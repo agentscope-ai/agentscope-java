@@ -31,22 +31,27 @@ public final class SessionViews {
     public static Transcript transcript(SessionLog log) {
         long target = log.head().seq();
         var messages = new LinkedHashMap<String, Msg>();
-        for (var event : log.scan(0, target)) {
-            if (event.type().equals("migration/baseline")) {
-                String state = (String) event.data().get("stateJson");
-                if (state != null)
-                    for (var msg : AgentState.fromJsonString(state).getContext())
-                        messages.putIfAbsent(msg.getId(), msg);
-            } else if (Set.of("message/user", "message/assistant", "tool/result", "turn/output")
-                    .contains(event.type())) {
-                Object value = event.data().get("message");
-                if (value != null) {
-                    Msg msg = JsonUtils.getJsonCodec().convertValue(value, Msg.class);
-                    if (event.type().equals("turn/output")) messages.put(msg.getId(), msg);
-                    else messages.putIfAbsent(msg.getId(), msg);
-                }
+        for (var event : log.scanMetadata(0, target)) {
+            for (var msg : messages(log, event)) {
+                if (event.type().equals("turn/output")) messages.put(msg.getId(), msg);
+                else messages.putIfAbsent(msg.getId(), msg);
             }
         }
         return new Transcript(target, List.copyOf(messages.values()));
+    }
+
+    /** Shared transcript extraction; ordinary checkpoints never contribute historical messages. */
+    static List<Msg> messages(SessionLog log, SessionEvent event) {
+        if (event.type().equals("migration/baseline")) {
+            String state = (String) log.materialize(event).data().get("stateJson");
+            return state == null ? List.of() : AgentState.fromJsonString(state).getContext();
+        }
+        if (Set.of("message/user", "message/assistant", "tool/result", "turn/output")
+                .contains(event.type())) {
+            Object value = event.data().get("message");
+            if (value != null)
+                return List.of(JsonUtils.getJsonCodec().convertValue(value, Msg.class));
+        }
+        return List.of();
     }
 }

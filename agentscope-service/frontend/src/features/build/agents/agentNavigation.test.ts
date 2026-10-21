@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentDetailPath,
   agentDetailTabs,
-  agentServicePath,
+  sessionPortalPath,
   legacyAgentManagePath,
   resolveAgentDetailTab,
 } from "./agentNavigation";
@@ -77,6 +77,6 @@ describe("Unified Agent navigation", () => {
       "definition",
     );
     expect(resolveAgentDetailTab("missing", "managed")).toBe("overview");
-    expect(agentServicePath("a/b")).toBe("/agent-center/agents/a%2Fb");
+    expect(sessionPortalPath("a/b")).toBe("/agent-center/agents/a%2Fb");
   });
 });

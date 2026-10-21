@@ -1152,6 +1152,11 @@ func (s *Server) getAgentTaskContext(c *gin.Context) {
 		}
 	}
 	ctx.TaskToken = token
+	if s.runtimeOnly || s.portalRuntime && strings.HasPrefix(c.Request.URL.Path, "/api/internal/runtime/") {
+		// The CLI already holds the current fenced identity through the Host
+		// relay; do not replace it with a legacy, weaker task credential.
+		ctx.TaskToken = ""
+	}
 	c.JSON(http.StatusOK, ctx)
 }
 
@@ -1881,13 +1886,13 @@ func (s *Server) uploadArtifact(c *gin.Context) {
 		sourceTaskID = &id
 	}
 	if token := c.GetHeader("X-Agent-Task-Token"); token != "" {
-		if sourceTaskID == nil || s.taskTokens.Verify(token, *sourceTaskID, time.Now().UTC()) != nil {
+		if sourceTaskID == nil {
 			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "artifact upload requires a valid source task token"})
 			return
 		}
-		task, loadErr := s.store.Collaboration().GetAgentTask(c.Request.Context(), *sourceTaskID)
+		task, loadErr := s.verifyActiveTaskToken(c.Request.Context(), token, *sourceTaskID)
 		if loadErr != nil {
-			s.writeCollaborationError(c, loadErr)
+			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "artifact upload requires a valid source task token"})
 			return
 		}
 		tenant, namespace = task.Tenant, task.Namespace
@@ -2053,11 +2058,11 @@ func (s *Server) downloadArtifact(c *gin.Context) {
 	}
 	if token := c.GetHeader("X-Agent-Task-Token"); token != "" {
 		taskID, parseErr := uuid.Parse(c.Query("taskId"))
-		if parseErr != nil || s.taskTokens.Verify(token, taskID, time.Now().UTC()) != nil {
+		if parseErr != nil {
 			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "valid taskId and task token are required"})
 			return
 		}
-		task, loadErr := s.store.Collaboration().GetAgentTask(c.Request.Context(), taskID)
+		task, loadErr := s.verifyActiveTaskToken(c.Request.Context(), token, taskID)
 		if loadErr != nil || !taskCanReadArtifact(task, artifact, links) {
 			c.JSON(http.StatusForbidden, ErrorResponse{Error: "artifact is outside task scope"})
 			return
@@ -2225,7 +2230,25 @@ func (s *Server) decideApproval(c *gin.Context) {
 		c.JSON(http.StatusForbidden, ErrorResponse{Error: "only the designated approver may decide this approval"})
 		return
 	}
+	owned, ownershipErr := s.portalOwnsNodeApproval(c.Request.Context(), current)
+	if ownershipErr != nil {
+		s.writeCollaborationError(c, ownershipErr)
+		return
+	}
+	if owned {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "Portal-owned approvals require the Session Turn actions API"})
+		return
+	}
 	if envelope, parseErr := parseManagedToolApproval(current); parseErr == nil {
+		owned, ownershipErr := s.portalOwnsApproval(c.Request.Context(), envelope)
+		if ownershipErr != nil {
+			s.writeCollaborationError(c, ownershipErr)
+			return
+		}
+		if owned {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "Portal-owned tool confirmations require the Session Turn actions API"})
+			return
+		}
 		if req.Status != controlmodel.ApprovalApproved && req.Status != controlmodel.ApprovalRejected {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "managed tool approval must be approved or rejected by its human approver"})
 			return

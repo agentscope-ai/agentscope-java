@@ -19,6 +19,7 @@ package httpapi
 import (
 	"encoding/json"
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"net/http/httptest"
@@ -27,6 +28,11 @@ import (
 )
 
 func TestWorkspaceApplicationRequiresMatchingFrozenDigest(t *testing.T) {
+	st, err := store.Open(t.Context(), store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
 	attempt := uuid.New()
 	for _, test := range []struct {
 		name, body, snapshot string
@@ -42,7 +48,7 @@ func TestWorkspaceApplicationRequiresMatchingFrozenDigest(t *testing.T) {
 			router := gin.New()
 			router.POST("/application", func(c *gin.Context) {
 				c.Set(ctxTaskAuth, &controlmodel.AgentTask{CurrentAttemptID: test.attempt, RuntimeBinding: json.RawMessage(test.snapshot)})
-				(&Server{}).reportWorkspaceApplication(c)
+				(&Server{store: st}).reportWorkspaceApplication(c)
 			})
 			req := httptest.NewRequest("POST", "/application", strings.NewReader(test.body))
 			req.Header.Set("Content-Type", "application/json")

@@ -190,7 +190,7 @@ func validateEndpointScopes(raw json.RawMessage) ([]string, error) {
 	}
 	seen := map[string]bool{}
 	for _, scope := range scopes {
-		if scope != "invoke" && scope != "read" && scope != "cancel" && scope != "interact" && scope != "webhooks:write" {
+		if scope != "invoke" && scope != "read" && scope != "cancel" && scope != "interact" && scope != "approve" && scope != "webhooks:write" {
 			return nil, fmt.Errorf("unknown credential scope: %s", scope)
 		}
 		if seen[scope] {

@@ -21,34 +21,35 @@ import (
 	"encoding/json"
 	"fmt"
 	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/google/uuid"
 	"time"
 )
 
-func (r *collaborationRepo) attachTeamContinuationLocked(issue *model.Issue, task, source *model.AgentTask) bool {
+func (r *collaborationRepo) attachTeamContinuationLocked(issue *model.Issue, task, source *model.AgentTask) (bool, error) {
 	if task.TeamID == nil || !source.LeaderTask || issue.ParentIssueID == nil {
-		return false
+		return false, nil
 	}
 	old := r.s.runs[source.OrchestrationRunID]
 	if old == nil || old.State != model.RunFailed || old.RootIssueID != *issue.ParentIssueID {
-		return false
+		return false, nil
 	}
 	root := r.s.issues[old.RootIssueID]
 	if root == nil || root.ArchivedAt != nil || root.AssigneeType != model.AssigneeTeam || root.AssigneeRef != task.TeamID.String() || (root.Status != model.IssueBlocked && root.Status != model.IssueInProgress) {
-		return false
+		return false, nil
 	}
 	var run *model.OrchestrationRun
 	for _, candidate := range r.s.runs {
 		if candidate.RootIssueID == root.ID && !model.IsOrchestrationRunTerminal(candidate.State) {
 			if candidate.RerunOfRunID == nil || *candidate.RerunOfRunID != old.ID {
-				return false
+				return false, nil
 			}
 			run = candidate
 		}
 	}
 	now := time.Now().UTC()
 	if run == nil {
-		run = &model.OrchestrationRun{ID: uuid.New(), Tenant: root.Tenant, Namespace: root.Namespace, RootIssueID: root.ID, Mode: model.RunModeAdaptive, RerunOfRunID: &old.ID, TriggerType: "team_continuation", TriggerRef: task.CausationID, State: model.RunRunning, Version: 1, CreatedBy: task.Originator, CreatedAt: now, UpdatedAt: now, StartedAt: &now, Input: cloneJSON(old.Input)}
+		run = &model.OrchestrationRun{ID: uuid.New(), Tenant: root.Tenant, Namespace: root.Namespace, RootIssueID: root.ID, Mode: model.RunModeAdaptive, PortalOwned: r.s.portalIssueOwnedLocked(root.ID), RerunOfRunID: &old.ID, TriggerType: "team_continuation", TriggerRef: task.CausationID, State: model.RunRunning, Version: 1, CreatedBy: task.Originator, CreatedAt: now, UpdatedAt: now, StartedAt: &now, Input: cloneJSON(old.Input)}
 		r.s.runs[run.ID] = run
 		key := old.ID.String() + "\x00" + task.TeamID.String()
 		if snapshot := r.s.runSnapshots[key]; snapshot != nil {
@@ -62,6 +63,17 @@ func (r *collaborationRepo) attachTeamContinuationLocked(issue *model.Issue, tas
 		r.s.runNodes[id] = &model.RunNode{ID: id, RunID: run.ID, Tenant: root.Tenant, Namespace: root.Namespace, NodeKey: "resumed-coordinator", Type: model.RunNodeTeam, Role: "leader", IssueID: &root.ID, State: model.RunNodeWaiting, Iteration: 1, Version: 1, CreatedAt: now, UpdatedAt: now}
 		payload, _ := json.Marshal(map[string]any{"previousRunId": old.ID, "rootIssueId": root.ID, "resumedIssueId": issue.ID})
 		r.s.runEvents[run.ID] = append(r.s.runEvents[run.ID], &model.RunEvent{ID: uuid.New(), RunID: run.ID, Tenant: root.Tenant, Namespace: root.Namespace, Sequence: 1, Type: "team.continued", Actor: task.Originator, Payload: payload, OccurredAt: now, IdempotencyKey: "team-continued:" + run.ID.String()})
+	}
+	if !task.LeaderTask {
+		count := 0
+		for _, node := range r.s.runNodes {
+			if node.RunID == run.ID {
+				count++
+			}
+		}
+		if count >= store.MaxRunNodes {
+			return false, store.ErrResourceLimit
+		}
 	}
 	task.OrchestrationRunID = run.ID
 	if task.LeaderTask {
@@ -78,5 +90,5 @@ func (r *collaborationRepo) attachTeamContinuationLocked(issue *model.Issue, tas
 		r.notifyIssueInboxLocked(root, previous, task.Originator, reason, task)
 		r.enqueueEventLocked(root.Tenant, "issue", root.ID, "issue.status-changed.v1", map[string]any{"issue": root, "previousStatus": previous}, fmt.Sprintf("issue-status:%s:%d", root.ID, root.Version))
 	}
-	return true
+	return true, nil
 }

@@ -108,6 +108,16 @@ public class E2bSandbox extends AbstractBaseSandbox {
         }
     }
 
+    /** Refreshes a known provider's TTL without creating a replacement or restoring files. */
+    public void keepAlive() throws Exception {
+        String id = e2bState.getSandboxId();
+        if (id == null || id.isBlank())
+            throw new IllegalStateException("Sandbox identity required for keepalive");
+        JsonNode reply = platform.connectSandbox(id, opt.getSandboxTimeoutSeconds());
+        if (reply.hasNonNull("sandboxID") && !id.equals(reply.get("sandboxID").asText()))
+            throw new IllegalStateException("E2B keepalive returned a different Sandbox");
+    }
+
     @Override
     public void shutdown() throws Exception {
         if (!e2bState.isSandboxOwned()) {
@@ -224,12 +234,23 @@ public class E2bSandbox extends AbstractBaseSandbox {
             envd = null;
             return;
         }
+        if (!e2bState.isSandboxOwned()) {
+            JsonNode reply = platform.getSandbox(e2bState.getSandboxId());
+            if (reply.hasNonNull("sandboxID")
+                    && !e2bState.getSandboxId().equals(reply.get("sandboxID").asText()))
+                throw new IllegalStateException("Sandbox lookup returned a different instance");
+            platform.applySandboxFields(e2bState, reply);
+            applyDefaultDomain();
+            envd = null;
+            return;
+        }
         try {
             JsonNode n =
                     platform.connectSandbox(
                             e2bState.getSandboxId(), opt.getSandboxTimeoutSeconds());
             platform.applySandboxFields(e2bState, n);
         } catch (Exception e) {
+            if (!opt.isRecreateOnConnectFailure()) throw e;
             log.warn("[sandbox-e2b] connect failed, recreating sandbox: {}", e.getMessage());
             e2bState.setWorkspaceRootReady(false);
             e2bState.setWorkspaceProjectionHash(null);

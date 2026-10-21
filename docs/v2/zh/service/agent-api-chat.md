@@ -6,19 +6,17 @@ en_link: /v2/en/service/agent-api-chat
 
 本例把一个 Managed“资料助手”接到业务聊天页面。用户提交整理资料的任务后，页面持续展示 Agent 的回复和工具调用；如果执行需要确认，页面让用户检查请求并作出决定。用户离开后再返回同一会话，应用会恢复已经保存的消息、工具结果和待办，再继续接收后续进度。
 
-本例使用[通过 Session API 接入应用](/v2/zh/service/service-api)中介绍的同一套接口，并选择 Managed Agent 展示连续对话和运行中的交互。调用 Team、Workflow 或其他类型的 Agent 时，也通过这个入口创建 Session 和提交 Turn；具体能展示哪些内容、提供哪些操作，取决于目标的执行能力。
+本例使用 Managed 原生 `/v1/sessions` API，固定一个 Managed Agent 及其 Environment；完整契约见 [Managed Session、Turn 与 Input API](/v2/zh/service/claude-session-api)。其他执行后端使用各自的受理与游标协议。
 
 开始前，先按[创建 Managed Agent](/v2/zh/service/create-managed-agent)配置模型和 Environment，并验证 Agent 能正常回答。要体验工具调用，需要按[工具指南](/v2/zh/service/tools)绑定可用工具；要体验用户确认，还应将对应工具的 `permissionPolicy.type` 设置为 `always_ask`。尚未配置工具时，也可以先完成文字对话和刷新恢复部分。
 
 ## 1. 创建会话，提交任务
 
-下面使用 curl 和 jq 在本地开发模式验证交互，无需认证请求头。将示例中的 ID 替换为实际资源 ID；如果 Agent 已配置默认 Environment，可以省略创建请求中的 `environmentId`。本地 Gateway 默认端口为 18080；生产身份配置见[生产部署](/v2/zh/service/kubernetes#production-api-access)。
+下面使用 curl 和 jq 在本地开发模式验证交互，无需认证请求头。将示例中的 ID 替换为实际资源 ID；如果 Agent 已配置默认 Environment，可以省略创建请求中的 `environment_id`。本地 Gateway 默认端口为 18080；生产身份配置见[生产部署](/v2/zh/service/kubernetes#production-api-access)。
 
 ```bash
 set -euo pipefail
 export BASE_URL="http://localhost:18080"
-export TENANT="default"
-export NAMESPACE="default"
 export AGENT_ID="YOUR_MANAGED_AGENT_ID"
 export ENVIRONMENT_ID="YOUR_ENVIRONMENT_ID"
 ```
@@ -27,21 +25,18 @@ export ENVIRONMENT_ID="YOUR_ENVIRONMENT_ID"
 
 ```bash
 SESSION_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+  curl -sS --fail-with-body "$BASE_URL/v1/sessions" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: notes-session-001" \
     --data-binary @- <<JSON
 {
-  "target": {
-    "type": "agent",
-    "id": "$AGENT_ID"
-  },
-  "environmentId": "$ENVIRONMENT_ID"
+  "agent": "$AGENT_ID",
+  "environment_id": "$ENVIRONMENT_ID"
 }
 JSON
 )
 SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
-SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+SESSION_URL="$BASE_URL/v1/sessions/$SESSION_ID"
 ```
 
 提交第一个问题：
@@ -54,7 +49,7 @@ TURN_JSON=$(
     -H "Idempotency-Key: $TURN_KEY" \
     --data-binary @- <<'JSON'
 {
-  "message": "整理会议待办：小李周五完成安装说明，下周一评审，时间待确认。列出还需要核实的信息。"
+  "input": {"message": "整理会议待办：小李周五完成安装说明，下周一评审，时间待确认。列出还需要核实的信息。"}
 }
 JSON
 )
@@ -71,7 +66,7 @@ TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
 SNAPSHOT=$(
   curl -sS --fail-with-body "$SESSION_URL/snapshot"
 )
-jq '{items, tools, turns, required_actions}' <<< "$SNAPSHOT"
+jq '{snapshot_id, as_of, resources}' <<< "$SNAPSHOT"
 CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
 ```
 
@@ -88,6 +83,8 @@ curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
 ```
+
+HTTP 快照在 `resources.<kind>.data` 中返回有界分页。需要更多历史时，沿用同一 `snapshot_id` 通过 `/resources/{kind}` 继续读取。下面的控制台辅助函数会把首批页面转换成自己的视图类型；其中 `snapshot.items` 不是原始 HTTP 响应结构。
 
 ## 3. 接到自己的页面
 
@@ -153,131 +150,62 @@ export function mountConversation(
 
 工具参数还在生成时，也可能刷新页面；状态更新器利用 snapshot 中保留的 active_tool_call_id 接上省略调用 ID 的后续参数片段。同一任务可产生多条 assistant item 和多个工具调用，不能把全部增量拼到最后一条消息。
 
-## 4. 把用户操作接到正确的 API
+## 4. 通过 Turn Input 提交交互
 
-下面将聊天页面上的操作对应到 Session API。所有路径都相对于 `SESSION_URL`；应用使用服务返回的 Session、Turn 和请求 ID 定位已有工作，由服务管理具体执行过程。
+显示操作前，先读取 `$SESSION_URL/turns/$TURN_ID/capabilities` 和 Turn 的 `inputs_open`。原生 API 通过同一个入口接收四种交互：
 
-显示按钮前读取当前 Turn 的能力；以下操作按用户意图选择，并不需要依次执行：
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities"
-```
-
-| 按钮 / 场景 | 请求 | 后续处理 |
+| 用户意图 | Input 请求体 | 应用依据 |
 | --- | --- | --- |
-| 发送新问题 | POST `/turns`，`{message}` | 新 turn、新 key，继续同一个 session 流 |
-| 调整当前任务 | POST `/turns/{turn}/steer`，`{message}` | 等 input.applied；409 时重新查看当前任务 |
-| 仅补充背景 | POST `/inputs/inject`，`{message}` | 不唤醒空闲 Agent；后续步骤应用 |
-| 允许 / 拒绝工具 | POST `/turns/{turn}/actions` | 按实际待办构造答复，继续观察命令状态和待办变化 |
-| 停止 | POST `/turns/{turn}/cancel` | 等明确 turn 结果，不把 cancel_requested 当作已停止 |
-| 继续中断任务 | POST `/turns/{turn}/resume` | 先处理待办和未知工具结果；沿用 turn，可能产生新 run |
+| 修正当前任务 | `{"type":"steer","payload":{"message":"新要求"}}` | Input 回执变为 `applied` |
+| 给当前 Turn 补充资料 | `{"type":"inject","payload":{"message":"补充上下文"}}` | 在安全边界应用，或明确拒绝 |
+| 回答待办 | `{"type":"reply","action_id":"REQUEST_ID","payload":{...}}` | Reply 已应用，且对应待办被解决 |
+| 停止当前任务 | `{"type":"cancel","payload":{}}` | Turn 到达实际终态 |
+| 提交新问题 | 另发 `POST /turns`，请求体为 `{"input":{"message":"下一个问题"}}` | 在同一 Session 受理一个新 Turn |
 
-<AccordionGroup>
-
-<Accordion title="调整当前要求，或仅补充背景">
-
-调整正在执行的任务：
+例如，修正一个开放的 Turn，并保存 Input 回执：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/steer" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: notes-correction-001" \
-  --data-binary @- <<'JSON'
-{
-  "message": "先列出待确认事项，暂时不要写入文件。"
-}
-JSON
-```
-
-仅保存背景材料，不启动推理：
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/inputs/inject" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: notes-context-001" \
-  --data-binary @- <<'JSON'
-{
-  "message": "补充背景：评审参与人还包括安装说明的维护者。"
-}
-JSON
-```
-
-</Accordion>
-
-<Accordion title="停止当前任务">
-
-```bash
-CANCEL_JSON=$(
-  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/cancel" \
-    -H "Idempotency-Key: notes-cancel-001"
+INPUT_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notes-correction-001" \
+    --data-binary '{"type":"steer","payload":{"message":"先列出待核实信息，暂时不要写文件。"}}'
 )
-CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
+INPUT_ID=$(jq -er '.id' <<< "$INPUT_JSON")
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs/$INPUT_ID"
 ```
 
-查询取消命令，再读取 Turn 状态确认终态：
+`accepted` 表示持久受理，`delivery_status=delivered` 表示传输进展，只有 `status=applied` 才确认运行时已应用。拒绝回执保留原因。网络超时后沿用原 key 和相同内容重试，新意图使用新 key。Input 不创建新 Turn，steer 也不能改变已经发出的模型请求。
+
+从快照的 `resources.required_actions.data` 读取待办。用户选择答复后，把卡片实际的 `data.request_id` 作为 `action_id`：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$CANCEL_COMMAND_ID"
+ACTION_ID="REQUEST_ID_FROM_PENDING_ACTION"
+REPLY_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notes-answer-001" \
+    --data-binary @- <<JSON
+{"type":"reply","action_id":"$ACTION_ID","payload":{"allow":true,"reason":"用户已确认"}}
+JSON
+)
+REPLY_ID=$(jq -er '.id' <<< "$REPLY_JSON")
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs/$REPLY_ID"
 ```
 
+确认类答复使用 `allow`；外部执行请求使用真实的 `content` 和 `is_error`，见[待办答复](/v2/zh/service/session-event-log#回答-required-action)。答复成功不代表任务完成，继续观察同一 Turn。通用外部结果和持久等待输入的完整验收仍属于本轮改造。
+
+取消也通过相同入口提交：
+
 ```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: notes-cancel-001" \
+  --data-binary '{"type":"cancel","payload":{}}'
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
 ```
 
-</Accordion>
-
-<Accordion title="继续可恢复的任务">
-
-只有 `available_commands` 包含 `resume`，并已处理待办和未知工具结果时，才提交恢复请求：
-
-```bash
-RESUME_JSON=$(
-  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/resume" \
-    -H "Idempotency-Key: notes-resume-001"
-)
-RESUME_COMMAND_ID=$(jq -er '.command.id' <<< "$RESUME_JSON")
-```
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$RESUME_COMMAND_ID"
-```
-
-</Accordion>
-
-</AccordionGroup>
-
-创建 Turn、调整要求、补充背景和回答待办时，都应为这一次操作提供稳定的 `Idempotency-Key`。下面演示用户检查工具请求并点击“允许”后，应用如何提交确认答复。`REQUEST_ID` 必须来自当前待办卡片中的 `request_id`，不能用工具调用 ID 替代：
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions"
-```
-
-```bash
-REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
-COMMAND_JSON=$(
-  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-    -H "Content-Type: application/json" \
-    -H "Idempotency-Key: notes-approval-001" \
-    --data-binary @- <<JSON
-{
-  "request_id": "$REQUEST_ID",
-  "payload": {
-    "allow": true,
-    "reason": "用户已确认"
-  }
-}
-JSON
-)
-COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
-```
-
-答复被接收后，应用应继续查询返回的命令状态，并观察待办是否已经处理、任务是否继续执行。HTTP 请求成功只说明服务接收了这次操作，不能立即把待办标为完成。如果命令失败或待办仍然存在，应重新读取最新记录，让用户了解当前状态后再决定是否重试。
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID"
-```
-
-待办要求外部工具执行结果时，应在 `payload` 中提交实际的 `output` 和 `is_error`；本地模式直接提交确认答复；生产审批身份见[生产部署](/v2/zh/service/kubernetes#production-api-access)。如何定位待办和处理命令回执见[回答 required action](/v2/zh/service/session-event-log#回答-required-action)。这些答复是在推进原来的任务，最终是否完成仍以 Turn 的结果为准。
+取消被受理不证明外部执行已停止，应等待 `completed`、`failed` 或 `cancelled`。`waiting_tool` 在 Hands 提交结果后自动恢复，不要求用户补造结果或另建 Turn。当前原生 capabilities 声明 `resume=false`，这里不提供旧的显式 `/resume` 和 `/commands` 流程。
 
 ## 5. 用真实工具走完一次流程
 
@@ -292,6 +220,6 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID"
 | 断开 SSE 后查看任务 | 服务仍执行；连接中断不会触发 cancel |
 | 完成后继续追问 | 同一 session 新建 turn，历史仍在 |
 
-上面的页面恢复只是在重新显示已有工作。恢复旧 checkpoint 会改变 Agent 的上下文，之后需要提交新的 Turn；如果需要继续被中断的原任务，则应检查恢复条件后使用 `resume`。这两类执行操作见[会话、任务与预算](/v2/zh/service/session-event-log)。
+页面恢复用于重新展示已有执行。原生 capabilities 暂未开放 checkpoint restore 和 Fork，仍需完成历史状态验收。长工具自动续跑沿用原 Turn；当前边界见[会话日志与恢复](/v2/zh/service/session-event-log)。
 
-当聊天页面还需要让用户上传材料或下载结果时，可以按[文件与产物](/v2/zh/service/files)接入对应能力。如果希望用户离开后由业务后端接收完成通知，则在[SSE 与事件续传](/v2/zh/service/sse-events#webhooks)中继续配置 Webhook。
+当聊天页面还需要让用户上传材料或下载结果时，可以按[文件与产物](/v2/zh/service/files)接入对应能力。需要后台观察时，可由业务后端消费持久 SSE。原生 Webhook 注册仍待迁移；[Webhook 指南](/v2/zh/service/sse-events#webhooks)介绍已有后端的独立协议。

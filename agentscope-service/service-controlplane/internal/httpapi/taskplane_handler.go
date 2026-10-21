@@ -15,6 +15,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"github.com/google/uuid"
 
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimeauth"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
@@ -60,7 +62,9 @@ func (s *Server) createRuntimeHostEnrollment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "hostKey is too long"})
 		return
 	}
-	if s.scopeMode == ScopeModeSingle {
+	if access := accessFrom(c); access != nil && access.Namespace != nil {
+		request.Tenant, request.Namespace = access.Namespace.Tenant, access.Namespace.Name
+	} else if s.scopeMode == ScopeModeSingle {
 		request.Tenant, request.Namespace = s.defaultTenant, s.defaultNamespace
 	} else {
 		if request.Tenant == "" {
@@ -94,7 +98,9 @@ func (s *Server) createRuntimeHostEnrollmentToken(c *gin.Context) {
 		return
 	}
 	request.Tenant, request.Namespace = strings.TrimSpace(request.Tenant), strings.TrimSpace(request.Namespace)
-	if s.scopeMode == ScopeModeSingle {
+	if access := accessFrom(c); access != nil && access.Namespace != nil {
+		request.Tenant, request.Namespace = access.Namespace.Tenant, access.Namespace.Name
+	} else if s.scopeMode == ScopeModeSingle {
 		request.Tenant, request.Namespace = s.defaultTenant, s.defaultNamespace
 	} else if request.Tenant == "" || request.Namespace == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "tenant and namespace are required in multi scope mode"})
@@ -151,7 +157,7 @@ func (s *Server) exchangeRuntimeHostEnrollment(c *gin.Context) {
 // on private links and Host-scoped credentials on public Gateway links.
 func (s *Server) runtimeHostCredentialMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if token := c.GetHeader("X-Builder-Internal-Token"); s.internalToken != "" && token == s.internalToken {
+		if token := c.GetHeader("X-Builder-Internal-Token"); !s.portalExecution() && s.internalToken != "" && token == s.internalToken {
 			c.Next()
 			return
 		}
@@ -220,6 +226,11 @@ func emptyRuntimeProfileConfiguration(raw json.RawMessage) bool {
 // internal Profile/Pool records required by the scheduler. They are not a
 // user-facing product area; Agent authors only see a discovered Runtime choice.
 func (s *Server) ensureRuntimeDefaults(c *gin.Context, req runtimeHostRegistrationRequest) error {
+	if s.portalExecution() && strings.HasPrefix(c.Request.URL.Path, "/api/internal/runtime/") {
+		// Pool and Profile definitions belong to the control plane. Runtime registration
+		// only writes observations; it must not create or upgrade resource definitions.
+		return nil
+	}
 	registry := s.store.RuntimeRegistry()
 	if _, err := registry.GetRuntimePool(c.Request.Context(), req.Tenant, req.Namespace, req.PoolName); err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
@@ -541,6 +552,11 @@ func (s *Server) claimExecutionAttempt(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "invalid execution runtime snapshot"})
 		return
 	}
+	snapshot, err = s.store.RuntimeSnapshots().RevealDispatch(task.ID.String(), snapshot)
+	if err != nil {
+		c.JSON(500, ErrorResponse{Error: "execution configuration is unavailable"})
+		return
+	}
 	profile := snapshot.RuntimeProfile
 	if profile == nil {
 		// Transitional fallback for Attempts created before hosted snapshots
@@ -582,15 +598,15 @@ func (s *Server) claimExecutionAttempt(c *gin.Context) {
 		}
 	}
 	hostedTokens := s.taskTokens
-	hostedTokens.TTL = 24 * time.Hour
+	hostedTokens.TTL = hostedCredentialTTL
 	attemptToken, err := hostedTokens.MintAttempt(execution.ID, execution.DispatchGeneration,
 		string(execution.BackendKind), hostID.String(), time.Now().UTC())
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	taskToken, err := hostedTokens.MintScoped(task.ID, execution.ID,
-		execution.DispatchGeneration, time.Now().UTC())
+	taskToken, err := hostedTokens.MintFenced(task.ID, execution.ID,
+		execution.DispatchGeneration, execution.FencingToken, hostID, time.Now().UTC())
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
@@ -621,7 +637,7 @@ func (s *Server) renewExecutionAttempt(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"attempt": current})
 		return
 	}
-	execution, err := s.store.ExecutionAttempts().RenewLease(c.Request.Context(), executionID,
+	execution, err := s.taskPlane.RenewExecution(c.Request.Context(), executionID,
 		req.LeaseToken, req.FencingToken, time.Duration(req.LeaseSeconds)*time.Second)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
@@ -641,6 +657,23 @@ func (s *Server) prepareExecutionAttempt(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"attempt": execution})
+}
+
+func (s *Server) observeExecutionAttempt(c *gin.Context) {
+	_, id, req, ok := s.bindExecutionLease(c)
+	if !ok {
+		return
+	}
+	attempt, err := s.store.ExecutionAttempts().Get(c.Request.Context(), id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if attempt.LeaseToken != req.LeaseToken || attempt.FencingToken != req.FencingToken {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "stale execution lease"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"attempt": attempt})
 }
 
 func (s *Server) startExecutionAttempt(c *gin.Context) {
@@ -728,43 +761,63 @@ func (s *Server) appendExecutionAttemptEvent(c *gin.Context) {
 		c.JSON(http.StatusRequestEntityTooLarge, ErrorResponse{Error: "provider event exceeds 256 KiB"})
 		return
 	}
-	attempt, err := s.store.ExecutionAttempts().Get(c.Request.Context(), attemptID)
-	if err != nil {
-		s.writeControlPlaneError(c, err)
-		return
-	}
-	if attempt.LeaseToken != req.LeaseToken || attempt.FencingToken != req.FencingToken {
-		c.JSON(http.StatusConflict, ErrorResponse{Error: "stale execution attempt lease"})
-		return
-	}
-	if controlmodel.IsExecutionAttemptTerminal(attempt.State) {
-		c.JSON(http.StatusOK, gin.H{"attempt": attempt, "accepted": false})
-		return
-	}
-	eventPayload, err := json.Marshal(gin.H{
-		"provider": payload.Provider, "eventType": payload.EventType,
-		"providerSessionId": payload.ProviderSessionID, "raw": payload.Raw,
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	err := s.store.WithSessionLock(ctx, "portal-attempt-stream:"+attemptID.String(), func(ctx context.Context) error {
+		attempt, err := s.store.ExecutionAttempts().Get(ctx, attemptID)
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return nil
+		}
+		if attempt.LeaseToken != req.LeaseToken || attempt.FencingToken != req.FencingToken {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "stale execution attempt lease"})
+			return nil
+		}
+		if controlmodel.IsExecutionAttemptTerminal(attempt.State) {
+			var snapshot controlmodel.RuntimeDispatchSnapshot
+			_ = json.Unmarshal(attempt.RuntimeBinding, &snapshot)
+			stopped := true
+			if snapshot.PortalCommandID != "" {
+				stopped, err = s.portalNativeStopped(ctx, attempt)
+				if err != nil {
+					s.writeControlPlaneError(c, err)
+					return nil
+				}
+			}
+			if stopped {
+				c.JSON(http.StatusOK, gin.H{"attempt": attempt, "accepted": false})
+				return nil
+			}
+		}
+		eventPayload, err := json.Marshal(gin.H{
+			"provider": payload.Provider, "eventType": payload.EventType,
+			"providerSessionId": payload.ProviderSessionID, "raw": payload.Raw,
+		})
+		if err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid provider event"})
+			return nil
+		}
+		event, err := s.store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{
+			RunID: attempt.RunID, Tenant: attempt.Tenant, Namespace: attempt.Namespace,
+			NodeID: &attempt.NodeID, AgentTaskID: &attempt.AgentTaskID, AttemptID: &attempt.ID,
+			Type: "attempt.provider_event", Actor: controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "runtime-host:" + hostID.String()},
+			Payload: eventPayload, IdempotencyKey: "provider-event:" + attempt.ID.String() + ":" + strconv.FormatInt(payload.Ordinal, 10),
+		})
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return nil
+		}
+		if err = s.projectHostedProviderEvent(ctx, attempt, payload.Provider,
+			payload.EventType, payload.ProviderSessionID, payload.Ordinal, payload.Raw); err != nil {
+			s.writeControlPlaneError(c, err)
+			return nil
+		}
+		c.JSON(http.StatusAccepted, gin.H{"event": event, "attempt": attempt, "accepted": true})
+		return nil
 	})
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid provider event"})
-		return
-	}
-	event, err := s.store.Orchestration().AppendRunEvent(c.Request.Context(), &controlmodel.RunEvent{
-		RunID: attempt.RunID, Tenant: attempt.Tenant, Namespace: attempt.Namespace,
-		NodeID: &attempt.NodeID, AgentTaskID: &attempt.AgentTaskID, AttemptID: &attempt.ID,
-		Type: "attempt.provider_event", Actor: controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "runtime-host:" + hostID.String()},
-		Payload: eventPayload, IdempotencyKey: "provider-event:" + attempt.ID.String() + ":" + strconv.FormatInt(payload.Ordinal, 10),
-	})
-	if err != nil {
 		s.writeControlPlaneError(c, err)
-		return
 	}
-	if err = s.projectHostedProviderEvent(c.Request.Context(), attempt, payload.Provider,
-		payload.EventType, payload.ProviderSessionID, payload.Ordinal, payload.Raw); err != nil {
-		s.writeControlPlaneError(c, err)
-		return
-	}
-	c.JSON(http.StatusAccepted, gin.H{"event": event, "attempt": attempt, "accepted": true})
 }
 
 func (s *Server) failExecutionAttempt(c *gin.Context) {
@@ -814,6 +867,10 @@ type boundExecutionLease struct {
 }
 
 func (s *Server) bindExecutionLease(c *gin.Context) (uuid.UUID, uuid.UUID, boundExecutionLease, bool) {
+	return s.bindExecutionLeaseCredential(c, true)
+}
+
+func (s *Server) bindExecutionLeaseCredential(c *gin.Context, requireAttemptToken bool) (uuid.UUID, uuid.UUID, boundExecutionLease, bool) {
 	hostID, ok := parseUUIDParam(c, "hostId")
 	if !ok {
 		return uuid.Nil, uuid.Nil, boundExecutionLease{}, false
@@ -841,10 +898,12 @@ func (s *Server) bindExecutionLease(c *gin.Context) (uuid.UUID, uuid.UUID, bound
 		c.JSON(http.StatusConflict, ErrorResponse{Error: "execution is not leased to this host"})
 		return uuid.Nil, uuid.Nil, boundExecutionLease{}, false
 	}
-	if err := s.taskTokens.VerifyAttempt(c.GetHeader("X-Execution-Attempt-Token"), current.ID,
-		current.DispatchGeneration, string(current.BackendKind), hostID.String(), time.Now().UTC()); err != nil {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid execution attempt token"})
-		return uuid.Nil, uuid.Nil, boundExecutionLease{}, false
+	if requireAttemptToken {
+		if err := s.taskTokens.VerifyAttempt(c.GetHeader("X-Execution-Attempt-Token"), current.ID,
+			current.DispatchGeneration, string(current.BackendKind), hostID.String(), time.Now().UTC()); err != nil {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid execution attempt token"})
+			return uuid.Nil, uuid.Nil, boundExecutionLease{}, false
+		}
 	}
 	req.extra = body
 	return hostID, executionID, req, true
@@ -860,7 +919,10 @@ func parseUUIDParam(c *gin.Context, name string) (uuid.UUID, bool) {
 }
 
 func (s *Server) writeControlPlaneError(c *gin.Context, err error) {
+	var native *product.ManagedServiceError
 	switch {
+	case errors.As(err, &native) && native.StatusCode >= 400 && native.StatusCode <= 599:
+		c.JSON(native.StatusCode, ErrorResponse{Error: native.Error()})
 	case errors.Is(err, store.ErrNotFound):
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
 	case errors.Is(err, store.ErrConflict):

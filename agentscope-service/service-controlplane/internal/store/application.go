@@ -27,4 +27,5 @@ type ApplicationRepository interface {
 	Get(context.Context, uuid.UUID) (*model.Application, error)
 	List(context.Context, string, string) ([]*model.Application, error)
 	Update(context.Context, *model.Application, int64) (*model.Application, error)
+	RecordRuntimeTokens(context.Context, uuid.UUID, int64) error
 }

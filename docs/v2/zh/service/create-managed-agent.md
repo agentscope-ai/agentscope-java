@@ -32,7 +32,7 @@ export NAMESPACE="default"
 
 ## 1. 创建执行环境
 
-创建一个 Local Environment，文件工具将在 Dataplane 容器内执行。如果已有可用环境，直接设置 `ENVIRONMENT_ID` 并跳过此请求；其他类型见 [Environment 指南](/v2/zh/service/environments)。
+创建一个 Local Environment，文件工具通过 Hands 执行。如果已有可用环境，直接设置 `ENVIRONMENT_ID` 并跳过此请求；其他类型见 [Environment 指南](/v2/zh/service/environments)。
 
 ```bash
 ENVIRONMENT_JSON=$(
@@ -52,6 +52,8 @@ ENVIRONMENT_ID=$(jq -er '.id' <<< "$ENVIRONMENT_JSON")
 <span id="创建统一-agent-身份与托管定义"></span>
 
 <span id="2-创建资料助手"></span>
+
+local Environment 现在通过 Hands 执行工具。给 Agent 发送任务前，应按 [环境指南](/v2/zh/service/environments#2-启动-hands) 为该 Environment 启动 Hands。仅创建环境资源不会自动产生在线 Worker。
 
 ## 2. 创建 Agent
 

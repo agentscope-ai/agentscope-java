@@ -308,6 +308,11 @@ func (s *Scheduler) selectCandidate(ctx context.Context, task *controlmodel.Agen
 	var previous controlmodel.RuntimeDispatchSnapshot
 	if len(task.RuntimeBinding) > 0 {
 		if json.Unmarshal(task.RuntimeBinding, &previous) == nil && previous.Binding.Kind != "" && previous.SelectionSource == "node" {
+			var err error
+			previous, err = s.Store.RuntimeSnapshots().RevealDispatch(task.ID.String(), previous)
+			if err != nil {
+				return nil, err
+			}
 			candidate := &controlmodel.RuntimeBindingCandidate{Binding: previous.Binding,
 				RequiredCapabilities: previous.Capabilities, SecurityConstraints: previous.SecurityConstraints,
 				SelectionSource: "node", CandidateIndex: previous.CandidateIndex}

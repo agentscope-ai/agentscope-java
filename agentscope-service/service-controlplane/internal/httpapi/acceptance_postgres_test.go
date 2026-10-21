@@ -53,5 +53,5 @@ func acceptancePostgresConfig(t *testing.T) store.Config {
 	q := u.Query()
 	q.Set("search_path", schema)
 	u.RawQuery = q.Encode()
-	return store.Config{Driver: store.DriverPostgres, PostgresDSN: u.String()}
+	return store.Config{Driver: store.DriverPostgres, PostgresDSN: u.String(), RuntimeMasterKey: "acceptance-fixture-vault-key-only"}
 }

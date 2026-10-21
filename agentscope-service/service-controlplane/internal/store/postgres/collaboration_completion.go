@@ -20,6 +20,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -34,8 +35,14 @@ import (
 // terminal task/input state in one transaction. This is the only completion
 // path used when the caller has not already persisted a response Comment.
 func (r *collaborationRepo) CompleteAgentTaskWithComment(ctx context.Context, id uuid.UUID, completion store.TaskCompletion, comment *controlmodel.Comment, targets []store.CommentTarget) (*controlmodel.AgentTask, *controlmodel.Comment, error) {
+	if err := store.ValidateTaskInputIDs(completion.ProcessedInputIDs, completion.DeferredInputIDs); err != nil {
+		return nil, nil, err
+	}
 	if comment == nil || strings.TrimSpace(comment.Content) == "" {
 		return nil, nil, fmt.Errorf("result comment content is required")
+	}
+	if len(targets) > store.MaxCommentTargets {
+		return nil, nil, store.ErrCommentCapacity
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -48,6 +55,9 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(ctx context.Context, id
 	}
 	if completion.ExpectedVersion > 0 && task.Version != completion.ExpectedVersion || !controlmodel.CanTransitionAgentTask(task.Status, controlmodel.AgentTaskCompleted) {
 		return nil, nil, store.ErrConflict
+	}
+	if err = acceptCoordinatorIntentTx(ctx, tx, task, completion); err != nil {
+		return nil, nil, err
 	}
 	var attempt *controlmodel.ExecutionAttempt
 	if task.CurrentAttemptID != nil {
@@ -98,6 +108,9 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(ctx context.Context, id
 		created.ThreadRootID = parent.ThreadRootID
 	} else {
 		created.ThreadRootID = created.ID
+	}
+	if err := store.ValidateCommentWrite(created, nil, targets); err != nil {
+		return nil, nil, err
 	}
 	created, err = scanComment(tx.QueryRow(ctx, `INSERT INTO comments
 		(id,tenant,namespace,issue_id,parent_id,thread_root_id,author_type,author_ref,
@@ -155,16 +168,20 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(ctx context.Context, id
 			route.Outcome, route.ReasonCode = controlmodel.RouteSuppressed, "self_trigger"
 		default:
 			routed, _, coalesced, routeErr := routeAgentTaskInputTx(ctx, tx, issue, created, target)
-			if routeErr != nil {
+			if errors.Is(routeErr, store.ErrResourceLimit) {
+				route.Outcome, route.ReasonCode = controlmodel.RouteBlocked, store.CapacityRouteReason(routeErr)
+			} else if routeErr != nil {
 				return nil, nil, routeErr
-			}
-			route.TaskID = &routed.ID
-			if coalesced {
-				route.Outcome = controlmodel.RouteCoalesced
 			} else {
-				route.Outcome = controlmodel.RouteQueued
+				route.TaskID = &routed.ID
+				if coalesced {
+					route.Outcome = controlmodel.RouteCoalesced
+				} else {
+					route.Outcome = controlmodel.RouteQueued
+				}
 			}
 		}
+
 		if err := tx.QueryRow(ctx, `INSERT INTO comment_routes
 			(id,tenant,namespace,issue_id,comment_id,comment_version,target_type,target_ref,route_type,
 			 outcome,task_id,reason_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
@@ -293,6 +310,15 @@ func reconcileCompletedTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 			IdempotencyKey: "node-" + string(next) + ":" + node.ID.String()}); err != nil {
 			return err
 		}
+	}
+	// Declared workflows aggregate every node's output in the engine. A task
+	// completing last must not replace the workflow result with its own result.
+	var runMode controlmodel.OrchestrationRunMode
+	if err = tx.QueryRow(ctx, `SELECT mode FROM orchestration_runs WHERE id=$1`, task.OrchestrationRunID).Scan(&runMode); err != nil {
+		return err
+	}
+	if runMode == controlmodel.RunModeDeclared || runMode == controlmodel.RunModeSubrun {
+		return nil
 	}
 	// The leader may explicitly converge the coordinator while its provider
 	// process is still running. Preserve that terminal decision when the
@@ -465,11 +491,11 @@ func (r *collaborationRepo) ClaimAgentTaskWithAttempt(ctx context.Context, claim
 		"agent-task.dispatched.v1", task, fmt.Sprintf("agent-task-dispatched:%s:%d", task.ID, task.Version)); err != nil {
 		return nil, nil, err
 	}
-	if err := tx.Commit(ctx); err != nil {
+	task.Inputs, err = listTaskInputs(ctx, tx, task.ID)
+	if err != nil {
 		return nil, nil, err
 	}
-	task.Inputs, err = listTaskInputs(ctx, r.pool, task.ID)
-	if err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return nil, nil, err
 	}
 	return task, created, nil

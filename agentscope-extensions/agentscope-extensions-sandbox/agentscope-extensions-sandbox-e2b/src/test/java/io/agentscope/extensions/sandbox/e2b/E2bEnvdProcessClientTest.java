@@ -33,10 +33,23 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.concurrent.atomic.AtomicInteger;
 import okhttp3.MediaType;
 import org.junit.jupiter.api.Test;
 
 class E2bEnvdProcessClientTest {
+
+    @Test
+    void jsonCodecAcceptsOmittedDefaultZeroExitCode() throws Exception {
+        var client = new E2bEnvdProcessClient(options(E2bCodec.JSON));
+        byte[] frame =
+                E2bEnvdProcessClient.encodeUnaryEnvelope(
+                        "{\"event\":{\"end\":{}}}".getBytes(StandardCharsets.UTF_8));
+        assertEquals(
+                0,
+                drainStartStream(
+                        client, frame, new ByteArrayOutputStream(), new ByteArrayOutputStream()));
+    }
 
     @Test
     void jsonCodecUsesConnectJsonAndJsonPayload() throws Exception {
@@ -204,6 +217,22 @@ class E2bEnvdProcessClientTest {
         assertEquals(0, exit);
     }
 
+    @Test
+    void boundedCaptureFailsInsteadOfReturningATruncatedWorkspaceArchive() throws Exception {
+        var options = options(E2bCodec.JSON);
+        options.setMaxCapturedBytes(128);
+        var client = new E2bEnvdProcessClient(options);
+        byte[] payload = connectFrame(responseJson(base64("x".repeat(256)), null, null));
+        assertThrows(
+                IOException.class,
+                () ->
+                        drainStartStream(
+                                client,
+                                payload,
+                                new ByteArrayOutputStream(),
+                                new ByteArrayOutputStream()));
+    }
+
     private static DynamicMessage dataResponse(
             E2bEnvdProcessClient client, String stdout, String stderr) {
         Descriptors.FileDescriptor fd = client.fileDescriptor();
@@ -239,11 +268,17 @@ class E2bEnvdProcessClientTest {
                         "drainStartStream",
                         InputStream.class,
                         ByteArrayOutputStream.class,
-                        ByteArrayOutputStream.class);
+                        ByteArrayOutputStream.class,
+                        AtomicInteger.class);
         method.setAccessible(true);
         try {
             return (int)
-                    method.invoke(client, new ByteArrayInputStream(connectFrame), stdout, stderr);
+                    method.invoke(
+                            client,
+                            new ByteArrayInputStream(connectFrame),
+                            stdout,
+                            stderr,
+                            new AtomicInteger());
         } catch (InvocationTargetException e) {
             Throwable cause = e.getCause();
             if (cause instanceof Exception exception) {

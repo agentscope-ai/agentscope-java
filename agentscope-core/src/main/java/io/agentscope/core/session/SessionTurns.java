@@ -42,7 +42,7 @@ public record SessionTurns(
         var inputs = new LinkedHashMap<String, List<Msg>>();
         var started = new LinkedHashSet<String>();
         var applied = new LinkedHashSet<String>();
-        for (var event : log.scan(0, log.head().seq())) {
+        for (var event : log.scanMetadata(0, log.head().seq())) {
             var data = event.data();
             if (event.type().equals("state/restored")) {
                 turns.clear();

@@ -141,6 +141,31 @@ func TestRunAppServerSessionResumesThreadAndDeclinesWithoutApprover(t *testing.T
 	}
 }
 
+func TestResumeDoesNotPublishHistoricalTokenUsage(t *testing.T) {
+	responses := strings.Join([]string{
+		`{"id":1,"result":{}}`,
+		`{"method":"thread/tokenUsage/updated","params":{"threadId":"thread-1","turnId":"old-turn","tokenUsage":{"last":{"inputTokens":100},"total":{"inputTokens":100}}}}`,
+		`{"id":2,"result":{"thread":{"id":"thread-1"}}}`,
+		`{"id":3,"result":{"turn":{"id":"new-turn","status":"inProgress"}}}`,
+		`{"method":"thread/tokenUsage/updated","params":{"threadId":"thread-1","turnId":"new-turn","tokenUsage":{"last":{"inputTokens":3},"total":{"inputTokens":103}}}}`,
+		`{"method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"new-turn","status":"completed"}}}`,
+	}, "\n")
+	var requests bytes.Buffer
+	var usage []provider.Event
+	client := newAppServerClient(t.Context(), &requests, strings.NewReader(responses), func(event provider.Event) error {
+		if event.Type == "thread/tokenUsage/updated" {
+			usage = append(usage, event)
+		}
+		return nil
+	}, nil)
+	if _, err := runAppServerSession(client, provider.Request{Workspace: t.TempDir(), Prompt: "continue", ProviderSessionID: "thread-1"}, configuration{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(usage) != 1 || strings.Contains(string(usage[0].Raw), "old-turn") {
+		t.Fatalf("historical usage published: %+v", usage)
+	}
+}
+
 func TestAppServerPermissionsApprovalReturnsRequestedSubset(t *testing.T) {
 	var responses bytes.Buffer
 	client := newAppServerClient(context.Background(), &responses, strings.NewReader(""), nil,

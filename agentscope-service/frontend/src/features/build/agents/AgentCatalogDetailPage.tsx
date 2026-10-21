@@ -68,7 +68,7 @@ import { HostedAgentSettings } from "./HostedAgentSettings";
 import { AgentGeneralSettings } from "./AgentGeneralSettings";
 import {
   agentDetailTabs,
-  agentServicePath,
+  sessionPortalPath,
   definitionSections,
   resolveAgentDetailTab,
   type AgentDetailTabId,
@@ -108,7 +108,7 @@ function bindingDescription(kind: string) {
   if (kind === "managed")
     return "AgentScope Service owns the definition, session lifecycle, and execution adapter.";
   if (kind === "external-application")
-    return "An independently deployed application registers instances and receives ASDP commands.";
+    return "An independently deployed application registers instances and receives runtime protocol commands.";
   if (kind === "hosted-runtime")
     return "Execution is launched on demand through an available detected agent runtime.";
   return "Runtime binding configuration.";
@@ -162,7 +162,7 @@ export default function AgentCatalogDetailPage() {
     enabled: !!agentId,
   });
   const runtimeKind = agent.data?.runtimeKind;
-  const base = agentServicePath(agentId);
+  const base = sessionPortalPath(agentId);
   const definition = location.pathname.includes("/definition");
   const channels = location.pathname.endsWith("/connections/channels");
   const section = definition
@@ -711,7 +711,7 @@ export default function AgentCatalogDetailPage() {
                           Automatically selected
                         </div>
                         <div className="text-muted-foreground">
-                          AgentScope uses the detected agent runtime selected
+                          AgentScope Service uses the detected agent runtime selected
                           when this Agent was created.
                         </div>
                         <div className="text-xs text-muted-foreground">
@@ -791,6 +791,7 @@ export default function AgentCatalogDetailPage() {
           ) : (
             <SessionUsageCard
               targetType="agent"
+              runtimeKind={runtimeKind}
               targetRef={value.id}
               targetName={value.name}
             />

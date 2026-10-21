@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -164,12 +165,12 @@ func (r *orchestrationRepo) ListRevisions(ctx context.Context, id uuid.UUID) ([]
 	return out, rows.Err()
 }
 
-const runCols = `id,tenant,namespace,root_issue_id,mode,definition_revision_id,parent_run_id,parent_node_id,rerun_of_run_id,trigger_type,trigger_ref,idempotency_key,input,variables,output,policy_snapshot,usage,state,wait_reason,failure_code,failure_message,version,created_by_type,created_by_ref,created_at,updated_at,started_at,completed_at`
+const runCols = `id,tenant,namespace,root_issue_id,mode,definition_revision_id,parent_run_id,parent_node_id,rerun_of_run_id,trigger_type,trigger_ref,idempotency_key,input,variables,output,policy_snapshot,usage,state,wait_reason,failure_code,failure_message,version,created_by_type,created_by_ref,created_at,updated_at,started_at,completed_at,terminal_cleanup_pending,portal_owned`
 
 func scanRun(row scannable) (*controlmodel.OrchestrationRun, error) {
 	v := &controlmodel.OrchestrationRun{}
 	var triggerRef, idem, wait, code, msg, actorRef *string
-	err := row.Scan(&v.ID, &v.Tenant, &v.Namespace, &v.RootIssueID, &v.Mode, &v.DefinitionRevisionID, &v.ParentRunID, &v.ParentNodeID, &v.RerunOfRunID, &v.TriggerType, &triggerRef, &idem, &v.Input, &v.Variables, &v.Output, &v.PolicySnapshot, &v.Usage, &v.State, &wait, &code, &msg, &v.Version, &v.CreatedBy.Type, &actorRef, &v.CreatedAt, &v.UpdatedAt, &v.StartedAt, &v.CompletedAt)
+	err := row.Scan(&v.ID, &v.Tenant, &v.Namespace, &v.RootIssueID, &v.Mode, &v.DefinitionRevisionID, &v.ParentRunID, &v.ParentNodeID, &v.RerunOfRunID, &v.TriggerType, &triggerRef, &idem, &v.Input, &v.Variables, &v.Output, &v.PolicySnapshot, &v.Usage, &v.State, &wait, &code, &msg, &v.Version, &v.CreatedBy.Type, &actorRef, &v.CreatedAt, &v.UpdatedAt, &v.StartedAt, &v.CompletedAt, &v.TerminalCleanupPending, &v.PortalOwned)
 	if err != nil {
 		return nil, orchNotFound(err)
 	}
@@ -188,7 +189,7 @@ func (r *orchestrationRepo) CreateRun(ctx context.Context, in *controlmodel.Orch
 	if in.State == "" {
 		in.State = controlmodel.RunPlanned
 	}
-	v, err := scanRun(r.pool.QueryRow(ctx, `INSERT INTO orchestration_runs(id,tenant,namespace,root_issue_id,mode,definition_revision_id,parent_run_id,parent_node_id,rerun_of_run_id,trigger_type,trigger_ref,idempotency_key,input,variables,output,policy_snapshot,usage,state,wait_reason,failure_code,failure_message,version,created_by_type,created_by_ref,started_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,1,$22,$23,CASE WHEN $18='running' THEN now() END) ON CONFLICT(tenant,namespace,idempotency_key) WHERE idempotency_key IS NOT NULL DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING `+runCols, in.ID, in.Tenant, in.Namespace, in.RootIssueID, in.Mode, in.DefinitionRevisionID, in.ParentRunID, in.ParentNodeID, in.RerunOfRunID, in.TriggerType, nullStr(in.TriggerRef), nullStr(in.IdempotencyKey), nullJSON(in.Input), nullJSON(in.Variables), nullJSON(in.Output), nullJSON(in.PolicySnapshot), nullJSON(in.Usage), in.State, nullStr(in.WaitReason), nullStr(in.FailureCode), nullStr(in.FailureMessage), in.CreatedBy.Type, nullStr(in.CreatedBy.Ref)))
+	v, err := scanRun(r.pool.QueryRow(ctx, `INSERT INTO orchestration_runs(id,tenant,namespace,root_issue_id,mode,definition_revision_id,parent_run_id,parent_node_id,rerun_of_run_id,trigger_type,trigger_ref,idempotency_key,input,variables,output,policy_snapshot,usage,state,wait_reason,failure_code,failure_message,version,created_by_type,created_by_ref,started_at,terminal_cleanup_pending,portal_owned) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,1,$22,$23,CASE WHEN $18='running' THEN now() END,$24,portal_issue_owned($4)) ON CONFLICT(tenant,namespace,idempotency_key) WHERE idempotency_key IS NOT NULL DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING `+runCols, in.ID, in.Tenant, in.Namespace, in.RootIssueID, in.Mode, in.DefinitionRevisionID, in.ParentRunID, in.ParentNodeID, in.RerunOfRunID, in.TriggerType, nullStr(in.TriggerRef), nullStr(in.IdempotencyKey), nullJSON(in.Input), nullJSON(in.Variables), nullJSON(in.Output), nullJSON(in.PolicySnapshot), nullJSON(in.Usage), in.State, nullStr(in.WaitReason), nullStr(in.FailureCode), nullStr(in.FailureMessage), in.CreatedBy.Type, nullStr(in.CreatedBy.Ref), controlmodel.NeedsFailedIssueCleanup(in)))
 	return v, err
 }
 func (r *orchestrationRepo) GetRun(ctx context.Context, id uuid.UUID) (*controlmodel.OrchestrationRun, error) {
@@ -203,7 +204,48 @@ func (r *orchestrationRepo) ListRuns(ctx context.Context, f store.OrchestrationR
 	if f.OldestFirst {
 		order = "ASC"
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+runCols+` FROM orchestration_runs r WHERE ($1='' OR r.tenant=$1) AND ($2='' OR r.namespace=$2) AND ($3::uuid='00000000-0000-0000-0000-000000000000' OR r.root_issue_id=$3) AND ($4='' OR r.state=$4) AND (NOT $5 OR r.state NOT IN('succeeded','partial_succeeded','failed','cancelled')) AND ($6::uuid='00000000-0000-0000-0000-000000000000' OR r.root_issue_id=$6 OR EXISTS (SELECT 1 FROM agent_tasks t WHERE t.orchestration_run_id=r.id AND t.issue_id=$6)) AND ($8::uuid='00000000-0000-0000-0000-000000000000' OR EXISTS (SELECT 1 FROM orchestration_revisions rev WHERE rev.id=r.definition_revision_id AND rev.definition_id=$8)) AND ($10::uuid='00000000-0000-0000-0000-000000000000' OR r.parent_node_id=$10) AND (NOT $11 OR issue_access_allowed(r.root_issue_id,$12::text[])) ORDER BY r.created_at `+order+`,r.id LIMIT $7 OFFSET $9`, f.Tenant, f.Namespace, f.RootIssueID, f.State, f.ActiveOnly, f.IssueID, limit, f.DefinitionID, max(0, f.Offset), f.ParentNodeID, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
+	var rows pgx.Rows
+	var err error
+	if f.ActiveOnly && f.OldestFirst && f.Tenant == "" && f.Namespace == "" && f.State == "" &&
+		f.RootIssueID == uuid.Nil && f.IssueID == uuid.Nil && f.DefinitionID == uuid.Nil &&
+		f.ParentNodeID == uuid.Nil && !f.ExcludeCancelling && f.Offset == 0 && !store.WorkAccessFrom(ctx).Restricted {
+		// Runtime scans use the active partial index directly, including on a
+		// prepared generic plan. User filters retain their separate access checks.
+		query := `SELECT ` + runCols + ` FROM orchestration_runs WHERE state NOT IN('succeeded','partial_succeeded','failed','cancelled')`
+		if f.IncludeTerminalCleanup {
+			query = `SELECT ` + runCols + ` FROM orchestration_runs WHERE (state NOT IN('succeeded','partial_succeeded','failed','cancelled') OR terminal_cleanup_pending)`
+		}
+		if f.PortalOnly {
+			query += " AND portal_owned"
+		}
+		args := []any{limit}
+		if f.AfterCreatedAt != nil {
+			query += ` AND (created_at,id)>($2::timestamptz,$3::uuid)`
+			args = append(args, f.AfterCreatedAt, f.AfterID)
+		}
+		rows, err = r.pool.Query(ctx, query+` ORDER BY created_at,id LIMIT $1`, args...)
+	} else {
+		parentScope := "AND ($10::uuid='00000000-0000-0000-0000-000000000000' OR r.parent_node_id=$10)"
+		rootScope := "($3::uuid='00000000-0000-0000-0000-000000000000' OR r.root_issue_id=$3)"
+		if f.RootIssueID != uuid.Nil {
+			rootScope = "r.root_issue_id=$3"
+		}
+		activeScope := "AND (NOT $5 OR r.state NOT IN('succeeded','partial_succeeded','failed','cancelled'))"
+		if f.ParentNodeID != uuid.Nil {
+			parentScope = "AND r.parent_node_id=$10"
+		}
+		if f.ActiveOnly {
+			activeScope = "AND $5 AND r.state NOT IN('succeeded','partial_succeeded','failed','cancelled')"
+		}
+		if f.IncludeTerminalCleanup {
+			activeScope = "AND (NOT $5 OR r.state NOT IN('succeeded','partial_succeeded','failed','cancelled') OR r.terminal_cleanup_pending)"
+		}
+		ownerScope := ""
+		if f.PortalOnly {
+			ownerScope = " AND r.portal_owned"
+		}
+		rows, err = r.pool.Query(ctx, `SELECT `+runCols+` FROM orchestration_runs r WHERE ($1='' OR r.tenant=$1) AND ($2='' OR r.namespace=$2) AND `+rootScope+` AND ($4='' OR r.state=$4) `+activeScope+` AND ($6::uuid='00000000-0000-0000-0000-000000000000' OR r.root_issue_id=$6 OR EXISTS (SELECT 1 FROM agent_tasks t WHERE t.orchestration_run_id=r.id AND t.issue_id=$6)) AND ($8::uuid='00000000-0000-0000-0000-000000000000' OR EXISTS (SELECT 1 FROM orchestration_revisions rev WHERE rev.id=r.definition_revision_id AND rev.definition_id=$8)) `+parentScope+` AND (NOT $11 OR issue_access_allowed(r.root_issue_id,$12::text[])) AND ($13::timestamptz IS NULL OR (r.created_at,r.id)>($13::timestamptz,$14::uuid)) AND (NOT $15 OR r.state<>'cancelling') `+ownerScope+` ORDER BY r.created_at `+order+`,r.id LIMIT $7 OFFSET $9`, f.Tenant, f.Namespace, f.RootIssueID, f.State, f.ActiveOnly, f.IssueID, limit, f.DefinitionID, max(0, f.Offset), f.ParentNodeID, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs, f.AfterCreatedAt, f.AfterID, f.ExcludeCancelling)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -236,8 +278,9 @@ func (r *orchestrationRepo) TransitionRun(ctx context.Context, id uuid.UUID, exp
 		failure_code=CASE WHEN $3='waiting' THEN NULL ELSE $5 END,
 		failure_message=CASE WHEN $3='waiting' THEN NULL ELSE $6 END,
 		version=version+1,updated_at=now(),started_at=CASE WHEN $3='running' THEN COALESCE(started_at,now()) ELSE started_at END,
-		completed_at=CASE WHEN $3 IN('succeeded','partial_succeeded','failed','cancelled') THEN now() ELSE completed_at END
-		WHERE id=$1 AND version=$2 RETURNING `+runCols, id, expected, to, nullJSON(output), nullStr(code), nullStr(message)))
+		completed_at=CASE WHEN $3 IN('succeeded','partial_succeeded','failed','cancelled') THEN now() ELSE completed_at END,
+        terminal_cleanup_pending=($3='failed' AND parent_run_id IS NULL AND trigger_type<>$7)
+		WHERE id=$1 AND version=$2 RETURNING `+runCols, id, expected, to, nullJSON(output), nullStr(code), nullStr(message), controlmodel.AgentTaskReviewComment))
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, store.ErrConflict
 	}
@@ -282,27 +325,86 @@ func (r *orchestrationRepo) CreateNode(ctx context.Context, in *controlmodel.Run
 	if in.Iteration == 0 {
 		in.Iteration = 1
 	}
-	return scanNode(r.pool.QueryRow(ctx, `INSERT INTO orchestration_run_nodes(id,run_id,tenant,namespace,node_key,definition_node_key,type,role,issue_id,state,config,input,output,iteration,wait_reason,failure_code,failure_message,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,1) RETURNING `+nodeCols, in.ID, in.RunID, in.Tenant, in.Namespace, in.NodeKey, nullStr(in.DefinitionNodeKey), in.Type, nullStr(in.Role), in.IssueID, in.State, nullJSON(in.Config), nullJSON(in.Input), nullJSON(in.Output), in.Iteration, nullStr(in.WaitReason), nullStr(in.FailureCode), nullStr(in.FailureMessage)))
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err = checkRunGraphCapacityTx(ctx, tx, in.RunID, 1, 0); err != nil {
+		return nil, err
+	}
+	v, err := scanNode(tx.QueryRow(ctx, `INSERT INTO orchestration_run_nodes(id,run_id,tenant,namespace,node_key,definition_node_key,type,role,issue_id,state,config,input,output,iteration,wait_reason,failure_code,failure_message,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,1) RETURNING `+nodeCols, in.ID, in.RunID, in.Tenant, in.Namespace, in.NodeKey, nullStr(in.DefinitionNodeKey), in.Type, nullStr(in.Role), in.IssueID, in.State, nullJSON(in.Config), nullJSON(in.Input), nullJSON(in.Output), in.Iteration, nullStr(in.WaitReason), nullStr(in.FailureCode), nullStr(in.FailureMessage)))
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
 func (r *orchestrationRepo) GetNode(ctx context.Context, id uuid.UUID) (*controlmodel.RunNode, error) {
 	return scanNode(r.pool.QueryRow(ctx, `SELECT `+nodeCols+` FROM orchestration_run_nodes WHERE id=$1`, id))
 }
 func (r *orchestrationRepo) ListNodes(ctx context.Context, runID uuid.UUID) ([]*controlmodel.RunNode, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+nodeCols+` FROM orchestration_run_nodes WHERE run_id=$1 ORDER BY node_key,iteration`, runID)
+	rows, err := r.pool.Query(ctx, `SELECT `+nodeCols+` FROM orchestration_run_nodes WHERE run_id=$1 ORDER BY node_key,iteration LIMIT $2`, runID, store.MaxRunNodes+1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []*controlmodel.RunNode{}
+	bytes := 0
+	for rows.Next() {
+		v, e := scanNode(rows)
+		if e != nil {
+			return nil, e
+		}
+		bytes += store.RunNodeGraphBytes(v)
+		if bytes > store.MaxRunGraphBytes {
+			return nil, store.ErrResourceLimit
+		}
+		out = append(out, v)
+		if len(out) > store.MaxRunNodes {
+			return nil, store.ErrResourceLimit
+		}
+	}
+	return out, rows.Err()
+}
+func (r *orchestrationRepo) ListNodesPage(ctx context.Context, runID uuid.UUID, filter store.RunNodeFilter) ([]*controlmodel.RunNode, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 128 {
+		limit = 16
+	}
+	query := `SELECT ` + nodeCols + ` FROM orchestration_run_nodes WHERE run_id=$1 AND id>$2`
+	if filter.ActiveOnly {
+		query += ` AND state NOT IN ('succeeded','failed','cancelled','skipped')`
+	}
+	if filter.AutonomousOnly {
+		query += ` AND (state IN ('ready','running') OR (state='waiting' AND type NOT IN ('approval','signal','subrun')))`
+	}
+	if filter.HumanOnly {
+		query += ` AND state='waiting' AND type IN ('approval','signal')`
+	}
+	if filter.AnsweredOnly {
+		query += ` AND state='waiting' AND (
+ (type='approval' AND EXISTS(SELECT 1 FROM approvals a WHERE a.target_type='run-node' AND a.target_ref=orchestration_run_nodes.id::text AND a.status IN('approved','rejected')))
+ OR (type='signal' AND EXISTS(SELECT 1 FROM orchestration_run_events e WHERE e.run_id=orchestration_run_nodes.run_id AND e.node_id=orchestration_run_nodes.id AND e.type LIKE 'run.signal.%')))`
+	}
+	rows, err := r.pool.Query(ctx, query+` ORDER BY id LIMIT $3`, runID, filter.AfterID, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []*controlmodel.RunNode{}
 	for rows.Next() {
-		v, e := scanNode(rows)
-		if e != nil {
-			return nil, e
+		node, err := scanNode(rows)
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, v)
+		out = append(out, node)
 	}
 	return out, rows.Err()
 }
+
 func (r *orchestrationRepo) TransitionNode(ctx context.Context, id uuid.UUID, expected int64, to controlmodel.RunNodeState, output json.RawMessage, code, message string) (*controlmodel.RunNode, error) {
 	current, err := r.GetNode(ctx, id)
 	if err != nil {
@@ -341,14 +443,42 @@ func scanEdge(row scannable) (*controlmodel.RunEdge, error) {
 	return v, nil
 }
 func (r *orchestrationRepo) CreateEdges(ctx context.Context, edges []*controlmodel.RunEdge) error {
+	if len(edges) > store.MaxRunEdges {
+		return store.ErrResourceLimit
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	counts := map[uuid.UUID]int{}
+	for _, edge := range edges {
+		counts[edge.RunID]++
+	}
+	ids := make([]uuid.UUID, 0, len(counts))
+	for id := range counts {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i].String() < ids[j].String() })
+	for _, id := range ids {
+		if err = checkRunGraphCapacityTx(ctx, tx, id, 0, counts[id]); err != nil {
+			return err
+		}
+	}
 	for _, e := range edges {
 		if e.ID == uuid.Nil {
 			e.ID = uuid.New()
+		}
+		var valid int
+		if err = tx.QueryRow(ctx, `SELECT count(*) FROM orchestration_run_nodes WHERE run_id=$1 AND id=ANY($2::uuid[])`, e.RunID, []uuid.UUID{e.FromNodeID, e.ToNodeID}).Scan(&valid); err != nil {
+			return err
+		}
+		expected := 2
+		if e.FromNodeID == e.ToNodeID {
+			expected = 1
+		}
+		if valid != expected {
+			return store.ErrNotFound
 		}
 		states, _ := json.Marshal(e.OnStates)
 		if _, err = tx.Exec(ctx, `INSERT INTO orchestration_run_edges(id,run_id,tenant,namespace,from_node_id,to_node_id,on_states,condition,ordinal,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, e.ID, e.RunID, e.Tenant, e.Namespace, e.FromNodeID, e.ToNodeID, states, nullStr(e.Condition), e.Ordinal, nullJSON(e.Metadata)); err != nil {
@@ -358,18 +488,26 @@ func (r *orchestrationRepo) CreateEdges(ctx context.Context, edges []*controlmod
 	return tx.Commit(ctx)
 }
 func (r *orchestrationRepo) ListEdges(ctx context.Context, runID uuid.UUID) ([]*controlmodel.RunEdge, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+edgeCols+` FROM orchestration_run_edges WHERE run_id=$1 ORDER BY ordinal,id`, runID)
+	rows, err := r.pool.Query(ctx, `SELECT `+edgeCols+` FROM orchestration_run_edges WHERE run_id=$1 ORDER BY ordinal,id LIMIT $2`, runID, store.MaxRunEdges+1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []*controlmodel.RunEdge{}
+	bytes := 0
 	for rows.Next() {
 		v, e := scanEdge(rows)
 		if e != nil {
 			return nil, e
 		}
+		bytes += store.RunEdgeGraphBytes(v)
+		if bytes > store.MaxRunGraphBytes {
+			return nil, store.ErrResourceLimit
+		}
 		out = append(out, v)
+		if len(out) > store.MaxRunEdges {
+			return nil, store.ErrResourceLimit
+		}
 	}
 	return out, rows.Err()
 }
@@ -565,4 +703,8 @@ func (r *orchestrationRepo) SetNodeInput(ctx context.Context, id uuid.UUID, expe
 		return nil, store.ErrConflict
 	}
 	return node, err
+}
+
+func (r *orchestrationRepo) FirstRunSignal(ctx context.Context, runID, nodeID uuid.UUID, name string, includeBroadcast bool) (*controlmodel.RunEvent, error) {
+	return scanRunEvent(r.pool.QueryRow(ctx, `SELECT `+eventCols+` FROM orchestration_run_events WHERE run_id=$1 AND type=$2 AND ((node_id IS NULL AND $4) OR node_id=$3) ORDER BY sequence LIMIT 1`, runID, "run.signal."+name, nodeID, includeBroadcast))
 }

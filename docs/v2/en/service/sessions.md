@@ -3,11 +3,46 @@ title: "Execution reference: Sessions, Runs and Attempts"
 zh_link: /v2/zh/service/sessions
 ---
 
+In the current Portal reconstruction, Managed execution keeps full native identities
+while storing journal paths under fixed-length keys in a Service-private store
+partition. Use a fresh runtime data space for this version. A fail-fast Run first
+drains sibling work in durable batches, preserving the original failure; node
+timeouts also wait for outstanding obligations to drain. Public Turn completion
+still waits for physical stop proofs before releasing concurrency reservations.
+
 <Note>
 This page uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 Applications submit work through Agent API sessions, Issues, or Session API. This reference follows the request through Runs, Tasks, Attempts, and Sessions. Namespace, work-level, and operational permissions apply to diagnostic APIs.
+
+In the source MQ/Redis deployment, a Managed Console Chat registers a native Session before
+its first message. Chat and Session diagnostics use `/v1/sessions/{id}` snapshots, Turns and
+cursor-based events. A long tool suspends and resumes the same logical Turn; later Turns wait
+for it to finish. Deleting a Chat requires no pending Turn and removes the personal list entry
+while retaining its native Session and execution evidence. Archived Chats remain readable.
+
+Managed AgentTask dispatch in the source refactor uses a durable Outbox and one native Session
+per Attempt. An uncertain admission response retries the original input and request key;
+it does not create a replacement Attempt. The control plane observes native Turn state,
+and cancellation remains pending until native execution confirms it stopped. Private task tool
+credentials remain bound to the current Attempt and Session across suspension and Resume;
+each use checks current execution and resource authority. A configured execution timeout requests
+native cancellation and records failure after stop confirmation. Additional caller-source and
+failure-recovery acceptance is still in progress.
+
+For a standalone Managed task, retrying a lost terminal MCP reply can read the already committed
+outcome while its original native Turn remains active. It cannot replace that result or perform
+new work. Other external tool side effects require their own idempotency and recovery contract.
+
+The source refactor removes the old Managed start, heartbeat and event-report callbacks.
+Managed results wait for the original native Turn's durable terminal state before the public
+Invocation closes. An observation failure keeps the result pending. Hosted and External runtimes
+retain their own execution and approval protocols.
+
+Managed task progress in shared Run diagnostics reads native events with a separate cursor per
+Attempt. Native required-action replies keep the original Attempt and Turn; receipt retries reuse
+the same command. Cancelling an Attempt prevents a later tool decision from releasing it.
 
 ## Trace work
 
@@ -182,9 +217,16 @@ Diagnostic endpoints include `/messages` (`offset`, `limit`, `fromEnd`), `/conte
 
 ## Managed Session log and recovery entry points
 
-Agent API correlates session_id → turn_id → run_id; run_id is not an orchestration Run ID. Snapshot supplies items/tools/turns/required_actions and an as_of cursor for stream resumption. GET turns returns command states keyed by the submitted turn ID.
+Native Managed execution uses `/v1/sessions/{sessionId}`. Its `turn_id` identifies work inside
+that Session; an internal execution run is separate from an orchestration Run. A snapshot contains
+bounded pages under `resources` and a public `as_of` cursor. Continue observing through the Session
+stream and read the admitted Turn ID for its current status.
 
-Native history holds checkpoints and execution facts; ordinary clients read public projections, while authorized administrators inspect trace/recovery. Reconnect after transport loss without posting another input. Inspect uncertain effects before actions/resume after execution interruption. See [Agent API and session logs](/v2/en/service/session-event-log).
+Full native logs and checkpoint objects are private recovery records. Public callers read projected
+events and checkpoint metadata; the old privileged trace/recovery routes are unavailable here.
+Reconnect without submitting another task. Long tools resume automatically; answer an actual
+required action through a Turn Input. Current native capabilities do not enable explicit failed-Turn
+resume, checkpoint restore or Fork. See [Session logs and recovery](/v2/en/service/session-event-log).
 
 ## What to record during diagnosis
 

@@ -126,15 +126,18 @@ public final class SessionExecution {
         return inbox.locked(
                 tx -> {
                     var applied = SessionTurns.read(log).applied();
+                    var snapshot = tx.snapshot();
                     boolean pending =
-                            tx.snapshot().commands().stream()
+                            snapshot.commands().stream()
                                     .anyMatch(
                                             input ->
                                                     input.kind().equals("steer")
                                                             && Objects.equals(
                                                                     input.turnId(),
                                                                     command.turnId())
-                                                            && !applied.contains(input.id()));
+                                                            && !applied.contains(input.id())
+                                                            && !snapshot.rejected()
+                                                                    .containsKey(input.id()));
                     if (!pending) close(tx, recorder);
                     return pending;
                 });

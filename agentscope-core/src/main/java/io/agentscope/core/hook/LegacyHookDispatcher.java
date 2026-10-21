@@ -73,6 +73,7 @@ public final class LegacyHookDispatcher {
     }
 
     public Mono<Void> fireReasoningChunk(Msg chunkMsg, ReasoningContext context, String modelName) {
+        if (agent.getSortedHooks().isEmpty()) return Mono.empty();
         ContentBlock content = chunkMsg.getFirstContentBlock();
 
         ContentBlock accumulatedContent = null;
@@ -162,6 +163,7 @@ public final class LegacyHookDispatcher {
             ReasoningContext context,
             GenerateOptions generateOptions,
             String modelName) {
+        if (agent.getSortedHooks().isEmpty()) return Mono.empty();
         ContentBlock content = chunkMsg.getFirstContentBlock();
 
         ContentBlock accumulatedContent = null;

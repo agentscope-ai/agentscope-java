@@ -36,6 +36,9 @@ func TestChildTurnCannotFinishOrReplaceParentResult(t *testing.T) {
 	client := newAppServerClient(context.Background(), io.Discard, strings.NewReader(input), func(event provider.Event) error {
 		if event.ProviderSessionID == "child" {
 			childEvents++
+			if event.CheckpointSessionID != "parent" {
+				t.Fatal("child event replaced the parent checkpoint identity")
+			}
 		}
 		return nil
 	}, nil)

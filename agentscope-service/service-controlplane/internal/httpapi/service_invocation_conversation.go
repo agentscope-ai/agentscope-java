@@ -45,7 +45,7 @@ func (s *Server) dispatchServiceConversation(ctx context.Context, id uuid.UUID) 
 			return s.expireServiceInvocation(ctx, inv)
 		}
 		if len(inv.Contract) > 0 {
-			frozen, err := serviceapi.ReadContract(inv.Contract)
+			frozen, err := serviceapi.ReadInvocationContract(ctx, s.store, inv)
 			if err != nil {
 				return err
 			}
@@ -54,15 +54,22 @@ func (s *Server) dispatchServiceConversation(ctx context.Context, id uuid.UUID) 
 		var input struct {
 			Message string `json:"message"`
 		}
-		if err = json.Unmarshal(inv.Input, &input); err != nil {
+		rawInput, err := serviceapi.InvocationInput(ctx, s.store, inv)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(rawInput, &input); err != nil {
 			return err
 		}
 		var conv *model.EndpointConversation
 		if inv.ConversationID == nil {
 			cid := uuid.NewSHA1(id, []byte("conversation"))
+			if frozen := serviceapi.ContextContract(ctx); frozen != nil && frozen.PortalCommandID != "" {
+				cid = uuid.NewSHA1(frozen.PublicSessionID, []byte("portal-conversation"))
+			}
 			conv, err = s.store.Endpoints().GetConversation(ctx, cid)
 			if errors.Is(err, store.ErrNotFound) {
-				sess, resolveErr := s.resolveEndpointConversation(ctx, ep, id.String())
+				sess, resolveErr := s.resolveEndpointConversation(context.WithValue(ctx, managedConversationIdentityKey{}, cid), ep, id.String())
 				if resolveErr != nil {
 					return resolveErr
 				}

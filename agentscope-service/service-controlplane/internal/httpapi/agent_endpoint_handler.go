@@ -1434,7 +1434,7 @@ func (s *Server) materializeEndpointTarget(ctx context.Context, endpoint *contro
 		if err != nil {
 			return err
 		}
-		return (&orchestration.Engine{Store: s.store}).ReconcileRun(ctx, run.ID)
+		return (&orchestration.Engine{Store: s.store, RequirePortal: s.portalExecution()}).ReconcileRun(ctx, run.ID)
 	}
 	nodeID := uuid.NewSHA1(run.ID, []byte("target"))
 	node, err := s.store.Orchestration().CreateNode(ctx, &controlmodel.RunNode{ID: nodeID, RunID: run.ID,
@@ -1455,7 +1455,7 @@ func (s *Server) materializeEndpointTarget(ctx context.Context, endpoint *contro
 	if err != nil {
 		return err
 	}
-	return (&orchestration.Engine{Store: s.store}).ReconcileRun(ctx, run.ID)
+	return (&orchestration.Engine{Store: s.store, RequirePortal: s.portalExecution()}).ReconcileRun(ctx, run.ID)
 }
 
 func (s *Server) getEndpointConversation(c *gin.Context) {

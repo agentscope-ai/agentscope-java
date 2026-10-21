@@ -15,16 +15,31 @@
  */
 package io.agentscope.builder.web.catalog;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.control.ControlPlaneClient;
 import io.agentscope.builder.control.SessionResolveResult;
+import io.agentscope.builder.runtime.ManagedCatalog;
 import io.agentscope.builder.runtime.config.SkillRepositorySupport;
+import io.agentscope.builder.runtime.managed.ManagedArtifactTool;
+import io.agentscope.builder.runtime.managed.ManagedAsyncToolRegistry;
+import io.agentscope.builder.runtime.managed.ManagedMcpBatchToolkit;
+import io.agentscope.builder.runtime.managed.ManagedMcpCatalog;
+import io.agentscope.builder.runtime.managed.ManagedMcpTool;
+import io.agentscope.builder.runtime.managed.ManagedRedisMessageBus;
+import io.agentscope.builder.runtime.managed.ManagedRemoteFilesystem;
+import io.agentscope.builder.runtime.managed.ManagedRuntimeInputMiddleware;
+import io.agentscope.builder.runtime.managed.ManagedRuntimeLog;
+import io.agentscope.builder.runtime.managed.ManagedScope;
+import io.agentscope.builder.runtime.managed.ManagedSubagentDefinition;
+import io.agentscope.builder.runtime.managed.ManagedTaskRepository;
+import io.agentscope.builder.runtime.managed.ManagedToolRequests;
+import io.agentscope.builder.runtime.managed.RedisManagedInfrastructure;
 import io.agentscope.builder.web.catalog.spec.AgentSpecCodec;
 import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.AgentToolset;
 import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.McpServerSpec;
 import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.SkillRef;
 import io.agentscope.builder.web.managed.AgentVersionSnapshot;
-import io.agentscope.builder.web.managed.EnvironmentSpecFactory;
 import io.agentscope.builder.web.managed.ManagedSessionDto;
 import io.agentscope.builder.web.managed.MemoryMountService;
 import io.agentscope.builder.web.managed.MemoryStoreFilesystem;
@@ -35,6 +50,7 @@ import io.agentscope.builder.web.toolbus.ToolConfirmationMiddleware;
 import io.agentscope.builder.web.toolbus.ToolEventBus;
 import io.agentscope.builder.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
@@ -42,13 +58,22 @@ import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.context.ContextPolicy;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.ToolsConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -57,6 +82,8 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -66,7 +93,7 @@ import org.springframework.web.server.ResponseStatusException;
  * Data-plane agent factory: instantiates (and caches) {@link HarnessAgent} instances for managed
  * sessions.
  *
- * <p>Managed session turns build exclusively from the control-plane ({@code service-controlplane}) session
+ * <p>Managed session turns build exclusively from the control-plane ({@code control-plane}) session
  * resolve payload — {@code agentSnapshot}, {@code workspacePath}, and {@code definitionFiles}.
  * There is no JPA catalog fallback; resolve must succeed with a non-empty snapshot.
  *
@@ -92,14 +119,23 @@ public class HarnessAgentBuildService {
     private static final String DP_AGENT_PREFIX = "dpa-";
 
     public static String sessionLogAgentId(ManagedSessionDto session) {
-        return DP_AGENT_PREFIX + session.ownerId() + "-" + session.agentId() + "-" + session.id();
+        try {
+            byte[] identity =
+                    JSON_MAPPER.writeValueAsBytes(
+                            List.of(session.ownerId(), session.agentId(), session.id()));
+            return DP_AGENT_PREFIX
+                    + HexFormat.of()
+                            .formatHex(MessageDigest.getInstance("SHA-256").digest(identity));
+        } catch (JsonProcessingException | NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Cannot derive session agent identity", e);
+        }
     }
 
     private static final String COLLABORATION_MCP_NAME = "controlplane-collaboration";
 
     private io.agentscope.core.session.SessionLogStore sessionLogStore;
 
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @Autowired(required = false)
     public void setSessionLogStore(io.agentscope.core.session.SessionLogStore store) {
         this.sessionLogStore = store;
     }
@@ -107,7 +143,6 @@ public class HarnessAgentBuildService {
     private final Model model;
     private final ToolEventBus toolEventBus;
     private final SharedWorkspacePaths sharedWorkspacePaths;
-    private final EnvironmentSpecFactory environmentSpecFactory;
     private final ToolConfirmationMiddleware toolConfirmationMiddleware;
     private final MemoryMountService memoryMountService;
     private final VaultCredentialResolver vaultCredentialResolver;
@@ -116,13 +151,29 @@ public class HarnessAgentBuildService {
     private final DefinitionStore definitionStore;
     private final ControlPlaneClient controlPlaneClient;
 
+    @Autowired(required = false)
+    private ManagedCatalog managedCatalog;
+
+    @Autowired(required = false)
+    private ManagedToolRequests managedToolRequests;
+
+    @Autowired(required = false)
+    private ManagedMcpCatalog managedMcpCatalog;
+
+    @Autowired(required = false)
+    private RedisManagedInfrastructure managedRedis;
+
+    @Autowired private BaseStore runtimeWorkspaceStore;
+
+    @Value("${builder.user-files-enabled:${BUILDER_USER_FILES_ENABLED:true}}")
+    private boolean userFilesEnabled = true;
+
     private final ConcurrentHashMap<String, HarnessAgent> agentCache = new ConcurrentHashMap<>();
 
     public HarnessAgentBuildService(
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
             SharedWorkspacePaths sharedWorkspacePaths,
-            EnvironmentSpecFactory environmentSpecFactory,
             @Lazy ToolConfirmationMiddleware toolConfirmationMiddleware,
             MemoryMountService memoryMountService,
             VaultCredentialResolver vaultCredentialResolver,
@@ -133,7 +184,6 @@ public class HarnessAgentBuildService {
         this.model = modelOpt.orElse(null);
         this.toolEventBus = toolEventBus;
         this.sharedWorkspacePaths = sharedWorkspacePaths;
-        this.environmentSpecFactory = environmentSpecFactory;
         this.toolConfirmationMiddleware = toolConfirmationMiddleware;
         this.memoryMountService = memoryMountService;
         this.vaultCredentialResolver = vaultCredentialResolver;
@@ -147,7 +197,7 @@ public class HarnessAgentBuildService {
             java.util.concurrent.ConcurrentHashMap.newKeySet();
     private io.agentscope.builder.web.managed.service.SessionEventLog managedEventLog;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     public void setManagedEventLog(
             io.agentscope.builder.web.managed.service.SessionEventLog eventLog) {
         this.managedEventLog = eventLog;
@@ -155,7 +205,7 @@ public class HarnessAgentBuildService {
 
     private JevServiceSupport jevServiceSupport;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     public void setJevServiceSupport(JevServiceSupport support) {
         this.jevServiceSupport = support;
     }
@@ -165,10 +215,37 @@ public class HarnessAgentBuildService {
         SessionResolveResult resolved = resolveSession(session);
         String prefix =
                 session.ownerId() + "/" + session.agentId() + "/session/" + session.id() + "/";
-        String cacheKey = prefix + materializationFingerprint(resolved, spec);
+        String materialization = materializationFingerprint(resolved, spec);
+        if (managedMcpCatalog != null
+                && managedCatalog != null
+                && managedCatalog.owns(session.id())) {
+            var description =
+                    managedMcpCatalog.require(
+                            managedCatalog.scope(session.id()),
+                            managedToolConnections(resolved),
+                            resolved);
+            materialization =
+                    ManagedScope.fingerprint(
+                            materialization, JSON_MAPPER.valueToTree(description).toString());
+        }
+        String cacheKey = prefix + materialization;
         closeCachedAgents(k -> k.startsWith(prefix) && !k.equals(cacheKey));
         if (degradedInstances.remove(cacheKey)) closeCachedAgents(cacheKey::equals);
-        return agentCache.computeIfAbsent(cacheKey, k -> build(session, spec, resolved, k));
+        var agent = agentCache.computeIfAbsent(cacheKey, k -> build(session, spec, resolved, k));
+        ManagedRuntimeLog.info(
+                log,
+                "brain.agent.cache.resolved",
+                null,
+                null,
+                "session_id",
+                session.id(),
+                "agent_id",
+                session.agentId(),
+                "logical_agent_id",
+                agent.getAgentId(),
+                "cache_entry",
+                ManagedScope.fingerprint(cacheKey));
+        return agent;
     }
 
     /** Includes resource revisions so credential rotation and environment edits affect the next turn. */
@@ -258,6 +335,15 @@ public class HarnessAgentBuildService {
                         degradedInstances.remove(key);
                         try {
                             agent.close();
+                            ManagedRuntimeLog.info(
+                                    log,
+                                    "brain.agent.cache.closed",
+                                    null,
+                                    null,
+                                    "logical_agent_id",
+                                    agent.getAgentId(),
+                                    "cache_entry",
+                                    ManagedScope.fingerprint(key));
                         } catch (RuntimeException e) {
                             log.warn(
                                     "Managed agent cleanup failed ({})",
@@ -360,9 +446,6 @@ public class HarnessAgentBuildService {
             }
             if (overrides.get("system") instanceof String s) {
                 sysPrompt = s;
-            } else if (overrides.get("sysPrompt") instanceof String s) {
-                // legacy override key — prefer "system"
-                sysPrompt = s;
             }
             if (overrides.get("model") instanceof String s) {
                 modelName = s;
@@ -458,7 +541,16 @@ public class HarnessAgentBuildService {
                                                     // connection can recover.
                                                     degradedInstances.add(cacheKey);
                                                 }));
-            b.toolsConfig(resolvedTools);
+            if (managedCatalog != null && managedCatalog.owns(session.id())) {
+                if (managedMcpCatalog == null)
+                    throw new IllegalStateException(
+                            "Managed tool discovery is unavailable while Brain consumers"
+                                    + " are disabled");
+                var descriptors =
+                        managedMcpCatalog.require(
+                                managedCatalog.scope(session.id()), resolvedTools, resolved);
+                b.toolsConfig(managedProxyConfiguration(resolvedTools, descriptors));
+            } else b.toolsConfig(resolvedTools);
         }
         PermissionContextState managedTaskPermissions =
                 managedTaskPermissionContext(resolved.executionContext());
@@ -487,6 +579,7 @@ public class HarnessAgentBuildService {
 
         b.middleware(new ToolNotificationMiddleware(toolEventBus));
         b.middleware(toolConfirmationMiddleware);
+        b.middleware(new ManagedRuntimeInputMiddleware(JSON_MAPPER));
         if (jevServiceSupport != null) {
             jevServiceSupport.middlewares(spec.overridesJson()).forEach(b::middleware);
             jevServiceSupport
@@ -500,16 +593,50 @@ public class HarnessAgentBuildService {
                     .ifPresent(b::compaction);
         }
 
-        applyManagedSessionBuildOptions(
-                b,
-                buildOwnerId,
-                definitionNamespace,
-                workspace,
-                spec,
-                sysPrompt,
-                session.id(),
-                resolved);
+        var memoryRoutes =
+                applyManagedSessionBuildOptions(
+                        b,
+                        buildOwnerId,
+                        definitionNamespace,
+                        workspace,
+                        spec,
+                        sysPrompt,
+                        session.id(),
+                        resolved);
+        if (managedCatalog != null && managedCatalog.owns(session.id())) {
+            if (managedToolRequests == null)
+                throw new IllegalStateException("Managed Hands bridge is unavailable");
+            if (userFilesEnabled) {
+                b.abstractFilesystem(managedFilesystem(managedToolRequests, memoryRoutes));
+            } else {
+                configureFilelessManagedAgent(
+                        b, runtimeWorkspaceStore, managedCatalog.scope(session.id()), memoryRoutes);
+            }
+            // Permit providers to return a complete tool wave; Worker execution stays ordered.
+            b.generateOptions(GenerateOptions.builder().parallelToolCalls(true).build());
+            b.asyncToolRegistry(new ManagedAsyncToolRegistry());
+            b.taskRepository(new ManagedTaskRepository());
+            if (managedRedis == null)
+                throw new IllegalStateException("Managed message bus is unavailable");
+            b.messageBus(
+                    new ManagedRedisMessageBus(
+                            managedCatalog.scope(session.id()), managedRedis, JSON_MAPPER));
+        } else memoryRoutes.forEach(b::filesystemRoute);
+        ManagedSubagentDefinition childDefinition =
+                managedCatalog == null || !managedCatalog.owns(session.id())
+                        ? null
+                        : managedCatalog.childDefinition(managedCatalog.scope(session.id()));
+        if (childDefinition != null) childDefinition.configure(b);
         HarnessAgent agent = b.build();
+        try {
+            if (managedCatalog != null && managedCatalog.owns(session.id())) {
+                ManagedTaskRepository.LOCAL_TOOLS.forEach(agent.getToolkit()::removeTool);
+            }
+            if (childDefinition != null) childDefinition.restrict(agent);
+        } catch (RuntimeException failure) {
+            agent.close();
+            throw failure;
+        }
         log.info(
                 "Built data-plane agent from control-plane snapshot: sessionOwner={}, agentId={},"
                         + " instanceId={}, version={}",
@@ -591,6 +718,24 @@ public class HarnessAgentBuildService {
         return permissions.build();
     }
 
+    static ToolsConfig managedProxyConfiguration(
+            ToolsConfig source, ManagedMcpCatalog.Description description) {
+        var proxy = copyToolsConfig(source);
+        // MCP selection has already happened in Hands. Preserve those tools when the built-in
+        // allowlist is restrictive, without opening any connection from the Harness builder.
+        if (!proxy.isStrictAllow()
+                && (!proxy.isDefaultToolsEnabled()
+                        || (proxy.getAllow() != null && !proxy.getAllow().isEmpty()))) {
+            var allow =
+                    new LinkedHashSet<String>(
+                            proxy.getAllow() == null ? List.of() : proxy.getAllow());
+            description.tools().forEach(tool -> allow.add(tool.name()));
+            proxy.setAllow(new ArrayList<>(allow));
+        }
+        proxy.setMcpServers(Map.of());
+        return proxy;
+    }
+
     private static ToolsConfig copyToolsConfig(ToolsConfig source) {
         ToolsConfig copy = new ToolsConfig();
         if (source == null) {
@@ -660,7 +805,53 @@ public class HarnessAgentBuildService {
         }
     }
 
-    private void applyManagedSessionBuildOptions(
+    private ToolsConfig managedToolConnections(SessionResolveResult resolved) {
+        var snapshot =
+                JSON_MAPPER.convertValue(resolved.agentSnapshot(), AgentVersionSnapshot.class);
+        var source = AgentSpecCodec.toToolsConfig(snapshot.tools(), snapshot.mcpServers());
+        return withManagedCollaborationTools(
+                vaultCredentialResolver.resolveSessionToolsConfig(
+                        source, resolved.vaultCredentials()),
+                resolved.executionContext(),
+                controlPlaneClient.collaborationMcpUrl());
+    }
+
+    /** Pins read-only MCP descriptors on the Runtime callback before acquiring an execution epoch. */
+    public void prepareManagedTools(SessionResolveResult resolved, String turn) {
+        if (managedMcpCatalog != null)
+            managedMcpCatalog.require(
+                    managedCatalog.scope(resolved.session().id()),
+                    managedToolConnections(resolved),
+                    resolved,
+                    turn);
+    }
+
+    public String managedExecutionConfiguration(SessionResolveResult resolved) {
+        if (managedMcpCatalog == null)
+            throw new IllegalStateException("Managed MCP catalog is required");
+        return managedMcpCatalog.seal(resolved, managedToolConnections(resolved));
+    }
+
+    /** Internal Harness bookkeeping remains shared without exposing user files or requiring Hands. */
+    static void configureFilelessManagedAgent(
+            HarnessAgent.Builder builder,
+            BaseStore store,
+            ManagedScope scope,
+            Map<String, AbstractFilesystem> routes) {
+        builder.abstractFilesystem(
+                new RemoteFilesystem(
+                        store, List.of("managed-private-workspace", scope.messageGroup())));
+        routes.forEach(builder::filesystemRoute);
+        builder.disableFilesystemTools().disableShellTool().disableAtPathExpansion();
+    }
+
+    static AbstractSandboxFilesystem managedFilesystem(
+            ManagedToolRequests requests, Map<String, AbstractFilesystem> routes) {
+        var primary = new ManagedRemoteFilesystem(requests);
+        return routes.isEmpty() ? primary : new RoutedSandboxFilesystem(primary, routes);
+    }
+
+    private Map<String, AbstractFilesystem> applyManagedSessionBuildOptions(
             HarnessAgent.Builder b,
             String buildOwnerId,
             String agentId,
@@ -669,14 +860,6 @@ public class HarnessAgentBuildService {
             String baseSysPrompt,
             String sessionId,
             SessionResolveResult resolved) {
-        var environment =
-                resolved.environment() != null ? resolved.environment() : spec.environment();
-        if (environment != null) {
-            environmentSpecFactory.applyEnvironment(b, environment);
-        } else {
-            environmentSpecFactory.applyAgentSandboxFields(b, null, null);
-        }
-
         var filesystems =
                 memoryMountService.createResolvedFilesystems(
                         controlPlaneClient,
@@ -689,7 +872,10 @@ public class HarnessAgentBuildService {
                                         : resolved.memoryMounts().stream()
                                                 .map(mount -> (String) mount.get("storeId"))
                                                 .toList()));
-        environmentSpecFactory.applyMemoryStoreRoutes(b, buildOwnerId, filesystems);
+        Map<String, AbstractFilesystem> routes = new LinkedHashMap<>();
+        if (filesystems != null)
+            for (var store : filesystems)
+                routes.put(MemoryStoreFilesystem.routePrefix(store.storeName()), store);
         var reviewTool =
                 jevServiceSupport == null
                         ? java.util.Optional
@@ -708,11 +894,25 @@ public class HarnessAgentBuildService {
                                 .<io.agentscope.extensions.judge.jev.browser.JevBrowserReadTool>
                                         empty()
                         : jevServiceSupport.browserTool(spec.overridesJson());
-        if (!filesystems.isEmpty()
+        boolean managed = managedCatalog != null && managedCatalog.owns(sessionId);
+        if (managed
+                || !filesystems.isEmpty()
                 || reviewTool.isPresent()
                 || evidenceTool.isPresent()
                 || browserTool.isPresent()) {
-            var applicationToolkit = new io.agentscope.core.tool.Toolkit();
+            Toolkit applicationToolkit = managed ? new ManagedMcpBatchToolkit() : new Toolkit();
+            if (managed && managedMcpCatalog != null) {
+                var description =
+                        managedMcpCatalog.require(
+                                managedCatalog.scope(sessionId),
+                                managedToolConnections(resolved),
+                                resolved);
+                for (var tool : description.tools())
+                    applicationToolkit.registerTool(
+                            new ManagedMcpTool(tool, managedToolRequests, JSON_MAPPER));
+            }
+            if (managed && userFilesEnabled)
+                applicationToolkit.registerTool(new ManagedArtifactTool(managedToolRequests));
             if (!filesystems.isEmpty())
                 applicationToolkit.registerTool(
                         new io.agentscope.builder.web.managed.ManagedMemoryTools(filesystems));
@@ -751,6 +951,7 @@ public class HarnessAgentBuildService {
                 definitionStore, buildOwnerId, agentId, workspace);
         sessionResourceMountService.apply(workspace, spec.resources());
         // Session inputs must never be published back into a reusable Agent definition.
+        return Map.copyOf(routes);
     }
 
     /** Shared knowledge is read-only during execution; session files hold private working memory. */

@@ -137,6 +137,7 @@ ENROLLMENT_TOKEN=$(jq -er '.enrollmentToken' <<< "$ENROLLMENT_JSON")
 | POST 相对路径 | 额外字段 | 用途 |
 | --- | --- | --- |
 | `/renew` | 可选 `leaseSeconds`，默认 30 秒 | 续租，读取服务端取消/终态 |
+| `/observe` | 无 | 使用原 lease token 和 fence 读取 Attempt，不延长租约或执行许可 |
 | `/preparing` | 无 | 报告正在准备 |
 | `/running` | 可选 `providerSessionId`、`workspaceKey` | 报告已开始 provider 执行 |
 | `/checkpoint` | `checkpoint`、可选 `providerSessionId` | 记录 provider 恢复信息 |
@@ -144,8 +145,19 @@ ENROLLMENT_TOKEN=$(jq -er '.enrollmentToken' <<< "$ENROLLMENT_JSON")
 | `/complete` | 可选 `result`、`checkpoint` | 报告完成 |
 | `/fail` | `failureCode`、`failureMessage`、可选 `checkpoint` | 报告失败 |
 | `/cancelled` | 无 | 确认执行已取消 |
+| `/physical-stop` | 无 | Portal 所属任务在 provider 停止且持久事件 outbox 排空后封存事件 |
 
 普通状态方法返回 `attempt`；事件接收响应应按 `accepted` 判断，Attempt 已封存时停止继续提交。Host checkpoint 是 provider 恢复材料，不是统一 Agent API 已支持的 checkpoint 恢复入口。能力区别见[Hosted 恢复](/v2/zh/service/runtime-host#hosted-agent-execution)。
+
+新的 Portal 执行路径中，`/complete`、`/fail`、`/cancelled` 先记录原生结果。原 Host 随后上传剩余已提交事件，使用同一 Attempt 凭据及 fence 调用 `/physical-stop`。Portal 收齐停止证明、最终输出和用量后才发布 Turn 终态。Host journal 跨重启保留这项操作，响应丢失时用原身份重试。权限到期会拒绝新执行及续租，原 Host 仍可排空已提交结果并证明执行已停止。
+
+续租被拒绝后，daemon 通过 `/observe` 区分取消和许可到期。查询不会授权执行。取消会停止 provider，先确认 `/cancelled`，再提交最终停止证明；停止回执成功之前保留 Attempt 凭据。
+
+Portal 所属 Hosted 工具确认通过任务身份调用 `POST /api/v1/agent-tasks/{taskId}/runtime-approvals`，并在该路径下调用 `GET /{approvalId}/decision` 和 `POST /{approvalId}/ack`。Portal 保留原物理任务凭据，将回调转入私有 Go 运行角色。等待只续物理租约，不延长根执行许可。人工通过公开 Turn actions 答复标准 `required_action.created` 待办；持久化受理会隔离旧激活，刷新调用者和审批人的权限，并记录原人工决定。运行角色只在当前许可与审批匹配时交付结果；Host 确认后才发出 `required_action.resolved` 和命令 applied 回执，受理并不等同于交付。
+
+Provider 事件先提交到独立本地 journal 文件，再投递。每轮最多投递 64 个事件、处理 8 个待交付 Attempt；最多保留 256 个待交付 Attempt，每个 Attempt 最多 65,536 个事件、256 MiB 事件数据，单个编码事件最多 1 MiB。投递失败保留记录并有限退避，journal 满时停止领取新任务；清理也按有限批次推进。这能在重启后恢复已提交的投递操作，不保证恢复中断的 provider 进程。
+
+Portal 所属 Hosted 任务通过 `POST /mcp/collaboration` 使用原任务 Bearer。签名身份包含 Attempt 代次、实际 fence 和 Host ID，运行角色校验根许可及当前物理租约后才允许执行。Portal 补充内部传输凭据，provider 不接收该凭据。daemon 在注册前取得状态目录的操作系统锁，第二个使用同目录的 daemon 会被拒绝；保留锁文件，进程退出时自动释放锁。
 
 <span id="hosted-agent-execution"></span>
 
@@ -188,7 +200,7 @@ Host 保留日志、provider 会话标识和 checkpoint，用于支持的恢复�
 | 查看 Workflow 运行过程 | `GET /api/v1/orchestration-runs/{runId}/graph`、`/events` | 节点图和运行事件，反映 Host 的执行结果 |
 | 恢复应用画面 | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}/snapshot`，再连接 `/events/stream` | 按 snapshot 游标接续 SSE；使用对应业务调用凭据 |
 
-Host 运行协议中的 `/checkpoint` 保存 `providerSessionId` 和 checkpoint，供适配器与任务恢复路径使用。它不是供应用任意选择 checkpoint 并恢复所有后端的接口。统一 invocation 的 `checkpoint_restore` 当前为 false；Hosted conversation 支持取消，补充输入、审批与 resume 则不能套用 Managed 的能力承诺。始终读取 `/api/v1/agent-sessions/{sessionId}/turns/{turnId}/capabilities` 的 `available_commands` 后再显示交互操作。
+Host 运行协议中的 `/checkpoint` 保存 `providerSessionId` 和 checkpoint，供适配器与任务恢复路径使用。它不是供应用任意选择 checkpoint 并恢复所有后端的接口。统一 invocation 的 `checkpoint_restore` 当前为 false；Hosted conversation 已接通取消及通过 Turn actions 答复的根工具确认；Hosted 尚不提供 Managed 的补充输入和显式 resume。始终读取 `/api/v1/agent-sessions/{sessionId}/turns/{turnId}/capabilities` 的 `available_commands` 后再显示交互操作。
 
 SSE 断线续传只恢复已经记录的输出，不重新执行工具，也不等于恢复 Host 进程。需要保留的交付物应上传为 Artifact；Host 磁盘、provider 会话和框架内部状态仍有各自生命周期。Host 接口与参数见 [Runtime Host API](/v2/zh/service/runtime-host#runtime-host-协议接口)。
 
@@ -261,3 +273,102 @@ curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/runtime-hosts/$HOST_ID/resum
 ```
 
 </Accordion>
+
+
+Session Portal 重构期间，Host 机器协议（register、heartbeat/state 及 Attempt claim/renew/checkpoint/events/终态回调）可经 Portal 进入独立 Go 编排运行角色。Portal 保留 Host 凭据和任务代次；内部服务凭据不能替代 Host 身份。容量、enrollment 等用户管理操作仍归控制面。该通道已通过本地进程验证，其他后端接入和部署更新仍在实施。
+
+
+重构开发中的 Go 运行角色使用 PostgreSQL 时，要求配置至少 32 字节、所有运行副本稳定
+一致的 `BUILDER_VAULT_MASTER_KEY`。Portal 配置和 Turn Inbox 的 payload 加密存储。
+配置/Inbox 链路已验证 Portal 与 Go 的进程重启，Hosted Job 与 Conversation 已从新
+Inbox 接通原生执行；其他控制和后端仍在实施。本地进程验证使用真实 daemon 与 fake
+Codex app-server CLI，不调用外部模型。
+
+
+新 Portal 路径的 Workflow 交互（包括嵌套子图）使用
+`POST /api/v1/agent-sessions/{sessionId}/turns/{turnId}/actions`。读取待办
+`required_actions` 资源后，在同一批次内提交确认（`request_id`、`allow`、可选 `reason`）
+或信号（`request_id`、`value`）；单个信号值最多 64 KiB。答复保留原调用者，推进前刷新
+准入，原生节点消费后才记为已应用。人工等待不会暂停独立的可执行分支。显示控制前读取
+Turn capabilities。图和步骤使用 UUID 区分重复节点名，事件携带图与父级引用。
+Session 和 Turn 快照中的 `steps` 资源保留图与节点状态；分页时复用同一
+`snapshot_id`，保持一致视图。
+Agent 任务可通过协作 MCP 提交定向信号：
+
+```json
+{"name":"run.signal","arguments":{"name":"report.ready","requestId":"PENDING_SIGNAL_NODE_UUID","idempotencyKey":"report-001","payload":{"artifactId":"ARTIFACT_ID"}}}
+```
+
+任务 CLI 对应命令为 `as task run signal report.ready --request-id PENDING_SIGNAL_NODE_UUID --idempotency-key report-001 --file signal.json`。
+节点 UUID 来自当前运行图或待处理交互。转发服务在创建 Portal 持久化命令前，校验物理
+Task/Attempt 租约、根执行授权和待处理 Signal 节点。回执区分已排队与原生已应用，
+通过 Session 命令 API 查询 `applied`。同一键和内容重试返回原命令 ID，更换内容返回冲突。
+任务信号沿用原始 Turn 调用者的调用权限，执行身份记为 Agent，不能回答人类确认。
+每个 Turn 同时受理一条待处理信号命令，前一条达到 `applied` 后再提交下一条。
+已持久化受理的信号允许在发送任务结束后应用，前提是 Attempt/fence 未被替换，
+且根 Turn 仍具备当前执行授权。
+
+暂停、显式 resume 和独立 Issue 子 Run 仍在接入。
+
+Hosted 任务和报告 token 有效期为 15 分钟。daemon 在到期前及重放过期日志凭据时，
+调用 `POST /api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/credentials`
+刷新，要求当前 Host 凭据、匹配的 lease token 与 fence。刷新不延长执行租约，也不
+恢复已撤销的执行许可。停止或撤权的任务可以刷新报告权限以完成停止回执投递，
+不会获得新的任务权限。provider 通过每个 Attempt 独立的本地凭据转发访问 MCP 和
+任务 CLI，使固定环境变量也能使用最新任务 token。转发限制为 8 个并发调用和有界
+请求及响应，随 Attempt 关闭。Host 入驻凭据仍使用独立的到期与轮换策略。
+
+公开 Session 创建也支持 Hosted Team Job。协调者在未完成工作节点结束后，通过带
+fence 的协作 MCP 身份提交结论。公开 Turn 等待每个 Hosted Worker 的实际停止回执。
+本地检查覆盖动态并行节点、完成和取消；完整委派及其余图控制仍在接入。
+
+Portal 资源快照在 `resources` 中返回有界页；后续页复用 `snapshot_id` 和
+`next_cursor`。UI 用 `order=desc` 读取最新 Turn，并可用 `status=running` 单独查询
+正在运行的 Turn，避免长队列遮住较早的运行任务。列表游标绑定排序及状态过滤条件，
+所选 Turn 的控件依据其 capabilities 展示。用量事件包含权威 `session_usage` 和
+`turn_usage` 摘要，未加载完整模型历史不会减少已报告用量。预算按已报告用量检查，
+在途并发调用可能超额，超额没有固定上界。
+
+UI 在晚到的历史页上重放实时变更，包括失败的部分输出和已删除产物。显示窗口最多
+保留 4096 条实时事件、8192 条索引记录及 16 MiB 序列化文本。达到上限后从新快照
+刷新视图；这只关闭当前读取连接，不会停止执行。
+
+Managed Turn capabilities 在等待工具时提供 `tool_retry`，Session 就绪时提供
+`workspace_recover`。`resume` 用于失败或中断的 Turn；工具或确认等待使用对应动作。
+UI 工具执行面板读取有界任务页，使用当前授权和 Workspace 代次。unknown 工具重试
+要求确认可能重复外部副作用。重新连接要求已核实实例空闲；从归档恢复或丢弃要求已
+核实旧实例不存在，并接受未归档文件变更丢失。Workspace 恢复不会重试 unknown
+工具；检查持久化命令状态、刷新代次，再按需要另行提交工具重试。
+
+Hosted 派发记录在可读元数据中保留调度身份、供应商能力及 profile/pool 版本。冻结
+供应商配置、Agent 覆盖值和 Workspace 定义在写入原生 Task、Attempt 和派发 outbox
+之前，使用运行角色的稳定 Vault key 加密。已鉴权的 Host 认领读取同一冻结配置，
+重试和节点选择也使用原 Task 身份解密。运行角色重启需使用相同 key。新 Portal
+Hosted 派发要求该格式；之前重建中的明文记录不能作为新 Portal 执行配置。这一步
+没有加密所有控制面资源定义或供应商本地文件。
+
+当前重建中，两个 Go 服务入口默认 `--schema-mode=validate`。普通副本启动前，
+用数据库 owner 单独执行 `--migrate-only`；编排运行时初始化 runtime schema，
+控制面还可以初始化已启用的 Product schema。任务在启动 HTTP 和 Worker 前退出，
+也不初始化用户。普通运行副本仍需稳定的内部凭据、任务签名 secret 和 Vault key。
+Java Portal/数据面的初始化入口及已验证的账号分离见仓库中的
+`agentscope-service/docs/session-portal-schema.md`。Compose/Helm 已接入独立角色及迁移
+任务；完整运行表写权限拆分仍在实施中。
+
+独立 Go 运行角色在推进 Run、派发 Task、将物理 Attempt 交给 Host，以及续租执行
+权限前，要求执行契约归属 Portal。旧资源操作正在迁移为持久化 Portal 运行意图；
+新运行角色读取同一 Store 不会让旧任务自动取得执行资格。
+
+独立 Go 运行时镜像支持 `--healthcheck`，只探测 `/readyz`，不启动数据库连接或 Worker。
+执行来源解析拒绝循环，最多查询 256 个父 Issue，避免异常父子链产生无界查询。
+
+Host 机器凭据剩余有效期不足 24 小时时，daemon 自动发起续期。请求经 Gateway 和
+Portal 到运行角色，携带仍有效的 Host bearer 与当前注册代次。续期保留 tenant、
+namespace 和 Host key，不延长注册或 Attempt 租约，也不授予任务执行权限。
+控制台注册保留调用者实际获授权的 namespace。
+
+续期凭据保存在已加锁的状态目录内 `host-credential.json` 中；用相同初始注册凭据
+重启时继续使用该缓存。缓存绑定初始凭据及机器作用域，重新注册的新凭据优先。
+状态目录应保持私有：Unix 文件权限为 0600，Windows 继承目录 ACL。临时续期失败
+时继续使用当前有效凭据；离线到所有机器凭据均已过期后，需要重新注册。
+续期不撤销此前签发的 token，也不轮换服务签名 key。

@@ -29,8 +29,8 @@ import (
 
 // concludeCoordinator completes the leader's semantic obligation before
 // exposing a successful coordinator node. It is deliberately a convergent
-// composite until the store grows a single cross-aggregate transaction: if the
-// second step fails, a completed task plus waiting node is safe and retryable;
+// composite: the persisted semantic intent recovers a completed leader whose
+// atomic node barrier commit was interrupted or encountered contention;
 // the inverse order would expose a successful Run with a live task/attempt.
 func (s *Server) concludeCoordinator(ctx context.Context, task *controlmodel.AgentTask,
 	output json.RawMessage, actor controlmodel.Actor) (*controlmodel.AgentTask, *controlmodel.RunNode, error) {
@@ -49,10 +49,14 @@ func (s *Server) concludeCoordinator(ctx context.Context, task *controlmodel.Age
 		if _, _, err = s.orchestrationService().ValidateCoordinatorNodeCompletion(ctx, current.ID); err != nil {
 			return current, nil, err
 		}
+		if err = s.orchestrationService().RequestCoordinatorCompletion(ctx, current, output, actor); err != nil {
+			return current, nil, err
+		}
 		current, resultComment, err = s.collaborationService().CompleteTask(ctx, current.ID, store.TaskCompletion{
-			ExpectedVersion: current.Version,
-			Summary:         "Team coordinator converged.",
-			Result:          output,
+			ExpectedVersion:       current.Version,
+			CoordinatorConclusion: true,
+			Summary:               "Team coordinator converged.",
+			Result:                output,
 		}, actor)
 		if err != nil {
 			return current, nil, err

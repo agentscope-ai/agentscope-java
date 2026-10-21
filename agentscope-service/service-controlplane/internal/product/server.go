@@ -17,7 +17,6 @@ package product
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -41,56 +40,17 @@ type TeamContextLookup func(ctx context.Context, sessionID string) json.RawMessa
 // managed session. It is exposed only through the internal resolve endpoint.
 type ManagedExecutionContextLookup func(ctx context.Context, sessionID string) json.RawMessage
 
-var (
-	// ErrManagedRuntimeFenceConflict means a runtime status patch is malformed or
-	// does not match the immutable fields of the named current Attempt.
-	ErrManagedRuntimeFenceConflict = errors.New("managed runtime fence mismatch")
-	// ErrManagedRuntimeFenceGone means the physical Attempt was failed,
-	// cancelled, requeued, or replaced and its data-plane turn must stop.
-	ErrManagedRuntimeFenceGone = errors.New("managed runtime Attempt is gone")
-)
-
-// ManagedRuntimeFence is captured when one physical managed turn is admitted.
-// Every status patch from that turn carries this exact tuple; callers must not
-// look up and adopt a newer session scope in a finally block.
-type ManagedRuntimeFence struct {
-	AgentTaskID        string `json:"agentTaskId,omitempty"`
-	AttemptID          string `json:"attemptId,omitempty"`
-	DispatchGeneration int64  `json:"dispatchGeneration,omitempty"`
-	TurnID             string `json:"turnId,omitempty"`
-}
-
-func (f ManagedRuntimeFence) Complete() bool {
-	return strings.TrimSpace(f.AgentTaskID) != "" && strings.TrimSpace(f.AttemptID) != "" &&
-		f.DispatchGeneration > 0 && strings.TrimSpace(f.TurnID) != ""
-}
-
-func (f ManagedRuntimeFence) Empty() bool {
-	return strings.TrimSpace(f.AgentTaskID) == "" && strings.TrimSpace(f.AttemptID) == "" &&
-		f.DispatchGeneration == 0 && strings.TrimSpace(f.TurnID) == ""
-}
-
-// ManagedRuntimeFenceValidator reports whether the product session is bound
-// to an AgentTask and verifies its current runtime-store fence. Personal chat
-// sessions return managed=false and continue to accept an empty fence.
-type ManagedRuntimeFenceValidator func(ctx context.Context, sessionID string,
-	fence ManagedRuntimeFence) (managed bool, err error)
-
-// TeamMemberActivityHook is invoked after a product session runtime status
-// patch succeeds. Used to mirror idle/running onto store-backed team members.
-type TeamMemberActivityHook func(ctx context.Context, sessionID, status string)
-
 type Server struct {
-	accountDisableGuard     func(context.Context, string) error
-	oauthHTTPClient         *http.Client // Optional transport override for in-process provider tests.
-	channelWork             *ChannelWorkRuntime
-	cfg                     Config
-	db                      *DB
-	vaultKey                []byte
-	teamContextLookup       TeamContextLookup
-	executionContextLookup  ManagedExecutionContextLookup
-	managedRuntimeValidator ManagedRuntimeFenceValidator
-	teamMemberActivityHook  TeamMemberActivityHook
+	scheduler              *schedulerRuntime
+	managedTriggerHandler  ManagedTriggerHandler
+	accountDisableGuard    func(context.Context, string) error
+	oauthHTTPClient        *http.Client // Optional transport override for in-process provider tests.
+	channelWork            *ChannelWorkRuntime
+	cfg                    Config
+	db                     *DB
+	vaultKey               []byte
+	teamContextLookup      TeamContextLookup
+	executionContextLookup ManagedExecutionContextLookup
 }
 
 // SetTeamContextLookup injects the runtime-store TeamContext lookup used by resolve.
@@ -108,22 +68,14 @@ func (s *Server) SetManagedExecutionContextLookup(fn ManagedExecutionContextLook
 	}
 }
 
-// SetManagedRuntimeFenceValidator injects the runtime-store authority used to
-// fence product-session status projection from delayed physical turns.
-func (s *Server) SetManagedRuntimeFenceValidator(fn ManagedRuntimeFenceValidator) {
-	if s != nil {
-		s.managedRuntimeValidator = fn
-	}
-}
-
 // ValidateManagedRuntime verifies that a managed Agent can create an
 // executable session, including the otherwise easy-to-miss Environment.
 func (s *Server) ValidateManagedRuntime(ctx context.Context, ownerID, agentID string) error {
 	if s == nil {
 		return fmt.Errorf("managed control plane is unavailable")
 	}
-	if strings.TrimSpace(s.cfg.DataURL) == "" {
-		return fmt.Errorf("managed data plane URL is not configured")
+	if strings.TrimSpace(s.cfg.SessionPortalURL) == "" {
+		return fmt.Errorf("Managed Session Portal URL is not configured")
 	}
 	if _, err := s.loadAgent(ctx, ownerID, agentID); err != nil {
 		return fmt.Errorf("managed Agent definition is unavailable")
@@ -134,17 +86,12 @@ func (s *Server) ValidateManagedRuntime(ctx context.Context, ownerID, agentID st
 	return nil
 }
 
-// SetTeamMemberActivityHook injects the store-backed member phase sync used when
-// Managed turns update session status via PATCH .../runtime.
-func (s *Server) SetTeamMemberActivityHook(fn TeamMemberActivityHook) {
-	if s != nil {
-		s.teamMemberActivityHook = fn
-	}
-}
-
-// Open connects to Postgres, migrates the `cp` schema, and seeds default
+// Open connects to Postgres, checks the configured schema mode, and seeds default
 // users. The caller owns the returned Server and must Close it.
 func Open(ctx context.Context, cfg Config) (*Server, error) {
+	if cfg.SchemaMode != "" && cfg.SchemaMode != "migrate" && cfg.SchemaMode != "validate" {
+		return nil, fmt.Errorf("product schema mode must be migrate or validate")
+	}
 	if len(cfg.JWTSecret) < 32 {
 		return nil, fmt.Errorf("jwt secret must be at least 32 characters")
 	}
@@ -161,7 +108,12 @@ func Open(ctx context.Context, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := migrate(ctx, db); err != nil {
+	if cfg.SchemaMode == "validate" {
+		err = validateSchema(ctx, db)
+	} else {
+		err = migrate(ctx, db)
+	}
+	if err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -182,11 +134,13 @@ func Open(ctx context.Context, cfg Config) (*Server, error) {
 		}
 	}
 
-	return &Server{
+	server := &Server{
 		cfg:      cfg,
 		db:       db,
 		vaultKey: vaultKey(cfg.VaultMasterKey, cfg.JWTSecret),
-	}, nil
+	}
+	server.scheduler = newSchedulerRuntime(server)
+	return server, nil
 }
 
 // Middlewares returns the auth chain that must wrap the product routes.

@@ -44,6 +44,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @SpringBootApplication(
         scanBasePackages = {
+            "io.agentscope.builder.runtime",
             "io.agentscope.builder.control",
             "io.agentscope.builder.web.api",
             "io.agentscope.builder.web.auth",

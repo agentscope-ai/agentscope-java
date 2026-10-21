@@ -21,10 +21,10 @@ import java.util.Map;
 /**
  * API representation of an execution environment template.
  *
- * <p>{@code type} is one of {@link EnvironmentTypes#TYPE_LOCAL} (host FS), {@link
- * EnvironmentTypes#TYPE_SANDBOX} (cloud-equivalent Docker hands), {@link
+ * <p>{@code type} is one of {@link EnvironmentTypes#TYPE_LOCAL} (Hands-local FS), {@link
+ * EnvironmentTypes#TYPE_CLOUD} (Service-managed ACS), {@link
  * EnvironmentTypes#TYPE_REMOTE} (distributed KV FS, no shell), or {@link
- * EnvironmentTypes#TYPE_SELF_HOSTED} (worker-owned hands via {@code externalSandbox}).
+ * EnvironmentTypes#TYPE_SELF_HOSTED} (user-owned Sandbox connections).
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record EnvironmentDto(

@@ -101,6 +101,10 @@ func (s *Server) sweepPublicSessionWebhooks(ctx context.Context) error {
 	}
 }
 func (s *Server) runPublicSessionWebhooks(ctx context.Context) {
+	// Resource admission and public delivery belong to the control-plane role.
+	if s.runtimeOnly {
+		return
+	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {

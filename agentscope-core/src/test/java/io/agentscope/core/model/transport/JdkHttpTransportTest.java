@@ -1291,17 +1291,15 @@ class JdkHttpTransportTest {
     }
 
     @Test
-    void testStreamTimeoutClosesBodyWhenFutureCompletesAfterCancellation() {
+    void testStreamTimeoutClosesBodyReturnedAfterCancellation() throws Exception {
         HttpTransportConfig customConfig =
                 HttpTransportConfig.builder()
-                        .responseTimeout(Duration.ofMillis(100))
+                        .responseTimeout(Duration.ofMillis(200))
                         .streamIdleTimeout(Duration.ofSeconds(1))
                         .build();
         BlockingInputStream body = new BlockingInputStream();
-        AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>> futureRef =
-                new AtomicReference<>();
-        JdkHttpTransport customTransport =
-                new JdkHttpTransport(new DeferredBodyHttpClient(futureRef, body), customConfig);
+        DeferredBodyHttpClient client = new DeferredBodyHttpClient(body);
+        JdkHttpTransport customTransport = new JdkHttpTransport(client, customConfig);
 
         try {
             HttpRequest request =
@@ -1318,13 +1316,14 @@ class JdkHttpTransportTest {
                                             && e.getMessage().contains("Stream timeout"))
                     .verify(Duration.ofSeconds(2));
 
-            CompletableFuture<java.net.http.HttpResponse<InputStream>> future = futureRef.get();
-            assertNotNull(future);
-            assertTrue(future.isCancelled(), "Timeout should cancel the pending async request");
-
-            future.complete(new TestHttpResponse(200, body));
+            assertEquals(0, client.started.getCount(), "Send should have started");
+            assertTrue(
+                    client.interrupted.await(1, TimeUnit.SECONDS),
+                    "Timeout should interrupt the pending send");
+            client.release.countDown();
             assertTrue(body.awaitClosed(), "Response body must be closed after late completion");
         } finally {
+            client.release.countDown();
             customTransport.close();
         }
     }
@@ -1481,15 +1480,12 @@ class JdkHttpTransportTest {
     }
 
     private static class DeferredBodyHttpClient extends HttpClient {
-        private final AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>>
-                futureRef;
         private final InputStream body;
+        private final CountDownLatch started = new CountDownLatch(1);
+        private final CountDownLatch interrupted = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
 
-        DeferredBodyHttpClient(
-                AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>>
-                        futureRef,
-                InputStream body) {
-            this.futureRef = futureRef;
+        DeferredBodyHttpClient(InputStream body) {
             this.body = body;
         }
 
@@ -1539,22 +1535,29 @@ class JdkHttpTransportTest {
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         public <T> java.net.http.HttpResponse<T> send(
                 java.net.http.HttpRequest request,
                 java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler) {
-            throw new UnsupportedOperationException("send is not used in this test");
+            started.countDown();
+            // Simulate a client that returns a body even after send has been interrupted.
+            boolean done = false;
+            while (!done) {
+                try {
+                    done = release.await(5, TimeUnit.SECONDS);
+                    if (!done) throw new AssertionError("Timed out waiting to release response");
+                } catch (InterruptedException e) {
+                    interrupted.countDown();
+                }
+            }
+            return (java.net.http.HttpResponse<T>) new TestHttpResponse(200, body);
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         public <T> CompletableFuture<java.net.http.HttpResponse<T>> sendAsync(
                 java.net.http.HttpRequest request,
                 java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler) {
-            CompletableFuture<java.net.http.HttpResponse<T>> future = new LateCompletableFuture<>();
-            futureRef.set(
-                    (CompletableFuture<java.net.http.HttpResponse<InputStream>>)
-                            (CompletableFuture<?>) future);
-            return future;
+            throw new AssertionError("Streaming must not depend on sendAsync completion");
         }
 
         @Override
@@ -1563,21 +1566,6 @@ class JdkHttpTransportTest {
                 java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler,
                 java.net.http.HttpResponse.PushPromiseHandler<T> pushPromiseHandler) {
             return sendAsync(request, responseBodyHandler);
-        }
-    }
-
-    private static class LateCompletableFuture<T> extends CompletableFuture<T> {
-        private final AtomicBoolean cancelled = new AtomicBoolean(false);
-
-        @Override
-        public boolean cancel(boolean mayInterruptIfRunning) {
-            cancelled.set(true);
-            return true;
-        }
-
-        @Override
-        public boolean isCancelled() {
-            return cancelled.get();
         }
     }
 

@@ -17,7 +17,7 @@
 
 面向**用户自带代码**（BYO）场景：用户用 ``agentscope`` 写好 Agent 并自行部
 署，一行 ``agentscope_service.instrument(agent, ...)`` 接入控制面。与 managed agents 模式
-下 service-dataplane 直接实现 ``/agentscope/*`` 合约是两条独立路径。
+下 brain 直接实现 ``/agentscope/*`` 合约是两条独立路径。
 
 零硬依赖：不 import ``agentscope``，全部 duck-typing。
 

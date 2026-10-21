@@ -24,7 +24,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +36,7 @@ import (
 
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/collaboration"
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/orchestration"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
@@ -127,7 +130,7 @@ func collaborationMCPTools() []mcpTool {
 		{Name: "run.node.complete", Description: "Conclude this Team leader turn after all delegated work converges and every requirement in coordinatorIssue is fulfilled. output must contain the actual user deliverables (full requested text or accessible artifacts), not only a claim that they were produced. output is the durable main Issue and Session Turn response. This completes the current leader AgentTask and then the coordinator node; do not call task.complete afterwards.", InputSchema: object(map[string]any{"output": map[string]any{}})},
 		{Name: "run.node.fail", Description: "Explicitly abort this Team leader turn and the entire coordinator, cancelling its remaining work. Do not use this to wait for a worker reply; use task.complete(outcome=waiting).", InputSchema: object(map[string]any{"code": stringProp, "message": stringProp, "result": map[string]any{}}, "code", "message")},
 		{Name: "run.replan", Description: "Add a dynamic agent or team node to this adaptive run.", InputSchema: object(map[string]any{"key": stringProp, "type": stringProp, "agentId": stringProp, "teamRef": stringProp, "role": stringProp}, "type")},
-		{Name: "run.signal", Description: "Deliver an idempotent named signal to this run.", InputSchema: object(map[string]any{"name": stringProp, "idempotencyKey": stringProp, "payload": map[string]any{}}, "name", "idempotencyKey")},
+		{Name: "run.signal", Description: "Deliver an idempotent signal to a pending Signal node. For Portal runs, requestId is the node UUID from run.graph; this cannot approve human confirmations.", InputSchema: object(map[string]any{"name": stringProp, "requestId": stringProp, "idempotencyKey": stringProp, "payload": map[string]any{}}, "name", "idempotencyKey")},
 		{Name: "run.artifacts", Description: "List Issue artifacts shared by all runtimes in this run.", InputSchema: object(map[string]any{})},
 	}
 }
@@ -188,10 +191,22 @@ func (s *Server) collaborationMCP(c *gin.Context) {
 	case "ping":
 		respond(map[string]any{}, nil)
 	case "tools/list":
-		respond(map[string]any{"tools": collaborationMCPToolsForTask(task)}, nil)
+		tools := collaborationMCPToolsForTask(task)
+		if receipt, _ := c.Get(ctxManagedTaskReceiptAuth); receipt == true {
+			allowed := tools[:0]
+			for _, tool := range tools {
+				if tool.Name == "task.complete" || tool.Name == "task.fail" {
+					allowed = append(allowed, tool)
+				}
+			}
+			tools = allowed
+		}
+		respond(map[string]any{"tools": tools}, nil)
 	case "tools/call":
 		var params mcpCallParams
-		if err := json.Unmarshal(req.Params, &params); err != nil || params.Name == "" {
+		decoder := json.NewDecoder(bytes.NewReader(req.Params))
+		decoder.UseNumber()
+		if err := decoder.Decode(&params); err != nil || params.Name == "" {
 			respond(nil, &mcpError{Code: -32602, Message: "invalid tools/call params"})
 			return
 		}
@@ -200,6 +215,14 @@ func (s *Server) collaborationMCP(c *gin.Context) {
 		}
 		if id := stringArg(params.Meta, "io.agentscope/toolCallId"); id != "" {
 			params.Arguments["_toolCallId"] = id
+		}
+		if receipt, _ := c.Get(ctxManagedTaskReceiptAuth); receipt == true {
+			if params.Name == "task.complete" && task.Status == controlmodel.AgentTaskCompleted || params.Name == "task.fail" && task.Status == controlmodel.AgentTaskFailed {
+				respond(mcpResult(map[string]any{"task": task, "replayed": true}, false), nil)
+			} else {
+				respond(mcpResult(map[string]any{"error": "terminal task credential can only replay its existing outcome"}, true), nil)
+			}
+			return
 		}
 		if completedCoordinator, _ := c.Get(ctxCompletedCoordinatorAuth); completedCoordinator == true &&
 			params.Name != "run.node.complete" && params.Name != "run.node.fail" {
@@ -271,6 +294,9 @@ func mcpResult(value any, isError bool) mcpToolResult {
 
 func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.AgentTask, name string, args map[string]any) (any, error) {
 	ctx := c.Request.Context()
+	if restricted, _ := ctx.Value(runtimeSignalReplayKey{}).(bool); restricted && name != "run.signal" {
+		return nil, store.ErrForbidden
+	}
 	if requested := stringArg(args, "taskId"); requested != "" && requested != "current" && requested != task.ID.String() {
 		return nil, fmt.Errorf("%w: task.get only accepts current taskId %s; read coordinatorChildren for sibling outcomes, not their Issue IDs", store.ErrNotFound, task.ID)
 	}
@@ -481,7 +507,7 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		failed, err := svc.FailTask(ctx, task.ID, current.Version, stringArg(args, "code"), stringArg(args, "message"), partial)
 
 		if err == nil {
-			err = (&orchestration.Engine{Store: s.store}).ReconcileRun(context.WithoutCancel(ctx), failed.OrchestrationRunID)
+			err = (&orchestration.Engine{Store: s.store, RequirePortal: s.portalExecution()}).ReconcileRun(context.WithoutCancel(ctx), failed.OrchestrationRunID)
 		}
 		projectionErr := s.projectMCPTaskTerminal(ctx, failed, nil)
 		if err != nil {
@@ -535,9 +561,11 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		return map[string]any{"node": node}, err
 	case "run.signal":
 		payload, _ := json.Marshal(args["payload"])
-		err := s.orchestrationService().Signal(ctx, task.OrchestrationRunID, stringArg(args, "name"),
-			stringArg(args, "idempotencyKey"), payload, actor)
-		return map[string]any{"accepted": err == nil}, err
+		token := c.GetHeader("X-Agent-Task-Token")
+		if token == "" {
+			token = requestBearerToken(c)
+		}
+		return s.submitTaskRunSignal(ctx, task, token, stringArg(args, "name"), stringArg(args, "requestId"), stringArg(args, "idempotencyKey"), payload)
 	case "run.artifacts":
 		artifacts, err := s.store.Collaboration().ListArtifacts(ctx, task.Tenant, task.Namespace,
 			"issue", task.IssueID.String())
@@ -650,7 +678,7 @@ func (s *Server) uploadMCPArtifact(ctx context.Context, task *controlmodel.Agent
 		return nil, fmt.Errorf("artifact provider is unavailable")
 	}
 	filename := strings.TrimSpace(stringArg(args, "filename"))
-	if filename == "" || strings.ContainsAny(filename, "/\\") {
+	if filename == "" || len(filename) > 512 || strings.ContainsAny(filename, "/\\\r\n") {
 		return nil, fmt.Errorf("artifact filename must be a base name")
 	}
 	content, err := base64.StdEncoding.DecodeString(stringArg(args, "contentBase64"))
@@ -664,6 +692,9 @@ func (s *Server) uploadMCPArtifact(ctx context.Context, task *controlmodel.Agent
 	contentType := strings.TrimSpace(stringArg(args, "contentType"))
 	if contentType == "" {
 		contentType = http.DetectContentType(content)
+	}
+	if _, _, err := mime.ParseMediaType(contentType); err != nil || len(contentType) > 255 {
+		return nil, fmt.Errorf("invalid artifact media type")
 	}
 	policy := controlmodel.TeamPolicy{}
 	if task.TeamID != nil {
@@ -690,12 +721,28 @@ func (s *Server) uploadMCPArtifact(ctx context.Context, task *controlmodel.Agent
 	}
 	artifact := &controlmodel.Artifact{ID: id, Tenant: task.Tenant, Namespace: task.Namespace,
 		StorageProvider: s.artifactProvider.Name(), StorageKey: key, Filename: filename, ContentType: contentType,
-		SizeBytes: info.Size, Checksum: info.Checksum, Uploader: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}, SourceTaskID: &task.ID}
+		SizeBytes: info.Size, Checksum: info.Checksum, Uploader: controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}, SourceTaskID: &task.ID,
+		SourceAttemptID: task.CurrentAttemptID, PortalCommandID: serviceapi.ContextPortalCommandID(ctx)}
 	targetType, targetRef := stringArg(args, "targetType"), stringArg(args, "targetRef")
 	if targetType == "" {
 		targetType, targetRef = "issue", task.IssueID.String()
 	}
 	links := []controlmodel.ArtifactLink{{TargetType: targetType, TargetRef: targetRef, Relation: "attachment"}}
+	if s.portalExecution() {
+		current, err := s.store.Collaboration().GetAgentTask(ctx, task.ID)
+		if err == nil && (controlmodel.IsAgentTaskTerminal(current.Status) ||
+			(current.CurrentAttemptID == nil) != (task.CurrentAttemptID == nil) ||
+			current.CurrentAttemptID != nil && *current.CurrentAttemptID != *task.CurrentAttemptID) {
+			err = store.ErrForbidden
+		}
+		if err == nil {
+			err = serviceapi.CheckTaskPortalExecution(ctx, s.store, current)
+		}
+		if err != nil {
+			_ = s.artifactProvider.Delete(ctx, key)
+			return nil, err
+		}
+	}
 	created, err := s.store.Collaboration().CreateArtifact(ctx, artifact, links)
 	if err != nil {
 		_ = s.artifactProvider.Delete(ctx, key)
@@ -748,6 +795,10 @@ func boolArg(args map[string]any, key string) bool {
 }
 
 func intArg(args map[string]any, key string) int {
+	if number, ok := args[key].(json.Number); ok {
+		value, _ := strconv.Atoi(string(number))
+		return value
+	}
 	value, _ := args[key].(float64)
 	return int(value)
 }

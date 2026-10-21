@@ -17,29 +17,39 @@ package io.agentscope.builder.web.toolbus;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.builder.control.SessionResolveResult;
+import io.agentscope.builder.runtime.ManagedCatalog;
 import io.agentscope.builder.web.catalog.spec.AgentSpecTypes;
 import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.AgentToolset;
 import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.PermissionPolicy;
 import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.ToolConfigEntry;
 import io.agentscope.builder.web.catalog.spec.AgentSpecTypes.ToolDefaultConfig;
-import io.agentscope.builder.web.managed.DataSessionService;
 import io.agentscope.builder.web.managed.ManagedSessionDto;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.RequestStopEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.session.SessionInteractions;
+import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.session.SessionProjection;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.util.MessageUtils;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -47,10 +57,107 @@ import reactor.core.publisher.Flux;
 class ToolConfirmationMiddlewareTest {
 
     @Test
+    void taskActionsAreIndependentOfDisabledBuiltinsButExplicitPoliciesRemain() {
+        var sessions = mock(ManagedCatalog.class);
+        var middleware = middleware(sessions);
+        var toolset =
+                new AgentToolset(
+                        AgentSpecTypes.TOOLSET_AGENT,
+                        new ToolDefaultConfig(false, null),
+                        List.of(
+                                new ToolConfigEntry(
+                                        "task.fail", true, PermissionPolicy.of("deny"))),
+                        null);
+        when(sessions.resolve("session-a"))
+                .thenReturn(
+                        new SessionResolveResult(
+                                session(),
+                                Map.of("name", "agent", "tools", List.of(toolset)),
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                Map.of(
+                                        "taskContext",
+                                        Map.of(
+                                                "taskToken",
+                                                "private-fixture-credential",
+                                                "availableActions",
+                                                List.of("task.get", "task.fail")))));
+        var state = AgentState.builder().build();
+        var executed = new AtomicReference<List<String>>();
+        var events =
+                middleware
+                        .onActing(
+                                agent(state),
+                                context(state),
+                                new ActingInput(
+                                        List.of(
+                                                call("read-task", "task.get", Map.of()),
+                                                call("explicit-denial", "task.fail", Map.of()),
+                                                call("builtin-denial", "execute", Map.of()))),
+                                input -> {
+                                    executed.set(
+                                            input.toolCalls().stream()
+                                                    .map(ToolUseBlock::getName)
+                                                    .toList());
+                                    return Flux.empty();
+                                })
+                        .collectList()
+                        .block();
+        assertThat(executed.get()).containsExactly("task.get");
+        assertThat(events).hasSize(6);
+    }
+
+    @Test
+    void actionNamesWithoutPrivateTaskCredentialDoNotGrantTools() {
+        var sessions = mock(ManagedCatalog.class);
+        var middleware = middleware(sessions);
+        var toolset =
+                new AgentToolset(
+                        AgentSpecTypes.TOOLSET_AGENT,
+                        new ToolDefaultConfig(false, null),
+                        List.of(),
+                        null);
+        when(sessions.resolve("session-a"))
+                .thenReturn(
+                        new SessionResolveResult(
+                                session(),
+                                Map.of("name", "agent", "tools", List.of(toolset)),
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                Map.of(
+                                        "taskContext",
+                                        Map.of("availableActions", List.of("task.get")))));
+        var state = AgentState.builder().build();
+        var events =
+                middleware
+                        .onActing(
+                                agent(state),
+                                context(state),
+                                new ActingInput(List.of(call("read-task", "task.get", Map.of()))),
+                                input ->
+                                        Flux.error(
+                                                new AssertionError("unbound task tool executed")))
+                        .collectList()
+                        .block();
+        assertThat(events).hasSize(3);
+    }
+
+    @Test
     void mcpServerDefaultDeniesItsNamespacedTools() {
-        ToolConfirmationCoordinator coordinator = mock(ToolConfirmationCoordinator.class);
-        DataSessionService sessions = mock(DataSessionService.class);
-        var middleware = middleware(coordinator, sessions);
+        ManagedCatalog sessions = mock(ManagedCatalog.class);
+        var middleware = middleware(sessions);
         when(sessions.resolve("session-a"))
                 .thenReturn(
                         resolved(
@@ -72,49 +179,69 @@ class ToolConfirmationMiddlewareTest {
                         .collectList()
                         .block();
         assertThat(events).hasSize(3);
-        verifyNoInteractions(coordinator);
     }
 
     @Test
     void defaultAlwaysAskAppliesWithoutPerToolConfigs() {
-        ToolConfirmationCoordinator coordinator = mock(ToolConfirmationCoordinator.class);
-        DataSessionService sessions = mock(DataSessionService.class);
-        ToolConfirmationMiddleware middleware = middleware(coordinator, sessions);
+        var sessions = mock(ManagedCatalog.class);
         when(sessions.resolve("session-a"))
                 .thenReturn(
                         resolved(
                                 new AgentToolset(
                                         AgentSpecTypes.TOOLSET_AGENT,
                                         new ToolDefaultConfig(
-                                                true,
-                                                PermissionPolicy.of(
-                                                        ToolConfirmationMiddleware
-                                                                .POLICY_ALWAYS_ASK)),
+                                                true, PermissionPolicy.of("always_ask")),
                                         List.of(),
                                         null)));
-        when(coordinator.awaitDecision("session-a", "call-a", "read_file", Map.of(), null))
-                .thenReturn(new ToolConfirmationCoordinator.ConfirmationDecision(false, null));
-        AgentState state = AgentState.builder().build();
-
-        List<AgentEvent> events =
-                middleware
-                        .onActing(
-                                agent(state),
-                                context(state),
-                                new ActingInput(List.of(call("call-a", "read_file", Map.of()))),
-                                ignored -> Flux.error(new AssertionError("tool must not execute")))
-                        .collectList()
-                        .block();
-
-        assertThat(events).hasSize(3);
-        assertThat(state.getContext()).hasSize(1);
+        var state = AgentState.builder().build();
+        var call = call("call-a", "read_file", Map.of());
+        var other = call("call-b", "write_file", Map.of());
+        state.contextMutable().add(new AssistantMessage(call).withContent(List.of(call, other)));
+        var log =
+                new InMemorySessionLogStore()
+                        .open(new SessionKey("user", "agent", "session-a"), null);
+        var recorder = new SessionRecorder(log, "turn", "native", null);
+        recorder.start(List.of(), state).block();
+        try {
+            var context =
+                    RuntimeContext.builder()
+                            .sessionId("session-a")
+                            .agentState(state)
+                            .put(SessionRecorder.CONTEXT_KEY, recorder)
+                            .build();
+            var events =
+                    middleware(sessions)
+                            .onActing(
+                                    agent(state),
+                                    context,
+                                    new ActingInput(List.of(call, other)),
+                                    ignored ->
+                                            Flux.error(
+                                                    new AssertionError(
+                                                            "tool must not execute before"
+                                                                    + " confirmation")))
+                            .collectList()
+                            .block();
+            assertThat(events).hasSize(2);
+            assertThat(events.get(0)).isInstanceOf(RequireUserConfirmEvent.class);
+            assertThat(SessionInteractions.pending(log)).containsKeys("call-a", "call-b");
+            assertThat(state.getContext().get(0).getContentBlocks(ToolResultBlock.class)).isEmpty();
+            assertThat(
+                            SessionProjection.read(log)
+                                    .restore()
+                                    .getContext()
+                                    .get(0)
+                                    .getContentBlocks(ToolUseBlock.class))
+                    .allMatch(tool -> tool.getState() == ToolCallState.ASKING);
+        } finally {
+            recorder.finish(state, "suspended").block();
+        }
     }
 
     @Test
     void missingControlPlaneSnapshotFailsClosed() {
-        ToolConfirmationCoordinator coordinator = mock(ToolConfirmationCoordinator.class);
-        DataSessionService sessions = mock(DataSessionService.class);
-        ToolConfirmationMiddleware middleware = middleware(coordinator, sessions);
+        ManagedCatalog sessions = mock(ManagedCatalog.class);
+        ToolConfirmationMiddleware middleware = middleware(sessions);
         when(sessions.resolve("session-a"))
                 .thenReturn(
                         new SessionResolveResult(
@@ -133,14 +260,12 @@ class ToolConfirmationMiddlewareTest {
                         .block();
 
         assertThat(events).hasSize(3);
-        verifyNoInteractions(coordinator);
     }
 
     @Test
     void sessionLoadFailureFailsClosed() {
-        ToolConfirmationCoordinator coordinator = mock(ToolConfirmationCoordinator.class);
-        DataSessionService sessions = mock(DataSessionService.class);
-        ToolConfirmationMiddleware middleware = middleware(coordinator, sessions);
+        ManagedCatalog sessions = mock(ManagedCatalog.class);
+        ToolConfirmationMiddleware middleware = middleware(sessions);
         when(sessions.resolve("session-a"))
                 .thenThrow(new IllegalStateException("session unavailable"));
         AgentState state = AgentState.builder().build();
@@ -156,14 +281,12 @@ class ToolConfirmationMiddlewareTest {
                         .block();
 
         assertThat(events).hasSize(3);
-        verifyNoInteractions(coordinator);
     }
 
     @Test
     void unknownPermissionPolicyFailsClosed() {
-        ToolConfirmationCoordinator coordinator = mock(ToolConfirmationCoordinator.class);
-        DataSessionService sessions = mock(DataSessionService.class);
-        ToolConfirmationMiddleware middleware = middleware(coordinator, sessions);
+        ManagedCatalog sessions = mock(ManagedCatalog.class);
+        ToolConfirmationMiddleware middleware = middleware(sessions);
         when(sessions.resolve("session-a"))
                 .thenReturn(
                         resolved(
@@ -186,15 +309,12 @@ class ToolConfirmationMiddlewareTest {
                         .block();
 
         assertThat(events).hasSize(3);
-        verifyNoInteractions(coordinator);
     }
 
     @Test
-    void rejectedToolWritesDeniedResultAndStillRunsAllowedCalls() {
-        ToolConfirmationCoordinator coordinator = mock(ToolConfirmationCoordinator.class);
-        DataSessionService sessions = mock(DataSessionService.class);
-        ToolConfirmationMiddleware middleware =
-                new ToolConfirmationMiddleware(coordinator, sessions);
+    void deniedToolWritesDeniedResultAndStillRunsAllowedCalls() {
+        ManagedCatalog sessions = mock(ManagedCatalog.class);
+        ToolConfirmationMiddleware middleware = new ToolConfirmationMiddleware(sessions);
 
         when(sessions.resolve("session-a"))
                 .thenReturn(
@@ -212,13 +332,8 @@ class ToolConfirmationMiddlewareTest {
                                                         true,
                                                         PermissionPolicy.of(
                                                                 ToolConfirmationMiddleware
-                                                                        .POLICY_ALWAYS_ASK))),
+                                                                        .POLICY_DENY))),
                                         null)));
-        when(coordinator.awaitDecision(
-                        "session-a", "call-denied", "web_search", Map.of("query", "q"), null))
-                .thenReturn(
-                        new ToolConfirmationCoordinator.ConfirmationDecision(
-                                false, "blocked by operator"));
 
         AgentState state = AgentState.builder().replyId("reply-a").build();
         Agent agent = mock(Agent.class);
@@ -265,7 +380,87 @@ class ToolConfirmationMiddlewareTest {
                                                 .getOutput()
                                                 .get(0))
                                 .getText())
-                .isEqualTo("blocked by operator");
+                .isEqualTo("Tool execution denied by the agent's configured permission policy.");
+    }
+
+    @Test
+    void portalApprovalPausesNativeStateAndConfirmedContinuationDoesNotAskAgain() {
+        var sessions = mock(ManagedCatalog.class);
+        when(sessions.resolve("session-a"))
+                .thenReturn(
+                        resolved(
+                                new AgentToolset(
+                                        AgentSpecTypes.TOOLSET_AGENT,
+                                        new ToolDefaultConfig(
+                                                true, PermissionPolicy.of("always_ask")),
+                                        List.of(),
+                                        null)));
+        var middleware = middleware(sessions);
+        var pendingCall = call("call-a", "read_file", Map.of("path", "fixture"));
+        var state = AgentState.builder().sessionId("session-a").build();
+        state.contextMutable().add(new AssistantMessage(pendingCall));
+        var log =
+                new InMemorySessionLogStore()
+                        .open(new SessionKey("user", "agent", "session-a"), null);
+        var recorder = new SessionRecorder(log, "turn", "native", null);
+        recorder.start(List.of(), state).block();
+        var context =
+                RuntimeContext.builder()
+                        .sessionId("session-a")
+                        .agentState(state)
+                        .put(SessionRecorder.CONTEXT_KEY, recorder)
+                        .build();
+        try {
+            var events =
+                    middleware
+                            .onActing(
+                                    agent(state),
+                                    context,
+                                    new ActingInput(List.of(pendingCall)),
+                                    ignored ->
+                                            Flux.error(
+                                                    new AssertionError(
+                                                            "Approval must pause before tool"
+                                                                    + " execution")))
+                            .collectList()
+                            .block();
+            assertThat(events).hasSize(2);
+            assertThat(events.get(0)).isInstanceOf(RequireUserConfirmEvent.class);
+            assertThat(events.get(1)).isInstanceOf(RequestStopEvent.class);
+            assertThat(SessionInteractions.pending(log)).containsKey("call-a");
+            assertThat(
+                            SessionProjection.read(log)
+                                    .restore()
+                                    .getContext()
+                                    .get(0)
+                                    .getContentBlocks(ToolUseBlock.class)
+                                    .get(0)
+                                    .getState())
+                    .isEqualTo(ToolCallState.ASKING);
+            assertThat(
+                            state.getContext()
+                                    .get(0)
+                                    .getContentBlocks(ToolUseBlock.class)
+                                    .get(0)
+                                    .getState())
+                    .isEqualTo(ToolCallState.ASKING);
+            var approved = pendingCall.withState(ToolCallState.ALLOWED);
+            MessageUtils.replaceToolUseBlocks(state.contextMutable(), Map.of("call-a", approved));
+            var executed = new AtomicBoolean();
+            middleware
+                    .onActing(
+                            agent(state),
+                            context,
+                            new ActingInput(List.of(approved)),
+                            ignored -> {
+                                executed.set(true);
+                                return Flux.empty();
+                            })
+                    .blockLast();
+            assertThat(executed).isTrue();
+        } finally {
+            recorder.finish(state, "suspended").block();
+        }
     }
 
     private static ManagedSessionDto session() {
@@ -289,9 +484,8 @@ class ToolConfirmationMiddlewareTest {
                 null);
     }
 
-    private static ToolConfirmationMiddleware middleware(
-            ToolConfirmationCoordinator coordinator, DataSessionService sessions) {
-        return new ToolConfirmationMiddleware(coordinator, sessions);
+    private static ToolConfirmationMiddleware middleware(ManagedCatalog sessions) {
+        return new ToolConfirmationMiddleware(sessions);
     }
 
     private static SessionResolveResult resolved(AgentToolset toolset) {

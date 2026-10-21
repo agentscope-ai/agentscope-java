@@ -13,10 +13,10 @@
 | Control Plane + Dashboard | `as-controlplane` 镜像 | Actions 或 `release.py images --push` |
 | Gateway | `as-gateway` 镜像 | 同上 |
 | Dataplane | `as-dataplane` 镜像 | 同上 |
-| Scheduler | `as-scheduler` 镜像 | 同上 |
 | 完整部署配置 | Compose 压缩包、Helm Chart | GitHub Release 附件；Chart 发布到公开 HTTP Helm 仓库 |
 | `as`、Runtime Host | Linux/macOS × amd64/arm64 压缩包 | GitHub Release 附件 |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` 及所需依赖 | Maven Central，单独发布 |
+| Java 公开 Session 客户端 | `io.agentscope:agentscope-service-client`；SDK 打包包含 jar、sources、javadoc、POM 与 README | Root `revision`，Maven 单独发布 |
 | Python SDK | `agentscope-service-sdk` wheel、sdist | PyPI，单独发布 |
 | DSH 插件 | `@agentscope-service/dsh-controlplane` npm 包 | npm，单独发布 |
 | 用户文档 | 官网 Service 专区 | 合入 `main` 后由网站工作流部署 |
@@ -24,6 +24,9 @@
 前端已经包含在 control 镜像中，不单独发布 npm 包。PostgreSQL 使用上游镜像或外部数据库。`service-common` 和 Service 可执行模块默认不发布到 Maven Central。完整 Service Chart 使用 standalone HTTP 模式；旧 Control Plane Chart 与 ASDP gRPC 属于另一种部署形态，发布说明应区分它们。
 
 SDK 可以独立发版。SDK 内容未变且已有兼容公开版本时，发布说明引用现有版本即可；不能为了凑齐发布清单重复上传同版本包。
+
+公开 Java Session 客户端仅依赖 Java 17/Jackson，不依赖 Service 服务端。
+`package` 收集本地制品并记录 `sdkVersions.java`；实际 Maven 发布仍按下述独立流程执行。
 
 ## 二、管理员首次发布前的一次性配置
 
@@ -47,9 +50,9 @@ SDK 可以独立发版。SDK 内容未变且已有兼容公开版本时，发布
 | `SERVICE_REGISTRY_USER` | 有该组织 package 写权限的账号 |
 | `SERVICE_REGISTRY_TOKEN` | 该账号用于 registry 登录的凭据 |
 
-工作流的 `repository` 输入则填写 `ghcr.io/agentscope-ai`，包含组织路径。四个镜像最终位于该路径下，Chart 位于 `oci://ghcr.io/agentscope-ai/charts/agentscope-service`。
+工作流的 `repository` 输入则填写 `ghcr.io/agentscope-ai`，包含组织路径。五个镜像最终位于该路径下，Chart 位于 `oci://ghcr.io/agentscope-ai/charts/agentscope-service`。
 
-当前工作流使用以上三个 Secret，不会自动改用 `GITHUB_TOKEN`。GHCR 使用 PAT 登录时按官方要求配置 classic token 的 `write:packages` 权限，并满足组织 SSO 策略。发布后逐个检查四个镜像和 Chart package 的可见性；代码仓库公开不等于 package 已公开。[GHCR 登录说明](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)、[Package 可见性说明](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)
+当前工作流使用以上三个 Secret，不会自动改用 `GITHUB_TOKEN`。GHCR 使用 PAT 登录时按官方要求配置 classic token 的 `write:packages` 权限，并满足组织 SSO 策略。发布后逐个检查五个镜像和 Chart package 的可见性；代码仓库公开不等于 package 已公开。[GHCR 登录说明](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)、[Package 可见性说明](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)
 
 不要把 registry token 填入产品部署的 `.env`、Chart values 或源码。
 
@@ -70,7 +73,7 @@ npm 的发布权限和 2FA 要求由包设置决定；此处使用交互式 `npm
 
 | 项目 | 本次需要确定的值 | 影响范围 |
 | --- | --- | --- |
-| Service 版本 | 例如 `2.0.3-rc.1` | 四个镜像、Chart version/appVersion、CLI、Compose 文件名 |
+| Service 版本 | 例如 `2.0.3-rc.1` | 五个镜像、Chart version/appVersion、CLI、Compose 文件名 |
 | Git tag | `v2.1.0-BETA1` | 唯一指向本次审核过的源码 |
 | Registry namespace | 例如 `ghcr.io/agentscope-ai` | 镜像和 Chart 的公开安装地址 |
 | Java 版本 | 根 `pom.xml` 的 `revision` | Java SDK、父 POM、相关 reactor 依赖 |
@@ -209,14 +212,14 @@ git push origin "$RELEASE_TAG"
 
 | Secret | 内容 |
 | --- | --- |
-| `SERVICE_REGISTRY_USER` | 能访问四个镜像仓库的 ACR 登录用户名 |
+| `SERVICE_REGISTRY_USER` | 能访问五个镜像仓库的 ACR 登录用户名 |
 | `SERVICE_REGISTRY_TOKEN` | 该用户名对应的 ACR Registry 专用密码，不是阿里云控制台登录密码 |
 
 登录域名从 Repository variable `SERVICE_IMAGE_REPOSITORY` 的镜像命名空间提取，默认 `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`；自动入口不需要 `SERVICE_REGISTRY_HOST`。本机 `docker login` 不会授权 GitHub 云端 runner。凭据含义见 [ACR 访问凭证文档](https://help.aliyun.com/zh/acr/user-guide/configure-access-credentials/)。上面的三个 Secret 仍适用于原手动镜像与 OCI Chart 工作流。
 
-先准备 Java POM 与 Go 版本常量中的正式发布版本，将源码合入 `main`，再推送主 `vVERSION` tag。当前 Maven `2.1.0-SNAPSHOT` 用于开发，打下一版本的发布 tag 前需同步实际发布版本。自动工作流先构建安装包，然后推送 `as-controlplane`、`as-gateway`、`as-dataplane`、`as-scheduler`，镜像 tag 为不含 `v` 的 `VERSION`，每个同时包含 `linux/amd64` 与 `linux/arm64`。Buildx 请求 SBOM 与 provenance。
+先准备 Java POM 与 Go 版本常量中的正式发布版本，将源码合入 `main`，再推送主 `vVERSION` tag。当前 Maven `2.1.0-SNAPSHOT` 用于开发，打下一版本的发布 tag 前需同步实际发布版本。自动工作流先构建安装包，然后推送 `as-controlplane`、`as-gateway`、`as-session-portal`、`as-dataplane`、`as-hands`，镜像 tag 为不含 `v` 的 `VERSION`，每个同时包含 `linux/amd64` 与 `linux/arm64`。Buildx 请求 SBOM 与 provenance。
 
-重跑时，已有镜像必须同时满足架构、版本和源码提交标签一致才能复用；冲突或认证、网络错误时停止，不覆盖。缺失镜像才会构建，推送后再次检查。部分推送失败可重跑 images job，复用已经成功的镜像。四个镜像全部成功后，才公开 GitHub Release，并自动上传含引用、digest、源码提交与架构的 `images.json`，把它纳入 `SHA256SUMS`。原始 Buildx 元数据保留在 `service-image-metadata` Actions artifact。公开 HTTP Helm 仓库与 Homebrew tap 保留独立发布流程，自动镜像 job 不依赖 Helm OCI 登录。
+重跑时，已有镜像必须同时满足架构、版本和源码提交标签一致才能复用；冲突或认证、网络错误时停止，不覆盖。缺失镜像才会构建，推送后再次检查。部分推送失败可重跑 images job，复用已经成功的镜像。五个镜像全部成功后，才公开 GitHub Release，并自动上传含引用、digest、源码提交与架构的 `images.json`，把它纳入 `SHA256SUMS`。原始 Buildx 元数据保留在 `service-image-metadata` Actions artifact。公开 HTTP Helm 仓库与 Homebrew tap 保留独立发布流程，自动镜像 job 不依赖 Helm OCI 登录。
 
 ### 6.2 运行与查看结果
 
@@ -366,9 +369,9 @@ git tag -a "$RELEASE_TAG" origin/main -m "$RELEASE_TAG"
 git push origin "$RELEASE_TAG"
 ```
 
-工作流校验提交已进入 `main`、Java/Go 版本与 tag 一致、Go 模块主版本一致，执行打包和 CLI 测试并构建上述附件。四个双架构镜像推送完成后，附件和镜像清单先上传至草稿，随后创建指向同一提交的 `agentscope-service/service-controlplane/vVERSION` tag，最后公开 GitHub Release；带预发布后缀的版本自动标记为 prerelease。Release Notes 保持一句话，链接到中英文官方文档。
+工作流校验提交已进入 `main`、Java/Go 版本与 tag 一致、Go 模块主版本一致，执行打包和 CLI 测试并构建上述附件。五个双架构镜像推送完成后，附件和镜像清单先上传至草稿，随后创建指向同一提交的 `agentscope-service/service-controlplane/vVERSION` tag，最后公开 GitHub Release；带预发布后缀的版本自动标记为 prerelease。Release Notes 保持一句话，链接到中英文官方文档。
 
-仅 GitHub Release 发布 job 使用 `contents: write` 和仓库自带的 `GITHUB_TOKEN`；镜像 job 使用第六节的两个 ACR Secret。可选的 Repository variable `SERVICE_IMAGE_REPOSITORY` 控制安装包内引用的镜像命名空间，默认是 `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`。此工作流构建并推送四个镜像，不发布 Maven/npm/PyPI，也不更新独立的 HTTP Helm 仓库或 Homebrew tap；各渠道保留已有发布流程。SDK 工作流仍独立响应主 tag。
+仅 GitHub Release 发布 job 使用 `contents: write` 和仓库自带的 `GITHUB_TOKEN`；镜像 job 使用第六节的两个 ACR Secret。后续 **helm** job 使用第 8.2 节的 `HELM_REPOSITORY_TOKEN`。可选的 Repository variable `SERVICE_IMAGE_REPOSITORY` 控制安装包内引用的镜像命名空间，默认是 `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`。此工作流构建并推送五个镜像，并自动同步独立的 HTTP Helm 仓库；不发布 Maven/npm/PyPI，也不更新 Homebrew tap。其他渠道保留已有发布流程。SDK 工作流仍独立响应主 tag。
 
 对于已经包含此工作流的现有 tag，可手动重跑，无需新建 tag：
 
@@ -379,7 +382,7 @@ gh workflow run service-dist-release.yml --repo agentscope-ai/agentscope-java \
 
 已经公开的 Release 保持不变；同提交的 Go tag 和同校验和的草稿附件会复用，tag 或校验和冲突时停止，不覆盖。失败时优先重跑 **publish job**，复用该次 Actions 原始制品；重新打包可能生成不同字节，不能覆盖已有草稿附件。已发布的 `v2.1.0-BETA1` 与 Go tag 早于此工作流，保持原样，自动化用于之后包含该工作流的新版本。通过 `GITHUB_TOKEN` 创建的 Go tag 不会再次触发 push 工作流，避免递归发布。见 [GitHub 工作流触发说明](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)。
 
-公开 HTTP Helm 仓库和可选的 Homebrew tap 是独立发布渠道。
+公开 HTTP Helm 仓库仍位于独立仓库，但已接入 Release 发布后的自动同步。可选的 Homebrew tap 仍需手动更新。
 
 用户按 [Runtime Host 安装指南](https://java.agentscope.io/v2/zh/service/runtime-host)，通过 `go install` 安装同一版本的 CLI 和 Runtime Host。可选的个人公开 tap 为 [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap)。配方源码保留在 `release/homebrew/agentscope-cli.rb`。每次 CLI 发版后，更新四个平台的 URL、已验证的 SHA-256、配方版本和测试中的版本断言，再将配方发布到 tap。既有二进制附件保持不变。组织仓库的 CI 若要自动更新这个个人仓库，需要另行配置对 tap 拥有 Contents 写权限的凭据；默认 `GITHUB_TOKEN` 不包含这个跨仓库权限。
 
@@ -401,8 +404,17 @@ Go CLI 安装、公开 HTTP Helm 仓库与运行要求集中维护在相应安�
 ### 8.2 发布官网
 
 公开 HTTP Helm 仓库位于 [chickenlj/helm-charts](https://github.com/chickenlj/helm-charts)。
-先公开发布上游 `vVERSION` Release，并上传独立 Chart `.tgz`，然后运行独立仓库的工作流。
-该分发渠道不要求执行前面的 OCI Chart 推送：
+上游 `vVERSION` Release 公开发布并上传独立 Chart `.tgz` 后，安装包工作流自动触发
+Helm 仓库 `main` 分支的 `publish.yml`，等待 Pages 部署成功，再核对公开索引与下载包
+是否匹配原始 Release 的 SHA-256。该分发渠道不要求执行前面的 OCI Chart 推送。
+
+在上游仓库的 Actions secrets 中配置 `HELM_REPOSITORY_TOKEN`：创建 fine-grained PAT，
+Resource owner 选择 `chickenlj`，仅授权 `helm-charts` 仓库，Repository permissions 设置
+**Actions: Read and write**（Metadata 自动保留 Read）。上游默认 `GITHUB_TOKEN` 没有这个
+跨仓库触发权限。Helm 工作流使用自己的 `GITHUB_TOKEN` 更新索引并部署 Pages，
+跨仓库 token 不需要 Contents 写权限。
+
+需要手动恢复时，在上游 Release 已公开后执行：
 
 ```bash
 gh workflow run publish.yml --repo chickenlj/helm-charts --ref main -f version=2.1.0-BETA1
@@ -413,7 +425,8 @@ helm pull agentscope/agentscope-service --version 2.1.0-BETA1
 
 后续发版替换为实际版本。工作流从上游 Release 下载原包，核对 SHA256 与 Chart 元数据，
 保留旧版本索引，拒绝以不同内容覆盖已发布版本，并部署 GitHub Pages。
-不需要额外 registry 凭据或跨仓库写入 token。官网跳转配置虽已合并，但线上 `/helm/index.yaml` 仍返回 404；
+不需要 Helm registry 凭据。同步失败不会撤回已公开的 GitHub Release；修复凭据或下游失败后，
+仅重跑 **helm** job 即可，不覆盖既有版本。官网跳转配置虽已合并，但线上 `/helm/index.yaml` 仍返回 404；
 安装文档默认使用已验证的 Pages 地址，待官网入口通过实际 Helm 检查后再启用别名。
 
 官网源码位于 `docs/v2/{zh,en}/service/`。把对应版本文档按审核流程合入 `main`，检查 **Validate Mintlify Docs** 工作流，并确认 Mintlify 从 `main` 部署成功；文档校验通过本身不等于官网已上线。
@@ -433,7 +446,6 @@ helm pull agentscope/agentscope-service --version 2.1.0-BETA1
 docker pull "$IMAGE_REPOSITORY/as-controlplane:$SERVICE_VERSION"
 docker pull "$IMAGE_REPOSITORY/as-gateway:$SERVICE_VERSION"
 docker pull "$IMAGE_REPOSITORY/as-dataplane:$SERVICE_VERSION"
-docker pull "$IMAGE_REPOSITORY/as-scheduler:$SERVICE_VERSION"
 helm repo add agentscope https://chickenlj.github.io/helm-charts
 helm repo update agentscope
 helm pull agentscope/agentscope-service \
@@ -466,3 +478,7 @@ helm pull agentscope/agentscope-service \
 | 网站手动运行成功但没更新 | 当前手动执行不部署，检查对应文档是否合入 `main` |
 
 如果某个组件已经公开、另一个组件发布失败，记录已成功的 digest 和包版本；相同源码可以补齐缺失步骤。需要修改源码时创建新的 RC 或补丁版本，不把部分成功的旧版本重新指向另一份代码。
+
+当前源码的部署包还包含独立 schema job、业务账号授权脚本及迁移 Secret 模板；
+发布校验包含五个 Java 执行模块。Compose 先初始化并授权再启动服务，Helm 按包内
+README 两阶段操作；普通副本只校验数据库。新增组件镜像随同一候选版本构建。

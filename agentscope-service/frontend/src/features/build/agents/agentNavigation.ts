@@ -63,13 +63,13 @@ export function resolveAgentDetailTab(
     : "overview";
 }
 
-export function agentServicePath(agentId: string): string {
+export function sessionPortalPath(agentId: string): string {
   return `/agent-center/agents/${encodeURIComponent(agentId)}`;
 }
 export function agentDetailPath(
   agent: Pick<AgentDefinition, "id" | "runtimeKind">,
 ): string {
-  return agentServicePath(agent.id);
+  return sessionPortalPath(agent.id);
 }
 
 export function legacyAgentManagePath(
@@ -78,7 +78,7 @@ export function legacyAgentManagePath(
   search = "",
 ): string {
   const params = new URLSearchParams(search);
-  const base = agentServicePath(agentId);
+  const base = sessionPortalPath(agentId);
   params.delete("tab");
   let path = base;
   if (section === "sessions") {

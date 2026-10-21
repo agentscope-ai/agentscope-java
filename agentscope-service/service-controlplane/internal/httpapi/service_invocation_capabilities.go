@@ -19,7 +19,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"net/url"
 
 	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
@@ -40,7 +39,7 @@ func serviceBindingCapabilities(ep *model.Endpoint, kind model.DataPlaneKind, re
 	}
 	switch kind {
 	case model.DataPlaneManaged:
-		caps["actions"], caps["cancel"], caps["inputs"], caps["resume"] = true, true, true, true
+		caps["actions"], caps["cancel"], caps["inputs"] = true, true, true
 	case model.DataPlaneHostedRuntime:
 		caps["cancel"] = true
 	case model.DataPlaneExternalApplication:
@@ -172,16 +171,6 @@ func (s *Server) getServiceInvocationCapabilities(c *gin.Context) {
 			if inv.RunID != nil {
 				run, e := s.store.Orchestration().GetRun(c, *inv.RunID)
 				resumable = e == nil && run.State == model.RunPaused
-			} else if s.product != nil {
-				if turn, e := s.nativeServiceTurn(c, ep, inv); e == nil {
-					raw, e := s.product.ManagedServiceRequest(c, turn.Owner, inv.SessionID, "GET", "/turns/"+url.PathEscape(turn.ID), "", nil)
-					var state struct {
-						Status string `json:"status"`
-					}
-					if e == nil && json.Unmarshal(raw, &state) == nil {
-						resumable = state.Status == "interrupted"
-					}
-				}
 			}
 			if resumable {
 				available = append(available, "resume")

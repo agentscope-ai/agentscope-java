@@ -38,6 +38,14 @@ func cloneChat(in *controlmodel.Chat) *controlmodel.Chat {
 	return &out
 }
 
+func (r *chatRepo) view(in *controlmodel.Chat) *controlmodel.Chat {
+	out := cloneChat(in)
+	if session := r.s.sessions[in.SessionID]; session != nil {
+		out.RuntimeKind = controlmodel.DataPlaneKind(session.Framework)
+	}
+	return out
+}
+
 func (r *chatRepo) Create(_ context.Context, in *controlmodel.Chat) (*controlmodel.Chat, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
@@ -55,7 +63,7 @@ func (r *chatRepo) Create(_ context.Context, in *controlmodel.Chat) (*controlmod
 	value.Version = 1
 	value.CreatedAt, value.UpdatedAt = now, now
 	r.s.chats[value.ID] = value
-	return cloneChat(value), nil
+	return r.view(value), nil
 }
 
 func (r *chatRepo) Get(_ context.Context, id uuid.UUID) (*controlmodel.Chat, error) {
@@ -65,7 +73,7 @@ func (r *chatRepo) Get(_ context.Context, id uuid.UUID) (*controlmodel.Chat, err
 	if !ok {
 		return nil, store.ErrNotFound
 	}
-	return cloneChat(value), nil
+	return r.view(value), nil
 }
 
 func (r *chatRepo) List(_ context.Context, filter store.ChatFilter) ([]*controlmodel.Chat, error) {
@@ -86,7 +94,7 @@ func (r *chatRepo) List(_ context.Context, filter store.ChatFilter) ([]*controlm
 			value.Status != status {
 			continue
 		}
-		out = append(out, cloneChat(value))
+		out = append(out, r.view(value))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Pinned != out[j].Pinned {
@@ -121,7 +129,7 @@ func (r *chatRepo) Update(_ context.Context, in *controlmodel.Chat, expectedVers
 	value.Version = current.Version + 1
 	value.UpdatedAt = time.Now().UTC()
 	r.s.chats[value.ID] = value
-	return cloneChat(value), nil
+	return r.view(value), nil
 }
 
 func (r *chatRepo) Touch(_ context.Context, id uuid.UUID) error {

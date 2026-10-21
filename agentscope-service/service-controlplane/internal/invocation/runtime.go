@@ -17,11 +17,15 @@
 package invocation
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"time"
 
 	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimeprotocol"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/google/uuid"
 )
@@ -34,6 +38,12 @@ func WithContract(ctx context.Context, c *Contract) context.Context {
 func ContextContract(ctx context.Context) *Contract {
 	c, _ := ctx.Value(contractContextKey{}).(*Contract)
 	return c
+}
+func ContextPortalCommandID(ctx context.Context) string {
+	if c := ContextContract(ctx); c != nil {
+		return c.PortalCommandID
+	}
+	return ""
 }
 func ContextDefinition(ctx context.Context, id string) (json.RawMessage, bool) {
 	c := ContextContract(ctx)
@@ -54,12 +64,132 @@ func ContextVersion(ctx context.Context, id string) int {
 	_ = json.Unmarshal(raw, &d)
 	return d.Version
 }
+
+// ReadInvocationContract resolves a Portal-owned immutable snapshot through
+// the shared runtime store. Neither a control-plane HTTP call nor live resource
+// definitions are needed for replica recovery.
+func ReadInvocationContract(ctx context.Context, st store.Store, inv *model.EndpointInvocation) (*Contract, error) {
+	c, err := ReadContract(inv.Contract)
+	if err != nil || c.PortalCommandID == "" {
+		return c, err
+	}
+	turn, err := st.RuntimePortal().Turn(ctx, c.PortalCommandID)
+	if err != nil {
+		return nil, err
+	}
+	if turn.NativeInvocationID != inv.ID.String() || turn.Command.Context.SessionID != c.PublicSessionID.String() {
+		return nil, store.ErrForbidden
+	}
+	session, err := st.RuntimePortal().Session(ctx, turn.Command.Context.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	var configuration struct {
+		Contract json.RawMessage `json:"contract"`
+	}
+	if err = json.Unmarshal(session.Bootstrap.Configuration, &configuration); err != nil {
+		return nil, err
+	}
+	frozen, err := ReadContract(configuration.Contract)
+	if err != nil {
+		return nil, err
+	}
+	if frozen.PublicSessionID != c.PublicSessionID || frozen.Endpoint.ID != inv.EndpointID || frozen.Endpoint.Tenant != turn.Command.Context.Tenant || frozen.Endpoint.Namespace != turn.Command.Context.Namespace {
+		return nil, store.ErrForbidden
+	}
+	frozen.PortalCommandID = c.PortalCommandID
+	return frozen, nil
+}
+
+// CheckPortalExecution gates new work, including Host lease renewal. Reporting
+// and cancellation are deliberately allowed after expiry to drain final facts.
+func CheckPortalExecution(ctx context.Context, st store.Store, c *Contract, tenant, namespace string) error {
+	return checkPortalRuntime(ctx, st, c, tenant, namespace, false, true)
+}
+
+// Waiting maintenance preserves a suspended physical process without renewing
+// its root execution grant. Approval delivery still requires a live grant.
+func CheckPortalWaiting(ctx context.Context, st store.Store, c *Contract, tenant, namespace string, delivery bool) error {
+	return checkPortalRuntime(ctx, st, c, tenant, namespace, true, delivery)
+}
+
+func checkPortalRuntime(ctx context.Context, st store.Store, c *Contract, tenant, namespace string, waiting, grant bool) error {
+	if c == nil || c.PortalCommandID == "" {
+		return nil
+	}
+	turn, err := st.RuntimePortal().Turn(ctx, c.PortalCommandID)
+	if err != nil {
+		return err
+	}
+	if turn.Command.Context.SessionID != c.PublicSessionID.String() || turn.Command.Context.Tenant != tenant || turn.Command.Context.Namespace != namespace || turn.Generation < 1 || turn.Fence == "" || (grant && turn.GrantUntil <= time.Now().UnixMilli()) || turn.StopRequested || (turn.Status != "queued" && turn.Status != "running" && !(waiting && turn.Status == "requires_action")) {
+		return store.ErrForbidden
+	}
+	session, err := st.RuntimePortal().Session(ctx, turn.Command.Context.SessionID)
+	if err != nil {
+		return err
+	}
+	if session.Lifecycle != "active" {
+		return store.ErrForbidden
+	}
+	return nil
+}
+
+func CheckTaskPortalExecution(ctx context.Context, st store.Store, task *model.AgentTask) error {
+	c, err := ContractForIssue(ctx, st, task.IssueID)
+	if err != nil {
+		return err
+	}
+	if c != nil && c.PortalCommandID != "" && task.Status == model.AgentTaskWaiting {
+		return store.ErrForbidden
+	}
+	// A delivered approval resumes the physical Task before its observation
+	// reaches Portal. Already-running Tasks may use that fresh grant during this
+	// interval; waiting Tasks and new dispatch still cannot execute.
+	if task.Status == model.AgentTaskRunning {
+		return CheckPortalWaiting(ctx, st, c, task.Tenant, task.Namespace, true)
+	}
+	return CheckPortalExecution(ctx, st, c, task.Tenant, task.Namespace)
+}
+
+func InvocationInput(ctx context.Context, st store.Store, inv *model.EndpointInvocation) (json.RawMessage, error) {
+	c, err := ReadContract(inv.Contract)
+	if err != nil {
+		return nil, err
+	}
+	if c.PortalCommandID == "" {
+		return inv.Input, nil
+	}
+	turn, err := st.RuntimePortal().Turn(ctx, c.PortalCommandID)
+	if err != nil {
+		return nil, err
+	}
+	if turn.NativeInvocationID != inv.ID.String() || turn.Command.Context.SessionID != c.PublicSessionID.String() {
+		return nil, store.ErrForbidden
+	}
+	return json.Marshal(turn.Command.Input)
+}
 func ContractForIssue(ctx context.Context, st store.Store, id uuid.UUID) (*Contract, error) {
 	if c := ContextContract(ctx); c != nil {
 		return c, nil
 	}
+	inv, err := InvocationForIssue(ctx, st, id)
+	if err != nil || inv == nil {
+		return nil, err
+	}
+	return ReadInvocationContract(ctx, st, inv)
+}
+
+// InvocationForIssue resolves the original service caller through delegated Issues.
+func InvocationForIssue(ctx context.Context, st store.Store, id uuid.UUID) (*model.EndpointInvocation, error) {
 	seen := map[uuid.UUID]bool{}
-	for id != uuid.Nil && !seen[id] {
+	const maxAncestors = 256
+	for id != uuid.Nil {
+		if seen[id] {
+			return nil, fmt.Errorf("%w: execution issue ancestry contains a cycle", store.ErrForbidden)
+		}
+		if len(seen) >= maxAncestors {
+			return nil, fmt.Errorf("%w: execution issue ancestry exceeds %d ancestors", store.ErrForbidden, maxAncestors)
+		}
 		seen[id] = true
 		issue, err := st.Collaboration().GetIssue(ctx, id)
 		if errors.Is(err, store.ErrNotFound) {
@@ -68,7 +198,7 @@ func ContractForIssue(ctx context.Context, st store.Store, id uuid.UUID) (*Contr
 		if err != nil {
 			return nil, err
 		}
-		if issue.SourceType == "endpoint" || issue.SourceType == "session_turn" {
+		if issue.SourceType == "endpoint" || issue.SourceType == "session_turn" || issue.SourceType == "endpoint_conversation" {
 			invID, err := uuid.Parse(issue.SourceRef)
 			if err != nil {
 				return nil, err
@@ -77,7 +207,7 @@ func ContractForIssue(ctx context.Context, st store.Store, id uuid.UUID) (*Contr
 			if err != nil {
 				return nil, err
 			}
-			return ReadContract(inv.Contract)
+			return inv, nil
 		}
 		if issue.ParentIssueID == nil {
 			break
@@ -108,4 +238,132 @@ func RuntimePolicy(ctx context.Context, st store.Store, task *model.AgentTask) (
 		return nil, store.ErrNotFound
 	}
 	return st.Orchestration().GetRuntimePolicy(ctx, task.Tenant, task.Namespace, task.AgentRef)
+}
+
+// PortalApprovalOutput proves the immutable human command before an ordinary
+// graph gate advances. Transport proof remains internal to the approval row.
+func PortalApprovalOutput(ctx context.Context, st store.Store, c *Contract, approval *model.Approval) (json.RawMessage, error) {
+	if c == nil || c.PortalCommandID == "" {
+		return approval.Decision, nil
+	}
+	var decision map[string]any
+	if err := json.Unmarshal(approval.Decision, &decision); err != nil {
+		return nil, err
+	}
+	activation, _ := decision["portal_command_id"].(string)
+	interaction, err := st.RuntimePortal().Interaction(ctx, c.PublicSessionID.String(), activation)
+	if err != nil {
+		return nil, err
+	}
+	command := interaction.Command
+	if proof, err := runtimeprotocol.ParseAgentSignalProof(command.Context.Actor); err != nil || proof != nil {
+		return nil, store.ErrForbidden
+	}
+	if command.Kind != "approval" || command.Context.SessionID != c.PublicSessionID.String() || command.Context.Tenant != approval.Tenant || command.Context.Namespace != approval.Namespace || command.Context.TurnID == nil || *command.Context.TurnID != c.PortalCommandID || command.Payload["target_command_id"] != c.PortalCommandID || decision["portal_fence"] != interaction.ActivationFence {
+		return nil, store.ErrForbidden
+	}
+	var generation int64
+	switch value := decision["portal_generation"].(type) {
+	case float64:
+		generation = int64(value)
+	case json.Number:
+		generation, _ = value.Int64()
+	}
+	if generation < 1 || generation != interaction.ActivationGeneration || approval.DecidedBy == nil || approval.DecidedBy.Type != model.ActorHuman || approval.DecidedBy.Ref != approval.ApproverRef || command.Context.Actor["user"] != approval.DecidedBy.Ref {
+		return nil, store.ErrForbidden
+	}
+	answers, _ := command.Payload["answers"].([]any)
+	for _, raw := range answers {
+		answer, _ := raw.(map[string]any)
+		if answer["kind"] != "confirmation" || answer["request_id"] != approval.ID.String() {
+			continue
+		}
+		allow, ok := answer["allow"].(bool)
+		if !ok || decision["allow"] != allow || decision["reason"] != answer["reason"] ||
+			allow && approval.Status != model.ApprovalApproved || !allow && approval.Status != model.ApprovalRejected {
+			return nil, store.ErrForbidden
+		}
+		return json.Marshal(map[string]any{"allow": allow, "reason": answer["reason"]})
+	}
+	return nil, store.ErrForbidden
+}
+
+// PortalSignalOutput distinguishes a targeted, authorized reply from legacy
+// broadcast signals. Only the business value enters the workflow context.
+func PortalSignalOutput(ctx context.Context, st store.Store, c *Contract, node *model.RunNode, event *model.RunEvent) (json.RawMessage, error) {
+	if c == nil || c.PortalCommandID == "" {
+		return event.Payload, nil
+	}
+	if event.NodeID == nil || *event.NodeID != node.ID || event.RunID != node.RunID {
+		return nil, store.ErrForbidden
+	}
+	var payload struct {
+		CommandID  string          `json:"portal_command_id"`
+		Generation int64           `json:"portal_generation"`
+		Fence      string          `json:"portal_fence"`
+		Value      json.RawMessage `json:"value"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return nil, err
+	}
+	interaction, err := st.RuntimePortal().Interaction(ctx, c.PublicSessionID.String(), payload.CommandID)
+	if err != nil {
+		return nil, err
+	}
+	command := interaction.Command
+	if command.Kind != "signal" || command.Context.TurnID == nil || *command.Context.TurnID != c.PortalCommandID || command.Context.Tenant != node.Tenant || command.Context.Namespace != node.Namespace || command.Payload["target_command_id"] != c.PortalCommandID || payload.Generation < 1 || payload.Generation != interaction.ActivationGeneration || payload.Fence != interaction.ActivationFence {
+		return nil, store.ErrForbidden
+	}
+	actor, err := PortalSignalActor(command.Context.Actor)
+	if err != nil {
+		return nil, err
+	}
+	if event.Actor != actor {
+		return nil, store.ErrForbidden
+	}
+	answers, _ := command.Payload["answers"].([]any)
+	for _, raw := range answers {
+		answer, _ := raw.(map[string]any)
+		if answer["kind"] == "signal" && answer["request_id"] == node.ID.String() {
+			value, err := json.Marshal(answer["value"])
+			if err != nil {
+				return nil, err
+			}
+			var a, b any
+			left, right := json.NewDecoder(bytes.NewReader(value)), json.NewDecoder(bytes.NewReader(payload.Value))
+			left.UseNumber()
+			right.UseNumber()
+			if left.Decode(&a) != nil || right.Decode(&b) != nil {
+				return nil, store.ErrForbidden
+			}
+			da, _ := runtimeprotocol.Digest(a)
+			db, _ := runtimeprotocol.Digest(b)
+			if da != db {
+				return nil, store.ErrForbidden
+			}
+			return payload.Value, nil
+		}
+	}
+	return nil, store.ErrForbidden
+}
+
+// An originating user's permission remains in the command, but task signals are attributed to the Agent.
+func PortalSignalActor(actor map[string]any) (model.Actor, error) {
+	proof, err := runtimeprotocol.ParseAgentSignalProof(actor)
+	if err != nil {
+		return model.Actor{}, store.ErrForbidden
+	}
+	if proof != nil {
+		if _, err = uuid.Parse(proof.TaskID); err != nil {
+			return model.Actor{}, store.ErrForbidden
+		}
+		if _, err = uuid.Parse(proof.AttemptID); err != nil {
+			return model.Actor{}, store.ErrForbidden
+		}
+		return model.Actor{Type: model.ActorAgent, Ref: proof.AgentRef}, nil
+	}
+	if user, ok := actor["user"].(string); ok && user != "" {
+		return model.Actor{Type: model.ActorHuman, Ref: user}, nil
+	}
+	return model.Actor{Type: model.ActorSystem, Ref: "portal-application"}, nil
 }

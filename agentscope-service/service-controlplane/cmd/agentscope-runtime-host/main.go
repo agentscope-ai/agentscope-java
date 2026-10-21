@@ -84,7 +84,12 @@ func main() {
 	flag.DurationVar(&heartbeatInterval, "heartbeat-interval", 15*time.Second, "host heartbeat interval")
 	flag.DurationVar(&leaseTTL, "lease-ttl", 60*time.Second, "execution lease TTL")
 	flag.Parse()
-	var err error
+	stateLock, err := runtimehost.LockStateRoot(stateRoot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	defer stateLock.Close()
 	hostKey, err = runtimehost.ResolveHostKey(hostKey, stateRoot)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -110,6 +115,11 @@ func main() {
 	if agentScopeBinary == "" {
 		slog.Warn("as CLI was not found; shell-only providers cannot use task collaboration fallback")
 	}
+	client := &runtimehost.Client{BaseURL: controlPlane, InternalToken: internalToken}
+	if err := client.ConfigureHostCredentials(stateRoot, hostKey); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	engine := &runtimehost.Engine{
 		Config: runtimehost.Config{
 			Registration: runtimehost.Registration{
@@ -121,7 +131,7 @@ func main() {
 			ControlPlane: controlPlane, CollaborationCLI: agentScopeBinary,
 			CollaborationMCP: strings.TrimRight(controlPlane, "/") + "/mcp/collaboration",
 		},
-		Client:    &runtimehost.Client{BaseURL: controlPlane, InternalToken: internalToken},
+		Client:    client,
 		Providers: providers,
 	}
 	if readyFile != "" {

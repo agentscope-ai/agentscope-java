@@ -25,11 +25,16 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.ToolExecutionDetails;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.session.SessionRecorder;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -43,6 +48,31 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 class ActionObservationsTest {
+    @Test
+    void externalRequestCommitsBeforeItsSuspendedActionAndIsNotRecordedTwice() {
+        var use = ToolUseBlock.builder().id("external").name("execute").input(Map.of()).build();
+        var state =
+                AgentState.builder()
+                        .context(List.of(AssistantMessage.builder().content(use).build()))
+                        .build();
+        var context = RuntimeContext.builder().userId("u").sessionId("s").agentState(state).build();
+        var log = new InMemorySessionLogStore().open(new SessionKey("u", "a", "s"), context);
+        var recorder = new SessionRecorder(log, "turn");
+        context.put(SessionRecorder.CONTEXT_KEY, recorder);
+        try {
+            var param = ToolCallParam.builder().toolUseBlock(use).runtimeContext(context).build();
+            ActionObservations.observe(param, () -> Mono.just(ToolResultBlock.suspended(use)))
+                    .block(Duration.ofSeconds(5));
+            recorder.checkpointNow(state, "after_tool");
+            var types = log.readAfter(0, 100).stream().map(e -> e.type()).toList();
+            assertEquals(1, types.stream().filter("tool/requested"::equals).count());
+            assertTrue(types.indexOf("tool/requested") < types.indexOf("action/start"));
+            assertTrue(types.indexOf("action/start") < types.indexOf("action/end"));
+        } finally {
+            recorder.close();
+        }
+    }
+
     @Test
     void toolkitDoesNotRetryFailedSettlement() {
         AtomicInteger calls = new AtomicInteger();

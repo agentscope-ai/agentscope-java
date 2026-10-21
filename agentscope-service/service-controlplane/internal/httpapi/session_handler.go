@@ -797,7 +797,7 @@ func (s *Server) postSessionUserMessage(c *gin.Context) {
 	// and ASDP transport. Only pre-catalog BYO sessions use the legacy HTTP prober.
 	if sess.BindingID != uuid.Nil {
 		if err := s.sendAgentConversationTurn(
-			c.Request.Context(), sess, content, "session_console", sess.ID.String()); err != nil {
+			c, sess, content, "session_console", sess.ID.String()); err != nil {
 			writeConversationTurnError(c, err)
 			return
 		}

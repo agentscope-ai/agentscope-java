@@ -50,7 +50,7 @@ export class AgentTaskCoordination {
         const registry = agent.ctx?.tools ?? this.ctx.get?.('tools') as { register?: (definition: Record<string,unknown>) => () => void }|undefined
         if (!registry?.register) return undefined
         const issueId = String((envelope.issue as Record<string,unknown>|undefined)?.id ?? '')
-        return registry.register(defineTool({ name: 'collaboration', description: 'Read/write the authoritative Issue and Run, coordinate Team nodes, and report this AgentTask result.', parameters: { type: 'object', additionalProperties: true, properties: { action: { type: 'string' }, content: { type: 'string' }, parent_id: { type: 'string' }, mentions: { type: 'array', items: { type: 'object' } }, processed_input_ids: { type: 'array', items: { type: 'string' } }, deferred_input_ids: { type: 'array', items: { type: 'string' } }, result: { type: 'object' }, output: {}, node: { type: 'object' }, signal_name: { type: 'string' }, idempotency_key: { type: 'string' }, payload: {}, code: { type: 'string' }, message: { type: 'string' }, child: { type: 'object' } }, required: ['action'] }, execute: async (raw) => {
+        return registry.register(defineTool({ name: 'collaboration', description: 'Read/write the authoritative Issue and Run, coordinate Team nodes, and report this AgentTask result.', parameters: { type: 'object', additionalProperties: true, properties: { action: { type: 'string' }, content: { type: 'string' }, parent_id: { type: 'string' }, mentions: { type: 'array', items: { type: 'object' } }, processed_input_ids: { type: 'array', items: { type: 'string' } }, deferred_input_ids: { type: 'array', items: { type: 'string' } }, result: { type: 'object' }, output: {}, node: { type: 'object' }, signal_name: { type: 'string' }, request_id: { type: 'string' }, idempotency_key: { type: 'string' }, payload: {}, code: { type: 'string' }, message: { type: 'string' }, child: { type: 'object' } }, required: ['action'] }, execute: async (raw) => {
             const args = (raw ?? {}) as Record<string,unknown>; const action = String(args.action ?? '').toLowerCase(); const mentions = (args.mentions ?? []) as MentionTarget[]
             switch (action) {
                 case 'issue.get': return this.client.issue(issueId, token)
@@ -66,7 +66,7 @@ export class AgentTaskCoordination {
 				case 'run.node.complete': return this.client.completeRunNode(taskId, token, args.output ?? args.result ?? {})
 				case 'run.node.fail': return this.client.failRunNode(taskId, token, String(args.code ?? 'coordinator_failed'), String(args.message ?? ''))
 				case 'run.replan': return this.client.replanRun(taskId, token, args.node ?? {})
-				case 'run.signal': return this.client.signalRun(taskId, token, String(args.signal_name ?? ''), String(args.idempotency_key ?? crypto.randomUUID()), args.payload ?? {})
+				case 'run.signal': return this.client.signalRun(taskId, token, String(args.signal_name ?? ''), String(args.idempotency_key ?? crypto.randomUUID()), args.payload ?? {}, typeof args.request_id === 'string' ? args.request_id : undefined)
 				case 'run.artifacts': return this.client.runArtifacts(taskId, token)
                 default: return { error: `unsupported action ${action}` }
             }

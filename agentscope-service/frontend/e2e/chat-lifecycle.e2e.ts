@@ -11,7 +11,8 @@ for (const method of ['context menu', 'keyboard']) {
       const req = route.request(), url = new URL(req.url()), path = url.pathname;
       if (!path.startsWith('/api/')) return route.continue();
       const json = (data: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
-      if (path === '/api/auth/me') return json({ username: 'alice', roles: ['admin'], isAdmin: true });
+      if (path === '/api/auth/dev-session') return route.fulfill({ status: 404 });
+      if (path === '/api/auth/me') return json({ userId: 'alice', username: 'alice', roles: ['admin'], isAdmin: true });
       if (path === '/api/v1/me/scope') return json({ tenant: 'default', namespace: 'default', mode: 'single', selectorVisible: false });
       if (path.endsWith('/events/stream')) return route.fulfill({ contentType: 'text/event-stream', body: '' });
       if (path.endsWith('/events')) return json({ events: [] });

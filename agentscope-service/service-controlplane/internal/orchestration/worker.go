@@ -21,15 +21,20 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
 // Worker is the timer/deadline safety net for the outbox-driven engine. CAS
 // versions and idempotent node materialization make it safe on every replica.
 type Worker struct {
-	Store    store.Store
-	Interval time.Duration
-	Batch    int
+	Store          store.Store
+	Interval       time.Duration
+	Batch          int
+	RequirePortal  bool
+	afterCreatedAt *time.Time
+	afterID        uuid.UUID
 }
 
 func (w *Worker) Start(ctx context.Context) error {
@@ -57,20 +62,28 @@ func (w *Worker) ReconcileOnce(ctx context.Context) {
 	if batch <= 0 {
 		batch = 100
 	}
-	engine := &Engine{Store: w.Store}
-	for offset := 0; ; offset += batch {
+	engine := &Engine{Store: w.Store, RequirePortal: w.RequirePortal}
+	if batch > 1024 {
+		batch = 1024
+	}
+	runs, err := w.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{
+		ActiveOnly: true, IncludeTerminalCleanup: true, PortalOnly: w.RequirePortal, OldestFirst: true, Limit: batch,
+		AfterCreatedAt: w.afterCreatedAt, AfterID: w.afterID,
+	})
+	if err != nil {
+		return
+	}
+	for _, run := range runs {
 		if ctx.Err() != nil {
 			return
 		}
-		runs, err := w.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{ActiveOnly: true, OldestFirst: true, Limit: batch, Offset: offset})
-		if err != nil {
-			return
-		}
-		for _, run := range runs {
-			_ = engine.ReconcileRun(ctx, run.ID)
-		}
-		if len(runs) < batch {
-			return
-		}
+		stepCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		_ = engine.ReconcileRun(stepCtx, run.ID)
+		cancel()
+		createdAt := run.CreatedAt
+		w.afterCreatedAt, w.afterID = &createdAt, run.ID
+	}
+	if len(runs) < batch {
+		w.afterCreatedAt, w.afterID = nil, uuid.Nil
 	}
 }

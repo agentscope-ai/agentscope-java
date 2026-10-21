@@ -26,6 +26,9 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
     private String apiKey;
     private String apiBaseUrl = "https://api.e2b.app";
     private String domain = "e2b.app";
+    private String envdBaseUrl;
+    private Boolean recreateOnConnectFailure;
+    private int maxCapturedBytes;
 
     /** E2B template id (or snapshot id when creating from a snapshot). */
     private String templateId = "base";
@@ -101,6 +104,38 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
 
     public void setApiBaseUrl(String apiBaseUrl) {
         this.apiBaseUrl = apiBaseUrl;
+    }
+
+    /** Optional envd proxy URL. Absent values use the provider's Sandbox DNS address. */
+    public String getEnvdBaseUrl() {
+        return envdBaseUrl;
+    }
+
+    public void setEnvdBaseUrl(String value) {
+        envdBaseUrl = value;
+    }
+
+    /** Default preserves standalone recovery; external coordinators disable implicit creation. */
+    public boolean isRecreateOnConnectFailure() {
+        return recreateOnConnectFailure == null || recreateOnConnectFailure;
+    }
+
+    Boolean recreateOnConnectFailureOverride() {
+        return recreateOnConnectFailure;
+    }
+
+    public void setRecreateOnConnectFailure(boolean value) {
+        recreateOnConnectFailure = value;
+    }
+
+    /** Zero preserves the existing capture behavior; coordinators can bound stream memory. */
+    public int getMaxCapturedBytes() {
+        return maxCapturedBytes;
+    }
+
+    public void setMaxCapturedBytes(int value) {
+        if (value < 0) throw new IllegalArgumentException("Capture limit cannot be negative");
+        maxCapturedBytes = value;
     }
 
     public String getDomain() {

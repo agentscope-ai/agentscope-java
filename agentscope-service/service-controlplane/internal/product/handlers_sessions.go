@@ -84,14 +84,11 @@ type sessionRow struct {
 	ResourcesJSON      *string
 	Status             string
 	StopReasonJSON     *string
-	RuntimeAgentTaskID *string
-	RuntimeAttemptID   *string
-	RuntimeDispatchGen *int64
-	RuntimeTurnID      *string
-	Version            int
-	ArchivedAt         *int64
-	CreatedAt          int64
-	UpdatedAt          int64
+
+	Version    int
+	ArchivedAt *int64
+	CreatedAt  int64
+	UpdatedAt  int64
 }
 
 func (r sessionRow) toJSON() gin.H {
@@ -136,16 +133,14 @@ func nullStrPtr(p *string) any {
 
 const sessionSelect = `SELECT session_id, owner_id, agent_id, agent_owner_id, agent_version, agent_ref_type,
 	agent_overrides_json, environment_id, external_key, memory_store_ids_json, vault_ids_json,
-	resources_json, status, stop_reason_json, runtime_agent_task_id, runtime_attempt_id,
-	runtime_dispatch_generation, runtime_turn_id, version, archived_at, created_at, updated_at FROM sessions`
+	resources_json, status, stop_reason_json, version, archived_at, created_at, updated_at FROM sessions`
 
 func (s *Server) scanSession(sc interface{ Scan(dest ...any) error }) (sessionRow, error) {
 	var r sessionRow
 	err := sc.Scan(
 		&r.SessionID, &r.OwnerID, &r.AgentID, &r.AgentOwnerID, &r.AgentVersion, &r.AgentRefType,
 		&r.AgentOverridesJSON, &r.EnvironmentID, &r.ExternalKey, &r.MemoryStoreIDsJSON, &r.VaultIDsJSON,
-		&r.ResourcesJSON, &r.Status, &r.StopReasonJSON, &r.RuntimeAgentTaskID, &r.RuntimeAttemptID,
-		&r.RuntimeDispatchGen, &r.RuntimeTurnID, &r.Version, &r.ArchivedAt, &r.CreatedAt, &r.UpdatedAt,
+		&r.ResourcesJSON, &r.Status, &r.StopReasonJSON, &r.Version, &r.ArchivedAt, &r.CreatedAt, &r.UpdatedAt,
 	)
 	return r, err
 }
@@ -231,7 +226,12 @@ func (s *Server) createSession(c *gin.Context) {
 	sess, err := s.insertSession(c.Request.Context(), owner, agentID, owner, ver, refType,
 		envID, req.ExternalKey, memIDs, vaultIDs, req.AgentOverrides, req.Resources)
 	if err != nil {
-		writeTextErr(c, http.StatusInternalServerError, err.Error())
+		status := http.StatusInternalServerError
+		var rejected *ManagedServiceError
+		if errors.As(err, &rejected) {
+			status = rejected.StatusCode
+		}
+		writeTextErr(c, status, err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, sess.toJSON())
@@ -239,8 +239,27 @@ func (s *Server) createSession(c *gin.Context) {
 
 func (s *Server) insertSession(ctx context.Context, owner, agentID, agentOwner string, ver int, refType,
 	envID, externalKey string, memIDs, vaultIDs []string, overrides, resources any) (sessionRow, error) {
-	if _, err := s.validateEnvironmentBinding(ctx, owner, envID); err != nil {
+	environment, err := s.validateEnvironmentBinding(ctx, owner, envID)
+	if err != nil {
 		return sessionRow{}, err
+	}
+	var config map[string]any
+	if environment.ConfigJSON != nil {
+		_ = json.Unmarshal([]byte(*environment.ConfigJSON), &config)
+	}
+	sandboxID, _ := config["sandboxId"].(string)
+	if entries, ok := resources.([]any); ok {
+		for _, entry := range entries {
+			if resource, ok := entry.(map[string]any); ok && resource["type"] == "sandbox_binding" {
+				if environment.Type != "self_hosted" {
+					return sessionRow{}, &ManagedServiceError{StatusCode: http.StatusBadRequest, Message: "sandbox_id requires self_hosted Environment"}
+				}
+				sandboxID, _ = resource["sandboxId"].(string)
+			}
+		}
+	}
+	if environment.Type == "self_hosted" && !sandboxIdentity.MatchString(sandboxID) {
+		return sessionRow{}, &ManagedServiceError{StatusCode: http.StatusBadRequest, Message: "self_hosted requires an existing sandbox_id"}
 	}
 	if err := s.validateSessionResources(ctx, owner, memIDs, vaultIDs); err != nil {
 		return sessionRow{}, err
@@ -261,7 +280,7 @@ func (s *Server) insertSession(ctx context.Context, owner, agentID, agentOwner s
 	if overrides != nil {
 		overridesJSON = mustJSON(overrides)
 	}
-	_, err := s.db.Pool.Exec(ctx,
+	_, err = s.db.Pool.Exec(ctx,
 		`INSERT INTO sessions (session_id, owner_id, agent_id, agent_owner_id, agent_version, agent_ref_type,
 		 agent_overrides_json, environment_id, external_key, memory_store_ids_json, vault_ids_json,
 		 resources_json, status, version, created_at, updated_at)

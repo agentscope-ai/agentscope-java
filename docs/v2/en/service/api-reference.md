@@ -3,7 +3,7 @@ title: "API, SDKs, and the Agent catalog"
 zh_link: /v2/zh/service/api-reference
 ---
 
-Applications use the Session API for Agents, Teams, and Workflows. Management APIs prepare resources, permissions, and published Workflow revisions. Callers select a target when creating a Session; there is no separate service publication step. Follow the [API guide](/v2/en/service/service-api) for the complete flow and use this page as a path and parameter reference.
+Applications use published Endpoint / Invocation APIs for business integration, or the native Managed Session API for direct Session and Turn control. Management APIs prepare resources and definitions. Follow the [API guide](/v2/en/service/service-api) for public business calls and the [native Managed contract](/v2/en/service/claude-session-api) for the MQ / Redis execution path.
 
 <span id="authentication-and-scope"></span>
 
@@ -15,45 +15,51 @@ Complete [local deployment](/v2/en/service/quickstart) and set `BASE_URL` and th
 
 An Application records the caller, members, and quotas. Credential creation requires explicit `targets` and `scopes` and returns the complete `apiKey` once. Listing credentials never returns plaintext keys. A credential does not automatically gain management permissions or a designated human's approval identity.
 
-| API | Parameters and behavior |
-| --- | --- |
-| `POST /api/v1/applications` | `name`, `tenant`, `namespace`; `description`, `members`, `maxConcurrent`, `tokenBudget` |
-| `GET /api/v1/applications` / `/{id}` | List or detail |
-| `PATCH /api/v1/applications/{id}` | `version`, `name`, `description`, `status`, `members`, `maxConcurrent`, `tokenBudget` |
-| `POST /api/v1/applications/{id}/credentials` | `name`, `targets:[{type,id}]`, `scopes`; `expiresAt` |
-| `GET /api/v1/applications/{id}/credentials` | Credential metadata |
-| `DELETE /api/v1/applications/{id}/credentials/{credentialId}` | Revoke the credential |
+## Native Managed Session API
 
-Credential scopes are `invoke`, `read`, `interact`, `cancel`, and `webhooks:write`. Application member roles are `viewer`, `operator`, and `approver`. Concurrency limits bound outstanding work. `tokenBudget` uses reported usage to govern further calls; it is not a provider prepaid hard limit.
-
-## Session and Turn API
-
-Paths below use `/api/v1/agent-sessions` as their prefix. Set `target.type` to `agent`, `team`, or `workflow`, and `target.id` to that resource's ID. Agents optionally accept `version`; Workflows accept `revisionId`. When omitted, the version is resolved and frozen at Session creation for subsequent Turns.
-
-Managed Sessions also accept `environmentId`, `memoryStoreIds`, `vaultIds`, `agentOverrides`, and `resources`. General options include `timeoutSeconds`, `budget.maxTokens`, `inputSchema`, `outputSchema`, and `resultMapping`. Supply business input and output constraints when creating the Session.
+Managed execution uses `/v1/sessions`. The following paths are relative to that base. Other
+backends retain `/api/v1/agent-sessions` with their own payloads, capabilities and cursors;
+do not send native Managed IDs or Input bodies to those routes.
 
 | API | Purpose |
 | --- | --- |
-| `POST /` | Create a Session; supports an idempotency key |
-| `GET /` | List: agentId, status, limit, offset |
-| `GET /{session}` | Read Session and frozen target |
-| `PATCH /{session}` | Update Managed environment and resource settings |
-| `POST /{session}/archive, /restore` | Archive or unarchive |
-| `DELETE /{session}` | Remove application access to the Session |
-| `GET /{session}/capabilities` | Target capabilities and context semantics |
-| `POST /{session}/turns` | message or input; idempotency key required |
-| `GET /{session}/turns, /turns/{turn}` | Turn list and status |
-| `GET /{session}/snapshot, /events, /events/stream` | Session snapshot and durable events |
-| `GET /{session}/turns/{turn}/snapshot, /events, /events/stream` | One Turn’s snapshot and events |
-| `GET /{session}/turns/{turn}/capabilities` | Read available_commands |
-| `POST /{session}/turns/{turn}/actions, /inputs, /cancel, /resume` | Interaction commands; idempotency key required |
-| `GET /{session}/turns/{turn}/commands/{command}` | Command receipt status |
-| `POST/GET /{session}/files` | Upload bytes or list files |
-| `GET /{session}/files/{file}/content` | Download an authorized file |
-| `POST/GET /{session}/webhooks` | Register or inspect notification subscriptions |
-Paths after commas share the prefix of the first path in the row. Turns also expose `/actions`, `/usage`, `/artifacts`, and `/webhooks`. Revoke a Webhook with `DELETE /webhooks/{id}` and retry with `POST /webhooks/{id}/retry`.
+| `POST /` | Pin `agent`, optional `environment_id`, resources and configuration; idempotency key required |
+| `GET /` | Keyset list: `after`, `limit`, `order`, `lifecycle`, `agent_id` |
+| `GET /{session}` | Read the Session and frozen configuration |
+| `POST /{session}` | Update `title` and string-pair `metadata` |
+| `POST /{session}/archive` or `/restore`; `DELETE /{session}` | Accept a lifecycle change with a stable key |
+| `GET /{session}/lifecycle/{command}` | Read that lifecycle operation's durable receipt |
+| `GET /{session}/capabilities` | Explicit file, artifact, budget and checkpoint capabilities |
+| `POST /{session}/turns` | Submit `{"input":{"message":"Task"}}` or structured Agent input; stable key required |
+| `GET /{session}/turns` | `after`, `limit`, `order`, `status` |
+| `GET /{session}/turns/{turn}` | Admission, execution, delivery and `inputs_open` |
+| `POST /{session}/turns/{turn}/inputs` | `type=steer|inject|reply|cancel`, `payload`, and `action_id` for reply |
+| `GET /{session}/turns/{turn}/inputs` or `/inputs/{input}` | Ordered Input list or one admission/application receipt |
+| `GET /{session}/snapshot` or `/turns/{turn}/snapshot` | Pinned, bounded resources for the Session or one Turn |
+| `GET /{session}/resources/{kind}` | Continue either snapshot's pages with `snapshot_id`, `after`, `limit` |
+| `GET /{session}/events` or `/events/stream` | Session journal pagination or persistent SSE |
+| `GET /{session}/usage` or `/turns/{turn}/usage` | Authoritative aggregate and committed cursor |
+| `GET /{session}/turns/{turn}/capabilities` | Available controls and explicit support flags |
+| `POST/GET /{session}/files` | Immutable binary upload or finite metadata list |
+| `GET /{session}/files/{file}` or `/files/{file}/content` | File metadata or bytes |
+| `POST/GET /{session}/artifacts` | Publish a deliverable or read a pinned resource page |
+| `GET/DELETE /{session}/artifacts/{artifact}` | Read or remove a publication; removal retains file bytes |
+| `GET /{session}/artifacts/{artifact}/content` | Platform-owned content; HTTPS references are not fetched |
+| `GET/PUT /{session}/budget` | Read or replace the shared root budget; PUT uses `If-Match` |
+| `GET /{session}/checkpoints` | Committed checkpoint metadata, with its own pagination watermark |
 
-Managed `/budget`, `/checkpoints`, `/fork`, `/inputs/inject`, `/subagents`, and `/export` extend the same API. They are not supported by every target; follow the [Session guide](/v2/en/service/session-event-log) and capabilities. See [Files](/v2/en/service/files) and [SSE](/v2/en/service/sse-events) for formats and signatures.
+Paths after “or” share the first path's Session prefix. Native Turn observations use a Turn
+snapshot plus the **Session** event stream; filter events by `data.turn_id` while advancing the
+Session cursor for every applied frame. There is no native Turn-specific events route.
+Snapshots return bounded `resources.<kind>.data` pages with `snapshot_id`, `as_of`, expiry and
+continuation fields. The Console helper flattens these pages; that view type is not the raw response.
+
+Replies and cancellation are Inputs with separate delivery and application status. Long-tool
+suspension resumes automatically. Current capabilities report `resume=false`,
+`checkpoint_restore=false` and `fork=false`; the old `/actions`, `/commands`, tool/workspace
+recovery and trace routes are not native controls. Native webhook registration and complete
+historical-state recovery remain migration work. See the [native contract](/v2/en/service/claude-session-api),
+[Files](/v2/en/service/files) and [SSE](/v2/en/service/sse-events).
 
 <span id="agents"></span>
 ## Agent catalog and runtime bindings
@@ -119,7 +125,7 @@ These guides document request fields, responses, and operation sequences. Visual
 
 ## SDKs and runnable examples
 
-Python `ManagementClient` prepares resources and credentials; `ServiceClient` creates Sessions, submits Turns, and reads results. The TypeScript client is in `frontend/src/api/serviceSessions.ts`. Runtime registration and reporting SDKs connect executors and have a separate responsibility from application clients.
+Python `ManagementClient` prepares resources and credentials; `ServiceClient` creates Sessions, submits Turns, and reads results. Application clients are also available as Java `io.agentscope.service.client.ServiceClient` (`agentscope-service/service-client`) and DSH package `ServiceClient`. The console TypeScript client is in `frontend/src/api/serviceSessions.ts`. Runtime registration and reporting SDKs connect executors and have a separate responsibility from application clients.
 
 ```python
 import os
@@ -143,4 +149,32 @@ For `400`, check the request. `401` indicates invalid credentials and `403` insu
 
 Read the current version before updating management resources. Issue decisions and Workflow publication use `expectedVersion`; Agent definition updates use their own `version` fields. Do not automatically replay an outdated human decision with a newer version.
 
-The machine-readable contract is `agentscope-service/docs/service-api/openapi-v1.json`. It lists Session API and application credential paths. Migration from the previous entry points is described in the adjacent `session-api-migration.md`.
+The current Portal deployment uses resource snapshot and receipt schemas above. Use the Service release manifest to select matching SDK versions; earlier Service schemas and command routes cannot be mixed with this deployment.
+
+The Java client requires Java 17 and Jackson, without Service server dependencies. Calls block;
+run them on application threads. Its default 30-second deadline includes response bodies and SSE
+connections. Close streams and reconnect with the last applied cursor. Java, Python and DSH clients
+bound JSON responses and uploads to 16 MiB and buffered downloads to 100 MiB; inspect Session
+capabilities before file input. Build artifacts and SDK version metadata do not confirm Maven
+repository publication.
+
+## Managed runtime contract
+
+Managed Sessions use `/v1/sessions`. Pending actions are in
+`snapshot.resources.required_actions.data`. Reply through
+`POST /v1/sessions/{session}/turns/{turn}/inputs` with
+`{"type":"reply","action_id":"ACTION_ID","payload":{"allow":true,"reason":"..."}}`
+for a confirmation. Keep the same explicit idempotency key and body when retrying.
+
+The Input receipt contains `id`, `turn_id`, `status` and `delivery_status`.
+`status` is `accepted`, `applied` or `rejected`; a rejected Input includes
+`rejection_reason`. Read the receipt at
+`GET /v1/sessions/{session}/turns/{turn}/inputs/{input}`. Delivery does not imply
+application. A cancel Input being applied does not prove that its Turn and tools have stopped;
+continue observing the Turn's terminal state.
+
+Managed Endpoint Invocation command receipts also expose `input_id`, `input_status`
+and `input_delivery_status`. Their command can remain `submitted` until the native Input
+is applied or rejected. Managed Turns do not expose a separate `resume` operation.
+SSE disconnects leave execution running; use the last applied cursor to reconnect.
+See the [Managed Session API](/v2/en/service/claude-session-api) for native resources and controls.

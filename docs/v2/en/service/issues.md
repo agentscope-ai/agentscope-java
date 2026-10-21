@@ -99,6 +99,10 @@ JSON
 
 The response's `routes` explain whether input was queued, merged into existing work, or blocked by policy. Comments can trigger work. For an informational progress record, use `type:"progress"` without mentions. Include `parentId` to reply to a comment. Submit the same body to `POST /api/v1/issues/{issueId}/comments/preview-routing` to preview routing before posting.
 
+An AgentTask can retain up to 8,192 comment input records. If a queued task is full, the comment is saved and its route reports `blocked` with `reasonCode:"task_input_capacity"`; inspect routes before treating a comment as delivered. Re-delivery of an existing comment/version stays idempotent. A retry of a worker in an active Team remains in that Team's completion scope. Input-history reads have a 16 MiB payload budget, while cancellation can proceed without reading history. Long delivery errors are explicitly marked diagnostic previews with their original length and SHA-256; this field is not the complete error log.
+
+Each new comment supports up to 128 mentions and 128 routing targets. Corrections retain routing history, capped at 4,096 combined mention/route records and 4 MiB per comment. The serialized body and base fields have a separate budget of approximately 12 MiB; escaped characters count toward it. If a write exceeds capacity, the whole comment or correction is rejected, preserving the previous version and input records. Large deliverables should use artifacts. A Team summary that exceeds its publication budget links to the retained execution details.
+
 ## Read progress and deliverables
 
 When a page opens again, read the Issue and its tasks, comments, and artifacts to reconstruct the work view:

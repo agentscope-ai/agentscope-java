@@ -15,8 +15,6 @@
  */
 package io.agentscope.builder.web.config;
 
-import io.agentscope.builder.control.ControlPlaneClient;
-import io.agentscope.builder.web.auth.EnvironmentKeyAuthFilter;
 import io.agentscope.builder.web.auth.InternalTokenAuthFilter;
 import io.agentscope.builder.web.auth.JwtService;
 import io.agentscope.builder.web.auth.LocalDevAuthFilter;
@@ -45,20 +43,7 @@ import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
-/**
- * WebFlux Security configuration for the builder data plane.
- *
- * <ul>
- *   <li>{@code /actuator/health|info} — public
- *   <li>{@code /api/environments/{id}/work/**} and self-hosted session routes — authenticated by
- *       {@link EnvironmentKeyAuthFilter} ({@code X-Builder-Environment-Key})
- *   <li>{@code /api/**} — requires an authenticated principal: a user JWT (same signing secret as
- *       the control plane), an environment key, or the internal token ({@code
- *       X-Builder-Internal-Token}) for plane-to-plane calls from the scheduler / control plane
- *   <li>{@code /**} — public (the data plane serves no browser assets; only {@code /api/**} is
- *       protected)
- * </ul>
- */
+/** User JWT and internal-token protection for Brain resource/debug APIs. Worker APIs live in Hands. */
 @Configuration
 @EnableWebFluxSecurity
 public class DataSecurityConfig {
@@ -67,7 +52,6 @@ public class DataSecurityConfig {
     public SecurityWebFilterChain securityWebFilterChain(
             ServerHttpSecurity http,
             JwtService jwtService,
-            ControlPlaneClient controlPlaneClient,
             @Value("${builder.internal-token:${BUILDER_INTERNAL_TOKEN:}}") String internalToken,
             @Value("${builder.local-dev:${BUILDER_LOCAL_DEV:false}}") boolean localDev) {
         if (localDev) {
@@ -96,9 +80,6 @@ public class DataSecurityConfig {
                                         new HttpStatusServerEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .addFilterBefore(
                         new InternalTokenAuthFilter(internalToken),
-                        SecurityWebFiltersOrder.AUTHENTICATION)
-                .addFilterBefore(
-                        new EnvironmentKeyAuthFilter(controlPlaneClient::verifyEnvironmentKey),
                         SecurityWebFiltersOrder.AUTHENTICATION)
                 .addFilterBefore(
                         new JwtAuthFilter(jwtService), SecurityWebFiltersOrder.AUTHENTICATION)
@@ -145,6 +126,8 @@ public class DataSecurityConfig {
                                 .toList();
                 UsernamePasswordAuthenticationToken auth =
                         new UsernamePasswordAuthenticationToken(userId, null, authorities);
+                if (claims.getExpiration() != null)
+                    auth.setDetails(claims.getExpiration().getTime());
                 return chain.filter(exchange)
                         .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth));
             } catch (JwtException e) {

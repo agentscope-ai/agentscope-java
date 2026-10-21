@@ -16,6 +16,10 @@ package memory
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/policychanges"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimeportal"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,6 +36,9 @@ func init() {
 
 // Store is an in-memory store.Store used for local/dev and unit tests.
 type Store struct {
+	runtimePortal        runtimeportal.Memory
+	runtimeCipher        *runtimeportal.Cipher
+	policyChanges        policychanges.Memory
 	accessNamespaces     map[string]*controlmodel.Namespace
 	accessNamespaceAudit []*controlmodel.NamespaceAudit
 	mu                   sync.RWMutex
@@ -134,7 +141,19 @@ type memBusEntry struct {
 
 // Open creates a memory store.
 func Open(_ context.Context, cfg store.Config) (store.Store, error) {
-	s := &Store{
+	master := cfg.RuntimeMasterKey
+	if master == "" {
+		var ephemeral [32]byte
+		if _, err := rand.Read(ephemeral[:]); err != nil {
+			return nil, err
+		}
+		master = hex.EncodeToString(ephemeral[:])
+	}
+	cipher, err := runtimeportal.NewCipher(master)
+	if err != nil {
+		return nil, err
+	}
+	s := &Store{runtimeCipher: cipher,
 		sessions:              make(map[uuid.UUID]*store.Session),
 		sessKey:               make(map[string]uuid.UUID),
 		eventSignals:          make(map[uuid.UUID]chan struct{}),
@@ -224,6 +243,8 @@ func (s *Store) Snapshots() store.SnapshotRepository          { return &snapshot
 func (s *Store) Bus() store.BusRepository                     { return &busRepo{s} }
 func (s *Store) AsyncTools() store.AsyncToolRepository        { return &asyncToolRepo{s} }
 func (s *Store) DPTasks() store.DPTaskRepository              { return &dpTaskRepo{s} }
+
+func (s *Store) ValidateSchema(context.Context) error { return nil }
 
 func (s *Store) Migrate(context.Context) error { return nil }
 func (s *Store) Ping(context.Context) error    { return nil }
@@ -389,3 +410,9 @@ func nextID(counter *int64) int64 {
 }
 
 func (s *Store) Applications() store.ApplicationRepository { return &applicationRepo{s} }
+
+func (s *Store) PolicyChanges() policychanges.Repository { return &s.policyChanges }
+
+func (s *Store) RuntimeSnapshots() runtimeportal.DispatchCodec { return s.runtimeCipher }
+
+func (s *Store) RuntimePortal() runtimeportal.Repository { return &s.runtimePortal }

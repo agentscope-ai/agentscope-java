@@ -2,12 +2,13 @@ import { test, expect, type Page, type Route } from '@playwright/test';
 
 async function fixture(page: Page, handler: (path: string, route: Route, json: (data: unknown) => Promise<void>) => Promise<boolean | void>, roles: string[] = ['admin', 'developer', 'operator', 'member']) {
   const token = `test.${Buffer.from(JSON.stringify({ username: 'alice', roles })).toString('base64url')}.test`;
-  await page.addInitScript(t => localStorage.setItem('claw_token', t), token);
+  await page.addInitScript(t => localStorage.setItem('agentscope_service_token', t), token);
   page.on('pageerror', error => { throw error; });
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (!path.startsWith('/api/')) return route.continue();
     const json = (data: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
+    if (path === '/api/auth/dev-session') return route.fulfill({ status: 404 });
     if (path === '/api/auth/me') return json({ username: 'alice', roles, isAdmin: roles.includes('admin') });
     if (path === '/api/v1/me/scope') return json({ tenant: 'default', namespace: 'default', mode: 'single', selectorVisible: false, namespaces: [{ tenant: 'default', name: 'default', roles }] });
     if (await handler(path, route, json)) return;
@@ -53,7 +54,7 @@ test('Workspace discovers MCP before editing and combines installed skills with 
   await expect(page.getByRole('button', { name: 'Already installed' })).toBeDisabled();
   await page.getByRole('button', { name: 'Installed skills' }).click();
   await expect(page.getByRole('button', { name: /Review Marketplace/ })).toBeVisible();
-  await page.screenshot({ path: '/tmp/agentscope-skills-unified.png', fullPage: true });
+  await page.screenshot({ path: '/tmp/agentscope-service-skills-unified.png', fullPage: true });
 });
 
 test('Task details promote result, recorded input and attempt history above diagnostics', async ({ page }) => {
@@ -69,7 +70,7 @@ test('Task details promote result, recorded input and attempt history above diag
   await expect(page.getByText('All checks passed.', { exact: true })).toHaveCount(1);
   await expect(page.getByText('raw-binding-marker', { exact: false })).not.toBeVisible();
   await expect(page.getByRole('link', { name: 'View conversation and events' })).toHaveAttribute('href', '/work/sessions/session');
-  await page.screenshot({ path: '/tmp/agentscope-task-result.png', fullPage: true });
+  await page.screenshot({ path: '/tmp/agentscope-service-task-result.png', fullPage: true });
 });
 
 test('Hosted Session with no telemetry reports missing data and its actual provider', async ({ page }) => {
@@ -281,7 +282,7 @@ test('Developer can manage self_hosted environments, bind an Agent and select th
       } else await json(environments);
       return true;
     }
-    if (path === '/api/hands/status') { await json({ brainInstanceId: 'brain', pendingWorkItems: 0, localSandboxRegistrySize: 0, workerHeartbeats: {}, sessionHandsMetrics: {} }); return true; }
+    if (path === '/api/handss/status') { await json({ brainInstanceId: 'brain', pendingWorkItems: 0, localSandboxRegistrySize: 0, workerHeartbeats: {}, sessionHandsMetrics: {} }); return true; }
     if (path === '/api/v1/agents') { await json({ items: [agent] }); return true; }
     if (path === '/api/v1/agents/managed') { await json({ agent }); return true; }
     if (path === '/api/v1/agents/managed/definition') {

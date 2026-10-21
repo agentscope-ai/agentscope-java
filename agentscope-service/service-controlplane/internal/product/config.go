@@ -18,6 +18,7 @@ package product
 // The module does not own an HTTP listener; service-controlplane mounts it onto the
 // shared REST server.
 type Config struct {
+	SchemaMode            string // validate for service replicas; migrate only for explicit initialization
 	LocalDev              bool   // BUILDER_LOCAL_DEV: local, unauthenticated single-user mode
 	OAuthPublicURL        string // BUILDER_OAUTH_PUBLIC_URL: public console origin for OAuth callbacks
 	DSN                   string
@@ -29,6 +30,7 @@ type Config struct {
 	BootstrapPassword     string // CONTROL_PLANE_BOOTSTRAP_PASSWORD: used only on an empty database
 	AllowLocalEnvironment bool   // BUILDER_ALLOW_LOCAL_ENVIRONMENT
 	DataURL               string // BUILDER_DATA_URL
+	SessionPortalURL      string // BUILDER_SESSION_PORTAL_URL: native Managed admission and queries
 	VaultMasterKey        string // BUILDER_VAULT_MASTER_KEY (optional)
 }
 

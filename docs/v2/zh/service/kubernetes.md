@@ -7,6 +7,66 @@ en_link: /v2/en/service/kubernetes
 当前发布版本为 `2.1.0-BETA1`，属于预发布版本。用于生产前请验证实际部署。
 </Note>
 
+## 当前源码：Managed MQ / Redis 部署
+
+当前源码部署五个组件：Go Control Plane、Gateway、Session Portal、Brain Dataplane 和平台 Hands。
+单个 `service-controlplane` 二进制和镜像在 8081 端口承载管理 API、Workflow / Team 编排、Hosted
+协调、Cron、渠道接入、消息发送和 Webhook 投递，不再独立部署 scheduler 或 orchestration。
+
+所有 control 副本运行有界 worker。PostgreSQL 负责消息和任务去重、领取、Stream 租约、重试与
+fence 校验，无需粘性会话或固定单副本。Helm 的 `control.executionSlots`、`control.workerBatch`、
+`control.channelSlots`、`control.webhookSlots` 设置单副本并发。保留 `cp`、`rt` schema 及现有签名、
+加密密钥；新增 `0007_integrated_scheduler` 产品迁移创建共享任务和 Stream 租约表。
+
+升级时先暂停渠道入口并排空待回复消息，停止旧 Java Scheduler 和 Go orchestration 部署，执行
+schema job 并重新授权，再启动合并后的 control 副本。Compose 使用 `--remove-orphans` 清理旧容器；
+Helm 升级前先将旧 Deployment 缩容为 0。切换后再停用旧 runtime / scheduler 数据库凭据。
+该部署结构需要重新构建源码镜像，已发布的 BETA1 镜像保持原样。
+
+五个 Service 镜像必须从同一版本构建。平台 Hands 为必选内部 HTTP/MQ 服务，端口 8085，
+与客户侧 Environment Worker 分开。准备外部 PostgreSQL、Redis 和 RocketMQ 5.5.1 的独立
+Cluster Proxy；先初始化 Turn 根父 Topic 及 `_d1` 至 `_d16` 子深度父 Topic，
+加上工具事件和 Resume 共 19 个父 Topic / 消费组，均启用 FIFO / Shared / wildcard。
+Brain 消费 ma_turns_v3 与 ma_turn_resumes_v3，Hands 仅消费 ma_tool_events_v3。
+使用 LitePushConsumer，Proxy 保留活动执行回调的自动续期配置。Brain 先持久提交完整
+checkpoint 与挂起状态，再释放活动执行令牌并返回 SDK Suspend，原消息保留队头而回调线程释放。
+独立 Resume 推进同一个 Turn；原 Turn 只有持久终态后才返回 SUCCESS。
+根回调默认 64，每个子深度 4，Resume 64；活动 Harness 容量独立有界，容量不足返回 Suspend。
+不再配置回调完成信箱、应用 callback hold 或本地 Turn 调度队列。
+
+当前 5.5.1 Lite 验收已确认首条缺口：独立 SDK 向 100 个新 LiteTopic 各发两条消息，
+其中 49 个只收到第二条；普通组的最小位点开关和已开启的内存检查均未避免此问题。
+最早位点、离线积压与重启验收仍为部署的可靠性前置要求。显式本地 MIN 测试修正版
+已在关闭热内存捷径时通过原始 SDK 的即时、离线积压及重启验收，Service 集成正在复验；
+这不代表官方 5.5.1 或未测试的托管提供者已通过。参见
+[Broker 初始位点路径](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/broker/src/main/java/org/apache/rocketmq/broker/processor/PopLiteMessageProcessor.java)。
+
+Compose / Helm 先执行四个独立初始化任务（cp/rt、portal、dp、ma），再授权四个业务账号。
+普通副本仅校验 ma 版本与校验和，不在启动时建表。已有无版本 ma 表需使用新运行数据空间，
+本轮不自动转换旧 Managed 数据。Portal、Brain、Hands 通过 PostgreSQL `ma.private_object`
+共享 checkpoint 与大消息对象。设置 `userFilesEnabled=false` 后关闭公开文件 API，
+不创建用户文件 PVC，各副本使用临时工作目录；开放Harness 内部工作数据使用现有 PostgreSQL KV 表，按 Session 隔离；关闭文件、Shell 和 Artifact
+工具，文本对话无需外部沙箱。用户文件和 Artifact 功能仍需共享存储。在私有配置中填写从服务可达的 Redis / Proxy 地址。
+
+本轮源码改造同时替换数据面 `dp` 迁移集合：新建 schema 保留资源 / 状态服务，Managed
+执行状态归 `ma`。旧数据面版本和校验和会被拒绝，需使用新数据空间。旧 SQL writer lease
+后端、Brain 本地 Sandbox 执行和同步 ASDP Agent 登记已删除；Worker 请求进入 Hands，
+Session 请求进入 Session Portal。
+
+所有完整 Managed 检查点（包括小检查点）以不可变字节保存到 PostgreSQL，Brain 保存成功后
+才由 Brain 校验大小、哈希、身份，并在挂起或终态事务中提交引用。超过 128 KiB 的消息也使用此私有表，
+对象上限仍为 64 MiB。替换副本前先执行新增 `managed-private-objects.sql` 迁移并重新授权。
+恢复和 fork 引用的对象应与日志一起备份。旧文件对象不会自动导入：升级已有安装前需导入
+全部被引用对象，或使用新的运行数据库；数据库不可用时不回退到节点本地存储。
+
+Hands 在发送 Tool Topic 前，将真实工具终态完整保存到数据库结果 outbox。Broker 发送回执
+不代表结果已经落库；Tool 消费者在提交结果与投影的同一事务中结清 outbox。重试复用原结果，
+必要时重建丢失的传输文件，不重新执行外部工具。数据库备份需同时包含这些记录和原生日志。
+
+精确命令、Secret、Topic 初始化及扩容参考当前源码的部署和 Chart README。下文已发布版本
+的安装命令对应旧架构，不能用于安装当前 MQ/Redis 协议。
+
+
 本页介绍面向生产环境的 Kubernetes 与 Helm 安装。正式 Service Chart 安装 Gateway、Control、Dataplane 和 Scheduler。PostgreSQL、持久存储、入口域名和 TLS 由你管理。应用每组件默认单副本并采用 Recreate 更新，部署和升级需要维护窗口。
 
 ## 1. 准备依赖
@@ -133,7 +193,15 @@ flowchart LR
 | Kubernetes / Helm | 由平台团队管理的安装 | PostgreSQL、共享 Workspace 存储、Artifact 存储、Secret、域名与 TLS |
 | 已有团队平台 | 应用开发者直接使用 | 服务地址、账号、授权空间、可用模型与 Environment |
 
-当前完整 Service Chart 为每个组件配置一个副本，并采用 Recreate 方式更新，所以升级时需要安排维护窗口，不能据此假定服务具备多副本高可用或无停机升级能力。Kubernetes-native ControlPlane/ASDP 是为相应 SDK 和运行传输提供的另一种部署模式，应根据接入要求选择；它并不是需要叠加到完整 Service Chart 上的一组必装组件。
+Service Chart 默认每组件一个副本并采用 Recreate 更新。需要数据面多副本时，先用单副本初始化 `dp` schema，再设置：
+
+```yaml
+dataplane:
+  replicas: 2
+  ddlAuto: validate
+```
+
+所有数据面副本使用相同的 PostgreSQL 数据库、Secret 和 RWX Workspace。使用已有 PVC 时，需要确认它支持共享写入。API、SSE 和 Turn 执行仍在同一批数据面 Pod 中，请求与 SSE 可以到达不同 Pod，不要求 sticky session。数据面多副本采用 RollingUpdate，Control、Scheduler 和 Gateway 保持默认部署配置。schema 升级仍需要先以单副本完成迁移，整套服务不会因此自动获得高可用或免维护窗口。Kubernetes-native ControlPlane/ASDP 是为相应 SDK 和运行传输提供的另一种部署模式，应根据接入要求选择；它并不是需要叠加到完整 Service Chart 上的一组必装组件。
 
 平台交付给业务团队时，管理员需要提供可访问的 Service 地址和账号，并说明该账号可以使用哪个 Namespace。使用者还需要知道默认模型是否可用、应选择哪个工具环境，以及业务资料放在哪里、如何获得访问权限。有了这些信息，就可以按[第一个托管 Agent](/v2/zh/service/create-managed-agent)完成模型与文件工具验证，再通过[应用接入指南](/v2/zh/service/service-api)检查业务应用的调用过程。
 
@@ -244,7 +312,7 @@ curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
   -H "X-AgentScope-Namespace: $NAMESPACE"
 ```
 
-账号、空间角色、资源授权与私有工作访问的配置见[生产权限管理](/v2/zh/service/access)。工具确认和指定人员审批必须使用有权限的用户身份；应用 API key 不代表该用户。外部工具、模型和 OAuth 提供方仍有各自的凭据，本地免鉴权模式不会跳过它们。
+账号、空间角色、资源授权与私有工作访问的配置见[生产权限管理](/v2/zh/service/access)。工具确认允许使用显式授权 `approve` 的应用 API key，只有 `interact` 不能确认工具；指定人员审批仍需该用户身份。外部工具、模型和 OAuth 提供方仍有各自的凭据，本地免鉴权模式不会跳过它们。
 
 <span id="production-application-credentials"></span>
 
@@ -307,7 +375,7 @@ AGENTSCOPE_API_KEY=$(jq -er '.apiKey' <<< "$KEY_JSON")
 CREDENTIAL_ID=$(jq -er '.credential.id' <<< "$KEY_JSON")
 ```
 
-服务只在创建凭据时返回明文 key。轮换时先签发新 key，更新应用配置并确认调用成功，再撤销旧凭据。`invoke` 允许提交工作，`read` 允许读取记录，`interact` 允许补充输入，`cancel` 允许取消；注册和管理回调还需要 `webhooks:write`。这些 scope 不会把应用变成人工审批人，指定人员的确认仍需由有权限的用户完成。
+服务只在创建凭据时返回明文 key。轮换时先签发新 key，更新应用配置并确认调用成功，再撤销旧凭据。`invoke` 允许提交工作，`read` 允许读取记录，`interact` 允许补充输入，`cancel` 允许取消；注册和管理回调还需要 `webhooks:write`。应用如需确认工具，须额外显式授予 `approve`；这些 scope 不会把应用变成指定的人工审批人。
 
 <Accordion title="列出与撤销旧凭据">
 

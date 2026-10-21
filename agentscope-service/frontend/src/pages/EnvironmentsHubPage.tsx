@@ -83,6 +83,7 @@ export default function EnvironmentsHubPage() {
   const [editing, setEditing] = useState<Environment | null>(null);
   const [name, setName] = useState('');
   const [type, setType] = useState('local');
+  const [configText, setConfigText] = useState('{}');
   const [editName, setEditName] = useState('');
   const [editConfigText, setEditConfigText] = useState('{}');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -113,7 +114,8 @@ export default function EnvironmentsHubPage() {
     setBusyId('create');
     setErr(null);
     try {
-      const created = await createEnvironment({ name: name.trim(), type: type.trim() || 'local' });
+      const config = JSON.parse(configText || '{}') as Record<string, unknown>;
+      const created = await createEnvironment({ name: name.trim(), type: type.trim() || 'local', config });
       setCreatedKey(created.apiKey ?? null);
       setCreating(false);
       setName('');
@@ -197,7 +199,7 @@ export default function EnvironmentsHubPage() {
         <button type="button" style={S.primaryBtn} hidden={!canManage} onClick={() => setCreating(true)}>＋ New environment</button>
       </div>
       <p style={S.blurb}>
-        Environments determine where Managed Agents read files and run commands. New sessions use the Agent’s default automatically. Configure local execution, remote filesystems, sandbox templates or self_hosted Environment Workers here, then select the environment in the Agent’s Runtime tab or when creating a session.
+        Environments determine where AgentScope Service read files and run commands. New sessions use the Agent’s default automatically. Configure execution in Hands, Service-managed ACS sandboxes, user-owned sandboxes or remote filesystems here, then select the environment in the Agent’s Runtime tab or when creating a session.
       </p>
       {canManage && hands && (
         <div style={{ ...S.card, marginBottom: 18 }}>
@@ -262,17 +264,17 @@ export default function EnvironmentsHubPage() {
               <label style={S.formField} htmlFor="environment-type">Type</label>
               <select id="environment-type" style={{ ...S.input, marginBottom: 20 }} value={type} onChange={e => setType(e.target.value)}>
                 <option value="local">local</option>
-                <option value="sandbox">sandbox</option>
+                <option value="cloud">cloud (ACS)</option>
                 <option value="remote">remote</option>
                 <option value="self_hosted">self_hosted</option>
               </select>
               {type === 'self_hosted' && (
                 <p style={{ margin: '-14px 0 20px', color: '#64748b', fontSize: '0.82rem', lineHeight: 1.5 }}>
-                  Sessions on this environment attach a hands sandbox from an Environment Worker
-                  at the start of each turn. Start an external Environment Worker with this
-                  environment ID and API key before running sessions.
+                  Hands connects to an existing user-owned sandbox. Configure its API URL, domain and Sandbox API key; supply sandboxId here or builder.sandbox_id when creating a Session.
                 </p>
               )}
+              <label style={S.formField} htmlFor="environment-config">Config (JSON)</label>
+              <textarea id="environment-config" style={{ ...S.input, marginBottom: 14 }} rows={7} value={configText} onChange={e => setConfigText(e.target.value)} placeholder='{"domain":"sandbox.example.com","templateId":"code-interpreter"}' />
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                 <button type="button" style={S.rowBtn} onClick={() => setCreating(false)}>Cancel</button>
                 <button type="submit" style={S.primaryBtn} disabled={busyId === 'create'}>

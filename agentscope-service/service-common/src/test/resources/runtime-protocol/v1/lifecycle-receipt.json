@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "sessionId": "session-1",
+  "commandId": "lifecycle-command",
+  "lifecycleRevision": 2,
+  "lifecycle": "archived",
+  "payloadDigest": "84dcdba9f85eac2032be6666b6134ec7fb8f2e9fe9aab9541456c85e4750edb8",
+  "status": "applied"
+}

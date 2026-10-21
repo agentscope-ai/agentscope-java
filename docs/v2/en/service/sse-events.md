@@ -1,150 +1,58 @@
 ---
-title: "SSE and event replay"
-description: "Observe tasks with snapshots and SSE, recover progress after disconnection, and receive backend Webhook notifications."
+title: "Session history and live events"
+description: "Open and buffer a live stream, read history, then deduplicate stable Event IDs."
 zh_link: /v2/zh/service/sse-events
 ---
 
-After submitting a task, an application needs to show its background progress to the user. The Session API preserves snapshots and an event log: a snapshot restores work that has already happened, and subsequent events update messages, tool calls, and pending actions. SSE delivers those events continuously, so an application can follow the same task after a page refresh or network interruption. Closing the connection does not cancel execution.
+This page applies to the Managed Draft 3 first release. See [Session Event API](/v2/en/service/claude-session-api).
+Only ordinary live SSE is enabled; reliable resume is a separate future capability.
 
-Start with [Integrate applications with the Session API](/v2/en/service/service-api) to create a Session and submit a Turn. The examples below reuse its `SESSION_URL` in local mode. If your backend needs notifications while users are offline, go to the [Webhook section](#webhooks). Webhook notifications can be used alongside page-level SSE subscriptions.
+GET /v1/sessions/{session}/events/stream follows events after its connection boundary. The Service
+captures a durable position before flushing the connected comment, and reads committed facts after it.
+Notifications are not the only source of truth.
 
-## Restore a snapshot before applying events
+```text
+event: agent.message
+data: {"id":"evt_answer","type":"agent.message","content":[{"type":"text","text":"Done."}],"processed_at":"2026-10-19T07:01:36Z"}
 
-When opening a page, read the Session `/snapshot`, restore its messages, tools, and actions, then pass its `as_of` as `after` to `/events/stream`. Persist a cursor only after successfully applying the event. Reconnect from the last applied cursor. If local page state is also lost, reload the snapshot first.
-
-Local mode reads events without credentials. See [production deployment](/v2/en/service/kubernetes#production-application-credentials) for application credentials.
-
-```bash
-SNAPSHOT=$(
-  curl -sS --fail-with-body "$SESSION_URL/snapshot"
-)
-CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
+: keepalive
 ```
 
-```bash
-curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "Accept: text/event-stream" \
-  --data-urlencode "after=$CURSOR"
-```
+The first release rejects after, Last-Event-ID, preview and event_deltas. The official SDK beta=true
+transport flag is accepted. A Turn ending keeps the stream open; disconnecting does not cancel work.
+AgentScope-Extensions: turn-inputs-v1 adds platform fields and Turn/Input notifications. Standard-only
+streams contain standard types. Checkpoints, private thinking, leases and credentials remain private.
 
-For a view of one task, pair `/turns/{turnId}/snapshot` with `/turns/{turnId}/events/stream`. Sessions, Turns, and subagents have separate journals, and a cursor belongs only to its source resource. It is not a timestamp or an event sequence clients should decode. `Last-Event-ID` takes precedence over the query parameter.
+Recovery order:
 
-<Accordion title="Subscribe to a Turn and reconnect">
+1. Open a new live stream and buffer its events.
+2. Read /events?limit=100&order=asc, following next_page.
+3. Apply history and buffered events, deduplicating stable Event IDs.
+4. Continue consuming the stream; repeat after another disconnect.
 
-To observe one Turn, use this matching pair:
+Reading history before opening a future-only stream leaves a gap. Pending admitted inputs are visible
+with processed_at=null; processing updates the same logical Event ID. History freezes its upper bound
+and projection versions, with types[] and processed_at time filters.
 
-```bash
-TURN_URL="$SESSION_URL/turns/$TURN_ID"
-TURN_SNAPSHOT=$(
-  curl -sS --fail-with-body "$TURN_URL/snapshot"
-)
-TURN_CURSOR=$(jq -er '.as_of' <<< "$TURN_SNAPSHOT")
-```
+For results without observation, poll the Turn to terminal and page /turns/{turn}/output. This requires
+no SSE, snapshot or durable capability. Terminal without output returns empty data and its actual status.
+Handshake errors use HTTP JSON. A transport failure after opening disconnects the observer and does not
+fail execution. Read permission is rechecked periodically. Keepalive is not completion or a resume cursor.
 
-```bash
-curl -sS --fail-with-body -N -G "$TURN_URL/events/stream" \
-  -H "Accept: text/event-stream" \
-  --data-urlencode "after=$TURN_CURSOR"
-```
+Reliable delivery, snapshots, preview and the new Managed Webhook protocol remain disabled. Other
+backends retain their own observation contracts; their cursors are not Managed history pages.
 
-To reconnect a Session stream, replace `LAST_APPLIED_CURSOR` with the last successfully applied Session event cursor. This uses the header without an `after` query parameter:
+### Managed tool output and operation progress
 
-```bash
-LAST_APPLIED_CURSOR="LAST_APPLIED_SESSION_CURSOR"
-curl -sS --fail-with-body -N "$SESSION_URL/events/stream" \
-  -H "Accept: text/event-stream" \
-  -H "Last-Event-ID: $LAST_APPLIED_CURSOR"
-```
+Use `agent.tool_use`, `agent.mcp_tool_use` and their result events to display tool activity. Merge updates by stable Event identity and read the targeted Turn/Input resources for execution and settlement. Tool output does not by itself prove that a Turn completed; final output is queried independently. Private checkpoints and execution leases are not public progress fields.
 
-</Accordion>
+## Webhooks
 
-## Interpret events and status
+The new Managed Draft 3 Webhook protocol remains disabled; `/capabilities` is authoritative and earlier native `/v1/sessions/{id}/webhooks` registration examples do not apply. Observe the Session event stream or query Turn/output resources instead. Hosted and External backends retain their separate `/api/v1/agent-sessions/{id}/webhooks` contract and existing delivery behavior. Automation inbound Webhooks remain a separate trigger mechanism; see [Automation](/v2/en/service/automation).
 
-An SSE frame's `id` is a replay cursor, `event` is its type, and `data` contains JSON. Public events include `schema_version`, `id`, `type`, `session_id`, `created_at`, `cursor`, and `data`. Task-associated events also carry `turn_id`. Deduplicate by event ID and update existing resources by ID instead of adding another card for each notification.
-
-`item.delta` appends message content, while `item.completed` supplies accumulated content and should replace it. Otherwise a client can display the same text twice. Tool events describe individual tool calls, `required_action.*` describes interactions, and `step.*` describes collaboration or workflow steps. Only the target Turn's explicit state establishes task completion; a tool or child finishing is not sufficient.
-
-Managed Session snapshots expose runtime resource arrays, including inputs, subagents, and execution attempts. Generic Turn, Team, and Workflow snapshots use collections indexed by ID. Reuse `agentSessions.ts` and `agentSessionView.ts` for Managed views, or `serviceSessions.ts` for generic Turn views. These snapshot shapes are not identical structures.
-
-## Pagination, reconnects, and expiration
-
-Use `GET /events?after=...&limit=100` when a persistent connection is unnecessary. `next_cursor` continues pagination and `has_more` indicates immediately available events. An empty page does not establish completion; read Turn status or wait for further events.
-
-```bash
-EVENT_PAGE=$(
-  curl -sS --fail-with-body -G "$SESSION_URL/events" \
-    --data-urlencode "after=$CURSOR" \
-    --data-urlencode "limit=100"
-)
-jq . <<< "$EVENT_PAGE"
-```
-
-Fetch the next page immediately only when `has_more` is true. Advance the cursor after processing the current page.
-
-```bash
-if jq -e '.has_more == true' <<< "$EVENT_PAGE" > /dev/null; then
-  NEXT_CURSOR=$(jq -er '.next_cursor' <<< "$EVENT_PAGE")
-  curl -sS --fail-with-body -G "$SESSION_URL/events" \
-    --data-urlencode "after=$NEXT_CURSOR" \
-    --data-urlencode "limit=100"
-fi
-```
-
-A `410` response with `cursor_expired` means the resource's incremental history is no longer retained. Load a fresh snapshot and resume from its `as_of`. Do not resubmit a task just to restore observation. Cursors from other resources are rejected.
-
-<span id="webhooks"></span>
-
-## Notify a backend while users are offline
-
-Register under a Session's `/webhooks` for events across its tasks, or under a Turn's `/webhooks` for just that task. Replace the example URL with an HTTPS receiver you have deployed:
-
-```bash
-WEBHOOKS_URL="$SESSION_URL/webhooks"
-WEBHOOK_JSON=$(
-  curl -sS --fail-with-body "$WEBHOOKS_URL" \
-    -H "Content-Type: application/json" \
-    -H "Idempotency-Key: notifications-001" \
-    --data-binary @- <<'JSON'
-{
-  "url": "https://your-app.example/agent-events",
-  "event_types": [
-    "turn.completed",
-    "turn.failed",
-    "required_action.created"
-  ]
-}
-JSON
-)
-WEBHOOK_ID=$(jq -er '.webhook.id' <<< "$WEBHOOK_JSON")
-SIGNING_SECRET=$(jq -er '.signing_secret' <<< "$WEBHOOK_JSON")
-```
-
-Store the returned `signing_secret` on the backend. Compute HMAC-SHA256 over `timestamp + '.' + raw request body` and compare it with `X-AgentScope-Signature: t=<seconds>,v1=<hex>`. Also check timestamp freshness and deduplicate event IDs. Verify the original bytes before parsing or reserializing JSON.
-
-For one Turn, set `WEBHOOKS_URL="$SESSION_URL/turns/$TURN_ID/webhooks"` before registering. The management requests below reuse that registration URL and returned `WEBHOOK_ID`.
-
-Delivery is at least once, so receivers may see duplicates. Persist the notification before acknowledging success, then read the latest Session or Turn state as needed. Inspect delivery with `GET /webhooks`, retry through `POST /webhooks/{webhookId}/retry`, or revoke with `DELETE`. Notification delivery does not make business operations idempotent or establish that an external transaction committed.
-
-<Accordion title="Inspect, retry, and disable a Webhook">
-
-Inspect subscriptions and delivery status:
-
-```bash
-curl -sS --fail-with-body "$WEBHOOKS_URL"
-```
-
-After recovering the receiver, retry failed delivery when needed:
-
-```bash
-curl -sS --fail-with-body -X POST "$WEBHOOKS_URL/$WEBHOOK_ID/retry"
-```
-
-Disable a subscription when notifications are no longer needed:
-
-```bash
-curl -sS --fail-with-body -X DELETE "$WEBHOOKS_URL/$WEBHOOK_ID"
-```
-
-</Accordion>
-
-Automation inbound Webhooks trigger work; these outbound Webhooks notify receivers about its progress. See [Automation](/v2/en/service/automation) and [Operations](/v2/en/service/operations).
+{/* Preserve earlier anchors; current capability limits supersede the old examples. */}
+<span id="restore-a-snapshot-before-applying-events"></span>
+<span id="interpret-events-and-status"></span>
+<span id="pagination-reconnects-and-expiration"></span>
+<span id="notify-a-backend-while-users-are-offline"></span>
+<span id="managed-runtime-contract"></span>

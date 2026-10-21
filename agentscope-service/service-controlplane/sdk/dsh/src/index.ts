@@ -23,6 +23,8 @@ export { HttpSelfRegistration } from './registration.js'
 export { SessionIndex } from './session-index.js'
 export { CollaborationClient } from './collaboration-client.js'
 export { AgentTaskCoordination } from './agent-task-coordination.js'
+export { ServiceClient, ServiceAPIError, type ServiceCredentials, type ServiceEvent, type ServicePage, type ServiceSnapshot } from './service-client.js'
+export { ManagedSessionClient, type ManagedInputReceipt, type ManagedLifecycleReceipt, type ManagedEvent } from './managed-session-client.js'
 export { OrchestrationClient } from './orchestration-client.js'
 export {
     CONTRACT_LEVEL,

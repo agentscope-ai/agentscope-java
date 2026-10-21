@@ -573,6 +573,26 @@ func (r *executionRepo) List(ctx context.Context, filter store.ExecutionAttemptF
 	defer r.s.mu.RUnlock()
 	out := make([]*controlmodel.ExecutionAttempt, 0)
 	for _, execution := range r.s.executions {
+		if filter.SweepAfterID != nil && execution.ID.String() <= filter.SweepAfterID.String() {
+			continue
+		}
+		if filter.PortalOnly && !r.s.portalRuntimeEventOwnedLocked("execution-attempt", execution.ID.String()) {
+			continue
+		}
+		if filter.ActiveOnly && controlmodel.IsExecutionAttemptTerminal(execution.State) || filter.ExcludeCancelRequested && execution.State == controlmodel.ExecutionCancelRequested {
+			continue
+		}
+		if filter.PortalCommandID != "" {
+			var snapshot struct {
+				PortalCommandID string `json:"portalCommandId"`
+			}
+			if json.Unmarshal(execution.RuntimeBinding, &snapshot) != nil || snapshot.PortalCommandID != filter.PortalCommandID {
+				continue
+			}
+		}
+		if filter.AfterCreatedAt != nil && (execution.CreatedAt.Before(*filter.AfterCreatedAt) || execution.CreatedAt.Equal(*filter.AfterCreatedAt) && execution.ID.String() <= filter.AfterID.String()) {
+			continue
+		}
 		if store.WorkAccessFrom(ctx).Restricted {
 			task := r.s.agentTasks[execution.AgentTaskID]
 			if task == nil || !r.s.canReadIssueLocked(ctx, task.IssueID) {
@@ -593,6 +613,15 @@ func (r *executionRepo) List(ctx context.Context, filter store.ExecutionAttemptF
 		out = append(out, cloneExecution(execution))
 	}
 	sort.Slice(out, func(i, j int) bool {
+		if filter.SweepAfterID != nil {
+			return out[i].ID.String() < out[j].ID.String()
+		}
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			if filter.NewestFirst {
+				return out[i].ID.String() > out[j].ID.String()
+			}
+			return out[i].ID.String() < out[j].ID.String()
+		}
 		if filter.NewestFirst {
 			return out[i].CreatedAt.After(out[j].CreatedAt)
 		}
@@ -626,6 +655,9 @@ func (r *executionRepo) Claim(_ context.Context, claim store.ExecutionClaim) (*c
 	}
 	var candidates []*controlmodel.ExecutionAttempt
 	for _, execution := range r.s.executions {
+		if claim.PortalOnly && !r.s.portalRuntimeEventOwnedLocked("execution-attempt", execution.ID.String()) {
+			continue
+		}
 		if execution.State != controlmodel.ExecutionQueued || execution.BackendKind != controlmodel.DataPlaneHostedRuntime {
 			continue
 		}
@@ -853,6 +885,24 @@ func (r *executionRepo) ForceCancelled(_ context.Context, id uuid.UUID, expected
 	return cloneExecution(attempt), nil
 }
 
+func (r *executionRepo) BindManagedTurn(_ context.Context, binding store.ManagedTurnBinding) (*controlmodel.ExecutionAttempt, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	attempt := r.s.executions[binding.AttemptID]
+	if attempt == nil {
+		return nil, store.ErrNotFound
+	}
+	if err := store.ValidateManagedTurnBinding(r.s.agentTasks[attempt.AgentTaskID], attempt, binding); err != nil {
+		return nil, err
+	}
+	if attempt.TurnID != binding.TurnID {
+		attempt.TurnID = binding.TurnID
+		attempt.Version++
+		attempt.UpdatedAt = time.Now().UTC()
+	}
+	return cloneExecution(attempt), nil
+}
+
 func (r *executionRepo) Report(_ context.Context, report store.ExecutionAttemptReport) (*controlmodel.ExecutionAttempt, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
@@ -914,6 +964,7 @@ func (r *outboxRepo) Enqueue(_ context.Context, in *controlmodel.OutboxEvent) (*
 		}
 	}
 	cp := cloneOutboxEvent(in)
+	cp.PortalOwned = r.s.portalRuntimeEventOwnedLocked(cp.AggregateType, cp.AggregateID)
 	if cp.ID == uuid.Nil {
 		cp.ID = uuid.New()
 	}
@@ -936,6 +987,14 @@ func (r *outboxRepo) Enqueue(_ context.Context, in *controlmodel.OutboxEvent) (*
 }
 
 func (r *outboxRepo) Claim(_ context.Context, worker string, now time.Time, ttl time.Duration, limit int) ([]*controlmodel.OutboxEvent, error) {
+	return r.claim(worker, now, ttl, limit, false)
+}
+
+func (r *outboxRepo) ClaimPortalRuntime(_ context.Context, worker string, now time.Time, ttl time.Duration, limit int) ([]*controlmodel.OutboxEvent, error) {
+	return r.claim(worker, now, ttl, limit, true)
+}
+
+func (r *outboxRepo) claim(worker string, now time.Time, ttl time.Duration, limit int, portalOnly bool) ([]*controlmodel.OutboxEvent, error) {
 	if worker == "" || ttl <= 0 {
 		return nil, fmt.Errorf("outbox claim requires worker and positive ttl")
 	}
@@ -946,12 +1005,20 @@ func (r *outboxRepo) Claim(_ context.Context, worker string, now time.Time, ttl 
 	}
 	var candidates []*controlmodel.OutboxEvent
 	for _, event := range r.s.outboxEvents {
+		if portalOnly && !event.PortalOwned {
+			continue
+		}
 		if event.DeliveredAt != nil || event.DeadLetteredAt != nil || event.AvailableAt.After(now) || event.ClaimedUntil != nil && event.ClaimedUntil.After(now) {
 			continue
 		}
 		candidates = append(candidates, event)
 	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].CreatedAt.Before(candidates[j].CreatedAt) })
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].CreatedAt.Equal(candidates[j].CreatedAt) {
+			return candidates[i].ID.String() < candidates[j].ID.String()
+		}
+		return candidates[i].CreatedAt.Before(candidates[j].CreatedAt)
+	})
 	if len(candidates) > limit {
 		candidates = candidates[:limit]
 	}

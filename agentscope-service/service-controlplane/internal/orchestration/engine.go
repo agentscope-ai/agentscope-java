@@ -21,7 +21,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,9 +35,12 @@ import (
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
+const reconcileNodeBatch = 32
+
 type Engine struct {
-	Store store.Store
-	CEL   *CEL
+	Store         store.Store
+	CEL           *CEL
+	RequirePortal bool
 }
 
 func (e *Engine) evaluator() (*CEL, error) {
@@ -59,13 +64,36 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 	if err != nil {
 		return err
 	}
+	remaining := reconcileNodeBatch
 	for iteration := 0; iteration < 128; iteration++ {
 		run, err := e.Store.Orchestration().GetRun(ctx, runID)
 		if err != nil {
 			return err
 		}
+		if e.RequirePortal {
+			contract, err := serviceapi.ContractForIssue(ctx, e.Store, run.RootIssueID)
+			if err != nil {
+				return err
+			}
+			if contract == nil || contract.PortalCommandID == "" {
+				return store.ErrForbidden
+			}
+			ctx = serviceapi.WithContract(ctx, contract)
+		}
 		if run.State == controlmodel.RunPlanned && run.DefinitionRevisionID != nil {
-			if err := e.materialize(ctx, run); err != nil {
+			contract, err := serviceapi.ContractForIssue(ctx, e.Store, run.RootIssueID)
+			if err != nil {
+				return err
+			}
+			if err = serviceapi.CheckPortalExecution(ctx, e.Store, contract, run.Tenant, run.Namespace); err != nil {
+				return err
+			}
+			ctx = serviceapi.WithContract(ctx, contract)
+			if err := e.materialize(ctx, run); errors.Is(err, errMaterializationPending) {
+				return nil
+			} else if errors.Is(err, store.ErrResourceLimit) {
+				return e.failGraphCapacity(ctx, run, err)
+			} else if err != nil {
 				return err
 			}
 			continue
@@ -80,17 +108,34 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 			return e.convergeCompletedIssue(ctx, run)
 		}
 		if run.State == controlmodel.RunCancelling {
-			_, err := (&Service{Store: e.Store}).cancelRun(ctx, run.ID)
-			return err
+			drained, err := (&Service{Store: e.Store}).cancelRun(ctx, run.ID)
+			if err != nil || drained.State != controlmodel.RunFailed {
+				return err
+			}
+			return e.finishFailedRun(ctx, drained)
 		}
 		if run.State == controlmodel.RunPaused {
 			return nil
 		}
+		contract, err := serviceapi.ContractForIssue(ctx, e.Store, run.RootIssueID)
+		if err != nil {
+			return err
+		}
+		if err = serviceapi.CheckPortalExecution(ctx, e.Store, contract, run.Tenant, run.Namespace); err != nil {
+			return err
+		}
+		ctx = serviceapi.WithContract(ctx, contract)
 		nodes, err := e.Store.Orchestration().ListNodes(ctx, runID)
+		if errors.Is(err, store.ErrResourceLimit) {
+			return e.failGraphCapacity(ctx, run, err)
+		}
 		if err != nil {
 			return err
 		}
 		edges, err := e.Store.Orchestration().ListEdges(ctx, runID)
+		if errors.Is(err, store.ErrResourceLimit) {
+			return e.failGraphCapacity(ctx, run, err)
+		}
 		if err != nil {
 			return err
 		}
@@ -117,21 +162,26 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 			if policy != "fail_fast" {
 				continue
 			}
-			for _, candidate := range nodes {
-				if candidate.ID != failedNode.ID && !controlmodel.IsRunNodeTerminal(candidate.State) {
-					if err := (&Service{Store: e.Store}).stopNodeWork(ctx, run, candidate); err != nil {
-						return err
-					}
-					_, _ = e.Store.Orchestration().TransitionNode(ctx, candidate.ID, candidate.Version, controlmodel.RunNodeCancelled, nil, "fail_fast", "cancelled after node failure")
-				}
+			// Commit the failure before draining siblings. Subsequent coordinators
+			// use the persisted cancellation cursor and never rescan this graph or
+			// recursively hold child Run locks to clean all work in one request.
+			code := failedNode.FailureCode
+			if code == "" {
+				code = "node_failed"
 			}
-			run, _ = e.Store.Orchestration().GetRun(ctx, runID)
-			failedRun, transitionErr := e.Store.Orchestration().TransitionRun(ctx, runID, run.Version,
-				controlmodel.RunFailed, nil, failedNode.FailureCode, failedNode.FailureMessage)
-			if transitionErr != nil {
-				return transitionErr
+			run, err = e.Store.Orchestration().TransitionRun(ctx, run.ID, run.Version,
+				controlmodel.RunCancelling, nil, code, failedNode.FailureMessage)
+			if err != nil {
+				return err
 			}
-			return e.convergeFailedIssueTree(ctx, failedRun)
+			drained, err := (&Service{Store: e.Store}).advanceCancellation(ctx, run)
+			if err != nil || drained.State != controlmodel.RunFailed {
+				return err
+			}
+			return e.finishFailedRun(ctx, drained)
+		}
+		if remaining <= 0 {
+			return nil
 		}
 		vars := buildCELVars(run, issue, nodes)
 		changed := false
@@ -139,17 +189,20 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 		for _, n := range nodes {
 			byID[n.ID] = n
 		}
+		incomingByID := map[uuid.UUID][]*controlmodel.RunEdge{}
+		for _, edge := range edges {
+			incomingByID[edge.ToNodeID] = append(incomingByID[edge.ToNodeID], edge)
+		}
 		for _, node := range nodes {
 			if node.State != controlmodel.RunNodePending {
 				continue
 			}
-			incoming := []*controlmodel.RunEdge{}
-			for _, edge := range edges {
-				if edge.ToNodeID == node.ID {
-					incoming = append(incoming, edge)
-				}
+			if remaining <= 0 {
+				return nil
 			}
+			incoming := incomingByID[node.ID]
 			if len(incoming) == 0 {
+				remaining--
 				if _, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeReady, nil, "", ""); err != nil {
 					return err
 				}
@@ -217,6 +270,7 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 				}
 				ready = selectedCount > 0
 			}
+			remaining--
 			target := controlmodel.RunNodeSkipped
 			if ready {
 				target = controlmodel.RunNodeReady
@@ -233,6 +287,10 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 			if node.State != controlmodel.RunNodeReady {
 				continue
 			}
+			if remaining <= 0 {
+				return nil
+			}
+			remaining--
 			var cfg DefinitionNode
 			if len(node.Config) == 0 && (node.Type == controlmodel.RunNodeAgent || node.Type == controlmodel.RunNodeTeam) {
 				// Direct/adaptive Runs are materialized by Issue routing together
@@ -347,7 +405,11 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 				if approver == "" {
 					return e.failNode(ctx, node, fmt.Errorf("approval node requires approverRef"))
 				}
-				_, err = e.Store.Collaboration().CreateApproval(ctx, &controlmodel.Approval{Tenant: run.Tenant, Namespace: run.Namespace, TargetType: "run-node", TargetRef: node.ID.String(), IssueID: node.IssueID, RunID: &run.ID, RunNodeID: &node.ID, RequestedBy: run.CreatedBy, ApproverRef: approver, Status: controlmodel.ApprovalPending, Reason: cfg.Approval.Prompt, Request: inputJSON})
+				approvalID := uuid.NewSHA1(node.ID, []byte("approval"))
+				_, err = e.Store.Collaboration().GetApproval(ctx, approvalID)
+				if err == store.ErrNotFound {
+					_, err = e.Store.Collaboration().CreateApproval(ctx, &controlmodel.Approval{ID: approvalID, Tenant: run.Tenant, Namespace: run.Namespace, TargetType: "run-node", TargetRef: node.ID.String(), IssueID: node.IssueID, RunID: &run.ID, RunNodeID: &node.ID, RequestedBy: run.CreatedBy, ApproverRef: approver, Status: controlmodel.ApprovalPending, Reason: cfg.Approval.Prompt, Request: inputJSON})
+				}
 				if err == nil {
 					_, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeWaiting, nil, "approval", "")
 				}
@@ -400,13 +462,21 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 			continue
 		}
 		var swept bool
-		if swept, err = e.sweepWaiting(ctx, run, nodes); err != nil {
+		if swept, err = e.sweepWaitingBatch(ctx, run, nodes, &remaining); errors.Is(err, store.ErrResourceLimit) {
+			return e.failGraphCapacity(ctx, run, err)
+		} else if err != nil {
 			return err
 		}
 		if swept {
 			continue
 		}
-		latest, _ := e.Store.Orchestration().ListNodes(ctx, runID)
+		latest, err := e.Store.Orchestration().ListNodes(ctx, runID)
+		if errors.Is(err, store.ErrResourceLimit) {
+			return e.failGraphCapacity(ctx, run, err)
+		}
+		if err != nil {
+			return err
+		}
 		active, waiting, runnable, success, failed := 0, 0, 0, 0, 0
 		partialAllowed := false
 		coordinatorFailed := false
@@ -464,6 +534,13 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 		return nil
 	}
 	return fmt.Errorf("orchestration reconciliation exceeded iteration limit")
+}
+
+func (e *Engine) finishFailedRun(ctx context.Context, run *controlmodel.OrchestrationRun) error {
+	if err := (&collaboration.Service{Store: e.Store}).EnsureTerminalTeamSummary(ctx, run); err != nil {
+		return err
+	}
+	return e.convergeFailedIssueTree(ctx, run)
 }
 
 // convergeCompletedIssue keeps human Work acceptance separate from physical
@@ -566,20 +643,16 @@ func (e *Engine) completedTeamCanResumeRoot(ctx context.Context, run *controlmod
 	if !completedCoordinator {
 		return false, nil
 	}
-	for offset := 0; ; offset += 500 {
-		children, listErr := e.Store.Collaboration().ListIssues(ctx, store.IssueFilter{Tenant: issue.Tenant, Namespace: issue.Namespace, ParentID: &issue.ID, Limit: 500, Offset: offset})
-		if listErr != nil {
-			return false, listErr
-		}
-		for _, child := range children {
-			if child.Status != controlmodel.IssueDone && child.Status != controlmodel.IssueCancelled {
-				return false, nil
-			}
-		}
-		if len(children) < 500 {
-			return true, nil
+	children, err := store.ReadChildIssuesBounded(ctx, e.Store.Collaboration(), store.IssueFilter{Tenant: issue.Tenant, Namespace: issue.Namespace, ParentID: &issue.ID})
+	if err != nil {
+		return false, err
+	}
+	for _, child := range children {
+		if child.Status != controlmodel.IssueDone && child.Status != controlmodel.IssueCancelled {
+			return false, nil
 		}
 	}
+	return true, nil
 }
 
 // convergeFailedIssueTree prevents a terminal Run from leaving human-facing
@@ -587,46 +660,7 @@ func (e *Engine) completedTeamCanResumeRoot(ctx context.Context, run *controlmod
 // not silently cancelled or accepted; a human or a later leader can still
 // reopen the Issue after fixing the missing capability or configuration.
 func (e *Engine) convergeFailedIssueTree(ctx context.Context, run *controlmodel.OrchestrationRun) error {
-	if run == nil || run.TriggerType == controlmodel.AgentTaskReviewComment || run.ParentRunID != nil || run.State != controlmodel.RunFailed {
-		return nil
-	}
-	latest, err := e.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{Tenant: run.Tenant, Namespace: run.Namespace, RootIssueID: run.RootIssueID, Limit: 1})
-	if err != nil {
-		return err
-	}
-	// Replaying an old failure must not block a newer recovery run.
-	if len(latest) > 0 && latest[0].ID != run.ID && latest[0].CreatedAt.After(run.CreatedAt) {
-		return nil
-	}
-	root, err := e.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
-	if err != nil {
-		return err
-	}
-	if err = (&collaboration.Service{Store: e.Store}).EnsureTerminalTeamSummary(ctx, run); err != nil {
-		return err
-	}
-	actor := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "orchestration-run:" + run.ID.String()}
-	queue := []*controlmodel.Issue{root}
-	for len(queue) > 0 {
-		issue := queue[0]
-		queue = queue[1:]
-		for offset := 0; ; offset += 500 {
-			children, listErr := e.Store.Collaboration().ListIssues(ctx, store.IssueFilter{
-				Tenant: issue.Tenant, Namespace: issue.Namespace, ParentID: &issue.ID, Limit: 500, Offset: offset,
-			})
-			if listErr != nil {
-				return listErr
-			}
-			queue = append(queue, children...)
-			if len(children) < 500 {
-				break
-			}
-		}
-		if err = e.blockIssueAfterRunFailure(ctx, issue.ID, actor, run.FailureCode); err != nil {
-			return err
-		}
-	}
-	return nil
+	return e.advanceFailedIssueTree(ctx, run)
 }
 
 func (e *Engine) blockIssueAfterRunFailure(ctx context.Context, issueID uuid.UUID,
@@ -664,19 +698,51 @@ func (e *Engine) blockIssueAfterRunFailure(ctx context.Context, issueID uuid.UUI
 }
 
 func buildCELVars(run *controlmodel.OrchestrationRun, issue *controlmodel.Issue, nodes []*controlmodel.RunNode) map[string]any {
-	var input, variables any
-	_ = json.Unmarshal(run.Input, &input)
-	_ = json.Unmarshal(run.Variables, &variables)
+	input, variables := celJSON(run.Input), celJSON(run.Variables)
 	nodeMap := map[string]any{}
 	for _, n := range nodes {
-		var output any
-		_ = json.Unmarshal(n.Output, &output)
+		output := celJSON(n.Output)
 		nodeMap[n.NodeKey] = map[string]any{"status": string(n.State), "output": output, "artifacts": []any{}}
 	}
 	issueJSON, _ := json.Marshal(issue)
-	var issueValue any
-	_ = json.Unmarshal(issueJSON, &issueValue)
+	issueValue := celJSON(issueJSON)
 	return map[string]any{"run": map[string]any{"input": input, "variables": variables}, "issue": issueValue, "trigger": map[string]any{"type": run.TriggerType, "ref": run.TriggerRef}, "nodes": nodeMap}
+}
+
+// JSON's default float64 decoding rounds integer identifiers above 2^53 before
+// a downstream expression reads them. Use CEL's signed/unsigned integer range;
+// decimal, exponential and larger numeric values retain double semantics.
+func celJSON(raw json.RawMessage) any {
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&value) != nil {
+		return nil
+	}
+	return celNumbers(value)
+}
+
+func celNumbers(value any) any {
+	switch v := value.(type) {
+	case json.Number:
+		if n, err := v.Int64(); err == nil {
+			return n
+		}
+		if n, err := strconv.ParseUint(string(v), 10, 64); err == nil {
+			return n
+		}
+		n, _ := v.Float64()
+		return n
+	case map[string]any:
+		for key, item := range v {
+			v[key] = celNumbers(item)
+		}
+	case []any:
+		for index, item := range v {
+			v[index] = celNumbers(item)
+		}
+	}
+	return value
 }
 
 func (e *Engine) failNode(ctx context.Context, node *controlmodel.RunNode, cause error) error {
@@ -688,8 +754,23 @@ func (e *Engine) failNode(ctx context.Context, node *controlmodel.RunNode, cause
 }
 
 func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.OrchestrationRun, nodes []*controlmodel.RunNode) (bool, error) {
+	remaining := reconcileNodeBatch
+	return e.sweepWaitingBatch(ctx, run, nodes, &remaining)
+}
+
+func (e *Engine) sweepWaitingBatch(ctx context.Context, run *controlmodel.OrchestrationRun, nodes []*controlmodel.RunNode, remaining *int) (changed bool, err error) {
+	nodes, commit, err := e.waitingSweepPage(ctx, run, nodes, *remaining)
+	if err != nil {
+		return false, err
+	}
+	*remaining -= len(nodes)
+	defer func() {
+		if err == nil {
+			err = commit()
+		}
+	}()
 	now := time.Now().UTC()
-	changed := false
+	changed = false
 	for _, node := range nodes {
 		if node.State != controlmodel.RunNodeWaiting {
 			continue
@@ -697,8 +778,12 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 		var cfg DefinitionNode
 		_ = json.Unmarshal(node.Config, &cfg)
 		if cfg.TimeoutSeconds > 0 && node.StartedAt != nil && now.After(node.StartedAt.Add(time.Duration(cfg.TimeoutSeconds)*time.Second)) {
-			if err := (&Service{Store: e.Store}).stopNodeWork(ctx, run, node); err != nil {
+			done, err := (&Service{Store: e.Store}).stopCancellationNode(ctx, run, node)
+			if err != nil {
 				return changed, err
+			}
+			if !done {
+				continue
 			}
 			if _, err := e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeFailed, nil, "timeout", "node execution timed out"); err != nil {
 				return changed, err
@@ -708,7 +793,7 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 		}
 		switch node.Type {
 		case controlmodel.RunNodeAgent, controlmodel.RunNodeTeam:
-			tasks, err := e.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{Tenant: run.Tenant, Namespace: run.Namespace, NodeID: node.ID, Limit: 500})
+			tasks, err := store.ReadTasksBounded(ctx, e.Store.Collaboration(), store.AgentTaskFilter{Tenant: run.Tenant, Namespace: run.Namespace, NodeID: node.ID, OmitInputs: true})
 			if err != nil {
 				return changed, err
 			}
@@ -723,6 +808,11 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 			// physical leader task is never proof that delegation converged (the model
 			// may have returned text without performing the claimed actions).
 			if node.Type == controlmodel.RunNodeTeam && latest.Status == controlmodel.AgentTaskCompleted {
+				recovered, recoveryErr := (&Service{Store: e.Store, CEL: e.CEL}).recoverCoordinatorCompletion(ctx, latest)
+				if recoveryErr != nil {
+					return changed, recoveryErr
+				}
+				changed = changed || recovered
 				continue
 			}
 			if latest.Status == controlmodel.AgentTaskCompleted {
@@ -770,12 +860,19 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 				return changed, err
 			}
 			for _, approval := range approvals {
+				output := approval.Decision
+				if approval.Status == controlmodel.ApprovalApproved || approval.Status == controlmodel.ApprovalRejected {
+					output, err = serviceapi.PortalApprovalOutput(ctx, e.Store, serviceapi.ContextContract(ctx), approval)
+					if err != nil {
+						return changed, err
+					}
+				}
 				decided := true
 				switch approval.Status {
 				case controlmodel.ApprovalApproved:
-					_, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, approval.Decision, "", "")
+					_, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, output, "", "")
 				case controlmodel.ApprovalRejected, controlmodel.ApprovalCancelled:
-					_, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeFailed, approval.Decision, "approval_rejected", approval.Reason)
+					_, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeFailed, output, "approval_rejected", approval.Reason)
 				default:
 					decided = false
 				}
@@ -789,26 +886,21 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 				break
 			}
 		case controlmodel.RunNodeSignal:
-			for after := int64(0); ; {
-				events, err := e.Store.Orchestration().ListRunEvents(ctx, run.ID, after, 100)
-				if err != nil {
-					return changed, err
-				}
-				found := false
-				for _, event := range events {
-					after = event.Sequence
-					if event.Type == "run.signal."+cfg.SignalName {
-						if _, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, event.Payload, "", ""); err != nil {
-							return changed, err
-						}
-						changed, found = true, true
-						break
-					}
-				}
-				if found || len(events) < 100 {
-					break
-				}
+			event, err := e.Store.Orchestration().FirstRunSignal(ctx, run.ID, node.ID, cfg.SignalName, serviceapi.ContextPortalCommandID(ctx) == "")
+			if err == store.ErrNotFound {
+				continue
 			}
+			if err != nil {
+				return changed, err
+			}
+			output, err := serviceapi.PortalSignalOutput(ctx, e.Store, serviceapi.ContextContract(ctx), node, event)
+			if err != nil {
+				return changed, err
+			}
+			if _, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, output, "", ""); err != nil {
+				return changed, err
+			}
+			changed = true
 		case controlmodel.RunNodeTimer:
 			var output struct {
 				WakeAt time.Time `json:"wakeAt"`

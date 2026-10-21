@@ -44,6 +44,8 @@ import java.util.Objects;
  * }</pre>
  */
 public class ToolCallParam {
+    /** Opt in to a per-tool context carrying the current {@link ToolUseBlock}. */
+    public static final String CALL_CONTEXT_KEY = "tool.call_context";
 
     private final ToolUseBlock toolUseBlock;
     private final Map<String, Object> input;

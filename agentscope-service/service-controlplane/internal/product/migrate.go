@@ -16,8 +16,12 @@ package product
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log"
+	"time"
+
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/policychanges"
 )
 
 const migrationSQL = `
@@ -300,17 +304,153 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS runtime_dispatch_generation BIGINT
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS runtime_turn_id TEXT;
 `
 
+type productMigration struct {
+	version string
+	sql     string
+}
+
+// New schema changes append a migration; published SQL must not be edited.
+var productMigrations = []productMigration{
+	{"0001_product_resources", migrationSQL + channelWorkMigrationSQL + oauthMigrationSQL + workspacePublicationMigration},
+	{"0002_product_resource_columns", migrationAlterSQL},
+	{"0003_product_accounts", accountManagementSQL},
+	{"0004_product_policy_changes", policychanges.SchemaSQL + policyChangeTriggers},
+	{"0005_environment_execution_modes", `
+      UPDATE environments SET type='local' WHERE type='self_hosted';
+      UPDATE environments SET type='cloud' WHERE type='sandbox';
+      UPDATE environments SET config_json=(COALESCE(NULLIF(config_json,'null')::jsonb,'{}'::jsonb) || jsonb_build_object('type',type))::text;
+    `},
+	{"0006_remove_managed_runtime_markers", `
+  ALTER TABLE sessions DROP COLUMN IF EXISTS runtime_agent_task_id;
+  ALTER TABLE sessions DROP COLUMN IF EXISTS runtime_attempt_id;
+  ALTER TABLE sessions DROP COLUMN IF EXISTS runtime_dispatch_generation;
+  ALTER TABLE sessions DROP COLUMN IF EXISTS runtime_turn_id;
+ `},
+	{"0007_integrated_scheduler", schedulerSchemaSQL},
+}
+
+func migrationChecksum(migration productMigration) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(migration.sql)))
+}
+
+// MigrateSchema runs without starting the product API, creating a workspace,
+// loading credentials, or bootstrapping any users.
+func MigrateSchema(ctx context.Context, dsn string) error {
+	db, err := openDB(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return migrate(ctx, db)
+}
+
 func migrate(ctx context.Context, db *DB) error {
-	log.Printf("running cp schema migration")
-	if _, err := db.Pool.Exec(ctx, migrationSQL+channelWorkMigrationSQL+oauthMigrationSQL+workspacePublicationMigration); err != nil {
-		return fmt.Errorf("migrate: %w", err)
+	conn, err := db.Pool.Acquire(ctx)
+	if err != nil {
+		return err
 	}
-	if _, err := db.Pool.Exec(ctx, migrationAlterSQL); err != nil {
-		return fmt.Errorf("migrate alter: %w", err)
+	defer conn.Release()
+	const lock int64 = 0x41534350000001
+	for {
+		var acquired bool
+		if err = conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", lock).Scan(&acquired); err != nil {
+			return err
+		}
+		if acquired {
+			break
+		}
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
-	if _, err := db.Pool.Exec(ctx, accountManagementSQL); err != nil {
-		return fmt.Errorf("migrate accounts: %w", err)
+	defer func() { _, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", lock) }()
+	if _, err = conn.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS cp;
+		CREATE TABLE IF NOT EXISTS cp.product_schema_migrations (
+		version TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
+		return fmt.Errorf("product migration metadata: %w", err)
+	}
+	rows, err := conn.Query(ctx, "SELECT version,checksum FROM cp.product_schema_migrations ORDER BY version LIMIT 1025")
+	if err != nil {
+		return err
+	}
+	applied := map[string]string{}
+	for rows.Next() {
+		var version, checksum string
+		if err = rows.Scan(&version, &checksum); err != nil {
+			rows.Close()
+			return err
+		}
+		applied[version] = checksum
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	if err = validateProductVersions(applied, false); err != nil {
+		return err
+	}
+	for _, migration := range productMigrations {
+		if _, exists := applied[migration.version]; exists {
+			continue
+		}
+		tx, err := conn.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, migration.sql); err == nil {
+			_, err = tx.Exec(ctx, "INSERT INTO cp.product_schema_migrations(version,checksum) VALUES($1,$2)", migration.version, migrationChecksum(migration))
+		}
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("product migrate %s: %w", migration.version, err)
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return err
+		}
 	}
 	log.Printf("cp schema migration complete")
+	return nil
+}
+
+func validateSchema(ctx context.Context, db *DB) error {
+	rows, err := db.Pool.Query(ctx, "SELECT version,checksum FROM cp.product_schema_migrations ORDER BY version LIMIT 1025")
+	if err != nil {
+		return fmt.Errorf("product schema is not initialized; run the migration job: %w", err)
+	}
+	defer rows.Close()
+	applied := map[string]string{}
+	for rows.Next() {
+		var version, checksum string
+		if err = rows.Scan(&version, &checksum); err != nil {
+			return err
+		}
+		applied[version] = checksum
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	return validateProductVersions(applied, true)
+}
+
+func validateProductVersions(applied map[string]string, complete bool) error {
+	expected := make(map[string]string, len(productMigrations))
+	for _, migration := range productMigrations {
+		expected[migration.version] = migrationChecksum(migration)
+		if complete && applied[migration.version] == "" {
+			return fmt.Errorf("product schema migration is missing: %s; run the migration job", migration.version)
+		}
+	}
+	for version, checksum := range applied {
+		if expected[version] == "" {
+			return fmt.Errorf("product schema version is unsupported: %s", version)
+		}
+		if expected[version] != checksum {
+			return fmt.Errorf("product schema checksum differs: %s", version)
+		}
+	}
 	return nil
 }

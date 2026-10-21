@@ -24,6 +24,7 @@ import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tracing.TracerRegistry;
@@ -43,7 +44,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * Abstract base class for all agents in the AgentScope framework.
@@ -427,15 +427,36 @@ public abstract class AgentBase implements Agent {
         // no-arg "most-recently-active" accessors.
         GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
         List<Msg> acceptedInputs = inputsForCall(scope, msgs);
+        RuntimeContext activeRuntime = runtimeForCall(scope);
+        AgentFinalization finalization =
+                activeRuntime == null ? null : activeRuntime.get(AgentFinalization.class);
+        Msg resumedResult = finalization == null ? null : finalization.resumeResult();
         Mono<Msg> body =
                 TracerRegistry.get()
                         .callAgent(
                                 this,
                                 msgs,
                                 () ->
-                                        notifyPreCall(acceptedInputs, scope)
-                                                .flatMap(doCallFn)
-                                                .flatMap(this::notifyPostCall)
+                                        (resumedResult == null
+                                                        ? notifyPreCall(acceptedInputs, scope)
+                                                                .flatMap(doCallFn)
+                                                                .flatMap(this::notifyPostCall)
+                                                        : Mono.just(resumedResult))
+                                                .flatMap(
+                                                        result ->
+                                                                (finalization == null
+                                                                                ? beforeCallComplete(
+                                                                                        scope,
+                                                                                        result)
+                                                                                : finalization
+                                                                                        .finish(
+                                                                                                activeRuntime,
+                                                                                                result,
+                                                                                                () ->
+                                                                                                        beforeCallComplete(
+                                                                                                                scope,
+                                                                                                                result)))
+                                                                        .thenReturn(result))
                                                 .onErrorResume(
                                                         createErrorHandler(
                                                                 control,
@@ -455,6 +476,10 @@ public abstract class AgentBase implements Agent {
 
     protected List<Msg> inputsForCall(Object scope, List<Msg> inputs) {
         return inputs;
+    }
+
+    protected Mono<Void> beforeCallComplete(Object scope, Msg result) {
+        return Mono.empty();
     }
 
     protected void onCallResult(Object scope, Msg result) {}
@@ -1129,7 +1154,7 @@ public abstract class AgentBase implements Agent {
                                             sink.onCancel(callDisposable);
                                         },
                                         FluxSink.OverflowStrategy.BUFFER)
-                                .publishOn(Schedulers.boundedElastic()));
+                                .publishOn(ModelSchedulers.responses()));
     }
 
     @Override

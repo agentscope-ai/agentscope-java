@@ -16,24 +16,21 @@
 package io.agentscope.builder.web.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.builder.runtime.managed.ManagedJournalStore;
+import io.agentscope.builder.runtime.managed.ManagedSessionLogStore;
 import io.agentscope.builder.web.auth.UserStore;
 import io.agentscope.builder.web.catalog.UserAgentDefinitionStore;
-import io.agentscope.builder.web.coord.CoordinationStore;
-import io.agentscope.builder.web.coord.JdbcCoordinationStore;
 import io.agentscope.builder.web.managed.service.AgentVersionService;
 import io.agentscope.builder.web.managed.service.DeletedSessionRegistry;
 import io.agentscope.builder.web.persistence.jpa.AgentStateEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.AgentVersionEntityRepository;
-import io.agentscope.builder.web.persistence.jpa.CoordHitlTicketEntityRepository;
-import io.agentscope.builder.web.persistence.jpa.CoordLeaseEntityRepository;
-import io.agentscope.builder.web.persistence.jpa.CoordWorkItemEntityRepository;
-import io.agentscope.builder.web.persistence.jpa.CoordWorkerHeartbeatEntityRepository;
 import io.agentscope.builder.web.persistence.jpa.JpaAgentStateStore;
 import io.agentscope.builder.web.share.AgentAclService;
 import io.agentscope.builder.web.share.AgentVisibilityResolver;
 import io.agentscope.builder.web.share.JpaAgentVisibilityResolver;
 import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.session.SessionLogStore;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.store.JdbcStore;
@@ -49,7 +46,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Bean assembly for the builder data plane.
@@ -60,13 +56,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>{@link Model} — optional default DashScope model for agents whose snapshot does not pin a
  *       model name; skipped when no api-key is configured so {@code Optional<Model>} injection
  *       sites receive {@code Optional.empty()};
- *   <li>{@link BaseStore} — JDBC-backed shared key/value store. The control plane writes agent
- *       definition files (skills, subagents, mirrors) through it; the data plane reads the same
- *       namespaces from the shared database when materializing agents;
+ *   <li>{@link BaseStore} — data-plane-owned JDBC workspace and journal storage. Definition
+ *       files are materialized from the admitted execution snapshot;
  *   <li>{@link AgentStateStore} — JPA-backed agent state persistence used by every built {@code
  *       HarnessAgent};
- *   <li>{@link CoordinationStore} — JDBC-backed coordination tables (turn leases, HITL tickets,
- *       Hands work queue) shared with the scheduler;
  *   <li>{@link SharedWorkspacePaths} — resolves the platform-wide shared workspace root
  *       (identical layout to the control plane).
  * </ul>
@@ -113,26 +106,28 @@ public class DataPlaneConfig {
     }
 
     /**
-     * Default {@link BaseStore} backed by the Spring-managed {@link DataSource}. All planes point
-     * at the same JDBC database, so definition files written by the control plane are visible
-     * here. Operators can override by declaring their own {@link BaseStore} bean.
+     * Default {@link BaseStore} backed by the data plane's Spring-managed {@link DataSource}.
+     * Operators can override by declaring their own {@link BaseStore} bean.
      */
     @Bean
     @ConditionalOnMissingBean(BaseStore.class)
-    public BaseStore baseStore(DataSource dataSource) {
+    public BaseStore baseStore(
+            DataSource dataSource,
+            @Value("${builder.schema.initialize:false}") boolean initializeSchema) {
         log.info("Wiring default JdbcStore-backed BaseStore on the Spring DataSource");
-        // The dialect builder creates and validates the schema in one pass.
-        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource).build();
+        AbstractJdbcDialect dialect =
+                AbstractJdbcDialect.from(dataSource)
+                        .tablePrefix("agentscope_")
+                        .autoCreateTable(initializeSchema)
+                        .build();
         return JdbcStore.builder(dataSource).dialect(dialect).build();
     }
 
-    /** Journal data follows the existing distributed workspace store, outside ephemeral sandboxes. */
+    /** Native writes are published through the active MQ execution; readers require explicit scope. */
     @Bean
-    @ConditionalOnMissingBean(io.agentscope.core.session.SessionLogStore.class)
-    public io.agentscope.core.session.SessionLogStore sessionLogStore(BaseStore store) {
-        return new io.agentscope.harness.agent.session.WorkspaceSessionLogStore(
-                new io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem(
-                        store, java.util.List.of("runtime", "sessions")));
+    @ConditionalOnMissingBean(SessionLogStore.class)
+    public ManagedSessionLogStore sessionLogStore(ManagedJournalStore journal) {
+        return new ManagedSessionLogStore(journal);
     }
 
     /** JPA-backed {@link AgentStateStore} shared by every agent built on this node. */
@@ -142,28 +137,6 @@ public class DataPlaneConfig {
             AgentStateEntityRepository repository, DeletedSessionRegistry deletedSessions) {
         log.info("Wiring JpaAgentStateStore on the Spring DataSource / JPA schema");
         return new JpaAgentStateStore(repository, deletedSessions);
-    }
-
-    /**
-     * Default multi-replica coordination store (turn leases, HITL tickets, Hands work queue)
-     * persisted in the shared builder database. The data plane writes turn leases and work items;
-     * the scheduler polls the same tables.
-     */
-    @Bean
-    @ConditionalOnMissingBean(CoordinationStore.class)
-    public CoordinationStore coordinationStore(
-            CoordLeaseEntityRepository leaseRepository,
-            CoordHitlTicketEntityRepository hitlRepository,
-            CoordWorkItemEntityRepository workRepository,
-            CoordWorkerHeartbeatEntityRepository workerRepository,
-            TransactionTemplate transactionTemplate) {
-        log.info("Wiring default JdbcCoordinationStore on the Spring DataSource / JPA schema");
-        return new JdbcCoordinationStore(
-                leaseRepository,
-                hitlRepository,
-                workRepository,
-                workerRepository,
-                transactionTemplate);
     }
 
     /**

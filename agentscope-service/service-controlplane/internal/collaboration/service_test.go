@@ -179,7 +179,7 @@ func TestTeamPolicyGuardsDelegationContentSLAAndTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	count, err := st.Collaboration().SweepTimedOutAgentTasks(ctx, running.StartedAt.Add(2*time.Second), 10)
+	count, err := st.Collaboration().SweepTimedOutAgentTasks(ctx, running.StartedAt.Add(2*time.Second), 10, false)
 	if err != nil || count != 1 {
 		t.Fatalf("timeout sweep: count=%d err=%v", count, err)
 	}

@@ -2,7 +2,7 @@ FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS build
 ARG MODULE
 WORKDIR /src
 COPY . .
-RUN --mount=type=cache,target=/root/.m2 case "$MODULE" in service-gateway|service-dataplane|service-scheduler) ;; *) exit 1 ;; esac \
+RUN --mount=type=cache,target=/root/.m2 case "$MODULE" in service-gateway|service-session-portal|service-dataplane|service-hands) ;; *) exit 1 ;; esac \
     && mvn -B -ntp -T1 -pl agentscope-service/$MODULE -am package -DskipTests \
     && mkdir /out \
     && find agentscope-service/$MODULE/target -maxdepth 1 -name "$MODULE-*.jar" \
@@ -15,7 +15,7 @@ RUN if ! command -v curl >/dev/null 2>&1; then \
     fi \
     && groupadd --gid 65532 agentscope \
     && useradd --uid 65532 --gid 65532 --home-dir /data --no-create-home agentscope \
-    && mkdir -p /data/workspaces /data/artifacts \
+    && mkdir -p /data/workspaces /data/artifacts /data/hands /data/managed-runtime-blobs \
     && chown -R 65532:65532 /data
 COPY --from=build /out/app.jar /app.jar
 ENV BUILDER_WORKSPACE_ROOT=/data/workspaces

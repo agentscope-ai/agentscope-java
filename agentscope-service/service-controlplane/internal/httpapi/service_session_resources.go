@@ -17,7 +17,6 @@
 package httpapi
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -28,11 +27,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimeprotocol"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/sessionapi"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/gin-gonic/gin"
@@ -48,11 +50,10 @@ type publicSessionFile struct {
 	Checksum    string    `json:"checksum"`
 	CreatedAt   time.Time `json:"created_at"`
 	StorageKey  string    `json:"storage_key,omitempty"`
-	NativeID    string    `json:"native_id,omitempty"`
 }
 
 func sessionFilePath(id uuid.UUID) string           { return "service-session-files/" + id.String() }
-func (f publicSessionFile) view() publicSessionFile { f.StorageKey = ""; f.NativeID = ""; return f }
+func (f publicSessionFile) view() publicSessionFile { f.StorageKey = ""; return f }
 func (s *Server) getPublicSessionFile(ctx context.Context, v *sessionapi.Session, id string) (*publicSessionFile, error) {
 	r, err := s.store.KV().Get(ctx, v.Tenant, sessionFilePath(v.ID), id)
 	if err != nil {
@@ -71,10 +72,6 @@ func (s *Server) publicSessionFileUpload(c *gin.Context) {
 		c.JSON(409, ErrorResponse{Error: "Session is not active"})
 		return
 	}
-	if s.artifactProvider == nil {
-		c.JSON(503, ErrorResponse{Error: "file storage is unavailable"})
-		return
-	}
 	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	if key == "" || len(key) > 256 {
 		c.JSON(400, ErrorResponse{Error: "Idempotency-Key must contain 1..256 characters"})
@@ -83,6 +80,34 @@ func (s *Server) publicSessionFileUpload(c *gin.Context) {
 	name, err := url.QueryUnescape(c.GetHeader("X-File-Name"))
 	if err != nil || strings.TrimSpace(name) == "" || len(name) > 1024 {
 		c.JSON(400, ErrorResponse{Error: "X-File-Name must contain a URL-encoded filename"})
+		return
+	}
+	contract, err := serviceapi.ReadContract(v.Contract)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if s.publicSessionIsManaged(contract) {
+		owner, _, err := s.publicNativeSession(c, v, contract)
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return
+		}
+		origin, err := s.ensureNativePublicSession(c, v, contract, owner, key)
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return
+		}
+		raw, err := s.product.ManagedRuntimeUpload(c, owner, origin, name, c.GetHeader("Content-Type"), c.Request.Body)
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return
+		}
+		c.Data(http.StatusCreated, "application/json", raw)
+		return
+	}
+	if s.artifactProvider == nil {
+		c.JSON(503, ErrorResponse{Error: "file storage is unavailable"})
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, 16<<20))
@@ -129,6 +154,15 @@ func (s *Server) publicSessionFiles(c *gin.Context) {
 	if !ok {
 		return
 	}
+	contract, err := serviceapi.ReadContract(v.Contract)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if s.publicSessionIsManaged(contract) {
+		s.publicSessionNativeResource(c)
+		return
+	}
 	offset := max(0, queryInt(c, "offset", 0))
 	limit := queryInt(c, "limit", 100)
 	if limit < 1 || limit > 200 {
@@ -155,21 +189,43 @@ func (s *Server) publicSessionFiles(c *gin.Context) {
 	}
 	c.JSON(200, gin.H{"items": items, "next_offset": next})
 }
+func (s *Server) publicSessionFileMetadata(c *gin.Context) {
+	v, ok := s.loadPublicSession(c, "read")
+	if !ok {
+		return
+	}
+	contract, err := serviceapi.ReadContract(v.Contract)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if s.publicSessionIsManaged(contract) {
+		s.publicSessionNativeResource(c)
+		return
+	}
+	file, err := s.getPublicSessionFile(c, v, c.Param("fileId"))
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, file.view())
+}
+
 func (s *Server) publicSessionFileContent(c *gin.Context) {
 	v, ok := s.loadPublicSession(c, "read")
 	if !ok {
 		return
 	}
-	f, err := s.getPublicSessionFile(c, v, c.Param("fileId"))
-	if errors.Is(err, store.ErrNotFound) {
-		// Files created by Managed tools live in its runtime file store. The
-		// runtime verifies their Session ownership after public authorization.
-		contract, e := serviceapi.ReadContract(v.Contract)
-		if e == nil && s.publicSessionIsManaged(contract) {
-			s.publicSessionNativeResource(c)
-			return
-		}
+	contract, err := serviceapi.ReadContract(v.Contract)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
 	}
+	if s.publicSessionIsManaged(contract) {
+		s.publicSessionNativeResource(c)
+		return
+	}
+	f, err := s.getPublicSessionFile(c, v, c.Param("fileId"))
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
@@ -188,6 +244,24 @@ func (s *Server) publicSessionFileContent(c *gin.Context) {
 }
 
 func (s *Server) publicNativeSession(ctx context.Context, v *sessionapi.Session, contract *serviceapi.Contract) (string, string, error) {
+	if s.publicSessionIsManaged(contract) {
+		policy := contract.Policies[v.Target.ID.String()]
+		candidate := policy.Candidates[0].Binding
+		owner := candidate.ManagedOwnerRef
+		if owner == "" {
+			binding, err := s.store.AgentCatalog().GetBinding(ctx, candidate.BindingID)
+			if err != nil {
+				return "", "", err
+			}
+			var cfg model.ManagedBindingConfiguration
+			if json.Unmarshal(binding.Configuration, &cfg) != nil || cfg.OwnerRef == "" {
+				return "", "", fmt.Errorf("invalid Managed resource binding")
+			}
+			owner = cfg.OwnerRef
+		}
+		return owner, v.ID.String(), nil
+	}
+
 	conv, err := s.ensurePublicConversation(ctx, v, contract)
 	if err != nil {
 		return "", "", err
@@ -207,6 +281,9 @@ func (s *Server) publicSessionNativeResource(c *gin.Context) {
 	scope := "read"
 	if c.Request.Method != "GET" {
 		scope = "interact"
+	}
+	if c.Request.Method == http.MethodPost && strings.HasSuffix(c.Request.URL.Path, "/cancel") {
+		scope = "cancel"
 	}
 	v, ok := s.loadPublicSession(c, scope)
 	if !ok {
@@ -245,84 +322,173 @@ func (s *Server) publicSessionNativeResource(c *gin.Context) {
 		c.JSON(409, ErrorResponse{Error: "Session is not active"})
 		return
 	}
-	owner, native, err := s.publicNativeSession(c, v, contract)
+	owner, _, err := s.publicNativeSession(c, v, contract)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	// The route table admits only known resource paths. Do not forward user-selected URLs.
-	if c.Request.URL.RawQuery != "" {
-		suffix += "?" + c.Request.URL.RawQuery
-	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<20)
-	var body io.Reader = c.Request.Body
-	if strings.HasPrefix(suffix, "/inputs/inject") || c.Request.Method == "POST" && suffix == "/artifacts" {
-		raw, e := io.ReadAll(c.Request.Body)
-		if e != nil {
-			c.Status(413)
-			return
-		}
-		input, e := s.nativePublicSessionInput(c, &model.EndpointInvocation{Contract: v.Contract, Input: raw, SessionID: native}, owner)
-		if e != nil {
-			c.JSON(400, ErrorResponse{Error: e.Error()})
-			return
-		}
-		raw, _ = json.Marshal(input)
-		body = bytes.NewReader(raw)
-	}
-	response, err := s.product.ManagedSessionResource(c, owner, native, c.Request.Method, suffix, c.Request.Header, body)
+	origin, err := s.ensureNativePublicSession(c, v, contract, owner, c.GetHeader("Idempotency-Key"))
 	if err != nil {
-		c.JSON(502, ErrorResponse{Error: err.Error()})
+		s.writeControlPlaneError(c, err)
 		return
 	}
-	defer response.Body.Close()
-	for _, h := range []string{"Content-Type", "Content-Disposition", "ETag"} {
-		if value := response.Header.Get(h); value != "" {
-			c.Header(h, value)
-		}
+	if c.Request.Method == http.MethodGet && suffix == "/files/"+c.Param("fileId")+"/content" {
+		s.serveNativeSessionFile(c, owner, origin, c.Param("fileId"))
+		return
 	}
-	if strings.Contains(response.Header.Get("Content-Type"), "application/json") {
-		var result any
-		if err = json.NewDecoder(io.LimitReader(response.Body, 32<<20)).Decode(&result); err != nil {
-			c.JSON(502, ErrorResponse{Error: "invalid runtime response"})
-			return
-		}
-		mapping, e := s.nativeSessionMapping(c, v, native)
+	if c.Request.Method == http.MethodGet && suffix == "/artifacts/"+c.Param("resourceId")+"/content" {
+		raw, e := s.product.ManagedRuntimeRequest(c, owner, product.ManagedRuntimeCall{Context: origin, Operation: "artifact", ResourceID: c.Param("resourceId")})
 		if e != nil {
 			s.writeControlPlaneError(c, e)
 			return
 		}
-		c.JSON(response.StatusCode, translateNativeValue(result, mapping))
-		return
-	}
-	c.Status(response.StatusCode)
-	contentType := response.Header.Get("Content-Type")
-	if strings.Contains(contentType, "text/event-stream") || strings.Contains(contentType, "ndjson") || strings.Contains(contentType, "jsonl") {
-		mapping, e := s.nativeSessionMapping(c, v, native)
-		if e != nil {
+		var artifact struct {
+			File string `json:"file_id"`
+		}
+		if json.Unmarshal(raw, &artifact) != nil {
+			c.JSON(502, ErrorResponse{Error: "invalid artifact response"})
 			return
 		}
-		scanner := bufio.NewScanner(response.Body)
-		scanner.Buffer(make([]byte, 64<<10), 16<<20)
-		for scanner.Scan() {
-			line := scanner.Text()
-			prefix, payload := "", line
-			if strings.HasPrefix(line, "data:") {
-				prefix, payload = "data: ", strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			}
-			var value any
-			if json.Unmarshal([]byte(payload), &value) == nil {
-				raw, _ := json.Marshal(translateNativeValue(value, mapping))
-				line = prefix + string(raw)
-			}
-			if _, e = fmt.Fprintln(c.Writer, line); e != nil {
-				return
-			}
-			c.Writer.Flush()
+		if artifact.File == "" {
+			c.JSON(422, ErrorResponse{Error: "external artifact content is available at its URI"})
+			return
 		}
+		s.serveNativeSessionFile(c, owner, origin, artifact.File)
 		return
 	}
-	_, _ = io.Copy(c.Writer, response.Body)
+	call, err := nativeSessionResourceCall(c, suffix, origin)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if call.Operation == "" {
+		sessionUnsupported(c, suffix)
+		return
+	}
+	raw, err := s.product.ManagedRuntimeRequest(c, owner, call)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	status := http.StatusOK
+	if call.Operation == "publish_artifact" {
+		status = http.StatusCreated
+	}
+	if call.Operation == "configure_budget" || call.Operation == "restore_checkpoint" {
+		status = http.StatusAccepted
+	}
+	c.Data(status, "application/json", raw)
+}
+
+// Explicit operations preserve native IDs, pinned snapshots and the authenticated request origin.
+func nativeSessionResourceCall(c *gin.Context, suffix string, origin runtimeprotocol.Context) (product.ManagedRuntimeCall, error) {
+	call := product.ManagedRuntimeCall{Context: origin, After: c.Query("after"), SnapshotID: c.Query("snapshot_id"), Limit: 100}
+	if text := c.Query("limit"); text != "" {
+		limit, err := strconv.Atoi(text)
+		if err != nil || limit < 1 || limit > 256 {
+			return call, &product.ManagedServiceError{StatusCode: 400, Message: "limit must contain an integer from 1 to 256"}
+		}
+		call.Limit = limit
+	}
+	if turn := c.Query("turn"); turn != "" {
+		call.Context.TurnID = &turn
+	}
+	switch c.Request.Method {
+	case http.MethodGet:
+		switch suffix {
+		case "/capabilities":
+			call.Operation = "capabilities"
+		case "/budget":
+			call.Operation = "budget"
+		case "/usage":
+			call.Operation = "usage"
+		case "/artifacts":
+			call.Operation = "artifacts"
+		case "/checkpoints":
+			call.Operation, call.Through = "checkpoints", c.Query("through")
+			if c.Query("limit") == "" {
+				call.Limit = 20
+			}
+		case "/files":
+			call.Operation = "files"
+			if c.Query("limit") == "" {
+				call.Limit = 50
+			}
+			if text := c.Query("offset"); text != "" {
+				value, err := strconv.Atoi(text)
+				if err != nil || value < 0 || value > 256 {
+					return call, &product.ManagedServiceError{StatusCode: 400, Message: "offset must contain an integer from 0 to 256"}
+				}
+				call.Offset = value
+			}
+		case "/items", "/tools", "/inputs", "/required-actions":
+			call.Operation = "resource_page"
+			call.ResourceKind = strings.ReplaceAll(strings.TrimPrefix(suffix, "/"), "-", "_")
+		default:
+			if id := c.Param("resourceId"); id != "" && suffix == "/checkpoint-operations/"+id {
+				call.Operation, call.ReceiptID = "checkpoint_operation", id
+			}
+			if id := c.Param("resourceId"); id != "" && suffix == "/checkpoints/"+id {
+				call.Operation, call.ResourceID = "checkpoint", id
+			}
+			if id := c.Param("fileId"); id != "" && suffix == "/files/"+id {
+				call.Operation, call.ResourceID = "file", id
+			}
+			if id := c.Param("resourceId"); id != "" && suffix == "/artifacts/"+id {
+				call.Operation, call.ResourceID = "artifact", id
+			}
+		}
+	case http.MethodPut:
+		if suffix == "/budget" {
+			call.Operation, call.ExpectedRevision = "configure_budget", c.GetHeader("If-Match")
+		}
+	case http.MethodPost:
+		if suffix == "/artifacts" {
+			call.Operation = "publish_artifact"
+		}
+		if suffix == "/checkpoints/restore" {
+			call.Operation = "restore_checkpoint"
+		}
+		if id := c.Param("resourceId"); id != "" && suffix == "/checkpoint-operations/"+id+"/cancel" {
+			call.Operation, call.ReceiptID = "cancel_checkpoint_operation", id
+		}
+	case http.MethodDelete:
+		if id := c.Param("resourceId"); id != "" && suffix == "/artifacts/"+id {
+			call.Operation, call.ResourceID = "delete_artifact", id
+		}
+	}
+	if call.Operation == "publish_artifact" || call.Operation == "restore_checkpoint" {
+		key := c.GetHeader("Idempotency-Key")
+		if key == "" || len(key) > 256 {
+			return call, &product.ManagedServiceError{StatusCode: 400, Message: "Idempotency-Key must contain 1..256 characters"}
+		}
+	}
+	if call.Operation == "configure_budget" || call.Operation == "publish_artifact" || call.Operation == "restore_checkpoint" {
+		var body map[string]any
+		decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 16<<20))
+		if err := decoder.Decode(&body); err != nil || body == nil {
+			return call, &product.ManagedServiceError{StatusCode: 400, Message: "a JSON object body is required"}
+		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			return call, &product.ManagedServiceError{StatusCode: 400, Message: "a single JSON body is required"}
+		}
+		call.Payload = body
+	}
+	return call, nil
+}
+
+func (s *Server) serveNativeSessionFile(c *gin.Context, owner string, origin runtimeprotocol.Context, file string) {
+	response, err := s.product.ManagedRuntimeFileContent(c, owner, origin, file)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	defer response.Body.Close()
+	headers := map[string]string{"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+	if value := response.Header.Get("Content-Disposition"); value != "" {
+		headers["Content-Disposition"] = value
+	}
+	c.DataFromReader(http.StatusOK, response.ContentLength, response.Header.Get("Content-Type"), response.Body, headers)
 }
 
 func sessionInputFiles(input map[string]json.RawMessage) ([]string, error) {
@@ -368,9 +534,11 @@ func (s *Server) validatePublicSessionInput(ctx context.Context, v *sessionapi.S
 	if err != nil {
 		return err
 	}
-	for _, id := range ids {
-		if _, err = s.getPublicSessionFile(ctx, v, id); err != nil {
-			return fmt.Errorf("file %s is not available in this Session", id)
+	if !s.publicSessionIsManaged(contract) {
+		for _, id := range ids {
+			if _, err = s.getPublicSessionFile(ctx, v, id); err != nil {
+				return fmt.Errorf("file %s is not available in this Session", id)
+			}
 		}
 	}
 	if contract.Endpoint.InvocationMode == model.EndpointConversationMode && !s.publicSessionIsManaged(contract) && len(ids) > 0 {
@@ -408,94 +576,6 @@ func (s *Server) validatePublicSessionInput(ctx context.Context, v *sessionapi.S
 	return nil
 }
 
-// Materialize uploaded files in the selected Managed runtime while preserving
-// stable public IDs and idempotency across retries and control-plane restarts.
-func (s *Server) nativePublicSessionInput(ctx context.Context, inv *model.EndpointInvocation, owner string) (any, error) {
-	contract, err := serviceapi.ReadContract(inv.Contract)
-	if err != nil {
-		return nil, err
-	}
-	v, err := sessionapi.Get(ctx, s.store, contract.Endpoint.Tenant, contract.PublicSessionID)
-	if err != nil {
-		return nil, err
-	}
-	var input map[string]json.RawMessage
-	if err = json.Unmarshal(inv.Input, &input); err != nil {
-		return nil, err
-	}
-	ids, err := sessionInputFiles(input)
-	if err != nil {
-		return nil, err
-	}
-	mapping := map[string]string{}
-	for _, id := range ids {
-		f, e := s.getPublicSessionFile(ctx, v, id)
-		if e != nil {
-			return nil, e
-		}
-		if f.NativeID == "" {
-			if s.artifactProvider == nil {
-				return nil, fmt.Errorf("file storage unavailable")
-			}
-			reader, _, e := s.artifactProvider.Open(ctx, f.StorageKey)
-			if e != nil {
-				return nil, e
-			}
-			h := http.Header{}
-			h.Set("Idempotency-Key", f.ID.String())
-			h.Set("X-File-Name", url.QueryEscape(f.Name))
-			h.Set("Content-Type", f.ContentType)
-			response, e := s.product.ManagedSessionResource(ctx, owner, inv.SessionID, "POST", "/files", h, reader)
-			reader.Close()
-			if e != nil {
-				return nil, e
-			}
-			raw, e := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-			response.Body.Close()
-			if e != nil {
-				return nil, e
-			}
-			if response.StatusCode >= 300 {
-				return nil, fmt.Errorf("file upload rejected: HTTP %d", response.StatusCode)
-			}
-			var file struct {
-				ID string `json:"file_id"`
-			}
-			if json.Unmarshal(raw, &file) != nil || file.ID == "" {
-				return nil, fmt.Errorf("runtime returned an invalid file")
-			}
-			f.NativeID = file.ID
-			raw, _ = json.Marshal(f)
-			if _, e = s.store.KV().Put(ctx, v.Tenant, sessionFilePath(v.ID), f.ID.String(), raw); e != nil {
-				return nil, e
-			}
-		}
-		mapping[id] = f.NativeID
-	}
-	var payload any
-	_ = json.Unmarshal(inv.Input, &payload)
-	var replace func(any)
-	replace = func(x any) {
-		switch obj := x.(type) {
-		case map[string]any:
-			if id, ok := obj["file_id"].(string); ok {
-				if mapped := mapping[id]; mapped != "" {
-					obj["file_id"] = mapped
-				}
-			}
-			for _, value := range obj {
-				replace(value)
-			}
-		case []any:
-			for _, value := range obj {
-				replace(value)
-			}
-		}
-	}
-	replace(payload)
-	return payload, nil
-}
-
 func (s *Server) attachPublicSessionFiles(ctx context.Context, inv *model.EndpointInvocation, issueID uuid.UUID) error {
 	contract, err := serviceapi.ReadContract(inv.Contract)
 	if err != nil {
@@ -504,13 +584,20 @@ func (s *Server) attachPublicSessionFiles(ctx context.Context, inv *model.Endpoi
 	if contract.PublicSessionID == uuid.Nil {
 		return nil
 	}
-	v, err := sessionapi.Get(ctx, s.store, contract.Endpoint.Tenant, contract.PublicSessionID)
+	rawInput, err := serviceapi.InvocationInput(ctx, s.store, inv)
 	if err != nil {
 		return err
 	}
 	var input map[string]json.RawMessage
-	_ = json.Unmarshal(inv.Input, &input)
+	_ = json.Unmarshal(rawInput, &input)
 	ids, err := sessionInputFiles(input)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	v, err := sessionapi.Get(ctx, s.store, contract.Endpoint.Tenant, contract.PublicSessionID)
 	if err != nil {
 		return err
 	}
@@ -533,8 +620,8 @@ func (s *Server) attachPublicSessionFiles(ctx context.Context, inv *model.Endpoi
 	return nil
 }
 
-func publicSessionFileRequest(c *gin.Context) bool {
-	return c.Request.Method == "POST" && strings.HasPrefix(c.Request.URL.Path, "/api/v1/agent-sessions/") && strings.HasSuffix(c.Request.URL.Path, "/files")
+func publicSessionProtocolRequest(c *gin.Context) bool {
+	return c.Request.URL.Path == "/api/v1/agent-sessions" || strings.HasPrefix(c.Request.URL.Path, "/api/v1/agent-sessions/")
 }
 
 func (s *Server) publicSessionArtifactMetadata(c *gin.Context) {
@@ -551,19 +638,5 @@ func (s *Server) publicSessionArtifactMetadata(c *gin.Context) {
 		sessionUnsupported(c, "artifact metadata; use the Turn artifacts resource")
 		return
 	}
-	snapshot, err := s.managedPublicSnapshot(c, v, contract, "")
-	if err != nil {
-		s.writeControlPlaneError(c, err)
-		return
-	}
-	artifacts, _ := snapshot["artifacts"].([]any)
-	for _, raw := range artifacts {
-		event, _ := raw.(map[string]any)
-		data, _ := event["data"].(map[string]any)
-		if data["artifact_id"] == c.Param("resourceId") {
-			c.JSON(200, data)
-			return
-		}
-	}
-	c.JSON(404, ErrorResponse{Error: "artifact not found in this Session"})
+	s.publicSessionNativeResource(c)
 }

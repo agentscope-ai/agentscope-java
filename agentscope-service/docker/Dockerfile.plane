@@ -7,7 +7,7 @@ RUN if ! command -v curl >/dev/null 2>&1; then \
     fi \
     && groupadd --gid 65532 agentscope \
     && useradd --uid 65532 --gid 65532 --home-dir /data --no-create-home agentscope \
-    && mkdir -p /data/workspaces /data/artifacts \
+    && mkdir -p /data/workspaces /data/artifacts /data/hands /data/managed-runtime-blobs \
     && chown -R 65532:65532 /data
 ARG JAR_FILE
 COPY ${JAR_FILE} /app.jar

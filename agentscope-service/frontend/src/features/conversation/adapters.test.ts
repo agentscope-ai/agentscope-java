@@ -122,11 +122,10 @@ describe('conversation adapters', () => {
   it('normalizes managed events while preserving their payload', () => {
     const [event] = managedEventsToConversation([{
       id: 'event-1',
-      sessionId: 'session-1',
-      seq: 2,
-      type: 'agent.tool_use',
-      payload: { toolCallId: 'call-2', name: 'Bash', input: { command: 'ls' } },
-      createdAt: 1_700_000_000_000,
+      session_id: 'session-1',
+      type: 'tool.requested',
+      data: { tool_call_id: 'call-2', name: 'Bash', input: { command: 'ls' } },
+      created_at: 1_700_000_000_000,
     }]);
 
     expect(event).toMatchObject({ category: 'tool', callId: 'call-2' });

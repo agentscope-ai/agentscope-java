@@ -27,6 +27,7 @@ export interface Chat {
   agentName: string;
   sessionId: string;
   runtimeSessionId: string;
+  runtimeKind: 'managed' | 'hosted-runtime' | 'external-application';
   title: string;
   status: ChatStatus;
   pinned: boolean;

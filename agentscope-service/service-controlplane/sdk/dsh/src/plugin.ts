@@ -48,7 +48,7 @@ export interface BridgeHandle {
 
 /**
  * Mount the controlplane contract HTTP server, observe DSH sessions, and optionally
- * self-register with service-controlplane.
+ * self-register with control-plane.
  */
 export function apply(ctx: DshContext, raw: PluginConfig = {}): void {
     const handlePromise = startBridge(ctx, raw)
@@ -179,7 +179,7 @@ export async function startBridge(ctx: DshContext, raw: PluginConfig = {}): Prom
         }, config.heartbeatIntervalMs)
         reportTimer.unref?.()
         onDispose(ctx, () => clearInterval(reportTimer))
-        log.info(`ASDP gRPC client targeting ${config.controlGrpc} (failure will not stop the agent loop)`)
+        log.info(`Runtime Protocol gRPC client targeting ${config.controlGrpc} (failure will not stop the agent loop)`)
     }
 
     return {

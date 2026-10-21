@@ -43,7 +43,7 @@ from agentscope_service.transport.grpc import GrpcTransport
 # ─── fake 控制面 ───
 
 
-class FakeASDPServicer(asdp_pb2_grpc.AgentDataPlaneServiceServicer):
+class FakeRuntimeProtocolServicer(asdp_pb2_grpc.AgentDataPlaneServiceServicer):
     def __init__(self):
         self._lock = threading.Lock()
         self.connects = []
@@ -112,7 +112,7 @@ class FakeASDPServicer(asdp_pb2_grpc.AgentDataPlaneServiceServicer):
 
 @pytest.fixture
 def fake_cp():
-    servicer = FakeASDPServicer()
+    servicer = FakeRuntimeProtocolServicer()
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     asdp_pb2_grpc.add_AgentDataPlaneServiceServicer_to_server(servicer, server)
     port = server.add_insecure_port("127.0.0.1:0")
@@ -350,7 +350,7 @@ def test_inventory_reported_on_connect(fake_cp, claude, fast_periods):
         bridge.stop()
 
 
-def test_asdp_session_command_dispatches_to_adapter(fake_cp, claude, fast_periods):
+def test_runtime_protocol_session_command_dispatches_to_adapter(fake_cp, claude, fast_periods):
     servicer, _ = fake_cp
     bridge = _make_bridge(fake_cp, claude)
     try:

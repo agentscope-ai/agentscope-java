@@ -22,8 +22,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.builder.control.ControlPlaneClient;
 import io.agentscope.builder.control.SessionResolveResult;
-import io.agentscope.builder.web.managed.DataSessionService;
-import io.agentscope.builder.web.managed.EnvironmentSpecFactory;
+import io.agentscope.builder.runtime.ManagedCatalog;
 import io.agentscope.builder.web.managed.ManagedSessionDto;
 import io.agentscope.builder.web.managed.MemoryMountService;
 import io.agentscope.builder.web.managed.SessionAgentBuildSpec;
@@ -44,6 +43,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.examples.jev.JevBrowserExample;
 import io.agentscope.examples.jev.JevCodeReviewExample;
 import io.agentscope.examples.jev.JevSupervisionExample;
 import io.agentscope.examples.jev.JevTraceEvaluationExample;
@@ -134,8 +134,7 @@ class JevTraceManagedAgentTest {
                         call -> {
                             evaluations.incrementAndGet();
                             if (purpose.equals("browser"))
-                                return io.agentscope.examples.jev.JevBrowserExample
-                                        .syntheticAnswers(call.getArgument(0));
+                                return JevBrowserExample.syntheticAnswers(call.getArgument(0));
                             if (purpose.equals("routing"))
                                 return io.agentscope.examples.jev.JevPhaseRoutingExample
                                         .syntheticAnswers(call.getArgument(0));
@@ -221,10 +220,7 @@ class JevTraceManagedAgentTest {
                                                                     purpose.equals("browser")
                                                                             ? Map.of(
                                                                                     "goal",
-                                                                                    io.agentscope
-                                                                                            .examples
-                                                                                            .jev
-                                                                                            .JevBrowserExample
+                                                                                    JevBrowserExample
                                                                                             .GOAL)
                                                                             : purpose.equals(
                                                                                             "retrieval")
@@ -285,7 +281,7 @@ class JevTraceManagedAgentTest {
                                 "fast", routedModel),
                         io.agentscope.examples.jev.JevPhaseRoutingExample.candidate(
                                 "strong", routedModel));
-        var sessions = mock(DataSessionService.class);
+        var sessions = mock(ManagedCatalog.class);
         when(sessions.resolve("eval-session"))
                 .thenAnswer(
                         ignored -> policyAvailable ? control.resolveSession("eval-session") : null);
@@ -294,8 +290,7 @@ class JevTraceManagedAgentTest {
                         Optional.of(model),
                         mock(ToolEventBus.class),
                         new SharedWorkspacePaths(workspace),
-                        mock(EnvironmentSpecFactory.class),
-                        new ToolConfirmationMiddleware(null, sessions),
+                        new ToolConfirmationMiddleware(sessions),
                         mock(MemoryMountService.class),
                         mock(VaultCredentialResolver.class),
                         new InMemoryAgentStateStore(),
@@ -321,14 +316,13 @@ class JevTraceManagedAgentTest {
                                     new io.agentscope.extensions.judge.jev.browser.JevBrowserSession
                                             .Source(
                                             req ->
-                                                    new io.agentscope.examples.jev.JevBrowserExample
-                                                            .ScriptedSession(
+                                                    new JevBrowserExample.ScriptedSession(
                                                             io.agentscope.examples.jev
                                                                     .JevBrowserExample.scope(
                                                                     req.context()),
                                                             new AtomicInteger(),
                                                             new AtomicInteger()),
-                                            io.agentscope.examples.jev.JevBrowserExample::verify))
+                                            JevBrowserExample::verify))
                             .sessionId(session.id())
                             .userId(session.ownerId())
                             .put(

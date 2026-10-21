@@ -15,6 +15,8 @@
  */
 package io.agentscope.builder.web.managed.selfhosted;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -22,10 +24,13 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Stages session metadata / resource file references into a worker workspace.
@@ -81,15 +86,16 @@ public final class SessionInputStager {
         if (metadata == null || metadata.isEmpty()) {
             return;
         }
+        var budget = new StagingBudget();
         Object inputFile = metadata.get("input_file");
         if (inputFile != null) {
-            stageOneFile(String.valueOf(inputFile), workDir);
+            stageOneFile(String.valueOf(inputFile), workDir, budget);
         }
         Object files = metadata.get("files");
         if (files instanceof Iterable<?> iterable) {
             for (Object f : iterable) {
                 if (f != null) {
-                    stageOneFile(String.valueOf(f), workDir);
+                    stageOneFile(String.valueOf(f), workDir, budget);
                 }
             }
         }
@@ -109,7 +115,7 @@ public final class SessionInputStager {
                                         resource.get("file"),
                                         resource.get("input_file"));
                         if (ref != null) {
-                            stageOneFile(ref, workDir);
+                            stageOneFile(ref, workDir, budget);
                         }
                     }
                 }
@@ -117,39 +123,86 @@ public final class SessionInputStager {
         }
     }
 
-    private static void stageOneFile(String ref, Path workDir) throws Exception {
+    private static void stageOneFile(String ref, Path workDir, StagingBudget budget)
+            throws Exception {
         if (ref == null || ref.isBlank()) {
             return;
         }
+        if (!budget.references.add(ref)) return;
+        if (budget.references.size() > 128)
+            throw new IOException("Input staging exceeds 128 references");
+        budget.check(0);
         Path destDir = workDir.resolve("inputs");
         Files.createDirectories(destDir);
         if (ref.startsWith("file://")) {
             Path src = Path.of(URI.create(ref));
+            if (Files.size(src) > 32L * 1024 * 1024)
+                throw new IOException("Input file exceeds 32 MiB staging limit");
+            budget.check(Files.size(src));
             Path dest = destDir.resolve(src.getFileName().toString());
             Files.copy(src, dest, StandardCopyOption.REPLACE_EXISTING);
             return;
         }
         if (ref.startsWith("http://") || ref.startsWith("https://")) {
-            HttpClient client = HttpClient.newHttpClient();
-            HttpResponse<byte[]> resp =
+            HttpClient client =
+                    HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+            var response =
                     client.send(
-                            HttpRequest.newBuilder(URI.create(ref)).GET().build(),
-                            HttpResponse.BodyHandlers.ofByteArray());
-            if (resp.statusCode() < 300) {
-                String name = Path.of(URI.create(ref).getPath()).getFileName().toString();
-                if (name == null || name.isBlank()) {
-                    name = "download.bin";
+                            HttpRequest.newBuilder(URI.create(ref))
+                                    .timeout(Duration.ofSeconds(30))
+                                    .GET()
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofInputStream());
+            try (InputStream input = response.body()) {
+                if (response.statusCode() >= 300) throw new IOException("Input download rejected");
+                var rawName = Path.of(URI.create(ref).getPath()).getFileName();
+                String name =
+                        rawName == null || rawName.toString().isBlank()
+                                ? "download.bin"
+                                : rawName.toString();
+                Path temporary = Files.createTempFile(destDir, ".input-", ".tmp");
+                try (var output = Files.newOutputStream(temporary)) {
+                    byte[] buffer = new byte[16384];
+                    int count;
+                    long total = 0;
+                    while ((count = input.read(buffer)) != -1) {
+                        budget.check(count);
+                        total += count;
+                        if (total > 32L * 1024 * 1024)
+                            throw new IOException("Input exceeds 32 MiB staging limit");
+                        output.write(buffer, 0, count);
+                    }
+                } catch (Exception failure) {
+                    Files.deleteIfExists(temporary);
+                    throw failure;
                 }
-                Files.write(destDir.resolve(name), resp.body());
+                Files.move(temporary, destDir.resolve(name), StandardCopyOption.REPLACE_EXISTING);
             }
             return;
         }
         Path maybe = Path.of(ref);
         if (Files.exists(maybe)) {
+            if (Files.size(maybe) > 32L * 1024 * 1024)
+                throw new IOException("Input file exceeds 32 MiB staging limit");
+            budget.check(Files.size(maybe));
             Files.copy(
                     maybe,
                     destDir.resolve(maybe.getFileName().toString()),
                     StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static final class StagingBudget {
+        final Set<String> references = new HashSet<>();
+        final long deadline = System.nanoTime() + Duration.ofSeconds(120).toNanos();
+        long bytes;
+
+        void check(long count) throws IOException {
+            bytes += count;
+            if (bytes > 64L * 1024 * 1024)
+                throw new IOException("Input staging exceeds 64 MiB total limit");
+            if (System.nanoTime() > deadline || Thread.currentThread().isInterrupted())
+                throw new IOException("Input staging deadline exceeded");
         }
     }
 

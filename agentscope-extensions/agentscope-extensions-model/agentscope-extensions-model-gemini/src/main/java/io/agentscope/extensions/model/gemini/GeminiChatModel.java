@@ -31,6 +31,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelException;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
@@ -43,7 +44,6 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * Gemini Chat Model implementation using the official Google GenAI Java SDK.
@@ -342,7 +342,6 @@ public class GeminiChatModel extends ChatModelBase {
 
                                     // Convert ResponseStream to Flux
                                     return Flux.fromIterable(responseStream)
-                                            .subscribeOn(Schedulers.boundedElastic())
                                             .map(
                                                     response ->
                                                             formatter.parseResponse(
@@ -381,7 +380,8 @@ public class GeminiChatModel extends ChatModelBase {
                                                 "Gemini API call failed: " + e.getMessage(), e));
                             }
                         })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(streamEnabled ? ModelSchedulers.streams() : ModelSchedulers.requests())
+                .publishOn(ModelSchedulers.responses(), 32);
     }
 
     @Override

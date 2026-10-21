@@ -6,6 +6,7 @@ import { createProcessor } from '@mdx-js/mdx';
 import remarkGfm from 'remark-gfm';
 import matter from 'gray-matter';
 import GithubSlugger from 'github-slugger';
+import ignore from 'ignore';
 
 function walk(node, visit) {
   visit(node);
@@ -84,8 +85,12 @@ export function checkSite(docs) {
   const config = JSON.parse(fs.readFileSync(path.join(docs, 'docs.json'), 'utf8'));
   const errors = [];
   const pages = new Map();
+  const ignoreFile = path.join(docs, '.mintignore');
+  const patterns = fs.existsSync(ignoreFile) ? fs.readFileSync(ignoreFile, 'utf8').split(/\r?\n/).map((line) => line.trim()) : [];
+  const excluded = ignore().add(patterns);
   const routes = navigationPages(config.navigation);
   for (const file of ['v1', 'v2'].flatMap((version) => pageFiles(path.join(docs, version)))) {
+    if (excluded.ignores(path.relative(docs, file).split(path.sep).join('/'))) continue;
     const route = '/' + path.relative(docs, file).replace(/\.mdx?$/, '').split(path.sep).join('/');
     try {
       if (pages.has(route)) errors.push(`Duplicate page route: ${route}`);
@@ -163,6 +168,11 @@ export function checkSite(docs) {
       return;
     }
     const file = path.resolve(docs, '.' + target);
+    const relative = path.relative(path.resolve(docs), file).split(path.sep).join('/');
+    if (relative && !relative.startsWith('../') && excluded.ignores(relative)) {
+      errors.push(`${from}: local target excluded by .mintignore ${link}`);
+      return;
+    }
     if (!file.startsWith(path.resolve(docs) + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       errors.push(`${from}: missing local target ${link}`);
     }

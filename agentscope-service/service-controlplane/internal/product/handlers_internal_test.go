@@ -18,231 +18,15 @@
 package product
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"sync"
-	"sync/atomic"
 	"testing"
-
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
-
-func TestPostSessionWakeEventRetriesLeaseReleaseRace(t *testing.T) {
-	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/sessions/session-a/events" ||
-			r.Header.Get("X-Builder-Internal-Token") != "internal-token" ||
-			r.Header.Get("X-Builder-Internal-User") != "owner-a" {
-			t.Errorf("unexpected wake request: path=%s headers=%v", r.URL.Path, r.Header)
-		}
-		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Errorf("decode payload: %v", err)
-		}
-		if calls.Add(1) == 1 {
-			w.WriteHeader(http.StatusConflict)
-			return
-		}
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	t.Cleanup(server.Close)
-
-	s := &Server{cfg: Config{DataURL: server.URL, InternalToken: "internal-token"}}
-	if err := s.PostSessionWakeEvent(t.Context(), "session-a", "owner-a", "hello"); err != nil {
-		t.Fatal(err)
-	}
-	if got := calls.Load(); got != 2 {
-		t.Fatalf("wake calls=%d, want 2", got)
-	}
-}
-
-func TestPostManagedToolConfirmationUsesFencedInternalEndpoint(t *testing.T) {
-	approvalID, taskID, attemptID := uuid.New(), uuid.New(), uuid.New()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/internal/sessions/session-a/tool-confirmations/call-1/decision" ||
-			r.Header.Get("X-Builder-Internal-Token") != "internal-token" ||
-			r.Header.Get("X-Builder-Internal-User") != "owner-a" {
-			t.Errorf("unexpected confirmation request: path=%s headers=%v", r.URL.Path, r.Header)
-		}
-		var body ManagedToolConfirmationDecision
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		if body.ApprovalID != approvalID || body.AgentTaskID != taskID || body.AttemptID != attemptID ||
-			body.DecisionVersion != 2 || body.Status != "approved" || !body.Allow ||
-			body.DispatchGeneration != 3 || body.TurnID != "turn-1" {
-			t.Errorf("unexpected confirmation body: %+v", body)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	t.Cleanup(server.Close)
-	s := &Server{cfg: Config{DataURL: server.URL, InternalToken: "internal-token"}}
-	err := s.PostManagedToolConfirmation(t.Context(), "session-a", "owner-a", "call-1",
-		ManagedToolConfirmationDecision{ApprovalID: approvalID, AgentTaskID: taskID,
-			AttemptID: attemptID, DecisionVersion: 2, Status: "approved", Allow: true,
-			DispatchGeneration: 3, TurnID: "turn-1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestPostManagedAttemptAbortUsesOldTurnFence(t *testing.T) {
-	taskID, attemptID := uuid.New(), uuid.New()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wantPath := "/api/internal/sessions/session-a/managed-attempts/" + attemptID.String() + "/abort"
-		if r.URL.Path != wantPath || r.Header.Get("X-Builder-Internal-Token") != "internal-token" ||
-			r.Header.Get("X-Builder-Internal-User") != "owner-a" {
-			t.Errorf("unexpected abort request: path=%s headers=%v", r.URL.Path, r.Header)
-		}
-		var body ManagedAttemptAbort
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		if body.AgentTaskID != taskID || body.AttemptID != attemptID || body.DispatchGeneration != 7 ||
-			body.TurnID != "turn-a" || body.Reason != "heartbeat_timeout" {
-			t.Errorf("unexpected abort body: %+v", body)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	t.Cleanup(server.Close)
-	s := &Server{cfg: Config{DataURL: server.URL, InternalToken: "internal-token"}}
-	err := s.PostManagedAttemptAbort(t.Context(), "session-a", "owner-a", ManagedAttemptAbort{
-		AgentTaskID: taskID, AttemptID: attemptID, DispatchGeneration: 7,
-		TurnID: "turn-a", Reason: "heartbeat_timeout",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestManagedRuntimeFenceProjectionIsMonotonic(t *testing.T) {
-	taskID := uuid.New().String()
-	attemptA, attemptB := uuid.New().String(), uuid.New().String()
-	fenceA := ManagedRuntimeFence{AgentTaskID: taskID, AttemptID: attemptA,
-		DispatchGeneration: 1, TurnID: "turn-a"}
-	fenceB := ManagedRuntimeFence{AgentTaskID: taskID, AttemptID: attemptB,
-		DispatchGeneration: 2, TurnID: "turn-b"}
-	var session sessionRow
-	if !managedRuntimeFenceCanAdvance(session, fenceA) {
-		t.Fatal("empty marker rejected Attempt A")
-	}
-	setRuntimeMarker := func(fence ManagedRuntimeFence) {
-		task, attempt, turn, generation := fence.AgentTaskID, fence.AttemptID, fence.TurnID, fence.DispatchGeneration
-		session.RuntimeAgentTaskID, session.RuntimeAttemptID = &task, &attempt
-		session.RuntimeTurnID, session.RuntimeDispatchGen = &turn, &generation
-	}
-	setRuntimeMarker(fenceA)
-	if !managedRuntimeFenceCanAdvance(session, fenceB) {
-		t.Fatal("newer Attempt B could not replace A marker")
-	}
-	setRuntimeMarker(fenceB)
-	if managedRuntimeFenceCanAdvance(session, fenceA) {
-		t.Fatal("delayed Attempt A could overwrite B marker")
-	}
-	if !managedRuntimeFenceCanAdvance(session, fenceB) {
-		t.Fatal("idempotent Attempt B patch was rejected")
-	}
-	sameGenerationDifferentTuple := fenceB
-	sameGenerationDifferentTuple.AttemptID = uuid.New().String()
-	if managedRuntimeFenceCanAdvance(session, sameGenerationDifferentTuple) {
-		t.Fatal("same generation with a different physical tuple was accepted")
-	}
-}
-
-func TestRunningRuntimePatchClearsPreviousAttemptStopReason(t *testing.T) {
-	previous := `{"code":"turn_failed"}`
-	sess := sessionRow{StopReasonJSON: &previous}
-	running := "running"
-	if got := sessionRuntimeStopReason(sess, &running, nil); got != nil {
-		t.Fatalf("running inherited previous stop reason: %#v", got)
-	}
-	idle := "idle"
-	if got := sessionRuntimeStopReason(sess, &idle, nil); got != previous {
-		t.Fatalf("idle status-only patch did not preserve stop reason: %#v", got)
-	}
-}
-
-func TestManagedRuntimePatchCannotOverwriteNewerPreWakeFence(t *testing.T) {
-	dsn := os.Getenv("CONTROL_PLANE_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("CONTROL_PLANE_TEST_POSTGRES_DSN not set; skipping product postgres test")
-	}
-	ctx := context.Background()
-	db, err := openDB(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(db.Close)
-	if err = migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-	sessionID := "test-runtime-fence-" + shortID("")
-	now := nowMillis()
-	if _, err = db.Pool.Exec(ctx, `INSERT INTO sessions
-		(session_id,owner_id,agent_id,environment_id,status,stop_reason_json,version,created_at,updated_at)
-		VALUES($1,'owner','agent','environment','running','{"code":"attempt_a_failed"}',1,$2,$2)`, sessionID, now); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.Pool.Exec(context.Background(), `DELETE FROM sessions WHERE session_id=$1`, sessionID)
-	})
-
-	taskID, attemptA, attemptB := uuid.New(), uuid.New(), uuid.New()
-	server := &Server{db: db, managedRuntimeValidator: func(context.Context, string, ManagedRuntimeFence) (bool, error) {
-		// This deliberately models Attempt A having passed its runtime-store
-		// validation immediately before Attempt B was claimed.
-		return true, nil
-	}}
-	if err = server.ClaimManagedRuntimeFence(ctx, sessionID, taskID, attemptA, 1, "turn-a"); err != nil {
-		t.Fatal(err)
-	}
-	if err = server.ClaimManagedRuntimeFence(ctx, sessionID, taskID, attemptB, 2, "turn-b"); err != nil {
-		t.Fatal(err)
-	}
-	router := gin.New()
-	server.registerInternal(router)
-	patch := func(fence ManagedRuntimeFence, status string) *httptest.ResponseRecorder {
-		body, marshalErr := json.Marshal(map[string]any{
-			"status": status, "agentTaskId": fence.AgentTaskID, "attemptId": fence.AttemptID,
-			"dispatchGeneration": fence.DispatchGeneration, "turnId": fence.TurnID,
-		})
-		if marshalErr != nil {
-			t.Fatal(marshalErr)
-		}
-		req := httptest.NewRequest(http.MethodPatch, "/api/internal/sessions/"+sessionID+"/runtime", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, req)
-		return response
-	}
-	fenceA := ManagedRuntimeFence{AgentTaskID: taskID.String(), AttemptID: attemptA.String(),
-		DispatchGeneration: 1, TurnID: "turn-a"}
-	fenceB := ManagedRuntimeFence{AgentTaskID: taskID.String(), AttemptID: attemptB.String(),
-		DispatchGeneration: 2, TurnID: "turn-b"}
-	if response := patch(fenceA, "terminated"); response.Code != http.StatusConflict {
-		t.Fatalf("delayed Attempt A status=%d body=%s", response.Code, response.Body.String())
-	}
-	var status, markerAttempt string
-	var stopReason *string
-	var markerGeneration int64
-	if err = db.Pool.QueryRow(ctx, `SELECT status,runtime_attempt_id,runtime_dispatch_generation,stop_reason_json
-		FROM sessions WHERE session_id=$1`, sessionID).Scan(&status, &markerAttempt, &markerGeneration, &stopReason); err != nil {
-		t.Fatal(err)
-	}
-	if status != "running" || markerAttempt != attemptB.String() || markerGeneration != 2 || stopReason != nil {
-		t.Fatalf("Attempt A mutated B projection: status=%s attempt=%s generation=%d stop=%v",
-			status, markerAttempt, markerGeneration, stopReason)
-	}
-	if response := patch(fenceB, "idle"); response.Code != http.StatusOK {
-		t.Fatalf("current Attempt B status=%d body=%s", response.Code, response.Body.String())
-	}
-}
 
 func TestEnsureDefaultLocalEnvironmentIsConcurrentAndIdempotent(t *testing.T) {
 	dsn := os.Getenv("CONTROL_PLANE_TEST_POSTGRES_DSN")
@@ -435,5 +219,15 @@ func TestLocalEnvironmentCannotCreateNewBindingWhenDisabled(t *testing.T) {
 	}
 	if _, err = server.ensureDefaultLocalEnvironment(ctx, ownerID); !errors.Is(err, ErrLocalEnvironmentDisabled) {
 		t.Fatalf("default error=%v, want ErrLocalEnvironmentDisabled", err)
+	}
+}
+
+func TestManagedRuntimeStatusCallbackIsRetired(t *testing.T) {
+	router := gin.New()
+	(&Server{}).registerInternal(router)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPatch, "/api/internal/sessions/session/runtime", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("retired runtime callback returned %d", response.Code)
 	}
 }

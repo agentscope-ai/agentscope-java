@@ -31,7 +31,7 @@ import (
 // Freeze follows declared references, including nested Workflow revisions. It
 // does not interpret arbitrary strings inside a task's business input as refs.
 func Freeze(ctx context.Context, st store.Store, ep *model.Endpoint) (json.RawMessage, error) {
-	c := Contract{Endpoint: *ep, Policies: map[string]*model.AgentRuntimePolicy{}, Definitions: map[string]json.RawMessage{}, Teams: map[string]*model.CollaborationTeam{}, Revisions: map[string]*model.OrchestrationRevision{}}
+	c := Contract{Endpoint: *ep, Policies: map[string]*model.AgentRuntimePolicy{}, Definitions: map[string]json.RawMessage{}, Teams: map[string]*model.CollaborationTeam{}, Revisions: map[string]*model.OrchestrationRevision{}, RuntimeProfiles: map[string]*model.RuntimeProfile{}, RuntimePools: map[string]*model.RuntimePool{}}
 	agents := map[string]bool{}
 	addAgent := func(ref string) error {
 		id, err := uuid.Parse(ref)
@@ -141,6 +141,24 @@ func Freeze(ctx context.Context, st store.Store, ep *model.Endpoint) (json.RawMe
 		}
 		if policy != nil {
 			c.Policies[id] = policy
+			for _, candidate := range policy.Candidates {
+				binding := candidate.Binding
+				if binding.Kind != model.DataPlaneHostedRuntime {
+					continue
+				}
+				profile, err := st.RuntimeRegistry().GetRuntimeProfileByID(ctx, binding.RuntimeProfileID)
+				if err != nil {
+					return nil, err
+				}
+				pool, err := st.RuntimeRegistry().GetRuntimePoolByID(ctx, binding.RuntimePoolID)
+				if err != nil {
+					return nil, err
+				}
+				if profile.Tenant != ep.Tenant || profile.Namespace != ep.Namespace || pool.Tenant != ep.Tenant || pool.Namespace != ep.Namespace {
+					return nil, store.ErrForbidden
+				}
+				c.RuntimeProfiles[profile.ID.String()], c.RuntimePools[pool.ID.String()] = profile, pool
+			}
 		}
 	}
 	sort.Strings(c.Agents)

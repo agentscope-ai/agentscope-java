@@ -25,14 +25,14 @@ func TestNativeServiceTurnAnswerUsesCanonicalRoleAndFinalOutput(t *testing.T) {
 		}}}
 	}
 	for _, final := range []string{"complete reply", ""} {
-		snapshot := map[string]any{"items": []any{
+		snapshot := map[string]any{"resources": map[string]any{"items": map[string]any{"data": []any{
 			item("this", "ASSISTANT", "reasoning", false),
 			item("this", "ASSISTANT", final, true),
 			item("this", "assistant", "late intermediate", false),
 			item("other", "ASSISTANT", "other turn", true),
 			item("this", "USER", "question", true),
 			item("this", "TOOL", "tool output", true),
-		}}
+		}}}}
 		if got := nativeServiceTurnAnswer(snapshot, "this"); got != final {
 			t.Fatalf("got %q, want %q", got, final)
 		}

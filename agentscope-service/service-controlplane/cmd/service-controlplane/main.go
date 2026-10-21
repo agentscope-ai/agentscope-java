@@ -50,10 +50,10 @@ import (
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/discovery"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/features"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/httpapi"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/orchestration"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/prober"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/realtime"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimeportal"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/sessionops"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store/memory"
@@ -328,6 +328,9 @@ func main() {
 		grpcTLSKey            string
 		grpcTLSCA             string
 
+		sessionPortalURL string
+		executionSlots   int
+		workerBatch      int
 		healthCheck      bool
 		enableKubernetes bool
 		enableProduct    bool
@@ -341,6 +344,8 @@ func main() {
 
 		storageDriver          string
 		storageDSN             string
+		schemaMode             string
+		migrateOnly            bool
 		storageMaxOpenConns    int
 		storageMaxIdleConns    int
 		storageConnMaxLifetime time.Duration
@@ -364,6 +369,7 @@ func main() {
 		defaultNamespace       string
 		allowLocalEnvironment  bool
 		localDev               bool
+		enableRuntimeWorkers   bool
 	)
 
 	defaultRetention := store.DefaultRetention()
@@ -396,6 +402,10 @@ func main() {
 
 	flag.BoolVar(&healthCheck, "healthcheck", false,
 		"Probe the local REST API and exit 0 when healthy. Intended for container health checks.")
+	flag.StringVar(&sessionPortalURL, "session-portal-url", envOr("BUILDER_SESSION_PORTAL_URL", envOr("SESSION_PORTAL_URL", "http://127.0.0.1:8084")), "Session Portal service URL shared by integrated execution and scheduling.")
+	flag.IntVar(&executionSlots, "execution-slots", 32, "Maximum concurrent bounded Portal Turn advances per replica (1..128).")
+	flag.IntVar(&workerBatch, "worker-batch", 64, "Maximum tasks/events selected per execution worker pass (1..128).")
+	flag.BoolVar(&enableRuntimeWorkers, "enable-runtime-workers", envBool("CONTROL_PLANE_ENABLE_RUNTIME_WORKERS", os.Getenv("CONTROL_PLANE_PRODUCT_DSN") != ""), "Run integrated execution workers on every replica; defaults on with a product database and off for SDK-only servers.")
 	flag.BoolVar(&enableKubernetes, "enable-kubernetes", envBool("CONTROL_PLANE_ENABLE_KUBERNETES", true),
 		"Connect to Kubernetes for CRD-backed APIs, reconcilers, and ASDP. Disable to run the control plane standalone.")
 	flag.BoolVar(&enableProduct, "enable-product", envBool("CONTROL_PLANE_ENABLE_PRODUCT", true),
@@ -429,6 +439,8 @@ func main() {
 		"Runtime data storage driver: memory (dev/test, non-durable) or postgres (production).")
 	flag.StringVar(&storageDSN, "storage-dsn", os.Getenv("CONTROL_PLANE_STORAGE_DSN"),
 		"PostgreSQL DSN for the storage driver (e.g. postgres://user:pass@host:5432/controlplane?sslmode=require). Required when --storage-driver=postgres.")
+	flag.StringVar(&schemaMode, "schema-mode", "validate", "validate for replicas, migrate only for explicit local initialization.")
+	flag.BoolVar(&migrateOnly, "migrate-only", false, "Initialize the runtime and enabled product schemas, then exit before starting HTTP, controllers, or workers.")
 	flag.IntVar(&storageMaxOpenConns, "storage-max-open-conns", 20, "Maximum open connections to the storage backend.")
 	flag.IntVar(&storageMaxIdleConns, "storage-max-idle-conns", 5, "Maximum idle connections to the storage backend.")
 	flag.DurationVar(&storageConnMaxLifetime, "storage-conn-max-lifetime", 30*time.Minute, "Maximum lifetime of a storage backend connection.")
@@ -452,6 +464,26 @@ func main() {
 	flag.DurationVar(&runtimeOfflineTimeout, "runtime-offline-timeout", 45*time.Second,
 		"Mark Runtime Hosts and Agent instances offline after this heartbeat gap.")
 	flag.Parse()
+	// The full Service owns execution. The SDK-only Kubernetes controller keeps
+	// its existing resource-only default and needs no Portal or runtime secrets.
+	if os.Getenv("CONTROL_PLANE_ENABLE_RUNTIME_WORKERS") == "" {
+		explicit := false
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "enable-runtime-workers" {
+				explicit = true
+			}
+		})
+		if !explicit {
+			enableRuntimeWorkers = enableProduct && strings.TrimSpace(productDSN) != ""
+		}
+	}
+	if executionSlots < 1 || executionSlots > 128 || workerBatch < 1 || workerBatch > 128 {
+		fmt.Fprintln(os.Stderr, "execution slots and worker batch must be between 1 and 128")
+		os.Exit(2)
+	}
+	if migrateOnly {
+		schemaMode = "migrate"
+	}
 	scopeMode = strings.ToLower(strings.TrimSpace(scopeMode))
 	if scopeMode != httpapi.ScopeModeSingle && scopeMode != httpapi.ScopeModeMulti {
 		fmt.Fprintf(os.Stderr, "invalid --scope-mode %q: expected single or multi\n", scopeMode)
@@ -473,6 +505,17 @@ func main() {
 			os.Exit(1)
 		}
 		os.Exit(0)
+	}
+
+	if enableRuntimeWorkers && !migrateOnly {
+		if !localDev && (len(productToken) < 32 || len(productJWTSecret) < 32) {
+			fmt.Fprintln(os.Stderr, "integrated execution requires stable internal and JWT secrets of at least 32 bytes")
+			os.Exit(2)
+		}
+		if storageDriver == store.DriverPostgres && len(os.Getenv("BUILDER_VAULT_MASTER_KEY")) < 32 {
+			fmt.Fprintln(os.Stderr, "integrated PostgreSQL execution requires BUILDER_VAULT_MASTER_KEY of at least 32 bytes")
+			os.Exit(2)
+		}
 	}
 
 	// Structured logging: default to production JSON; use console mode for
@@ -501,11 +544,13 @@ func main() {
 	// metrics, Issue collaboration, and AgentTasks). Memory is the default for local/dev use
 	// and unit tests; it is NOT durable across restarts.
 	storeCfg := store.Config{
-		Driver:          storageDriver,
-		PostgresDSN:     storageDSN,
-		MaxOpenConns:    storageMaxOpenConns,
-		MaxIdleConns:    storageMaxIdleConns,
-		ConnMaxLifetime: storageConnMaxLifetime,
+		SchemaMode:       schemaMode,
+		Driver:           storageDriver,
+		PostgresDSN:      storageDSN,
+		RuntimeMasterKey: os.Getenv("BUILDER_VAULT_MASTER_KEY"),
+		MaxOpenConns:     storageMaxOpenConns,
+		MaxIdleConns:     storageMaxIdleConns,
+		ConnMaxLifetime:  storageConnMaxLifetime,
 		Retention: store.RetentionConfig{
 			SessionEvents:    retentionSessionEvents,
 			Snapshots:        retentionSnapshots,
@@ -524,6 +569,16 @@ func main() {
 		os.Exit(1)
 	}
 	defer runtimeStore.Close()
+	if migrateOnly {
+		if enableProduct && productDSN != "" {
+			if err = product.MigrateSchema(context.Background(), productDSN); err != nil {
+				logger.Error(err, "unable to migrate product schema")
+				os.Exit(1)
+			}
+		}
+		logger.Info("control plane schema migration complete")
+		return
+	}
 	if storageDriver == store.DriverMemory {
 		logger.Info("WARNING: using the in-memory storage driver -- session, event, and team data will NOT survive a restart. Use --storage-driver=postgres for production deployments.")
 	}
@@ -537,6 +592,7 @@ func main() {
 		logger.Info("Managed Agents control plane not mounted: no --product-dsn configured")
 	default:
 		productSrv, err = product.Open(context.Background(), product.Config{
+			SchemaMode:            schemaMode,
 			LocalDev:              localDev,
 			DSN:                   productDSN,
 			JWTSecret:             productJWTSecret,
@@ -547,6 +603,7 @@ func main() {
 			BootstrapPassword:     os.Getenv("CONTROL_PLANE_BOOTSTRAP_PASSWORD"),
 			AllowLocalEnvironment: allowLocalEnvironment,
 			DataURL:               os.Getenv("BUILDER_DATA_URL"),
+			SessionPortalURL:      sessionPortalURL,
 			VaultMasterKey:        os.Getenv("BUILDER_VAULT_MASTER_KEY"),
 			OAuthPublicURL:        os.Getenv("BUILDER_OAUTH_PUBLIC_URL"),
 		})
@@ -632,19 +689,20 @@ func main() {
 	}
 	if mgr != nil {
 		setupKubernetes(kubeRuntime{
-			mgr:                mgr,
-			logger:             logger,
-			store:              runtimeStore,
-			storeCfg:           storeCfg,
-			prober:             httpProber,
-			registry:           dpRegistry,
-			product:            productSrv,
-			enableExperimental: enableExperimental,
-			enableWebhook:      enableWebhook,
-			enableHostedStore:  enableHostedStore,
-			asdpServer:         asdpServer,
-			taskSweepInterval:  taskSweepInterval,
-			taskOrphanTimeout:  taskOrphanTimeout,
+			mgr:                  mgr,
+			logger:               logger,
+			store:                runtimeStore,
+			storeCfg:             storeCfg,
+			prober:               httpProber,
+			registry:             dpRegistry,
+			product:              productSrv,
+			enableExperimental:   enableExperimental,
+			enableWebhook:        enableWebhook,
+			enableHostedStore:    enableHostedStore,
+			enableRuntimeWorkers: enableRuntimeWorkers,
+			asdpServer:           asdpServer,
+			taskSweepInterval:    taskSweepInterval,
+			taskOrphanTimeout:    taskOrphanTimeout,
 		})
 	}
 
@@ -660,30 +718,18 @@ func main() {
 		cancel()
 	}()
 
-	// Self-registration poller: always runs so standalone (no K8s) fleets
-	// still get session snapshots into the runtime store.
-	go (&dataplane.Poller{
-		Registry: dpRegistry,
-		Store:    runtimeStore,
-		Prober:   httpProber,
-		Interval: 15 * time.Second,
-	}).Run(ctx)
-	logger.Info("data plane self-registration poller started")
+	if enableRuntimeWorkers {
+		// Self-registration poller: always runs so standalone (no K8s) fleets
+		// still get session snapshots into the runtime store.
+		go (&dataplane.Poller{
+			Registry: dpRegistry,
+			Store:    runtimeStore,
+			Prober:   httpProber,
+			Interval: 15 * time.Second,
+		}).Run(ctx)
+		logger.Info("data plane self-registration poller started")
 
-	go func() {
-		worker := &controller.RuntimeControlSweeper{
-			Store: runtimeStore, Interval: runtimeSweepInterval,
-			RuntimeTimeout: runtimeOfflineTimeout, Batch: 100,
-			ReconcileRun: func(sweepCtx context.Context, runID uuid.UUID) error {
-				return (&orchestration.Engine{Store: runtimeStore}).ReconcileRun(sweepCtx, runID)
-			},
-		}
-		if err := worker.Start(ctx); err != nil {
-			logger.Error(err, "runtime control sweeper stopped")
-		}
-	}()
-	logger.Info("runtime control sweeper started", "interval", runtimeSweepInterval,
-		"offlineTimeout", runtimeOfflineTimeout)
+	}
 
 	collaborationEvents := realtime.NewHub()
 
@@ -694,14 +740,6 @@ func main() {
 		}
 	}()
 	logger.Info("automation worker started", "interval", 2*time.Second)
-
-	go func() {
-		worker := &orchestration.Worker{Store: runtimeStore, Interval: time.Second, Batch: 200}
-		if err := worker.Start(ctx); err != nil {
-			logger.Error(err, "orchestration engine worker stopped")
-		}
-	}()
-	logger.Info("orchestration engine worker started", "interval", time.Second)
 
 	// Start the ASDP gRPC server.
 	// Multi-replica note: the gRPC server runs on ALL replicas, not just the
@@ -723,8 +761,25 @@ func main() {
 
 	// Build REST API server options. One listener serves the Kubernetes-native
 	// API, the Managed Agents API, and the console SPA.
+	var artifactProvider artifact.Provider
+	if envBool("BUILDER_USER_FILES_ENABLED", true) {
+		artifactProvider = &artifact.LocalProvider{Root: artifactRoot}
+	}
+	var portalClient *runtimeportal.Client
+	if enableRuntimeWorkers {
+		portalClient, err = runtimeportal.NewClient(sessionPortalURL, productToken)
+		if err != nil {
+			logger.Error(err, "unable to configure Portal execution client")
+			os.Exit(1)
+		}
+		defer portalClient.Close()
+	}
+
 	apiOpts := httpapi.ServerOptions{
 		LocalDev:                 localDev,
+		PortalRuntime:            enableRuntimeWorkers,
+		PortalClient:             portalClient,
+		DisableExecutionWorkers:  !enableRuntimeWorkers,
 		ServiceEventRetention:    serviceEventRetention,
 		Store:                    runtimeStore,
 		Prober:                   httpProber,
@@ -740,7 +795,7 @@ func main() {
 		TaskTokenSecret:          productJWTSecret,
 		EndpointCredentialSecret: envOr("CONTROL_PLANE_ENDPOINT_CREDENTIAL_KEY", productJWTSecret),
 		HostedStore:              enableHostedStore,
-		ArtifactProvider:         &artifact.LocalProvider{Root: artifactRoot},
+		ArtifactProvider:         artifactProvider,
 		CollaborationEvents:      collaborationEvents,
 		Features: features.Gates{
 			RuntimeHost: enableRuntimeHost,
@@ -768,28 +823,22 @@ func main() {
 	}
 
 	apiServer := httpapi.NewServer(apiOpts)
-	outboxHandler := &controller.CollaborationOutboxHandler{
-		Store: runtimeStore, Sink: collaborationEvents, DispatchAgentTask: apiServer.DispatchAgentTask,
-		DispatchApprovalDecision: apiServer.DispatchApprovalDecision,
-		DispatchManagedAbort:     apiServer.DispatchManagedAttemptAbort,
-		ReconcileRun: func(eventCtx context.Context, runID uuid.UUID) error {
-			return (&orchestration.Engine{Store: runtimeStore}).ReconcileRun(eventCtx, runID)
-		},
+	if enableRuntimeWorkers {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if err := apiServer.RunExecutionWorkers(ctx, executionSlots, workerBatch, runtimeSweepInterval, runtimeOfflineTimeout); err != nil {
+				logger.Error(err, "integrated execution workers stopped")
+				cancel()
+			}
+		}()
+		defer func() {
+			cancel()
+			<-done
+		}()
 	}
-	hostname, _ := os.Hostname()
-	go func() {
-		worker := &controller.ControlOutboxDispatcher{
-			Store: runtimeStore, Handler: outboxHandler,
-			WorkerID:   fmt.Sprintf("%s/%d", hostname, os.Getpid()),
-			MaxBackoff: 5 * time.Second,
-		}
-		if err := worker.Start(ctx); err != nil {
-			logger.Error(err, "control outbox dispatcher stopped")
-		}
-	}()
-	logger.Info("control outbox dispatcher started")
 
-	if ops := apiServer.SessionOps(); ops != nil && runtimeStore != nil {
+	if ops := apiServer.SessionOps(); enableRuntimeWorkers && ops != nil && runtimeStore != nil {
 		go (&sessionops.QueueWorker{
 			Router:   ops,
 			Store:    runtimeStore,
@@ -829,19 +878,20 @@ func main() {
 
 // kubeRuntime carries everything the Kubernetes-dependent wiring needs.
 type kubeRuntime struct {
-	mgr                ctrl.Manager
-	logger             logr.Logger
-	store              store.Store
-	storeCfg           store.Config
-	prober             prober.DataPlaneProber
-	registry           *dataplane.Registry
-	product            *product.Server
-	enableExperimental bool
-	enableWebhook      bool
-	enableHostedStore  bool
-	asdpServer         *asdp.Server
-	taskSweepInterval  time.Duration
-	taskOrphanTimeout  time.Duration
+	mgr                  ctrl.Manager
+	logger               logr.Logger
+	store                store.Store
+	storeCfg             store.Config
+	prober               prober.DataPlaneProber
+	registry             *dataplane.Registry
+	product              *product.Server
+	enableExperimental   bool
+	enableWebhook        bool
+	enableHostedStore    bool
+	enableRuntimeWorkers bool
+	asdpServer           *asdp.Server
+	taskSweepInterval    time.Duration
+	taskOrphanTimeout    time.Duration
 }
 
 // setupKubernetes registers the reconcilers, config delivery, admission
@@ -934,7 +984,7 @@ func setupKubernetes(k kubeRuntime) {
 		os.Exit(1)
 	}
 
-	if k.enableHostedStore {
+	if k.enableHostedStore && k.enableRuntimeWorkers {
 		if err := mgr.Add(&controller.TaskSweepWorker{
 			Store:         runtimeStore,
 			Interval:      k.taskSweepInterval,

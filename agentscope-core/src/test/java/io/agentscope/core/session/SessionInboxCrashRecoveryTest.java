@@ -30,6 +30,50 @@ import org.junit.jupiter.api.Test;
 
 class SessionInboxCrashRecoveryTest {
     @Test
+    void rejectionSurvivesLostCommitAcknowledgementWithoutAnExecutableIntermediateInput() {
+        var storage = new FaultStorage();
+        var command = new SessionInbox.Command("denied", "inject", null, List.of(), List.of());
+        var inbox = new SessionInbox(new JournalSessionLog(storage, "session"));
+        storage.loseRejectedAck = true;
+        assertThrows(
+                SessionLogException.class,
+                () -> inbox.locked(tx -> tx.acceptRejected(command, "input_admission_expired")));
+        var restarted = new SessionInbox(new JournalSessionLog(storage, "session"));
+        assertEquals(1, restarted.snapshot().commands().size());
+        assertEquals("input_admission_expired", restarted.snapshot().rejected().get("denied"));
+        restarted.locked(tx -> tx.acceptRejected(command, "input_admission_expired"));
+        assertEquals(2, new JournalSessionLog(storage, "session").inbox().head().seq());
+        var accepted = new SessionInbox.Command("accepted", "inject", null, List.of(), List.of());
+        restarted.locked(tx -> tx.accept(accepted));
+        restarted.locked(tx -> tx.acceptRejected(accepted, "input_admission_expired"));
+        assertFalse(restarted.snapshot().rejected().containsKey("accepted"));
+    }
+
+    @Test
+    void rejectedSteeringDoesNotKeepTheExecutionOpen() {
+        var log = new JournalSessionLog(new FaultStorage(), "session");
+        var command = new SessionInbox.Command("submit", "submit", "turn", List.of(), List.of());
+        var state = AgentState.builder().sessionId("session").build();
+        var recorder = new SessionRecorder(log, "turn", "execution", null);
+        var execution = new SessionExecution(log, command);
+        execution.prepare(recorder);
+        recorder.start(List.of(), state).block();
+        new SessionInbox(log)
+                .locked(
+                        tx -> {
+                            var rejected =
+                                    new SessionInbox.Command(
+                                            "expired", "steer", "turn", List.of(), List.of());
+                            tx.acceptRejected(rejected, "input_admission_expired");
+                            return null;
+                        });
+        assertFalse(execution.continueOrClose(recorder));
+        assertEquals(null, new SessionInbox(log).snapshot().turnId());
+        recorder.finish(state, "completed").block();
+        assertEquals("completed", SessionTurns.read(log).latest().status());
+    }
+
+    @Test
     void acceptanceSurvivesLostCommitAcknowledgementAndRetryDoesNotDuplicateInput() {
         var storage = new FaultStorage();
         var command =
@@ -105,6 +149,7 @@ class SessionInboxCrashRecoveryTest {
     private static final class FaultStorage implements AtomicSessionStorage {
         private final Map<String, Value> values = new HashMap<>();
         private boolean loseInboxAck;
+        private boolean loseRejectedAck;
         private boolean failAckInspection;
         private boolean failApplied;
 
@@ -127,10 +172,11 @@ class SessionInboxCrashRecoveryTest {
             var current = values.get(path);
             if ((current == null ? 0 : current.version()) != version) return false;
             values.put(path, new Value(version + 1, bytes));
-            if (loseInboxAck
-                    && path.endsWith("/inbox/head.json")
-                    && content.contains("\"seq\":1")) {
+            if (path.endsWith("/inbox/head.json")
+                    && (loseInboxAck && content.contains("\"seq\":1")
+                            || loseRejectedAck && content.contains("\"seq\":2"))) {
                 loseInboxAck = false;
+                loseRejectedAck = false;
                 failAckInspection = true;
                 throw new SessionLogException("injected lost committed acceptance ACK");
             }

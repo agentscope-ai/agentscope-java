@@ -16,7 +16,6 @@
 package io.agentscope.builder.web.managed;
 
 import io.agentscope.builder.web.managed.service.MemoryStoreService;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -27,8 +26,7 @@ import org.springframework.stereotype.Service;
 /**
  * Resolves session-bound memory stores into {@link MemoryStoreFilesystem} routes mounted under
  * {@code memory-stores/{storeName}/} in the harness filesystem (see {@link
- * MemoryStoreFilesystem#routePrefix} and {@link
- * EnvironmentSpecFactory#applyMemoryStoreRoutes}).
+ * MemoryStoreFilesystem#routePrefix} and the Harness filesystem routes).
  *
  * <p>Memory documents are read/written directly against the {@link MemoryStoreService} JPA store
  * — there is no host-disk materialization step, so mounts stay in sync across concurrent turns
@@ -73,7 +71,7 @@ public class MemoryMountService {
 
     /**
      * Builds one {@link MemoryStoreFilesystem} per resolvable memory store id, ready to be
-     * mounted via {@link EnvironmentSpecFactory#applyMemoryStoreRoutes}. All mounts default to
+     * mounted via the Harness filesystem routes. All mounts default to
      * {@code read_write}; use {@link #createFilesystems(String, List, Map)} to mount some stores
      * {@code read_only}.
      */
@@ -164,27 +162,6 @@ public class MemoryMountService {
                             access.get(id)));
         }
         return result;
-    }
-
-    /**
-     * @deprecated host-disk materialization is no longer used; memory stores are mounted live via
-     *     {@link #createFilesystems}. Retained only so callers mid-migration keep compiling;
-     *     delegates to {@link #resolveMounts}.
-     */
-    @Deprecated
-    public List<MountInfo> materialize(
-            String ownerId, Path workspace, List<String> memoryStoreIds) {
-        return resolveMounts(ownerId, memoryStoreIds);
-    }
-
-    /**
-     * @deprecated writeback is a no-op: {@link MemoryStoreFilesystem} writes directly through to
-     *     {@link MemoryStoreService} on every tool call, so there is nothing left to reconcile
-     *     after a turn.
-     */
-    @Deprecated
-    public void writeback(String ownerId, Path workspace, List<String> memoryStoreIds) {
-        // no-op — MemoryStoreFilesystem writes through immediately.
     }
 
     private static String sanitize(String name) {

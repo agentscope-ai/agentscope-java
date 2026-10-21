@@ -93,11 +93,11 @@ public final class SharedWorkspacePaths {
             return p.normalize();
         }
         Path cwd = Paths.get(System.getProperty("user.dir")).toAbsolutePath().normalize();
-        Path agentScopeBase = cwd.resolve(".agentscope").normalize();
+        Path platformBase = cwd.resolve(".agentscope").normalize();
         Path resolvedAgainstCwd = cwd.resolve(p).normalize();
-        if (resolvedAgainstCwd.startsWith(agentScopeBase)) {
+        if (resolvedAgainstCwd.startsWith(platformBase)) {
             return resolvedAgainstCwd;
         }
-        return agentScopeBase.resolve(p).normalize();
+        return platformBase.resolve(p).normalize();
     }
 }

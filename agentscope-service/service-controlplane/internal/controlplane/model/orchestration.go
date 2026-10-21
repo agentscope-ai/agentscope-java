@@ -65,7 +65,7 @@ func CanTransitionOrchestrationRun(from, to OrchestrationRunState) bool {
 	case RunPaused:
 		return to == RunRunning || to == RunWaiting || to == RunCancelling
 	case RunCancelling:
-		return to == RunCancelled
+		return to == RunCancelled || to == RunFailed
 	default:
 		return false
 	}
@@ -148,33 +148,41 @@ type OrchestrationRevision struct {
 }
 
 type OrchestrationRun struct {
-	ID                   uuid.UUID             `json:"id"`
-	Tenant               string                `json:"tenant"`
-	Namespace            string                `json:"namespace"`
-	RootIssueID          uuid.UUID             `json:"rootIssueId"`
-	Mode                 OrchestrationRunMode  `json:"mode"`
-	DefinitionRevisionID *uuid.UUID            `json:"definitionRevisionId,omitempty"`
-	ParentRunID          *uuid.UUID            `json:"parentRunId,omitempty"`
-	ParentNodeID         *uuid.UUID            `json:"parentNodeId,omitempty"`
-	RerunOfRunID         *uuid.UUID            `json:"rerunOfRunId,omitempty"`
-	TriggerType          string                `json:"triggerType"`
-	TriggerRef           string                `json:"triggerRef,omitempty"`
-	IdempotencyKey       string                `json:"idempotencyKey,omitempty"`
-	Input                json.RawMessage       `json:"input,omitempty"`
-	Variables            json.RawMessage       `json:"variables,omitempty"`
-	Output               json.RawMessage       `json:"output,omitempty"`
-	PolicySnapshot       json.RawMessage       `json:"policySnapshot,omitempty"`
-	Usage                json.RawMessage       `json:"usage,omitempty"`
-	State                OrchestrationRunState `json:"state"`
-	WaitReason           string                `json:"waitReason,omitempty"`
-	FailureCode          string                `json:"failureCode,omitempty"`
-	FailureMessage       string                `json:"failureMessage,omitempty"`
-	Version              int64                 `json:"version"`
-	CreatedBy            Actor                 `json:"createdBy"`
-	CreatedAt            time.Time             `json:"createdAt"`
-	UpdatedAt            time.Time             `json:"updatedAt"`
-	StartedAt            *time.Time            `json:"startedAt,omitempty"`
-	CompletedAt          *time.Time            `json:"completedAt,omitempty"`
+	// PortalOwned is a derived scan hint; execution still requires its live contract.
+	PortalOwned            bool                  `json:"-"`
+	TerminalCleanupPending bool                  `json:"-"`
+	ID                     uuid.UUID             `json:"id"`
+	Tenant                 string                `json:"tenant"`
+	Namespace              string                `json:"namespace"`
+	RootIssueID            uuid.UUID             `json:"rootIssueId"`
+	Mode                   OrchestrationRunMode  `json:"mode"`
+	DefinitionRevisionID   *uuid.UUID            `json:"definitionRevisionId,omitempty"`
+	ParentRunID            *uuid.UUID            `json:"parentRunId,omitempty"`
+	ParentNodeID           *uuid.UUID            `json:"parentNodeId,omitempty"`
+	RerunOfRunID           *uuid.UUID            `json:"rerunOfRunId,omitempty"`
+	TriggerType            string                `json:"triggerType"`
+	TriggerRef             string                `json:"triggerRef,omitempty"`
+	IdempotencyKey         string                `json:"idempotencyKey,omitempty"`
+	Input                  json.RawMessage       `json:"input,omitempty"`
+	Variables              json.RawMessage       `json:"variables,omitempty"`
+	Output                 json.RawMessage       `json:"output,omitempty"`
+	PolicySnapshot         json.RawMessage       `json:"policySnapshot,omitempty"`
+	Usage                  json.RawMessage       `json:"usage,omitempty"`
+	State                  OrchestrationRunState `json:"state"`
+	WaitReason             string                `json:"waitReason,omitempty"`
+	FailureCode            string                `json:"failureCode,omitempty"`
+	FailureMessage         string                `json:"failureMessage,omitempty"`
+	Version                int64                 `json:"version"`
+	CreatedBy              Actor                 `json:"createdBy"`
+	CreatedAt              time.Time             `json:"createdAt"`
+	UpdatedAt              time.Time             `json:"updatedAt"`
+	StartedAt              *time.Time            `json:"startedAt,omitempty"`
+	CompletedAt            *time.Time            `json:"completedAt,omitempty"`
+}
+
+// Failed root Runs retain their Issue cleanup obligation after execution ends.
+func NeedsFailedIssueCleanup(run *OrchestrationRun) bool {
+	return run.State == RunFailed && run.ParentRunID == nil && run.TriggerType != AgentTaskReviewComment
 }
 
 type RunNode struct {

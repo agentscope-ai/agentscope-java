@@ -135,3 +135,28 @@ jobs:
           path: agentscope-service/release/dist/${{ needs.package.outputs.version }}/
       - name: Upload assets, create Go tag and publish GitHub Release
         run: python3 agentscope-service/release/release.py publish-github --version "$SERVICE_VERSION"
+
+  helm:
+    name: Sync public Helm repository
+    needs: [package, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'PyYAML>=6,<7'
+      - name: Import Release chart, wait for Pages and verify public downloads
+        env:
+          GH_TOKEN: ${{ secrets.HELM_REPOSITORY_TOKEN }}
+          SERVICE_VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo '::error::Configure HELM_REPOSITORY_TOKEN with Actions write access to chickenlj/helm-charts.'
+            exit 1
+          fi
+          python agentscope-service/release/sync_helm.py "$SERVICE_VERSION"

@@ -56,8 +56,8 @@ func enqueueCollaborationEventTx(ctx context.Context, tx pgx.Tx, tenant, aggrega
 	_, err = tx.Exec(ctx, `INSERT INTO control_outbox
 		(id,tenant,namespace,aggregate_type,aggregate_id,event_type,schema_version,
 		 actor_type,actor_ref,causation_id,correlation_id,occurred_at,payload,dedupe_key,
-		 attempts,available_at,created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,1,$7,$8,$9,$10,$11,$12,$13,0,$11,$11)
+		 attempts,available_at,created_at,portal_owned)
+		VALUES ($1,$2,$3,$4,$5,$6,1,$7,$8,$9,$10,$11,$12,$13,0,$11,$11,portal_runtime_event_owned($4,$5))
 		ON CONFLICT (tenant,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
 		uuid.New(), tenant, meta.Namespace, aggregateType, aggregateID.String(), eventType,
 		meta.Actor.Type, nullStr(meta.Actor.Ref), nullStr(meta.CausationID), nullStr(meta.CorrelationID),

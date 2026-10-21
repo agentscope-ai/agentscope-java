@@ -28,7 +28,6 @@ import org.springframework.test.context.TestPropertySource;
         properties = {
             "builder.control-plane-url=http://localhost:8081",
             "builder.data-plane-url=http://localhost:8082",
-            "builder.scheduler-plane-url=http://localhost:8083"
         })
 class GatewayAppContextLoadTest {
 

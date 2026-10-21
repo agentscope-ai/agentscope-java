@@ -307,6 +307,14 @@ class ToolExecutor {
             mergedInput.putAll(registered.getPresetParameters());
         }
 
+        // Hosts needing durable call identity opt in; ordinary tools keep their shared context.
+        if (runtimeContext != null
+                && Boolean.TRUE.equals(runtimeContext.get(ToolCallParam.CALL_CONTEXT_KEY)))
+            runtimeContext =
+                    RuntimeContext.builder(runtimeContext)
+                            .put(ToolUseBlock.class, toolCall)
+                            .build();
+
         // Build final execution param
         ToolCallParam executionParam =
                 ToolCallParam.builder()

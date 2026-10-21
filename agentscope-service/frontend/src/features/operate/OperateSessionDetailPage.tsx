@@ -57,6 +57,7 @@ import { CompressButton } from './components/CompressButton';
 import { ContextPanel, contextSummary } from './components/ContextPanel';
 import { StatusStrip } from './components/StatusStrip';
 import { useSessionEvents } from './lib/useSessionEvents';
+import SessionExecution from '@/components/SessionExecution';
 
 export default function OperateSessionDetailPage() {
   const { sessionId = '', agentId } = useParams();
@@ -80,45 +81,46 @@ export default function OperateSessionDetailPage() {
   // Capabilities come from the session response (enriched by control plane) —
   // do NOT join against dataplanes[0].
   const sessionReady = !!s;
+  const nativeManaged = s?.runtime?.kind === 'managed' || s?.framework === 'managed';
   const contractLevel = s?.contractLevel ?? 0;
   const capabilities = s?.capabilities || [];
 
   const context = useQuery({
     queryKey: ['runtime-context', sessionId, agentId],
     queryFn: () => fetchSessionContext(sessionId, agentId),
-    enabled: sessionReady && canQueryContext(capabilities),
+    enabled: sessionReady && !nativeManaged && canQueryContext(capabilities),
   });
 
   const eventTimeline = useSessionEvents(sessionId, {
     agentId,
-    enabled: !!sessionId && sessionReady,
+    enabled: !!sessionId && sessionReady && !nativeManaged,
   });
 
   const tasks = useQuery({
     queryKey: ['runtime-tasks', sessionId, agentId],
     queryFn: () => fetchSessionTasks(sessionId, agentId),
-    enabled: !!sessionId && canQueryTasks(capabilities),
+    enabled: sessionReady && !nativeManaged && canQueryTasks(capabilities),
     retry: false,
   });
 
   const subagentTasks = useQuery({
     queryKey: ['runtime-subagent-tasks', sessionId, agentId],
     queryFn: () => fetchSessionSubagentTasks(sessionId, agentId),
-    enabled: !!sessionId && canQuerySubagentTasks(capabilities),
+    enabled: sessionReady && !nativeManaged && canQuerySubagentTasks(capabilities),
     retry: false,
   });
 
   const commands = useQuery({
     queryKey: ['runtime-commands', sessionId, agentId],
     queryFn: () => fetchSessionCommands(sessionId, agentId),
-    enabled: !!sessionId,
+    enabled: sessionReady && !nativeManaged,
     retry: false,
   });
 
   const turns = useQuery({
     queryKey: ['runtime-turns', sessionId, agentId],
     queryFn: () => fetchSessionTurns(sessionId, agentId),
-    enabled: !!sessionId,
+    enabled: sessionReady && !nativeManaged,
   });
 
   const latestEventSeq = eventTimeline.events[eventTimeline.events.length - 1]?.seq;
@@ -222,6 +224,14 @@ export default function OperateSessionDetailPage() {
   const canArchive = phase === 'idle';
   const canRestore = isArchived;
   const compressDisabled = readOnlyOps || phase === 'compressing';
+
+  if (nativeManaged && s) return <Page>
+    <Link to={scope.scopedPath('/work/sessions')} className="text-sm text-muted-foreground hover:text-foreground">← Sessions</Link>
+    <PageHeader className="mt-2" title={s.sessionId} description={s.agentName} actions={
+      <Button asChild variant="outline"><Link to={scope.scopedPath(`/managed/sessions/${encodeURIComponent(s.sessionId)}`)}>Session details</Link></Button>
+    } />
+    <SessionExecution sessionId={s.sessionId} readOnly={agentScopedReadOnly || readOnlyOps} />
+  </Page>;
 
   return (
     <Page>

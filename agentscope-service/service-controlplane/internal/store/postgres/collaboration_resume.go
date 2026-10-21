@@ -66,13 +66,16 @@ func attachTeamContinuationTx(ctx context.Context, tx pgx.Tx, issue *model.Issue
 			return false, fmt.Errorf("root Issue already has a different active Run")
 		}
 		runID = uuid.New()
-		_, err = tx.Exec(ctx, `INSERT INTO orchestration_runs(id,tenant,namespace,root_issue_id,mode,rerun_of_run_id,trigger_type,trigger_ref,state,version,created_by_type,created_by_ref,started_at,input)
-   VALUES($1,$2,$3,$4,'adaptive',$5,'team_continuation',$6,'running',1,$7,$8,now(),$9)`, runID, root.Tenant, root.Namespace, root.ID, old.ID, task.CausationID, task.Originator.Type, nullStr(task.Originator.Ref), nullJSON(old.Input))
+		_, err = tx.Exec(ctx, `INSERT INTO orchestration_runs(id,tenant,namespace,root_issue_id,mode,rerun_of_run_id,trigger_type,trigger_ref,state,version,created_by_type,created_by_ref,started_at,input,portal_owned)
+   VALUES($1,$2,$3,$4,'adaptive',$5,'team_continuation',$6,'running',1,$7,$8,now(),$9,portal_issue_owned($4))`, runID, root.Tenant, root.Namespace, root.ID, old.ID, task.CausationID, task.Originator.Type, nullStr(task.Originator.Ref), nullJSON(old.Input))
 		if err != nil {
 			return false, err
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO orchestration_run_team_snapshots(run_id,team_id,tenant,namespace,snapshot) SELECT $1,team_id,tenant,namespace,snapshot FROM orchestration_run_team_snapshots WHERE run_id=$2 AND team_id=$3`, runID, old.ID, *task.TeamID)
 		if err != nil {
+			return false, err
+		}
+		if err = checkRunGraphCapacityTx(ctx, tx, runID, 1, 0); err != nil {
 			return false, err
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO orchestration_run_nodes(id,run_id,tenant,namespace,node_key,type,role,issue_id,state,iteration,version)

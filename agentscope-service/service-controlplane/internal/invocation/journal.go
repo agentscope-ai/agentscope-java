@@ -361,6 +361,26 @@ func updateTool(s *Snapshot, e *PublicEvent, b map[string]any, status string) {
 	}
 	key := field(e.Data, "execution_id") + ":" + id
 	d := merge(s.Tools[key], map[string]any{"execution_id": e.Data["execution_id"], "tool_call_id": id})
+	remote := field(b, "task_id") != "" && (e.Type == "tool.delta" || e.Type == "tool.progress" || e.Type == "tool.output_gap")
+	if strings.HasPrefix(e.Type, "tool.operation.") || remote {
+		task := field(b, "task_id")
+		if task == "" {
+			return
+		}
+		operations := merge(nil, object(d["operations"]))
+		metadata := merge(object(operations[task]), b)
+		delete(metadata, "output")
+		operations[task] = metadata
+		d["operations"] = operations
+		if e.Type == "tool.delta" {
+			appendToolProgress(d, blocks(b["output"]))
+		}
+		if field(d, "status") == "" {
+			d["status"] = "running"
+		}
+		s.Tools[key] = d
+		return
+	}
 	for _, k := range []string{"item_id", "agent_id", "model_call_id"} {
 		if v, ok := e.Data[k]; ok {
 			d[k] = v
@@ -380,7 +400,7 @@ func updateTool(s *Snapshot, e *PublicEvent, b map[string]any, status string) {
 	}
 	if output, ok := b["output"]; ok {
 		if e.Type == "tool.delta" {
-			d["progress"] = append(blocks(d["progress"]), blocks(output)...)
+			appendToolProgress(d, blocks(output))
 		} else {
 			d["output"] = output
 		}
@@ -396,20 +416,75 @@ func updateTool(s *Snapshot, e *PublicEvent, b map[string]any, status string) {
 	}
 	s.Tools[key] = d
 }
+
+// Keep a bounded snapshot preview. Full captured output remains in the event journal.
+func appendToolProgress(data map[string]any, incoming []any) {
+	remaining := 64 * 1024
+	truncated, _ := data["progress_truncated"].(bool)
+	combined := append(append([]any{}, blocks(data["progress"])...), incoming...)
+	kept := []any{}
+	for _, raw := range combined {
+		if len(kept) >= 256 || remaining <= 0 {
+			truncated = true
+			break
+		}
+		block := merge(nil, object(raw))
+		if text, ok := block["text"].(string); ok {
+			used, end := 0, 0
+			for index, r := range text {
+				units := 1
+				if r > 0xffff {
+					units = 2
+				}
+				if used+units > remaining {
+					break
+				}
+				used += units
+				end = index + len(string(r))
+			}
+			if end < len(text) {
+				truncated = true
+			}
+			block["text"] = text[:end]
+			remaining -= used
+			if len(kept) > 0 && len(block) == 2 && field(block, "type") == "text" {
+				last := object(kept[len(kept)-1])
+				if len(last) == 2 && field(last, "type") == "text" {
+					last["text"] = field(last, "text") + text[:end]
+					continue
+				}
+			}
+		} else {
+			encoded, _ := json.Marshal(block)
+			if len(encoded) > remaining {
+				truncated = true
+				break
+			}
+			remaining -= len(encoded)
+		}
+		kept = append(kept, block)
+	}
+	data["progress"] = kept
+	if truncated {
+		data["progress_truncated"] = true
+	}
+}
 func apply(s *Snapshot, e *PublicEvent) {
 	d := e.Data
 	switch {
 	case strings.HasPrefix(e.Type, "invocation."):
 		s.Invocation = d
-	case e.Type == "item.started" || e.Type == "item.completed":
+	case e.Type == "item.started" || e.Type == "item.completed" || e.Type == "item.finalized":
 		id := field(d, "item_id")
 		if id == "" {
 			return
 		}
 		s.Items[id] = d
 		item := object(d["item"])
-		if e.Type == "item.completed" {
-			item["status"] = "completed"
+		if e.Type == "item.completed" || e.Type == "item.finalized" {
+			if field(item, "status") == "" {
+				item["status"] = "completed"
+			}
 		}
 		for _, v := range blocks(item["content"]) {
 			b := object(v)
@@ -464,6 +539,9 @@ func apply(s *Snapshot, e *PublicEvent) {
 		if e.Type == "tool.requested" {
 			status = "requested"
 		}
+		if e.Type == "tool.waiting" {
+			status = "waiting"
+		}
 		if e.Type == "tool.completed" {
 			status = field(d, "status")
 			if status == "" {
@@ -479,7 +557,8 @@ func apply(s *Snapshot, e *PublicEvent) {
 			}
 		}
 		for _, v := range s.Tools {
-			if v["execution_id"] == d["execution_id"] && !terminalTool(field(v, "status")) {
+			if v["execution_id"] == d["execution_id"] && !terminalTool(field(v, "status")) &&
+				!(field(d, "status") == "suspended" && field(v, "status") == "waiting") {
 				v["status"] = "unknown"
 			}
 		}

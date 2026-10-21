@@ -81,7 +81,7 @@ class ContextSnapshot:
     """Level-4 effective context snapshot.
 
     同时承担两种编码：
-    - ``to_proto()``     → ASDP ``ContextReport`` 上行推送；
+    - ``to_proto()``     → RuntimeProtocol ``ContextReport`` 上行推送；
     - ``to_json_dict()`` → HTTP 合约 ``GET /agentscope/sessions/{id}/context`` 响应。
     """
 

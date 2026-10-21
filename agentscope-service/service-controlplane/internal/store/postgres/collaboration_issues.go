@@ -96,6 +96,9 @@ func (r *collaborationRepo) CreateIssue(ctx context.Context, issue *controlmodel
 			return nil, store.ErrConflict
 		}
 	}
+	if err := guardCoordinatorChildTx(ctx, tx, issue); err != nil {
+		return nil, err
+	}
 	created, err := scanIssue(tx.QueryRow(ctx, `INSERT INTO issues
 		(id,tenant,namespace,identifier,title,description,status,priority,kind,visibility,completion_policy,
 		 assignee_type,assignee_ref,execution_target_type,execution_target_ref,creator_type,creator_ref,parent_issue_id,
@@ -221,6 +224,15 @@ func (r *collaborationRepo) ListIssues(ctx context.Context, filter store.IssueFi
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
+	order := "updated_at DESC,id DESC"
+	parentScope := "AND ($6::uuid IS NULL OR parent_issue_id=$6) AND ($17::uuid IS NULL OR id>$17)"
+	if filter.ChildrenAfterID != nil {
+		if filter.ParentID == nil {
+			return nil, fmt.Errorf("child keyset page requires a parent")
+		}
+		order = "id"
+		parentScope = "AND parent_issue_id=$6 AND id>$17"
+	}
 	rows, err := r.pool.Query(ctx, `SELECT `+issueColumns+` FROM issues WHERE
 		($1='' OR tenant=$1) AND ($2='' OR namespace=$2)
 		AND ($3='' OR status=$3) AND ($4='' OR assignee_type=$4)
@@ -228,15 +240,15 @@ func (r *collaborationRepo) ListIssues(ctx context.Context, filter store.IssueFi
 		AND ($13='' OR kind=$13) AND ($14='' OR visibility=$14)
 		AND ($13='conversation_turn' OR kind <> 'conversation_turn')
 		AND (NOT $15 OR issue_access_allowed(id,$16::text[]))
-		AND ($6::uuid IS NULL OR parent_issue_id=$6)
+        `+parentScope+` AND ($18::timestamptz IS NULL OR created_at<=$18)
 		AND ($9::timestamptz IS NULL OR (updated_at,id) < ($9,$10))
 		AND (($11 AND archived_at IS NOT NULL) OR (NOT $11 AND archived_at IS NULL))
 		AND ($12='' OR to_tsvector('simple',COALESCE(identifier,'')||' '||title||' '||COALESCE(description,''))
 			@@ websearch_to_tsquery('simple',$12) OR lower(COALESCE(identifier,''))=lower($12))
-		ORDER BY updated_at DESC,id DESC LIMIT $7 OFFSET $8`, filter.Tenant,
+		ORDER BY `+order+` LIMIT $7 OFFSET $8`, filter.Tenant,
 		filter.Namespace, filter.Status, filter.AssigneeType, filter.AssigneeRef,
 		filter.ParentID, limit, maxInt(filter.Offset, 0), filter.CursorTime, filter.CursorID,
-		filter.Archived, strings.TrimSpace(filter.Search), filter.Kind, filter.Visibility, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
+		filter.Archived, strings.TrimSpace(filter.Search), filter.Kind, filter.Visibility, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs, filter.ChildrenAfterID, filter.CreatedBefore)
 	if err != nil {
 		return nil, err
 	}
@@ -291,6 +303,17 @@ func (r *collaborationRepo) UpdateIssue(ctx context.Context, issue *controlmodel
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	current, err := scanIssue(tx.QueryRow(ctx, `SELECT `+issueColumns+` FROM issues WHERE id=$1`, issue.ID))
+	if err != nil {
+		return nil, err
+	}
+	if current.ParentIssueID != nil && (current.SourceType != issue.SourceType || current.SourceRef != issue.SourceRef) {
+		candidate := *current
+		candidate.SourceType, candidate.SourceRef = issue.SourceType, issue.SourceRef
+		if err = guardCoordinatorChildWriteTx(ctx, tx, &candidate, true); err != nil {
+			return nil, err
+		}
+	}
 	access, _ := json.Marshal(issue.Access)
 	updated, err := scanIssue(tx.QueryRow(ctx, `UPDATE issues SET
 		title=$2,description=$3,priority=$4,acceptance_criteria=$5,context_refs=$6,
@@ -336,6 +359,11 @@ func (r *collaborationRepo) TransitionIssue(ctx context.Context, id uuid.UUID, e
 	}
 	if expectedVersion > 0 && current.Version != expectedVersion || !controlmodel.CanTransitionIssue(current.Status, status) {
 		return nil, store.ErrConflict
+	}
+	if status != controlmodel.IssueDone && status != controlmodel.IssueCancelled && (current.Status == controlmodel.IssueDone || current.Status == controlmodel.IssueCancelled) {
+		if err = guardCoordinatorChildWriteTx(ctx, tx, current, true); err != nil {
+			return nil, err
+		}
 	}
 	var resolvedAt *time.Time
 	if status == controlmodel.IssueDone {

@@ -18,6 +18,7 @@ In AgentScope Java, you can hook into 6 places — covering everything from the 
 | `onModelCall` | Onion | Wraps a raw `ChatModel` API call — closest to the model |
 | `onSystemPrompt` | Transformer | Triggers when the system prompt is assembled; multiple middlewares run in sequence, each transforming the previous output |
 | `onAgentStateReady` | Notification | Fires once per call as soon as this call's `AgentState` is ready — before the input enters the pipeline (pre-call hooks, memory, reasoning) |
+| `onAgentFinish` | Awaited notification | Returns `Mono<Void>` after the call result and before the native checkpoint and writer release; retains the active call context. |
 
 The three types differ:
 
@@ -47,7 +48,7 @@ onAgent/
 
 ## Equipping middleware
 
-AgentScope packs a set of hooks into a single `MiddlewareBase` implementation — one middleware class can implement any subset of the 6 hooks (onion/transformer hooks not implemented default to `next.apply(input)`; notification hooks default to a no-op). Pass the instances to the builder's `middlewares(...)`:
+AgentScope packs a set of hooks into a single `MiddlewareBase` implementation — one middleware class can implement any subset of the 7 hooks (onion/transformer hooks not implemented default to `next.apply(input)`; notification hooks default to a no-op). Pass the instances to the builder's `middlewares(...)`:
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -669,3 +670,5 @@ ReActAgent agent =
                 .middlewares(List.of(new StopOnAllDeniedMiddleware()))
                 .build();
 ```
+
+`onAgentFinish` runs sequentially in middleware order and participates through `ON_AGENT_FINISH`. Service-managed memory extraction and consolidation use this boundary so authorization and usage remain inside the Turn. Standalone Harness calls keep their default background memory behavior.

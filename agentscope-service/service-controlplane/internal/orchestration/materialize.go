@@ -17,6 +17,7 @@ package orchestration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
@@ -26,7 +27,13 @@ import (
 
 // A planned Run is a durable materialization checkpoint. All identities are
 // deterministic so a process crash between writes can be resumed by any worker.
-// The caller holds the cross-replica Run lock until graph creation completes.
+// Each call commits a finite batch while holding the cross-replica Run lock.
+// The planned state prevents execution before every node and edge is durable.
+const materializeNodeBatch = 16
+const materializeEdgeBatch = 64
+
+var errMaterializationPending = errors.New("graph materialization pending")
+
 func (e *Engine) materialize(ctx context.Context, run *controlmodel.OrchestrationRun) error {
 	revision, err := serviceapi.Revision(ctx, e.Store, run.RootIssueID, *run.DefinitionRevisionID)
 	if err != nil {
@@ -55,9 +62,13 @@ func (e *Engine) materialize(ctx context.Context, run *controlmodel.Orchestratio
 	for _, edge := range spec.Edges {
 		incoming[edge.To]++
 	}
+	created := 0
 	for _, n := range spec.Nodes {
 		if byKey[n.Key] != nil {
 			continue
+		}
+		if created >= materializeNodeBatch {
+			return errMaterializationPending
 		}
 		issueID := issue.ID
 		if n.IssueMode == "child" {
@@ -81,6 +92,7 @@ func (e *Engine) materialize(ctx context.Context, run *controlmodel.Orchestratio
 			return err
 		}
 		byKey[n.Key] = node
+		created++
 	}
 	existingEdges, err := e.Store.Orchestration().ListEdges(ctx, run.ID)
 	if err != nil {
@@ -91,10 +103,15 @@ func (e *Engine) materialize(ctx context.Context, run *controlmodel.Orchestratio
 		seen[edge.ID] = true
 	}
 	edges := []*controlmodel.RunEdge{}
+	moreEdges := false
 	for i, edge := range spec.Edges {
 		id := uuid.NewSHA1(run.ID, []byte(fmt.Sprintf("edge:%d", i)))
 		if seen[id] {
 			continue
+		}
+		if len(edges) >= materializeEdgeBatch {
+			moreEdges = true
+			break
 		}
 		on := edge.On
 		if len(on) == 0 {
@@ -104,6 +121,9 @@ func (e *Engine) materialize(ctx context.Context, run *controlmodel.Orchestratio
 	}
 	if err = e.Store.Orchestration().CreateEdges(ctx, edges); err != nil {
 		return err
+	}
+	if moreEdges {
+		return errMaterializationPending
 	}
 	if _, err = e.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{RunID: run.ID, Tenant: run.Tenant, Namespace: run.Namespace, Type: "run.started", Actor: run.CreatedBy, IdempotencyKey: "run-started:" + run.ID.String()}); err != nil {
 		return err

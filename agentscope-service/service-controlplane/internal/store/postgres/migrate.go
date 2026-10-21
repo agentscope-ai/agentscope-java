@@ -115,6 +115,50 @@ func (s *Store) Migrate(ctx context.Context) error {
 	return nil
 }
 
+// ValidateSchema performs no DDL and rejects both missing and unknown migration versions.
+// An application role needs only SELECT on schema_migrations and its own business tables.
+func (s *Store) ValidateSchema(ctx context.Context) error {
+	entries, err := migrationFS.ReadDir("migrations")
+	if err != nil {
+		return err
+	}
+	expected := make(map[string]bool)
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".up.sql") {
+			expected[strings.TrimSuffix(entry.Name(), ".up.sql")] = false
+		}
+	}
+	rows, err := s.pool.Query(ctx, `SELECT version FROM schema_migrations ORDER BY version LIMIT 1025`)
+	if err != nil {
+		return fmt.Errorf("runtime schema is not initialized; run the migration job: %w", err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var version string
+		if err = rows.Scan(&version); err != nil {
+			return err
+		}
+		if _, known := expected[version]; !known {
+			return fmt.Errorf("runtime schema version is unsupported: %s", version)
+		}
+		expected[version] = true
+		count++
+		if count > 1024 {
+			return fmt.Errorf("runtime schema version history exceeds limit")
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	for version, present := range expected {
+		if !present {
+			return fmt.Errorf("runtime schema migration is missing: %s; run the migration job", version)
+		}
+	}
+	return nil
+}
+
 // A blocking advisory-lock SELECT retains its statement snapshot while waiting.
 // CREATE INDEX CONCURRENTLY in the lock holder can wait for that same snapshot,
 // creating a deadlock during simultaneous replica startup. Wait outside SQL.

@@ -112,3 +112,27 @@ test('wildcards reject missing destinations, page shadowing and growing cycles',
   assert(result.errors.some((e) => e.includes('shadows page')));
   assert(result.errors.some((e) => e.includes('redirect cycle')));
 });
+
+
+test('publishing ignores exclude repository drafts and honor explicit negation', (t) => {
+  const dir = fixture(t, { pages: ['v2/en/intro', 'v2/en/draft-public'] });
+  fs.writeFileSync(path.join(dir, '.mintignore'), '  # Keep private design notes out of the site.\r\n  v2/en/draft-*.md  \r\n !v2/en/draft-public.md \r\n');
+  fs.writeFileSync(path.join(dir, 'v2/en/draft-private.md'), '<not-valid-mdx');
+  fs.writeFileSync(path.join(dir, 'v2/en/draft-public.md'), '---\ntitle: Public\n---\n');
+  assert.deepEqual(checkSite(dir).errors, []);
+  fs.writeFileSync(path.join(dir, 'v2/en/unlisted.md'), '---\ntitle: Unlisted\n---\n');
+  assert(checkSite(dir).errors.includes('Page missing from navigation: /v2/en/unlisted'));
+});
+
+test('navigation cannot publish a page excluded by Mintlify', (t) => {
+  const dir = fixture(t);
+  fs.writeFileSync(path.join(dir, '.mintignore'), 'v2/en/intro.md\n');
+  assert(checkSite(dir).errors.includes('Missing navigation page: /v2/en/intro'));
+});
+
+test('public links cannot target excluded files even when the files exist', (t) => {
+  const dir = fixture(t, { body: '[Design](/v2/en/Internal%20Design.md)' });
+  fs.writeFileSync(path.join(dir, '.mintignore'), 'v2/en/Internal Design.md\n');
+  fs.writeFileSync(path.join(dir, 'v2/en/Internal Design.md'), '---\ntitle: Design\n---\n');
+  assert(checkSite(dir).errors.some((e) => e.includes('local target excluded by .mintignore')));
+});

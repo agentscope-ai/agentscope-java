@@ -142,24 +142,24 @@ curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
   --data-urlencode "after=$CURSOR"
 ```
 
-To observe one Turn, use `/turns/{turnId}/snapshot` and `/turns/{turnId}/events/stream`. Session and Turn cursors belong to separate logs and cannot be interchanged. A Session stream stays open for later Turns, so connection closure is not completion. Read the Turn status: `completed` is success, `partial_succeeded` is partial success, and `failed`, `cancelled` and `timed_out` are other terminal outcomes.
+To observe one Turn, use `/turns/{turnId}/snapshot` and `/turns/{turnId}/events/stream`. For Managed Agents, Turn reads filter the same Session log and use its cursor. Other backends retain separate Session and Turn logs and cursors. A Session stream stays open for later Turns, so connection closure is not completion. Read the Turn status: `completed` is success, `partial_succeeded` is partial success, and `failed`, `cancelled` and `timed_out` are other terminal outcomes.
 
 A Turn snapshot indexes `items`, `tools`, `required_actions`, `steps`, `artifacts` and `usage` by identifier. Managed Session snapshots also retain complete conversation, subagent and native interaction records. See the [API reference](/v2/en/service/api-reference) for the interfaces and [events and notifications](/v2/en/service/sse-events) for replay and callback handling.
 
 ## Participate during execution
 
-Read pending work from `required_actions` and answer through the Turn's `/actions` resource. Include `request_id` and, when required, `expected_version`. Managed confirmation answers go in `payload`, for example `{"allow":true}`. Local mode accepts answers with the development identity; production approval identity rules are in the [production guide](/v2/en/service/kubernetes#production-api-access).
+Read pending work from `required_actions` and answer through the Turn's `/actions` resource. Include `request_id` and, when required, `expected_version`. Managed answers use `{"answers":[{"request_id":"...","allow":true}]}`; their response is the accepted Turn. `GET /turns/{turnId}/actions` lists command receipts. Generic Team and Workflow commands keep their own payload and receipt format. Local mode accepts answers with the development identity; production approval identity rules are in the [production guide](/v2/en/service/kubernetes#production-api-access).
 
 Read the current Turn’s pending actions first. Do not call `/actions` if none are pending:
 
 ```bash
 ACTIONS_JSON=$(
-  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions"
+  curl -sS --fail-with-body "$SESSION_URL/snapshot"
 )
 jq '.required_actions' <<< "$ACTIONS_JSON"
 ```
 
-Inspect the selected action’s description, `kind`, and request. Copy its actual `request_id` unchanged, including prefixes such as `native:`. Answer the action the user selected rather than automatically allowing everything in the list.
+Inspect the selected action’s description, `kind`, and request. Copy its actual `request_id` unchanged; use the ID returned by that runtime. Answer the action the user selected rather than automatically allowing everything in the list.
 
 ```bash
 REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
@@ -179,15 +179,15 @@ COMMAND_JSON=$(
     -H "Idempotency-Key: report-confirmation-001" \
     --data-binary @- <<JSON
 {
-  "request_id": "$REQUEST_ID",
-  "payload": {
+  "answers": [{
+    "request_id": "$REQUEST_ID",
     "allow": true,
     "reason": "The user reviewed the tool arguments and confirmed execution."
-  }
+  }]
 }
 JSON
 )
-COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
+# Managed answers return the Turn; follow /snapshot and /events/stream.
 ```
 
 </Tab>
@@ -202,15 +202,15 @@ COMMAND_JSON=$(
     -H "Idempotency-Key: report-tool-result-001" \
     --data-binary @- <<JSON
 {
-  "request_id": "$REQUEST_ID",
-  "payload": {
+  "answers": [{
+    "request_id": "$REQUEST_ID",
     "output": "Replace with actual tool execution result",
     "is_error": false
-  }
+  }]
 }
 JSON
 )
-COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
+# Managed answers return the Turn; follow /snapshot and /events/stream.
 ```
 
 </Tab>
@@ -240,6 +240,8 @@ COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 
 A `202 Accepted` response means the answer was received. Query the returned command ID until `command.status` is `completed` or `failed`. On failure, inspect `command.error` and reread the pending action. Retry a lost request with its original idempotency key and body.
 
+For an Endpoint Invocation backed by Managed execution, a command can remain `submitted` while its native Input is pending. The receipt exposes `input_id`, `input_status` and `input_delivery_status`; delivery alone does not mean the Agent applied the input. A completed cancellation command still requires a terminal Turn outcome before the application reports execution stopped. Managed Turns continue after a reply or recover automatically; they do not expose a separate `resume` command. Direct Managed Session integrations use the [native Session API](/v2/en/service/claude-session-api).
+
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID"
 ```
@@ -264,13 +266,13 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities"
 
 ## Budgets and notifications
 
-See [production deployment](/v2/en/service/kubernetes#production-application-credentials) for application-wide limits. Session creation also accepts `timeoutSeconds` and `budget.maxTokens` for each Turn. Managed Session budgets have a separate `/budget` resource; see [Usage, subagents, and budgets](/v2/en/service/session-event-log#budgets) for configuration and usage queries.
+See [production deployment](/v2/en/service/kubernetes#production-application-credentials) for application-wide limits. Other backends accept `timeoutSeconds` and `budget.maxTokens` for each Turn. For Managed Agents, `budget.maxTokens` initializes the Session-wide `max_total_tokens` budget; `timeoutSeconds` is rejected. Managed budgets also have a `/budget` resource; see [Usage, subagents, and budgets](/v2/en/service/session-event-log#budgets) for configuration and usage queries.
 
-<Accordion title="Set Turn budgets">
+<Accordion title="Set a Managed Session budget">
 
 
 
-Set the timeout in seconds and token budget for each Turn when creating a new Session:
+Set the total token budget when creating a Managed Session:
 
 ```bash
 SESSION_JSON=$(
@@ -283,7 +285,6 @@ SESSION_JSON=$(
     "type": "agent",
     "id": "$AGENT_ID"
   },
-  "timeoutSeconds": 300,
   "budget": {
     "maxTokens": 10000
   }
@@ -302,7 +303,7 @@ Register a Session Webhook when a backend needs notification of completion, fail
 
 A `completed` Turn means this execution finished successfully. The application still needs to check that the deliverables meet its business requirements: a report may need sources, a file must be downloadable, and a structured result must contain the data required for further processing. For file output, use the interfaces in [Files and artifacts](/v2/en/service/files) to retrieve the actual artifact rather than treating a filename in the Agent's reply as proof of delivery.
 
-Optional `inputSchema`, `outputSchema` and `resultMapping` settings are frozen when creating the Session. Verify real target output before defining mappings or validation. JSON written inside an Agent's text reply is not automatically a structured business result. These rules validate data shape; they do not assess content quality or automatically make the Agent revise its output.
+For other backends, optional `inputSchema`, `outputSchema` and `resultMapping` settings are frozen when creating the Session. Managed Agents validate `inputSchema` against the message or structured user-message list and reject `outputSchema` and `resultMapping`. Verify real target output before defining mappings or validation. JSON written inside an Agent's text reply is not automatically a structured business result. These rules validate data shape; they do not assess content quality or automatically make the Agent revise its output.
 
 <Accordion title="Validate structured input and results">
 
@@ -390,3 +391,27 @@ print(api.turn(session["id"], turn["id"]))
 ```
 
 `agentscope-service/service-controlplane/examples/service-api` contains runnable registration and calling examples for Agents, Teams and Workflows. Use `ManagementClient` for configuration and `ServiceClient` for application execution. See the [API reference](/v2/en/service/api-reference) for interface entry points.
+
+## Managed runtime request routing
+
+The Gateway routes `/v1/sessions` to Session Portal. Control Plane resolves and registers fixed Agent / Environment definitions; Portal persists the Session and accepts Turns without a Brain bootstrap or a ready wait. Brain consumes ordered Turn messages, and Hands commits runtime facts and drives Sandbox tools. These components can be deployed and scaled independently, using shared database, RocketMQ and Redis infrastructure.
+
+The source Managed runtime requires RocketMQ 5.5.1, a separate **Cluster Proxy**, and four LiteTopic parents: Turns, Brain runtime events, Hands tool events, and resumes. Each fully scoped Session has its own LiteTopic. Consumer groups use LitePushConsumer with FIFO and wildcard subscriptions, so new Sessions need no subscription directory. The SDK and Proxy renew deliveries automatically for up to three hours; the application has no per-delivery MQ renewal loop. During a long tool wait, Brain saves its checkpoint and publishes the suspension, then releases Harness compute resources and its Redis execution lease while keeping the original Turn callback open. The original tool result wakes the same logical Turn through the separate resume channel. Hands atomically records a completion notification with the terminal transaction and reliably delivers it through a Redis logical mailbox. The matching callback returns SUCCESS, the SDK acknowledges the delivery, and the next Turn in that Session can proceed. Notification identity contains no SDK receipt, and receiving a notification does not assert that the Broker confirmed an ACK. Runtime and tool events have separate consumers; producer roles and event kinds must match their channels. This source requirement is not a claim that released deployment bundles have been migrated.
+
+Managed file uploads, lists, metadata and downloads use Portal's immutable file store. An upload returns `file_id`; use that ID directly in Turn / Input content blocks and Artifact publication. Files can be uploaded before the first Turn. Control Plane's Managed file entrypoints retain the original Actor and Session scope and do not create a second file copy or rewrite its ID. Other backends keep their existing file protocols.
+
+Once an Agent run has started, an Agent error or explicit failed result ends the Turn after its failure checkpoint, input receipts and known tool outcomes are committed. Recovery of that failure decision does not call the model again. Internal tool waits, log transport errors and lost execution guards retain their recovery paths. Normal queuing is controlled by the original Turn FIFO callback and the SDK ACK; the database retains business outcomes, checkpoints and execution epochs for idempotency and recovery.
+
+`waiting_tool` is a nonterminal Turn status: the Sandbox operation continues while the Brain execution attempt has ended. The Turn keeps its ID, input admission and Session ordering position; a resumed attempt receives a new execution epoch.
+
+REST, snapshots and SSE use committed native public events and the same cursor. Disconnecting SSE stops the subscription; it does not cancel the Turn. Capabilities come from Portal and only advertise implemented operations. Full Checkpoint / fork integration and platform subagent support are still being implemented.
+
+Checkpoint metadata is available from `GET /v1/sessions/{session}/checkpoints` and `/{checkpoint}`. `workspace_available` reports whether a private immutable workspace image has been committed for that checkpoint; it does not certify that the checkpoint has no unresolved tools or interactions. Metadata responses never include the native state or workspace archive.
+
+The native administrative entrypoints accept `POST /v1/sessions/{session}/checkpoints/restore` with `checkpoint_id`, or `POST /v1/sessions/{session}/fork` with `checkpoint_id` and `target_session_id`. Both require an `Idempotency-Key` and return an asynchronous operation. A Fork target must already be registered as an empty Managed root Session with the same Agent definition and resource scope. Read `/checkpoint-operations/{operation_id}` on the source Session to follow validation, workspace import and completion. The Java, TypeScript and Python Managed clients expose matching methods. Console uses these native operation IDs for status and cancellation. Complete multi-replica acceptance remains pending; these writes are not yet advertised as complete capabilities.
+
+The Control Plane's `/api/v1/agent-sessions/{session}/fork` route uses the same checkpoint and operation IDs. It registers both existing Session resources with their frozen definitions before submitting the operation, retaining the original Actor. Registration creates no Turn and requires no Brain bootstrap. Read or cancel `/checkpoint-operations/{operation_id}` on the same Control Plane Session route. Restore uses `/checkpoints/restore`. The request contains only the checkpoint and, for Fork, the target Session ID; it has no recovery reason field.
+
+New Turns, file writes and lifecycle changes wait until the administrative operation has completed or been rejected. If a historical checkpoint has no workspace image and subsequent tools changed the workspace, the operation is rejected with `checkpoint_workspace_unavailable`. `POST /checkpoint-operations/{operation_id}/cancel` can release a validation or snapshot operation. Once import begins, an unconfirmed outcome keeps admission closed and cancellation returns 409; retrying queries the original execution instead of importing again. Definition files are staged once and are not recreated on ordinary provider reconnection.
+
+self_hosted workspace operations use the outbound Environment Worker through the same `/v1/hands/environments/{environment}/tool-tasks` protocol as other Sandbox operations. Configure an existing Sandbox ID for each Session; a Fork requires independent source and target instances. Brain owns checkpoint validation, operation phases and the final baseline commit. It publishes immutable Execute/Control commands; Hands owns the physical binding, Worker lease and original execution result. Worker replacement queries the original execution ID and retransmits its locally retained result until Hands confirms capture. Brain receives the result event before advancing the checkpoint operation. No separate workspace claim or launch-permission endpoint exists. Workers receive no database, MQ or Redis credentials. The compressed archive limit is 32 MiB.

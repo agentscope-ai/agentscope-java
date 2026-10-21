@@ -21,12 +21,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
 	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimeprotocol"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/google/uuid"
 )
@@ -34,8 +35,9 @@ import (
 var errNativeActionNotPending = errors.New("native action is no longer pending")
 
 type serviceNativeTurn struct {
-	ID    string `json:"id"`
-	Owner string `json:"owner"`
+	ID      string                  `json:"id"`
+	Owner   string                  `json:"owner"`
+	Context runtimeprotocol.Context `json:"context"`
 }
 
 func (s *Server) nativeServiceTurn(ctx context.Context, ep *model.Endpoint, inv *model.EndpointInvocation) (serviceNativeTurn, error) {
@@ -51,15 +53,15 @@ func (s *Server) acceptNativeServiceTurn(ctx context.Context, ep *model.Endpoint
 	if s.product == nil {
 		return fmt.Errorf("managed runtime unavailable")
 	}
+	origin, err := s.ensureNativeRuntimeSession(ctx, ep, inv, owner)
+	if err != nil {
+		return err
+	}
 	var body any = map[string]any{"message": message}
 	if frozen := serviceapi.ContextContract(ctx); frozen != nil && frozen.PublicSessionID != uuid.Nil {
-		var err error
-		body, err = s.nativePublicSessionInput(ctx, inv, owner)
-		if err != nil {
-			return err
-		}
+		body = inv.Input
 	}
-	raw, err := s.product.ManagedServiceRequest(ctx, owner, inv.SessionID, "POST", "/turns", inv.ID.String(), body)
+	raw, err := s.product.ManagedRuntimeRequest(ctx, owner, product.ManagedRuntimeCall{Context: origin, Operation: "submit_turn", Payload: map[string]any{"input": body}})
 	if err != nil {
 		return err
 	}
@@ -71,6 +73,7 @@ func (s *Server) acceptNativeServiceTurn(ctx context.Context, ep *model.Endpoint
 		return fmt.Errorf("managed runtime did not return a turn ID")
 	}
 	turn.Owner = owner
+	turn.Context = origin
 	raw, err = json.Marshal(turn)
 	if err != nil {
 		return err
@@ -79,13 +82,42 @@ func (s *Server) acceptNativeServiceTurn(ctx context.Context, ep *model.Endpoint
 	return err
 }
 func (s *Server) nativeServiceSnapshot(ctx context.Context, inv *model.EndpointInvocation, turn serviceNativeTurn) (map[string]any, error) {
-	raw, err := s.product.ManagedServiceRequest(ctx, turn.Owner, inv.SessionID, "GET", "/snapshot", "", nil)
+	raw, err := s.nativeRuntimeRequest(ctx, turn, product.ManagedRuntimeCall{Operation: "snapshot", Limit: 256})
 	if err != nil {
 		return nil, err
 	}
 	var snapshot map[string]any
-	err = json.Unmarshal(raw, &snapshot)
-	return snapshot, err
+	if err = json.Unmarshal(raw, &snapshot); err != nil {
+		return nil, err
+	}
+	resources, _ := snapshot["resources"].(map[string]any)
+	for kind, value := range resources {
+		page, _ := value.(map[string]any)
+		items, _ := page["data"].([]any)
+		for page["has_more"] == true {
+			cursor, _ := page["next_cursor"].(string)
+			if cursor == "" {
+				return nil, fmt.Errorf("native snapshot resource cursor did not advance")
+			}
+			id, _ := snapshot["snapshot_id"].(string)
+			raw, err = s.nativeRuntimeRequest(ctx, turn, product.ManagedRuntimeCall{Operation: "resources", ResourceKind: kind, SnapshotID: id, After: cursor, Limit: 256})
+			if err != nil {
+				return nil, err
+			}
+			if err = json.Unmarshal(raw, &page); err != nil {
+				return nil, err
+			}
+			next, _ := page["data"].([]any)
+			items = append(items, next...)
+			if page["has_more"] == true && page["next_cursor"] == cursor {
+				return nil, fmt.Errorf("native snapshot resource cursor did not advance")
+			}
+		}
+		page["data"] = items
+		page["has_more"] = false
+		resources[kind] = page
+	}
+	return snapshot, nil
 }
 func (s *Server) refreshNativeServiceTurn(ctx context.Context, ep *model.Endpoint, inv *model.EndpointInvocation) (*model.EndpointInvocation, error) {
 	turn, err := s.nativeServiceTurn(ctx, ep, inv)
@@ -98,7 +130,7 @@ func (s *Server) refreshNativeServiceTurn(ctx context.Context, ep *model.Endpoin
 	if s.product == nil {
 		return inv, nil
 	}
-	raw, err := s.product.ManagedServiceRequest(ctx, turn.Owner, inv.SessionID, "GET", "/turns/"+url.PathEscape(turn.ID), "", nil)
+	raw, err := s.nativeRuntimeRequest(ctx, turn, product.ManagedRuntimeCall{Operation: "turn"})
 	if err != nil {
 		return nil, err
 	}
@@ -111,17 +143,12 @@ func (s *Server) refreshNativeServiceTurn(ctx context.Context, ep *model.Endpoin
 	}
 	old := inv.Status
 	switch native.Status {
-	case "queued":
+	case "accepted", "preparing":
 		inv.Status = model.EndpointInvocationDispatching
 	case "running":
 		inv.Status = model.EndpointInvocationRunning
-	case "requires_action", "interrupted":
+	case "requires_action":
 		inv.Status = model.EndpointInvocationWaiting
-		if old == model.EndpointInvocationCancelRequested && native.Status == "interrupted" {
-			inv.Status = model.EndpointInvocationCancelled
-		}
-	case "cancel_requested":
-		inv.Status = model.EndpointInvocationCancelRequested
 	case "completed":
 		snapshot, err := s.nativeServiceSnapshot(ctx, inv, turn)
 		if err != nil {
@@ -155,9 +182,16 @@ func (s *Server) refreshNativeServiceTurn(ctx context.Context, ep *model.Endpoin
 
 // Completed native message roles use the Core enum spelling (for example
 // ASSISTANT). Prefer an explicit final output, even when that output is empty.
+func nativeSnapshotItems(snapshot map[string]any, kind string) []any {
+	resources, _ := snapshot["resources"].(map[string]any)
+	page, _ := resources[kind].(map[string]any)
+	data, _ := page["data"].([]any)
+	return data
+}
+
 func nativeServiceTurnAnswer(snapshot map[string]any, turnID string) string {
 	answer, hasFinal := "", false
-	items, _ := snapshot["items"].([]any)
+	items := nativeSnapshotItems(snapshot, "items")
 	for _, value := range items {
 		event, _ := value.(map[string]any)
 		data, _ := event["data"].(map[string]any)
@@ -190,29 +224,32 @@ func (s *Server) nativeServiceAction(ctx context.Context, ep *model.Endpoint, in
 	if err != nil {
 		return err
 	}
+	return s.nativeActionOnTurn(ctx, ep, inv, turn, cmd, in, strings.TrimPrefix(in.RequestID, "native:"), apply)
+}
+
+func (s *Server) nativeActionOnTurn(ctx context.Context, ep *model.Endpoint, inv *model.EndpointInvocation, turn serviceNativeTurn, cmd *serviceCommand, in serviceActionInput, actionID string, apply bool) error {
+	var err error
 	if apply {
 		// The native inbox returns a previous command before checking pending state.
 		// Retrying its stable key is safe after a lost response; a new stale answer is rejected.
-		if err = s.nativeServiceAction(ctx, ep, inv, cmd, in, false); err != nil && !errors.Is(err, errNativeActionNotPending) {
+		if err = s.nativeActionOnTurn(ctx, ep, inv, turn, cmd, in, actionID, false); err != nil && !errors.Is(err, errNativeActionNotPending) {
 			return err
 		}
 		var answer map[string]any
 		if err = json.Unmarshal(in.Payload, &answer); err != nil || answer == nil {
 			return fmt.Errorf("native action payload must be an object")
 		}
-		answer["request_id"] = strings.TrimPrefix(in.RequestID, "native:")
-		_, err = s.product.ManagedServiceRequest(ctx, turn.Owner, inv.SessionID, "POST", "/turns/"+url.PathEscape(turn.ID)+"/actions", cmd.ID.String(), map[string]any{"answers": []any{answer}})
-		return err
+		return s.applyNativeServiceInput(ctx, ep, inv, turn, cmd, "reply", actionID, answer)
 	}
 	snapshot, err := s.nativeServiceSnapshot(ctx, inv, turn)
 	if err != nil {
 		return err
 	}
-	actions, _ := snapshot["required_actions"].([]any)
+	actions := nativeSnapshotItems(snapshot, "required_actions")
 	for _, v := range actions {
 		event, _ := v.(map[string]any)
 		data, _ := event["data"].(map[string]any)
-		if data["turn_id"] != turn.ID || data["request_id"] != strings.TrimPrefix(in.RequestID, "native:") {
+		if data["turn_id"] != turn.ID || data["request_id"] != actionID {
 			continue
 		}
 		if data["kind"] == "confirmation" && !s.nativeConfirmationAllowed(ctx, ep, inv, turn.Owner, cmd.Principal, data) {
@@ -224,9 +261,14 @@ func (s *Server) nativeServiceAction(ctx context.Context, ep *model.Endpoint, in
 }
 
 func (s *Server) projectNativeServiceEvents(ctx context.Context, ep *model.Endpoint, inv *model.EndpointInvocation, j serviceapi.Journal, turn serviceNativeTurn) error {
+	return s.projectNativeRuntimeEvents(ctx, ep.Tenant, j, turn, inv.ID.String(), ep.TargetRef.String(), inv.ID.String(), "native:")
+}
+
+// Each original Attempt has an independent durable cursor and public identity.
+func (s *Server) projectNativeRuntimeEvents(ctx context.Context, tenant string, j serviceapi.Journal, turn serviceNativeTurn, executionID, agentID, cursorKey, actionPrefix string) error {
 	cursor := ""
 	path := "service-api/native-cursors"
-	if item, err := s.store.KV().Get(ctx, ep.Tenant, path, inv.ID.String()); err == nil {
+	if item, err := s.store.KV().Get(ctx, tenant, path, cursorKey); err == nil {
 		if err = json.Unmarshal(item.Value, &cursor); err != nil {
 			return err
 		}
@@ -234,7 +276,7 @@ func (s *Server) projectNativeServiceEvents(ctx context.Context, ep *model.Endpo
 		return err
 	}
 	for {
-		raw, err := s.product.ManagedServiceRequest(ctx, turn.Owner, inv.SessionID, "GET", "/events?limit=100&after="+url.QueryEscape(cursor), "", nil)
+		raw, err := s.nativeRuntimeRequest(ctx, turn, product.ManagedRuntimeCall{Operation: "events", Limit: 100, After: cursor})
 		if err != nil {
 			return err
 		}
@@ -254,7 +296,7 @@ func (s *Server) projectNativeServiceEvents(ctx context.Context, ep *model.Endpo
 			if event.Data["turn_id"] != turn.ID || !publicServiceRuntimeType(event.Type) {
 				continue
 			}
-			data := map[string]any{"execution_id": inv.ID.String(), "agent_id": ep.TargetRef.String()}
+			data := map[string]any{"execution_id": executionID, "agent_id": agentID}
 			for k, v := range event.Data {
 				switch k {
 				case "source", "run_id", "turn_id", "execution_id", "agent_id":
@@ -263,7 +305,7 @@ func (s *Server) projectNativeServiceEvents(ctx context.Context, ep *model.Endpo
 				data[k] = v
 			}
 			if id, ok := data["item_id"].(string); ok {
-				data["item_id"] = inv.ID.String() + ":" + id
+				data["item_id"] = executionID + ":" + id
 			}
 			kind := event.Type
 			if kind == "run.ended" {
@@ -271,10 +313,10 @@ func (s *Server) projectNativeServiceEvents(ctx context.Context, ep *model.Endpo
 			}
 			if strings.HasPrefix(kind, "required_action.") {
 				if id, ok := data["request_id"].(string); ok {
-					data["request_id"] = "native:" + id
+					data["request_id"] = actionPrefix + id
 				}
 			}
-			if _, err = j.Append(ctx, "native:"+event.ID, kind, data); err != nil {
+			if _, err = j.Append(ctx, "native:"+turn.Context.SessionID+":"+event.ID, kind, data); err != nil {
 				return err
 			}
 		}
@@ -283,7 +325,7 @@ func (s *Server) projectNativeServiceEvents(ctx context.Context, ep *model.Endpo
 		}
 		cursor = page.Next
 		raw, _ = json.Marshal(cursor)
-		if _, err = s.store.KV().Put(ctx, ep.Tenant, path, inv.ID.String(), raw); err != nil {
+		if _, err = s.store.KV().Put(ctx, tenant, path, cursorKey, raw); err != nil {
 			return err
 		}
 		if !page.More {

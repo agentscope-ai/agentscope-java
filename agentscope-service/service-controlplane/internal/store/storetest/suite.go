@@ -45,6 +45,7 @@ func RunSuite(t *testing.T, s store.Store) {
 	t.Run("Inbox", func(t *testing.T) { testInbox(t, ctx, s) })
 	t.Run("CollaborationReliability", func(t *testing.T) { testCollaborationReliability(t, ctx, s) })
 	t.Run("RuntimeRegistryAndExecutions", func(t *testing.T) { testRuntime(t, ctx, s) })
+	t.Run("ManagedTurnBinding", func(t *testing.T) { testManagedTurnBinding(t, ctx, s) })
 	t.Run("Outbox", func(t *testing.T) { testOutbox(t, ctx, s) })
 	t.Run("ConversationTurns", func(t *testing.T) { testConversationTurns(t, ctx, s) })
 	t.Run("TerminalRunEvents", func(t *testing.T) { testTerminalRunEvents(t, ctx, s) })

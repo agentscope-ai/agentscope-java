@@ -71,6 +71,41 @@ func accessRequest(s *Server, user, method, path, body string) *httptest.Respons
 	s.router.ServeHTTP(w, r)
 	return w
 }
+
+func TestRuntimeConfigurationAdmissionUsesPublicSessionNamespacePermission(t *testing.T) {
+	s, _ := accessTestServer(t)
+	// Exercise the same namespace authority after upstream caller authentication;
+	// runtime_admission_test separately rejects a service credential on its own.
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", c.GetHeader("X-Test-User"))
+		c.Set("username", c.GetHeader("X-Test-User"))
+		c.Set(ctxConsoleAuth, true)
+		c.Next()
+	})
+	router.Use(s.namespaceAccessMiddleware())
+	for _, path := range []string{"/api/internal/runtime-admissions/sessions", "/api/v1/agent-sessions"} {
+		router.POST(path, func(c *gin.Context) {
+			if accessFrom(c).Namespace.Name != "engineering" {
+				t.Error("admission changed the authorized scope")
+			}
+			c.Status(204)
+		})
+	}
+	s.router = router
+	for _, path := range []string{"/api/internal/runtime-admissions/sessions", "/api/v1/agent-sessions"} {
+		for _, row := range []struct {
+			user   string
+			status int
+		}{{"alice", 204}, {"bob", 204}, {"carol", 403}, {"outsider", 404}} {
+			response := accessRequest(s, row.user, "POST", path+"?tenant=default&namespace=engineering", `{}`)
+			if response.Code != row.status {
+				t.Fatalf("%s %s: %d %s", row.user, path, response.Code, response.Body.String())
+			}
+		}
+	}
+}
+
 func accessIssue(t *testing.T, st store.Store, title, creator, mode string, parent *uuid.UUID) *controlmodel.Issue {
 	t.Helper()
 	v, e := st.Collaboration().CreateIssue(context.Background(), &controlmodel.Issue{Tenant: "default", Namespace: "engineering", Title: title, Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: creator}, ParentIssueID: parent, Access: controlmodel.IssueAccess{Mode: mode}})

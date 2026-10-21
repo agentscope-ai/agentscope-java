@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""ASDP gRPC 传输（数据面 → 控制面上行推送；下行收 ConfigPush / SessionCommand）。
+"""Runtime Protocol gRPC 传输（数据面 → 控制面上行推送；下行收 ConfigPush / SessionCommand）。
 
 后台线程驱动 ``Connect`` 双向流。Level 2 事件由 SessionBridge 持久化并在
 收到控制面 commit ACK 后出队；其他遥测仍为 best-effort。
@@ -40,7 +40,7 @@ BACKOFF_MAX = 30.0
 
 
 class GrpcTransport:
-    """ASDP 双向流客户端。"""
+    """RuntimeProtocol 双向流客户端。"""
 
     def __init__(
         self,

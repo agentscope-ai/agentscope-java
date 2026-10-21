@@ -18,11 +18,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 func resourceTestServer(t *testing.T) *Server {
@@ -31,6 +36,30 @@ func resourceTestServer(t *testing.T) *Server {
 	if dsn == "" {
 		t.Skip("CONTROL_PLANE_TEST_POSTGRES_DSN not set")
 	}
+	parsed, err := url.Parse(dsn)
+	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
+		t.Fatal("test DSN must be a PostgreSQL URL")
+	}
+	admin, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	database := "resource_test_" + uuid.NewString()[:8]
+	quoted := pgx.Identifier{database}.Sanitize()
+	if _, err = admin.Exec(t.Context(), "CREATE DATABASE "+quoted); err != nil {
+		_ = admin.Close(context.Background())
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if _, err := admin.Exec(ctx, "DROP DATABASE "+quoted); err != nil {
+			t.Error(err)
+		}
+		_ = admin.Close(ctx)
+	})
+	parsed.Path = "/" + database
+	dsn = parsed.String()
 	db, err := openDB(context.Background(), dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +82,7 @@ func TestManagedMemorySessionAuthorizationAndVersionConflict(t *testing.T) {
 	s := resourceTestServer(t)
 	owner, store, sess, env := shortID("owner_"), shortID("store_"), shortID("sess_"), shortID("env_")
 	resourceSQL(t, s, `INSERT INTO memory_stores(store_id,owner_id,name,created_at,updated_at) VALUES($1,$2,'notes',1,1)`, store, owner)
-	resourceSQL(t, s, `INSERT INTO environments(environment_id,owner_id,name,type,created_at,updated_at) VALUES($1,$2,'test','self_hosted',1,1)`, env, owner)
+	resourceSQL(t, s, `INSERT INTO environments(environment_id,owner_id,name,type,created_at,updated_at) VALUES($1,$2,'test','local',1,1)`, env, owner)
 	resourceSQL(t, s, `INSERT INTO sessions(session_id,owner_id,agent_id,environment_id,status,version,memory_store_ids_json,created_at,updated_at) VALUES($1,$2,'agent',$3,'idle',1,$4,1,1)`, sess, owner, env, mustJSON([]string{store}))
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

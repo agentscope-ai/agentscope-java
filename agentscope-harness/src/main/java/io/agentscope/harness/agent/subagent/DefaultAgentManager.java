@@ -23,6 +23,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.session.SessionExecution;
 import io.agentscope.core.session.SessionExportSink;
 import io.agentscope.core.session.SessionRecorder;
@@ -34,6 +35,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -182,13 +184,17 @@ public final class DefaultAgentManager {
     public Mono<Msg> invokeAgent(
             Agent agent, String sessionId, String userId, String prompt, RuntimeContext parentRc) {
         RuntimeContext ctx = childContext(sessionId, userId, parentRc);
-        if (agent instanceof ReActAgent react) {
-            return react.call(List.of(userMessage(prompt)), ctx);
-        }
-        if (agent instanceof HarnessAgent harness) {
-            return harness.call(userMessage(prompt), ctx);
-        }
-        return agent.call(List.of(userMessage(prompt)));
+        Supplier<Mono<Msg>> local =
+                () -> {
+                    if (agent instanceof ReActAgent react)
+                        return react.call(List.of(userMessage(prompt)), ctx);
+                    if (agent instanceof HarnessAgent harness)
+                        return harness.call(userMessage(prompt), ctx);
+                    return agent.call(List.of(userMessage(prompt)));
+                };
+        SubagentExecution execution =
+                parentRc == null ? null : parentRc.get(SubagentExecution.class);
+        return execution == null ? local.get() : execution.invoke(agent, parentRc, ctx, local);
     }
 
     /**
@@ -254,7 +260,12 @@ public final class DefaultAgentManager {
         child.put(SessionRecorder.CONTEXT_KEY, null);
         child.put(SessionRecorder.TURN_ID_KEY, null);
         child.put(SessionExportSink.CONTEXT_KEY, null);
+        if (parent != null
+                && parent.get(SessionExportSink.CONTEXT_KEY) instanceof SessionExportSink sink)
+            child.put(SessionExportSink.CONTEXT_KEY, sink.forChild(sessionId));
         child.put(SessionExecution.CONTEXT_KEY, null);
+        child.put(ToolUseBlock.class, null);
+        child.put(SubagentExecution.Invocation.class, null);
         child.setAgentState(null);
         if (recorder != null)
             child.put(

@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+{{- if and (not .Values.schema.only) .Values.userFilesEnabled }}
 {{- range $kind, $config := .Values.persistence }}
 {{- if not $config.existingClaim }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "service.name" $ }}-{{ $kind }}
+  name: {{ printf "%s-%s" (include "service.name" $) $kind | lower }}
   annotations:
     helm.sh/resource-policy: keep
   labels:
@@ -31,5 +32,6 @@ spec:
   resources:
     requests:
       storage: {{ $config.size }}
+{{- end }}
 {{- end }}
 {{- end }}

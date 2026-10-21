@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Outbound HTTP execution transport using the same fenced ASDP message contract."""
+"""Outbound HTTP execution transport using the same fenced RuntimeProtocol message contract."""
 from __future__ import annotations
 
 import json

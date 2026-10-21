@@ -17,6 +17,8 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/policychanges"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimeportal"
 	"github.com/jackc/pgx/v5"
 	"hash/fnv"
 	"time"
@@ -32,8 +34,9 @@ func init() {
 
 // Store is the PostgreSQL implementation of store.Store.
 type Store struct {
-	pool      *pgxpool.Pool
-	retention store.RetentionConfig
+	runtimeCipher *runtimeportal.Cipher
+	pool          *pgxpool.Pool
+	retention     store.RetentionConfig
 
 	sessions          *sessionRepo
 	turns             *turnRepo
@@ -86,6 +89,13 @@ func Open(ctx context.Context, cfg store.Config) (store.Store, error) {
 	}
 
 	s := &Store{pool: pool, retention: cfg.Retention}
+	if cfg.RuntimeMasterKey != "" {
+		s.runtimeCipher, err = runtimeportal.NewCipher(cfg.RuntimeMasterKey)
+		if err != nil {
+			pool.Close()
+			return nil, err
+		}
+	}
 	s.sessions = &sessionRepo{pool: pool}
 	s.turns = &turnRepo{pool: pool}
 	s.events = &eventRepo{pool: pool}
@@ -110,6 +120,10 @@ func Open(ctx context.Context, cfg store.Config) (store.Store, error) {
 	s.teamProposals = &teamProposalRepo{pool: pool}
 	s.chats = &chatRepo{pool: pool}
 	return s, nil
+}
+
+func (s *Store) PolicyChanges() policychanges.Repository {
+	return &policychanges.Postgres{Pool: s.pool}
 }
 
 func (s *Store) Sessions() store.SessionRepository                 { return s.sessions }
@@ -229,3 +243,9 @@ func (s *Store) PurgeOlderThan(ctx context.Context, r store.RetentionConfig) (in
 }
 
 func (s *Store) Applications() store.ApplicationRepository { return &applicationRepo{pool: s.pool} }
+
+func (s *Store) RuntimeSnapshots() runtimeportal.DispatchCodec { return s.runtimeCipher }
+
+func (s *Store) RuntimePortal() runtimeportal.Repository {
+	return &runtimeportal.Postgres{Pool: s.pool, Cipher: s.runtimeCipher}
+}

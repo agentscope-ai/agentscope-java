@@ -313,9 +313,13 @@ func (r *collaborationRepo) SweepOverdueIssues(ctx context.Context, now time.Tim
 	return count, rows.Err()
 }
 
-func (r *collaborationRepo) SweepTimedOutAgentTasks(ctx context.Context, now time.Time, limit int) (int, error) {
+func (r *collaborationRepo) SweepTimedOutAgentTasks(ctx context.Context, now time.Time, limit int, portalOnly bool) (int, error) {
 	if limit <= 0 {
 		limit = 100
+	}
+	ownerScope := ""
+	if portalOnly {
+		ownerScope = " AND EXISTS(SELECT 1 FROM orchestration_runs r WHERE r.id=t.orchestration_run_id AND r.portal_owned)"
 	}
 	rows, err := r.pool.Query(ctx, `SELECT t.id,t.version FROM agent_tasks t
 		JOIN orchestration_run_team_snapshots ts ON ts.run_id=t.orchestration_run_id AND ts.team_id=t.team_id
@@ -323,7 +327,7 @@ func (r *collaborationRepo) SweepTimedOutAgentTasks(ctx context.Context, now tim
 		AND COALESCE((ts.snapshot->'policy'->>'taskTimeoutSeconds')::bigint,0)>0
 		AND COALESCE(t.started_at,t.dispatched_at,t.created_at)
 			+ COALESCE((ts.snapshot->'policy'->>'taskTimeoutSeconds')::bigint,0) * interval '1 second' <= $3
-		ORDER BY COALESCE(t.started_at,t.dispatched_at,t.created_at),t.id LIMIT $4`,
+		`+ownerScope+` ORDER BY COALESCE(t.started_at,t.dispatched_at,t.created_at),t.id LIMIT $4`,
 		controlmodel.AgentTaskRunning, controlmodel.AgentTaskDispatched, now, limit)
 	if err != nil {
 		return 0, err
@@ -407,13 +411,13 @@ func (r *collaborationRepo) CreateArtifact(ctx context.Context, artifact *contro
 	created, err := scanArtifact(tx.QueryRow(ctx, `INSERT INTO artifacts
 		(id,tenant,namespace,storage_provider,storage_key,filename,content_type,
 		 size_bytes,checksum,uploader_type,uploader_ref,source_task_id,
-		 source_attempt_id,metadata,expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		 source_attempt_id,metadata,expires_at,portal_command_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		RETURNING `+artifactColumns, artifact.ID, artifact.Tenant, artifact.Namespace,
 		artifact.StorageProvider, artifact.StorageKey, artifact.Filename,
 		artifact.ContentType, artifact.SizeBytes, artifact.Checksum,
 		artifact.Uploader.Type, nullStr(artifact.Uploader.Ref), artifact.SourceTaskID,
-		artifact.SourceAttemptID, nullJSON(artifact.Metadata), artifact.ExpiresAt))
+		artifact.SourceAttemptID, nullJSON(artifact.Metadata), artifact.ExpiresAt, artifact.PortalCommandID))
 	if err != nil {
 		return nil, err
 	}
@@ -777,11 +781,25 @@ func (r *collaborationRepo) ListApprovals(ctx context.Context, filter store.Appr
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
+	ownerScope, afterScope, order := "", "AND ($11::uuid IS NULL OR id>$11)", "created_at DESC,id"
+	if filter.PortalOnly {
+		ownerScope = "AND portal_runtime_event_owned('approval',id::text)"
+	}
+	if filter.AfterID != nil {
+		afterScope, order = "AND id>$11", "id"
+	}
+	stateScope, targetScope := "AND ($6='' OR status=$6)", "AND ($4='' OR target_type=$4)"
+	if filter.Status == controlmodel.ApprovalPending {
+		stateScope = "AND status='pending' AND $6='pending'"
+	}
+	if filter.TargetType != "" {
+		targetScope = "AND target_type=$4"
+	}
 	rows, err := r.pool.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE
 		($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND ($3='' OR approver_ref=$3)
-		AND ($4='' OR target_type=$4) AND ($5='' OR target_ref=$5) AND ($6='' OR status=$6)
-		AND (NOT $9 OR target_work_access_allowed(target_type,target_ref,$10::text[])) ORDER BY created_at DESC,id LIMIT $7 OFFSET $8`, filter.Tenant, filter.Namespace,
-		filter.ApproverRef, filter.TargetType, filter.TargetRef, filter.Status, limit, maxInt(filter.Offset, 0), store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
+		`+targetScope+` AND ($5='' OR target_ref=$5) `+stateScope+`
+		AND (NOT $9 OR target_work_access_allowed(target_type,target_ref,$10::text[])) `+ownerScope+` `+afterScope+` ORDER BY `+order+` LIMIT $7 OFFSET $8`, filter.Tenant, filter.Namespace,
+		filter.ApproverRef, filter.TargetType, filter.TargetRef, filter.Status, limit, maxInt(filter.Offset, 0), store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs, filter.AfterID)
 	if err != nil {
 		return nil, err
 	}

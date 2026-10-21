@@ -95,6 +95,8 @@ Workspace、Environment、Memory 和 Vault 都是可以复用的资源，但它�
 
 Agent 的默认资源用于创建新会话，不会在修改定义后自动替换已有 Session 的选择。Session 保存的是资源 ID，不能因此把资源本身当成不可变快照：Memory 文档可以继续更新，Vault 凭据可以轮换，Environment 配置也可以被维护。只有 Workspace 发布内容随 Agent 定义版本固定下来。修改共享资源本身时，应同时考虑其他引用它的 Agent 和 Session。
 
+Turn 恢复后，Agent 仍可读取 Memory Store 的最新文档。Store 绑定集合取自 Session 固定配置，访问仍检查当前资源归属、归档状态与 Environment 设置。Agent 侧的共享挂载保持只读；需要修改共享文档时使用资源 API。
+
 ### 设置 Agent 的默认资源
 
 先在相应资源页面创建 Environment、Memory Store 或 Vault，并取得它们返回的 ID。下面示例将三类资源设为已有 Managed Agent 的默认值；把 JSON 中的占位值换成实际 ID，保存为 `resource-defaults.json`。如果只想修改其中一类，文件中只保留对应字段即可。省略的字段会由下面的命令保留原值；列表中的 ID 则表示完整的默认集合，空数组会清空该类默认绑定。

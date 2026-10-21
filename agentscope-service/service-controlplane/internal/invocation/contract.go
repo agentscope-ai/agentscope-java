@@ -34,7 +34,12 @@ import (
 type Contract struct {
 	// PublicSessionID identifies a direct Session API execution. Endpoint remains
 	// a storage-compatible execution configuration, not a published resource.
-	PublicSessionID uuid.UUID                            `json:"public_session_id,omitempty"`
+	PublicSessionID uuid.UUID `json:"public_session_id,omitempty"`
+	// PortalCommandID refers to the encrypted runtime admission. Native rows
+	// retain this reference rather than another copy of resolved credentials.
+	PortalCommandID string                               `json:"portal_command_id,omitempty"`
+	RuntimeProfiles map[string]*model.RuntimeProfile     `json:"runtime_profiles,omitempty"`
+	RuntimePools    map[string]*model.RuntimePool        `json:"runtime_pools,omitempty"`
 	EnvironmentID   string                               `json:"environment_id,omitempty"`
 	SessionOptions  json.RawMessage                      `json:"session_options,omitempty"`
 	Policies        map[string]*model.AgentRuntimePolicy `json:"policies,omitempty"`
@@ -60,7 +65,7 @@ func ReadContract(raw json.RawMessage) (*Contract, error) {
 	return &c, nil
 }
 func BoundEndpoint(ctx context.Context, st store.Store, inv *model.EndpointInvocation) (*model.Endpoint, error) {
-	c, err := ReadContract(inv.Contract)
+	c, err := ReadInvocationContract(ctx, st, inv)
 	if err != nil {
 		return nil, err
 	}

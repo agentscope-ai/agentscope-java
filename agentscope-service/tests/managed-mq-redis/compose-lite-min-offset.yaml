@@ -1,0 +1,21 @@
+# Explicit test-only Broker derivative. Use together with compose-lite.yaml and
+# --project-name managed-mq-redis-lite-min-offset; the official baseline stays on 19981.
+services:
+  broker:
+    image: managed-test/rocketmq:5.5.1-min-offset
+    volumes:
+      - ./broker-lite-min-offset.conf:/opt/managed/broker.conf:ro
+    ports: !override ['127.0.0.1:19982:19982']
+  topics:
+    entrypoint: [sh, /opt/managed/init-proxy.sh]
+    command: []
+    volumes:
+      - ./init-lite-proxy.sh:/opt/managed/init-proxy.sh:ro
+  proxy:
+    volumes:
+      - ./proxy-lite-min-offset.json:/opt/managed/proxy.json:ro
+    depends_on: !override
+      broker: {condition: service_healthy}
+      topics: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD-SHELL, "bash -c '</dev/tcp/127.0.0.1/19982'"]

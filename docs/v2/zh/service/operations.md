@@ -59,7 +59,9 @@ Kubernetes 同样需要数据库备份与 PVC 快照；根据存储提供程序�
 
 阅读新版本的迁移与兼容性说明，先在测试数据库副本上演练。完成备份后，Docker 修改 `.env` 中的 `SERVICE_VERSION`，拉取镜像并重建容器；Helm 使用指定版本的 Chart 执行 upgrade。
 
-Go 在启动时执行产品与运行状态迁移，Java 当前通过 Hibernate 更新表结构。组件镜像回退不保证旧版本可以读取新 schema。
+当前源码部署先执行独立迁移任务，普通副本使用业务账号校验 schema。PostgreSQL 连接预算要累加业务池和原生日志池：每个数据面副本另有一个有界池，通过 `BUILDER_RUNTIME_NATIVE_LOG_CONNECTIONS`（默认 8）或 Helm `dataplane.nativeLogConnections` 配置。
+
+Managed 原生历史保存在数据面索引表中。该格式要求重建运行数据；旧 Workspace 日志会明确拒绝，不会当成空历史。切换前排空旧 Session，准备新的运行数据空间；数据库迁移不会自动转换旧日志。备份需同时包含 Portal 状态、原生日志表、共享文件和原密钥。组件镜像回退不保证旧版本可以读取新 schema。
 
 ## 恢复
 
@@ -175,6 +177,16 @@ kubectl -n agentscope describe pod POD_NAME
 ```
 
 Gateway 正常不代表模型或工具执行正常。Managed 会话故障查看 Dataplane；渠道与 Worker 调度查看 Scheduler；产品 Automation、资源、账号和编排派发查看 Control。Hosted provider 故障还需对应主机的 daemon 日志。
+
+### 跟踪 Managed 跨实例执行
+
+源码 Managed MQ 运行时在 INFO 级别输出 `managed_runtime ` 前缀和单行 JSON。需要部署包含此日志的构建并重启相关服务；已发布镜像和正在运行的 JVM 不会自动获得新日志。每个副本设置独立的 `BUILDER_INSTANCE_ID`，例如 Pod 名称。未指定时，`instance_id` 使用主机名和 PID；每条记录还包含 `host`、`pid` 和每次进程启动重新生成的 `boot_id`，用于区分重启前后的进程。
+
+先按 `session_id`、`turn_id` 查找，再关联 `run_id`、`epoch`、`checkpoint_id`、`task_id` 和 `execution_id`。`brain.checkpoint.published` 表示 Broker 已接受，`hands.checkpoint.committed` 才表示已持久提交。将该 checkpoint 与接替 Brain 的 `brain.checkpoint.loaded` 和新 run 关联。`hands.tool.querying_existing` 表示查询原执行，不表示重新启动命令；`hands.sandbox.attached` 记录 Sandbox 标识，并区分云端创建与重新连接。
+
+`brain.execution.released` 表示活动执行退出，不会清理 Agent 构建缓存。实际缓存移除和关闭记录为 `brain.agent.cache.closed`，可通过 `cache_entry` 与 `brain.agent.cache.resolved` 关联 Session；二者都不表示 JVM 已完成垃圾回收。消费者启动和 SDK 回调返回记录也可能没有当前 Session，应通过 `consumer_id` 和 `delivery_id` 关联。回调返回 `SUCCESS` 不表示 Broker 已确认 ACK，还应检查消费位点。
+
+这些生命周期日志只记录标识与有限状态，不打印上下文正文、工具参数、完整工具结果、凭据或 Guard token。跨机器恢复仍要求共享 checkpoint 存储并能访问同一个远程 Sandbox；增加副本后请求成功，不能单独证明恢复过程正确。
 
 ## 重启没有重置管理员密码
 

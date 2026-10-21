@@ -53,7 +53,7 @@ export default function AgentToolsPage() {
         </div>
       )}
       {agent?.runtimeKind === 'hosted-runtime' && <div role="note" style={helpStyle}>
-        Built-in tools in this catalog belong to Managed Agents. Hosted runtimes use their native tools;
+        Built-in tools in this catalog belong to AgentScope Service. Hosted runtimes use their native tools;
         supported mappings depend on the provider. Codex does not apply these built-in policies.
         Use its Runtime Profile for sandbox and approval settings. MCP connections can be configured below.
       </div>}

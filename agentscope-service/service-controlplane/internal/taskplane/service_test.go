@@ -61,6 +61,13 @@ func TestHostedAgentTaskLifecycleWritesResultComment(t *testing.T) {
 	if err = json.Unmarshal(execution.RuntimeBinding, &snapshot); err != nil || snapshot.RuntimeProfile == nil || snapshot.RuntimePool == nil || snapshot.RuntimeProfile.Version != profile.Version || snapshot.RuntimePool.Version != pool.Version {
 		t.Fatalf("hosted dispatch did not freeze runtime resources: snapshot=%+v err=%v", snapshot, err)
 	}
+	if snapshot.SnapshotCipherVersion != 1 || len(snapshot.SealedConfiguration) == 0 || len(snapshot.ResolvedProviderConfiguration) != 0 || len(snapshot.RuntimeProfile.Configuration) != 0 || snapshot.Binding.ExecutionOverrides != nil || len(snapshot.Definition) != 0 {
+		t.Fatal("native dispatch persisted plaintext execution configuration")
+	}
+	snapshot, err = st.RuntimeSnapshots().RevealDispatch(task.ID.String(), snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var resolved map[string]any
 	if err = json.Unmarshal(snapshot.ResolvedProviderConfiguration, &resolved); err != nil ||
 		resolved["sandbox"] != "workspace-write" || resolved["reasoningEffort"] != "high" ||

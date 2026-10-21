@@ -11,6 +11,8 @@ Channel 将外部消息平台连接到 AgentScope Service，负责接收消息�
 
 当前适配器包含钉钉、飞书、企业微信、GitHub 和 GitLab，具体配置通过类型接口查询。其中把外部消息关联为持久 Issue、路由给 Agent / Team 并回传工作进展的完整流程，目前仅支持飞书。其他适配器不能据此推定具有相同的任务协作能力。
 
+在当前源码构建中，个人会话路由到 Managed Agent 后，由平台消息 ID 标识一次 Turn。同一消息重复投递复用原 Turn；新消息进入同一 Session 的后续 Turn。回复读取该 Turn 已持久保存的公开事件，重试时应保留原平台消息 ID。
+
 ## 查询平台要求并创建连接
 
 以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与空间)准备 `BASE_URL`（Service 地址）、`TENANT`、`NAMESPACE`，在同一个 Bash 终端执行后续步骤：

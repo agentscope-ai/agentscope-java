@@ -324,7 +324,7 @@ func taskRunReplanCmd() *cobra.Command {
 }
 
 func taskRunSignalCmd() *cobra.Command {
-	var file, key string
+	var file, key, requestID string
 	cmd := &cobra.Command{Use: "signal NAME [TASK_ID]", Args: cobra.RangeArgs(1, 2), RunE: func(_ *cobra.Command, args []string) error {
 		explicit := ""
 		if len(args) == 2 {
@@ -341,9 +341,10 @@ func taskRunSignalCmd() *cobra.Command {
 				return err
 			}
 		}
-		body := jsonBody(map[string]any{"idempotencyKey": key, "payload": payload})
+		body := jsonBody(map[string]any{"idempotencyKey": key, "payload": payload, "requestId": requestID})
 		return printResponse(doTaskAPI(http.MethodPost, "/api/v1/agent-tasks/"+url.PathEscape(id)+"/run/signals/"+url.PathEscape(args[0]), body, agentTaskToken()))
 	}}
+	cmd.Flags().StringVar(&requestID, "request-id", "", "Pending Signal node UUID from run graph (required for Portal runs)")
 	cmd.Flags().StringVar(&key, "idempotency-key", "", "Unique signal delivery key")
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Signal payload YAML or JSON")
 	_ = cmd.MarkFlagRequired("idempotency-key")

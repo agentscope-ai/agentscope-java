@@ -105,11 +105,14 @@ def test_management_and_public_clients_follow_current_routes():
     assert calls[0][1] == "/api/v1/applications/application/credentials"
     assert calls[0][2]["targets"] == [{"type": "agent", "id": "agent"}]
     client = ServiceClient("http://unused", api_token="platform")
-    client._request = lambda *args: calls.append(args) or {}
+    def reply(*args):
+        calls.append(args)
+        return {"snapshot_id": "snapshot", "as_of": "cursor", "resources": {}} if "/snapshot?" in args[1] else {}
+    client._request = reply
     client.create_session({"type": "agent", "id": "agent"}, idempotency_key="session-key")
     client.snapshot("session", "turn")
-    client.command("session", "turn", "actions", {"request_id": "r", "expected_version": 2}, idempotency_key="retry-key")
-    assert calls[2][1] == "/session/turns/turn/snapshot"
+    client.command("session", "turn", "actions", {"answers": [{"request_id": "r", "allow": True}]}, idempotency_key="retry-key")
+    assert calls[2][1] == "/session/turns/turn/snapshot?limit=100"
     assert calls[3][-1] == "retry-key"
     assert client._headers() == {"Authorization": "Bearer platform"}
 
@@ -170,7 +173,7 @@ def test_service_client_local_mode_omits_credentials(monkeypatch):
     def respond(request, timeout):
         requests.append(request)
         class Response:
-            def read(self): return b'{"items":[]}'
+            def read(self, size=-1): return b'{"items":[]}'
         yield Response()
     monkeypatch.setattr(service, "urlopen", respond)
     client = ServiceClient("http://local-service")
@@ -180,3 +183,119 @@ def test_service_client_local_mode_omits_credentials(monkeypatch):
     import pytest
     with pytest.raises(ValueError):
         ServiceClient("http://local-service", "application-key", api_token="platform-token")
+
+
+def test_public_service_client_rejects_redirect_before_forwarding_identity():
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+    from urllib.error import HTTPError
+    import pytest
+    forwarded = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_GET(self):
+            if self.path == "/forwarded":
+                forwarded.append(self.headers.get("X-API-Key"))
+                self.send_response(200)
+            else:
+                self.send_response(302)
+                self.send_header("Location", "/forwarded")
+            self.end_headers()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = ServiceClient("http://127.0.0.1:" + str(server.server_port), "original-key")
+        with pytest.raises(HTTPError) as error:
+            client.session("session")
+        assert error.value.code == 302
+        assert forwarded == []
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_public_upload_enforces_request_and_response_limits(monkeypatch):
+    from agentscope_service import service
+    import pytest
+    client = ServiceClient("http://local-service")
+    with pytest.raises(ValueError, match="16 MiB"):
+        client.upload_file("session", "file", bytes((16 << 20) + 1), idempotency_key="key")
+    limits = []
+    @contextmanager
+    def respond(request, timeout):
+        assert request.get_header("X-file-name") == "%E6%96%87%E4%BB%B6%20name.bin"
+        assert request.data == b"\x00\xff"
+        class Response:
+            def read(self, size):
+                limits.append(size)
+                return b"x" * size
+        yield Response()
+    monkeypatch.setattr(service, "urlopen", respond)
+    with pytest.raises(ValueError, match="JSON response"):
+        client.upload_file("session", "文件 name.bin", b"\x00\xff", idempotency_key="key")
+    assert limits == [(16 << 20) + 1]
+
+
+def test_public_export_pins_watermark_and_rejects_incomplete_windows(monkeypatch):
+    from agentscope_service import service
+    from io import BytesIO
+    from urllib.parse import parse_qs, urlsplit
+    import pytest
+    queries, closed = [], []
+    incomplete = False
+
+    @contextmanager
+    def respond(request, timeout):
+        assert request.get_header("X-api-key") == "original-key"
+        assert not request.has_header("X-builder-internal-token")
+        query = parse_qs(urlsplit(request.full_url).query)
+        queries.append(query)
+        first = not query.get("after")
+        event = {"schema_version": 1, "session_id": "session", "id": "a" if first else "b",
+                 "cursor": "cursor-a" if first else "watermark", "type": "turn.completed", "data": {}}
+        payload = json.dumps(event).encode() + (b"" if incomplete else b"\n")
+        response = BytesIO(payload)
+        response.headers = {"Content-Type": "application/x-ndjson", "X-Export-Through": "watermark",
+                            "X-Next-Cursor": event["cursor"], "X-Has-More": "true" if first else "false",
+                            "X-Export-Count": "1"}
+        try:
+            yield response
+        finally:
+            response.close()
+            closed.append(True)
+
+    monkeypatch.setattr(service, "urlopen", respond)
+    client = ServiceClient("http://local-service", "original-key")
+    assert [event["id"] for event in client.export_events("session", limit=1)] == ["a", "b"]
+    assert queries[1]["through"] == ["watermark"]
+    assert queries[1]["after"] == ["cursor-a"]
+    assert len(closed) == 2
+    incomplete = True
+    with pytest.raises(ValueError, match="Incomplete"):
+        list(client.export_events("session", limit=1))
+    assert len(closed) == 3
+
+
+def test_public_budget_preserves_identity_and_conditional_revision(monkeypatch):
+    from agentscope_service import service
+    import io
+    import pytest
+    @contextmanager
+    def respond(request, timeout):
+        assert request.get_header("X-api-key") == "original-key"
+        assert request.get_header("X-builder-internal-token") is None
+        assert request.full_url.endswith("/session/budget")
+        if request.method == "PUT":
+            assert request.get_header("If-match") == "2"
+            assert json.loads(request.data) == {"max_model_calls": 20}
+        yield io.BytesIO(b'{"revision":3}')
+    monkeypatch.setattr(service, "urlopen", respond)
+    client = ServiceClient("http://local-service", api_key="original-key")
+    assert client.budget("session")["revision"] == 3
+    assert client.set_budget("session", {"max_model_calls": 20}, revision=2)["revision"] == 3
+    with pytest.raises(ValueError, match="positive"):
+        client.set_budget("session", {}, revision=0)

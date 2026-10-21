@@ -20,6 +20,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.Model;
+import io.agentscope.harness.agent.context.ContextModelCalls;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -189,7 +190,7 @@ public class MemoryConsolidator {
                         .content(TextBlock.builder().text(userContent.toString()).build())
                         .build());
 
-        return model.stream(messages, null, null)
+        return ContextModelCalls.auxiliary(model, messages)
                 .reduce(
                         new StringBuilder(),
                         (sb, chatResponse) -> {

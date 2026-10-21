@@ -138,3 +138,53 @@ func TestTaskContextOutputRedactsCredential(t *testing.T) {
 		t.Fatalf("redacted output=%s", output)
 	}
 }
+
+func TestTaskRunSignalKeepsPendingIdentityKeyAndExactValue(t *testing.T) {
+	called := false
+	withTaskCLIServer(t, func(w http.ResponseWriter, request *http.Request) {
+		called = true
+		if request.URL.Path != "/api/v1/agent-tasks/task-1/run/signals/ready" || request.Header.Get("X-Agent-Task-Token") != "task-secret" || request.Header.Get("Authorization") != "" {
+			t.Errorf("signal transport scope=%s", request.URL.Path)
+		}
+		var body struct {
+			RequestID      string          `json:"requestId"`
+			IdempotencyKey string          `json:"idempotencyKey"`
+			Payload        json.RawMessage `json:"payload"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.RequestID != "node-1" || body.IdempotencyKey != "original-key" || !bytes.Contains(body.Payload, []byte("9007199254740993")) {
+			t.Errorf("signal body=%+v", body)
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"command_id":"durable-command","status":"queued"}`))
+	})
+	file := filepath.Join(t.TempDir(), "signal.json")
+	if err := os.WriteFile(file, []byte(`{"value":9007199254740993}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := taskRunSignalCmd()
+	cmd.SetArgs([]string{"ready", "--request-id=node-1", "--idempotency-key=original-key", "--file=" + file})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("signal was not submitted")
+	}
+}
+func TestTaskClientRejectsRedirectBeforeCredentialForwarding(t *testing.T) {
+	redirected := false
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirected = true; w.WriteHeader(200) }))
+	defer target.Close()
+	withTaskCLIServer(t, func(w http.ResponseWriter, request *http.Request) {
+		http.Redirect(w, request, target.URL, http.StatusTemporaryRedirect)
+	})
+	response, err := doTaskAPI(http.MethodPost, "/api/v1/agent-tasks/task-1/run/signals/ready", []byte(`{}`), "task-secret")
+	if response != nil && response.Body != nil {
+		response.Body.Close()
+	}
+	if err == nil || redirected {
+		t.Fatalf("redirect=%v, err=%v", redirected, err)
+	}
+}

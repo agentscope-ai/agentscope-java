@@ -1,370 +1,142 @@
 ---
 title: "Sessions, tasks, and budgets"
-description: "Add requirements, answer pending actions, cancel or resume submitted work, and manage usage and budgets."
+description: "Steer a Managed Turn, answer an interaction, cancel work, and inspect durable results and budgets."
 zh_link: /v2/zh/service/session-event-log
 ---
 
-A Session records work between an application and an execution target. A Turn is one task submitted to that Session. Agents, Teams, and Workflows share the Session API; Managed Agents additionally support conversation context, steering, checkpoints, and subagents. Closing a page or disconnecting an event stream does not cancel background work.
+This page covers the source MQ / Redis Managed runtime and its `/v1/sessions` API. A Session pins an Agent definition and resource bindings; each Turn is one submitted request. Portal admits work, Brain reasons and commits native execution state, and Hands runs remote tools. Closing a page does not cancel execution. Other execution backends retain their own contracts; see [the service API](/v2/en/service/service-api).
 
-Start with [Integrate applications with the Session API](/v2/en/service/service-api) to obtain `SESSION_URL`, `TURN_ID`. Once a task is submitted, users may need to change requirements, answer an Agent's question, or stop and resume execution. This page explains how those operations apply to an existing Session and Turn. Examples use local mode. See [production deployment](/v2/en/service/kubernetes#production-api-access) for identity and grants.
+Create a Session through the [Managed Session, Turn and Input API](/v2/en/service/claude-session-api), then set `SESSION_URL="$BASE_URL/v1/sessions/$SESSION_ID"` and retain the returned `TURN_ID`. Examples below use local mode. Use the credentials described in [production deployment](/v2/en/service/kubernetes#production-api-access) in production.
+
+The current runtime uses a fresh Managed schema baseline. Previous Hands-through-Portal HTTP forwarding, result callbacks and standalone workspace-task protocols are removed; no old-state conversion or consumer-group offset migration is provided.
 
 ## How Sessions and Turns relate
 
-Session creation freezes the target and its configuration. Subsequent Turns use that configuration, so editing an Agent does not silently change an existing conversation. Create a new Session to use the updated definition. Workflow Sessions select a published revision, either explicitly or by resolving the latest published revision at creation.
+Creating a Session persists its frozen configuration; it does not wait for bootstrap or a ready state. Editing an Agent does not update an existing Session. The Session update operation changes title and metadata, not its frozen definition or Environment binding.
 
-<Accordion title="Update Managed runtime resources">
+Turns execute in MQ reception order within the Session. API admission order is a query coordinate, not execution priority. A long-running or suspended Turn retains its original ordered delivery until its durable terminal result lets the SDK acknowledge it. Subsequent Turns remain queued. Different Sessions can progress independently. A suspended Turn releases its active execution and MQ callback; its original message stays at the ordered head. An independent Resume continues the same Turn after its tool result or reply is durably available.
 
-A Managed Session can update runtime resource bindings with `PATCH`. Complete an initial Turn to establish its runtime Session, then fill in an Environment ID you may use. This changes only the Environment and keeps the frozen Agent definition version.
-
-```bash
-ENVIRONMENT_ID="YOUR_ENVIRONMENT_ID"
-curl -sS --fail-with-body -X PATCH "$SESSION_URL" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<JSON
-{
-  "environmentId": "$ENVIRONMENT_ID"
-}
-JSON
-```
-
-</Accordion>
-
-Turns in a Session execute in acceptance order. A task waiting for approval holds later Turns in the queue until it finishes. Managed Agents retain conversation context between Turns. Each Team or Workflow Turn starts independent work, while the Session collects its progress and results. A common interface does not imply identical memory or interaction capabilities; read `/capabilities` before displaying controls.
-
-A `202 Accepted` response with status `queued` means the task has been accepted and has not finished. Retry a network request with the same `Idempotency-Key` and body to retrieve the original Turn. Use a new key only for a new task. When a page refreshes, read the existing Session snapshot and events instead of resubmitting input.
+Retry an uncertain submission with the same `Idempotency-Key` and body. Reading an existing Turn or reconnecting SSE restores observation without creating another request.
 
 ## Read results and restore a page
 
-Read `GET /turns/{turnId}` for task status. To restore the full page, load the Session `/snapshot`, then connect to `/events/stream` with the returned `as_of`. A view limited to one Turn should pair that Turn's `/snapshot` with its own `/events/stream`. Session and Turn cursors are not interchangeable.
+Read the current Turn and a pinned snapshot:
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
+SNAPSHOT=$(curl -sS --fail-with-body "$SESSION_URL/snapshot?limit=100")
+CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
+SNAPSHOT_ID=$(jq -er '.snapshot_id' <<< "$SNAPSHOT")
 ```
 
-<Accordion title="List Sessions and previous Turns">
-
-The Session list defaults to active records; `status=all` also includes archived records. Both lists return `items` and `next_offset`; pass a non-null next offset as `offset` in the next request.
+Every collection in `resources` shares `snapshot_id`, `as_of` and `expires_at`. Follow a collection's `next_cursor` through `/resources/{kind}` with the same `snapshot_id`; limits are 1–256. Snapshots last ten minutes, with at most 32 active snapshots per Session. On `snapshot_expired`, load a new snapshot.
 
 ```bash
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/agent-sessions" \
-  --data-urlencode "status=all" \
-  --data-urlencode "limit=20" \
-  --data-urlencode "offset=0"
+curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
+  -H "Accept: text/event-stream" --data-urlencode "after=$CURSOR"
 ```
 
-```bash
-curl -sS --fail-with-body "$SESSION_URL"
-```
+Apply events only after restoring the snapshot. Persist a cursor after applying its event; reconnect through either Portal replica using that cursor or `Last-Event-ID`. Events and resource pages have different cursor contracts. See [SSE and event replay](/v2/en/service/sse-events) for accumulation, tool progress and bounded previews.
 
-```bash
-curl -sS --fail-with-body -G "$SESSION_URL/turns" \
-  --data-urlencode "limit=20" \
-  --data-urlencode "offset=0"
-```
-
-</Accordion>
-
-Managed Session snapshots include messages, tools, inputs, required actions, and subagents. Team, Workflow, and generic Turn snapshots contain collections indexed by ID and execution steps. Clients must handle the appropriate snapshot shape. Session and Turn identity, control paths, and resumable event delivery are shared. See [SSE and event replay](/v2/en/service/sse-events) for accumulation rules.
+`waiting_tool` means Hands is still executing a tool and the platform will resume the same Turn from its checkpoint. It is not a request for the user to invent or supply a tool result. `waiting` with an actual required action needs a reply. Only `completed`, `failed` or `cancelled` establishes a terminal Turn outcome.
 
 ## Add requirements or context
 
-Submit a new Turn for a new question. To change the subsequent steps of an active Managed task, use `steer` when supported. Steering cannot change a model request that has already been sent. To add background context without starting inference, use the Session `/inputs/inject` resource.
-
-Read the Turn’s available commands before displaying controls:
+A new question starts a new Turn. To steer or add context to an open Turn, submit an Input. Read the Turn's `/capabilities` and `inputs_open` before displaying controls.
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities"
+INPUT_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+    -H "Content-Type: application/json" -H "Idempotency-Key: correction-001" \
+    --data-binary '{"type":"steer","payload":{"message":"Check the budget before continuing."}}'
+)
+INPUT_ID=$(jq -er '.id' <<< "$INPUT_JSON")
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs/$INPUT_ID"
 ```
 
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/steer" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: correction-001" \
-  --data-binary @- <<'JSON'
-{
-  "message": "Check the budget first; do not send email yet."
-}
-JSON
-```
+Use `type=inject` at the same endpoint to add context to that Turn. Neither Input starts another Turn. Steering applies at a safe reasoning boundary and cannot change a model request already sent. The payload accepts either `message` or structured user input; [file references](/v2/en/service/files) follow the Session's immutable file contract.
 
-Managed input accepts either a nonempty `message` or an `input` array of user messages, but not both. Structured input carries text and file references; see [Files and artifacts](/v2/en/service/files). `input.accepted` means persisted, while `input.applied` means consumed by the runtime. Do not present acceptance as completed processing.
-
-Add context without starting inference:
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/inputs/inject" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: context-001" \
-  --data-binary @- <<'JSON'
-{
-  "message": "Additional context: the installation guide is for developers new to Docker."
-}
-JSON
-```
+Input `status=accepted` means durable admission. `delivery_status=delivered` means delivery, while `status=applied` confirms the input was committed with runtime state. A rejected Input retains `rejection_reason`. Retry the same intent with its original key; changing the content requires a new key.
 
 ## Answer a required action
 
-An Agent creates a required action when it needs confirmation or an external execution result. Save its `request_id`, explain the requested operation to the user, and submit their actual decision to the corresponding Turn. Replace the placeholder below with an ID returned by the service:
+Read `required_actions` from the snapshot and retain the actual `request_id`. Use it as `action_id` in a reply Input. A confirmation expects `allow` and an optional reason:
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions"
-```
-
-Choose an actual pending `request_id` and check the required answer type. For a tool confirmation, use the following answer; set `allow` to `false` and explain the reason to deny it.
-
-```bash
-REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
-COMMAND_JSON=$(
-  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-    -H "Content-Type: application/json" \
-    -H "Idempotency-Key: approval-001" \
-    --data-binary @- <<JSON
-{
-  "request_id": "$REQUEST_ID",
-  "payload": {
-    "allow": true,
-    "reason": "Confirmed by the user"
-  }
-}
-JSON
-)
-COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
-```
-
-The response includes a command receipt and status URL. Follow that receipt and subsequent task events; accepting an answer does not complete the whole task. Retry an unchanged answer with its original key. Before changing an answer, reread the action. Local mode accepts the development identity. Production calling and approval identities are described in [production deployment](/v2/en/service/kubernetes#production-api-access).
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID"
-```
-
-<Accordion title="External tool results and designated approval">
-
-Use real `output` only for an action asking for external tool results. Set `is_error: true` and report the actual error if execution failed. This is a different answer from a tool permission decision.
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: tool-result-001" \
+ACTION_ID="REQUEST_ID_FROM_REQUIRED_ACTION"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+  -H "Content-Type: application/json" -H "Idempotency-Key: answer-001" \
   --data-binary @- <<JSON
-{
-  "request_id": "$REQUEST_ID",
-  "payload": {
-    "output": "Actual tool execution result",
-    "is_error": false
-  }
-}
+{"type":"reply","action_id":"$ACTION_ID","payload":{"allow":true,"reason":"Confirmed by the user"}}
 JSON
 ```
 
-For a business approval, use the current version from the pending action. Replace `EXPECTED_VERSION` with the actual number; use `decision: "rejected"` to reject it.
+For an action requesting external execution, send actual content and error status instead:
 
-```bash
-REQUEST_ID="BUSINESS_APPROVAL_REQUEST_ID"
-EXPECTED_VERSION=1
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: business-approval-001" \
-  --data-binary @- <<JSON
-{
-  "request_id": "$REQUEST_ID",
-  "expected_version": $EXPECTED_VERSION,
-  "decision": "approved"
-}
-JSON
+```json
+{"type":"reply","action_id":"ACTUAL_REQUEST_ID","payload":{"content":[{"type":"text","text":"Actual execution result"}],"is_error":false}}
 ```
 
-</Accordion>
+Set `is_error` to `true` when the external tool failed. The result retains its error state when reasoning resumes and the public tool status is `failed`. The Agent can use that result to continue reasoning; a failed tool does not by itself make the Turn fail.
+
+These answer types are not interchangeable. Read the returned Input until applied or rejected, then continue observing the same Turn. An accepted answer does not establish task completion. Input waits persist the pending actions and checkpoint, then release active Harness ownership. Admission and suspension commit both check for an accepted reply/cancel, so either arrival order can schedule the same Turn for recovery. Runtime and transaction tests cover external replies and cancellation; full multi-replica acceptance remains recorded separately.
 
 ## Cancel and resume
 
-Cancellation and resumption operate on an existing Turn and require stable idempotency keys. After a cancellation receipt, wait for an explicit terminal state. Cancellation cannot guarantee reversal of operations already sent to external systems, so reconcile their outcomes before another execution.
+Cancellation is another durable Input:
 
 ```bash
-CANCEL_JSON=$(
-  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/cancel" \
-    -H "Idempotency-Key: cancel-001"
-)
-CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+  -H "Content-Type: application/json" -H "Idempotency-Key: cancel-001" \
+  --data-binary '{"type":"cancel","payload":{}}'
 ```
 
-When `available_commands` from `/turns/{turnId}/capabilities` includes `resume`, submit to that Turn's `/resume` path. Resumption retains the Turn ID and continues from persisted state. Answer pending actions first, and reconcile uncertain tool results before continuing. Resume is not a general replacement for submitting a new task.
+You can also cancel an accepted Turn while required MCP discovery is pending, without waiting for the server to become available. After acceptance, wait for the Turn's actual terminal state. A committed completion can win the cancellation race. An uncertain external effect cannot be treated as stopped or safely repeated merely because a lease expired.
 
-```bash
-RESUME_JSON=$(
-  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/resume" \
-    -H "Idempotency-Key: resume-001"
-)
-RESUME_COMMAND_ID=$(jq -er '.command.id' <<< "$RESUME_JSON")
-```
-
-After cancellation or resumption, read the corresponding command and then the Turn state. For example, inspect the cancellation above:
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$CANCEL_COMMAND_ID"
-```
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
-```
+Long-tool suspension resumes automatically after Hands persists the covered original result and reliably publishes Resume. Brain first commits the tool event Inbox and checks the current suspension and every pending result, then restores the checkpoint. A Resume received before its result or suspension remains pending; duplicate delivery cannot create another physical invocation. Current native capabilities declare `resume=false`; the old explicit failed-Turn `/resume` and command-receipt protocol is not the native Managed contract. Do not start a replacement execution to resolve an unknown tool outcome.
 
 <span id="budgets"></span>
 
 ## Usage, subagents, and budgets
 
-A Managed Session's `/subagents` resource lists associated child sessions. Follow those associations to inspect child snapshots and events. Each child has its own cursor. `GET /usage?include_children=true` aggregates reported subtree usage, but does not represent an atomic snapshot of every child at the same moment.
+Read `$SESSION_URL/usage` for the shared Session usage and `$SESSION_URL/turns/$TURN_ID/usage` for a Turn. A snapshot's usage and resources refer to its pinned cursor. Child execution has its own identity; use `resources.subagents` and supported child reads rather than treating a child completion as the parent result. Subtree summaries reflect reported child usage, not an atomic snapshot of every process.
+
+Read the current budget before replacing its limits:
 
 ```bash
-curl -sS --fail-with-body -G "$SESSION_URL/usage" \
-  --data-urlencode "include_children=true"
-```
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/usage"
-```
-
-<Accordion title="Inspect a subagent’s progress">
-
-Read the associations and select a child session ID from the response. The snapshot and stream below both belong to that child:
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/subagents"
-```
-
-```bash
-CHILD_SESSION_ID="CHILD_SESSION_ID_FROM_RESPONSE"
-CHILD_URL="$SESSION_URL/subagents/$CHILD_SESSION_ID"
-CHILD_SNAPSHOT=$(
-  curl -sS --fail-with-body "$CHILD_URL/snapshot"
-)
-CHILD_CURSOR=$(jq -er '.as_of' <<< "$CHILD_SNAPSHOT")
-```
-
-```bash
-curl -sS --fail-with-body -N -G "$CHILD_URL/events/stream" \
-  -H "Accept: text/event-stream" \
-  --data-urlencode "after=$CHILD_CURSOR"
-```
-
-</Accordion>
-
-Use `/budget` to limit Managed model calls or accumulated usage. This example allows up to 30 model calls and checks the reported token total before further execution:
-
-```bash
+BUDGET=$(curl -sS --fail-with-body "$SESSION_URL/budget")
+REVISION=$(jq -er '.revision' <<< "$BUDGET")
 curl -sS --fail-with-body -X PUT "$SESSION_URL/budget" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<'JSON'
-{
-  "max_model_calls": 30,
-  "max_total_tokens": 100000
-}
-JSON
+  -H "Content-Type: application/json" -H "If-Match: $REVISION" \
+  --data-binary '{"max_model_calls":30,"max_total_tokens":100000}'
 ```
 
-Token and cost budgets use reported usage and cannot forcibly truncate parallel calls that have already started. Cost limits also require model pricing. Application concurrency and token budgets govern the application's overall workload separately from Managed runtime budgets. See the [Session API guide](/v2/en/service/service-api).
-
-Read the Managed Session’s current budget and reported usage:
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/budget"
-```
+Update the root Session's shared budget. A stale revision returns `409`; reread before deciding whether to replace it. PUT `{}` clears the limits. Limits are checked before subsequent model calls using reported usage. In-flight parallel calls can overshoot, and cost checks require configured pricing. Raising a budget does not enable an unsupported explicit resume operation.
 
 ## Continue from a checkpoint
 
-A Managed Session's `/checkpoints` resource lists restorable context records. Select a returned `checkpoint_id`, call `/checkpoints/restore`, and submit a new Turn. Restoration appends an audit fact, preserves history, and does not undo external effects.
+`GET $SESSION_URL/checkpoints?limit=20` lists committed checkpoint handles. It returns metadata, not native Agent state. Checkpoint cursors are independent of public event cursors; keep the list watermark while paging.
 
-```bash
-curl -sS --fail-with-body -G "$SESSION_URL/checkpoints" \
-  --data-urlencode "limit=20"
-```
+When `checkpoint_restore` or `fork` is enabled, submit a restore or Fork with a stable key and poll its operation through the source Session until `completed`. A Fork target must be registered and empty. The operation validates settled execution and the selected directory image, then appends a new Agent-state baseline. Saved historical images are reused; a historical checkpoint without an image cannot use a directory changed by later tool work. Subsequent Turns use the restored context and Workspace, while earlier public events remain visible. File assets, Artifact publications and external business effects are separate resources; restoring context does not rewind them. See [the operation contract](/v2/en/service/claude-session-api#restore-and-fork).
 
-Fill in a returned checkpoint ID and restore only when the Session is idle and eligible:
+Archive, restore-from-archive and delete are separate Session lifecycle commands. They require an idempotency key and return their own receipt, read through `/lifecycle/{command}`. Follow that receipt until completion; lifecycle cancellation of accepted work does not prove immediate physical stop. Deletion is not a promise of immediate removal of every audit record.
 
-```bash
-CHECKPOINT_ID="CHECKPOINT_ID_FROM_RESPONSE"
-curl -sS --fail-with-body "$SESSION_URL/checkpoints/restore" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: restore-context-001" \
-  --data-binary @- <<JSON
-{
-  "checkpoint_id": "$CHECKPOINT_ID",
-  "reason": "Return to the context before verification for another attempt."
-}
-JSON
-```
+## Background notifications and client reuse
 
-To keep the original conversation and experiment separately, create an empty Session for the same Agent, then call `/fork` on the source with `{target_session_id, checkpoint_id, reason}` and an idempotency key. The sessions must be idle and eligible for recovery, without queued tasks, unresolved actions, or uncertain tool results. Fork copies Agent state, not the environment, credentials, working files, or budget.
+Use `GET /events?after=...&limit=100` for finite replay or SSE for continuous observation. The native Java and TypeScript SDK entry is `ServiceClient.managedSessions()`; Python uses `managed_sessions()`. Preserve stable write keys and the Session's opaque cursors. Legacy backend `/actions`, `/commands`, export or trace examples are not interchangeable with these native routes.
 
-<Accordion title="Create an empty Session and fork">
+The Console's Managed view uses `agentSessions.ts` and `agentSessionView.ts`. A task adapter can project these events into a separate public execution view with its own cursor. Never reuse that cursor on the original Session. Notification and export support must follow the capabilities of the selected backend; public observations must not include private recovery state or credentials.
 
-```bash
-TARGET_SESSION_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
-    -H "Content-Type: application/json" \
-    -H "Idempotency-Key: fork-target-001" \
-    --data-binary @- <<JSON
-{
-  "target": {
-    "type": "agent",
-    "id": "$AGENT_ID"
-  }
-}
-JSON
-)
-TARGET_SESSION_ID=$(jq -er '.id' <<< "$TARGET_SESSION_JSON")
-```
+## Managed runtime protocol
 
-```bash
-curl -sS --fail-with-body "$SESSION_URL/fork" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: fork-context-001" \
-  --data-binary @- <<JSON
-{
-  "target_session_id": "$TARGET_SESSION_ID",
-  "checkpoint_id": "$CHECKPOINT_ID",
-  "reason": "Keep the original record and experiment in a new Session."
-}
-JSON
-```
+Recovery scans committed event metadata and loads only the last checkpoint's state body. Turn and pending-interaction queries do not load historical checkpoints. Dispatch collection and Recorder startup checks reuse their respective projection scans; historical message IDs from imported baselines remain available. Log wrappers within one execution share a bounded read cache, discarded on takeover. Tool tasks for one native call are fetched together. These read optimizations preserve the kernel's writer-acquisition, tool-result reconciliation transaction and subsequent Recorder restoration boundaries. Full native history reads still return complete payloads.
 
-Submit subsequent tasks to `"$BASE_URL/api/v1/agent-sessions/$TARGET_SESSION_ID/turns"`.
+An unconfirmed native commit stops the active Harness through the existing Guard failure path. MQ redelivery acquires a new epoch and restores the committed head, native history and checkpoint; it does not replay a historical batch receipt. Tool results remain durable business facts: `ma.tool_task.result_hash` records the original result identity atomically with its settled result. Matching redelivery is harmless even after result Outbox cleanup; conflicting content or a different execution is rejected. Managed SessionLog does not support permanent `sealWriter`; Redis ownership, epoch fencing and local handoff protection remain in effect.
 
-</Accordion>
+One model tool can contain multiple Hands operations. `tool.operation.completed` only updates an operation; the actual model tool result completes the tool. Output and progress continue while Brain is suspended, and a replacement Hands collector resumes the original execution's durable output cursor. The [tool event contract](/v2/en/service/sse-events#managed-tool-output-and-operation-progress) explains gaps, final watermarks and preview limits.
 
-Session `/archive` blocks new submissions and `/restore` unarchives it; neither restores a checkpoint. Deleting a Session removes application access but does not immediately erase underlying audit data. See [Operations](/v2/en/service/operations) for backup and retention.
+Tools with unknown effects are not automatically rerun. The retired Workspace journal, automatic sandbox-recreation, `authorization_generation`, `tool-recovery` and `workspace-recovery` protocols are not available on `/v1/sessions`. Deployment acceptance remains separate from source-level support.
 
-<Accordion title="Archive, unarchive, and delete">
+## Privileged native trace
 
-Ensure no active or queued Turns remain before archiving or deleting; otherwise the request returns 409. Choose the operation you need below. Restore only applies to an archived Session. Deletion removes application access.
-
-Archive:
-
-```bash
-curl -sS --fail-with-body -X POST "$SESSION_URL/archive"
-```
-
-Unarchive:
-
-```bash
-curl -sS --fail-with-body -X POST "$SESSION_URL/restore"
-```
-
-Delete:
-
-```bash
-curl -sS --fail-with-body -X DELETE "$SESSION_URL"
-```
-
-</Accordion>
-
-## Background notifications and clients
-
-Register a Session or Turn Webhook for backend notifications after users leave the page. See [Webhooks](/v2/en/service/sse-events#webhooks) for signatures and retry behavior. Managed `/export` provides public execution records as JSONL.
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/export" \
-  --output session-events.jsonl
-```
-
-The console uses `frontend/src/api/agentSessions.ts` for detailed Managed resources and `serviceSessions.ts` for generic task views. Both use the same Session API. Keep snapshots paired with their event resource and treat returned IDs as opaque values.
-
-To connect these operations to your own chat page, continue with [Integration example: resumable chat](/v2/en/service/agent-api-chat). It combines task submission, progress display, and user actions, including how to continue the same work after leaving or refreshing the page.
+The native Session API exposes committed public events and checkpoint metadata. It does not currently provide the old privileged `/trace` endpoint. Internal recovery records, tool-source bytes and checkpoint objects are separate from public SSE and snapshots. Operators must follow the deployment's internal observability procedure rather than using an obsolete HTTP recovery or trace example.

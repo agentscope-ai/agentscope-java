@@ -282,6 +282,8 @@ Replicas must share this backend, namespace and session identity. Shared storage
 
 For a custom backend, implement `SessionLogStore`, or implement `AtomicSessionStorage` and reuse `JournalSessionLog`. Preserve compare-and-set writes, writer leases, stale-writer fencing, ordered idempotent commits and durable export cursors. A custom Filesystem must supply `sessionStorage` or use a separate log store; ordinary file reads and writes cannot provide atomic journal commits. A custom `SessionLog` also needs `inbox()` for `AgentSession` commands; `JournalSessionLog` already supports it.
 
+Backends that externalize state bodies can override `readMetadataAfter` and `materialize` to avoid loading unused historical checkpoints. `scanMetadata` traverses the same committed prefix, retaining ordinary payloads and references to external state. Projection validates every event and materializes the last checkpoint; Recorder combines startup checks and historical message ID collection with that traversal. Imported baselines still supply historical messages. The default hooks preserve ordinary reads, and `JournalSessionLog` retains its optimized chain scan. `readAfter` and `scan` continue to return complete original payloads; the serialized event and recovery protocol are unchanged.
+
 <Accordion title="Physical layout, command journal and backups">
 
 The logical object layout below is useful for operating a backend. Identity segments use Base64URL. POSIX local objects include a version prefix; Windows stores their logical paths, versions and payloads as SQLite rows. Read them through the SDK rather than treating them as application JSONL files.
@@ -343,6 +345,39 @@ static Mono<Void> recordReview(RuntimeContext context, String note) {
 ```
 
 Await the returned `Mono` as part of the tool or middleware pipeline. `required=false` suits diagnostic facts that do not participate in recovery. For recovery-relevant types, register validators and reducers through `SessionEventCodecRegistry` before execution or restoration; an unknown required type prevents recovery. Do not retain the recorder for writes after its invocation ends.
+
+## Host-managed iteration budgets
+
+A durable host may bind `AgentExecutionPosition(reasoningIteration, actingIteration)` in the
+call's `RuntimeContext`. Core starts reasoning or pending-tool continuation at those positions;
+the next reasoning step still checks `maxIters`. The host must derive the positions from
+committed step and tool facts, preserve them across suspension, and reset them for a new logical
+Turn. This prevents process restarts from resetting a Turn's iteration budget. Without this
+binding, both entry points keep their existing iteration-zero behavior. The record adds no
+fields to `AgentState` or native events and does not replay middleware effects or Java stacks.
+
+## Host-managed finalization
+
+A host that restores the full Agent state can bind `AgentFinalization` in the call's
+`RuntimeContext`. Its `resumeResult()` returns an already produced reply when only finalization
+remains; Core skips primary inference and still runs the finalization boundary before delivering
+the same result through `call()` or `streamEvents()`. Without this binding, the normal lifecycle
+is unchanged. The host persists the phase and keeps execution ownership valid while it runs.
+
+`SessionModelInvocation` is an optional model boundary on the same context. Calling its `next`
+function records the chosen model call ID and executes the existing `SessionModelPolicy`; a host
+may instead replay a fully recorded response. The host must validate the frozen request and keep
+incomplete model attempts distinct from complete responses. These hooks add no fields to
+`AgentState` or existing native event payloads.
+
+`SessionRecorder.checkpointedRecordNow(state, reason, type, payload)` commits a recovery-critical
+fact and its checkpoint in one batch, including when the state is unchanged. Existing checkpoint
+methods retain their behavior.
+
+For repeatable memory finalization, `MemoryFlushManager` accepts an optional `Clock` from the
+context; absent a clock it uses the current system time and default zone. Inline memory flushes
+propagate `SessionLogException` so a host can resume a suspended operation rather than report a
+successful flush. Recovery facts owned by a host use registered, required event schemas.
 
 <span id="migration-and-forking" />
 

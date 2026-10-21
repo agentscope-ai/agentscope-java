@@ -38,17 +38,22 @@ type Target struct {
 
 // Contract and Principal are persisted, but never returned by the public API.
 type Session struct {
-	ID            uuid.UUID       `json:"id"`
-	Tenant        string          `json:"tenant"`
-	Namespace     string          `json:"namespace"`
-	Target        Target          `json:"target"`
-	Principal     string          `json:"principal"`
-	ApplicationID *uuid.UUID      `json:"applicationId,omitempty"`
-	Contract      json.RawMessage `json:"contract"`
-	Status        string          `json:"status"`
-	CreatedAt     time.Time       `json:"createdAt"`
-	UpdatedAt     time.Time       `json:"updatedAt"`
-	InputHash     string          `json:"inputHash,omitempty"`
+	ID               uuid.UUID       `json:"id"`
+	Tenant           string          `json:"tenant"`
+	Namespace        string          `json:"namespace"`
+	Target           Target          `json:"target"`
+	Principal        string          `json:"principal"`
+	ApplicationID    *uuid.UUID      `json:"applicationId,omitempty"`
+	SourceEndpointID *uuid.UUID      `json:"sourceEndpointId,omitempty"`
+	TaskAttemptID    *uuid.UUID      `json:"taskAttemptId,omitempty"`
+	Contract         json.RawMessage `json:"contract"`
+	Status           string          `json:"status"`
+	CreatedAt        time.Time       `json:"createdAt"`
+	UpdatedAt        time.Time       `json:"updatedAt"`
+	InputHash        string          `json:"inputHash,omitempty"`
+	RuntimeOwner     string          `json:"runtimeOwner,omitempty"`
+	RuntimeStatus    string          `json:"runtimeStatus,omitempty"`
+	RuntimeRevision  int64           `json:"runtimeRevision,omitempty"`
 }
 
 func (v *Session) View() map[string]any {

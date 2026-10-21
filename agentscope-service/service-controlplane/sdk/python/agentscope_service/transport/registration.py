@@ -23,7 +23,7 @@ from urllib import error, request
 
 @dataclass(frozen=True)
 class RegisteredIdentity:
-    """Stable Catalog identity required by every ASDP connection."""
+    """Stable Catalog identity required by every RuntimeProtocol connection."""
 
     agent_id: str
     agent_key: str

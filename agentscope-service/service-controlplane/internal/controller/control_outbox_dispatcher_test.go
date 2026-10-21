@@ -54,6 +54,64 @@ func (h *deferredControlHandler) HandleControlEvent(context.Context, *controlmod
 
 type testPermanentDispatchError struct{}
 
+func TestManagedDispatchOutboxRetainsOriginalAttemptAcrossRetry(t *testing.T) {
+	ctx := t.Context()
+	st, err := memory.Open(ctx, store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{Tenant: "native", Namespace: "n", Title: "durable admission",
+		Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "human"}, AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: issue.ID, Limit: 2})
+	if err != nil || len(tasks) != 1 {
+		t.Fatal(tasks, err)
+	}
+	task, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+		store.TaskClaim{TaskID: tasks[0].ID, ExpectedVersion: tasks[0].Version, SessionID: uuid.NewString()},
+		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged, State: controlmodel.ExecutionAssigned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := st.Outbox().Claim(ctx, "inspect-native", time.Now().Add(time.Second), time.Minute, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var event *controlmodel.OutboxEvent
+	for _, candidate := range events {
+		if candidate.EventType == "agent-task.dispatched.v1" && candidate.AggregateID == task.ID.String() {
+			event = candidate
+		}
+	}
+	if event == nil {
+		t.Fatal("claim did not atomically retain admission notification")
+	}
+	var received []uuid.UUID
+	handler := &CollaborationOutboxHandler{Store: st, DispatchManagedAttempt: func(_ context.Context, id uuid.UUID) error {
+		received = append(received, id)
+		if len(received) == 1 {
+			return errors.New("Portal response lost")
+		}
+		return nil
+	}}
+	if err = handler.HandleControlEvent(ctx, event); !errors.Is(err, ErrControlEventDeferred) {
+		t.Fatalf("ambiguous dispatch was not deferred: %v", err)
+	}
+	if err = handler.HandleControlEvent(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	if len(received) != 2 || received[0] != attempt.ID || received[1] != attempt.ID {
+		t.Fatalf("Attempt changed across Outbox retry: %v", received)
+	}
+	current, err := st.Collaboration().GetAgentTask(ctx, task.ID)
+	if err != nil || current.CurrentAttemptID == nil || *current.CurrentAttemptID != attempt.ID || current.Status != controlmodel.AgentTaskDispatched {
+		t.Fatalf("Outbox retry replaced task execution: %+v %v", current, err)
+	}
+}
+
 func (testPermanentDispatchError) Error() string { return "runtime candidates exhausted" }
 
 func (testPermanentDispatchError) DispatchFailureCode() string {

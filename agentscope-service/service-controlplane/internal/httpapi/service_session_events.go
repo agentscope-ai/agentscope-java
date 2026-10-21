@@ -44,7 +44,9 @@ func (s *Server) projectPublicSession(ctx context.Context, v *sessionapi.Session
 		if err != nil {
 			return err
 		}
-		managed := s.publicSessionIsManaged(contract)
+		if s.publicSessionIsManaged(contract) {
+			return nil
+		}
 		for offset := 0; ; offset += 100 {
 			turns, err := s.store.Endpoints().ListInvocations(ctx, store.EndpointInvocationFilter{EndpointID: v.ID, Limit: 100, Offset: offset, OldestFirst: true})
 			if err != nil {
@@ -57,13 +59,7 @@ func (s *Server) projectPublicSession(ctx context.Context, v *sessionapi.Session
 				if err = s.projectServiceInvocation(ctx, inv.ID); err != nil {
 					return err
 				}
-				// Commit native resources before a public terminal Turn event, so a
-				// completion notification never overtakes its messages or artifacts.
-				if managed {
-					if err = s.projectPublicManagedEvents(ctx, v, contract); err != nil {
-						return err
-					}
-				}
+
 				contract, err := serviceapi.ReadContract(inv.Contract)
 				if err != nil {
 					return err
@@ -84,9 +80,7 @@ func (s *Server) projectPublicSession(ctx context.Context, v *sessionapi.Session
 						return e
 					}
 					for _, event := range events {
-						if managed && !strings.HasPrefix(event.Type, "invocation.") && !strings.HasPrefix(event.Type, "command.") {
-							continue
-						}
+
 						data := map[string]any{}
 						for k, value := range event.Data {
 							data[k] = value
@@ -107,9 +101,6 @@ func (s *Server) projectPublicSession(ctx context.Context, v *sessionapi.Session
 				}
 			}
 			if len(turns) < 100 {
-				if managed {
-					return s.projectPublicManagedEvents(ctx, v, contract)
-				}
 				return nil
 			}
 		}
@@ -172,27 +163,27 @@ func (s *Server) publicSessionSnapshot(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := s.projectPublicSession(c, v); err != nil {
-		s.writeControlPlaneError(c, err)
-		return
-	}
-	snapshot, err := s.sessionJournal(v).Snapshot(c)
-	if err != nil {
-		s.writeControlPlaneError(c, err)
-		return
-	}
 	contract, err := serviceapi.ReadContract(v.Contract)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}
 	if s.publicSessionIsManaged(contract) {
-		result, e := s.managedPublicSnapshot(c, v, contract, snapshot.AsOf)
-		if e != nil {
-			s.writeControlPlaneError(c, e)
+		result, err := s.managedPublicSnapshot(c, v, contract)
+		if err != nil {
+			s.writeControlPlaneError(c, err)
 			return
 		}
 		c.JSON(200, result)
+		return
+	}
+	if err = s.projectPublicSession(c, v); err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	snapshot, err := s.sessionJournal(v).Snapshot(c)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
 		return
 	}
 	c.JSON(200, sessionSnapshotView(v, snapshot))
@@ -235,6 +226,15 @@ func (s *Server) publicSessionStream(c *gin.Context) { s.servePublicSessionEvent
 func (s *Server) servePublicSessionEvents(c *gin.Context, stream bool) {
 	v, ok := s.loadPublicSession(c, "read")
 	if !ok {
+		return
+	}
+	contract, err := serviceapi.ReadContract(v.Contract)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if s.publicSessionIsManaged(contract) {
+		s.serveNativeSessionEvents(c, v, contract, stream)
 		return
 	}
 	after := serviceAfter(c)

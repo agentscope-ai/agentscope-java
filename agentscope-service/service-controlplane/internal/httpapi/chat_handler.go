@@ -19,6 +19,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -28,6 +29,9 @@ import (
 
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/conversation"
+	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/sessionapi"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
 
@@ -121,7 +125,7 @@ func (s *Server) createChat(c *gin.Context) {
 	value, err := s.store.Chats().Create(c, &controlmodel.Chat{
 		ID: chatID, Tenant: agent.Tenant, Namespace: agent.Namespace, CreatorRef: catalogOwnerRef(c, ""),
 		AgentID: agent.ID, AgentName: agent.DisplayName, SessionID: session.ID,
-		RuntimeSession: session.SessionID, Title: chatTitle(req.Title, agent.DisplayName), Status: controlmodel.ChatActive,
+		RuntimeSession: session.SessionID, RuntimeKind: controlmodel.DataPlaneKind(session.Framework), Title: chatTitle(req.Title, agent.DisplayName), Status: controlmodel.ChatActive,
 	})
 	if err != nil {
 		s.writeControlPlaneError(c, err)
@@ -222,11 +226,18 @@ func (s *Server) sendChatTurn(c *gin.Context) {
 		return
 	}
 	_ = s.store.Chats().Touch(c, value.ID)
+	status := "running"
+	eventsURL := "/api/v1/sessions/" + session.ID.String() + "/events?chatId=" + value.ID.String()
+	streamURL := "/api/v1/sessions/" + session.ID.String() + "/events/stream?chatId=" + value.ID.String()
+	if value.RuntimeKind == controlmodel.DataPlaneManaged {
+		status = "accepted"
+		eventsURL = "/v1/sessions/" + session.SessionID + "/events"
+		streamURL = eventsURL + "/stream"
+	}
 	c.JSON(http.StatusAccepted, gin.H{
-		"chatId": value.ID, "status": "running", "sessionId": session.ID,
+		"chatId": value.ID, "status": status, "sessionId": session.ID,
 		"runtimeSessionId": session.SessionID, "bindingId": session.BindingID,
-		"eventsUrl":      "/api/v1/sessions/" + session.ID.String() + "/events?chatId=" + value.ID.String(),
-		"eventStreamUrl": "/api/v1/sessions/" + session.ID.String() + "/events/stream?chatId=" + value.ID.String(),
+		"eventsUrl": eventsURL, "eventStreamUrl": streamURL,
 	})
 }
 
@@ -257,6 +268,12 @@ func (s *Server) deleteChat(c *gin.Context) {
 			return err
 		}
 		busy := conversation.Read(sess).Pending()
+		if current.RuntimeKind == controlmodel.DataPlaneManaged {
+			busy, err = s.managedChatBusy(ctx, sess)
+			if err != nil {
+				return err
+			}
+		}
 		if sess.AgentTaskID != nil {
 			task, err := s.store.Collaboration().GetAgentTask(ctx, *sess.AgentTaskID)
 			if err != nil {
@@ -280,4 +297,38 @@ func (s *Server) deleteChat(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"chat": value})
+}
+
+func (s *Server) managedChatBusy(ctx context.Context, descriptor *store.Session) (bool, error) {
+	id, err := uuid.Parse(descriptor.SessionID)
+	if err != nil {
+		return false, err
+	}
+	resource, err := sessionapi.Get(ctx, s.store, descriptor.Tenant, id)
+	if err != nil {
+		return false, err
+	}
+	contract, err := serviceapi.ReadContract(resource.Contract)
+	if err != nil {
+		return false, err
+	}
+	agent, err := s.store.AgentCatalog().GetAgent(ctx, descriptor.AgentID)
+	if err != nil {
+		return false, err
+	}
+	origin, err := s.nativePublicSessionOrigin(ctx, resource, contract, agent.OwnerRef, "")
+	if err != nil {
+		return false, err
+	}
+	raw, err := s.product.ManagedRuntimeRequest(ctx, agent.OwnerRef, product.ManagedRuntimeCall{Context: origin, Operation: "session"})
+	if err != nil {
+		return false, err
+	}
+	var state struct {
+		Status string `json:"status"`
+	}
+	if err = json.Unmarshal(raw, &state); err != nil {
+		return false, err
+	}
+	return state.Status != "idle" && state.Status != "terminated", nil
 }

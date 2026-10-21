@@ -1,0 +1,14 @@
+{
+  "input": {
+    "text": "<>& 世界",
+    "line": "  ",
+    "literal": "\\u2028",
+    "optional": null,
+    "number": 9007199254740993,
+    "small": 1.25,
+    "🌟": "astral",
+    "": "bmp",
+    "control": "\u001b"
+  },
+  "digest": "f25df77c8f02d60c7d94e224ee407fee71cea4865dd7a4c630500616194cb8af"
+}

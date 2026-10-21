@@ -30,7 +30,7 @@ const localEnvironmentType = "local"
 
 var (
 	// ErrLocalEnvironmentDisabled is returned whenever a new binding would let
-	// Managed Agent code execute in the data-plane process filesystem/shell.
+	// Managed Agent code execute in the Hands process filesystem/shell.
 	ErrLocalEnvironmentDisabled = errors.New("local environments are disabled by deployment policy")
 	ErrEnvironmentNotAvailable  = errors.New("environment not found, not owned by the user, or archived")
 	ErrNoRunnableEnvironment    = errors.New("no runnable environment is bound")

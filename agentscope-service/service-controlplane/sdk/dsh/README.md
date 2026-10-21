@@ -195,3 +195,71 @@ npm install
 npm test
 npm run build
 ```
+
+## Public Session Portal client
+
+Managed execution uses `new ServiceClient(baseUrl, credentials).managedSessions()` and
+the native `/v1/sessions` protocol. For example:
+
+```ts
+const managed = new ServiceClient(baseUrl, { apiKey, tenant, namespace }).managedSessions()
+const session = await managed.createSession({ agent: agentId, environment_id: environmentId }, 'create-001')
+const turn = await managed.submit(String(session.id), { message: 'Review the project' }, 'turn-001')
+const receipt = await managed.input(String(session.id), String(turn.id), 'steer', { message: 'Check tests first' }, 'steer-001')
+const applied = await managed.inputReceipt(String(session.id), String(turn.id), receipt.id)
+const snapshot = await managed.snapshot(String(session.id))
+for await (const event of managed.stream(String(session.id), snapshot.as_of)) {
+    // Apply and save event.cursor; filter data.turn_id when observing one Turn.
+}
+```
+
+Native lifecycle calls require retry keys and return acceptance; use `lifecycleReceipt`
+to observe cleanup completion. File content, explicit Artifact publication, budget and
+pinned pages are available. Turn snapshot pages retain their snapshot ID through the
+Session resources route. Usage preserves `data/as_of`; Fork/checkpoint restoration are
+still being implemented. Native commands are typed Inputs; there is no legacy fallback.
+
+The flat client below serves other execution families with their existing contract.
+
+`ServiceClient` uses an Application API key or the original platform token, independently of
+DSH registration's internal/bootstrap identity. `OrchestrationClient` manages definitions and
+policies; start and control execution through Portal Sessions and Turns.
+
+```ts
+import { ServiceClient } from '@agentscope-service/dsh-controlplane'
+const api = new ServiceClient(baseUrl, { apiKey, tenant, namespace })
+const session = await api.createSession({ type: 'workflow', id: workflowId }, 'create-001')
+const turn = await api.submit(String(session.id), { input: { request: 'Review' } }, 'turn-001')
+const snapshot = await api.snapshot(String(session.id), String(turn.id))
+for await (const event of api.stream(String(session.id), snapshot.as_of, String(turn.id))) {
+    // Apply the event, then persist event.cursor. Reconnect with that cursor after a timeout.
+}
+```
+
+Resource pages retain `snapshot_id` and `as_of`; continue using `resources(..., { after,
+snapshotId, turn, limit })`. Actions use `{ answers: [...] }`; `commandStatus` reads the Session
+command route and checks its Turn. `queued` and `runtime_accepted` are admission states, while
+`command_status`/`input_status` report runtime application. `usage` returns the authoritative
+snapshot aggregate. `artifactContent` uses the authorized `/content` route, never a caller URI.
+The client bounds JSON at 16 MiB, one SSE event at 1 MiB and content at 100 MiB, with a default
+30-second transport timeout; closing observation does not stop execution. Use matching SDK/Service
+versions and capabilities. The SDK does not fabricate approval, resume or file-input support.
+
+`ServiceClient` also exposes Session Webhook registration, subscription and delivery pages, deletion and retry. Omit `eventTypes` for default terminal/required-action notifications. Operator allowlists and the original caller scopes apply.
+
+`api.exportEvents(sessionId, { through: snapshot.as_of, limit: 1000 })` is an async
+iterator over fixed-watermark public NDJSON windows. Persist each applied cursor
+and pass it as `after` on restart, retaining `through`. Incomplete records and count
+mismatches fail explicitly; an early loop exit closes the response. Each event is
+limited to 1 MiB and each window uses the configured request deadline.
+
+Managed file APIs include `uploadFile`, `files`, `fileMetadata` and `fileContent`.
+Check `capabilities(session).capabilities.file_input` before Turn file input. Uploads are
+limited to 16 MiB, JSON responses to 16 MiB and buffered downloads to 100 MiB. Public calls
+reject redirects so original credentials cannot follow a redirect destination.
+
+Managed Session budgets use `budget(session)` and `setBudget(session, limits, revision)`. The optional current revision prevents lost updates (412). Settings return 202 and apply before the next model call; GET separates desired and applied revisions.
+
+`trace(session, after, through, limit)` reads privileged native history with a human trace credential. The server must enable it; pass the same `as_of_seq` watermark with the next `next_seq`. Application keys cannot use it.
+
+`checkpoints(session, after, through, limit)` lists checkpoint metadata through Portal. Keep the same `as_of` as `through` and advance `next_cursor` while `has_more`, including empty pages; raw Agent state stays private. `restoreCheckpoint`/`fork` writes return durable 202 commands; poll `command` for completed/rejected. Both roots require interact permission and settled execution/inputs.

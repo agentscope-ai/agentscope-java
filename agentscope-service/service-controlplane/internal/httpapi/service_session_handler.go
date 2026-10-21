@@ -81,6 +81,7 @@ func (s *Server) registerPublicSessions() {
 	hooks.POST("/:webhookId/retry", s.updateServiceWebhook)
 	g.POST("/:publicSessionId/files", s.publicSessionFileUpload)
 	g.GET("/:publicSessionId/files", s.publicSessionFiles)
+	g.GET("/:publicSessionId/files/:fileId", s.publicSessionFileMetadata)
 	g.GET("/:publicSessionId/files/:fileId/content", s.publicSessionFileContent)
 	for _, path := range []string{"budget", "usage", "checkpoints", "subagents", "artifacts", "items", "tools", "inputs", "required-actions"} {
 		g.GET("/:publicSessionId/"+path, s.publicSessionNativeResource)
@@ -89,8 +90,13 @@ func (s *Server) registerPublicSessions() {
 	g.POST("/:publicSessionId/fork", s.forkPublicSession)
 	g.POST("/:publicSessionId/artifacts", s.publicSessionNativeResource)
 	g.GET("/:publicSessionId/artifacts/:resourceId", s.publicSessionArtifactMetadata)
+	g.GET("/:publicSessionId/artifacts/:resourceId/content", s.publicSessionNativeResource)
+	g.DELETE("/:publicSessionId/artifacts/:resourceId", s.publicSessionNativeResource)
 	g.POST("/:publicSessionId/inputs/inject", s.publicSessionNativeResource)
+	g.GET("/:publicSessionId/checkpoints/:resourceId", s.publicSessionNativeResource)
 	g.POST("/:publicSessionId/checkpoints/restore", s.publicSessionNativeResource)
+	g.GET("/:publicSessionId/checkpoint-operations/:resourceId", s.publicSessionNativeResource)
+	g.POST("/:publicSessionId/checkpoint-operations/:resourceId/cancel", s.publicSessionNativeResource)
 	g.GET("/:publicSessionId/export", s.publicSessionNativeResource)
 	g.GET("/:publicSessionId/subagents/:resourceId", s.publicSessionNativeResource)
 	g.GET("/:publicSessionId/subagents/:resourceId/snapshot", s.publicSessionNativeResource)
@@ -239,7 +245,7 @@ func (s *Server) createPublicSession(c *gin.Context) {
 				s.writeControlPlaneError(c, store.ErrConflict)
 				return
 			}
-			c.JSON(200, s.publicSessionView(c, existing))
+			s.writeSessionCreation(c, c, existing, 200)
 			return
 		} else if !errors.Is(e, store.ErrNotFound) {
 			s.writeControlPlaneError(c, e)
@@ -284,7 +290,7 @@ func (s *Server) createPublicSession(c *gin.Context) {
 			if existing.InputHash != hash {
 				return store.ErrConflict
 			}
-			c.JSON(200, s.publicSessionView(ctx, existing))
+			s.writeSessionCreation(ctx, c, existing, 200)
 			return nil
 		} else if !errors.Is(e, store.ErrNotFound) {
 			return e
@@ -301,6 +307,12 @@ func (s *Server) createPublicSession(c *gin.Context) {
 		contract, e := serviceapi.ReadContract(raw)
 		if e != nil {
 			return e
+		}
+		if s.publicSessionIsManaged(contract) && (req.TimeoutSeconds > 0 ||
+			len(req.OutputSchema) > 0 && string(req.OutputSchema) != "null" ||
+			len(req.ResultMapping) > 0 && string(req.ResultMapping) != "null") {
+			c.JSON(400, ErrorResponse{Error: "Managed Sessions use the native Turn contract; timeoutSeconds, outputSchema and resultMapping are unsupported"})
+			return nil
 		}
 		contract.PublicSessionID = ep.ID
 		contract.EnvironmentID = req.EnvironmentID
@@ -361,6 +373,11 @@ func (s *Server) createPublicSession(c *gin.Context) {
 				}
 			}
 		}
+		if s.publicSessionIsManaged(contract) {
+			if e = s.freezeManagedEnvironment(ctx, contract, req.Target.ID); e != nil {
+				return e
+			}
+		}
 		raw, e = json.Marshal(contract)
 		if e != nil {
 			return e
@@ -374,12 +391,26 @@ func (s *Server) createPublicSession(c *gin.Context) {
 		if e = sessionapi.Save(ctx, s.store, v, true); e != nil {
 			return e
 		}
-		c.JSON(201, s.publicSessionView(ctx, v))
+		s.writeSessionCreation(ctx, c, v, 201)
 		return nil
 	})
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 	}
+}
+
+// Internal configuration admission retains the original caller, including application-key identity.
+func (s *Server) writeSessionCreation(ctx context.Context, c *gin.Context, v *sessionapi.Session, status int) {
+	view := s.publicSessionView(ctx, v)
+	if c.GetBool("runtime-config-admission") {
+		keyHash := ""
+		if key := c.GetHeader("X-API-Key"); key != "" {
+			digest := sha256.Sum256([]byte(key))
+			keyHash = hex.EncodeToString(digest[:])
+		}
+		view["admissionActor"] = gin.H{"user": c.GetString("userId"), "key_hash": keyHash, "internal": false}
+	}
+	c.JSON(status, view)
 }
 
 func (s *Server) getPublicSession(c *gin.Context) {
@@ -515,6 +546,15 @@ func (s *Server) createPublicSessionTurn(c *gin.Context) {
 	if !ok {
 		return
 	}
+	contract, err := serviceapi.ReadContract(v.Contract)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if v.RuntimeOwner == "dataplane" || s.publicSessionIsManaged(contract) {
+		c.JSON(409, ErrorResponse{Error: "Submit Managed Session turns through Session Portal"})
+		return
+	}
 	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	if key == "" || len(key) > 256 {
 		c.JSON(400, ErrorResponse{Error: "Idempotency-Key must contain 1..256 characters"})
@@ -540,11 +580,6 @@ func (s *Server) createPublicSessionTurn(c *gin.Context) {
 	var message string
 	if len(input["message"]) > 0 && (json.Unmarshal(input["message"], &message) != nil || strings.TrimSpace(message) == "") {
 		c.JSON(400, ErrorResponse{Error: "message must be nonempty text"})
-		return
-	}
-	contract, err := serviceapi.ReadContract(v.Contract)
-	if err != nil {
-		s.writeControlPlaneError(c, err)
 		return
 	}
 	if err = s.validatePublicSessionInput(c, v, contract, input); err != nil {
@@ -705,6 +740,10 @@ func (s *Server) publicSessionCapabilities(c *gin.Context) {
 	contract, err := serviceapi.ReadContract(v.Contract)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
+		return
+	}
+	if s.publicSessionIsManaged(contract) {
+		s.publicSessionNativeResource(c)
 		return
 	}
 	caps := guaranteedServiceCapabilities(contract)

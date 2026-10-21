@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,15 +38,29 @@ import (
 var ErrNoWork = errors.New("runtime host: no work")
 
 type Client struct {
-	BaseURL       string
-	InternalToken string
-	HTTPClient    *http.Client
-	attemptTokens sync.Map
+	BaseURL              string
+	InternalToken        string
+	HTTPClient           *http.Client
+	attemptTokens        sync.Map
+	taskTokens           sync.Map
+	refreshAfter         sync.Map
+	hostCredential       atomic.Value
+	hostRefreshMu        sync.Mutex
+	hostRefreshRetryAt   time.Time
+	hostCredentialPath   string
+	bootstrapFingerprint string
 }
+
+type responseError struct {
+	status  int
+	message string
+}
+
+func (e *responseError) Error() string { return e.message }
 
 func (c *Client) RestoreAttemptToken(attemptID uuid.UUID, token string) {
 	if attemptID != uuid.Nil && token != "" {
-		c.attemptTokens.Store(attemptID, token)
+		c.storeAttemptToken(attemptID, token)
 	}
 }
 
@@ -113,11 +128,11 @@ func (c *Client) requestWithHeaders(ctx context.Context, method, path string, bo
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if c.InternalToken != "" {
-		if strings.HasPrefix(c.InternalToken, "asrh_") {
-			req.Header.Set("Authorization", "Bearer "+c.InternalToken)
+	if credential := c.currentHostCredential(); credential != "" {
+		if strings.HasPrefix(credential, "asrh_") {
+			req.Header.Set("Authorization", "Bearer "+credential)
 		} else {
-			req.Header.Set("X-Builder-Internal-Token", c.InternalToken)
+			req.Header.Set("X-Builder-Internal-Token", credential)
 		}
 	}
 	for name, value := range headers {
@@ -138,7 +153,8 @@ func (c *Client) requestWithHeaders(ctx context.Context, method, path string, bo
 		return resp.StatusCode, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return resp.StatusCode, fmt.Errorf("control plane %s %s: status=%d body=%s", method, path, resp.StatusCode, strings.TrimSpace(string(data)))
+		return resp.StatusCode, &responseError{status: resp.StatusCode,
+			message: fmt.Sprintf("control plane %s %s: status=%d body=%s", method, path, resp.StatusCode, strings.TrimSpace(string(data)))}
 	}
 	if out != nil && len(data) > 0 {
 		if err := json.Unmarshal(data, out); err != nil {
@@ -153,10 +169,14 @@ func (c *Client) Register(ctx context.Context, registration Registration) (*cont
 		Host *controlmodel.RuntimeHost `json:"host"`
 	}
 	_, err := c.request(ctx, http.MethodPost, "/api/v1/runtime-hosts/register", registration, &response)
+	if err == nil && response.Host != nil {
+		c.refreshHostCredentialIfDue(ctx, response.Host)
+	}
 	return response.Host, err
 }
 
 func (c *Client) Heartbeat(ctx context.Context, host *controlmodel.RuntimeHost, active int32, capabilities json.RawMessage) (*controlmodel.RuntimeHost, error) {
+	c.refreshHostCredentialIfDue(ctx, host)
 	var response struct {
 		Host *controlmodel.RuntimeHost `json:"host"`
 	}
@@ -188,11 +208,16 @@ func (c *Client) Claim(ctx context.Context, host *controlmodel.RuntimeHost, owne
 	if response.TaskToken == "" {
 		return nil, fmt.Errorf("claim response missing agent task token")
 	}
-	c.attemptTokens.Store(response.Attempt.ID, response.AttemptToken)
+	c.storeAttemptToken(response.Attempt.ID, response.AttemptToken)
+	c.taskTokens.Store(response.Attempt.ID, response.TaskToken)
 	return &response, nil
 }
 
 func (c *Client) executionAction(ctx context.Context, hostID, executionID uuid.UUID, action string, payload map[string]any, out *controlmodel.ExecutionAttempt) error {
+	var binding controlmodel.RuntimeDispatchSnapshot
+	if out != nil {
+		_ = json.Unmarshal(out.RuntimeBinding, &binding)
+	}
 	var response struct {
 		Attempt *controlmodel.ExecutionAttempt `json:"attempt"`
 	}
@@ -200,11 +225,22 @@ func (c *Client) executionAction(ctx context.Context, hostID, executionID uuid.U
 	token, _ := c.attemptTokens.Load(executionID)
 	_, err := c.requestWithHeaders(ctx, http.MethodPost, path, payload, &response,
 		map[string]string{"X-Execution-Attempt-Token": fmt.Sprint(token)})
+	var denied *responseError
+	if errors.As(err, &denied) && denied.status == http.StatusUnauthorized && out != nil {
+		if refreshErr := c.RefreshCredentials(ctx, hostID, out); refreshErr != nil {
+			return refreshErr
+		}
+		token, _ = c.attemptTokens.Load(executionID)
+		_, err = c.requestWithHeaders(ctx, http.MethodPost, path, payload, &response,
+			map[string]string{"X-Execution-Attempt-Token": fmt.Sprint(token)})
+	}
 	if err == nil && response.Attempt != nil && out != nil {
 		*out = *response.Attempt
 	}
-	if err == nil && response.Attempt != nil && controlmodel.IsExecutionAttemptTerminal(response.Attempt.State) {
-		c.attemptTokens.Delete(executionID)
+	// Portal-bound attempts still need their credential to drain final events
+	// and prove physical stop after the native result has become terminal.
+	if err == nil && response.Attempt != nil && controlmodel.IsExecutionAttemptTerminal(response.Attempt.State) && binding.PortalCommandID == "" {
+		c.forgetCredentials(executionID)
 	}
 	return err
 }
@@ -225,9 +261,28 @@ func (c *Client) Start(ctx context.Context, hostID uuid.UUID, execution *control
 }
 
 func (c *Client) Renew(ctx context.Context, hostID uuid.UUID, execution *controlmodel.ExecutionAttempt, ttl time.Duration) error {
+	if deadline, ok := c.refreshAfter.Load(execution.ID); ok && !time.Now().Before(deadline.(time.Time)) {
+		if err := c.RefreshCredentials(ctx, hostID, execution); err != nil {
+			return err
+		}
+	}
 	payload := leasePayload(execution)
 	payload["leaseSeconds"] = int64(ttl.Seconds())
-	return c.executionAction(ctx, hostID, execution.ID, "renew", payload, execution)
+	err := c.executionAction(ctx, hostID, execution.ID, "renew", payload, execution)
+	var response *responseError
+	if errors.As(err, &response) && (response.status == http.StatusForbidden || response.status == http.StatusConflict) {
+		// Reading a stop decision is allowed after root authorization ends;
+		// this does not renew either the physical lease or the root grant.
+		if observeErr := c.Observe(ctx, hostID, execution); observeErr == nil &&
+			(controlmodel.IsExecutionAttemptTerminal(execution.State) || execution.State == controlmodel.ExecutionCancelRequested) {
+			return nil
+		}
+	}
+	return err
+}
+
+func (c *Client) Observe(ctx context.Context, hostID uuid.UUID, execution *controlmodel.ExecutionAttempt) error {
+	return c.executionAction(ctx, hostID, execution.ID, "observe", leasePayload(execution), execution)
 }
 
 func (c *Client) Checkpoint(ctx context.Context, hostID uuid.UUID, execution *controlmodel.ExecutionAttempt, providerSessionID string, checkpoint json.RawMessage) error {
@@ -258,6 +313,14 @@ func (c *Client) Complete(ctx context.Context, hostID uuid.UUID, execution *cont
 	return c.executionAction(ctx, hostID, execution.ID, "complete", payload, execution)
 }
 
+func (c *Client) PhysicalStopped(ctx context.Context, hostID uuid.UUID, execution *controlmodel.ExecutionAttempt) error {
+	err := c.executionAction(ctx, hostID, execution.ID, "physical-stop", leasePayload(execution), execution)
+	if err == nil {
+		c.forgetCredentials(execution.ID)
+	}
+	return err
+}
+
 func (c *Client) Fail(ctx context.Context, hostID uuid.UUID, execution *controlmodel.ExecutionAttempt, code, message string, checkpoint json.RawMessage) error {
 	payload := leasePayload(execution)
 	payload["failureCode"] = code
@@ -272,6 +335,16 @@ func (c *Client) Cancelled(ctx context.Context, hostID uuid.UUID, execution *con
 
 func (c *Client) AwaitToolApproval(ctx context.Context, taskID, taskToken string,
 	request provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
+	return c.awaitToolApproval(ctx, taskID, func() string { return taskToken }, request)
+}
+
+func (c *Client) AwaitToolApprovalRefreshing(ctx context.Context, taskID string, attemptID uuid.UUID,
+	request provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
+	return c.awaitToolApproval(ctx, taskID, func() string { return c.CurrentTaskToken(attemptID) }, request)
+}
+
+func (c *Client) awaitToolApproval(ctx context.Context, taskID string, currentToken func() string,
+	request provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
 	var created struct {
 		Approval *controlmodel.Approval `json:"approval"`
 	}
@@ -280,7 +353,7 @@ func (c *Client) AwaitToolApproval(ctx context.Context, taskID, taskToken string
 		"kind": "tool_confirmation", "toolUseId": request.ToolUseID,
 		"toolName": request.ToolName, "inputPreview": request.Input,
 		"inputSha256": request.InputSHA256, "expiresAt": request.ExpiresAt,
-	}, &created, map[string]string{"X-Agent-Task-Token": taskToken})
+	}, &created, currentToken)
 	if err != nil || created.Approval == nil {
 		if err == nil {
 			err = fmt.Errorf("runtime approval response is missing approval")
@@ -297,7 +370,7 @@ func (c *Client) AwaitToolApproval(ctx context.Context, taskID, taskToken string
 			DenyMessage     string `json:"denyMessage"`
 		}
 		status, pollErr := c.approvalRequestWithRetry(ctx, http.MethodGet, decisionPath, nil, &result,
-			map[string]string{"X-Agent-Task-Token": taskToken})
+			currentToken)
 		if pollErr != nil {
 			return provider.ToolApprovalDecision{}, pollErr
 		}
@@ -315,7 +388,7 @@ func (c *Client) AwaitToolApproval(ctx context.Context, taskID, taskToken string
 		ackPath := path + "/" + created.Approval.ID.String() + "/ack"
 		if _, ackErr := c.approvalRequestWithRetry(ctx, http.MethodPost, ackPath,
 			map[string]any{"decisionVersion": result.DecisionVersion}, nil,
-			map[string]string{"X-Agent-Task-Token": taskToken}); ackErr != nil {
+			currentToken); ackErr != nil {
 			return provider.ToolApprovalDecision{}, ackErr
 		}
 		return provider.ToolApprovalDecision{ApprovalID: result.ApprovalID,
@@ -326,11 +399,16 @@ func (c *Client) AwaitToolApproval(ctx context.Context, taskID, taskToken string
 
 // Approval create/ack are idempotent for the same tool-use and decision version.
 // A brief control-plane outage must not discard an already approved tool call.
-func (c *Client) approvalRequestWithRetry(ctx context.Context, method, path string, body, out any, headers map[string]string) (int, error) {
+func (c *Client) approvalRequestWithRetry(ctx context.Context, method, path string, body, out any, currentToken func() string) (int, error) {
 	retryCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	delay := 250 * time.Millisecond
 	for {
+		token := currentToken()
+		if token == "" {
+			return http.StatusForbidden, fmt.Errorf("task authority is unavailable")
+		}
+		headers := map[string]string{"X-Agent-Task-Token": token}
 		status, err := c.requestWithHeaders(retryCtx, method, path, body, out, headers)
 		if err == nil {
 			return status, nil

@@ -26,8 +26,11 @@ npm run validate
 npm run broken-links
 ```
 
-`npm run check` verifies all v1/v2 pages are reachable from navigation, every page
-has a title, local images/links/anchors exist, and redirects have valid targets.
+`npm run check` verifies all published v1/v2 pages are reachable from navigation, every page
+has a title, local images/links/anchors exist, and redirects have valid targets. It follows
+`.mintignore`, as Mintlify does. Repository-only design notes can remain at their established
+paths when explicitly excluded there; they are not published, and public navigation or links
+to excluded files still fail validation.
 `npm run validate` also runs Mintlify's strict build validation. The GitHub Actions
 workflow runs these checks on documentation PRs and pushes to `main` or `Mintlify`.
 
@@ -70,6 +73,14 @@ English guides with `npm run dev` from `docs/`. Commit the PNG files with the
 corresponding guides and script changes; do not commit browser traces or caches.
 
 ## Authoring
+
+### Analytics
+
+`baidu-analytics.js` loads Baidu Tongji globally through Mintlify's custom JavaScript
+support, using site ID `9cc2f979c09fd25f67b57f89237e28a2`. It also records page changes
+through `mintlify:navigate` and the History API for older clients, since client-side
+navigation does not reload the script. Repeated notifications for the same URL are ignored.
+Keep this integration in the global script rather than copying it into individual pages.
 
 ### Service content and scenario standards
 

@@ -15,18 +15,37 @@
 name: agentscope-service
 
 x-runtime-env: &runtime-env
+  BUILDER_USER_FILES_ENABLED: ${BUILDER_USER_FILES_ENABLED:-true}
   BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-false}
+  BUILDER_SESSION_TRACE_ENABLED: ${BUILDER_SESSION_TRACE_ENABLED:-false}
   SPRING_PROFILES_ACTIVE: jdbc
   BUILDER_SEED_USERS: "false"
-  BUILDER_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=dp
-  BUILDER_DB_USER: agentscope
-  BUILDER_DB_PASSWORD: ${POSTGRES_PASSWORD:?Run init-env.sh first}
+  BUILDER_JPA_DDL_AUTO: validate
+  BUILDER_SCHEMA_INIT: "false"
   BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET:?Required}
   BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:?Required}
   BUILDER_VAULT_MASTER_KEY: ${BUILDER_VAULT_MASTER_KEY:?Required}
   BUILDER_CONTROL_URL: http://control:8081
   BUILDER_DATA_URL: http://data:8082
-  BUILDER_SCHEDULER_URL: http://scheduler:8083
+  BUILDER_WEBHOOK_ALLOWED_HOSTS: ${BUILDER_WEBHOOK_ALLOWED_HOSTS:-}
+  BUILDER_WEBHOOK_SLOTS: ${BUILDER_WEBHOOK_SLOTS:-8}
+  BUILDER_SESSION_PORTAL_URL: http://portal:8084
+  BUILDER_HANDS_URL: http://hands:8085
+  BUILDER_MANAGED_REDIS_URI: ${BUILDER_MANAGED_REDIS_URI:?Set reachable Redis URI}
+  BUILDER_MANAGED_MQ_ENDPOINTS: ${BUILDER_MANAGED_MQ_ENDPOINTS:?Set RocketMQ 5.5.1 Cluster Proxy endpoints}
+  BUILDER_MANAGED_MQ_TURN_TOPIC: ${BUILDER_MANAGED_MQ_TURN_TOPIC:-ma_turns_v3}
+  BUILDER_MANAGED_MQ_TOOL_EVENT_TOPIC: ${BUILDER_MANAGED_MQ_TOOL_EVENT_TOPIC:-ma_tool_events_v3}
+  BUILDER_MANAGED_MQ_TOOL_EXECUTE_TOPIC: ${BUILDER_MANAGED_MQ_TOOL_EXECUTE_TOPIC:-ma_tool_execute_v1}
+  BUILDER_MANAGED_MQ_TOOL_CONTROL_TOPIC: ${BUILDER_MANAGED_MQ_TOOL_CONTROL_TOPIC:-ma_tool_control_v1}
+  BUILDER_MANAGED_MQ_TOOL_EXECUTE_GROUP: ${BUILDER_MANAGED_MQ_TOOL_EXECUTE_GROUP:-ma_hands_execute_v1}
+  BUILDER_MANAGED_MQ_TOOL_CONTROL_GROUP: ${BUILDER_MANAGED_MQ_TOOL_CONTROL_GROUP:-ma_hands_control_v1}
+  BUILDER_MANAGED_MQ_RESUME_TOPIC: ${BUILDER_MANAGED_MQ_RESUME_TOPIC:-ma_turn_resumes_v3}
+  BUILDER_MANAGED_MQ_BRAIN_GROUP: ${BUILDER_MANAGED_MQ_BRAIN_GROUP:-ma_brain_v3}
+  BUILDER_MANAGED_MQ_RESUME_GROUP: ${BUILDER_MANAGED_MQ_RESUME_GROUP:-ma_brain_resumes_v3}
+  BUILDER_MANAGED_MQ_TOOL_EVENTS_GROUP: ${BUILDER_MANAGED_MQ_TOOL_EVENTS_GROUP:-ma_brain_tool_events_v3}
+  BUILDER_MANAGED_MQ_CACHE_MESSAGES: ${BUILDER_MANAGED_MQ_CACHE_MESSAGES:-512}
+  BUILDER_MANAGED_MQ_CACHE_BYTES: ${BUILDER_MANAGED_MQ_CACHE_BYTES:-33554432}
+  BUILDER_MANAGED_MQ_SSL: ${BUILDER_MANAGED_MQ_SSL:-false}
   BUILDER_WORKSPACE_ROOT: /data/workspaces
   BUILDER_E2B_API_KEY: ${BUILDER_E2B_API_KEY:-}
   DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
@@ -55,16 +74,74 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
-  control:
+  schema-control:
     image: ${IMAGE_REPOSITORY:?Set image repository}/as-controlplane:${SERVICE_VERSION:?Set release version}
+    command: [--storage-driver=postgres, --migrate-only]
+    environment:
+      CONTROL_PLANE_PRODUCT_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable
+      CONTROL_PLANE_STORAGE_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable&search_path=rt
+    depends_on:
+      db: {condition: service_healthy}
+  schema-portal:
+    image: ${IMAGE_REPOSITORY}/as-session-portal:${SERVICE_VERSION}
+    entrypoint: [java, -Dloader.main=io.agentscope.builder.web.persistence.ServiceSchemaMain, -cp, /app.jar, org.springframework.boot.loader.launch.PropertiesLauncher]
+    command: [--component=portal]
+    environment:
+      BUILDER_PORTAL_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=portal
+      BUILDER_PORTAL_DB_USER: agentscope
+      BUILDER_PORTAL_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      db: {condition: service_healthy}
+  schema-data:
+    image: ${IMAGE_REPOSITORY}/as-dataplane:${SERVICE_VERSION}
+    entrypoint: [java, -Dloader.main=io.agentscope.builder.web.persistence.ServiceSchemaMain, -cp, /app.jar, org.springframework.boot.loader.launch.PropertiesLauncher]
+    command: [--component=dataplane]
+    environment:
+      BUILDER_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=dp
+      BUILDER_DB_USER: agentscope
+      BUILDER_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      db: {condition: service_healthy}
+  schema-managed:
+    image: ${IMAGE_REPOSITORY}/as-session-portal:${SERVICE_VERSION}
+    entrypoint: [java, -Dloader.main=io.agentscope.builder.web.persistence.ServiceSchemaMain, -cp, /app.jar, org.springframework.boot.loader.launch.PropertiesLauncher]
+    command: [--component=managed]
+    environment:
+      BUILDER_MANAGED_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=ma
+      BUILDER_MANAGED_DB_USER: agentscope
+      BUILDER_MANAGED_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      db: {condition: service_healthy}
+  schema-grants:
+    image: postgres:17
+    entrypoint: [sh, /postgres-roles.sh]
+    environment:
+      PGHOST: db
+      PGDATABASE: ${POSTGRES_DB:-agentscope}
+      PGUSER: agentscope
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      CONTROL_DB_PASSWORD: ${CONTROL_DB_PASSWORD:?Required}
+      PORTAL_DB_PASSWORD: ${PORTAL_DB_PASSWORD:?Required}
+      DATA_DB_PASSWORD: ${DATA_DB_PASSWORD:?Required}
+      HANDS_DB_PASSWORD: ${HANDS_DB_PASSWORD:?Required}
+    volumes:
+      - ./postgres-roles.sh:/postgres-roles.sh:ro
+    depends_on:
+      schema-control: {condition: service_completed_successfully}
+      schema-portal: {condition: service_completed_successfully}
+      schema-data: {condition: service_completed_successfully}
+      schema-managed: {condition: service_completed_successfully}
+  control:
+    image: ${IMAGE_REPOSITORY}/as-controlplane:${SERVICE_VERSION}
     restart: unless-stopped
-    command: [--storage-driver=postgres]
+    stop_grace_period: 30s
+    command: [--storage-driver=postgres, --schema-mode=validate, --enable-runtime-workers=true]
     environment:
       BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-false}
       CONTROL_PLANE_ENABLE_KUBERNETES: 'false'
       CONTROL_PLANE_HTTP_BIND: ':8081'
-      CONTROL_PLANE_PRODUCT_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable
-      CONTROL_PLANE_STORAGE_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable&search_path=rt
+      CONTROL_PLANE_PRODUCT_DSN: postgres://agentscope_control:${CONTROL_DB_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable
+      CONTROL_PLANE_STORAGE_DSN: postgres://agentscope_control:${CONTROL_DB_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable&search_path=rt
       CONTROL_PLANE_SEED_USERS: 'false'
       CONTROL_PLANE_BOOTSTRAP_ADMIN: ${CONTROL_PLANE_BOOTSTRAP_ADMIN:-admin}
       CONTROL_PLANE_BOOTSTRAP_PASSWORD: ${CONTROL_PLANE_BOOTSTRAP_PASSWORD:?Required}
@@ -74,6 +151,11 @@ services:
       BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN}
       BUILDER_VAULT_MASTER_KEY: ${BUILDER_VAULT_MASTER_KEY}
       BUILDER_DATA_URL: http://data:8082
+      BUILDER_SESSION_PORTAL_URL: http://portal:8084
+      BUILDER_WEBHOOK_ALLOWED_HOSTS: ${BUILDER_WEBHOOK_ALLOWED_HOSTS:-}
+      BUILDER_WEBHOOK_ALLOW_LOOPBACK_HTTP: ${BUILDER_WEBHOOK_ALLOW_LOOPBACK_HTTP:-false}
+      BUILDER_WEBHOOK_SLOTS: ${BUILDER_WEBHOOK_SLOTS:-8}
+      BUILDER_CHANNEL_SLOTS: ${BUILDER_CHANNEL_SLOTS:-8}
       BUILDER_OAUTH_PUBLIC_URL: ${BUILDER_OAUTH_PUBLIC_URL:-http://localhost:18080}
       BUILDER_ALLOW_LOCAL_ENVIRONMENT: ${BUILDER_ALLOW_LOCAL_ENVIRONMENT:-false}
     volumes:
@@ -85,44 +167,79 @@ services:
       timeout: 5s
       retries: 30
     depends_on:
-      db: {condition: service_healthy}
+      schema-grants: {condition: service_completed_successfully}
+  portal:
+    image: ${IMAGE_REPOSITORY}/as-session-portal:${SERVICE_VERSION}
+    restart: unless-stopped
+    environment:
+      <<: *runtime-env
+      SERVER_PORT: 8084
+      BUILDER_PORTAL_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=portal
+      BUILDER_PORTAL_DB_USER: agentscope_portal
+      BUILDER_PORTAL_DB_PASSWORD: ${PORTAL_DB_PASSWORD}
+      BUILDER_PORTAL_SCHEMA_INIT: never
+      BUILDER_PORTAL_FILE_TRANSFER_SLOTS: ${BUILDER_PORTAL_FILE_TRANSFER_SLOTS:-16}
+    healthcheck: *java-health
+    depends_on:
+      schema-grants: {condition: service_completed_successfully}
+      control: {condition: service_healthy}
   data:
     image: ${IMAGE_REPOSITORY}/as-dataplane:${SERVICE_VERSION}
     restart: unless-stopped
     environment:
       <<: *runtime-env
       SERVER_PORT: 8082
+      BUILDER_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=dp
+      BUILDER_DB_USER: agentscope_data
+      BUILDER_DB_PASSWORD: ${DATA_DB_PASSWORD}
       BUILDER_DATAPLANE_PUBLIC_URL: http://data:8082
+      BUILDER_MANAGED_CONSUMERS_ENABLED: "true"
+      BUILDER_MANAGED_CONCURRENCY: ${BUILDER_MANAGED_CONCURRENCY:-32}
+      BUILDER_MANAGED_TURN_CALLBACKS: ${BUILDER_MANAGED_TURN_CALLBACKS:-64}
+      BUILDER_MANAGED_RESUME_CALLBACKS: ${BUILDER_MANAGED_RESUME_CALLBACKS:-64}
     volumes:
       - workspaces:/data/workspaces
     healthcheck: *java-health
     depends_on:
-      control: {condition: service_healthy}
-  scheduler:
-    image: ${IMAGE_REPOSITORY}/as-scheduler:${SERVICE_VERSION}
+      portal: {condition: service_healthy}
+  hands:
+    image: ${IMAGE_REPOSITORY}/as-hands:${SERVICE_VERSION}
     restart: unless-stopped
+    stop_grace_period: 45s
+    command: [--platform-service]
     environment:
       <<: *runtime-env
-      SERVER_PORT: 8083
+      SERVER_PORT: 8085
+      BUILDER_HANDS_PORT: 8085
+      BUILDER_HANDS_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=ma
+      BUILDER_HANDS_DB_USER: agentscope_hands
+      BUILDER_HANDS_DB_PASSWORD: ${HANDS_DB_PASSWORD}
+      BUILDER_MANAGED_TOOL_CONCURRENCY: ${BUILDER_MANAGED_TOOL_CONCURRENCY:-16}
     volumes:
       - workspaces:/data/workspaces
     healthcheck: *java-health
     depends_on:
-      data: {condition: service_healthy}
+      schema-grants: {condition: service_completed_successfully}
+      control: {condition: service_healthy}
   gateway:
     image: ${IMAGE_REPOSITORY}/as-gateway:${SERVICE_VERSION}
     restart: unless-stopped
     environment:
       SERVER_PORT: 8080
+      BUILDER_USER_FILES_ENABLED: ${BUILDER_USER_FILES_ENABLED:-true}
+      BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-false}
+      BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN}
       BUILDER_CONTROL_URL: http://control:8081
       BUILDER_DATA_URL: http://data:8082
-      BUILDER_SCHEDULER_URL: http://scheduler:8083
+      BUILDER_SESSION_PORTAL_URL: http://portal:8084
+      BUILDER_HANDS_URL: http://hands:8085
       MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: never
     ports:
       - '${BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-18080}:8080'
     healthcheck: *java-health
     depends_on:
-      scheduler: {condition: service_healthy}
+      hands: {condition: service_healthy}
+      portal: {condition: service_healthy}
 
 volumes:
   postgres:

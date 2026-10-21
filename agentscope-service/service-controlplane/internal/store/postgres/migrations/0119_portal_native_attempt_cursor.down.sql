@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_execution_attempts_portal_cursor;

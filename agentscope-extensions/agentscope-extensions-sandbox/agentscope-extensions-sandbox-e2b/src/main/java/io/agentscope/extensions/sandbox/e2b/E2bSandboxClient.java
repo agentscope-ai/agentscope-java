@@ -78,6 +78,25 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         return new E2bSandbox(state, merged);
     }
 
+    /** Attaches a borrowed instance without creating it, renewing its TTL, or restoring files. */
+    public Sandbox connectExisting(String sandboxId, String accessToken) {
+        if (sandboxId == null || !sandboxId.matches("[A-Za-z0-9_-]{1,256}"))
+            throw new IllegalArgumentException("Existing Sandbox ID required");
+        var state = new E2bSandboxState();
+        var workspace = new WorkspaceSpec();
+        workspace.setRoot(defaultOptions.getWorkspaceRoot());
+        state.setSessionId(UUID.randomUUID().toString());
+        state.setWorkspaceSpec(workspace);
+        state.setSandboxId(sandboxId);
+        state.setSandboxOwned(false);
+        state.setWorkspaceRoot(defaultOptions.getWorkspaceRoot());
+        state.setWorkspaceRootReady(true);
+        state.setSandboxDomain(defaultOptions.getDomain());
+        state.setEnvdAccessToken(accessToken);
+        state.setCodec(defaultOptions.getCodec());
+        return new E2bSandbox(state, copy(defaultOptions));
+    }
+
     @Override
     public Sandbox resume(SandboxState state) {
         if (!(state instanceof E2bSandboxState e2b)) {
@@ -147,6 +166,11 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         if (call.getHttpClient() != null) {
             o.setHttpClient(call.getHttpClient());
         }
+        o.setEnvdBaseUrl(
+                call.getEnvdBaseUrl() != null ? call.getEnvdBaseUrl() : o.getEnvdBaseUrl());
+        if (call.recreateOnConnectFailureOverride() != null)
+            o.setRecreateOnConnectFailure(call.isRecreateOnConnectFailure());
+        if (call.getMaxCapturedBytes() > 0) o.setMaxCapturedBytes(call.getMaxCapturedBytes());
         o.setConnectTimeoutSeconds(call.getConnectTimeoutSeconds());
         o.setReadTimeoutSeconds(call.getReadTimeoutSeconds());
         o.setMaxRetries(call.getMaxRetries());
@@ -163,6 +187,9 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         o.setApiKey(src.getApiKey());
         o.setApiBaseUrl(src.getApiBaseUrl());
         o.setDomain(src.getDomain());
+        o.setEnvdBaseUrl(src.getEnvdBaseUrl());
+        o.setRecreateOnConnectFailure(src.isRecreateOnConnectFailure());
+        o.setMaxCapturedBytes(src.getMaxCapturedBytes());
         o.setTemplateId(src.getTemplateId());
         o.setWorkspaceRoot(src.getWorkspaceRoot());
         o.setSandboxTimeoutSeconds(src.getSandboxTimeoutSeconds());

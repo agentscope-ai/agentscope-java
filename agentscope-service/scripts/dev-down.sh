@@ -13,6 +13,9 @@ GATEWAY_PORT="${BUILDER_GATEWAY_PORT:-18080}"
 CONTROL_PORT="${BUILDER_CONTROL_PORT:-8081}"
 DATA_PORT="${BUILDER_DATA_PORT:-8082}"
 SCHED_PORT="${BUILDER_SCHEDULER_PORT:-8083}"
+PORTAL_PORT="${BUILDER_PORTAL_PORT:-8084}"
+RUNTIME_PORT="${BUILDER_ORCHESTRATION_RUNTIME_PORT:-8086}"
+HANDS_PORT="${BUILDER_HANDS_PORT:-8085}"
 
 managed_plane_name() {
     local pid="$1" command
@@ -20,6 +23,9 @@ managed_plane_name() {
     [ -n "$command" ] || return 1
     case "$command" in
         *"$ROOT/service-controlplane/bin/service-controlplane"*) echo control ;;
+        *"$ROOT/service-controlplane/bin/agentscope-orchestration-runtime"*) echo orchestration ;;
+        *"$ROOT/service-session-portal/target/service-session-portal-"*.jar*) echo portal ;;
+        *"$ROOT/service-hands/target/service-hands-"*.jar*) echo hands ;;
         *"$ROOT/service-dataplane/target/service-dataplane-"*.jar*) echo data ;;
         *"$ROOT/service-scheduler/target/service-scheduler-"*.jar*) echo scheduler ;;
         *"$ROOT/service-gateway/target/service-gateway-"*.jar*) echo gateway ;;
@@ -94,7 +100,7 @@ fi
 
 # Stop only identifiable AgentScope orphans. A Docker-published port is owned by
 # com.docker.backend on macOS; killing an arbitrary listener would stop Docker.
-for port in "$GATEWAY_PORT" "$CONTROL_PORT" "$DATA_PORT" "$SCHED_PORT"; do
+for port in "$GATEWAY_PORT" "$CONTROL_PORT" "$DATA_PORT" "$SCHED_PORT" "$PORTAL_PORT" "$RUNTIME_PORT" "$HANDS_PORT"; do
     free_port "$port"
 done
 

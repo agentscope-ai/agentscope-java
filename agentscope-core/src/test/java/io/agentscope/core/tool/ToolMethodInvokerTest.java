@@ -19,6 +19,7 @@ import static org.junit.Assert.assertThrows;
 
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -52,6 +53,37 @@ class ToolMethodInvokerTest {
         ToolCallParam param =
                 ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
         return invoker.invokeAsync(tools, method, param, responseConverter).block();
+    }
+
+    @Test
+    void sessionBoundaryFailuresPropagateAcrossAllMethodReturnTypes() throws Exception {
+        var tools = new SessionFailureTools();
+        for (String name : List.of("sync", "reactive", "future")) {
+            var failure =
+                    assertThrows(
+                            SessionLogException.class,
+                            () ->
+                                    invokeWithParam(
+                                            tools,
+                                            SessionFailureTools.class.getMethod(name),
+                                            Map.of()));
+            Assertions.assertEquals("durable boundary unavailable", failure.getMessage());
+        }
+    }
+
+    static class SessionFailureTools {
+        public String sync() {
+            throw new SessionLogException("durable boundary unavailable");
+        }
+
+        public Mono<String> reactive() {
+            return Mono.error(new SessionLogException("durable boundary unavailable"));
+        }
+
+        public CompletableFuture<String> future() {
+            return CompletableFuture.failedFuture(
+                    new SessionLogException("durable boundary unavailable"));
+        }
     }
 
     // Test class with various method signatures for testing

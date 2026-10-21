@@ -1,0 +1,27 @@
+{
+  "context": {
+    "version": 1,
+    "tenant": "tenant-1",
+    "namespace": "default",
+    "applicationId": "app-1",
+    "sessionId": "session-1",
+    "turnId": "turn-1",
+    "commandId": "command-1",
+    "traceId": "trace-1",
+    "actor": {
+      "user": "user-1",
+      "key_hash": "",
+      "internal": false
+    },
+    "policyVersion": "policy-1",
+    "permissionExpiresAt": 2000000000000
+  },
+  "taskId": "tool-task-1",
+  "authorizationGeneration": "tool-generation-1",
+  "claimToken": "claim-1",
+  "status": "succeeded",
+  "output": {
+    "text": "file content"
+  },
+  "artifactRef": null
+}

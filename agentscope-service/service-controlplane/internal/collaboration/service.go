@@ -399,6 +399,9 @@ func (s *Service) evaluateAcceptanceCriteria(ctx context.Context, issue *control
 const collaborationPageSize = 500
 
 func (s *Service) listAllIssues(ctx context.Context, filter store.IssueFilter) ([]*controlmodel.Issue, error) {
+	if filter.ParentID != nil {
+		return store.ReadChildIssuesBounded(ctx, s.Store.Collaboration(), filter)
+	}
 	var out []*controlmodel.Issue
 	for offset := 0; ; offset += collaborationPageSize {
 		filter.Limit, filter.Offset = collaborationPageSize, offset
@@ -414,18 +417,7 @@ func (s *Service) listAllIssues(ctx context.Context, filter store.IssueFilter) (
 }
 
 func (s *Service) listAllTasks(ctx context.Context, filter store.AgentTaskFilter) ([]*controlmodel.AgentTask, error) {
-	var out []*controlmodel.AgentTask
-	for offset := 0; ; offset += collaborationPageSize {
-		filter.Limit, filter.Offset = collaborationPageSize, offset
-		page, err := s.Store.Collaboration().ListAgentTasks(ctx, filter)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, page...)
-		if len(page) < collaborationPageSize {
-			return out, nil
-		}
-	}
+	return store.ReadTasksBounded(ctx, s.Store.Collaboration(), filter)
 }
 
 func (s *Service) listAllApprovals(ctx context.Context, filter store.ApprovalFilter) ([]*controlmodel.Approval, error) {
@@ -444,17 +436,7 @@ func (s *Service) listAllApprovals(ctx context.Context, filter store.ApprovalFil
 }
 
 func (s *Service) listAllComments(ctx context.Context, issueID uuid.UUID) ([]*controlmodel.Comment, error) {
-	var out []*controlmodel.Comment
-	for offset := 0; ; offset += collaborationPageSize {
-		page, err := s.Store.Collaboration().ListComments(ctx, issueID, store.CommentListOptions{Limit: collaborationPageSize, Offset: offset})
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, page...)
-		if len(page) < collaborationPageSize {
-			return out, nil
-		}
-	}
+	return store.ReadCommentsBounded(ctx, s.Store.Collaboration(), issueID)
 }
 
 type CreateIssueRequest struct {
@@ -649,6 +631,9 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 	}
 	if req.IssueID == uuid.Nil || strings.TrimSpace(req.Content) == "" {
 		return nil, fmt.Errorf("issueId and content are required")
+	}
+	if len(req.Mentions) > store.MaxCommentTargets {
+		return nil, store.ErrCommentCapacity
 	}
 	issue, err := s.Store.Collaboration().GetIssue(ctx, req.IssueID)
 	if err != nil {

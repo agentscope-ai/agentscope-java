@@ -16,11 +16,14 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.session.SessionLogException;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
@@ -84,6 +87,9 @@ import reactor.core.scheduler.Schedulers;
  * </ul>
  */
 public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
+
+    /** Service executions finish extraction while their native writer and authorization remain valid. */
+    public static final String INLINE_CONTEXT_KEY = "agentscope.memory.inlineFlush";
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFlushMiddleware.class);
 
@@ -153,7 +159,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_AGENT);
+        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_AGENT_FINISH);
     }
 
     @Override
@@ -163,7 +169,19 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        if (Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY))) return next.apply(input);
         return next.apply(input).doOnComplete(() -> scheduleFlush(agent, rc));
+    }
+
+    @Override
+    public Mono<Void> onAgentFinish(Agent agent, RuntimeContext rc, Msg result) {
+        if (!Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY))
+                || SessionRecorder.from(rc) == null
+                || !"completed".equals(SessionRecorder.outcome(result.getGenerateReason())))
+            return Mono.empty();
+        return Mono.defer(() -> doFlush(agent, rc))
+                .subscribeOn(Schedulers.boundedElastic())
+                .contextWrite(context -> context.put(AgentBase.RUNTIME_CONTEXT_KEY, rc));
     }
 
     private void scheduleFlush(Agent agent, RuntimeContext rc) {
@@ -279,6 +297,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 .doOnSuccess(v -> log.debug("Memory flush completed"))
                 .onErrorResume(
                         e -> {
+                            if (Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY))
+                                    && SessionLogException.causedBy(e)) return Mono.error(e);
                             log.warn("Memory flush failed: {}", e.getMessage());
                             return Mono.empty();
                         });

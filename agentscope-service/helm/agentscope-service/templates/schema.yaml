@@ -1,0 +1,65 @@
+# Copyright 2024-2026 the original author or authors.
+# Licensed under the Apache License, Version 2.0.
+{{- if .Values.schema.enabled -}}
+{{- $dataSecret := include "service.dataSecret" . -}}
+{{- $migrationDataSecret := include "service.migrationDataSecret" . -}}
+{{- $secret := required "schema.existingSecret is required for independent migration jobs" .Values.schema.existingSecret -}}
+{{- if eq $secret .Values.existingSecret -}}
+{{- fail "Migration and ordinary service credentials require separate Secrets" -}}
+{{- end -}}
+{{- if and $migrationDataSecret (or (eq $migrationDataSecret .Values.existingSecret) (eq $migrationDataSecret $dataSecret)) -}}
+{{- fail "Business and migration connections require separate Secrets" -}}
+{{- end -}}
+{{- $name := include "service.name" . -}}
+{{- $repository := required "imageRepository is required" .Values.imageRepository -}}
+{{- range $component, $image := dict "control" "as-controlplane" "portal" "as-session-portal" "dataplane" "as-dataplane" "managed" "as-session-portal" }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-schema-{{ $component }}
+  labels:
+    {{- include "service.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: schema-{{ $component }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: {{ $.Values.schema.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+        app.kubernetes.io/component: schema-{{ $component }}
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532}
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: schema
+          image: {{ printf "%s/%s:%s" $repository $image ($.Values.imageTag | default $.Chart.AppVersion) | quote }}
+          imagePullPolicy: {{ $.Values.imagePullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          {{- if eq $component "control" }}
+          args: [--storage-driver=postgres, --migrate-only]
+          {{- else }}
+          command: [java, -Dloader.main=io.agentscope.builder.web.persistence.ServiceSchemaMain, -cp, /app.jar, org.springframework.boot.loader.launch.PropertiesLauncher]
+          args: [--component={{ $component }}]
+          {{- end }}
+          envFrom:
+            - secretRef: {name: {{ $secret | quote }}}
+            {{- if $migrationDataSecret }}
+            - secretRef: {name: {{ $migrationDataSecret | quote }}}
+            {{- end }}
+          resources:
+            {{- toYaml $.Values.schema.resources | nindent 12 }}
+{{- end }}
+{{- end }}

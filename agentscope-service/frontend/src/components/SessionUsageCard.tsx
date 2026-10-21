@@ -1,24 +1,54 @@
 import { useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { useControlPlaneScope } from '@/app/ScopeContext';
+import { Link, useSearchParams } from 'react-router-dom';
 import { authHeaders, readApiError } from '@/api/http';
-import { createApplication, createApplicationCredential, listApplications, listApplicationCredentials, revokeApplicationCredential, type SessionTarget } from '@/api/applications';
+import type { SessionTarget } from '@/api/applications';
+import { SessionApplicationCredentials } from './SessionApplicationCredentials';
 import { ServiceClient } from '@/api/serviceSessions';
 import { ServiceTurnPanel } from './ServiceTurnPanel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
-export function SessionUsageCard({ targetType, targetRef, targetName, revisionId }: { targetType: SessionTarget['type']; targetRef: string; targetName: string; revisionId?: string }) {
-  const scope = useControlPlaneScope();
+type SessionUsageCardProps = { targetType: SessionTarget['type']; targetRef: string; targetName: string; revisionId?: string; runtimeKind?: string };
+
+export function SessionUsageCard(props: SessionUsageCardProps) {
+  return props.targetType === 'agent' && props.runtimeKind === 'managed'
+    ? <ManagedSessionUsageCard {...props} /> : <RuntimeSessionUsageCard {...props} />;
+}
+
+function ManagedSessionUsageCard({ targetRef, targetName }: SessionUsageCardProps) {
+  const [apiKey, setApiKey] = useState('');
+  const sample = [
+    'curl "$BASE_URL/v1/sessions"',
+    '  -H "X-API-Key: $AGENTSCOPE_API_KEY"',
+    '  -H "Content-Type: application/json"',
+    '  -H "AgentScope-Extensions: turn-inputs-v1"',
+    '  -H "Idempotency-Key: create-session-001"',
+    `  -d '${JSON.stringify({ agent: targetRef, environment_id: 'environment-id' })}'`,
+  ].join(' \\\n') + '\n\n' + [
+    'curl "$BASE_URL/v1/sessions/$SESSION_ID/events"',
+    '  -H "X-API-Key: $AGENTSCOPE_API_KEY"',
+    '  -H "Content-Type: application/json"',
+    '  -H "AgentScope-Extensions: turn-inputs-v1"',
+    '  -H "Idempotency-Key: task-001"',
+    `  -d '${JSON.stringify({ events: [{ type: 'user.message', content: [{ type: 'text', text: 'Complete this task.' }], agentscope_service: { intent: 'new_turn' } }] })}'`,
+  ].join(' \\\n') + '\n\n' + [
+    'curl "$BASE_URL/v1/sessions/$SESSION_ID/turns/$TURN_ID/output"',
+    '  -H "X-API-Key: $AGENTSCOPE_API_KEY"',
+  ].join(' \\\n');
+  return <Card><CardHeader><CardTitle>Use {targetName} through the Session API</CardTitle>
+    <CardDescription>Create a Session, send text events, and read each Turn result independently of the live stream.</CardDescription></CardHeader>
+    <CardContent className="space-y-4">
+      <SessionApplicationCredentials targetType="agent" targetRef={targetRef} apiKey={apiKey} onApiKey={setApiKey} apiOnly />
+      <Link to={`/managed/sessions/new?agentId=${encodeURIComponent(targetRef)}`}>Create Session in Console</Link>
+      <p className="text-sm text-muted-foreground">Use an application credential with invoke, read and cancel access to this Agent. Console creation uses your signed-in identity. Replace environment-id with an accessible Environment ID; copy SESSION_ID and TURN_ID from the returned Session and event receipt.</p>
+      <details><summary className="cursor-pointer text-sm font-semibold">API example</summary><pre className="mt-2 overflow-auto rounded border p-3 text-xs">{sample}</pre></details>
+    </CardContent></Card>;
+}
+
+function RuntimeSessionUsageCard({ targetType, targetRef, targetName, revisionId }: SessionUsageCardProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const savedTargetMatches = searchParams.get('sessionTarget') === targetRef && (searchParams.get('sessionRevision') ?? '') === (revisionId ?? '');
-  const [application, setApplication] = useState('');
-  const [applicationName, setApplicationName] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [credentialName, setCredentialName] = useState('');
-  const [scopes, setScopes] = useState(['invoke', 'read', 'cancel', 'interact']);
   const [message, setMessage] = useState(targetType === 'workflow' ? '{}' : 'Describe the task you want this Agent to complete.');
   const [session, setSession] = useState(savedTargetMatches ? searchParams.get('serviceSession') ?? '' : '');
   const [turn, setTurn] = useState(savedTargetMatches ? searchParams.get('serviceTurn') ?? '' : '');
@@ -27,11 +57,13 @@ export function SessionUsageCard({ targetType, targetRef, targetName, revisionId
   const pending = useRef<{ body: string; key: string }>();
   const sessionKey = useRef(crypto.randomUUID());
   const target = useMemo<SessionTarget>(() => ({ type: targetType, id: targetRef, ...(revisionId ? { revisionId } : {}) }), [targetType, targetRef, revisionId]);
-  const headers = useMemo(() => () => ({ ...authHeaders(), ...(apiKey ? { 'X-API-Key': apiKey } : {}) }), [apiKey]);
+  const headers = useMemo(() => () => {
+    const value = authHeaders();
+    if (apiKey) { delete value.Authorization; value['X-API-Key'] = apiKey; }
+    return value;
+  }, [apiKey]);
   const client = useMemo(() => new ServiceClient(session, '', headers), [session, headers]);
   const humanClient = useMemo(() => new ServiceClient(session, '', authHeaders), [session]);
-  const apps = useQuery({ queryKey: ['applications', scope.tenant, scope.namespace], queryFn: () => listApplications(scope.tenant, scope.namespace) });
-  const credentials = useQuery({ queryKey: ['application-credentials', application], queryFn: () => listApplicationCredentials(application), enabled: !!application });
   async function perform(work: () => Promise<void>) { setBusy(true); setError(''); try { await work(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); } }
   function rememberSession(id: string, turnId = '') {
     const next = new URLSearchParams(searchParams);
@@ -57,16 +89,7 @@ export function SessionUsageCard({ targetType, targetRef, targetName, revisionId
   const sample = `curl "$BASE_URL/api/v1/agent-sessions" \\\n  -H "X-API-Key: $AGENTSCOPE_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: create-session-001" \\\n  -d '${JSON.stringify({ target })}'\n\ncurl "$BASE_URL/api/v1/agent-sessions/$SESSION_ID/turns" \\\n  -H "X-API-Key: $AGENTSCOPE_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: task-001" \\\n  -d '${JSON.stringify(targetType === 'workflow' ? { input: {} } : { message: 'Complete this task.' })}'`;
   return <Card><CardHeader><CardTitle>Use {targetName} through the Session API</CardTitle><CardDescription>Create a Session that selects this {targetType}, then submit each task as a Turn. The same Session keeps its selected configuration and execution history. Application credentials control which resources an application may use.</CardDescription></CardHeader>
     <CardContent className="space-y-5">
-      <details><summary className="cursor-pointer text-sm font-semibold">Application credentials</summary><div className="mt-3 space-y-3">
-        <select aria-label="Application" className="w-full rounded border p-2" value={application} onChange={e => setApplication(e.target.value)}><option value="">Select an application</option>{(apps.data?.items ?? []).filter(a => a.status === 'active').map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
-        <div className="flex gap-2"><Input aria-label="New application name" placeholder="New application name" value={applicationName} onChange={e => setApplicationName(e.target.value)} /><Button disabled={busy || !applicationName.trim()} onClick={() => void perform(async () => { const result = await createApplication({ tenant: scope.tenant, namespace: scope.namespace, name: applicationName.trim() }); setApplication(result.application.id); setApplicationName(''); await apps.refetch(); })}>Create application</Button></div>
-        <div className="flex flex-wrap gap-3">{['invoke', 'read', 'cancel', 'interact', 'webhooks:write'].map(value => <label key={value} className="flex gap-1 text-sm"><input type="checkbox" checked={scopes.includes(value)} onChange={e => setScopes(current => e.target.checked ? [...current, value] : current.filter(s => s !== value))} />{value}</label>)}</div>
-        <div className="flex gap-2"><Input aria-label="Credential name" placeholder="Credential name" value={credentialName} onChange={e => setCredentialName(e.target.value)} /><Button disabled={busy || !application || !credentialName.trim()} onClick={() => void perform(async () => { const result = await createApplicationCredential(application, { name: credentialName, scopes, targets: [{ type: targetType, id: targetRef }] }); setApiKey(result.apiKey); await credentials.refetch(); })}>Issue key</Button></div>
-        <p className="text-sm text-muted-foreground">This key grants access to this {targetType}. Copy a newly issued key before leaving this page. To rotate it, issue a replacement, update your application, then revoke the previous key.</p>
-        {(credentials.data?.items ?? []).map(key => <div key={key.id} className="flex items-center gap-3 text-sm"><span>{key.name} · {key.status}</span><Button size="sm" variant="outline" disabled={busy || key.status !== 'active'} onClick={() => void perform(async () => { await revokeApplicationCredential(application, key.id); await credentials.refetch(); })}>Revoke</Button></div>)}
-      </div></details>
-      <label className="block space-y-1 text-sm"><span>Application API key (leave empty to use your signed-in identity)</span><Input type="password" autoComplete="off" value={apiKey} disabled={!!session} onChange={e => setApiKey(e.target.value)} /></label>
-      {!!apiKey && !session && <Button size="sm" variant="outline" onClick={() => void navigator.clipboard.writeText(apiKey)}>Copy API key</Button>}
+      <SessionApplicationCredentials targetType={targetType} targetRef={targetRef} apiKey={apiKey} onApiKey={setApiKey} disabled={!!session} />
       <details><summary className="cursor-pointer text-sm font-semibold">API example</summary><pre className="mt-2 overflow-auto rounded border p-3 text-xs">{sample}</pre></details>
       <label className="block space-y-1 text-sm"><span>{targetType === 'workflow' ? 'Workflow input JSON' : 'Task message'}</span><textarea className="min-h-24 w-full rounded border p-3" value={message} onChange={e => setMessage(e.target.value)} /></label>
       <div className="flex items-center gap-3"><Button disabled={busy || !message.trim()} onClick={() => void run()}>{session ? 'Submit next Turn' : 'Create Session and submit'}</Button>{session && <Button variant="outline" disabled={busy} onClick={() => { setSession(''); setTurn(''); rememberSession(''); sessionKey.current = crypto.randomUUID(); pending.current = undefined; }}>New Session</Button>}</div>

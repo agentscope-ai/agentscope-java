@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -217,6 +218,8 @@ func (r *orchestrationRepo) CreateRun(_ context.Context, in *controlmodel.Orches
 	if c.State == "" {
 		c.State = controlmodel.RunPlanned
 	}
+	c.TerminalCleanupPending = controlmodel.NeedsFailedIssueCleanup(c)
+	c.PortalOwned = r.s.portalIssueOwnedLocked(c.RootIssueID)
 	now := time.Now().UTC()
 	c.Version = 1
 	c.CreatedAt, c.UpdatedAt = now, now
@@ -240,6 +243,16 @@ func (r *orchestrationRepo) ListRuns(ctx context.Context, f store.OrchestrationR
 	defer r.s.mu.RUnlock()
 	out := []*controlmodel.OrchestrationRun{}
 	for _, v := range r.s.runs {
+		if f.PortalOnly && !v.PortalOwned {
+			continue
+		}
+		if f.ExcludeCancelling && v.State == controlmodel.RunCancelling {
+			continue
+		}
+		if f.AfterCreatedAt != nil && (v.CreatedAt.Before(*f.AfterCreatedAt) ||
+			(v.CreatedAt.Equal(*f.AfterCreatedAt) && v.ID.String() <= f.AfterID.String())) {
+			continue
+		}
 		if !r.s.canReadIssueLocked(ctx, v.RootIssueID) {
 			continue
 		}
@@ -252,13 +265,18 @@ func (r *orchestrationRepo) ListRuns(ctx context.Context, f store.OrchestrationR
 				}
 			}
 		}
-		if (f.ParentNodeID == uuid.Nil || (v.ParentNodeID != nil && *v.ParentNodeID == f.ParentNodeID)) && (f.DefinitionID == uuid.Nil || (v.DefinitionRevisionID != nil && r.s.revisions[*v.DefinitionRevisionID] != nil && r.s.revisions[*v.DefinitionRevisionID].DefinitionID == f.DefinitionID)) && (f.Tenant == "" || v.Tenant == f.Tenant) && (f.Namespace == "" || v.Namespace == f.Namespace) && (f.RootIssueID == uuid.Nil || v.RootIssueID == f.RootIssueID) && matchesIssue && (f.State == "" || v.State == f.State) && (!f.ActiveOnly || !controlmodel.IsOrchestrationRunTerminal(v.State)) {
+		if (f.ParentNodeID == uuid.Nil || (v.ParentNodeID != nil && *v.ParentNodeID == f.ParentNodeID)) && (f.DefinitionID == uuid.Nil || (v.DefinitionRevisionID != nil && r.s.revisions[*v.DefinitionRevisionID] != nil && r.s.revisions[*v.DefinitionRevisionID].DefinitionID == f.DefinitionID)) && (f.Tenant == "" || v.Tenant == f.Tenant) && (f.Namespace == "" || v.Namespace == f.Namespace) && (f.RootIssueID == uuid.Nil || v.RootIssueID == f.RootIssueID) && matchesIssue && (f.State == "" || v.State == f.State) && (!f.ActiveOnly || !controlmodel.IsOrchestrationRunTerminal(v.State) || f.IncludeTerminalCleanup && v.TerminalCleanupPending) {
 			out = append(out, cloneRun(v))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	if f.OldestFirst {
-		sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+				return out[i].ID.String() < out[j].ID.String()
+			}
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		})
 	}
 	if f.Offset > 0 {
 		if f.Offset >= len(out) {
@@ -282,6 +300,7 @@ func (r *orchestrationRepo) TransitionRun(_ context.Context, id uuid.UUID, expec
 		return nil, store.ErrConflict
 	}
 	v.State = to
+	v.TerminalCleanupPending = controlmodel.NeedsFailedIssueCleanup(v)
 	if output != nil {
 		v.Output = cloneJSON(output)
 	}
@@ -326,10 +345,27 @@ func (r *orchestrationRepo) CreateNode(_ context.Context, in *controlmodel.RunNo
 	if r.s.runs[in.RunID] == nil {
 		return nil, store.ErrNotFound
 	}
+	if err := r.s.coordinatorRunOpenLocked(in.RunID); err != nil {
+		return nil, err
+	}
+	if controlmodel.IsOrchestrationRunTerminal(r.s.runs[in.RunID].State) {
+		return nil, store.ErrConflict
+	}
+	iteration := in.Iteration
+	if iteration == 0 {
+		iteration = 1
+	}
+	count := 0
 	for _, v := range r.s.runNodes {
-		if v.RunID == in.RunID && v.NodeKey == in.NodeKey && v.Iteration == in.Iteration {
+		if v.RunID == in.RunID {
+			count++
+		}
+		if v.RunID == in.RunID && v.NodeKey == in.NodeKey && v.Iteration == iteration {
 			return nil, store.ErrConflict
 		}
+	}
+	if count >= store.MaxRunNodes {
+		return nil, store.ErrResourceLimit
 	}
 	c := cloneRunNode(in)
 	if c.ID == uuid.Nil {
@@ -360,14 +396,71 @@ func (r *orchestrationRepo) ListNodes(_ context.Context, runID uuid.UUID) ([]*co
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	out := []*controlmodel.RunNode{}
+	bytes := 0
 	for _, v := range r.s.runNodes {
 		if v.RunID == runID {
+			bytes += store.RunNodeGraphBytes(v)
+			if bytes > store.MaxRunGraphBytes {
+				return nil, store.ErrResourceLimit
+			}
 			out = append(out, cloneRunNode(v))
+			if len(out) > store.MaxRunNodes {
+				return nil, store.ErrResourceLimit
+			}
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].NodeKey < out[j].NodeKey })
 	return out, nil
 }
+func (r *orchestrationRepo) ListNodesPage(_ context.Context, runID uuid.UUID, filter store.RunNodeFilter) ([]*controlmodel.RunNode, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	limit := filter.Limit
+	if limit <= 0 || limit > 128 {
+		limit = 16
+	}
+	out := []*controlmodel.RunNode{}
+	for _, node := range r.s.runNodes {
+		if node.RunID == runID && node.ID.String() > filter.AfterID.String() && (!filter.ActiveOnly || !controlmodel.IsRunNodeTerminal(node.State)) {
+			if filter.AutonomousOnly && node.State != controlmodel.RunNodeReady && node.State != controlmodel.RunNodeRunning &&
+				!(node.State == controlmodel.RunNodeWaiting && node.Type != controlmodel.RunNodeApproval && node.Type != controlmodel.RunNodeSignal && node.Type != controlmodel.RunNodeSubrun) {
+				continue
+			}
+			if filter.HumanOnly && (node.State != controlmodel.RunNodeWaiting || node.Type != controlmodel.RunNodeApproval && node.Type != controlmodel.RunNodeSignal) {
+				continue
+			}
+			if filter.AnsweredOnly {
+				answered := false
+				if node.State == controlmodel.RunNodeWaiting && node.Type == controlmodel.RunNodeApproval {
+					for _, approval := range r.s.approvals {
+						if approval.TargetType == "run-node" && approval.TargetRef == node.ID.String() && (approval.Status == controlmodel.ApprovalApproved || approval.Status == controlmodel.ApprovalRejected) {
+							answered = true
+							break
+						}
+					}
+				}
+				if node.State == controlmodel.RunNodeWaiting && node.Type == controlmodel.RunNodeSignal {
+					for _, event := range r.s.runEvents[node.RunID] {
+						if event.NodeID != nil && *event.NodeID == node.ID && strings.HasPrefix(event.Type, "run.signal.") {
+							answered = true
+							break
+						}
+					}
+				}
+				if !answered {
+					continue
+				}
+			}
+			out = append(out, cloneRunNode(node))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID.String() < out[j].ID.String() })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 func (r *orchestrationRepo) TransitionNode(_ context.Context, id uuid.UUID, expected int64, to controlmodel.RunNodeState, output json.RawMessage, code, message string) (*controlmodel.RunNode, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
@@ -401,13 +494,46 @@ func (r *orchestrationRepo) TransitionNode(_ context.Context, id uuid.UUID, expe
 	return cloneRunNode(v), nil
 }
 func (r *orchestrationRepo) CreateEdges(_ context.Context, in []*controlmodel.RunEdge) error {
+	if len(in) > store.MaxRunEdges {
+		return store.ErrResourceLimit
+	}
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
-	for _, e := range in {
-		if r.s.runs[e.RunID] == nil || r.s.runNodes[e.FromNodeID] == nil || r.s.runNodes[e.ToNodeID] == nil {
+	counts := map[uuid.UUID]int{}
+	seen := map[uuid.UUID]bool{}
+	for _, edge := range in {
+		from, to := r.s.runNodes[edge.FromNodeID], r.s.runNodes[edge.ToNodeID]
+		if r.s.runs[edge.RunID] == nil || from == nil || to == nil || from.RunID != edge.RunID || to.RunID != edge.RunID {
 			return store.ErrNotFound
 		}
-		c := cloneRunEdge(e)
+		if edge.ID != uuid.Nil {
+			if seen[edge.ID] || r.s.runEdges[edge.ID] != nil {
+				return store.ErrConflict
+			}
+			seen[edge.ID] = true
+		}
+		counts[edge.RunID]++
+	}
+	for runID := range counts {
+		if err := r.s.coordinatorRunOpenLocked(runID); err != nil {
+			return err
+		}
+		if controlmodel.IsOrchestrationRunTerminal(r.s.runs[runID].State) {
+			return store.ErrConflict
+		}
+	}
+	for _, edge := range r.s.runEdges {
+		if _, adding := counts[edge.RunID]; adding {
+			counts[edge.RunID]++
+		}
+	}
+	for _, count := range counts {
+		if count > store.MaxRunEdges {
+			return store.ErrResourceLimit
+		}
+	}
+	for _, edge := range in {
+		c := cloneRunEdge(edge)
 		if c.ID == uuid.Nil {
 			c.ID = uuid.New()
 		}
@@ -418,13 +544,22 @@ func (r *orchestrationRepo) CreateEdges(_ context.Context, in []*controlmodel.Ru
 	}
 	return nil
 }
+
 func (r *orchestrationRepo) ListEdges(_ context.Context, runID uuid.UUID) ([]*controlmodel.RunEdge, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	out := []*controlmodel.RunEdge{}
+	bytes := 0
 	for _, v := range r.s.runEdges {
 		if v.RunID == runID {
+			bytes += store.RunEdgeGraphBytes(v)
+			if bytes > store.MaxRunGraphBytes {
+				return nil, store.ErrResourceLimit
+			}
 			out = append(out, cloneRunEdge(v))
+			if len(out) > store.MaxRunEdges {
+				return nil, store.ErrResourceLimit
+			}
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Ordinal < out[j].Ordinal })
@@ -587,4 +722,15 @@ func (r *orchestrationRepo) SetNodeInput(_ context.Context, id uuid.UUID, expect
 	node.Input = cloneJSON(input)
 	node.Version++
 	return cloneRunNode(node), nil
+}
+
+func (r *orchestrationRepo) FirstRunSignal(_ context.Context, runID, nodeID uuid.UUID, name string, includeBroadcast bool) (*controlmodel.RunEvent, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	for _, event := range r.s.runEvents[runID] {
+		if event.Type == "run.signal."+name && (includeBroadcast && event.NodeID == nil || event.NodeID != nil && *event.NodeID == nodeID) {
+			return cloneRunEvent(event), nil
+		}
+	}
+	return nil, store.ErrNotFound
 }

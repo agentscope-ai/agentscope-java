@@ -31,7 +31,7 @@ interface Props {
 }
 const field: React.CSSProperties = { padding: 8, border: '1px solid #cbd5e1', borderRadius: 6, width: '100%', boxSizing: 'border-box' };
 const button: React.CSSProperties = { padding: '7px 12px', border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', cursor: 'pointer' };
-const headersExample = JSON.stringify({ Authorization: 'Bearer ${MCP_TOKEN}', 'X-Client': 'agentscope' }, null, 2);
+const headersExample = JSON.stringify({ Authorization: 'Bearer ${MCP_TOKEN}', 'X-Client': 'agentscope-service' }, null, 2);
 const environmentExample = JSON.stringify({ API_KEY: '${MCP_TOKEN}', LOG_LEVEL: 'info' }, null, 2);
 const jsonField: React.CSSProperties = { ...field, fontFamily: 'monospace', resize: 'vertical' };
 const example: React.CSSProperties = { margin: '6px 0 16px', padding: 12, borderRadius: 6, background: '#f8fafc', fontSize: 13, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };

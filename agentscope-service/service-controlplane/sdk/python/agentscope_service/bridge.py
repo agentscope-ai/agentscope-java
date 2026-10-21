@@ -17,7 +17,7 @@
 职责：适配器挂载、Level 2 持久化 outbox 与 ACK 重传、ContextTracker
 增量视图、Level 1 聚合（~10s）、Level 4 推送（hash 变更防抖 30s 冷却；
 compaction 后立即推）、Inventory（连接建立后立即一次，之后低频）、命令
-分发（ASDP 与 HTTP 双通道 → ``handle_command``）、内嵌合约 HTTP 服务。
+分发（RuntimeProtocol 与 HTTP 双通道 → ``handle_command``）、内嵌合约 HTTP 服务。
 
 旁路原则：所有上报路径失败静默忽略，绝不阻断 Agent 主对话路径。
 """
@@ -76,7 +76,7 @@ CONTRACT_LEVEL = 3
 
 
 class SessionBridge:
-    """数据面桥：框架适配器 ↔ ASDP gRPC 推送 ↔ 内嵌 HTTP 合约服务。"""
+    """数据面桥：框架适配器 ↔ Runtime Protocol gRPC 推送 ↔ 内嵌 HTTP 合约服务。"""
 
     def __init__(
         self,

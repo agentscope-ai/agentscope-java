@@ -178,13 +178,15 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <ScopeProvider><React.Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading console…</div>}><Routes>
+        <React.Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading console…</div>}><Routes>
           <Route path="/login" element={<LoginPage />} />
 
           <Route
             element={
               <PrivateRoute>
-                <AppShell />
+                <ScopeProvider>
+                  <AppShell />
+                </ScopeProvider>
               </PrivateRoute>
             }
           >
@@ -328,7 +330,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
             <Route path="*" element={<DefaultWorkspaceRedirect />} />
           </Route>
-        </Routes></React.Suspense></ScopeProvider>
+        </Routes></React.Suspense>
       </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>,

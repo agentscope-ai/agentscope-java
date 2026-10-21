@@ -56,7 +56,7 @@ export function getEntityIdentity(identities: EntityIdentityMap, type?: string, 
 }
 
 export function entityDisplayName(identities: EntityIdentityMap, type?: string, ref?: string): string {
-  if (!ref) return type === "system" ? "AgentScope" : type || "Unknown";
+  if (!ref) return type === "system" ? "AgentScope Service" : type || "Unknown";
   const identity = getEntityIdentity(identities, type, ref);
   if (identity?.resolved) return identity.name;
   const normalized = normalizeEntityRef({ type, ref });

@@ -15,13 +15,11 @@
 package product
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"log"
+	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -297,7 +295,7 @@ func (s *Server) runDeployment(c *gin.Context) {
 		Text string `json:"text"`
 	}
 	_ = c.ShouldBindJSON(&body)
-	out, err := s.fireDeployment(c.Request.Context(), d, body.Text)
+	out, err := s.fireDeployment(c.Request.Context(), d, body.Text, c.GetHeader("Idempotency-Key"), currentUserID(c))
 	if err != nil {
 		writeTextErr(c, environmentBindingHTTPStatus(err), err.Error())
 		return
@@ -359,7 +357,7 @@ func (s *Server) triggerDeploymentWebhook(c *gin.Context) {
 		Text string `json:"text"`
 	}
 	_ = c.ShouldBindJSON(&body)
-	out, err := s.fireDeployment(c.Request.Context(), d, body.Text)
+	out, err := s.fireDeployment(c.Request.Context(), d, body.Text, c.GetHeader("Idempotency-Key"), currentUserID(c))
 	if err != nil {
 		writeErr(c, environmentBindingHTTPStatus(err), err.Error())
 		return
@@ -373,57 +371,37 @@ func (s *Server) triggerDeploymentWebhook(c *gin.Context) {
 	})
 }
 
-func (s *Server) fireDeployment(ctx context.Context, d deployRow, message string) (deployRow, error) {
+func (s *Server) fireDeployment(ctx context.Context, d deployRow, message, requestID, actorID string) (deployRow, error) {
 	if _, err := s.validateEnvironmentBinding(ctx, d.OwnerID, d.EnvironmentID); err != nil {
 		return d, err
 	}
-	refType := "latest"
-	ver := 0
-	a, err := s.loadAgent(ctx, d.OwnerID, d.AgentID)
-	if err != nil {
-		return d, err
+	if requestID == "" {
+		requestID = uuid.NewString()
 	}
-	ver = a.HeadVersion
+	if strings.TrimSpace(message) == "" {
+		message = "Run deployment: " + d.Name
+	}
+	version := 0
 	if d.AgentVersion != nil {
-		ver = *d.AgentVersion
-		refType = "version"
+		version = *d.AgentVersion
 	}
-	_, memIDs, vaultIDs := mergeSessionMounts(a, d.EnvironmentID, nil, nil, false, false)
-	sess, err := s.insertSession(ctx, d.OwnerID, d.AgentID, d.OwnerID, ver, refType,
-		d.EnvironmentID, "", memIDs, vaultIDs, nil, nil)
+	raw, err := s.SubmitManagedTrigger(ctx, ManagedTrigger{OwnerID: d.OwnerID, ActorID: actorID, AgentID: d.AgentID,
+		AgentVersion: version, EnvironmentID: d.EnvironmentID,
+		RequestID: requestID, ExternalKey: "deployment:" + d.DeploymentID + ":" + requestID, Text: message})
 	if err != nil {
 		return d, err
+	}
+	var receipt struct {
+		SessionID string `json:"sessionId"`
+	}
+	if json.Unmarshal(raw, &receipt) != nil || receipt.SessionID == "" {
+		return d, fmt.Errorf("invalid Managed deployment receipt")
 	}
 	now := nowMillis()
-	status := "ok"
-	if s.cfg.DataURL != "" {
-		payload := map[string]any{
-			"events": []map[string]any{
-				{"type": "user.message", "payload": map[string]any{"text": message}},
-			},
-		}
-		b, _ := json.Marshal(payload)
-		url := s.cfg.DataURL + "/api/sessions/" + sess.SessionID + "/events"
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
-		if err == nil {
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Builder-Internal-Token", s.cfg.InternalToken)
-			client := &http.Client{Timeout: 15 * time.Second}
-			resp, err := client.Do(req)
-			if err != nil {
-				log.Printf("fire deployment event post failed: %v", err)
-				status = "error"
-			} else {
-				_ = resp.Body.Close()
-				if resp.StatusCode >= 300 {
-					log.Printf("fire deployment event status=%d", resp.StatusCode)
-					status = "error"
-				}
-			}
-		}
+	if _, err = s.db.Pool.Exec(ctx,
+		`UPDATE deployments SET last_run_at=$1, last_session_id=$2, last_status='accepted', updated_at=$1 WHERE deployment_id=$3`,
+		now, receipt.SessionID, d.DeploymentID); err != nil {
+		return d, err
 	}
-	_, _ = s.db.Pool.Exec(ctx,
-		`UPDATE deployments SET last_run_at=$1, last_session_id=$2, last_status=$3, updated_at=$1
-		 WHERE deployment_id=$4`, now, sess.SessionID, status, d.DeploymentID)
 	return s.loadDeploy(ctx, d.DeploymentID)
 }

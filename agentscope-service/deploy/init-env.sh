@@ -17,15 +17,25 @@ jwt=$(openssl rand -hex 32)
 internal=$(openssl rand -hex 32)
 vault=$(openssl rand -hex 32)
 admin=$(openssl rand -hex 16)
+control_db=$(openssl rand -hex 24)
+portal_db=$(openssl rand -hex 24)
+data_db=$(openssl rand -hex 24)
+hands_db=$(openssl rand -hex 24)
 set -o noclobber
 cat > .env <<ENV
 IMAGE_REPOSITORY=$2
 SERVICE_VERSION=$1
 POSTGRES_DB=agentscope
 POSTGRES_PASSWORD=$pg
+CONTROL_DB_PASSWORD=$control_db
+PORTAL_DB_PASSWORD=$portal_db
+DATA_DB_PASSWORD=$data_db
+HANDS_DB_PASSWORD=$hands_db
 BUILDER_JWT_SECRET=$jwt
 BUILDER_INTERNAL_TOKEN=$internal
 BUILDER_VAULT_MASTER_KEY=$vault
+BUILDER_MANAGED_REDIS_URI=
+BUILDER_MANAGED_MQ_ENDPOINTS=
 CONTROL_PLANE_BOOTSTRAP_ADMIN=admin
 CONTROL_PLANE_BOOTSTRAP_PASSWORD=$admin
 BIND_ADDRESS=127.0.0.1
@@ -36,4 +46,5 @@ BUILDER_ALLOW_LOCAL_ENVIRONMENT=false
 DASHSCOPE_API_KEY=
 BUILDER_E2B_API_KEY=
 ENV
+echo 'Set Redis and RocketMQ Cluster Proxy addresses in .env before startup.'
 echo 'Created .env (mode 600). Read CONTROL_PLANE_BOOTSTRAP_PASSWORD locally to sign in as admin.'

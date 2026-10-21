@@ -23,23 +23,26 @@ import java.util.Set;
  */
 public final class EnvironmentTypes {
 
-    /** Local host filesystem hands. */
+    /** Filesystem and shell executed in the Hands process. */
     public static final String TYPE_LOCAL = "local";
 
-    /** Cloud-equivalent Docker hands (E2B sandbox). */
-    public static final String TYPE_SANDBOX = "sandbox";
+    /** Service-owned ACS Sandbox instances through native E2B. */
+    public static final String TYPE_CLOUD = "cloud";
 
     /** Distributed KV filesystem, no shell. */
     public static final String TYPE_REMOTE = "remote";
 
-    /** Worker-owned hands via {@code externalSandbox} (self-hosted environment workers). */
+    /** Borrowed user-owned Sandbox instances executed by Hands. */
     public static final String TYPE_SELF_HOSTED = "self_hosted";
 
     /** ACL resource type used for environment share checks. */
     public static final String RESOURCE_TYPE = "environment";
 
     public static final Set<String> VALID_TYPES =
-            Set.of(TYPE_LOCAL, TYPE_SANDBOX, TYPE_REMOTE, TYPE_SELF_HOSTED);
+            Set.of(TYPE_LOCAL, TYPE_CLOUD, TYPE_REMOTE, TYPE_SELF_HOSTED);
+
+    public static final Set<String> TOOL_WORKER_TYPES =
+            Set.of(TYPE_LOCAL, TYPE_CLOUD, TYPE_SELF_HOSTED);
 
     private EnvironmentTypes() {}
 }

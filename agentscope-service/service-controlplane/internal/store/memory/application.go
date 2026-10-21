@@ -102,8 +102,27 @@ func (r *applicationRepo) Update(_ context.Context, in *model.Application, versi
 	v.OwnerUserID = current.OwnerUserID
 	v.CreatedAt = current.CreatedAt
 	v.TokensUsed = current.TokensUsed
+	v.RuntimeTokensUsed = current.RuntimeTokensUsed
 	v.Version = version + 1
 	v.UpdatedAt = time.Now().UTC()
 	r.s.applications[v.ID] = v
+	r.s.policyChanges.Record(v.Tenant, v.Namespace, v.ID.String())
 	return cloneApplication(v), nil
+}
+
+func (r *applicationRepo) RecordRuntimeTokens(_ context.Context, id uuid.UUID, total int64) error {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	v := r.s.applications[id]
+	if v == nil {
+		return store.ErrNotFound
+	}
+	if total < 0 {
+		return store.ErrConflict
+	}
+	if total > v.RuntimeTokensUsed {
+		v.TokensUsed += total - v.RuntimeTokensUsed
+		v.RuntimeTokensUsed = total
+	}
+	return nil
 }

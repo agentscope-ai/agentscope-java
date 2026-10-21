@@ -19,7 +19,7 @@
  * Licensed under the Apache License, Version 2.0.
  */
 
-import { Activity, Brain, Clock, Wrench, Bot, ChevronDown, ChevronRight, CircleAlert, Send, User } from 'lucide-react';
+import { Activity, Brain as BrainIcon, Clock, Wrench, Bot, ChevronDown, ChevronRight, CircleAlert, Send, User } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { presentEvent, durationLabel, record } from './eventPresentation';
@@ -117,7 +117,7 @@ function ToolBlock({ block }: { block: ConversationContentBlock }) {
 function ProcessBlock({ block }: { block: ConversationContentBlock }) {
   const thinking = block.kind === 'thinking';
   if (!thinking) return <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground"><Clock className="h-3.5 w-3.5" /><span>{block.toolState === 'running' ? 'Requesting model…' : block.toolState === 'unavailable' ? 'Model request · end not recorded' : 'Model request finished'}</span>{block.durationMs != null && <span>· {durationLabel(block.durationMs)}</span>}</div>;
-  return <details className="rounded-lg border border-violet-200 bg-violet-50/40 text-sm"><summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-violet-700"><Brain className="h-4 w-4" /><span className="font-medium">Thinking</span><ChevronDown className="ml-auto h-3.5 w-3.5" /></summary><div className="md-text max-h-80 overflow-auto border-t border-violet-100 px-4 py-3 leading-6 text-slate-600"><ReactMarkdown>{block.text || 'No thinking text was recorded.'}</ReactMarkdown></div></details>;
+  return <details className="rounded-lg border border-violet-200 bg-violet-50/40 text-sm"><summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-violet-700"><BrainIcon className="h-4 w-4" /><span className="font-medium">Thinking</span><ChevronDown className="ml-auto h-3.5 w-3.5" /></summary><div className="md-text max-h-80 overflow-auto border-t border-violet-100 px-4 py-3 leading-6 text-slate-600"><ReactMarkdown>{block.text || 'No thinking text was recorded.'}</ReactMarkdown></div></details>;
 }
 
 function MessageRow({ message }: { message: ConversationMessage }) {

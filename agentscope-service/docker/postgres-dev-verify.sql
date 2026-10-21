@@ -39,6 +39,12 @@ BEGIN
           ('rt', 'orchestration_run_events'),
           ('rt', 'agent_runtime_policies'),
           ('rt', 'control_outbox'),
+          ('portal', 'builder_schema_migration'),
+          ('portal', 'builder_portal_session'),
+          ('portal', 'builder_portal_turn'),
+          ('portal', 'builder_portal_event'),
+          ('portal', 'builder_portal_artifact_publication'),
+          ('dp', 'builder_schema_migration'),
           ('dp', 'builder_user'),
           ('dp', 'builder_agent'),
           ('dp', 'builder_session'),
@@ -52,9 +58,9 @@ BEGIN
 
     IF NOT EXISTS (
         SELECT 1 FROM rt.schema_migrations
-         WHERE version = '0099_agent_runtime_policy_id_index'
+         WHERE version = '0125_portal_runtime_artifacts'
     ) THEN
-        RAISE EXCEPTION 'runtime schema migrations did not reach 0099_agent_runtime_policy_id_index';
+        RAISE EXCEPTION 'runtime schema migrations did not reach 0125_portal_runtime_artifacts';
     END IF;
 
     IF EXISTS (

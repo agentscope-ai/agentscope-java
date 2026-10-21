@@ -215,6 +215,10 @@ The Leader selects members according to context. Use Workflow for fixed ordering
 
 Member replies, Attempt success, coordinator completion, Run terminal state and Issue acceptance represent different layers. A final Leader message does not replace node completion. When required child work remains, wait, revise the plan or report failure explicitly.
 
+A successful conclusion waits for required delegated work and pending Leader outcomes. New delegation into a closed coordinator is rejected; submit a new Turn for additional work. An accepted explicit conclusion survives a Runtime restart and is checked again against the outstanding work. An ordinary Task reply does not become a conclusion during recovery. A Team node inside a Workflow closes its own delegated task tree, so other Workflow steps can continue.
+
+Large delivery bodies remain in their original Tasks, comments and artifacts. If the inline team summary exceeds its capacity, Service publishes a clearly marked status and a link to execution details instead of an incomplete delivery body. The root Turn and execution state still determine completion.
+
 Human reviewers should check the final result, key evidence and failure explanations before accepting or requesting changes. Run succeeded/partial_succeeded still needs comparison with business acceptance criteria.
 
 ## Extension and recovery

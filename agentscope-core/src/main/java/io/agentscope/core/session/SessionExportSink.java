@@ -21,5 +21,18 @@ public interface SessionExportSink {
 
     String name();
 
+    /** Maximum committed events per drain; callers can continue from the durable cursor. */
+    default int maxEventsPerDrain() {
+        return Integer.MAX_VALUE;
+    }
+
+    /**
+     * Creates an independently scoped sink for a linked child Session. The default preserves
+     * standalone behavior: children never export into their parent's identity implicitly.
+     */
+    default SessionExportSink forChild(String sessionId) {
+        return null;
+    }
+
     void accept(SessionEvent event);
 }

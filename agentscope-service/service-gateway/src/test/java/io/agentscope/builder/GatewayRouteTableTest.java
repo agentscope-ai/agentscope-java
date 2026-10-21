@@ -28,6 +28,7 @@ import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 @SpringBootTest(
@@ -38,7 +39,7 @@ import reactor.test.StepVerifier;
         properties = {
             "builder.control-plane-url=http://control:8081",
             "builder.data-plane-url=http://data:8082",
-            "builder.scheduler-plane-url=http://scheduler:8083"
+            "builder.session-portal-url=http://portal:8085"
         })
 class GatewayRouteTableTest {
 
@@ -55,17 +56,25 @@ class GatewayRouteTableTest {
                                     .isEqualTo(URI.create("http://data:8082"));
                             assertThat(find(routes, "control-api").getUri())
                                     .isEqualTo(URI.create("http://control:8081"));
-                            assertThat(find(routes, "scheduler-outbound").getUri())
-                                    .isEqualTo(URI.create("http://scheduler:8083"));
-                            assertThat(find(routes, "scheduler-channel-callbacks").getUri())
-                                    .isEqualTo(URI.create("http://scheduler:8083"));
-                            assertThat(find(routes, "agent-session-lifecycle").getUri())
+                            assertThat(find(routes, "control-outbound").getUri())
                                     .isEqualTo(URI.create("http://control:8081"));
+                            assertThat(find(routes, "control-channel-callbacks").getUri())
+                                    .isEqualTo(URI.create("http://control:8081"));
+                            assertThat(find(routes, "agent-session-lifecycle").getUri())
+                                    .isEqualTo(URI.create("http://portal:8085"));
+                            for (String id :
+                                    List.of(
+                                            "portal-runtime-host",
+                                            "portal-collaboration-mcp",
+                                            "portal-task-collaboration",
+                                            "portal-tool-tasks"))
+                                assertThat(find(routes, id).getUri())
+                                        .isEqualTo(URI.create("http://portal:8085"));
                             assertThat(find(routes, "reject-internal").getOrder())
                                     .isLessThan(find(routes, "data-session-turn").getOrder());
                             assertThat(find(routes, "data-session-turn").getOrder())
                                     .isLessThan(find(routes, "control-api").getOrder());
-                            assertThat(find(routes, "scheduler-channel-callbacks").getOrder())
+                            assertThat(find(routes, "control-channel-callbacks").getOrder())
                                     .isLessThan(find(routes, "control-api").getOrder());
                             assertThat(find(routes, "agent-session-lifecycle").getOrder())
                                     .isLessThan(find(routes, "control-api").getOrder());
@@ -124,5 +133,52 @@ class GatewayRouteTableTest {
                 .filter(r -> id.equals(r.getId()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Missing route id: " + id));
+    }
+
+    @Test
+    void machineCollaborationUsesPortalAndHumanManagementUsesControl() {
+        String task = "/api/v1/agent-tasks/00000000-0000-4000-8000-000000000001/context";
+        String issue = "/api/v1/issues/00000000-0000-4000-8000-000000000001";
+        String host = "/api/v1/runtime-hosts/00000000-0000-4000-8000-000000000001";
+        StepVerifier.create(
+                        selected(
+                                MockServerHttpRequest.get(task)
+                                        .header("X-Agent-Task-Token", "task")))
+                .expectNext("portal-task-collaboration")
+                .verifyComplete();
+        StepVerifier.create(
+                        selected(
+                                MockServerHttpRequest.get(issue)
+                                        .header("X-Agent-Task-Token", "task")))
+                .expectNext("portal-task-collaboration")
+                .verifyComplete();
+        StepVerifier.create(selected(MockServerHttpRequest.get(issue)))
+                .expectNext("control-api")
+                .verifyComplete();
+        StepVerifier.create(
+                        selected(
+                                MockServerHttpRequest.post(
+                                        host
+                                                + "/execution-attempts/00000000-0000-4000-8000-000000000002/credentials")))
+                .expectNext("portal-runtime-host")
+                .verifyComplete();
+        StepVerifier.create(selected(MockServerHttpRequest.get(host)))
+                .expectNext("control-api")
+                .verifyComplete();
+        StepVerifier.create(selected(MockServerHttpRequest.post(host + "/drain")))
+                .expectNext("control-api")
+                .verifyComplete();
+        StepVerifier.create(selected(MockServerHttpRequest.post("/mcp/collaboration")))
+                .expectNext("portal-collaboration-mcp")
+                .verifyComplete();
+    }
+
+    private Mono<String> selected(MockServerHttpRequest.BaseBuilder<?> request) {
+        var exchange = MockServerWebExchange.from(request);
+        return routeLocator
+                .getRoutes()
+                .filterWhen(route -> route.getPredicate().apply(exchange))
+                .next()
+                .map(Route::getId);
     }
 }

@@ -31,23 +31,31 @@
     <packaging>pom</packaging>
 
     <name>AgentScope Java - Service</name>
-    <description>Four-plane agent builder platform: gateway + control + data + scheduler, built on HarnessAgent</description>
+    <description>Agent service platform: Go control plane with orchestration and scheduling, Java execution services</description>
 
     <modules>
+        <module>service-client</module>
         <module>service-common</module>
+        <module>service-session-portal</module>
+        <module>service-hands</module>
         <module>service-gateway</module>
         <module>service-dataplane</module>
-        <module>service-scheduler</module>
     </modules>
 
     <properties>
         <spring.boot.version>4.0.4</spring.boot.version>
         <spring-cloud.version>2025.1.2</spring-cloud.version>
+        <rocketmq-client-java.version>5.2.2</rocketmq-client-java.version>
         <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.apache.rocketmq</groupId>
+                <artifactId>rocketmq-client-java</artifactId>
+                <version>${rocketmq-client-java.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>

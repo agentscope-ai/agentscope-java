@@ -148,18 +148,18 @@ curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
 
 ## 在执行中参与交互
 
-Agent 需要用户确认、补充资料或提供外部工具结果时，应用从快照中的 `required_actions` 读取待办，再向对应 Turn 的 `/actions` 提交答复。请求应包含待办的 `request_id`，需要版本校验的待办还应包含 `expected_version`。Managed Agent 的确认答复放在 `payload` 中，例如 `{"allow":true}`。
+Agent 需要用户确认、补充资料或提供外部工具结果时，应用从快照中的 `required_actions` 读取待办，再向对应 Turn 的 `/actions` 提交答复。请求应包含待办的 `request_id`，需要版本校验的待办还应包含 `expected_version`。Managed 答复使用 `{"answers":[{"request_id":"...","allow":true}]}`，响应为已接受答复的 Turn。`GET /turns/{turnId}/actions` 返回答复命令记录；Team、Workflow 的通用命令仍使用各自的 payload 和回执格式。
 
 先读取当前 Turn 的待办。没有待办时不需要调用 `/actions`：
 
 ```bash
 ACTIONS_JSON=$(
-  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions"
+  curl -sS --fail-with-body "$SESSION_URL/snapshot"
 )
 jq '.required_actions' <<< "$ACTIONS_JSON"
 ```
 
-检查所选待办的操作说明、`kind` 和请求内容，将真实 `request_id` 原样填入下面的变量，保留服务返回的 `native:` 等前缀。一次只答复用户选择的待办，不要自动允许列表中的所有操作。
+检查所选待办的操作说明、`kind` 和请求内容，将真实 `request_id` 原样填入下面的变量，按运行时返回的标识填写。一次只答复用户选择的待办，不要自动允许列表中的所有操作。
 
 ```bash
 REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
@@ -179,15 +179,15 @@ COMMAND_JSON=$(
     -H "Idempotency-Key: report-confirmation-001" \
     --data-binary @- <<JSON
 {
-  "request_id": "$REQUEST_ID",
-  "payload": {
+  "answers": [{
+    "request_id": "$REQUEST_ID",
     "allow": true,
     "reason": "用户已核对工具参数并确认执行。"
-  }
+  }]
 }
 JSON
 )
-COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
+# Managed 答复返回 Turn，后续通过 /snapshot 和 /events/stream 跟踪。
 ```
 
 </Tab>
@@ -202,15 +202,15 @@ COMMAND_JSON=$(
     -H "Idempotency-Key: report-tool-result-001" \
     --data-binary @- <<JSON
 {
-  "request_id": "$REQUEST_ID",
-  "payload": {
+  "answers": [{
+    "request_id": "$REQUEST_ID",
     "output": "替换为真实工具执行结果",
     "is_error": false
-  }
+  }]
 }
 JSON
 )
-COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
+# Managed 答复返回 Turn，后续通过 /snapshot 和 /events/stream 跟踪。
 ```
 
 </Tab>
@@ -240,6 +240,8 @@ COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 
 请求返回 `202 Accepted` 只表示答复已接收。使用返回的命令 ID 查询回执，直到 `command.status` 为 `completed` 或 `failed`；失败时检查 `command.error` 并重新读取待办。网络重试沿用同一个幂等键和请求体。
 
+对于由 Managed 执行的 Endpoint Invocation，原生 Input 尚未应用时，命令会保持 `submitted`。回执包含 `input_id`、`input_status` 和 `input_delivery_status`；已投递不代表 Agent 已应用输入。取消命令完成后，应用仍需等到 Turn 终态才能报告执行已经停止。Managed Turn 在答复后继续运行，故障后自动恢复，不提供独立的 `resume` 命令。直接接入 Managed Session 时使用[原生 Session API](/v2/zh/service/claude-session-api)。
+
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID"
 ```
@@ -264,13 +266,13 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities"
 
 ## 预算和后台通知
 
-应用级额度见[生产部署](/v2/zh/service/kubernetes#production-application-credentials)。创建 Session 时，还可以设置 `timeoutSeconds` 和 `budget.maxTokens`，约束该 Session 中每个 Turn 的执行。Managed 会话自己的预算则通过 `/budget` 管理，具体配置与用量查询见[用量、子 Agent 与预算](/v2/zh/service/session-event-log#budgets)。
+应用级额度见[生产部署](/v2/zh/service/kubernetes#production-application-credentials)。其他后端创建 Session 时，可以设置 `timeoutSeconds` 和 `budget.maxTokens`，约束每个 Turn。Managed 的 `budget.maxTokens` 初始化整个 Session 的 `max_total_tokens` 预算；`timeoutSeconds` 会被拒绝。Managed 预算也可以通过 `/budget` 管理，具体配置与用量查询见[用量、子 Agent 与预算](/v2/zh/service/session-event-log#budgets)。
 
-<Accordion title="设置任务预算">
+<Accordion title="设置 Managed Session 预算">
 
 
 
-创建新 Session 时可同时设置每个 Turn 的超时秒数与 token 预算：
+创建 Managed Session 时设置整个会话的 token 总预算：
 
 ```bash
 SESSION_JSON=$(
@@ -283,7 +285,6 @@ SESSION_JSON=$(
     "type": "agent",
     "id": "$AGENT_ID"
   },
-  "timeoutSeconds": 300,
   "budget": {
     "maxTokens": 10000
   }
@@ -302,7 +303,7 @@ SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 
 Turn 的 `completed` 表示这轮执行成功结束。应用还需要检查实际交付是否符合业务要求，例如报告是否包含所需来源、文件是否能够下载，以及结构化结果是否包含后续处理所需的数据。返回的是文件时，应通过[文件与产物](/v2/zh/service/files)中的接口读取实际产物，不能仅凭 Agent 回复中的文件名判断交付已经完成。
 
-如果任务需要严格的业务输入和输出，可以在创建 Session 时提供 `inputSchema`、`outputSchema` 和 `resultMapping`。这些设置固定在当前 Session 的执行配置中。应先验证目标真实返回的数据，再设置输出映射和校验规则；Agent 在文字中写出 JSON，不等于平台已把这段文字转换为业务对象。这些规则用于检查数据格式，不能代替对内容质量的验收，也不会自动驱动 Agent 反复修改结果。
+其他后端的任务需要严格的业务输入和输出时，可以在创建 Session 时提供 `inputSchema`、`outputSchema` 和 `resultMapping`。Managed 使用 `inputSchema` 校验消息或结构化用户消息列表，并拒绝 `outputSchema` 和 `resultMapping`。这些设置固定在当前 Session 的执行配置中。应先验证目标真实返回的数据，再设置输出映射和校验规则；Agent 在文字中写出 JSON，不等于平台已把这段文字转换为业务对象。这些规则用于检查数据格式，不能代替对内容质量的验收，也不会自动驱动 Agent 反复修改结果。
 
 <Accordion title="校验结构化输入与交付结果">
 
@@ -390,3 +391,27 @@ print(api.turn(session["id"], turn["id"]))
 ```
 
 仓库中的 `agentscope-service/service-controlplane/examples/service-api` 提供 Agent、Team 和 Workflow 的注册与调用示例。管理对象使用 `ManagementClient`，应用执行使用 `ServiceClient`。接口入口见 [API 参考](/v2/zh/service/api-reference)。
+
+## Managed 运行时请求路由
+
+Gateway 将 `/v1/sessions` 路由到 Session Portal。Control Plane 解析并登记固定的 Agent / Environment 定义；Portal 保存 Session 并受理 Turn，不发起 Brain bootstrap，也不等待 ready。Brain 消费顺序 Turn 消息，Hands 提交运行事实并驱动 Sandbox 工具。这些组件可分别部署和扩容，共享数据库、RocketMQ 与 Redis 基础设施。
+
+源码中的 Managed Runtime 要求 RocketMQ 5.5.1、独立的 **Cluster Proxy** 和四个 LiteTopic 父主题：Turn、Brain 运行事件、Hands 工具事件和 Resume。每个完整作用域的 Session 使用独立 LiteTopic；各消费组采用 LitePushConsumer、FIFO 和 wildcard 全量订阅，新 Session 自动进入消费。SDK / Proxy 自动续期，上限为 3 小时，应用不维护逐投递 MQ 续期或 Session 订阅目录。长工具等待时先保存检查点并提交挂起事实，Brain 释放 Harness 计算资源与 Redis 执行租约，原 Turn 消费回调继续保持未完成；工具结果通过独立 Resume 通道恢复同一逻辑 Turn。Hands 在终态事务内写入完成通知，经 Redis 逻辑信箱可靠送达当前消费方，由回调返回 SUCCESS，SDK 执行 ACK，再放行同 Session 后续 Turn。通知身份不包含 SDK receipt，通知回执也不表示 Broker 已确认 ACK。运行事件和工具事件独立消费，生产者职责及事件类型必须匹配对应通道。这一源码要求不表示已有发布部署包完成迁移。
+
+Managed 文件上传、列表、元数据和下载使用 Portal 的不可变文件存储。上传返回 `file_id`，Turn / Input 内容块和 Artifact 发布直接引用该 ID；可以在第一轮 Turn 之前上传。控制面的 Managed 文件入口保留原始 Actor 与 Session 作用域，不再复制文件或改写 ID。其他后端沿用自身文件协议。
+
+已开始的 Agent 运行报错或返回明确失败结果时，在失败检查点、输入回执和已确认工具结果提交后结束 Turn。恢复已记录的失败决定不会再次调用模型。内部工具等待、日志传输故障及执行权丢失仍走恢复流程。正常排队由原 Turn 的 FIFO 消费回调及 SDK ACK 控制；数据库保留业务终态、检查点和执行代次，用于幂等与故障恢复。
+
+`waiting_tool` 是非终态：Sandbox 工具继续执行，本次 Brain 执行已结束。Turn 保留原 ID、输入受理和 Session 顺序位置，恢复尝试取得新的执行代次。
+
+REST、快照和 SSE 读取已提交的原生公开事件，并使用同一游标。断开 SSE 结束订阅，不取消 Turn。能力列表从 Portal 获取，只宣告已实现的操作；完整 Checkpoint / fork 集成与平台 Subagent 仍在实现中。
+
+检查点元数据通过 `GET /v1/sessions/{session}/checkpoints` 及 `/{checkpoint}` 读取。`workspace_available` 表示该检查点已经关联持久的私有工作目录镜像，但不能据此认定工具或交互已全部结算。元数据响应不包含原生状态或目录归档。
+
+原生管理入口接受 `POST /v1/sessions/{session}/checkpoints/restore`，请求包含 `checkpoint_id`；或 `POST /v1/sessions/{session}/fork`，请求包含 `checkpoint_id` 与 `target_session_id`。两者均要求 `Idempotency-Key`，返回异步操作。Fork 的目标须预先登记为没有执行历史的 Managed 根 Session，并使用相同 Agent 定义及资源作用域。在源 Session 下读取 `/checkpoint-operations/{operation_id}`，跟踪校验、目录导入与完成状态。Java、TypeScript、Python 的 Managed 客户端均提供对应方法，Console 也使用原生操作 ID 查询和取消。完整多副本验收尚待完成，这些写入口暂未被能力列表宣告为完整能力。
+
+控制面的 `/api/v1/agent-sessions/{session}/fork` 使用相同的检查点和操作 ID。提交前，控制面根据固定定义登记两端已有 Session 资源，保留原始 Actor；登记不创建 Turn，也不需要 Brain bootstrap。通过同一控制面 Session 路径下的 `/checkpoint-operations/{operation_id}` 查询或取消，Restore 使用 `/checkpoints/restore`。请求只包含检查点及 Fork 的目标 Session ID，不再包含恢复原因字段。
+
+管理操作完成或拒绝之前，新 Turn、文件写入与生命周期变更不能进入。历史检查点没有目录镜像、且后续工具已经改变目录时，操作返回 `checkpoint_workspace_unavailable`。`POST /checkpoint-operations/{operation_id}/cancel` 可以取消校验或快照操作；导入开始后，未确认的结果会继续阻止准入，取消返回 409。重试查询原执行，不再次导入。定义文件只在首次初始化时创建，普通 provider 重连不会重新补回已删除的文件。
+
+self_hosted 工作目录操作由 outbound Environment Worker 执行，与其他 Sandbox 操作统一使用 `/v1/hands/environments/{environment}/tool-tasks` 协议。每个 Session 配置已有 Sandbox ID，Fork 两端使用独立实例。Brain 负责 checkpoint 校验、操作阶段推进和最终基线提交，通过不可变 Execute/Control 命令交接；Hands 负责物理绑定、Worker 租约和原始执行结果。Worker 接管后查询原 executionId，并持续补传本地保存的结果，直到 Hands 确认捕获；Brain 接收结果事件后才推进 checkpoint 操作。没有独立的 workspace 领取或启动许可接口。外部 Worker 不接收数据库、MQ、Redis 凭据，压缩归档上限为 32 MiB。

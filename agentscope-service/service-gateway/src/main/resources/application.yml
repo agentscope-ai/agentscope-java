@@ -1,7 +1,10 @@
 server:
+  shutdown: graceful
   port: ${BUILDER_GATEWAY_PORT:18080}
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   application:
     name: builder-gateway
 
@@ -13,6 +16,11 @@ spring:
             # Long-lived SSE (/api/sessions/*/events/stream) must not be cut by the default timeout.
             connect-timeout: 5000
             response-timeout: 1h
+            pool:
+              # Retire idle upstream sockets before network idle timeouts can reset them.
+              # Active responses, including SSE, are not idle pool connections.
+              max-idle-time: 10s
+              eviction-interval: 5s
           default-filters:
             # Never forward client-supplied internal auth headers through the public gateway.
             - RemoveRequestHeader=X-Builder-Internal-Token
@@ -35,14 +43,41 @@ spring:
             # /api/sessions/** and /api/environments/** namespaces.
             # ------------------------------------------------------------------
             - id: agent-session-lifecycle
-              uri: ${builder.control-plane-url}
+              uri: ${builder.session-portal-url}
               order: -1
               predicates:
-                - Path=/api/v1/agent-sessions,/api/v1/agent-sessions/**
+                - Path=/api/v1/agent-sessions,/api/v1/agent-sessions/**,/v1/sessions,/v1/sessions/**
               filters:
                 - RemoveRequestHeader=X-Builder-Environment-Key
                 - RemoveRequestHeader=X-Builder-Internal-Token
                 - RemoveRequestHeader=X-Builder-Internal-User
+            - id: portal-runtime-host
+              uri: ${builder.session-portal-url}
+              order: 0
+              predicates:
+                - Method=POST
+                - Path=/api/v1/runtime-hosts/register,/api/v1/runtime-hosts/*/heartbeat,/api/v1/runtime-hosts/*/state,/api/v1/runtime-hosts/*/credentials,/api/v1/runtime-hosts/*/execution-attempts/**
+            - id: portal-collaboration-mcp
+              uri: ${builder.session-portal-url}
+              order: 0
+              predicates:
+                - Path=/mcp/collaboration
+            - id: portal-task-collaboration
+              uri: ${builder.session-portal-url}
+              order: 0
+              predicates:
+                - Header=X-Agent-Task-Token, .+
+                - Path=/api/v1/agent-tasks/**,/api/v1/issues/*,/api/v1/issues/*/comments,/api/v1/teams/*
+            - id: managed-hands-workers
+              uri: ${builder.hands-url}
+              order: 0
+              predicates:
+                - Path=/v1/hands/environments/*/tool-tasks/**
+            - id: portal-tool-tasks
+              uri: ${builder.session-portal-url}
+              order: 0
+              predicates:
+                - Path=/api/environments/*/tool-tasks/**
             - id: data-session-turn
               uri: ${builder.data-plane-url}
               order: 0
@@ -68,20 +103,20 @@ spring:
                 - Path=/api/hands/**
 
             # ------------------------------------------------------------------
-            # Scheduler plane — outbound send + IM platform callbacks/webhooks.
+            # Control plane — outbound send + IM platform callbacks/webhooks.
             # Must be higher priority than control-api's /api/channels/** CRUD.
             # ------------------------------------------------------------------
-            - id: scheduler-outbound
-              uri: ${builder.scheduler-plane-url}
+            - id: control-outbound
+              uri: ${builder.control-plane-url}
               order: 5
               predicates:
                 - Path=/api/outbound/**
 
-            - id: scheduler-channel-callbacks
-              uri: ${builder.scheduler-plane-url}
+            - id: control-channel-callbacks
+              uri: ${builder.control-plane-url}
               order: 6
               predicates:
-                - Path=/api/channels/feishu/**,/api/channels/wecom/**,/api/channels/github/**,/api/channels/gitlab/**
+                - Path=/api/channels/dingtalk/**,/api/channels/feishu/**,/api/channels/wecom/**,/api/channels/github/**,/api/channels/gitlab/**
 
             # ------------------------------------------------------------------
             # Control plane (service-controlplane) — Managed Agents APIs, the /api/v1
@@ -109,9 +144,10 @@ spring:
 # Cross-plane wiring — same property family as the scheduler plane.
 # --------------------------------------------------------------------------
 builder:
+  hands-url: ${BUILDER_HANDS_URL:http://localhost:8085}
   control-plane-url: ${BUILDER_CONTROL_URL:http://localhost:8081}
   data-plane-url: ${BUILDER_DATA_URL:http://localhost:8082}
-  scheduler-plane-url: ${BUILDER_SCHEDULER_URL:http://localhost:8083}
+  session-portal-url: ${BUILDER_SESSION_PORTAL_URL:http://localhost:8084}
 
 management:
   endpoints:

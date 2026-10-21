@@ -16,72 +16,92 @@
 package io.agentscope.builder.web.config;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import io.agentscope.builder.control.ControlPlaneClient;
 import io.agentscope.builder.web.auth.JwtService;
-import java.security.Principal;
+import io.jsonwebtoken.Claims;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Import;
-import org.springframework.test.context.support.TestPropertySourceUtils;
+import org.springframework.core.env.MapPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.config.EnableWebFlux;
+import org.springframework.web.reactive.function.server.RouterFunction;
+import org.springframework.web.reactive.function.server.RouterFunctions;
+import org.springframework.web.reactive.function.server.ServerResponse;
 
+/** Brain resource security stays intact after moving Session/Worker ingress out of the process. */
 class DataSecurityConfigLocalDevTest {
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void onlyExplicitLocalModeAcceptsRequestsWithoutValidCredentials(boolean localDev) {
-        try (AnnotationConfigApplicationContext context =
-                new AnnotationConfigApplicationContext()) {
-            TestPropertySourceUtils.addInlinedPropertiesToEnvironment(
-                    context, "builder.local-dev=" + localDev);
-            context.register(TestConfig.class);
+    @ValueSource(booleans = {true, false})
+    void resourcesUseExplicitLocalIdentityOrUserJwtAndNeverWorkerCredentials(boolean localDev) {
+        try (var context = new AnnotationConfigApplicationContext()) {
+            var jwt = mock(JwtService.class);
+            var claims = mock(Claims.class);
+            when(jwt.parse("fixture-token")).thenReturn(claims);
+            when(jwt.extractUserId(claims)).thenReturn("native-user");
+            when(jwt.extractRoles(claims)).thenReturn(List.of("user"));
+            context.getEnvironment()
+                    .getPropertySources()
+                    .addFirst(
+                            new MapPropertySource(
+                                    "fixture",
+                                    Map.of(
+                                            "builder.local-dev",
+                                            localDev,
+                                            "builder.internal-token",
+                                            "fixture-internal")));
+            context.registerBean(JwtService.class, () -> jwt);
+            context.register(DataSecurityConfig.class, Probe.class);
             context.refresh();
-            WebTestClient client = WebTestClient.bindToApplicationContext(context).build();
-            for (String path : new String[] {"/api/probe", "/api/internal/probe"}) {
-                var response =
-                        client.get()
-                                .uri(path)
-                                .header("Authorization", "Bearer invalid")
-                                .header("X-Builder-Environment-Key", "invalid")
-                                .exchange();
-                if (localDev) {
-                    response.expectStatus()
-                            .isOk()
-                            .expectBody(String.class)
-                            .isEqualTo("local-developer");
-                } else {
-                    response.expectStatus().isUnauthorized();
-                }
+            var client = WebTestClient.bindToApplicationContext(context).build();
+            var anonymous = client.get().uri("/api/probe").exchange();
+            if (localDev)
+                anonymous
+                        .expectStatus()
+                        .isOk()
+                        .expectBody(String.class)
+                        .isEqualTo("local-developer");
+            else anonymous.expectStatus().isUnauthorized();
+            if (!localDev) {
+                client.get()
+                        .uri("/api/probe")
+                        .header("X-Builder-Environment-Key", "worker-key")
+                        .exchange()
+                        .expectStatus()
+                        .isUnauthorized();
+                client.get()
+                        .uri("/api/probe")
+                        .header("Authorization", "Bearer fixture-token")
+                        .exchange()
+                        .expectStatus()
+                        .isOk()
+                        .expectBody(String.class)
+                        .isEqualTo("native-user");
             }
         }
     }
 
-    @Configuration
+    @Configuration(proxyBeanMethods = false)
     @EnableWebFlux
-    @Import({DataSecurityConfig.class, Probe.class})
-    static class TestConfig {
-        @Bean
-        JwtService jwtService() {
-            return new JwtService("local-development-test-secret-at-least-32chars");
-        }
-
-        @Bean
-        ControlPlaneClient controlPlaneClient() {
-            return mock(ControlPlaneClient.class);
-        }
-    }
-
-    @RestController
     static class Probe {
-        @GetMapping({"/api/probe", "/api/internal/probe"})
-        String probe(Principal principal) {
-            return principal.getName();
+        @Bean
+        RouterFunction<ServerResponse> probe() {
+            return RouterFunctions.route()
+                    .GET(
+                            "/api/probe",
+                            request ->
+                                    request.principal()
+                                            .flatMap(
+                                                    principal ->
+                                                            ServerResponse.ok()
+                                                                    .bodyValue(
+                                                                            principal.getName())))
+                    .build();
         }
     }
 }

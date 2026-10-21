@@ -29,7 +29,6 @@ import (
 
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/collaboration"
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store/memory"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/taskauth"
@@ -37,38 +36,19 @@ import (
 )
 
 type managedRecorder struct {
-	sessionID    string
-	wakes        []string
-	claims       []product.ManagedRuntimeFence
-	aborts       []product.ManagedAttemptAbort
-	abortSession string
-	abortOwner   string
-	order        []string
-	claimErr     error
+	admitted  []uuid.UUID
+	cancelled []uuid.UUID
+	turnID    string
+	admitErr  error
 }
 
-func (m *managedRecorder) FindOrCreateSessionID(context.Context, string, string, string, string) (string, error) {
-	return m.sessionID, nil
+func (m *managedRecorder) AdmitManagedAttempt(_ context.Context, id uuid.UUID) (string, error) {
+	m.admitted = append(m.admitted, id)
+	return m.turnID, m.admitErr
 }
 
-func (m *managedRecorder) PostSessionWakeEvent(_ context.Context, _ string, _ string, text string) error {
-	m.order = append(m.order, "wake")
-	m.wakes = append(m.wakes, text)
-	return nil
-}
-
-func (m *managedRecorder) ClaimManagedRuntimeFence(_ context.Context, _ string,
-	agentTaskID, attemptID uuid.UUID, dispatchGeneration int64, turnID string) error {
-	m.order = append(m.order, "claim")
-	m.claims = append(m.claims, product.ManagedRuntimeFence{AgentTaskID: agentTaskID.String(),
-		AttemptID: attemptID.String(), DispatchGeneration: dispatchGeneration, TurnID: turnID})
-	return m.claimErr
-}
-
-func (m *managedRecorder) PostManagedAttemptAbort(_ context.Context, sessionID, ownerID string,
-	abort product.ManagedAttemptAbort) error {
-	m.abortSession, m.abortOwner = sessionID, ownerID
-	m.aborts = append(m.aborts, abort)
+func (m *managedRecorder) CancelManagedAttempt(_ context.Context, id uuid.UUID) error {
+	m.cancelled = append(m.cancelled, id)
 	return nil
 }
 
@@ -102,22 +82,14 @@ func TestManagedWakeInstructionsDescribeTeamRoleLifecycle(t *testing.T) {
 	}
 }
 
-func TestCancelManagedAttemptUsesCompleteOldTurnFence(t *testing.T) {
-	taskID, attemptID := uuid.New(), uuid.New()
+func TestCancelManagedAttemptUsesImmutableAttemptIdentity(t *testing.T) {
 	managed := &managedRecorder{}
-	attempt := &controlmodel.ExecutionAttempt{ID: attemptID, AgentTaskID: taskID,
-		BackendKind: controlmodel.DataPlaneManaged, SessionID: "session-a", ManagedOwnerRef: "owner-a",
-		DispatchGeneration: 4, TurnID: "turn-a"}
+	attempt := &controlmodel.ExecutionAttempt{ID: uuid.New(), BackendKind: controlmodel.DataPlaneManaged}
 	if err := (&Resolver{Managed: managed}).CancelAttempt(t.Context(), attempt); err != nil {
 		t.Fatal(err)
 	}
-	if managed.abortSession != attempt.SessionID || managed.abortOwner != attempt.ManagedOwnerRef || len(managed.aborts) != 1 {
-		t.Fatalf("managed abort target=%s/%s payload=%+v", managed.abortSession, managed.abortOwner, managed.aborts)
-	}
-	abort := managed.aborts[0]
-	if abort.AgentTaskID != taskID || abort.AttemptID != attemptID || abort.DispatchGeneration != 4 ||
-		abort.TurnID != "turn-a" || abort.Reason != "task_cancel_requested" {
-		t.Fatalf("managed abort lost physical fence: %+v", abort)
+	if len(managed.cancelled) != 1 || managed.cancelled[0] != attempt.ID {
+		t.Fatalf("wrong cancellation target: %+v", managed.cancelled)
 	}
 }
 
@@ -165,50 +137,68 @@ func TestResolverDispatchesSameAgentTaskContractToEveryBackend(t *testing.T) {
 		}
 		runtimeBinding, _ := binding.RuntimeBinding()
 		task := newTask(agent.ID.String())
-		managed := &managedRecorder{sessionID: "managed-session"}
+		managed := &managedRecorder{turnID: "portal-real-turn"}
 		resolver := &Resolver{Store: st, Managed: managed, Tokens: tokens}
 		result, err := resolver.Dispatch(ctx, task.ID, &runtimeBinding)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result.Task.Status != controlmodel.AgentTaskDispatched || result.SessionID != managed.sessionID ||
-			result.TaskToken == "" || len(managed.wakes) != 1 || len(managed.claims) != 1 ||
-			len(managed.order) != 2 || managed.order[0] != "claim" || managed.order[1] != "wake" {
-			t.Fatalf("managed dispatch: result=%+v wakes=%+v", result, managed.wakes)
+		if result.Task.Status != controlmodel.AgentTaskDispatched || result.Execution.TurnID != "" || len(managed.admitted) != 0 {
+			t.Fatalf("dispatch ran before durable Outbox delivery: %+v", result)
 		}
-		if managed.claims[0].AgentTaskID != task.ID.String() || managed.claims[0].AttemptID != result.Execution.ID.String() ||
-			managed.claims[0].DispatchGeneration != result.Execution.DispatchGeneration ||
-			managed.claims[0].TurnID != result.Execution.TurnID {
-			t.Fatalf("managed dispatch claimed wrong runtime fence: %+v execution=%+v", managed.claims[0], result.Execution)
+		if err = resolver.SubmitManagedAttempt(ctx, result.Execution.ID); err != nil {
+			t.Fatal(err)
 		}
-		if strings.Contains(managed.wakes[0], result.TaskToken) ||
-			strings.Contains(strings.ToLower(managed.wakes[0]), "token") ||
-			strings.Contains(managed.wakes[0], task.ID.String()) {
-			t.Fatalf("managed wake leaked task identity or credentials: %q", managed.wakes[0])
+		bound, err := st.ExecutionAttempts().Get(ctx, result.Execution.ID)
+		if err != nil || bound.TurnID != managed.turnID || bound.LeaseExpiresAt != nil || bound.HeartbeatAt != nil {
+			t.Fatalf("native receipt/liveness: %+v %v", bound, err)
 		}
-		session, err := st.Sessions().Get(ctx, task.Tenant, agent.AgentKey, task.Namespace, managed.sessionID)
-		if err != nil || session.AgentID != agent.ID || session.BindingID != binding.ID || session.OriginType != "agent-task" ||
-			session.AgentTaskID == nil || *session.AgentTaskID != task.ID || session.Tenant != task.Tenant {
-			t.Fatalf("managed session context: %+v %v", session, err)
+		if err = resolver.SubmitManagedAttempt(ctx, result.Execution.ID); err != nil {
+			t.Fatal(err)
 		}
-		var persistedContext map[string]any
-		if json.Unmarshal(session.TaskContext, &persistedContext) != nil || persistedContext["taskToken"] != nil {
-			t.Fatalf("public session context persisted task credentials: %s", session.TaskContext)
+		if len(managed.admitted) != 1 {
+			t.Fatal("bound receipt was submitted twice")
+		}
+		var intent controlmodel.RuntimeDispatchSnapshot
+		if err = json.Unmarshal(bound.RuntimeBinding, &intent); err != nil {
+			t.Fatal(err)
+		}
+		if intent.ManagedInput == "" || strings.Contains(intent.ManagedInput, result.TaskToken) || strings.Contains(intent.ManagedInput, task.ID.String()) {
+			t.Fatalf("invalid public input: %q", intent.ManagedInput)
+		}
+		session, err := st.Sessions().Get(ctx, task.Tenant, agent.AgentKey, task.Namespace, result.SessionID)
+		if err != nil || session.AgentTaskID == nil || *session.AgentTaskID != task.ID || session.Framework != string(controlmodel.DataPlaneManaged) {
+			t.Fatalf("task descriptor: %+v %v", session, err)
+		}
+		var publicContext map[string]any
+		if json.Unmarshal(session.TaskContext, &publicContext) != nil || publicContext["taskToken"] != nil {
+			t.Fatal("task token persisted in public descriptor")
 		}
 
 		failingTask := newTask(agent.ID.String())
-		claimFailure := errors.New("product runtime fence unavailable")
-		failedManaged := &managedRecorder{sessionID: "managed-session-fence-failure", claimErr: claimFailure}
-		failedResolver := &Resolver{Store: st, Managed: failedManaged, Tokens: tokens}
-		if result, dispatchErr := failedResolver.Dispatch(ctx, failingTask.ID, &runtimeBinding); !errors.Is(dispatchErr, claimFailure) || result != nil {
-			t.Fatalf("fence claim failure result=%+v err=%v", result, dispatchErr)
+		uncertain := errors.New("Portal reply lost after admission")
+		recorder := &managedRecorder{turnID: "accepted-before-timeout", admitErr: uncertain}
+		retryResolver := &Resolver{Store: st, Managed: recorder, Tokens: tokens}
+		pending, err := retryResolver.Dispatch(ctx, failingTask.ID, &runtimeBinding)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if len(failedManaged.wakes) != 0 || len(failedManaged.order) != 1 || failedManaged.order[0] != "claim" {
-			t.Fatalf("fence claim failure woke data plane: %+v", failedManaged)
+		if err = retryResolver.SubmitManagedAttempt(ctx, pending.Execution.ID); !errors.Is(err, uncertain) {
+			t.Fatalf("ambiguous response: %v", err)
 		}
-		requeued, getErr := st.Collaboration().GetAgentTask(ctx, failingTask.ID)
-		if getErr != nil || requeued.Status != controlmodel.AgentTaskQueued {
-			t.Fatalf("fence claim failure did not requeue task: task=%+v err=%v", requeued, getErr)
+		current, err := st.Collaboration().GetAgentTask(ctx, failingTask.ID)
+		if err != nil || current.Status != controlmodel.AgentTaskDispatched || *current.CurrentAttemptID != pending.Execution.ID {
+			t.Fatalf("ambiguous response replaced Attempt: %+v %v", current, err)
+		}
+		recorder.admitErr = nil
+		if err = retryResolver.SubmitManagedAttempt(ctx, pending.Execution.ID); err != nil {
+			t.Fatal(err)
+		}
+		if len(recorder.admitted) != 2 || recorder.admitted[0] != recorder.admitted[1] {
+			t.Fatalf("retry identity changed: %v", recorder.admitted)
+		}
+		if pending.SessionID == result.SessionID {
+			t.Fatal("different Attempts share a Session")
 		}
 	})
 

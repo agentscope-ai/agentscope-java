@@ -158,7 +158,12 @@ func (s *Server) reportWorkspaceApplication(c *gin.Context) {
 		return
 	}
 	var snapshot controlmodel.RuntimeDispatchSnapshot
-	if json.Unmarshal(task.RuntimeBinding, &snapshot) != nil || len(snapshot.Definition) == 0 || task.CurrentAttemptID == nil {
+	if json.Unmarshal(task.RuntimeBinding, &snapshot) != nil || task.CurrentAttemptID == nil {
+		c.JSON(409, ErrorResponse{Error: "task has no frozen Workspace definition"})
+		return
+	}
+	snapshot, decodeErr := s.store.RuntimeSnapshots().RevealDispatch(task.ID.String(), snapshot)
+	if decodeErr != nil || len(snapshot.Definition) == 0 {
 		c.JSON(409, ErrorResponse{Error: "task has no frozen Workspace definition"})
 		return
 	}

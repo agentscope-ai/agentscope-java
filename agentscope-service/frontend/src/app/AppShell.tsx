@@ -199,7 +199,7 @@ export default function AppShell() {
       <aside className={cn('fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col border-r border-border bg-white transition-transform lg:static lg:z-auto lg:translate-x-0', mobileNavOpen ? 'translate-x-0' : '-translate-x-full')}>
         <div className="border-b border-border px-4 py-4">
           <Link className="flex items-center gap-3 rounded-lg" to="/work/overview">
-            <img src="/logo.svg" alt="AgentScope" className="h-9 w-9 shrink-0" width={36} height={36} />
+            <img src="/logo.svg" alt="AgentScope Service" className="h-9 w-9 shrink-0" width={36} height={36} />
             <div className="min-w-0">
               <div className="text-lg font-bold tracking-tight text-foreground">AgentScope Service</div>
               <div className="truncate text-xs text-muted-foreground">Control plane</div>
@@ -238,7 +238,7 @@ export default function AppShell() {
         <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-3 py-2 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Menu className="h-4 w-4" /></Button>
-            <div className="hidden min-w-0 text-sm font-medium text-foreground xl:block">{context?.[1] || 'AgentScope'}</div>
+            <div className="hidden min-w-0 text-sm font-medium text-foreground xl:block">{context?.[1] || 'AgentScope Service'}</div>
           </div>
           <div className="flex items-center gap-3">
             {accessLink && <Link className="text-xs font-medium text-indigo-600" to={accessLink}>Access & dependencies</Link>}

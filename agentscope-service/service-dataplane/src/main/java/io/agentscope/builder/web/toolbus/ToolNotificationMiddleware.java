@@ -31,7 +31,7 @@ import reactor.core.publisher.Flux;
 /**
  * {@link MiddlewareBase} implementation that publishes tool-call events to {@link ToolEventBus}
  * before each tool-call execution, enabling real-time SSE streaming of tool calls in
- * {@code io.agentscope.builder.web.api.DataSessionApiController}.
+ * {@code the tool debug API; durable Session events are projected by Hands}.
  *
  * <p>The session key is derived from {@link RuntimeContext#getSessionId()} (falling back to
  * {@link RuntimeContext#getUserId()}) on the in-flight call, accessed via the agent's

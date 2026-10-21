@@ -1,0 +1,10 @@
+{
+  "protocol_revision": "agentscope-service-2026-10-19-draft3",
+  "compatibility_level": "candidate",
+  "anthropic_version": "2023-06-01",
+  "anthropic_beta": "managed-agents-2026-04-01",
+  "official_sdks": {"python": "1.15.0", "typescript": "0.135.0", "java": "2.73.0"},
+  "schema_source": "anthropic Python SDK 1.15.0 model JSON schemas",
+  "verified_scope": "See verification.md for actual commands and results; the version list alone is not a compatibility guarantee.",
+  "schema_files": ["schema/session.json", "schema/event.json"]
+}

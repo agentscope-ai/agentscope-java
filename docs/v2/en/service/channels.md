@@ -11,6 +11,8 @@ A Channel connects an external messaging platform to AgentScope Service. It rece
 
 Adapters currently include DingTalk, Feishu, WeCom, GitHub, and GitLab. Query their configuration requirements through the type API. The complete durable-work flow—linking external messages to Issues, routing work to Agents or Teams, and returning progress—currently supports Feishu only. Other adapters do not automatically have the same collaboration capabilities.
 
+For a personal conversation routed to a Managed Agent in the current source build, the provider message ID identifies one Turn. Redelivery of that message reuses the same Turn; a new message enters the next Turn of the same Session. Replies come from that Turn’s persisted public events. Retain the provider message ID when retrying delivery.
+
 ## Discover requirements and create a connection
 
 The examples use Bash, `curl`, and `jq`. Set `BASE_URL` to your Service address, and `TENANT` / `NAMESPACE` to the default scope; see [API authentication](/v2/en/service/api-reference). Run the following steps in the same Bash terminal:

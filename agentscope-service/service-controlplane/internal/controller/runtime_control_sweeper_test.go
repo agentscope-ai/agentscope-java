@@ -217,3 +217,167 @@ func TestRuntimeControlSweeperSystemCancelsExpiredManagedToolApproval(t *testing
 		}
 	}
 }
+
+func TestRuntimeControlSweeperPortalApprovalCursorSurvivesReplacement(t *testing.T) {
+	ctx := t.Context()
+	st, err := memory.Open(ctx, store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	actor := controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}
+	sessionID := uuid.New()
+	contract, _ := json.Marshal(map[string]string{"public_session_id": sessionID.String(), "portal_command_id": "scan-fixture"})
+	invocation, _, err := st.Endpoints().ReserveInvocation(ctx, &controlmodel.EndpointInvocation{EndpointID: sessionID, Mode: controlmodel.EndpointJobMode, Contract: contract})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{Tenant: "t", Namespace: "n", Title: "Portal", Creator: actor, SourceType: "endpoint", SourceRef: invocation.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{Tenant: "t", Namespace: "n", RootIssueID: issue.ID, State: controlmodel.RunPlanned, CreatedBy: actor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleRequest, _ := json.Marshal(managedToolApprovalRequest{Kind: controlmodel.ApprovalRequestKindManagedToolConfirmation, SchemaVersion: 1})
+	ordinary, err := st.Collaboration().CreateApproval(ctx, &controlmodel.Approval{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Tenant: "t", Namespace: "n", TargetType: controlmodel.ApprovalTargetExecutionAttempt, TargetRef: uuid.NewString(), RunID: &run.ID, RequestedBy: actor, ApproverRef: "owner", Request: json.RawMessage(`{"kind":"ordinary"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := st.Collaboration().CreateApproval(ctx, &controlmodel.Approval{ID: uuid.MustParse("00000000-0000-0000-0000-000000000099"), Tenant: "t", Namespace: "n", TargetType: controlmodel.ApprovalTargetExecutionAttempt, TargetRef: uuid.NewString(), RunID: &run.ID, RequestedBy: actor, ApproverRef: "owner", Request: staleRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := st.Collaboration().CreateApproval(ctx, &controlmodel.Approval{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Tenant: "t", Namespace: "n", TargetType: controlmodel.ApprovalTargetExecutionAttempt, TargetRef: uuid.NewString(), RequestedBy: actor, ApproverRef: "owner", Request: staleRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	(&RuntimeControlSweeper{Store: st, PortalOnly: true, Batch: 1}).Sweep(ctx, time.Now().UTC())
+	current, err := st.Collaboration().GetApproval(ctx, stale.ID)
+	if err != nil || current.Status != controlmodel.ApprovalPending {
+		t.Fatalf("scan exceeded finite page: %+v %v", current, err)
+	}
+	(&RuntimeControlSweeper{Store: st, PortalOnly: true, Batch: 1}).Sweep(ctx, time.Now().UTC())
+	current, err = st.Collaboration().GetApproval(ctx, stale.ID)
+	if err != nil || current.Status != controlmodel.ApprovalCancelled {
+		t.Fatalf("replacement did not continue shared cursor: %+v %v", current, err)
+	}
+	for _, id := range []uuid.UUID{ordinary.ID, legacy.ID} {
+		current, err = st.Collaboration().GetApproval(ctx, id)
+		if err != nil || current.Status != controlmodel.ApprovalPending {
+			t.Fatalf("unrelated approval mutated: %+v %v", current, err)
+		}
+	}
+}
+
+func TestRuntimeControlSweeperPortalRotationReachesExpiredAttempt(t *testing.T) {
+	ctx := t.Context()
+	st, err := memory.Open(ctx, store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	actor := controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}
+	sessionID := uuid.New()
+	contract, _ := json.Marshal(map[string]string{"public_session_id": sessionID.String(), "portal_command_id": "rotation-fixture"})
+	invocation, _, err := st.Endpoints().ReserveInvocation(ctx, &controlmodel.EndpointInvocation{EndpointID: sessionID, Mode: controlmodel.EndpointJobMode, Contract: contract})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	future, past := now.Add(time.Hour), now.Add(-time.Minute)
+	ids := []uuid.UUID{uuid.MustParse("00000000-0000-0000-0000-000000000001"), uuid.MustParse("00000000-0000-0000-0000-000000000002"), uuid.MustParse("00000000-0000-0000-0000-000000000003"), uuid.MustParse("00000000-0000-0000-0000-000000000099")}
+	for i, id := range ids {
+		source, ref := "endpoint", invocation.ID.String()
+		if i == 2 {
+			source, ref = "", ""
+		}
+		issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{Tenant: "t", Namespace: "n", Title: "rotation", Creator: actor, SourceType: source, SourceRef: ref, AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "a"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: issue.ID, Limit: 2})
+		if err != nil || len(tasks) != 1 {
+			t.Fatal(tasks, err)
+		}
+		expiry := future
+		if i >= 2 {
+			expiry = past
+		}
+		_, _, err = st.Collaboration().ClaimAgentTaskWithAttempt(ctx, store.TaskClaim{TaskID: tasks[0].ID, ExpectedVersion: tasks[0].Version, RuntimeBinding: json.RawMessage(`{}`)}, &controlmodel.ExecutionAttempt{ID: id, BackendKind: controlmodel.DataPlaneExternalApplication, State: controlmodel.ExecutionAssigned, RuntimeBinding: json.RawMessage(`{}`), LeaseExpiresAt: &expiry})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for round := 0; round < 3; round++ {
+		(&RuntimeControlSweeper{Store: st, PortalOnly: true, Batch: 1}).Sweep(ctx, now)
+		late, err := st.ExecutionAttempts().Get(ctx, ids[3])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if round < 2 && late.State != controlmodel.ExecutionAssigned {
+			t.Fatalf("scan exceeded finite page at round %d: %+v", round, late)
+		}
+		if round == 2 && (late.State != controlmodel.ExecutionFailed || late.FailureCode != "startup_timeout") {
+			t.Fatalf("live first page starved expired attempt after replacement: %+v", late)
+		}
+	}
+	for _, id := range ids[:3] {
+		unchanged, err := st.ExecutionAttempts().Get(ctx, id)
+		if err != nil || unchanged.State != controlmodel.ExecutionAssigned {
+			t.Fatalf("hot or legacy attempt mutated: %+v %v", unchanged, err)
+		}
+	}
+}
+
+func TestManagedAttemptHasNoControlPlaneLivenessTimeout(t *testing.T) {
+	ctx := t.Context()
+	st, err := memory.Open(ctx, store.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{Tenant: "native", Namespace: "n",
+		Title: "long native Turn", Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "human"},
+		AssigneeType: controlmodel.AssigneeAgent, AssigneeRef: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{IssueID: issue.ID, Limit: 2})
+	if err != nil || len(tasks) != 1 {
+		t.Fatal(tasks, err)
+	}
+	task, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx,
+		store.TaskClaim{TaskID: tasks[0].ID, ExpectedVersion: tasks[0].Version, SessionID: uuid.NewString()},
+		&controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged, State: controlmodel.ExecutionAssigned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed := []uuid.UUID{}
+	w := &RuntimeControlSweeper{Store: st, ReconcileManagedAttempt: func(_ context.Context, id uuid.UUID) error {
+		observed = append(observed, id)
+		return nil
+	}}
+	w.Sweep(ctx, time.Now().Add(24*time.Hour))
+	current, err := st.ExecutionAttempts().Get(ctx, attempt.ID)
+	if err != nil || current.State != controlmodel.ExecutionAssigned || current.Version != attempt.Version {
+		t.Fatalf("native Attempt was timed out: %+v %v", current, err)
+	}
+	currentTask, err := st.Collaboration().GetAgentTask(ctx, task.ID)
+	if err != nil || currentTask.CurrentAttemptID == nil || *currentTask.CurrentAttemptID != attempt.ID || currentTask.Status != controlmodel.AgentTaskDispatched {
+		t.Fatalf("native Task was requeued: %+v %v", currentTask, err)
+	}
+	cancelling, err := st.ExecutionAttempts().Cancel(ctx, current.ID, current.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Sweep(ctx, time.Now().Add(48*time.Hour))
+	current, err = st.ExecutionAttempts().Get(ctx, attempt.ID)
+	if err != nil || current.State != controlmodel.ExecutionCancelRequested || current.Version != cancelling.Version {
+		t.Fatalf("cancellation was fabricated by grace timeout: %+v %v", current, err)
+	}
+	if len(observed) != 2 || observed[0] != attempt.ID || observed[1] != attempt.ID {
+		t.Fatalf("native reconciliation targets: %v", observed)
+	}
+}

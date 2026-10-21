@@ -32,7 +32,7 @@ export NAMESPACE="default"
 
 ## 1. Create an environment
 
-Create a Local Environment so file tools run inside the Dataplane container. If you already have an available environment, set `ENVIRONMENT_ID` and skip this request. See [Environments](/v2/en/service/environments) for other types.
+Create a Local Environment so file tools execute through Hands. If you already have an available environment, set `ENVIRONMENT_ID` and skip this request. See [Environments](/v2/en/service/environments) for other types.
 
 ```bash
 ENVIRONMENT_JSON=$(
@@ -52,6 +52,8 @@ ENVIRONMENT_ID=$(jq -er '.id' <<< "$ENVIRONMENT_JSON")
 <span id="create-the-identity-and-managed-definition"></span>
 
 <span id="2-create-the-notes-assistant"></span>
+
+A local Environment now executes through Hands. Before sending this Agent a task, start Hands for its Environment using the [Environment guide](/v2/en/service/environments#2-start-hands). Creating the resource alone does not provide an online Worker.
 
 ## 2. Create an Agent
 

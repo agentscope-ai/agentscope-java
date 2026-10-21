@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Per-session hands-lease counters: acquires, releases, and acquire timeouts. Phase D
- * observability for {@code HandsLeaseService} — read by {@code DeploymentService} / the
+ * observability for {@code Hands execution lifecycle} — read by {@code DeploymentService} / the
  * deployment status endpoint to surface self_hosted hands health without wiring a full metrics
  * backend.
  */

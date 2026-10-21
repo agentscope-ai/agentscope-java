@@ -15,7 +15,7 @@
 # Copyright 2024-2026 the original author or authors.
 # Licensed under the Apache License, Version 2.0.
 
-"""Durable local outbox for acknowledged ASDP session events."""
+"""Durable local outbox for acknowledged RuntimeProtocol session events."""
 from __future__ import annotations
 
 import hashlib

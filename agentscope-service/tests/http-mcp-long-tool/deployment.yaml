@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentscope-service-long-tool-mcp
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  selector:
+    matchLabels: {app: agentscope-service-long-tool-mcp}
+  template:
+    metadata:
+      labels: {app: agentscope-service-long-tool-mcp}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 200
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: mcp
+          image: registry.example.com/agentscope/http-mcp-long-tool:latest
+          ports: [{name: http, containerPort: 8000}]
+          env:
+            - name: MCP_DATABASE_POOL_SIZE
+              value: "16"
+            - name: MCP_EXECUTION_POLL_SECONDS
+              value: "1"
+            - name: MCP_EXECUTION_DATABASE_URI
+              valueFrom:
+                secretKeyRef: {name: agentscope-service-long-tool-mcp-execution, key: uri}
+            - name: MCP_TEST_TOKEN
+              valueFrom:
+                secretKeyRef: {name: agentscope-service-long-tool-mcp-auth, key: token}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentscope-service-long-tool-mcp
+spec:
+  type: ClusterIP
+  selector: {app: agentscope-service-long-tool-mcp}
+  ports: [{name: http, port: 8000, targetPort: http}]

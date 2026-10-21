@@ -55,6 +55,7 @@ export function presentEvent(event: ConversationEvent) {
     'agent.message': ['Agent response', 'Response content emitted by the agent runtime.'],
     'assistant.message': projected ? ['Task result recorded', 'The control plane recorded the task result in this session.'] : ['Assistant response', 'Assistant response content recorded in this session.'],
     'agent.thinking': ['Thinking recorded', 'Reasoning content exposed by the model/runtime. This is separate from the final response.'],
+    'turn.waiting_tool': ['Waiting for tools', 'The Sandbox tool is still running. The same Turn resumes when its result is available.'],
     'turn.completed': ['Turn completed', 'The execution turn was marked complete. Other runtime events can still arrive afterward.'],
     'turn.failed': ['Turn failed', 'The execution turn was marked failed.'],
   };

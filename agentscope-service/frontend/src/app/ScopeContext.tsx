@@ -136,6 +136,8 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
   const authorized = descriptor?.namespaces ? resolveAuthorizedNamespace(descriptor.namespaces, requestedTenant, requestedNamespace, descriptor.namespace) : undefined;
   const tenant = authorized?.tenant ?? requestedTenant;
   const namespace = authorized?.name ?? requestedNamespace;
+  const scopeQueryPending = mode === 'multi' && !!authorized &&
+    (params.get('tenant') !== tenant || params.get('namespace') !== namespace);
   setRequestNamespace(tenant, namespace, token);
   useEffect(() => {
     if (!descriptor?.namespaces || !authorized || mode !== 'multi') return;
@@ -202,7 +204,8 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
   if (scopeError) {
     return <div className="flex h-full items-center justify-center px-6 text-center text-sm text-destructive">{scopeError}</div>;
   }
-  if (!descriptor) {
+  // Normalize the scope URL before mounting pages that may redirect themselves.
+  if (!descriptor || scopeQueryPending) {
     return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading console…</div>;
   }
   return <ScopeContext.Provider key={`${token}:${tenant}:${namespace}:${authorityVersion}`} value={value}>{children}</ScopeContext.Provider>;

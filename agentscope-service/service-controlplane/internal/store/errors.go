@@ -27,4 +27,7 @@ var (
 	// ErrForbidden is returned when a machine identity cannot claim the
 	// requested logical Agent or crosses a tenant/namespace boundary.
 	ErrForbidden = errors.New("store: forbidden")
+
+	// ErrResourceLimit rejects growth that would exceed a bounded runtime graph.
+	ErrResourceLimit = errors.New("store: resource limit exceeded")
 )

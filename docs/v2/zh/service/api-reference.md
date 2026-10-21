@@ -3,7 +3,7 @@ title: "API、SDK 与目录管理"
 en_link: /v2/en/service/api-reference
 ---
 
-业务应用统一通过 Session API 调用 Agent、Team 和 Workflow。管理 API 用于准备这些资源、配置权限和发布 Workflow revision；应用调用时直接选择目标创建 Session，不需要再发布一层服务入口。完整接入流程见[通过 API 使用 Agent](/v2/zh/service/service-api)，本页用于查找路径和参数。
+业务应用通过发布后的 Endpoint／Invocation API 接入，也可以使用 Managed 原生 Session API 直接控制 Session 和 Turn。管理 API 用于准备资源与定义。业务调用见[API 指南](/v2/zh/service/service-api)，MQ／Redis 执行入口见[Managed 原生契约](/v2/zh/service/claude-session-api)。
 
 <span id="认证与空间"></span>
 
@@ -15,45 +15,47 @@ en_link: /v2/en/service/api-reference
 
 Application 保存调用方身份、成员和额度。创建凭据时需要显式给出 `targets` 和 `scopes`，服务只返回一次完整的 `apiKey`；列表接口不会返回明文。应用凭据不会自动获得管理资源或替指定人员审批的权限。
 
-| API | 参数与行为 |
-| --- | --- |
-| `POST /api/v1/applications` | `name`, `tenant`, `namespace`; `description`, `members`, `maxConcurrent`, `tokenBudget` |
-| `GET /api/v1/applications` / `/{id}` | 列表或详情 |
-| `PATCH /api/v1/applications/{id}` | `version`, `name`, `description`, `status`, `members`, `maxConcurrent`, `tokenBudget` |
-| `POST /api/v1/applications/{id}/credentials` | `name`, `targets:[{type,id}]`, `scopes`; `expiresAt` |
-| `GET /api/v1/applications/{id}/credentials` | 凭据元数据 |
-| `DELETE /api/v1/applications/{id}/credentials/{credentialId}` | 撤销凭据 |
+## Managed 原生 Session API
 
-凭据 scope 包括 `invoke`、`read`、`interact`、`cancel` 和 `webhooks:write`。Application 成员角色为 `viewer`、`operator`、`approver`。并发限制用于控制应用待处理的工作数量；tokenBudget 依据已报告用量限制后续调用，不是供应商的预付费硬额度。
-
-## Session 与 Turn API
-
-以下路径以 `/api/v1/agent-sessions` 为前缀。创建 Session 时，`target.type` 为 `agent`、`team` 或 `workflow`，`target.id` 为相应资源 ID。Agent 可指定 `version`，Workflow 可指定 `revisionId`。省略版本时，Service 在创建会话时解析并固定版本，后续 Turn 沿用该配置。
-
-Managed Session 还可指定 `environmentId`、`memoryStoreIds`、`vaultIds`、`agentOverrides` 和 `resources`。通用参数包括 `timeoutSeconds`、`budget.maxTokens`、`inputSchema`、`outputSchema` 和 `resultMapping`；需要约束业务输入和输出时，应在创建 Session 时提供这些契约。
+Managed 执行使用 `/v1/sessions`，下表路径均相对于此入口。其他后端保留
+`/api/v1/agent-sessions` 及各自的请求体、能力和游标；不要向这些入口提交原生 Managed ID 或 Input。
 
 | API | 用途 |
 | --- | --- |
-| `POST /` | 创建会话；可携带幂等键 |
-| `GET /` | 列表：agentId、status、limit、offset |
-| `GET /{session}` | 读取会话及固定目标 |
-| `PATCH /{session}` | 更新 Managed 的环境与资源设置 |
-| `POST /{session}/archive, /restore` | 归档与解除归档 |
-| `DELETE /{session}` | 停止应用访问该会话 |
-| `GET /{session}/capabilities` | 目标能力与上下文语义 |
-| `POST /{session}/turns` | message 或 input；必须携带幂等键 |
-| `GET /{session}/turns, /turns/{turn}` | 任务列表与状态 |
-| `GET /{session}/snapshot, /events, /events/stream` | 会话快照和持久事件 |
-| `GET /{session}/turns/{turn}/snapshot, /events, /events/stream` | 单个任务的快照和事件 |
-| `GET /{session}/turns/{turn}/capabilities` | 读取 available_commands |
-| `POST /{session}/turns/{turn}/actions, /inputs, /cancel, /resume` | 交互命令；必须携带幂等键 |
-| `GET /{session}/turns/{turn}/commands/{command}` | 命令回执状态 |
-| `POST/GET /{session}/files` | 上传字节或列出会话文件 |
-| `GET /{session}/files/{file}/content` | 读取已授权的文件内容 |
-| `POST/GET /{session}/webhooks` | 注册或查看通知订阅 |
-表中逗号后的路径与同一行第一个路径共享前缀。Turn 下也提供 `/actions`、`/usage`、`/artifacts` 和 `/webhooks` 查询；Webhook 撤销与重试分别使用 `DELETE /webhooks/{id}` 和 `POST /webhooks/{id}/retry`。
+| `POST /` | 固定 `agent`、可选 `environment_id`、资源和配置；必须带幂等键 |
+| `GET /` | Keyset 列表：`after`、`limit`、`order`、`lifecycle`、`agent_id` |
+| `GET /{session}` | 读取 Session 与固定配置 |
+| `POST /{session}` | 更新 `title` 和字符串键值 `metadata` |
+| `POST /{session}/archive` 或 `/restore`；`DELETE /{session}` | 使用稳定 key 受理生命周期操作 |
+| `GET /{session}/lifecycle/{command}` | 查询该生命周期操作的持久回执 |
+| `GET /{session}/capabilities` | 显式文件、产物、预算和检查点能力 |
+| `POST /{session}/turns` | 提交 `{"input":{"message":"任务"}}` 或结构化 Agent 输入；必须带稳定 key |
+| `GET /{session}/turns` | `after`、`limit`、`order`、`status` |
+| `GET /{session}/turns/{turn}` | 受理、执行、投递状态及 `inputs_open` |
+| `POST /{session}/turns/{turn}/inputs` | `type=steer|inject|reply|cancel`、`payload`；reply 另带 `action_id` |
+| `GET /{session}/turns/{turn}/inputs` 或 `/inputs/{input}` | 有序 Input 列表或单项受理／应用回执 |
+| `GET /{session}/snapshot` 或 `/turns/{turn}/snapshot` | Session 或单 Turn 的固定有界资源快照 |
+| `GET /{session}/resources/{kind}` | 使用 `snapshot_id`、`after`、`limit` 继续上述任一种快照 |
+| `GET /{session}/events` 或 `/events/stream` | Session 日志分页或持久 SSE |
+| `GET /{session}/usage` 或 `/turns/{turn}/usage` | 权威汇总与已提交游标 |
+| `GET /{session}/turns/{turn}/capabilities` | 当前可用操作与显式支持标志 |
+| `POST/GET /{session}/files` | 不可变二进制上传或有界元数据列表 |
+| `GET /{session}/files/{file}` 或 `/files/{file}/content` | 文件元数据或内容 |
+| `POST/GET /{session}/artifacts` | 发布交付物或读取固定资源页 |
+| `GET/DELETE /{session}/artifacts/{artifact}` | 读取或移除发布记录；移除保留文件内容 |
+| `GET /{session}/artifacts/{artifact}/content` | 平台拥有的内容；不抓取外部 HTTPS 引用 |
+| `GET/PUT /{session}/budget` | 读取或替换根 Session 共享预算；PUT 使用 `If-Match` |
+| `GET /{session}/checkpoints` | 已提交的检查点元数据，具有独立分页水位 |
 
-Managed Agent 的 `/budget`、`/checkpoints`、`/fork`、`/inputs/inject`、`/subagents` 与 `/export` 是同一套 API 的能力扩展。并非每个目标都支持这些操作，请按[会话指南](/v2/zh/service/session-event-log)与 capabilities 使用。文件格式见[文件与产物](/v2/zh/service/files)，事件与签名见 [SSE](/v2/zh/service/sse-events)。
+“或”后的路径沿用同一行的 Session 前缀。观察一个原生 Turn 时，读取 Turn 快照，继续订阅
+**Session** 事件流，按 `data.turn_id` 过滤展示，同时对每个已应用帧推进 Session 游标。
+当前没有原生 Turn 专属 events 路由。HTTP 快照返回有界的 `resources.<kind>.data` 页面，携带
+`snapshot_id`、`as_of`、有效期和续页信息。控制台辅助函数会转换这些页面，其视图类型不是原始响应。
+
+答复和取消都是 Input，分别记录投递与应用状态。长工具挂起后自动恢复。当前 capabilities 声明
+`resume=false`、`checkpoint_restore=false`、`fork=false`；旧的 `/actions`、`/commands`、工具／工作区
+恢复和 trace 入口不属于原生控制接口。原生 Webhook 注册与完整历史状态恢复仍属于待完成迁移。
+详见[原生契约](/v2/zh/service/claude-session-api)、[文件](/v2/zh/service/files)与[SSE](/v2/zh/service/sse-events)。
 
 <span id="agents"></span>
 ## 统一 Agent 目录与运行绑定
@@ -119,7 +121,7 @@ curl -sS --fail-with-body -G "$BASE_URL/api/v1/agent-runtime-policies/$AGENT_ID"
 
 ## SDK 与可运行示例
 
-Python 的 `ManagementClient` 用于准备资源与凭据，`ServiceClient` 用于创建 Session、提交 Turn 和读取结果。前端 TypeScript 客户端位于 `frontend/src/api/serviceSessions.ts`。运行时注册和任务回报 SDK 则用于接入执行器，与应用调用客户端的职责不同。
+Python 的 `ManagementClient` 用于准备资源与凭据，`ServiceClient` 用于创建 Session、提交 Turn 和读取结果。应用侧另有 Java `io.agentscope.service.client.ServiceClient`（`agentscope-service/service-client`）及 DSH 包的 `ServiceClient`。控制台 TypeScript 客户端位于 `frontend/src/api/serviceSessions.ts`。运行时注册和任务回报 SDK 则用于接入执行器，与应用调用客户端的职责不同。
 
 ```python
 import os
@@ -143,4 +145,28 @@ print(client.snapshot(session["id"]))
 
 管理资源更新前先读取当前版本。Issue 决策与 Workflow 发布使用 `expectedVersion`，Agent 定义等更新使用各自的 `version` 字段，不能自动用新版本重放已经过期的人工决定。
 
-机器可读契约位于 `agentscope-service/docs/service-api/openapi-v1.json`，其中列出当前 Session API 和应用凭据路径。旧调用入口的迁移说明位于同目录的 `session-api-migration.md`。
+当前 Portal 部署采用上述资源快照和回执格式。通过 Service 发布清单选择配套 SDK 版本；旧 Service 数据格式与命令路径不能混用。
+
+Java 客户端要求 Java 17 与 Jackson，不依赖服务端模块。调用会阻塞，应在应用线程执行；
+默认 30 秒总超时包含响应体和 SSE 连接。停止消费时关闭流，从最后已应用游标重新连接。
+Java、Python 和 DSH 的 JSON 响应及上传限制为 16 MiB，缓冲下载为 100 MiB；文件输入前
+读取 Session capabilities。构建制品和 SDK 版本元数据不代表 Maven 仓库已经发布。
+
+## Managed 运行时协议
+
+Managed Session 使用 `/v1/sessions`。待办位于
+`snapshot.resources.required_actions.data`。确认答复提交到
+`POST /v1/sessions/{session}/turns/{turn}/inputs`，请求为
+`{"type":"reply","action_id":"ACTION_ID","payload":{"allow":true,"reason":"..."}}`。
+重试使用同一个显式幂等键和请求体。
+
+Input 回执包含 `id`、`turn_id`、`status` 和 `delivery_status`。
+`status` 为 `accepted`、`applied` 或 `rejected`；拒绝时还包含 `rejection_reason`。
+使用 `GET /v1/sessions/{session}/turns/{turn}/inputs/{input}` 查询。
+投递完成不代表输入已经应用；cancel Input 已应用也不能证明 Turn 和工具已经停止，
+应用仍需继续观察 Turn 终态。
+
+Managed Endpoint Invocation 的命令回执还包含 `input_id`、`input_status` 和
+`input_delivery_status`。原生 Input 应用或拒绝前，命令可以保持 `submitted`。
+Managed Turn 不提供独立的 `resume` 操作。SSE 断线后执行继续，客户端从最后已应用的
+游标续传。原生资源和轮内操作见 [Managed Session API](/v2/zh/service/claude-session-api)。

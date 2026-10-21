@@ -10,7 +10,7 @@ Agent 通过工具读写文件时，工作位置由 Environment 决定；上传�
 
 ## 上传会话文件
 
-以下示例沿用[通过 Session API 接入应用](/v2/zh/service/service-api)中的 Session 和应用凭据，并假设本地已有 `report.pdf`。上传接口返回文件的 `id`；应用保存这个值，随后以 `file_id` 放入结构化消息。文件最多为 16 MiB，并归属于当前 Session，其他 Session 不能直接引用它。
+以下示例沿用[通过 Session API 接入应用](/v2/zh/service/service-api)中的 Session 和应用凭据，并假设本地已有 `report.pdf`。Managed 上传返回 `file_id`、`media_type`、`sha256` 和 `download_url`；应用保存 `file_id`，用于结构化消息。当前 Portal 只为 Managed Session 开放这些文件接口；其他后端声明 `files=false`、`file_input=false`，请求返回能力不支持错误。文件最多为 16 MiB，并归属于当前 Session，其他 Session 不能直接引用它。
 
 先确认 Session 支持文件存储与文件输入；上传请求直接发送文件字节，不使用 multipart 表单：
 
@@ -27,7 +27,7 @@ FILE_JSON=$(
     -H "Content-Type: application/pdf" \
     --data-binary @report.pdf
 )
-FILE_ID=$(jq -er '.id' <<< "$FILE_JSON")
+FILE_ID=$(jq -er '.file_id' <<< "$FILE_JSON")
 ```
 
 再将文件 ID 放入这一轮任务的输入：
@@ -60,7 +60,11 @@ JSON
 TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
 ```
 
-这个输入格式适用于 Managed Agent。Team 和 Workflow 接收业务定义的任务输入，Service 会将其中的会话文件关联为任务附件；执行器仍需具备读取和处理附件的能力。External 或 Hosted 的直接对话不自动获得 Managed 的文件输入能力，接入前检查 `file_input`。
+这个输入格式适用于 Managed Agent。Team、Workflow、External 和 Hosted 的文件输入适配仍在实现；发送引用前检查 `file_input`。文件输入能力不代表当前模型能够理解所有文件类型。
+
+单次 Managed 输入最多包含 128 个文件引用，解析的文件内容合计最多 64 MiB；重复引用计入两项限制。单文件默认上传上限仍为 16 MiB。
+
+上传需要 Session 的 `interact` 权限，读取元数据和下载需要 `read` 权限。Portal 流式转发到私有运行端；Portal 和数据面各自默认 16 个传输槽位，整次传输限时 30 秒，饱和返回 HTTP 429。运维可配置 `BUILDER_PORTAL_FILE_TRANSFER_SLOTS` 和 `BUILDER_RUNTIME_FILE_TRANSFER_SLOTS`。
 
 上传重试时使用相同的 key、文件名、内容类型和字节内容。如果其中任意一项改变，应使用新 key。`X-File-Name` 的非 ASCII 字符需要 UTF-8 百分号编码。上传只负责保存文件，模型是否能够理解 PDF、图片或音频，还取决于模型和工具配置。
 
@@ -74,7 +78,7 @@ curl -sS --fail-with-body -G "$SESSION_URL/files" \
   --data-urlencode "offset=0"
 ```
 
-列表返回 `items` 和 `next_offset`。后者非空时，用它替换下一次请求的 `offset`，直至返回 null。
+文件列表返回 `data`、`next_offset` 和 `has_more`。当 `has_more` 为 true 时，从 `next_offset` 继续读取。
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/files/$FILE_ID/content" \
@@ -82,6 +86,8 @@ curl -sS --fail-with-body "$SESSION_URL/files/$FILE_ID/content" \
 ```
 
 Managed Session 可以通过 `POST /artifacts` 将已上传的文件显式发布为产物，请求体为 `{"file_id":"RETURNED_FILE_ID"}`，并提供幂等键。产物也可以引用可访问的外部 HTTPS 资源。应用从快照或 `/artifacts` 中取得实际产物记录，再按照它的文件引用下载；不要根据 Agent 回复中猜测的路径拼接下载地址。
+
+发布需要 `interact` 权限。Portal 在同一事务中提交发布收据、公开事件和查询投影；相同幂等键使用不同输入时返回 HTTP 409。`DELETE /artifacts/{artifactId}` 移除当前交付记录并产生 `artifact.deleted`，保留已上传的文件和既有快照。重试原发布幂等键返回原收据，不会重新发布已删除的产物；再次发布需要新幂等键。
 
 下面将已经上传并核验过的结果文件登记为 Managed 产物。`RESULT_FILE_ID` 必须是当前 Session 的真实文件 ID；这一步登记交付记录，不会从工作目录读取或生成文件。
 
@@ -108,7 +114,8 @@ curl -sS --fail-with-body "$SESSION_URL/artifacts"
 
 ```bash
 ARTIFACT_METADATA=$(
-  curl -sS --fail-with-body "$SESSION_URL/artifacts/$ARTIFACT_ID"
+  curl -sS --fail-with-body "$SESSION_URL/artifacts" \
+    | jq -er --arg id "$ARTIFACT_ID" '.data[].data | select(.artifact_id == $id)'
 )
 RESULT_FILE_ID=$(jq -er '.file_id' <<< "$ARTIFACT_METADATA")
 ```
@@ -137,7 +144,7 @@ JSON
 
 </Accordion>
 
-Team 和 Workflow 的任务产物由执行器回报，应用可以从 Turn 的 `/artifacts` 查看，再使用 `/turns/{turnId}/artifacts/{artifactId}` 下载。验收时应检查文件内容、版本和访问权限，不能仅凭任务返回 `completed` 判断交付物正确。[文档核验](/v2/zh/service/cases/document-verification)和[产品内文件交付](/v2/zh/service/cases/in-product-delivery)说明了业务端如何使用这些结果。
+任务执行器通过运行端适配器回报已发布产物，应用从 Turn 的 `/artifacts` 查看，再使用 `/turns/{turnId}/artifacts/{artifactId}/content` 下载；不带 `/content` 的路径返回元数据。Portal 检查读取权限，运行端再次检查产物的 Turn 归属和校验和；下载有并发上限和 30 秒期限。验收时应检查文件内容、版本和访问权限，不能仅凭任务返回 `completed` 判断交付物正确。[文档核验](/v2/zh/service/cases/document-verification)和[产品内文件交付](/v2/zh/service/cases/in-product-delivery)说明了业务端如何使用这些结果。
 
 <Accordion title="下载 Team 或 Workflow 的任务产物">
 
@@ -149,7 +156,7 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts"
 
 ```bash
 TURN_ARTIFACT_ID="TASK_ARTIFACT_ID_FROM_RESPONSE"
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts/$TURN_ARTIFACT_ID" \
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts/$TURN_ARTIFACT_ID/content" \
   --output task-result.pdf
 ```
 

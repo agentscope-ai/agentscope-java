@@ -30,6 +30,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 	authv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -46,6 +47,7 @@ import (
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/realtime"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimeauth"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimebinding"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimeportal"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/scheduler"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/secretcrypto"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/sessionops"
@@ -66,19 +68,6 @@ type ConversationTurnSender interface {
 	SendConversationTurn(tenant, namespace, instanceID string, command *asdp.ConversationTurnCommand) error
 }
 
-// ManagedToolConfirmationSender delivers one durable control-plane Approval
-// decision to the managed data plane that owns the corresponding HITL ticket.
-type ManagedToolConfirmationSender interface {
-	PostManagedToolConfirmation(ctx context.Context, sessionID, ownerID, toolUseID string, decision product.ManagedToolConfirmationDecision) error
-}
-
-// ManagedAttemptAbortSender delivers a fully fenced old-turn interrupt. It is
-// separate from the decision sender so tests and alternative data planes can
-// implement either capability explicitly.
-type ManagedAttemptAbortSender interface {
-	PostManagedAttemptAbort(ctx context.Context, sessionID, ownerID string, abort product.ManagedAttemptAbort) error
-}
-
 // InventoryProvider exposes the latest per-instance inventory reports held
 // by the ASDP connection registry. Implemented by asdp.Server.
 type InventoryProvider interface {
@@ -87,14 +76,21 @@ type InventoryProvider interface {
 
 // ServerOptions configures the REST API server.
 type ServerOptions struct {
-	LocalDev              bool // Explicitly bypass end-user authentication/authorization for local development.
-	ServiceEventRetention time.Duration
-	AccountDirectory      AccountDirectory
-	Client                client.Client
-	Store                 store.Store
-	Prober                prober.DataPlaneProber
-	Addr                  string
-	Experimental          bool
+	PortalClient *runtimeportal.Client
+	// RuntimeOnly exposes private execution protocols without resource CRUD or user admission.
+	RuntimeOnly bool
+	// PortalRuntime enables the private execution protocol in the combined control plane.
+	PortalRuntime bool
+	// DisableExecutionWorkers leaves durable execution intents to the runtime role.
+	DisableExecutionWorkers bool
+	LocalDev                bool // Explicitly bypass end-user authentication/authorization for local development.
+	ServiceEventRetention   time.Duration
+	AccountDirectory        AccountDirectory
+	Client                  client.Client
+	Store                   store.Store
+	Prober                  prober.DataPlaneProber
+	Addr                    string
+	Experimental            bool
 	// ASDPCommands, when non-nil, delivers session commands over live ASDP
 	// streams before falling back to the HTTP data-plane contract.
 	ASDPCommands SessionCommandSender
@@ -133,13 +129,11 @@ type ServerOptions struct {
 	// control-plane transcript store (NAS / object storage). When it returns
 	// ok=true, getSessionMessages skips the live DP fallback and does not
 	// require the message-query capability.
-	TranscriptMessages   TranscriptMessagesFunc
-	Features             features.Gates
-	ArtifactProvider     artifact.Provider
-	CollaborationEvents  *realtime.Hub
-	ManagedConfirmations ManagedToolConfirmationSender
-	ManagedAttemptAborts ManagedAttemptAbortSender
-	GitHubTransport      worksource.GitHubTransport
+	TranscriptMessages  TranscriptMessagesFunc
+	Features            features.Gates
+	ArtifactProvider    artifact.Provider
+	CollaborationEvents *realtime.Hub
+	GitHubTransport     worksource.GitHubTransport
 	// ScopeMode controls whether tenant/namespace are selectable by callers or
 	// fixed by this deployment. Empty preserves the multi-scope library default;
 	// the service-controlplane binary explicitly defaults product deployments to single.
@@ -150,42 +144,45 @@ type ServerOptions struct {
 
 // Server is the REST API server for the control plane.
 type Server struct {
-	localDev              bool
-	accounts              AccountDirectory
-	client                client.Client
-	store                 store.Store
-	prober                prober.DataPlaneProber
-	router                *gin.Engine
-	httpServer            *http.Server
-	experimental          bool
-	authToken             string
-	tlsCertFile           string
-	tlsKeyFile            string
-	kubeClient            kubernetes.Interface
-	asdpCommands          SessionCommandSender
-	asdpInventory         InventoryProvider
-	product               *product.Server
-	staticDir             string
-	registry              *dataplane.Registry
-	internalToken         string
-	hostedStore           bool
-	transcriptMessages    TranscriptMessagesFunc
-	sessionOps            *sessionops.Router
-	features              features.Gates
-	taskPlane             *taskplane.Service
-	runtimeBindings       *runtimebinding.Resolver
-	taskTokens            taskauth.Manager
-	runtimeTokens         runtimeauth.Manager
-	serviceEventRetention time.Duration
-	endpointCredentialKey []byte
-	artifactProvider      artifact.Provider
-	collaborationEvents   *realtime.Hub
-	managedConfirmations  ManagedToolConfirmationSender
-	managedAttemptAborts  ManagedAttemptAbortSender
-	workSources           *worksource.Service
-	scopeMode             string
-	defaultTenant         string
-	defaultNamespace      string
+	portalClient            *runtimeportal.Client
+	runtimeOnly             bool
+	portalRuntime           bool
+	disableExecutionWorkers bool
+	localDev                bool
+	accounts                AccountDirectory
+	client                  client.Client
+	store                   store.Store
+	prober                  prober.DataPlaneProber
+	router                  *gin.Engine
+	httpServer              *http.Server
+	experimental            bool
+	authToken               string
+	tlsCertFile             string
+	tlsKeyFile              string
+	kubeClient              kubernetes.Interface
+	asdpCommands            SessionCommandSender
+	asdpInventory           InventoryProvider
+	product                 *product.Server
+	staticDir               string
+	registry                *dataplane.Registry
+	internalToken           string
+	hostedStore             bool
+	transcriptMessages      TranscriptMessagesFunc
+	sessionOps              *sessionops.Router
+	features                features.Gates
+	taskPlane               *taskplane.Service
+	runtimeBindings         *runtimebinding.Resolver
+	taskTokens              taskauth.Manager
+	runtimeTokens           runtimeauth.Manager
+	serviceEventRetention   time.Duration
+	endpointCredentialKey   []byte
+	artifactProvider        artifact.Provider
+	artifactTransfers       chan struct{}
+	collaborationEvents     *realtime.Hub
+	workSources             *worksource.Service
+	scopeMode               string
+	defaultTenant           string
+	defaultNamespace        string
 }
 
 // NewServer creates a new API server.
@@ -215,33 +212,36 @@ func NewServer(opts ServerOptions) *Server {
 		configuredNamespace = defaultNamespace
 	}
 	s := &Server{
-		localDev:             opts.LocalDev,
-		accounts:             opts.AccountDirectory,
-		client:               opts.Client,
-		store:                opts.Store,
-		prober:               opts.Prober,
-		router:               router,
-		experimental:         opts.Experimental,
-		authToken:            opts.AuthToken,
-		tlsCertFile:          opts.TLSCertFile,
-		tlsKeyFile:           opts.TLSKeyFile,
-		kubeClient:           opts.KubeClient,
-		asdpCommands:         opts.ASDPCommands,
-		asdpInventory:        opts.ASDPInventory,
-		product:              opts.Product,
-		staticDir:            opts.StaticDir,
-		registry:             opts.Registry,
-		internalToken:        opts.InternalToken,
-		hostedStore:          opts.HostedStore,
-		features:             opts.Features,
-		transcriptMessages:   opts.TranscriptMessages,
-		artifactProvider:     opts.ArtifactProvider,
-		collaborationEvents:  opts.CollaborationEvents,
-		managedConfirmations: opts.ManagedConfirmations,
-		managedAttemptAborts: opts.ManagedAttemptAborts,
-		scopeMode:            scopeMode,
-		defaultTenant:        configuredTenant,
-		defaultNamespace:     configuredNamespace,
+		portalClient:            opts.PortalClient,
+		runtimeOnly:             opts.RuntimeOnly,
+		portalRuntime:           opts.PortalRuntime,
+		disableExecutionWorkers: opts.DisableExecutionWorkers,
+		localDev:                opts.LocalDev,
+		accounts:                opts.AccountDirectory,
+		client:                  opts.Client,
+		store:                   opts.Store,
+		prober:                  opts.Prober,
+		router:                  router,
+		experimental:            opts.Experimental,
+		authToken:               opts.AuthToken,
+		tlsCertFile:             opts.TLSCertFile,
+		tlsKeyFile:              opts.TLSKeyFile,
+		kubeClient:              opts.KubeClient,
+		asdpCommands:            opts.ASDPCommands,
+		asdpInventory:           opts.ASDPInventory,
+		product:                 opts.Product,
+		staticDir:               opts.StaticDir,
+		registry:                opts.Registry,
+		internalToken:           opts.InternalToken,
+		hostedStore:             opts.HostedStore,
+		features:                opts.Features,
+		transcriptMessages:      opts.TranscriptMessages,
+		artifactProvider:        opts.ArtifactProvider,
+		artifactTransfers:       make(chan struct{}, 16),
+		collaborationEvents:     opts.CollaborationEvents,
+		scopeMode:               scopeMode,
+		defaultTenant:           configuredTenant,
+		defaultNamespace:        configuredNamespace,
 		httpServer: &http.Server{
 			Addr:         opts.Addr,
 			Handler:      router,
@@ -252,7 +252,7 @@ func NewServer(opts ServerOptions) *Server {
 	if s.accounts == nil && s.product != nil {
 		s.accounts = s.product
 	}
-	if s.store != nil && s.scopeMode == ScopeModeMulti {
+	if s.store != nil && s.scopeMode == ScopeModeMulti && !s.runtimeOnly {
 		if _, err := s.ensureGlobalDefaultNamespace(context.Background()); err != nil {
 			ctrl.Log.WithName("httpapi").Error(err, "unable to provision global default namespace")
 		}
@@ -270,12 +270,6 @@ func NewServer(opts ServerOptions) *Server {
 			}
 			return nil
 		})
-	}
-	if s.managedConfirmations == nil && opts.Product != nil {
-		s.managedConfirmations = opts.Product
-	}
-	if s.managedAttemptAborts == nil && opts.Product != nil {
-		s.managedAttemptAborts = opts.Product
 	}
 	credentialMaster := strings.TrimSpace(opts.EndpointCredentialSecret)
 	if credentialMaster == "" {
@@ -323,14 +317,14 @@ func NewServer(opts ServerOptions) *Server {
 		}
 		s.taskTokens = taskauth.Manager{Secret: secret, TTL: time.Hour}
 		s.runtimeTokens = runtimeauth.Manager{Secret: secret, TTL: 30 * 24 * time.Hour}
-		s.taskPlane = &taskplane.Service{Store: opts.Store}
+		s.taskPlane = &taskplane.Service{Store: opts.Store, RequirePortal: s.portalExecution()}
 		s.taskPlane.CommentSink = s.workSources.QueueComment
 		var external runtimebinding.ExternalCommander
 		if commander, ok := opts.ASDPCommands.(runtimebinding.ExternalCommander); ok {
 			external = commander
 		}
 		s.runtimeBindings = &runtimebinding.Resolver{Store: opts.Store, Tasks: s.taskPlane, AuthorizeTask: s.authorizeTaskResources,
-			Managed: opts.Product, External: external, Tokens: &s.taskTokens}
+			Managed: s, External: external, Tokens: &s.taskTokens}
 		s.taskPlane.CancelBackend = s.runtimeBindings.CancelAttempt
 		if s.product != nil {
 			s.configureChannelWork()
@@ -351,18 +345,27 @@ func NewServer(opts ServerOptions) *Server {
 				}
 				return json.Marshal(definition)
 			}
+			s.product.SetManagedTriggerHandler(s.handleManagedTrigger)
 			s.product.SetManagedExecutionContextLookup(s.managedExecutionContextForSession)
-			s.product.SetManagedRuntimeFenceValidator(s.validateManagedSessionRuntimeFence)
 		}
 	}
 
-	if opts.KubeClient == nil {
+	if opts.KubeClient == nil && !s.runtimeOnly {
 		ctrl.Log.WithName("httpapi").Info("authorization disabled: no kube client configured (static token mode does not support authorization)")
 	}
 
-	s.registerRoutes()
+	if s.runtimeOnly {
+		s.registerRuntimeRoutes()
+	} else {
+		s.registerRoutes()
+		if s.portalRuntime {
+			s.registerRuntimeProtocols()
+		}
+	}
 	return s
 }
+
+func (s *Server) portalExecution() bool { return s.runtimeOnly || s.portalRuntime }
 
 // SessionOps returns the session command router, or nil when store/registry
 // are unavailable.
@@ -379,6 +382,10 @@ func (s *Server) DispatchAgentTask(ctx context.Context, taskID uuid.UUID) error 
 	}
 	_, err := (&scheduler.Scheduler{Store: s.store, Resolver: s.runtimeBindings}).DispatchTask(ctx, taskID)
 	return err
+}
+
+func (s *Server) DispatchManagedAttempt(ctx context.Context, attemptID uuid.UUID) error {
+	return s.runtimeBindings.SubmitManagedAttempt(ctx, attemptID)
 }
 
 func (s *Server) registerRoutes() {
@@ -409,13 +416,27 @@ func (s *Server) registerRoutes() {
 		pg.Use(s.productNamespaceMiddleware())
 		pg.Use(s.scopeMiddleware())
 		s.product.Register(pg)
+		s.product.RegisterChannelTransports(s.router)
 	}
 	if s.store != nil {
+		admissions := s.router.Group("/api/internal/runtime-admissions")
+		admissions.Use(s.requireRuntimeProjectionToken, s.internalTokenMiddleware(),
+			s.publicSessionAuth(), s.scopeMiddleware(), s.namespaceAccessMiddleware(), s.authzMiddleware())
+		admissions.POST("/sessions", func(c *gin.Context) {
+			c.Set("runtime-config-admission", true)
+			s.createPublicSession(c)
+		})
+		policyChanges := s.router.Group("/api/internal/policy-changes")
+		policyChanges.Use(s.requireRuntimeProjectionToken, s.internalTokenMiddleware())
+		policyChanges.POST("/claim", s.claimPolicyChanges)
+		policyChanges.POST("/ack", s.acknowledgePolicyChange)
 		managedRuntime := s.router.Group("/api/internal/runtime-sessions")
 		managedRuntime.Use(s.internalTokenMiddleware())
-		managedRuntime.POST("/:sessionId/events", s.reportManagedSessionEvent)
-		managedRuntime.POST("/:sessionId/start", s.startManagedSession)
-		managedRuntime.POST("/:sessionId/heartbeat", s.heartbeatManagedSession)
+		managedRuntime.GET("/:sessionId/projection", s.requireRuntimeProjectionToken, s.managedRuntimeProjection)
+		managedRuntime.POST("/:sessionId/summary", s.requireRuntimeProjectionToken, s.managedRuntimeSummary)
+		attempts := s.router.Group("/api/internal/managed-attempts")
+		attempts.Use(s.requireRuntimeProjectionToken, s.internalTokenMiddleware())
+		attempts.POST("/:attemptId/:operation", s.managedAttemptOperation)
 	}
 
 	if runtime, ok := s.asdpInventory.(interface{ HTTPHandler() http.Handler }); ok {
@@ -790,20 +811,7 @@ func (s *Server) registerRoutes() {
 	if s.store != nil && s.features.RuntimeHost {
 		hosts := s.router.Group("/api/v1/runtime-hosts")
 		hosts.Use(s.runtimeHostCredentialMiddleware())
-		{
-			hosts.POST("/register", s.registerRuntimeHost)
-			hosts.POST("/:hostId/heartbeat", s.heartbeatRuntimeHost)
-			hosts.POST("/:hostId/state", s.setRuntimeHostState)
-			hosts.POST("/:hostId/execution-attempts/claim", s.claimExecutionAttempt)
-			hosts.POST("/:hostId/execution-attempts/:attemptId/renew", s.renewExecutionAttempt)
-			hosts.POST("/:hostId/execution-attempts/:attemptId/preparing", s.prepareExecutionAttempt)
-			hosts.POST("/:hostId/execution-attempts/:attemptId/running", s.startExecutionAttempt)
-			hosts.POST("/:hostId/execution-attempts/:attemptId/checkpoint", s.checkpointExecutionAttempt)
-			hosts.POST("/:hostId/execution-attempts/:attemptId/events", s.appendExecutionAttemptEvent)
-			hosts.POST("/:hostId/execution-attempts/:attemptId/complete", s.completeExecutionAttempt)
-			hosts.POST("/:hostId/execution-attempts/:attemptId/fail", s.failExecutionAttempt)
-			hosts.POST("/:hostId/execution-attempts/:attemptId/cancelled", s.cancelledExecutionAttempt)
-		}
+		s.registerRuntimeHostRoutes(hosts)
 	}
 
 	if s.staticDir != "" {
@@ -943,9 +951,10 @@ func requestBearerToken(c *gin.Context) string {
 // or the normal console/JWT/kube auth chain.
 func (s *Server) teamsAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		collaborationMCP := c.Request.URL.Path == "/mcp/collaboration" || c.Request.URL.Path == "/api/internal/runtime/mcp/collaboration"
 		token := c.GetHeader("X-Agent-Task-Token")
 		bearerCandidate := false
-		if token == "" && c.Request.URL.Path == "/mcp/collaboration" {
+		if token == "" && collaborationMCP {
 			token = requestBearerToken(c)
 			bearerCandidate = token != ""
 		}
@@ -958,10 +967,16 @@ func (s *Server) teamsAuthMiddleware() gin.HandlerFunc {
 			}
 			task, err := verify(c.Request.Context(), token, uuid.Nil)
 			completedCoordinator := false
-			if err != nil && c.Request.URL.Path == "/mcp/collaboration" {
+			completedReceipt := false
+			if err != nil && collaborationMCP {
 				if coordinatorTask, coordinatorErr := s.verifyCoordinatorTaskToken(
 					c.Request.Context(), token, uuid.Nil); coordinatorErr == nil {
 					task, err, completedCoordinator = coordinatorTask, nil, true
+				}
+			}
+			if err != nil && collaborationMCP {
+				if receipt, receiptErr := s.verifyCompletedManagedTaskReceipt(c.Request.Context(), token); receiptErr == nil {
+					task, err, completedReceipt = receipt, nil, true
 				}
 			}
 			if err != nil {
@@ -974,6 +989,9 @@ func (s *Server) teamsAuthMiddleware() gin.HandlerFunc {
 				c.Set(ctxTaskAuth, task)
 				if completedCoordinator {
 					c.Set(ctxCompletedCoordinatorAuth, true)
+				}
+				if completedReceipt {
+					c.Set(ctxManagedTaskReceiptAuth, true)
 				}
 				c.Next()
 				return
@@ -1026,6 +1044,40 @@ func (s *Server) verifyTaskToken(ctx context.Context, token string, expectedTask
 	if err != nil || attempt.DispatchGeneration != claims.Generation {
 		return nil, fmt.Errorf("task token generation is no longer active")
 	}
+	nativeCredential := claims.ManagedSessionID != uuid.Nil
+	if nativeCredential {
+		if err := s.validateManagedTaskCredential(ctx, task, attempt, claims.ManagedSessionID); err != nil {
+			return nil, err
+		}
+	}
+	if nativeCredential || attempt.BackendKind == controlmodel.DataPlaneManaged &&
+		(attempt.State == controlmodel.ExecutionAssigned || attempt.State == controlmodel.ExecutionPreparing) {
+		// A fast first MCP call can precede the read-model sweep. Observe the
+		// native Turn now so task.complete does not depend on a periodic heartbeat.
+		if err := s.ReconcileManagedAttempt(ctx, attempt.ID); err != nil {
+			return nil, err
+		}
+		task, err = s.store.Collaboration().GetAgentTask(ctx, claims.TaskID)
+		if err != nil || task.CurrentAttemptID == nil || *task.CurrentAttemptID != claims.AttemptID {
+			return nil, store.ErrConflict
+		}
+		attempt, err = s.store.ExecutionAttempts().Get(ctx, claims.AttemptID)
+		completedCoordinator := allowCompletedCoordinator && task.LeaderTask &&
+			(task.Status == controlmodel.AgentTaskCompleted || task.Status == controlmodel.AgentTaskFailed)
+		if err != nil || attempt.DispatchGeneration != claims.Generation ||
+			(attempt.State != controlmodel.ExecutionRunning && attempt.State != controlmodel.ExecutionWaiting && !completedCoordinator) {
+			return nil, fmt.Errorf("native Managed Turn has not started")
+		}
+	}
+	if nativeCredential {
+		if err := s.requireManagedTaskExecution(ctx, task, attempt); err != nil {
+			return nil, err
+		}
+	}
+	if claims.Fence > 0 && (attempt.FencingToken != claims.Fence || attempt.HostID == nil || *attempt.HostID != claims.HostID ||
+		attempt.LeaseExpiresAt == nil || !time.Now().Before(*attempt.LeaseExpiresAt)) {
+		return nil, fmt.Errorf("task token physical lease is no longer active")
+	}
 	if controlmodel.IsExecutionAttemptTerminal(attempt.State) &&
 		(!allowCompletedCoordinator || !task.LeaderTask ||
 			(task.Status != controlmodel.AgentTaskCompleted && task.Status != controlmodel.AgentTaskFailed)) {
@@ -1055,7 +1107,11 @@ func (s *Server) collaborationTaskScopeMiddleware() gin.HandlerFunc {
 			return
 		}
 		allowed := false
-		switch c.FullPath() {
+		route := c.FullPath()
+		if strings.HasPrefix(route, "/api/internal/runtime/") {
+			route = "/api/v1/" + strings.TrimPrefix(route, "/api/internal/runtime/")
+		}
+		switch route {
 		case "/api/v1/agent-tasks/:taskId/workspace-application", "/api/v1/agent-tasks/:taskId", "/api/v1/agent-tasks/:taskId/context",
 			"/api/v1/agent-tasks/:taskId/claim", "/api/v1/agent-tasks/:taskId/ack",
 			"/api/v1/agent-tasks/:taskId/inputs/delivery-failed", "/api/v1/agent-tasks/:taskId/start",
@@ -1113,16 +1169,27 @@ func (s *Server) kubeAuth(c *gin.Context) {
 }
 
 // Start begins serving HTTP (or HTTPS when TLS cert/key are configured).
-func (s *Server) Start(ctx context.Context) error {
-	if s.store != nil {
-		go s.runServiceInvocations(ctx)
-		go s.runPublicSessionWebhooks(ctx)
+func (s *Server) Start(ctx context.Context) (result error) {
+	ctx, cancel := context.WithCancel(ctx)
+	workers, workerCtx := errgroup.WithContext(ctx)
+	defer func() {
+		cancel()
+		if err := workers.Wait(); result == nil {
+			result = err
+		}
+	}()
+	run := func(start func(context.Context)) { workers.Go(func() error { start(workerCtx); return nil }) }
+
+	if s.store != nil && !s.disableExecutionWorkers {
+		run(s.runServiceInvocations)
+		run(s.runPublicSessionWebhooks)
 	}
 	if s.product != nil {
-		go s.product.RunChannelWork(ctx)
+		run(s.product.RunChannelWork)
+		workers.Go(func() error { return s.product.RunScheduler(workerCtx) })
 	}
-	if s.workSources != nil {
-		go func() {
+	if s.workSources != nil && !s.disableExecutionWorkers {
+		run(func(ctx context.Context) {
 			ticker := time.NewTicker(5 * time.Second)
 			defer ticker.Stop()
 			for {
@@ -1133,14 +1200,19 @@ func (s *Server) Start(ctx context.Context) error {
 				case <-ticker.C:
 				}
 			}
-		}()
+		})
 	}
+	shutdownDone := make(chan struct{})
 	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		s.httpServer.Shutdown(shutdownCtx)
+		defer close(shutdownDone)
+		<-workerCtx.Done()
+		shutdownCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
+			_ = s.httpServer.Close()
+		}
 	}()
+	defer func() { cancel(); <-shutdownDone }()
 
 	if s.tlsCertFile != "" && s.tlsKeyFile != "" {
 		if err := s.httpServer.ListenAndServeTLS(s.tlsCertFile, s.tlsKeyFile); err != nil && err != http.ErrServerClosed {

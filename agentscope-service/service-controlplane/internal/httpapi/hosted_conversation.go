@@ -29,6 +29,7 @@ import (
 
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/conversation"
+	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/taskplane"
 )
@@ -207,6 +208,15 @@ func (s *Server) dispatchHostedConversationTurn(ctx context.Context, session *st
 		issueID := uuid.NewSHA1(turnUUID, []byte("conversation-issue"))
 		runID := uuid.NewSHA1(turnUUID, []byte("conversation-run"))
 		actor := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: sourceType}
+		if frozen := serviceapi.ContextContract(lockCtx); frozen != nil && frozen.PortalCommandID != "" {
+			turn, err := s.store.RuntimePortal().Turn(lockCtx, frozen.PortalCommandID)
+			if err != nil {
+				return err
+			}
+			if user, ok := turn.Command.Context.Actor["user"].(string); ok && user != "" {
+				actor = controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: user}
+			}
+		}
 		if current.OriginType == "chat" {
 			chatID, parseErr := uuid.Parse(current.OriginRef)
 			if parseErr != nil {

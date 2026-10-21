@@ -22,7 +22,7 @@ for (const scenario of ['agent', 'cancel', 'denied'] as const) {
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(e.message));
     const token = `test.${Buffer.from(JSON.stringify({ sub: 'alice', username: 'alice', roles: ['admin'] })).toString('base64url')}.test`;
-    await page.addInitScript(t => localStorage.setItem('claw_token', t), token);
+    await page.addInitScript(t => localStorage.setItem('agentscope_service_token', t), token);
     const server = { name: 'crm', transport: 'http', url: 'https://crm.example/mcp' };
     let definition = { id: 'agent', name: 'CRM assistant', workspaceId: 'review', version: 1, mcpServers: [server], tools: [], defaultVaultIds: ['existing-vault'] };
     const catalog = { id: 'agent', agentKey: 'crm-assistant', displayName: 'CRM assistant', ownerId: 'alice', tenant: 'default', namespace: 'personal', status: 'active' };
@@ -34,7 +34,7 @@ for (const scenario of ['agent', 'cancel', 'denied'] as const) {
       const path = new URL(route.request().url()).pathname;
       if (path.endsWith('/consent')) {
         status = scenario === 'denied' ? 'failed' : 'authorized';
-        return route.fulfill({ contentType: 'text/html', body: '<h1>Return to AgentScope</h1>' });
+        return route.fulfill({ contentType: 'text/html', body: '<h1>Return to AgentScope Service</h1>' });
       }
       return route.fulfill({ contentType: 'text/html', body: '<h1>Example CRM authorization</h1><a href="/oauth-fixture/consent">Authorize CRM access</a>' });
     });

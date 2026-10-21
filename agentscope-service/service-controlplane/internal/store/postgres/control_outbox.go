@@ -32,7 +32,7 @@ type outboxRepo struct{ pool *pgxpool.Pool }
 
 const outboxColumns = `id,tenant,namespace,aggregate_type,aggregate_id,event_type,schema_version,
 	actor_type,actor_ref,causation_id,correlation_id,occurred_at,payload,dedupe_key,attempts,
-	available_at,claimed_by,claimed_until,delivered_at,dead_lettered_at,last_error,created_at`
+	available_at,claimed_by,claimed_until,delivered_at,dead_lettered_at,last_error,created_at,portal_owned`
 
 func scanOutboxEvent(row scannable) (*controlmodel.OutboxEvent, error) {
 	event := &controlmodel.OutboxEvent{}
@@ -41,7 +41,7 @@ func scanOutboxEvent(row scannable) (*controlmodel.OutboxEvent, error) {
 	err := row.Scan(&event.ID, &event.Tenant, &event.Namespace, &event.AggregateType, &event.AggregateID,
 		&event.EventType, &event.SchemaVersion, &event.Actor.Type, &actorRef, &causationID,
 		&correlationID, &event.OccurredAt, &event.Payload, &dedupeKey, &event.Attempts, &event.AvailableAt,
-		&claimedBy, &event.ClaimedUntil, &event.DeliveredAt, &event.DeadLetteredAt, &lastError, &event.CreatedAt)
+		&claimedBy, &event.ClaimedUntil, &event.DeliveredAt, &event.DeadLetteredAt, &lastError, &event.CreatedAt, &event.PortalOwned)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, store.ErrNotFound
@@ -83,8 +83,8 @@ func (r *outboxRepo) Enqueue(ctx context.Context, event *controlmodel.OutboxEven
 	return scanOutboxEvent(r.pool.QueryRow(ctx, `INSERT INTO control_outbox (
 		id,tenant,namespace,aggregate_type,aggregate_id,event_type,schema_version,actor_type,
 		actor_ref,causation_id,correlation_id,occurred_at,payload,dedupe_key,attempts,
-		available_at,claimed_by,claimed_until,delivered_at,dead_lettered_at,last_error)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+		available_at,claimed_by,claimed_until,delivered_at,dead_lettered_at,last_error,portal_owned)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,portal_runtime_event_owned($4,$5))
 		ON CONFLICT (tenant,dedupe_key) WHERE dedupe_key IS NOT NULL
 		DO UPDATE SET id=control_outbox.id RETURNING `+outboxColumns,
 		event.ID, event.Tenant, event.Namespace, event.AggregateType, event.AggregateID, event.EventType,
@@ -95,17 +95,29 @@ func (r *outboxRepo) Enqueue(ctx context.Context, event *controlmodel.OutboxEven
 }
 
 func (r *outboxRepo) Claim(ctx context.Context, worker string, now time.Time, ttl time.Duration, limit int) ([]*controlmodel.OutboxEvent, error) {
+	return r.claim(ctx, worker, now, ttl, limit, false)
+}
+
+func (r *outboxRepo) ClaimPortalRuntime(ctx context.Context, worker string, now time.Time, ttl time.Duration, limit int) ([]*controlmodel.OutboxEvent, error) {
+	return r.claim(ctx, worker, now, ttl, limit, true)
+}
+
+func (r *outboxRepo) claim(ctx context.Context, worker string, now time.Time, ttl time.Duration, limit int, portalOnly bool) ([]*controlmodel.OutboxEvent, error) {
 	if worker == "" || ttl <= 0 {
 		return nil, fmt.Errorf("outbox claim requires worker and positive ttl")
 	}
 	if limit <= 0 {
 		limit = 100
 	}
+	ownerScope := ""
+	if portalOnly {
+		ownerScope = " AND portal_owned"
+	}
 	rows, err := r.pool.Query(ctx, `WITH candidates AS (
 		SELECT id AS event_id FROM control_outbox
 		WHERE delivered_at IS NULL AND dead_lettered_at IS NULL AND available_at<=$1
 			AND (claimed_until IS NULL OR claimed_until<=$1)
-		ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT $2
+		`+ownerScope+` ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT $2
 	)
 	UPDATE control_outbox o SET claimed_by=$3,claimed_until=$1+$4::interval,
 		attempts=o.attempts+1 FROM candidates c WHERE o.id=c.event_id

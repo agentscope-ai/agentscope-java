@@ -30,6 +30,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
@@ -51,7 +52,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 /** Per-execution ordered acceptance and acknowledged checkpoints. Buffer retained on failure. */
 public final class SessionRecorder {
@@ -103,35 +103,41 @@ public final class SessionRecorder {
         this.turnId = turnId == null ? UUID.randomUUID().toString() : turnId;
         this.writer = log.acquire(runId, LEASE);
         try {
-            initial = SessionProjection.read(log);
+            var seenTurn = new AtomicBoolean();
+            initial =
+                    SessionProjection.read(
+                            log,
+                            event -> {
+                                if (runId.equals(event.executionRunId()))
+                                    throw new SessionLogException(
+                                            "Run ID already used; prepare a new execution to"
+                                                    + " resume");
+                                if (this.turnId.equals(event.turnId())) {
+                                    seenTurn.set(true);
+                                    if (event.type().equals("turn/completed")
+                                            || (event.type().equals("turn/end")
+                                                    && "completed"
+                                                            .equals(event.data().get("status"))))
+                                        throw new SessionLogException(
+                                                "Turn already completed; use a new turn ID");
+                                }
+                                for (var message : SessionViews.messages(log, event))
+                                    recordedMessages.add(message.getId());
+                            });
             durableSeq = initial.asOfSeq();
-            boolean seenTurn = false;
-            for (var event : log.scan(0, durableSeq)) {
-                if (runId.equals(event.executionRunId()))
-                    throw new SessionLogException(
-                            "Run ID already used; prepare a new execution to resume");
-                if (!this.turnId.equals(event.turnId())) continue;
-                seenTurn = true;
-                if (event.type().equals("turn/completed")
-                        || (event.type().equals("turn/end")
-                                && "completed".equals(event.data().get("status"))))
-                    throw new SessionLogException("Turn already completed; use a new turn ID");
-            }
-            resumedTurn = seenTurn;
+            resumedTurn = seenTurn.get();
             if (!initial.uncertainToolCalls().isEmpty())
                 throw new SessionLogException(
                         "Explicit reconciliation required for unknown tool outcomes: "
                                 + initial.uncertainToolCalls());
             previousState = initial.stateJson();
             if (previousState != null) previousMessages = messageJson(initial.restore());
-            for (var message : SessionViews.transcript(log).messages())
-                recordedMessages.add(message.getId());
         } catch (RuntimeException e) {
             log.release(writer);
             throw e;
         }
         heartbeat =
-                Schedulers.boundedElastic()
+                ModelSchedulers.requests()
                         .schedulePeriodically(
                                 () -> {
                                     synchronized (this) {
@@ -247,7 +253,7 @@ public final class SessionRecorder {
     }
 
     public Mono<Void> flush() {
-        return Mono.<Void>fromRunnable(this::flushNow).subscribeOn(Schedulers.boundedElastic());
+        return Mono.<Void>fromRunnable(this::flushNow).subscribeOn(ModelSchedulers.requests());
     }
 
     public synchronized void flushNow() {
@@ -271,7 +277,7 @@ public final class SessionRecorder {
     private void exportCommitted() {
         if (exporter == null) return;
         if (!exporting.compareAndSet(false, true)) return;
-        Schedulers.boundedElastic()
+        ModelSchedulers.requests()
                 .schedule(
                         () -> {
                             try {
@@ -396,6 +402,20 @@ public final class SessionRecorder {
         flushNow();
     }
 
+    /** Commits a recovery-critical fact with its state, even when state capture deduplicates. */
+    public synchronized void checkpointedRecordNow(
+            AgentState state, String reason, String type, Object payload) {
+        captureState(state, reason);
+        boolean checkpoint =
+                pending.stream().anyMatch(event -> "state/checkpoint".equals(event.type()));
+        append(type, payload);
+        if (!checkpoint)
+            append(
+                    "state/checkpoint",
+                    Map.of("projectorVersion", 1, "stateJson", state.toJson(), "reason", reason));
+        flushNow();
+    }
+
     public Mono<Void> checkpoint(AgentState state, String reason) {
         return Mono.defer(
                 () -> {
@@ -495,11 +515,11 @@ public final class SessionRecorder {
                             }
                             return flush();
                         })
-                .then(Mono.<Void>fromRunnable(this::close).subscribeOn(Schedulers.boundedElastic()))
+                .then(Mono.<Void>fromRunnable(this::close).subscribeOn(ModelSchedulers.requests()))
                 .onErrorResume(
                         error ->
                                 Mono.<Void>fromRunnable(this::close)
-                                        .subscribeOn(Schedulers.boundedElastic())
+                                        .subscribeOn(ModelSchedulers.requests())
                                         .then(Mono.error(error)));
     }
 

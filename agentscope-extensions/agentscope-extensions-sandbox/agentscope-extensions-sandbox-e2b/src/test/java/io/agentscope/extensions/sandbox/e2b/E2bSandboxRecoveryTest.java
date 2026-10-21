@@ -18,6 +18,7 @@ package io.agentscope.extensions.sandbox.e2b;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
@@ -83,6 +84,39 @@ class E2bSandboxRecoveryTest {
         assertEquals("old-sandbox", state.getSandboxId());
         assertTrue(state.isWorkspaceRootReady());
         assertEquals("old-projection", state.getWorkspaceProjectionHash());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
+    }
+
+    @Test
+    void externallyCoordinatedReconnectFailureCannotCreateAnotherProviderInstance()
+            throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(503).setBody("temporary outage"));
+        var options = options();
+        options.setMaxRetries(0);
+        options.setRecreateOnConnectFailure(false);
+        var state = stateForResume();
+        assertThrows(Exception.class, () -> invokeEnsureSandbox(new E2bSandbox(state, options)));
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertEquals(1, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
+    }
+
+    @Test
+    void keepAliveCannotRecreateOrChangeWorkspaceAndMissingProviderIsObservable() throws Exception {
+        server.enqueue(
+                new MockResponse().setResponseCode(200).setBody("{\"sandboxID\":\"old-sandbox\"}"));
+        server.enqueue(new MockResponse().setResponseCode(404).setBody("missing"));
+        var options = options();
+        options.setMaxRetries(0);
+        var state = stateForResume();
+        var sandbox = new E2bSandbox(state, options);
+        sandbox.keepAlive();
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
+        assertEquals(
+                404, assertThrows(E2bSandboxApiException.class, sandbox::keepAlive).getStatus());
+        assertEquals(2, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
         assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
     }
 

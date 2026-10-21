@@ -1,0 +1,4 @@
+{
+  "grpcServerPort": 19881,
+  "remotingListenPort": 19880
+}

@@ -145,7 +145,7 @@ func TestRenewLoopToleratesTransientControlPlaneFailureWithinLease(t *testing.T)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	failures := make(chan error, 1)
-	go engine.renewLoop(ctx, cancel, uuid.New(), &controlmodel.ExecutionAttempt{}, failures)
+	go engine.renewLoop(ctx, cancel, uuid.New(), &controlmodel.ExecutionAttempt{}, failures, &sync.Mutex{})
 	select {
 	case got := <-cp.renewed:
 		if !errors.Is(got, transient) {
@@ -170,7 +170,7 @@ func TestRenewLoopCancelsProviderAfterLeaseExpires(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	failures := make(chan error, 1)
-	go engine.renewLoop(ctx, cancel, uuid.New(), &controlmodel.ExecutionAttempt{}, failures)
+	go engine.renewLoop(ctx, cancel, uuid.New(), &controlmodel.ExecutionAttempt{}, failures, &sync.Mutex{})
 	select {
 	case err := <-failures:
 		if !errors.Is(err, leaseFailure) {
@@ -191,7 +191,7 @@ func TestRenewLoopCancelsProviderWhenControlPlaneReportsTerminal(t *testing.T) {
 	engine := &Engine{Config: Config{LeaseTTL: 3 * time.Second}, Client: cp}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go engine.renewLoop(ctx, cancel, uuid.New(), &controlmodel.ExecutionAttempt{}, make(chan error, 1))
+	go engine.renewLoop(ctx, cancel, uuid.New(), &controlmodel.ExecutionAttempt{}, make(chan error, 1), &sync.Mutex{})
 	select {
 	case <-ctx.Done():
 	case <-time.After(2 * time.Second):
@@ -234,6 +234,65 @@ func (f *fakeControlPlane) Cancelled(_ context.Context, _ uuid.UUID, attempt *co
 }
 
 type fakeProvider struct{}
+
+type concurrentRenewFixture struct {
+	fakeControlPlane
+	started chan struct{}
+}
+
+func (f *concurrentRenewFixture) Renew(_ context.Context, _ uuid.UUID, attempt *controlmodel.ExecutionAttempt, _ time.Duration) error {
+	close(f.started)
+	deadline := time.Now().Add(30 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		attempt.ProviderSessionID = "renewed-session"
+		expires := time.Now().Add(time.Minute)
+		attempt.LeaseExpiresAt = &expires
+	}
+	return nil
+}
+
+type concurrentRenewProvider struct{ started <-chan struct{} }
+
+func (concurrentRenewProvider) Name() string                           { return "fake" }
+func (concurrentRenewProvider) Detect(context.Context) (string, error) { return "fake/1.0", nil }
+func (p concurrentRenewProvider) Run(ctx context.Context, _ provider.Request, sink provider.EventSink) (*provider.Result, error) {
+	select {
+	case <-p.started:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if err := sink(provider.Event{Type: "assistant", ProviderSessionID: "provider-session",
+		Raw: json.RawMessage(`{"text":"done"}`)}); err != nil {
+		return nil, err
+	}
+	return &provider.Result{ProviderSessionID: "provider-session", Output: "done"}, nil
+}
+
+func TestEngineSerializesRenewalWithProviderEventsAndFinalization(t *testing.T) {
+	task := &controlmodel.AgentTask{ID: uuid.New(), Tenant: "tenant", Namespace: "default"}
+	expires := time.Now().Add(time.Minute)
+	work := &ClaimedWork{Task: task,
+		Context: &collaboration.ContextEnvelope{Task: task,
+			Issue: &controlmodel.Issue{ID: uuid.New(), Title: "concurrent renewal"}},
+		Attempt: &controlmodel.ExecutionAttempt{ID: uuid.New(), AgentTaskID: task.ID,
+			State: controlmodel.ExecutionQueued, LeaseExpiresAt: &expires},
+		Profile: &controlmodel.RuntimeProfile{Provider: "fake"}}
+	client := &concurrentRenewFixture{fakeControlPlane: fakeControlPlane{completed: make(chan struct{})},
+		started: make(chan struct{})}
+	stateRoot := t.TempDir()
+	engine := &Engine{Config: Config{WorkspaceRoot: t.TempDir(), StateRoot: stateRoot, LeaseTTL: 3 * time.Second},
+		Client: client, Providers: map[string]provider.Adapter{"fake": concurrentRenewProvider{client.started}}}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	engine.execute(ctx, uuid.New(), work)
+	if work.Attempt.State != controlmodel.ExecutionSucceeded || work.Attempt.ProviderSessionID != "provider-session" || client.completeCalls != 1 {
+		t.Fatalf("final attempt=%+v complete calls=%d", work.Attempt, client.completeCalls)
+	}
+	rows, err := (&Journal{Root: stateRoot}).List()
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("finalization retained journal: %d %v", len(rows), err)
+	}
+}
 
 func (fakeProvider) Name() string                           { return "fake" }
 func (fakeProvider) Detect(context.Context) (string, error) { return "fake/1.0", nil }

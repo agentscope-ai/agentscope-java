@@ -15,7 +15,7 @@
 """Instance inventory models (mirror ``asdp.InventoryReport`` /
 ``prober.SubagentInfo`` / ``prober.WorkspaceInfo``).
 
-支撑控制面 subagent 管理与 workspace 管理的观测面：SDK 在 ASDP 连接建立后
+支撑控制面 subagent 管理与 workspace 管理的观测面：SDK 在 RuntimeProtocol 连接建立后
 立即上报一次，之后低频刷新（sdk-design §3.5）。
 """
 from __future__ import annotations

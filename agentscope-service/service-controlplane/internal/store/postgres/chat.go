@@ -37,7 +37,8 @@ type chatRepo struct{ pool *pgxpool.Pool }
 
 const chatColumns = `id, tenant, namespace, creator_ref, agent_id, agent_name,
 		session_fk, runtime_session_id, title, status, pinned, last_read_seq,
-		version, created_at, updated_at`
+		version, created_at, updated_at,
+		COALESCE((SELECT framework FROM sessions s WHERE s.id=chat_conversations.session_fk),'')`
 
 func (r *chatRepo) Create(ctx context.Context, in *controlmodel.Chat) (*controlmodel.Chat, error) {
 	if in.ID == uuid.Nil {
@@ -156,7 +157,7 @@ func (r *chatRepo) Touch(ctx context.Context, id uuid.UUID) error {
 func scanChat(row scannable, out *controlmodel.Chat) error {
 	return row.Scan(&out.ID, &out.Tenant, &out.Namespace, &out.CreatorRef, &out.AgentID,
 		&out.AgentName, &out.SessionID, &out.RuntimeSession, &out.Title, &out.Status,
-		&out.Pinned, &out.LastReadSeq, &out.Version, &out.CreatedAt, &out.UpdatedAt)
+		&out.Pinned, &out.LastReadSeq, &out.Version, &out.CreatedAt, &out.UpdatedAt, &out.RuntimeKind)
 }
 
 func isUniqueViolation(err error) bool {

@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Event;
@@ -30,25 +32,31 @@ import io.agentscope.core.agent.EventSource;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.ToolSuspendException;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.memory.MemoryConfig;
+import io.agentscope.harness.agent.subagent.SubagentExecution;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Verifies that synchronous local subagent invocations forward child {@link Event}s into the
@@ -120,6 +128,64 @@ class HarnessAgentSubagentStreamTest {
                         .content(contentJson)
                         .build();
         return new ChatResponse(id, List.of(tc), null, Map.of(), "tool_use");
+    }
+
+    @Test
+    void hostChildSuspensionPreservesTheParentToolCall() throws Exception {
+        Files.createDirectories(workspace.resolve("subagents"));
+        Files.writeString(
+                workspace.resolve("subagents/researcher.md"),
+                "---\ndescription: Researcher\n---\nResearch.");
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "owned-spawn",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                "researcher",
+                                                "task",
+                                                "research",
+                                                "timeout_seconds",
+                                                60))));
+        Model memoryModel = mock(Model.class);
+        when(memoryModel.getModelName()).thenReturn("memory-stub");
+        when(memoryModel.stream(anyList(), any(), any()))
+                .thenReturn(Flux.just(stopChunk("memory", "NO_REPLY")));
+        parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .memory(MemoryConfig.builder().model(memoryModel).build())
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+        AtomicReference<String> parentCall = new AtomicReference<>();
+        SubagentExecution execution =
+                (childAgent, parentContext, childContext, local) -> {
+                    parentCall.set(parentContext.get(ToolUseBlock.class).getId());
+                    assertNull(childContext.get(ToolUseBlock.class));
+                    assertEquals(
+                            "researcher",
+                            parentContext.get(SubagentExecution.Invocation.class).agentId());
+                    return Mono.error(new ToolSuspendException("child needs an external result"));
+                };
+        Msg result =
+                parent.call(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("go").build()),
+                                RuntimeContext.builder()
+                                        .sessionId("owned-parent")
+                                        .put(SubagentExecution.class, execution)
+                                        .build())
+                        .block();
+        assertNotNull(result);
+        assertEquals("tc-owned-spawn", parentCall.get());
+        assertEquals(GenerateReason.TOOL_SUSPENDED, result.getGenerateReason());
+        assertEquals("tc-owned-spawn", result.getContentBlocks(ToolUseBlock.class).get(0).getId());
+        verify(model, times(1)).stream(anyList(), any(), any());
     }
 
     // -----------------------------------------------------------------

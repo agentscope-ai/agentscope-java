@@ -10,7 +10,7 @@ The Environment determines where the Agent's tools read and write working files.
 
 ## Upload a Session file
 
-This example uses the Session and application credential from [Integrate applications with the Session API](/v2/en/service/service-api), with a local `report.pdf`. Upload returns an `id`; save it and reference it as `file_id` in structured input. Files are limited to 16 MiB and belong to the current Session. Another Session cannot reference them directly.
+This example uses the Session and application credential from [Integrate applications with the Session API](/v2/en/service/service-api), with a local `report.pdf`. Managed upload returns `file_id`, `media_type`, `sha256`, and `download_url`; save `file_id` for structured input. The Portal currently exposes these file endpoints for Managed Sessions; other backends report `files=false` and `file_input=false` and return an unsupported-capability error. Files are limited to 16 MiB and belong to the current Session. Another Session cannot reference them directly.
 
 Check that the Session supports file storage and file input. Upload sends raw file bytes rather than a multipart form:
 
@@ -27,7 +27,7 @@ FILE_JSON=$(
     -H "Content-Type: application/pdf" \
     --data-binary @report.pdf
 )
-FILE_ID=$(jq -er '.id' <<< "$FILE_JSON")
+FILE_ID=$(jq -er '.file_id' <<< "$FILE_JSON")
 ```
 
 Reference the file ID in task input:
@@ -60,7 +60,11 @@ JSON
 TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
 ```
 
-This input format is for Managed Agents. Teams and Workflows accept task input defined by the business; the service links referenced Session files as task attachments, which the executor must be able to process. Direct External or Hosted conversations do not automatically inherit Managed file-input support. Check `file_input` first.
+This input format is for Managed Agents. Team, Workflow, External and Hosted file-input adapters are still being implemented. Check `file_input` before sending a reference. A supported file input does not guarantee that the selected model can interpret every file type.
+
+A Managed input accepts at most 128 file references and resolves at most 64 MiB of file content in total. Repeated references count toward both limits. The per-file upload limit remains 16 MiB by default.
+
+Uploads require Session `interact` permission; metadata and downloads require `read` permission. Portal streams files to the private runtime endpoint. Portal and dataplane each default to 16 concurrent transfers and a 30-second transfer deadline; saturation returns HTTP 429. Operators can set `BUILDER_PORTAL_FILE_TRANSFER_SLOTS` and `BUILDER_RUNTIME_FILE_TRANSFER_SLOTS`.
 
 An upload retry must preserve its key, filename, content type, and bytes. Use a new key when any of these changes. Percent-encode non-ASCII characters in `X-File-Name` using UTF-8. Upload stores the file; interpreting PDF, image, or audio content depends on the model and tools.
 
@@ -74,7 +78,7 @@ curl -sS --fail-with-body -G "$SESSION_URL/files" \
   --data-urlencode "offset=0"
 ```
 
-The list returns `items` and `next_offset`. Use a non-null next offset in the next request until it becomes null.
+The file list returns `data`, `next_offset`, and `has_more`. Continue from `next_offset` while `has_more` is true.
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/files/$FILE_ID/content" \
@@ -82,6 +86,8 @@ curl -sS --fail-with-body "$SESSION_URL/files/$FILE_ID/content" \
 ```
 
 A Managed Session can explicitly publish an uploaded file with `POST /artifacts`, a body of `{"file_id":"RETURNED_FILE_ID"}`, and an idempotency key. Artifacts may also reference accessible external HTTPS resources. Read the actual artifact from the snapshot or `/artifacts` and follow its file reference. Do not construct a download URL from a path guessed in an Agent reply.
+
+Publication requires `interact` permission. Portal commits the publication receipt, public event, and query projection together. Reusing a key with different input returns HTTP 409. `DELETE /artifacts/{artifactId}` removes the current deliverable record and emits `artifact.deleted`; it retains the uploaded bytes and existing snapshots. Retrying the original publication key returns its original receipt and does not republish a deleted artifact. Use a new key to publish it again.
 
 Register an uploaded, verified result file as a Managed artifact. `RESULT_FILE_ID` must be an actual file ID in this Session. Publication records the deliverable; it does not read or generate a working-directory file.
 
@@ -108,7 +114,8 @@ curl -sS --fail-with-body "$SESSION_URL/artifacts"
 
 ```bash
 ARTIFACT_METADATA=$(
-  curl -sS --fail-with-body "$SESSION_URL/artifacts/$ARTIFACT_ID"
+  curl -sS --fail-with-body "$SESSION_URL/artifacts" \
+    | jq -er --arg id "$ARTIFACT_ID" '.data[].data | select(.artifact_id == $id)'
 )
 RESULT_FILE_ID=$(jq -er '.file_id' <<< "$ARTIFACT_METADATA")
 ```
@@ -137,7 +144,7 @@ JSON
 
 </Accordion>
 
-Team and Workflow executors report task artifacts. Read them from a Turn's `/artifacts`, then download through `/turns/{turnId}/artifacts/{artifactId}`. Verify content, version, and access permissions; a `completed` task alone does not establish a correct deliverable. See [Document verification](/v2/en/service/cases/document-verification) and [In-product delivery](/v2/en/service/cases/in-product-delivery).
+Task executors report their published artifacts through the runtime adapter. Read them from a Turn's `/artifacts`, then download through `/turns/{turnId}/artifacts/{artifactId}/content`. The route without `/content` returns metadata. Portal checks reader permission and the runtime checks the artifact's Turn binding and checksum; downloads have finite transfer capacity and a 30-second deadline. Verify content, version, and access permissions; a `completed` task alone does not establish a correct deliverable. See [Document verification](/v2/en/service/cases/document-verification) and [In-product delivery](/v2/en/service/cases/in-product-delivery).
 
 <Accordion title="Download a Team or Workflow task artifact">
 
@@ -149,7 +156,7 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts"
 
 ```bash
 TURN_ARTIFACT_ID="TASK_ARTIFACT_ID_FROM_RESPONSE"
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts/$TURN_ARTIFACT_ID" \
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts/$TURN_ARTIFACT_ID/content" \
   --output task-result.pdf
 ```
 

@@ -117,7 +117,7 @@ export default function LoginPage() {
     <div style={s.page}>
       <form style={s.card} onSubmit={handleSubmit}>
         <div style={s.brand}>
-          <img src="/logo.svg" alt="AgentScope" width={40} height={40} />
+          <img src="/logo.svg" alt="AgentScope Service" width={40} height={40} />
         </div>
         <div style={s.title}>AgentScope Service</div>
         <div style={s.sub}>Sign in to continue</div>

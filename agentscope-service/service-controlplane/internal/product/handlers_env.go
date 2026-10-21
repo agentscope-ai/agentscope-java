@@ -16,7 +16,11 @@ package product
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
+	"regexp"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -121,11 +125,12 @@ func (s *Server) createEnvironment(c *gin.Context) {
 		writeErr(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	typ := normalizeEnvironmentType(req.Type)
-	if typ != "local" && typ != "sandbox" && typ != "remote" && typ != "self_hosted" {
-		writeErr(c, http.StatusBadRequest, "Unsupported environment type")
+	typ, config, err := executionEnvironmentConfig(req.Type, req.Config)
+	if err != nil {
+		writeErr(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	req.Config = config
 	if typ == localEnvironmentType && !s.cfg.AllowLocalEnvironment {
 		writeTextErr(c, http.StatusForbidden, ErrLocalEnvironmentDisabled.Error())
 		return
@@ -135,7 +140,7 @@ func (s *Server) createEnvironment(c *gin.Context) {
 	owner := currentResourceOwner(c)
 	plainKey := shortID("ek_")
 	keyHash := sha256Hex(plainKey)
-	_, err := s.db.Pool.Exec(c.Request.Context(),
+	_, err = s.db.Pool.Exec(c.Request.Context(),
 		`INSERT INTO environments (environment_id, owner_id, name, type, config_json, api_key_hash, created_at, updated_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
 		id, owner, req.Name, typ, mustJSON(req.Config), keyHash, now)
@@ -195,7 +200,12 @@ func (s *Server) updateEnvironment(c *gin.Context) {
 			writeErr(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		configJSON = mustJSON(req.Config)
+		_, config, err := executionEnvironmentConfig(e.Type, req.Config)
+		if err != nil {
+			writeErr(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		configJSON = mustJSON(config)
 	}
 	now := nowMillis()
 	if _, err := s.db.Pool.Exec(c.Request.Context(),
@@ -265,3 +275,84 @@ func (s *Server) rotateEnvironmentKey(c *gin.Context) {
 	out["apiKey"] = plainKey
 	c.JSON(http.StatusOK, out)
 }
+
+// The public mode belongs to the Environment; transport credentials only scope Workers.
+func executionEnvironmentConfig(requestType string, raw any) (string, map[string]any, error) {
+	config := map[string]any{}
+	if raw != nil {
+		input, ok := raw.(map[string]any)
+		if !ok {
+			return "", nil, fmt.Errorf("config must be an object")
+		}
+		for key, value := range input {
+			config[key] = value
+		}
+	}
+	typ := strings.TrimSpace(requestType)
+	if configured, ok := config["type"].(string); ok {
+		if typ != "" && normalizeEnvironmentType(typ) != normalizeEnvironmentType(configured) {
+			return "", nil, fmt.Errorf("type and config.type differ")
+		}
+		typ = configured
+	}
+	typ = normalizeEnvironmentType(typ)
+	if typ == "sandbox" {
+		typ = "cloud"
+	}
+	if typ != "local" && typ != "cloud" && typ != "self_hosted" && typ != "remote" {
+		return "", nil, fmt.Errorf("Unsupported environment type")
+	}
+	config["type"] = typ
+	if scope, ok := config["isolationScope"].(string); ok && !strings.EqualFold(scope, "SESSION") && typ != "remote" {
+		return "", nil, fmt.Errorf("Hands environments require SESSION isolation")
+	}
+	if typ == "cloud" || typ == "self_hosted" {
+		provider, _ := config["provider"].(string)
+		if provider == "" {
+			if typ == "cloud" {
+				provider = "acs"
+			} else {
+				provider = "e2b"
+			}
+		}
+		if (typ == "cloud" && provider != "acs") || (provider != "acs" && provider != "e2b") {
+			return "", nil, fmt.Errorf("Unsupported Sandbox provider")
+		}
+		config["provider"] = provider
+		endpoint, _ := config["apiBaseUrl"].(string)
+		domain, _ := config["domain"].(string)
+		if endpoint == "" && domain != "" {
+			endpoint = "https://api." + domain
+			config["apiBaseUrl"] = endpoint
+		}
+		endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
+		config["apiBaseUrl"] = endpoint
+		parsed, err := url.Parse(endpoint)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.User != nil {
+			return "", nil, fmt.Errorf("apiBaseUrl or domain required")
+		}
+		if domain == "" && config["envdBaseUrl"] == nil {
+			return "", nil, fmt.Errorf("domain or envdBaseUrl required")
+		}
+		if typ == "cloud" {
+			template, _ := config["templateId"].(string)
+			if template == "" {
+				return "", nil, fmt.Errorf("ACS templateId required")
+			}
+			if config["sandboxId"] != nil {
+				return "", nil, fmt.Errorf("cloud creates its own Sandbox; sandboxId is self_hosted only")
+			}
+		} else {
+			key, _ := config["apiKey"].(string)
+			if strings.TrimSpace(key) == "" {
+				return "", nil, fmt.Errorf("self_hosted requires its own Sandbox apiKey")
+			}
+			if id, ok := config["sandboxId"].(string); ok && !sandboxIdentity.MatchString(id) {
+				return "", nil, fmt.Errorf("Invalid sandboxId")
+			}
+		}
+	}
+	return typ, config, nil
+}
+
+var sandboxIdentity = regexp.MustCompile(`^[A-Za-z0-9_-]{1,256}$`)

@@ -1,150 +1,50 @@
 ---
-title: "SSE 与事件续传"
-description: "通过快照与 SSE 观察任务、恢复断线后的进度，并通过 Webhook 接收后台通知。"
+title: "Session 历史与实时事件"
+description: "先打开并缓冲实时流，再读取历史，最后按稳定 Event ID 去重。"
 en_link: /v2/en/service/sse-events
 ---
 
-任务提交后，应用需要把后台的执行进度展示给用户。Session API 会保存快照与事件日志：快照用于恢复已经发生的工作，后续事件用于更新页面上的消息、工具调用和待办。应用通过 SSE 持续接收这些事件，因此用户刷新页面或网络断开后，仍可以继续观察同一项任务；关闭连接不会取消执行。
+本页适用于 Managed Draft 3 首版，参见 [Session 事件 API](/v2/zh/service/claude-session-api)。当前仅启用普通实时 SSE；可靠续传是单独的后续能力。
 
-首次创建 Session 和提交 Turn 的流程见[通过 Session API 接入应用](/v2/zh/service/service-api)。下面沿用该页的 `SESSION_URL`，使用本地免鉴权模式。如果业务后端需要在用户离线后收到通知，可以直接阅读本页的[Webhook 部分](#webhooks)，它与页面上的 SSE 订阅可以同时使用。
+`GET /v1/sessions/{session}/events/stream` 跟踪连接边界之后的事件。服务先记录持久位置，再发送 connected 注释，并从持久日志读取随后提交的事实；通知不是唯一事实来源。
 
-## 先恢复快照，再接收增量
+```text
+event: agent.message
+data: {"id":"evt_answer","type":"agent.message","content":[{"type":"text","text":"完成。"}],"processed_at":"2026-10-19T07:01:36Z"}
 
-应用第一次打开页面时，应先读取 Session 的 `/snapshot`，用返回内容恢复消息、工具和待办，然后把其中的 `as_of` 作为 `/events/stream` 的 `after` 参数。每处理完一个事件，再保存它的 cursor。网络重连时从最后成功应用的 cursor 继续；如果页面状态也丢失了，则重新加载快照。
-
-本地模式无需凭据即可读取事件。生产调用身份配置见[生产部署](/v2/zh/service/kubernetes#production-application-credentials)。
-
-```bash
-SNAPSHOT=$(
-  curl -sS --fail-with-body "$SESSION_URL/snapshot"
-)
-CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
+: keepalive
 ```
 
-```bash
-curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "Accept: text/event-stream" \
-  --data-urlencode "after=$CURSOR"
-```
+首版拒绝 after、Last-Event-ID、preview 和 event_deltas。允许官方 SDK 的 beta=true 传输参数。Turn 结束后流继续保持，断线不会取消执行。
 
-若只显示一个任务，则使用 `/turns/{turnId}/snapshot` 与 `/turns/{turnId}/events/stream`。Session、Turn 和子 Agent 各有自己的事件日志，游标只能用在产生它的资源上。它不是时间戳，也不能通过解析其中的字符推断事件序号。服务支持 `Last-Event-ID`；这个请求头存在时优先于查询参数。
+`AgentScope-Extensions: turn-inputs-v1` 增加平台字段与 Turn/Input 通知。标准流只包含标准类型。checkpoint、私有思考、租约和凭据不公开。
 
-<Accordion title="单个 Turn 订阅与断线续传">
+恢复顺序：
 
-只观察一个 Turn 时，使用这一对接口：
+1. 打开新的实时流并缓冲事件。
+2. 读取 `/events?limit=100&order=asc`，跟随 next_page 翻页。
+3. 应用历史和缓冲事件，按稳定 Event ID 去重。
+4. 继续处理实时流；再次断线后重复上述过程。
 
-```bash
-TURN_URL="$SESSION_URL/turns/$TURN_ID"
-TURN_SNAPSHOT=$(
-  curl -sS --fail-with-body "$TURN_URL/snapshot"
-)
-TURN_CURSOR=$(jq -er '.as_of' <<< "$TURN_SNAPSHOT")
-```
+同一个输入 Event 可以先以 `processed_at=null` 出现在历史中，处理完成后在实时流中出现相同 ID。合并时更新原记录，不要丢弃处理后的状态或重复插入消息。
 
-```bash
-curl -sS --fail-with-body -N -G "$TURN_URL/events/stream" \
-  -H "Accept: text/event-stream" \
-  --data-urlencode "after=$TURN_CURSOR"
-```
+Turn 最终结果由 `/turns/{turn}/output` 独立提供，不应将 keepalive、断线或普通消息直接当成 Turn 已完成。使用 Turn 状态和结果接口判断完成；取消操作通过事件 API 受理，不能用关闭流代替。
 
-重连 Session 流时，将 `LAST_APPLIED_CURSOR` 替换为最后成功应用的 Session 事件游标。本例使用请求头续传，无需同时传 `after`：
+权限在订阅期间持续检查。权限撤销时停止流；查询历史和重新订阅仍需保留相同调用身份、Session 和作用域。生产环境使用应用凭据或平台 Bearer 令牌，本地开发模式需要显式开启。
 
-```bash
-LAST_APPLIED_CURSOR="LAST_APPLIED_SESSION_CURSOR"
-curl -sS --fail-with-body -N "$SESSION_URL/events/stream" \
-  -H "Accept: text/event-stream" \
-  -H "Last-Event-ID: $LAST_APPLIED_CURSOR"
-```
+可靠投递、snapshot、preview 和新版 Managed Webhook 协议仍未启用。其他后端保留各自的观察契约，其游标不能作为 Managed 历史分页参数。
 
-</Accordion>
+### Managed 工具输出与操作进度
 
-## 理解事件与状态
+通过 `agent.tool_use`、`agent.mcp_tool_use` 及对应结果事件展示工具活动。按稳定 Event 身份合并更新，并查询指定 Turn/Input 的执行与处理状态。工具输出本身不表示 Turn 已完成，最终结果仍需独立查询。私有 checkpoint 和执行租约不作为公开进度字段。
 
-SSE 的 `id` 字段是续传游标，`event` 是事件类型，`data` 是 JSON 事件。公共事件包含 `schema_version`、`id`、`type`、`session_id`、`created_at`、`cursor` 和 `data`；属于某个任务的事件还会关联 `turn_id`。应用应按事件 ID 去重，并按资源 ID 更新已有内容，不能每收到一次通知就添加一张新卡片。
+## Webhooks
 
-`item.delta` 用于追加消息增量，`item.completed` 提供该消息的累计内容。处理完成事件时应替换累计内容，避免把同一段文字追加两次。工具事件描述单次工具调用，`required_action.*` 描述待办和答复，`step.*` 描述协作或流程步骤。只有目标 Turn 的明确状态才能判断任务是否结束，单个工具或子任务完成不代表整个任务完成。
+新版 Managed Draft 3 Webhook 协议尚未启用，以 `/capabilities` 为准；此前原生 `/v1/sessions/{id}/webhooks` 注册示例不适用于本版本。当前通过 Session 事件流或 Turn/output 查询观察执行。Hosted 和 External 后端继续使用独立的 `/api/v1/agent-sessions/{id}/webhooks` 契约及原有投递行为。Automation 入站 Webhook 仍是独立触发机制，参见 [Automation](/v2/zh/service/automation)。
 
-Managed Session 快照使用运行时的资源数组，可以展示输入、子 Agent 和运行尝试；通用 Turn 与 Team、Workflow 快照使用按 ID 索引的集合。前端可复用 `agentSessions.ts` 与 `agentSessionView.ts` 处理 Managed 执行视图，或用 `serviceSessions.ts` 处理通用 Turn 视图。不要把这两种快照形状当成完全相同的数据结构。
-
-## 分页、断线与过期
-
-无需持续连接时，可以使用 `GET /events?after=...&limit=100` 分页读取。响应中的 `next_cursor` 用于下一页，`has_more` 表示当前还有可读事件。空页并不表示任务已完成；应用仍应读取 Turn 状态，或继续等待后续事件。
-
-```bash
-EVENT_PAGE=$(
-  curl -sS --fail-with-body -G "$SESSION_URL/events" \
-    --data-urlencode "after=$CURSOR" \
-    --data-urlencode "limit=100"
-)
-jq . <<< "$EVENT_PAGE"
-```
-
-仅当 `has_more` 为 true 时立即读取下一页；处理完当前页后再推进游标。
-
-```bash
-if jq -e '.has_more == true' <<< "$EVENT_PAGE" > /dev/null; then
-  NEXT_CURSOR=$(jq -er '.next_cursor' <<< "$EVENT_PAGE")
-  curl -sS --fail-with-body -G "$SESSION_URL/events" \
-    --data-urlencode "after=$NEXT_CURSOR" \
-    --data-urlencode "limit=100"
-fi
-```
-
-如果请求返回 `410` 和 `cursor_expired`，说明该资源的增量历史已超过保留范围。此时读取新的快照，并从新的 `as_of` 恢复订阅。不要为了恢复观察而重新提交任务。不同资源的游标不可交换，错误的游标会被拒绝。
-
-<span id="webhooks"></span>
-
-## 用户离线后的 Webhook 通知
-
-业务后端可以在 Session 的 `/webhooks` 注册通知，覆盖该会话中的后续任务；如果只关心一个任务，则在对应 Turn 的 `/webhooks` 注册。生产回调权限配置见[生产部署](/v2/zh/service/kubernetes#production-application-credentials)。下面的目标地址应替换为你实际部署的 HTTPS 接收端：
-
-```bash
-WEBHOOKS_URL="$SESSION_URL/webhooks"
-WEBHOOK_JSON=$(
-  curl -sS --fail-with-body "$WEBHOOKS_URL" \
-    -H "Content-Type: application/json" \
-    -H "Idempotency-Key: notifications-001" \
-    --data-binary @- <<'JSON'
-{
-  "url": "https://your-app.example/agent-events",
-  "event_types": [
-    "turn.completed",
-    "turn.failed",
-    "required_action.created"
-  ]
-}
-JSON
-)
-WEBHOOK_ID=$(jq -er '.webhook.id' <<< "$WEBHOOK_JSON")
-SIGNING_SECRET=$(jq -er '.signing_secret' <<< "$WEBHOOK_JSON")
-```
-
-保存返回的 `signing_secret`，不要将它暴露给浏览器。接收端使用这个 secret，对 `时间戳 + '.' + 原始请求体` 计算 HMAC-SHA256，并与 `X-AgentScope-Signature: t=<秒>,v1=<hex>` 比较。同时检查时间窗口，并按事件 ID 去重。验签必须使用原始请求字节，不能先解析 JSON 再序列化。
-
-如果只通知一个 Turn，在注册前改用 `WEBHOOKS_URL="$SESSION_URL/turns/$TURN_ID/webhooks"`。下面的管理请求继续使用注册时的 `WEBHOOKS_URL` 和返回的 `WEBHOOK_ID`。
-
-Webhook 是至少一次投递，因此同一个事件可能收到多次。接收端应先可靠保存通知，再返回成功，并按需要读取 Session 或 Turn 的最新状态。`GET /webhooks` 可检查投递状态；失败后可以调用 `POST /webhooks/{webhookId}/retry` 重试，或者通过 `DELETE` 撤销订阅。Webhook 不会替业务系统完成幂等处理，也不表示外部业务事务已经提交。
-
-<Accordion title="查看、重试与停用 Webhook">
-
-查看订阅及投递状态：
-
-```bash
-curl -sS --fail-with-body "$WEBHOOKS_URL"
-```
-
-接收端恢复后，按需重试失败投递：
-
-```bash
-curl -sS --fail-with-body -X POST "$WEBHOOKS_URL/$WEBHOOK_ID/retry"
-```
-
-不再需要通知时停用订阅：
-
-```bash
-curl -sS --fail-with-body -X DELETE "$WEBHOOKS_URL/$WEBHOOK_ID"
-```
-
-</Accordion>
-
-自动化的入站 Webhook 用于让外部系统触发工作，与这里用于通知结果的出站 Webhook 用途不同。配置入口见[自动化](/v2/zh/service/automation)，保留和恢复策略见[运维](/v2/zh/service/operations)。
+{/* Preserve earlier anchors; current capability limits supersede the old examples. */}
+<span id="先恢复快照再接收增量"></span>
+<span id="理解事件与状态"></span>
+<span id="分页断线与过期"></span>
+<span id="用户离线后的-webhook-通知"></span>
+<span id="managed-运行时协议"></span>

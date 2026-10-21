@@ -32,7 +32,6 @@ import (
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/collaboration"
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/metrics"
-	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/taskauth"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/taskplane"
@@ -41,11 +40,8 @@ import (
 const commandAttemptDispatch = "dispatch"
 
 type ManagedSessionAPI interface {
-	FindOrCreateSessionID(ctx context.Context, ownerID, agentID, environmentID, externalKey string) (string, error)
-	ClaimManagedRuntimeFence(ctx context.Context, sessionID string, agentTaskID, attemptID uuid.UUID,
-		dispatchGeneration int64, turnID string) error
-	PostSessionWakeEvent(ctx context.Context, sessionID, ownerID, text string) error
-	PostManagedAttemptAbort(ctx context.Context, sessionID, ownerID string, abort product.ManagedAttemptAbort) error
+	AdmitManagedAttempt(context.Context, uuid.UUID) (string, error)
+	CancelManagedAttempt(context.Context, uuid.UUID) error
 }
 
 // CancelAttempt sends a backend-specific cancellation after the durable
@@ -61,10 +57,7 @@ func (r *Resolver) CancelAttempt(ctx context.Context, attempt *controlmodel.Exec
 		if r.Managed == nil {
 			return fmt.Errorf("managed runtime adapter is not configured")
 		}
-		return r.Managed.PostManagedAttemptAbort(ctx, attempt.SessionID, attempt.ManagedOwnerRef,
-			product.ManagedAttemptAbort{AgentTaskID: attempt.AgentTaskID, AttemptID: attempt.ID,
-				DispatchGeneration: attempt.DispatchGeneration, TurnID: attempt.TurnID,
-				Reason: "task_cancel_requested"})
+		return r.Managed.CancelManagedAttempt(ctx, attempt.ID)
 	case controlmodel.DataPlaneExternalApplication:
 		if r.External == nil || attempt.AgentInstanceID == nil {
 			return fmt.Errorf("external runtime target is unavailable")
@@ -153,6 +146,10 @@ func (r *Resolver) ResolveCandidate(ctx context.Context, taskID uuid.UUID, reque
 	if len(task.RuntimeBinding) > 0 {
 		var existing controlmodel.RuntimeDispatchSnapshot
 		if json.Unmarshal(task.RuntimeBinding, &existing) == nil && existing.Binding.Kind != "" && existing.SelectionSource == "node" {
+			existing, err = r.Store.RuntimeSnapshots().RevealDispatch(task.ID.String(), existing)
+			if err != nil {
+				return controlmodel.RuntimeBindingCandidate{}, err
+			}
 			return controlmodel.RuntimeBindingCandidate{Binding: existing.Binding,
 				RequiredCapabilities: existing.Capabilities, SecurityConstraints: existing.SecurityConstraints,
 				SelectionSource: existing.SelectionSource, CandidateIndex: existing.CandidateIndex}, existing.Binding.Validate()
@@ -277,46 +274,78 @@ func (r *Resolver) dispatchManaged(ctx context.Context, taskID uuid.UUID, candid
 	if err != nil {
 		return nil, err
 	}
-	wake := managedWakeWithBrief(task, envelope.ExecutionBrief)
-	sessionID, err := r.Managed.FindOrCreateSessionID(ctx, binding.ManagedOwnerRef,
-		binding.ManagedDefinitionRef, "", "agent-task|"+task.ID.String())
-	if err != nil {
-		return nil, err
-	}
-	snapshot, _ := json.Marshal(controlmodel.RuntimeDispatchSnapshot{Binding: binding,
+	attemptID := uuid.New()
+	// Each physical Attempt owns a native Session. A retry must not share the
+	// workspace or an unfinished tool execution with its predecessor.
+	sessionID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("managed-attempt:"+attemptID.String())).String()
+	snapshot, _ := json.Marshal(controlmodel.RuntimeDispatchSnapshot{PortalCommandID: serviceapi.ContextPortalCommandID(ctx), Binding: binding,
 		SessionID: sessionID, Capabilities: candidate.RequiredCapabilities,
+		ManagedInput:        managedWakeWithBrief(task, envelope.ExecutionBrief),
 		SecurityConstraints: candidate.SecurityConstraints, SelectionSource: candidate.SelectionSource,
 		CandidateIndex: candidate.CandidateIndex, ResolvedAt: time.Now().UTC()})
 	dispatched, attempt, err := r.Store.Collaboration().ClaimAgentTaskWithAttempt(ctx, store.TaskClaim{
 		TaskID: task.ID, ExpectedVersion: task.Version, RuntimeBinding: snapshot, SessionID: sessionID,
-	}, &controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged,
+	}, &controlmodel.ExecutionAttempt{ID: attemptID, BackendKind: controlmodel.DataPlaneManaged,
 		AgentID: binding.AgentID, BindingID: binding.BindingID,
 		State: controlmodel.ExecutionAssigned, ManagedOwnerRef: binding.ManagedOwnerRef,
-		ManagedAgentRef: binding.ManagedDefinitionRef, SessionID: sessionID, TurnID: uuid.NewString(),
+		ManagedAgentRef: binding.ManagedDefinitionRef, SessionID: sessionID,
 		RequiredCapabilities: candidate.RequiredCapabilities})
 	if err != nil {
 		return nil, err
 	}
-	if err := r.persistSession(ctx, dispatched, sessionID, binding, nil); err != nil {
-		return nil, err
-	}
-	if err := r.Managed.ClaimManagedRuntimeFence(ctx, sessionID, dispatched.ID, attempt.ID,
-		attempt.DispatchGeneration, attempt.TurnID); err != nil {
-		_, _, _ = r.Store.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, task.ID, store.TaskFailure{
-			ExpectedVersion: dispatched.Version, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,
-			Code: "managed_runtime_fence_claim_failed", Message: err.Error()})
-		return nil, err
-	}
-	if err := r.Managed.PostSessionWakeEvent(ctx, sessionID, binding.ManagedOwnerRef,
-		wake); err != nil {
-		_, _, _ = r.Store.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, task.ID, store.TaskFailure{
-			ExpectedVersion: dispatched.Version, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,
-			Code: "managed_wake_failed", Message: err.Error()})
-		return nil, err
-	}
+	// Claim and agent-task.dispatched.v1 commit together. Its Outbox consumer
+	// admits this exact Attempt even if this process stops before any HTTP call.
 	metrics.RecordAgentTaskTransition(dispatched.Namespace, string(binding.Kind), string(dispatched.Status))
 	return &DispatchResult{Task: dispatched, Execution: attempt, SessionID: sessionID,
 		TaskToken: r.taskTokenForAttempt(taskID, attempt), AttemptToken: r.attemptToken(attempt)}, nil
+}
+
+// SubmitManagedAttempt retries admission for the immutable dispatched Attempt.
+// Ambiguous transport failures leave it dispatched; they never create a new execution.
+func (r *Resolver) SubmitManagedAttempt(ctx context.Context, attemptID uuid.UUID) error {
+	if r.Managed == nil {
+		return fmt.Errorf("managed runtime adapter is not configured")
+	}
+	attempt, err := r.Store.ExecutionAttempts().Get(ctx, attemptID)
+	if err != nil {
+		return err
+	}
+	if attempt.BackendKind != controlmodel.DataPlaneManaged {
+		return nil
+	}
+	task, err := r.Store.Collaboration().GetAgentTask(ctx, attempt.AgentTaskID)
+	if err != nil {
+		return err
+	}
+	if task.CurrentAttemptID == nil || *task.CurrentAttemptID != attempt.ID ||
+		controlmodel.IsAgentTaskTerminal(task.Status) || controlmodel.IsExecutionAttemptTerminal(attempt.State) ||
+		attempt.State == controlmodel.ExecutionCancelRequested || attempt.TurnID != "" {
+		return nil
+	}
+	var snapshot controlmodel.RuntimeDispatchSnapshot
+	if err = json.Unmarshal(attempt.RuntimeBinding, &snapshot); err != nil {
+		return err
+	}
+	ctx, err = serviceapi.TaskContext(ctx, r.Store, task)
+	if err != nil {
+		return err
+	}
+	if r.AuthorizeTask != nil {
+		if err = r.AuthorizeTask(ctx, task, controlmodel.RuntimeBindingCandidate{Binding: snapshot.Binding,
+			RequiredCapabilities: snapshot.Capabilities, SecurityConstraints: snapshot.SecurityConstraints}); err != nil {
+			return err
+		}
+	}
+	if err = r.persistSession(ctx, task, attempt.SessionID, snapshot.Binding, nil); err != nil {
+		return err
+	}
+	turnID, err := r.Managed.AdmitManagedAttempt(ctx, attempt.ID)
+	if err != nil {
+		return err
+	}
+	_, err = r.Store.ExecutionAttempts().BindManagedTurn(ctx, store.ManagedTurnBinding{AttemptID: attempt.ID,
+		DispatchGeneration: attempt.DispatchGeneration, SessionID: attempt.SessionID, TurnID: turnID})
+	return err
 }
 
 func managedWakeWithBrief(task *controlmodel.AgentTask, brief *collaboration.ExecutionBrief) string {
@@ -433,7 +462,7 @@ func (r *Resolver) dispatchExternal(ctx context.Context, taskID uuid.UUID, candi
 	}
 	sessionID := uuid.NewString()
 	instanceID := instance.ID
-	snapshot, _ := json.Marshal(controlmodel.RuntimeDispatchSnapshot{Binding: binding, Definition: definition,
+	snapshot, _ := json.Marshal(controlmodel.RuntimeDispatchSnapshot{PortalCommandID: serviceapi.ContextPortalCommandID(ctx), Binding: binding, Definition: definition,
 		AgentInstanceID: &instanceID, SessionID: sessionID, Capabilities: instance.Capabilities,
 		SecurityConstraints: candidate.SecurityConstraints,
 		SelectionSource:     candidate.SelectionSource, CandidateIndex: candidate.CandidateIndex,
@@ -521,10 +550,14 @@ func (r *Resolver) persistSession(ctx context.Context, task *controlmodel.AgentT
 		instanceGeneration = instance.Generation
 	}
 	now := time.Now().UTC()
+	framework := ""
+	if binding.Kind == controlmodel.DataPlaneManaged {
+		framework = string(controlmodel.DataPlaneManaged)
+	}
 	_, err = r.Store.Sessions().Upsert(ctx, &store.Session{SessionID: sessionID,
 		Tenant: task.Tenant, AgentID: binding.AgentID, BindingID: binding.BindingID,
 		AgentInstanceID: agentInstanceID, InstanceGeneration: instanceGeneration,
-		AgentName: agent.AgentKey, Namespace: task.Namespace, InstanceRef: instanceRef,
+		AgentName: agent.AgentKey, Namespace: task.Namespace, InstanceRef: instanceRef, Framework: framework,
 		OriginType: "agent-task", OriginRef: task.ID.String(),
 		Phase: store.SessionPhaseActive, AgentTaskID: &task.ID, TaskContext: contextJSON,
 		StartedAt: &now, LastActiveAt: &now})

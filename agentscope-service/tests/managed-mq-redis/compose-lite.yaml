@@ -1,0 +1,67 @@
+name: managed-mq-redis-lite
+services:
+  namesrv:
+    image: managed-test/rocketmq:5.5.1
+    command: [sh, mqnamesrv]
+    environment:
+      JAVA_OPT_EXT: '-Xms128m -Xmx128m -Xmn32m'
+    healthcheck:
+      test: [CMD-SHELL, "bash -c '</dev/tcp/127.0.0.1/9876'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  mq-store-init:
+    image: managed-test/rocketmq:5.5.1
+    user: '0:0'
+    entrypoint: [sh, -ec]
+    command: ['chown 3000:3000 /home/rocketmq/store']
+    volumes: [lite-data:/home/rocketmq/store]
+  broker:
+    image: managed-test/rocketmq:5.5.1
+    command: [sh, mqbroker, -c, /opt/managed/broker.conf]
+    environment:
+      NAMESRV_ADDR: namesrv:9876
+      JAVA_OPT_EXT: '-Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m'
+    ports: ['127.0.0.1:19981:19981']
+    volumes:
+      - ./broker-lite.conf:/opt/managed/broker.conf:ro
+      - ./init-lite-topics.sh:/opt/managed/init-topics.sh:ro
+      - lite-data:/home/rocketmq/store
+    depends_on:
+      namesrv: {condition: service_healthy}
+      mq-store-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD-SHELL, "bash -c '</dev/tcp/127.0.0.1/21911'"]
+      interval: 5s
+      timeout: 3s
+      retries: 45
+      start_period: 20s
+  topics:
+    image: managed-test/rocketmq:5.5.1
+    entrypoint: [sh, /opt/managed/init-topics.sh]
+    network_mode: service:broker
+    volumes:
+      - ./init-lite-topics.sh:/opt/managed/init-topics.sh:ro
+    depends_on:
+      broker: {condition: service_healthy}
+  proxy:
+    image: managed-test/rocketmq:5.5.1
+    command: [sh, mqproxy, -pm, CLUSTER, -n, namesrv:9876, -pc, /opt/managed/proxy.json]
+    # Local fixture: the Proxy shares the Broker network namespace so its
+    # advertised loopback Broker address works from both the host and Proxy.
+    network_mode: service:broker
+    environment:
+      JAVA_OPT_EXT: '-Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m'
+    volumes:
+      - ./proxy-lite.json:/opt/managed/proxy.json:ro
+    depends_on:
+      broker: {condition: service_healthy}
+      topics: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD-SHELL, "bash -c '</dev/tcp/127.0.0.1/19981'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+volumes:
+  lite-data:

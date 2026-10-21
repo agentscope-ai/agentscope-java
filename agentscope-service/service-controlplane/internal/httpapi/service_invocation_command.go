@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -36,15 +35,18 @@ import (
 )
 
 type serviceCommand struct {
-	Actor       model.Actor     `json:"actor"`
-	ID          uuid.UUID       `json:"id"`
-	Kind        string          `json:"kind"`
-	Status      string          `json:"status"`
-	Principal   string          `json:"-"`
-	Payload     json.RawMessage `json:"payload"`
-	Error       string          `json:"error,omitempty"`
-	Attempts    int             `json:"attempts"`
-	NextAttempt time.Time       `json:"next_attempt,omitempty"`
+	Actor               model.Actor     `json:"actor"`
+	ID                  uuid.UUID       `json:"id"`
+	Kind                string          `json:"kind"`
+	Status              string          `json:"status"`
+	Principal           string          `json:"-"`
+	Payload             json.RawMessage `json:"payload"`
+	Error               string          `json:"error,omitempty"`
+	Attempts            int             `json:"attempts"`
+	NextAttempt         time.Time       `json:"next_attempt,omitempty"`
+	InputID             string          `json:"input_id,omitempty"`
+	InputStatus         string          `json:"input_status,omitempty"`
+	InputDeliveryStatus string          `json:"input_delivery_status,omitempty"`
 }
 type serviceActionInput struct {
 	RequestID string               `json:"request_id"`
@@ -156,11 +158,39 @@ func (s *Server) getServiceCommand(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
+	if command.Status == "submitted" {
+		err = s.store.WithSessionLock(c, "service-commands:"+inv.ID.String(), func(ctx context.Context) error {
+			current, err := s.store.KV().Get(ctx, ep.Tenant, serviceCommandPath(inv.ID), id.String())
+			if err != nil {
+				return err
+			}
+			command, err = decodeServiceCommand(current.Value)
+			if err != nil || command.Status != "submitted" {
+				return err
+			}
+			if err = s.refreshNativeServiceCommand(ctx, ep, inv, &command, endpointActor(c)); err != nil {
+				return err
+			}
+			raw, err := json.Marshal(map[string]any{"command": command, "principal": command.Principal})
+			if err != nil {
+				return err
+			}
+			_, err = s.store.KV().Put(ctx, ep.Tenant, serviceCommandPath(inv.ID), command.ID.String(), raw)
+			return err
+		})
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return
+		}
+	}
 	c.JSON(200, gin.H{"command": command})
 }
 func (s *Server) validateServiceCommand(ctx context.Context, inv *model.EndpointInvocation, ep *model.Endpoint, cmd *serviceCommand, in serviceActionInput) error {
 	switch cmd.Kind {
 	case "actions":
+		if strings.HasPrefix(in.RequestID, "native-task:") {
+			return s.nativeManagedTaskAction(ctx, ep, inv, cmd, in, false)
+		}
 		if strings.HasPrefix(in.RequestID, "native:") {
 			return s.nativeServiceAction(ctx, ep, inv, cmd, in, false)
 		}
@@ -221,22 +251,7 @@ func (s *Server) validateServiceCommand(ctx context.Context, inv *model.Endpoint
 		}
 	case "resume":
 		if inv.RunID == nil {
-			turn, err := s.nativeServiceTurn(ctx, ep, inv)
-			if err != nil {
-				return err
-			}
-			raw, err := s.product.ManagedServiceRequest(ctx, turn.Owner, inv.SessionID, "GET", "/turns/"+url.PathEscape(turn.ID), "", nil)
-			if err != nil {
-				return err
-			}
-			var state struct {
-				Status string `json:"status"`
-			}
-			_ = json.Unmarshal(raw, &state)
-			if state.Status != "interrupted" {
-				return fmt.Errorf("resume requires an interrupted native turn")
-			}
-			return nil
+			return fmt.Errorf("Managed Turns resume through durable Input or automatic recovery")
 		}
 		if inv.RunID == nil {
 			return fmt.Errorf("invocation has no resumable workflow")
@@ -323,16 +338,24 @@ func (s *Server) processServiceCommands(ctx context.Context, inv *model.Endpoint
 						return err
 					}
 				}
-				if cmd.Status != "accepted" || time.Now().Before(cmd.NextAttempt) {
+				if cmd.Status != "accepted" && cmd.Status != "submitted" || time.Now().Before(cmd.NextAttempt) {
 					continue
 				}
 				var in serviceActionInput
 				_ = json.Unmarshal(cmd.Payload, &in)
-				err = s.applyServiceCommand(ctx, inv, ep, &cmd, in)
-				cmd.Attempts++
+				if cmd.Status == "submitted" {
+					err = s.refreshNativeServiceCommand(ctx, ep, inv, &cmd, cmd.Actor)
+				} else {
+					err = s.applyServiceCommand(ctx, inv, ep, &cmd, in)
+					cmd.Attempts++
+				}
 				if err == nil {
-					cmd.Status = "completed"
-					cmd.Error = ""
+					if cmd.InputID == "" {
+						cmd.Status = "completed"
+					}
+					if cmd.Status != "failed" {
+						cmd.Error = ""
+					}
 				} else {
 					cmd.Error = err.Error()
 					cmd.NextAttempt = time.Now().Add(time.Duration(min(cmd.Attempts*2, 60)) * time.Second)
@@ -362,15 +385,22 @@ func (s *Server) applyServiceCommand(ctx context.Context, inv *model.EndpointInv
 	}
 	switch cmd.Kind {
 	case "cancel":
+		if inv.Mode == model.EndpointConversationMode && inv.RunID == nil && s.product != nil {
+			if turn, err := s.nativeServiceTurn(ctx, ep, inv); err == nil {
+				if err = s.applyNativeServiceInput(ctx, ep, inv, turn, cmd, "cancel", "", map[string]any{}); err != nil {
+					return err
+				}
+				inv.Status = model.EndpointInvocationCancelRequested
+				_, err = s.store.Endpoints().UpdateInvocation(ctx, inv)
+				return err
+			} else if !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
 		return s.cancelServiceInvocation(ctx, inv.ID, false)
 	case "resume":
 		if inv.RunID == nil {
-			turn, err := s.nativeServiceTurn(ctx, ep, inv)
-			if err != nil {
-				return err
-			}
-			_, err = s.product.ManagedServiceRequest(ctx, turn.Owner, inv.SessionID, "POST", "/turns/"+url.PathEscape(turn.ID)+"/resume", cmd.ID.String(), map[string]any{})
-			return err
+			return fmt.Errorf("Managed Turns do not expose a resume command")
 		}
 		run, err := s.store.Orchestration().GetRun(ctx, *inv.RunID)
 		if err != nil {
@@ -382,6 +412,9 @@ func (s *Server) applyServiceCommand(ctx context.Context, inv *model.EndpointInv
 		_, err = s.orchestrationService().Resume(ctx, run.ID)
 		return err
 	case "actions":
+		if strings.HasPrefix(in.RequestID, "native-task:") {
+			return s.nativeManagedTaskAction(ctx, ep, inv, cmd, in, true)
+		}
 		if strings.HasPrefix(in.RequestID, "native:") {
 			return s.nativeServiceAction(ctx, ep, inv, cmd, in, true)
 		}
@@ -412,8 +445,7 @@ func (s *Server) applyServiceCommand(ctx context.Context, inv *model.EndpointInv
 			if err != nil {
 				return err
 			}
-			_, err = s.product.ManagedServiceRequest(ctx, turn.Owner, inv.SessionID, "POST", "/turns/"+url.PathEscape(turn.ID)+"/steer", cmd.ID.String(), map[string]any{"message": in.Message})
-			return err
+			return s.applyNativeServiceInput(ctx, ep, inv, turn, cmd, "steer", "", map[string]any{"message": in.Message})
 		}
 		if in.RequestID != "" {
 			return s.applyServiceSignal(ctx, inv, in, cmd.ID.String(), cmd.Actor)
@@ -489,6 +521,12 @@ func (s *Server) requestServiceCancellation(ctx context.Context, inv *model.Endp
 		return err
 	}
 	if inv.RunID != nil {
+		if contract, err := serviceapi.ReadContract(inv.Contract); err == nil && contract.PortalCommandID != "" {
+			// New Portal work is owned by the root Run and explicit child nodes.
+			// Each cancelling Run advances its own finite batch on every replica.
+			_, err = s.orchestrationService().Cancel(ctx, *inv.RunID)
+			return err
+		}
 		ids, loadErr := s.serviceRunIDs(ctx, *inv.RunID)
 		if loadErr != nil {
 			return loadErr
@@ -529,15 +567,12 @@ func (s *Server) requestServiceCancellation(ctx context.Context, inv *model.Endp
 		return err
 	}
 	if binding.Kind == model.DataPlaneManaged && s.product != nil {
-		if turn, e := s.nativeServiceTurn(ctx, ep, inv); e == nil {
-			_, err = s.product.ManagedServiceRequest(ctx, turn.Owner, inv.SessionID, "POST", "/turns/"+url.PathEscape(turn.ID)+"/cancel", "", map[string]any{})
-			return err
+		turn, e := s.nativeServiceTurn(ctx, ep, inv)
+		if e != nil {
+			return e
 		}
-		var cfg model.ManagedBindingConfiguration
-		if err = json.Unmarshal(binding.Configuration, &cfg); err != nil {
-			return err
-		}
-		return s.product.AbortManagedSession(ctx, conv.SessionID, cfg.OwnerRef)
+		_, err = s.nativeRuntimeInput(ctx, ep, inv, turn, inv.Actor, "cancel:"+inv.ID.String(), "cancel", "", map[string]any{})
+		return err
 	}
 	if s.sessionOps != nil {
 		_, err = s.sessionOps.Execute(ctx, sess, sessionops.Request{Command: sessionops.CommandAbort, Operator: inv.PrincipalRef, Source: "endpoint", CommandID: "invocation-cancel:" + id.String()})

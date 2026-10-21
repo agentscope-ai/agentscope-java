@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/sessionapi"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
@@ -144,16 +145,24 @@ func TestLocalDevelopmentManagedQuickstart(t *testing.T) {
 		if r.Header.Get("X-Builder-Internal-User") != "namespace:default:default" {
 			t.Error("missing local runtime owner")
 		}
-		switch {
-		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/turns"):
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/request") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var call product.ManagedRuntimeCall
+		if err := json.NewDecoder(r.Body).Decode(&call); err != nil || call.Context.Actor["user"] != product.LocalDeveloperID || call.Context.Actor["internal"] != false {
+			t.Errorf("invalid native runtime call: %+v %v", call, err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		switch call.Operation {
+		case "session":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": call.Context.SessionID, "runtime_kind": "managed", "status": "idle"})
+		case "submit_turn":
 			submitted = true
-			w.WriteHeader(202)
-			io.WriteString(w, `{"id":"native-turn","status":"queued"}`)
-		case strings.HasSuffix(r.URL.Path, "/turns/native-turn"):
-			io.WriteString(w, `{"id":"native-turn","status":"queued"}`)
-		case strings.HasSuffix(r.URL.Path, "/events"):
-			io.WriteString(w, `{"data":[],"next_cursor":"cursor","has_more":false}`)
-		case strings.HasSuffix(r.URL.Path, "/snapshot"):
+			w.WriteHeader(http.StatusAccepted)
+			io.WriteString(w, `{"id":"native-turn","status":"accepted"}`)
+		case "snapshot":
 			io.WriteString(w, `{"items":[],"turns":[],"runs":[],"tools":[],"required_actions":[],"artifacts":[],"usage":{}}`)
 		default:
 			w.WriteHeader(404)
@@ -163,6 +172,7 @@ func TestLocalDevelopmentManagedQuickstart(t *testing.T) {
 	cfg := product.DefaultConfig()
 	cfg.LocalDev, cfg.AllowLocalEnvironment = true, true
 	cfg.DSN, cfg.WorkspaceRoot, cfg.DataURL = dsn, t.TempDir(), runtime.URL
+	cfg.SessionPortalURL = runtime.URL
 	p, err := product.Open(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -186,10 +196,32 @@ func TestLocalDevelopmentManagedQuickstart(t *testing.T) {
 	agent := call("POST", "/api/v1/agents", `{"agentKey":"local-`+uuid.NewString()+`","displayName":"Notes","binding":{"kind":"managed"},"definition":{"name":"Notes","system":"Organize notes","defaultEnvironmentId":"`+env["id"].(string)+`"}}`, 201)
 	session := call("POST", "/api/v1/agent-sessions", `{"target":{"type":"agent","id":"`+agent["agent"].(map[string]any)["id"].(string)+`"}}`, 201)
 	path := "/api/v1/agent-sessions/" + session["id"].(string)
-	call("POST", path+"/turns", `{"message":"Organize notes"}`, 202)
+	call("POST", path+"/turns", `{"message":"Managed must use Session Portal"}`, 409)
+	resource, err := sessionapi.Get(t.Context(), st, "default", uuid.MustParse(session["id"].(string)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resource.RuntimeOwner != "" {
+		t.Fatal("test must cover a Managed configuration Session without a runtime-owner marker")
+	}
+	contract, err := serviceapi.ReadContract(resource.Contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, _, err := server.publicNativeSession(t.Context(), resource, contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin, err := server.nativePublicSessionOrigin(t.Context(), resource, contract, owner, "local-native-turn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = p.ManagedRuntimeRequest(t.Context(), owner, product.ManagedRuntimeCall{Context: origin, Operation: "submit_turn", Payload: map[string]any{"input": map[string]any{"message": "Organize notes"}}}); err != nil {
+		t.Fatal(err)
+	}
 	call("GET", path+"/snapshot", "", 200)
 	if !submitted {
-		t.Fatal("local Turn did not reach dataplane")
+		t.Fatal("local Turn did not reach the native Session Portal")
 	}
 }
 

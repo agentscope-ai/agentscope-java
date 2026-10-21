@@ -7,6 +7,85 @@ zh_link: /v2/zh/service/kubernetes
 The current release is `2.1.0-BETA1`, a prerelease. Validate your deployment before using it in production.
 </Note>
 
+## Current source: Managed MQ / Redis deployment
+
+The current source deploys five components: the Go Control Plane, Gateway, Session Portal,
+Brain Dataplane and platform Hands. One `service-controlplane` binary/image owns management,
+Workflow/Team orchestration, Hosted coordination, Cron, channels, outbound messages and webhook
+sending on port 8081. There are no separate scheduler or orchestration deployments.
+
+Every control replica runs bounded workers. PostgreSQL owns message/job deduplication, claims,
+stream leases, retries and fencing; no sticky sessions or single control replica are required.
+`control.executionSlots`, `control.workerBatch`, `control.channelSlots` and `control.webhookSlots`
+set per-replica concurrency in Helm. Keep `cp` and `rt` schemas and signing/encryption keys stable.
+The new `0007_integrated_scheduler` product migration adds the shared jobs and stream leases.
+
+For an upgrade, drain incoming channel traffic and outstanding replies, stop the old Java
+Scheduler and Go orchestration deployments, run the schema jobs and reapply grants, then start
+the combined control replicas. Remove old Compose containers with `--remove-orphans`; scale down
+old Helm deployments before upgrading. Retire unused runtime/scheduler credentials only after
+cutover. This source layout requires newly built images; published BETA1 images are unchanged.
+
+Build all five current-source images together. Platform Hands is a required internal
+HTTP/MQ service on 8085, separate from customer Environment Workers. Prepare external
+PostgreSQL, Redis and RocketMQ 5.5.1 with a standalone Cluster Proxy. Brain consumes
+ma_turns_v3 and ma_turn_resumes_v3; Hands consumes ma_tool_events_v3.
+Initialize the root Turn parent and `_d1` through `_d16` depth parents, plus the tool and
+Resume parents (19 total), with FIFO / Shared / wildcard groups before startup.
+`deploy/managed-mq-init.sh` creates this static family. The runtime uses LitePushConsumer;
+keep Proxy automatic renewal configured for active execution callbacks. A suspended Turn
+returns SDK Suspend after Brain durably commits its checkpoint and waiting state, releasing
+the callback thread while retaining the ordered message. Resume has its own callback pool;
+only a durable terminal Turn allows the original message to return SUCCESS.
+Root callbacks default to 64, each child depth to 4 and Resume callbacks to 64. Active Harness
+capacity is independently bounded; saturation returns Suspend. There are no callback completion
+mailboxes, local Turn scheduling queues or application callback-hold settings.
+
+The current 5.5.1 Lite acceptance has a confirmed first-message gap: an independent SDK
+probe sent two messages to each of 100 fresh LiteTopics, and 49 received only the second.
+The group's consume-from-min flag and the enabled in-memory initial-offset check did not
+prevent this. Earliest-offset support, offline backlog and restart acceptance remain
+required before treating a deployment as reliable. An explicitly named local test derivative
+that honors consume-from-min has passed the raw-SDK live and offline/restart gates with
+the in-memory shortcut disabled; Service integration revalidation is ongoing. This does not
+certify unmodified 5.5.1 or an untested provider. See the
+[broker initialization path](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/broker/src/main/java/org/apache/rocketmq/broker/processor/PopLiteMessageProcessor.java).
+
+Compose and Helm run four independent initialization jobs (cp/rt, portal, dp, ma),
+then grant four business accounts before ordinary replicas start. Replicas only validate
+the ma version/checksum. Unversioned existing ma tables require a fresh runtime data
+space; this refactoring does not silently convert old Managed data. Portal, Brain and
+Hands share private checkpoint and oversized-message objects through PostgreSQL `ma.private_object`.
+With `userFilesEnabled=false`, the Chart disables public file APIs and uses per-pod scratch
+workspaces without user-file PVCs. Harness internal working data uses the existing PostgreSQL KV
+store in a Session-isolated namespace; file, Shell and Artifact tools are disabled, so text turns
+do not require an external sandbox. User files and artifacts still need shared storage when enabled. Set reachable Redis/MQ addresses in private workload configuration.
+
+The unreleased source refactoring also replaces the Dataplane `dp` migration set. Its fresh
+schema contains resource/state services; Managed execution lives in `ma`. Use a fresh data
+space for the previous Dataplane ledger, whose checksum and retired migrations are rejected.
+There is no legacy SQL writer-lease fallback, Brain sandbox execution, or synchronous ASDP
+Agent registration. Worker traffic goes to Hands; Session traffic goes to Session Portal.
+
+Every complete Managed checkpoint, including small checkpoints, is stored as immutable bytes
+in PostgreSQL before Brain commits its manifest and handoff transaction. Brain verifies size,
+hash and identity and advances its native log only after durable commit. Messages above 128 KiB also use this private table; the object limit remains
+64 MiB. Run the `managed-private-objects.sql` migration and business-role grants before replacing
+replicas. Back up referenced objects with the journal for recovery and fork. Existing filesystem
+objects are not automatically imported: use a fresh runtime database or import all referenced
+objects before switching an existing installation. There is no fallback to node-local storage.
+
+Hands stores each confirmed tool outcome in the database result outbox before sending it to
+Tool Topic. A Broker send response does not close this outbox: the Tool consumer closes it in
+the same transaction as the result and projections. Retries reuse the captured outcome and can
+rebuild a missing transport blob, without restarting the external tool. Include these rows in
+database backups together with the native journal.
+
+See the current source deployment and Chart READMEs for exact commands, Secrets, Topic
+initialization and scaling. The published-release commands below describe the earlier
+architecture and cannot install this MQ/Redis protocol.
+
+
 This guide covers production deployment with Kubernetes and Helm. The published Service Chart installs Gateway, Control, Dataplane and Scheduler. You manage PostgreSQL, storage, domain and TLS. Components default to one replica with Recreate updates; plan maintenance windows.
 
 ## 1. Prepare dependencies
@@ -133,7 +212,15 @@ For local evaluation, use the Compose [quickstart](/v2/en/service/quickstart). A
 | Kubernetes / Helm | Installation operated by a platform team | PostgreSQL, shared Workspace storage, Artifact storage, Secrets, domain, and TLS |
 | Existing team platform | Direct use by application developers | Service address, account, authorized scope, available model and Environment |
 
-The current complete Service Chart configures one replica per component and uses Recreate updates, so upgrades require a maintenance window. Do not assume this installation provides multi-replica high availability or upgrades without downtime. Kubernetes-native ControlPlane/ASDP is a separate deployment mode for the corresponding SDK and runtime transport requirements; it is not an additional set of mandatory components to install over the complete Service Chart.
+The Service Chart defaults to one replica per component and Recreate updates. To run multiple Dataplane replicas, first initialize the `dp` schema with a single replica, then set the following values:
+
+```yaml
+dataplane:
+  replicas: 2
+  ddlAuto: validate
+```
+
+All Dataplane replicas use the same PostgreSQL database, Secret and RWX Workspace claim. Verify shared writes when using an existing PVC. Their API, SSE and Turn execution run in the same pods; requests and SSE can reach different pods without sticky sessions. Multiple Dataplane replicas use RollingUpdate, while Control, Scheduler and Gateway retain their default deployment settings. Schema upgrades still require a single-replica migration stage; this does not make the entire installation highly available or remove maintenance windows. Kubernetes-native ControlPlane/ASDP is a separate deployment mode for the corresponding SDK and runtime transport requirements; it is not an additional set of mandatory components to install over the complete Service Chart.
 
 When handing the platform over to an application team, administrators provide an accessible Service address and account and explain which Namespace the account can use. Users also need to know whether the default model is ready, which tool environment to select, and where business materials reside and how to access them. With this information, they can verify the model and file tools through [Their first managed Agent](/v2/en/service/create-managed-agent), then check application calls through the [Session API integration guide](/v2/en/service/service-api).
 
@@ -244,7 +331,7 @@ curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
   -H "X-AgentScope-Namespace: $NAMESPACE"
 ```
 
-See [production access management](/v2/en/service/access) for accounts, namespace roles, resource grants, and private work. Tool confirmations and designated approvals require the authorized human's identity; an application key does not represent that human. Model, tool, and OAuth providers keep their own credentials in local mode too.
+See [production access management](/v2/en/service/access) for accounts, namespace roles, resource grants, and private work. Tool confirmations accept an application key explicitly granted `approve`; `interact` alone cannot approve a tool. Designated human approvals still require that user’s identity. Model, tool, and OAuth providers keep their own credentials in local mode too.
 
 <span id="production-application-credentials"></span>
 
@@ -307,7 +394,7 @@ AGENTSCOPE_API_KEY=$(jq -er '.apiKey' <<< "$KEY_JSON")
 CREDENTIAL_ID=$(jq -er '.credential.id' <<< "$KEY_JSON")
 ```
 
-A key is returned in plaintext only when it is issued. To rotate it, create a replacement, update and verify your application, then revoke the previous credential. The scopes are `invoke`, `read`, `interact`, `cancel` and `webhooks:write`. An application key does not become a designated human approver merely because it has `interact`.
+A key is returned in plaintext only when it is issued. To rotate it, create a replacement, update and verify your application, then revoke the previous credential. The scopes are `invoke`, `read`, `interact`, `cancel`, `approve` and `webhooks:write`. Grant `approve` explicitly when the application should confirm tool calls. An application key does not become a designated human approver.
 
 <Accordion title="List and revoke old credentials">
 

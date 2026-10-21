@@ -147,6 +147,7 @@ func (r *accessRepo) PutNamespace(_ context.Context, n *controlmodel.Namespace, 
 	copy.Version = version + 1
 	r.s.accessNamespaces[key] = copy
 	r.recordAuditLocked(copy, actor)
+	r.s.policyChanges.Record(copy.Tenant, copy.Name, "")
 	return cloneNamespace(copy), nil
 }
 
@@ -175,6 +176,7 @@ func (r *accessRepo) TransferNamespace(_ context.Context, tenant, name, owner st
 	copy.Version++
 	r.s.accessNamespaces[tenant+"/"+name] = copy
 	r.recordAuditLocked(copy, actor)
+	r.s.policyChanges.Record(copy.Tenant, copy.Name, "")
 	return cloneNamespace(copy), nil
 }
 

@@ -95,6 +95,8 @@ Workspaces, Environments, Memory Stores, and Vaults are reusable resources, but 
 
 Agent defaults apply when creating new Sessions. Updating the definition does not replace the resources selected by existing Sessions. A Session saves resource IDs, which do not make the referenced resources immutable: Memory documents can change, Vault credentials can rotate, and Environment configuration can be maintained. Workspace publication content is pinned with the Agent definition version. Consider other consumers when modifying a shared resource itself.
 
+Memory Store documents remain live when a Turn resumes. Store membership comes from the Session’s fixed configuration; operations still respect current ownership, archival, and Environment access. The Agent’s shared mounts remain read-only; edit shared documents through the resource API.
+
 ### Set default resources on an Agent
 
 First create the required Environment, Memory Store, or Vault and retain the returned IDs. The following example sets all three defaults for an existing Managed Agent. Replace the placeholders and save the JSON as `resource-defaults.json`. To change only one resource category, include only that field. The command below preserves omitted fields; each supplied ID array is the complete default list, and an empty array clears that default binding.

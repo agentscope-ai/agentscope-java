@@ -15,12 +15,14 @@
  */
 package io.agentscope.harness.agent.context;
 
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.session.SessionModels;
 import java.util.List;
 import java.util.UUID;
 import reactor.core.publisher.Flux;
@@ -41,11 +43,10 @@ public final class ContextModelCalls {
                                         ModelRequestPreparer.Purpose.SUMMARY)
                                 .flatMapMany(
                                         input ->
-                                                io.agentscope.core.session.SessionModels.wrap(
+                                                SessionModels.wrap(
                                                         input.model(),
                                                         subscriber.getOrDefault(
-                                                                io.agentscope.core.agent.AgentBase
-                                                                        .RUNTIME_CONTEXT_KEY,
+                                                                AgentBase.RUNTIME_CONTEXT_KEY,
                                                                 RuntimeContext.empty()),
                                                         "SUMMARY")
                                                         .stream(

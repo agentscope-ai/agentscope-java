@@ -20,6 +20,7 @@ package collaboration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -60,7 +61,7 @@ func (s *Service) PublishCoordinatorSummary(ctx context.Context, run *controlmod
 	if run.State == controlmodel.RunCancelled {
 		state, next = "cancelled（已取消）", "本次执行已取消；需要继续时请重新发起任务。"
 	}
-	var b strings.Builder
+	var b coordinatorSummaryBuilder
 	fmt.Fprintf(&b, "本次团队处理总结\n\n处理结果：%s\n", state)
 	if leader == nil {
 		b.WriteString("\n本总结由系统根据执行记录生成。\n")
@@ -80,8 +81,15 @@ func (s *Service) PublishCoordinatorSummary(ctx context.Context, run *controlmod
 	if text := CoordinatorOutcomeText(output); text != "" {
 		fmt.Fprintf(&b, "\n%s\n", text)
 	}
+	fallback := func() error { return s.publishSummaryDetailReference(ctx, root, run, leader, id, state, next) }
+	if b.err != nil {
+		return fallback()
+	}
 	tasks, err := s.listRunSummaryTasks(ctx, run)
 	if err != nil {
+		if errors.Is(err, store.ErrResourceLimit) {
+			return fallback()
+		}
 		return err
 	}
 	// A fallback uses the system identity, never inventing an LLM-authored reply.
@@ -89,45 +97,50 @@ func (s *Service) PublishCoordinatorSummary(ctx context.Context, run *controlmod
 	if leader != nil {
 		actor = controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: leader.AgentRef}
 	}
-	children := []*controlmodel.Issue{}
-	for offset := 0; ; offset += 500 {
-		page, listErr := s.Store.Collaboration().ListIssues(ctx, store.IssueFilter{Tenant: root.Tenant, Namespace: root.Namespace, ParentID: &root.ID, Limit: 500, Offset: offset})
-		if listErr != nil {
-			return listErr
-		}
-		children = append(children, page...)
-		if len(page) < 500 {
-			break
+	if b.err != nil {
+		return fallback()
+	}
+	byIssue := map[uuid.UUID][]uuid.UUID{}
+	latestWorker := map[uuid.UUID]*controlmodel.AgentTask{}
+	for _, candidate := range tasks {
+		byIssue[candidate.IssueID] = append(byIssue[candidate.IssueID], candidate.ID)
+		latest := latestWorker[candidate.IssueID]
+		if !candidate.LeaderTask && (latest == nil || candidate.CreatedAt.After(latest.CreatedAt) || candidate.CreatedAt.Equal(latest.CreatedAt) && candidate.ID.String() > latest.ID.String()) {
+			latestWorker[candidate.IssueID] = candidate
 		}
 	}
+	children, err := store.ReadChildIssuesBounded(ctx, s.Store.Collaboration(), store.IssueFilter{Tenant: root.Tenant, Namespace: root.Namespace, ParentID: &root.ID})
+	if err != nil {
+		if errors.Is(err, store.ErrResourceLimit) {
+			return fallback()
+		}
+		return err
+	}
+
 	if len(children) > 0 {
 		b.WriteString("\n子任务结果：\n")
 	}
 	for _, child := range children {
 		fmt.Fprintf(&b, "\n- [%s](/work/issues/%s)：%s\n", child.Title, child.ID, child.Status)
-		var latest *controlmodel.AgentTask
-		for _, task := range tasks {
-			if task.IssueID == child.ID && !task.LeaderTask && (latest == nil || task.CreatedAt.After(latest.CreatedAt)) {
-				latest = task
-			}
-		}
-		comments, listErr := s.listAllComments(ctx, child.ID)
-		if listErr != nil {
-			return listErr
-		}
+		latest := latestWorker[child.ID]
 		var deliverable *controlmodel.Comment
-		for _, comment := range comments {
-			if comment.DeletedAt != nil || comment.Type != controlmodel.CommentResult || comment.SourceTaskID == nil {
-				continue
-			}
-			for _, source := range tasks {
-				if source.ID == *comment.SourceTaskID && (deliverable == nil || comment.CreatedAt.After(deliverable.CreatedAt)) {
-					deliverable = comment
+		if ids := byIssue[child.ID]; len(ids) > 0 {
+			comments, listErr := s.Store.Collaboration().ListComments(ctx, child.ID, store.CommentListOptions{SourceTaskIDs: ids, ResultOnly: true, OmitRelations: true, Limit: 1, Tail: 1})
+			if listErr != nil {
+				if errors.Is(listErr, store.ErrResourceLimit) {
+					return fallback()
 				}
+				return listErr
+			}
+			if len(comments) > 0 {
+				deliverable = comments[0]
 			}
 		}
 		if deliverable != nil {
 			fmt.Fprintf(&b, "  已保存交付（验收状态：%s）：%s\n", child.Status, deliverable.Content)
+		}
+		if b.err != nil {
+			return fallback()
 		}
 		if latest == nil {
 			continue
@@ -145,8 +158,14 @@ func (s *Service) PublishCoordinatorSummary(ctx context.Context, run *controlmod
 		if failure && !controlmodel.IsAgentTaskTerminal(latest.Status) {
 			b.WriteString("  主执行失败，尚未完成的工作将停止；此项不计为成功。\n")
 		}
+		if b.err != nil {
+			return fallback()
+		}
 	}
 	fmt.Fprintf(&b, "\n下一步：%s", next)
+	if b.err != nil {
+		return fallback()
+	}
 	comment := &controlmodel.Comment{ID: id, IssueID: root.ID, Author: actor, Type: controlmodel.CommentResult, Content: b.String()}
 	if failure {
 		comment.Type = controlmodel.CommentStatus
@@ -156,6 +175,9 @@ func (s *Service) PublishCoordinatorSummary(ctx context.Context, run *controlmod
 	}
 	// No implicit routing: publishing the final summary must not start more work.
 	_, err = s.Store.Collaboration().CreateComment(ctx, store.CreateCommentRequest{Comment: comment})
+	if errors.Is(err, store.ErrCommentCapacity) {
+		return fallback()
+	}
 	if err != nil {
 		if _, readErr := s.Store.Collaboration().GetComment(ctx, id); readErr == nil {
 			return nil
@@ -165,17 +187,7 @@ func (s *Service) PublishCoordinatorSummary(ctx context.Context, run *controlmod
 }
 
 func (s *Service) listRunSummaryTasks(ctx context.Context, run *controlmodel.OrchestrationRun) ([]*controlmodel.AgentTask, error) {
-	var all []*controlmodel.AgentTask
-	for offset := 0; ; offset += 500 {
-		page, err := s.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{Tenant: run.Tenant, Namespace: run.Namespace, RunID: run.ID, Limit: 500, Offset: offset})
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, page...)
-		if len(page) < 500 {
-			return all, nil
-		}
-	}
+	return store.ReadTasksBounded(ctx, s.Store.Collaboration(), store.AgentTaskFilter{Tenant: run.Tenant, Namespace: run.Namespace, RunID: run.ID, OmitInputs: true})
 }
 
 // EnsureTerminalTeamSummary is also used when the runtime fails before the
@@ -208,4 +220,50 @@ func CoordinatorOutcomeText(output json.RawMessage) string {
 		return strings.TrimSpace(text)
 	}
 	return strings.TrimSpace(string(output))
+}
+
+// A failed size check switches publication to an explicit detail-reference
+// summary; it never publishes the accumulated partial delivery text.
+type coordinatorSummaryBuilder struct {
+	text strings.Builder
+	err  error
+}
+
+func (b *coordinatorSummaryBuilder) Write(value []byte) (int, error) {
+	if b.err != nil {
+		return 0, b.err
+	}
+	if len(value) > store.MaxRunGraphBytes-b.text.Len() {
+		b.err = fmt.Errorf("%w: coordinator summary exceeds capacity", store.ErrResourceLimit)
+		return 0, b.err
+	}
+	return b.text.Write(value)
+}
+func (b *coordinatorSummaryBuilder) WriteString(value string) (int, error) {
+	if b.err != nil {
+		return 0, b.err
+	}
+	if len(value) > store.MaxRunGraphBytes-b.text.Len() {
+		b.err = fmt.Errorf("%w: coordinator summary exceeds capacity", store.ErrResourceLimit)
+		return 0, b.err
+	}
+	return b.text.WriteString(value)
+}
+func (b *coordinatorSummaryBuilder) String() string { return b.text.String() }
+
+// Detailed records remain durable. This explicit reference summary lets lifecycle
+// convergence finish without pretending an omitted body is a full delivery.
+func (s *Service) publishSummaryDetailReference(ctx context.Context, root *controlmodel.Issue, run *controlmodel.OrchestrationRun, leader *controlmodel.AgentTask, id uuid.UUID, state, next string) error {
+	content := fmt.Sprintf("本次团队处理总结\n\n处理结果：%s\n\n完整详情超过内联汇总容量，本评论不包含完整交付正文。原始交付保存在各任务、评论及产物中；请查看 [Run %s](/work/executions/%s) 和关联子 Issue。\n\n下一步：%s", state, run.ID, run.ID, next)
+	comment := &controlmodel.Comment{ID: id, IssueID: root.ID, Author: controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "orchestration-summary:" + run.ID.String()}, Type: controlmodel.CommentStatus, Content: content}
+	if leader != nil {
+		comment.SourceTaskID, comment.SourceAttemptID = &leader.ID, leader.CurrentAttemptID
+	}
+	_, err := s.Store.Collaboration().CreateComment(ctx, store.CreateCommentRequest{Comment: comment})
+	if err != nil {
+		if _, readErr := s.Store.Collaboration().GetComment(ctx, id); readErr == nil {
+			return nil
+		}
+	}
+	return err
 }

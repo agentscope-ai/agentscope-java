@@ -21,6 +21,7 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
@@ -40,7 +41,6 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * AgentScope ChatModel implementation for Ollama.
@@ -250,7 +250,7 @@ public class OllamaChatModel extends ChatModelBase {
                                             return Flux.error(e);
                                         }
                                     })
-                            .subscribeOn(Schedulers.boundedElastic());
+                            .subscribeOn(ModelSchedulers.requests());
         }
 
         return responseFlux.transform(

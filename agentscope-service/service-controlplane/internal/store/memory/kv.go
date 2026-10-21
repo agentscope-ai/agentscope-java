@@ -53,6 +53,7 @@ func (r *kvRepo) Put(_ context.Context, tenant, nsPath, key string, value json.R
 		Version: ver,
 		NsPath:  nsPath,
 	}
+	r.recordPolicyChange(tenant, nsPath)
 	return ver, nil
 }
 
@@ -72,6 +73,7 @@ func (r *kvRepo) PutIfVersion(_ context.Context, tenant, nsPath, key string, val
 			Version: 1,
 			NsPath:  nsPath,
 		}
+		r.recordPolicyChange(tenant, nsPath)
 		return 1, true, nil
 	}
 
@@ -88,6 +90,7 @@ func (r *kvRepo) PutIfVersion(_ context.Context, tenant, nsPath, key string, val
 		Version: newVer,
 		NsPath:  nsPath,
 	}
+	r.recordPolicyChange(tenant, nsPath)
 	return newVer, true, nil
 }
 
@@ -95,6 +98,7 @@ func (r *kvRepo) Delete(_ context.Context, tenant, nsPath, key string) error {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	delete(r.s.kv, kvKey(tenant, nsPath, key))
+	r.recordPolicyChange(tenant, nsPath)
 	return nil
 }
 
@@ -148,4 +152,10 @@ func cloneKVItem(item *store.KVItem) *store.KVItem {
 		cp.Value = append(json.RawMessage(nil), item.Value...)
 	}
 	return &cp
+}
+
+func (r *kvRepo) recordPolicyChange(tenant, path string) {
+	if app, ok := strings.CutPrefix(path, "application-credentials/"); ok {
+		r.s.policyChanges.Record(tenant, "", app)
+	}
 }

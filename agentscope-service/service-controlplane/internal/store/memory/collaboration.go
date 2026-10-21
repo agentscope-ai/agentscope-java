@@ -65,6 +65,9 @@ func (r *collaborationRepo) CreateIssue(_ context.Context, issue *controlmodel.I
 			}
 		}
 	}
+	if err := r.s.guardCoordinatorChildLocked(issue); err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	copy := cloneIssue(issue)
 	if copy.Status == "" {
@@ -119,7 +122,10 @@ func (r *collaborationRepo) CreateIssue(_ context.Context, issue *controlmodel.I
 			delete(r.s.issues, copy.ID)
 			return nil, store.ErrNotFound
 		}
-		r.newTaskLocked(copy, team.LeaderAgentRef, "assignment", nil, &teamID, "leader", true, copy.Creator, parentTaskID, nil)
+		if _, err := r.newTaskLocked(copy, team.LeaderAgentRef, "assignment", nil, &teamID, "leader", true, copy.Creator, parentTaskID, nil); err != nil {
+			delete(r.s.issues, copy.ID)
+			return nil, err
+		}
 	} else if copy.AssigneeType == controlmodel.AssigneeAgent {
 		if copy.AssigneeRef == "" {
 			delete(r.s.issues, copy.ID)
@@ -139,7 +145,10 @@ func (r *collaborationRepo) CreateIssue(_ context.Context, issue *controlmodel.I
 			}
 			teamID, teamRole, leader = &sourceTeam.ID, role, role == "leader"
 		}
-		r.newTaskLocked(copy, copy.AssigneeRef, "assignment", nil, teamID, teamRole, leader, copy.Creator, parentTaskID, nil)
+		if _, err := r.newTaskLocked(copy, copy.AssigneeRef, "assignment", nil, teamID, teamRole, leader, copy.Creator, parentTaskID, nil); err != nil {
+			delete(r.s.issues, copy.ID)
+			return nil, err
+		}
 	}
 	r.appendActivityLocked(&controlmodel.Activity{
 		Tenant: copy.Tenant, Namespace: copy.Namespace, IssueID: &copy.ID,
@@ -162,8 +171,17 @@ func (r *collaborationRepo) GetIssue(_ context.Context, id uuid.UUID) (*controlm
 func (r *collaborationRepo) ListIssues(ctx context.Context, filter store.IssueFilter) ([]*controlmodel.Issue, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
+	if filter.ChildrenAfterID != nil && filter.ParentID == nil {
+		return nil, fmt.Errorf("child keyset page requires a parent")
+	}
 	out := make([]*controlmodel.Issue, 0)
 	for _, issue := range r.s.issues {
+		if filter.ChildrenAfterID != nil && issue.ID.String() <= filter.ChildrenAfterID.String() {
+			continue
+		}
+		if filter.CreatedBefore != nil && issue.CreatedAt.After(*filter.CreatedBefore) {
+			continue
+		}
 		if !r.s.canReadIssueLocked(ctx, issue.ID) {
 			continue
 		}
@@ -199,6 +217,9 @@ func (r *collaborationRepo) ListIssues(ctx context.Context, filter store.IssueFi
 		out = append(out, cloneIssue(issue))
 	}
 	sort.Slice(out, func(i, j int) bool {
+		if filter.ChildrenAfterID != nil {
+			return out[i].ID.String() < out[j].ID.String()
+		}
 		if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
 			return out[i].ID.String() > out[j].ID.String()
 		}
@@ -220,9 +241,17 @@ func (r *collaborationRepo) UpdateIssue(_ context.Context, issue *controlmodel.I
 	if expectedVersion > 0 && current.Version != expectedVersion {
 		return nil, store.ErrConflict
 	}
+	if current.ParentIssueID != nil && (current.SourceType != issue.SourceType || current.SourceRef != issue.SourceRef) {
+		candidate := *current
+		candidate.SourceType, candidate.SourceRef = issue.SourceType, issue.SourceRef
+		if err := r.s.guardCoordinatorChildWriteLocked(&candidate, true); err != nil {
+			return nil, err
+		}
+	}
 	next := cloneIssue(issue)
 	next.Tenant, next.Namespace, next.CreatedAt = current.Tenant, current.Namespace, current.CreatedAt
 	next.Creator, next.ParentIssueID = current.Creator, current.ParentIssueID
+	next.Status, next.ResolvedAt = current.Status, current.ResolvedAt
 	next.Version = current.Version + 1
 	next.UpdatedAt = time.Now().UTC()
 	r.s.issues[next.ID] = next
@@ -242,6 +271,11 @@ func (r *collaborationRepo) TransitionIssue(_ context.Context, id uuid.UUID, exp
 	}
 	if expectedVersion > 0 && issue.Version != expectedVersion || !controlmodel.CanTransitionIssue(issue.Status, status) {
 		return nil, store.ErrConflict
+	}
+	if status != controlmodel.IssueDone && status != controlmodel.IssueCancelled && (issue.Status == controlmodel.IssueDone || issue.Status == controlmodel.IssueCancelled) {
+		if err := r.s.guardCoordinatorChildWriteLocked(issue, true); err != nil {
+			return nil, err
+		}
 	}
 	next := cloneIssue(issue)
 	next.Status = status
@@ -316,7 +350,12 @@ func (r *collaborationRepo) AssignIssue(_ context.Context, id uuid.UUID, expecte
 	r.s.issues[id] = next
 	var task *controlmodel.AgentTask
 	if assigneeType == controlmodel.AssigneeAgent || assigneeType == controlmodel.AssigneeTeam {
-		task = r.newTaskLocked(next, agentRef, "assignment", nil, teamID, "leader", leader, actor, nil, nil)
+		var err error
+		task, err = r.newTaskLocked(next, agentRef, "assignment", nil, teamID, "leader", leader, actor, nil, nil)
+		if err != nil {
+			r.s.issues[id] = issue
+			return nil, nil, err
+		}
 	}
 	r.appendActivityLocked(&controlmodel.Activity{Tenant: next.Tenant, Namespace: next.Namespace, IssueID: &id, Actor: actor, Action: "issue.assigned", ObjectType: string(assigneeType), ObjectRef: assigneeRef})
 	r.enqueueEventLocked(next.Tenant, "issue", id, "issue.assigned.v1", map[string]any{"issue": next, "task": task}, fmt.Sprintf("issue-assigned:%s:%d", id, next.Version))
@@ -326,6 +365,9 @@ func (r *collaborationRepo) AssignIssue(_ context.Context, id uuid.UUID, expecte
 func (r *collaborationRepo) CreateComment(_ context.Context, req store.CreateCommentRequest) (*store.CreateCommentResult, error) {
 	if req.Comment == nil || strings.TrimSpace(req.Comment.Content) == "" {
 		return nil, store.ErrConflict
+	}
+	if len(req.Mentions) > store.MaxCommentTargets || len(req.Targets) > store.MaxCommentTargets {
+		return nil, store.ErrCommentCapacity
 	}
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
@@ -355,6 +397,9 @@ func (r *collaborationRepo) CreateComment(_ context.Context, req store.CreateCom
 	}
 	now := time.Now().UTC()
 	comment.Version, comment.CreatedAt, comment.UpdatedAt = 1, now, now
+	if err := store.ValidateCommentWrite(comment, req.Mentions, req.Targets); err != nil {
+		return nil, err
+	}
 	r.s.comments[comment.ID] = comment
 
 	mentions := make([]controlmodel.Mention, 0, len(req.Mentions))
@@ -401,7 +446,12 @@ func (r *collaborationRepo) CreateComment(_ context.Context, req store.CreateCom
 		} else if target.AgentRef == comment.Author.Ref && comment.Author.Type == controlmodel.ActorAgent {
 			route.Outcome, route.ReasonCode = controlmodel.RouteSuppressed, "self_trigger"
 		} else {
-			task, coalesced := r.routeTaskLocked(issue, comment, target)
+			task, coalesced, err := r.routeTaskLocked(issue, comment, target)
+			if err != nil {
+				route.Outcome, route.ReasonCode = controlmodel.RouteBlocked, store.CapacityRouteReason(err)
+				routes = append(routes, route)
+				continue
+			}
 			route.TaskID = &task.ID
 			if coalesced {
 				route.Outcome = controlmodel.RouteCoalesced
@@ -439,6 +489,7 @@ func (r *collaborationRepo) CreateComment(_ context.Context, req store.CreateCom
 			continue
 		}
 		copy := *event
+		copy.PortalOwned = r.s.portalRuntimeEventOwnedLocked(copy.AggregateType, copy.AggregateID)
 		copy.ID = nonNilUUID(copy.ID)
 		copy.Tenant = issue.Tenant
 		if copy.CreatedAt.IsZero() {
@@ -474,9 +525,15 @@ func (r *collaborationRepo) GetComment(_ context.Context, id uuid.UUID) (*contro
 	if comment == nil {
 		return nil, store.ErrNotFound
 	}
+	if len(r.s.commentMentions[id])+len(r.s.commentRoutes[id]) > store.MaxCommentRelations {
+		return nil, store.ErrCommentCapacity
+	}
 	out := cloneComment(comment)
 	out.Mentions = append([]controlmodel.Mention(nil), r.s.commentMentions[id]...)
 	out.Routes = append([]controlmodel.CommentRoute(nil), r.s.commentRoutes[id]...)
+	if err := store.ValidateCommentCapacity(out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -486,6 +543,10 @@ func (r *collaborationRepo) ListComments(_ context.Context, issueID uuid.UUID, o
 	if r.s.issues[issueID] == nil {
 		return nil, store.ErrNotFound
 	}
+	if len(opts.SourceTaskIDs) > store.MaxRunTaskView {
+		return nil, store.ErrResourceLimit
+	}
+	sources := uuidSet(opts.SourceTaskIDs)
 	out := make([]*controlmodel.Comment, 0)
 	for _, comment := range r.s.comments {
 		if comment.IssueID != issueID || opts.RootsOnly && comment.ParentID != nil || opts.ThreadID != nil && comment.ThreadRootID != *opts.ThreadID && comment.ID != *opts.ThreadID {
@@ -494,10 +555,13 @@ func (r *collaborationRepo) ListComments(_ context.Context, issueID uuid.UUID, o
 		if opts.CursorTime != nil && (comment.CreatedAt.Before(*opts.CursorTime) || comment.CreatedAt.Equal(*opts.CursorTime) && comment.ID.String() <= opts.CursorID.String()) {
 			continue
 		}
-		copy := cloneComment(comment)
-		copy.Mentions = append([]controlmodel.Mention(nil), r.s.commentMentions[comment.ID]...)
-		copy.Routes = append([]controlmodel.CommentRoute(nil), r.s.commentRoutes[comment.ID]...)
-		out = append(out, copy)
+		if opts.ResultOnly && (comment.Type != controlmodel.CommentResult || comment.DeletedAt != nil) {
+			continue
+		}
+		if len(sources) > 0 && (comment.SourceTaskID == nil || !sources[*comment.SourceTaskID]) {
+			continue
+		}
+		out = append(out, cloneComment(comment))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
@@ -508,7 +572,36 @@ func (r *collaborationRepo) ListComments(_ context.Context, issueID uuid.UUID, o
 	if opts.Tail > 0 && len(out) > opts.Tail {
 		out = out[len(out)-opts.Tail:]
 	}
-	return page(out, opts.Offset, opts.Limit), nil
+	limit := opts.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	out = page(out, opts.Offset, limit)
+	bytes := 0
+	for _, comment := range out {
+		if !opts.OmitRelations {
+			if len(r.s.commentMentions[comment.ID])+len(r.s.commentRoutes[comment.ID]) > store.MaxCommentRelations {
+				return nil, store.ErrCommentCapacity
+			}
+			comment.Mentions = append([]controlmodel.Mention(nil), r.s.commentMentions[comment.ID]...)
+			comment.Routes = append([]controlmodel.CommentRoute(nil), r.s.commentRoutes[comment.ID]...)
+		}
+		if err := store.ValidateCommentCapacity(comment); err != nil {
+			return nil, err
+		}
+		if len(comment.Content) > store.MaxRunGraphBytes {
+			return nil, store.ErrResourceLimit
+		}
+		raw, err := json.Marshal(comment)
+		if err != nil {
+			return nil, err
+		}
+		bytes += len(raw)
+		if bytes > store.MaxRunGraphBytes {
+			return nil, store.ErrResourceLimit
+		}
+	}
+	return out, nil
 }
 
 func (r *collaborationRepo) UpdateComment(_ context.Context, comment *controlmodel.Comment, expectedVersion int64) (*controlmodel.Comment, error) {
@@ -525,7 +618,7 @@ func (r *collaborationRepo) UpdateComment(_ context.Context, comment *controlmod
 	next.Content, next.Type = comment.Content, comment.Type
 	next.Version++
 	next.UpdatedAt = time.Now().UTC()
-	r.s.comments[next.ID] = next
+	targets := make([]store.CommentTarget, 0)
 	seen := map[string]bool{}
 	for taskID, inputs := range r.s.taskInputs {
 		matched := false
@@ -550,12 +643,32 @@ func (r *collaborationRepo) UpdateComment(_ context.Context, comment *controlmod
 		if task.TeamID != nil {
 			target.TargetType, target.TargetRef = controlmodel.AssigneeTeam, task.TeamID.String()
 		}
-		routed, coalesced := r.routeTaskLocked(r.s.issues[next.IssueID], next, target)
+		if len(targets) >= store.MaxCommentTargets {
+			return nil, store.ErrCommentCapacity
+		}
+		targets = append(targets, target)
+	}
+	if len(r.s.commentMentions[next.ID])+len(r.s.commentRoutes[next.ID]) > store.MaxCommentRelations {
+		return nil, store.ErrCommentCapacity
+	}
+	projected := *next
+	projected.Mentions, projected.Routes = r.s.commentMentions[next.ID], r.s.commentRoutes[next.ID]
+	if err := store.ValidateCommentWrite(&projected, nil, targets); err != nil {
+		return nil, err
+	}
+	r.s.comments[next.ID] = next
+	for _, target := range targets {
+		routed, coalesced, err := r.routeTaskLocked(r.s.issues[next.IssueID], next, target)
 		route := controlmodel.CommentRoute{ID: uuid.New(), Tenant: next.Tenant, Namespace: next.Namespace,
 			IssueID: next.IssueID, CommentID: next.ID, CommentVersion: next.Version,
 			TargetType: target.TargetType, TargetRef: target.TargetRef, RouteType: controlmodel.RouteFollowUp,
-			TaskID: &routed.ID, Outcome: controlmodel.RouteQueued, ReasonCode: "comment_correction", CreatedAt: next.UpdatedAt}
-		if coalesced {
+			Outcome: controlmodel.RouteQueued, ReasonCode: "comment_correction", CreatedAt: next.UpdatedAt}
+		if err != nil {
+			route.Outcome, route.ReasonCode = controlmodel.RouteBlocked, store.CapacityRouteReason(err)
+		} else {
+			route.TaskID = &routed.ID
+		}
+		if err == nil && coalesced {
 			route.Outcome = controlmodel.RouteCoalesced
 		}
 		r.s.commentRoutes[next.ID] = append(r.s.commentRoutes[next.ID], route)
@@ -632,6 +745,18 @@ func (r *collaborationRepo) ResolveComment(_ context.Context, id uuid.UUID, expe
 	return cloneComment(next), nil
 }
 
+func (r *collaborationRepo) GetAgentTaskWithoutInputs(_ context.Context, id uuid.UUID) (*controlmodel.AgentTask, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	task := r.s.agentTasks[id]
+	if task == nil {
+		return nil, store.ErrNotFound
+	}
+	out := cloneAgentTask(task)
+	out.Inputs = nil
+	return out, nil
+}
+
 func (r *collaborationRepo) GetAgentTask(_ context.Context, id uuid.UUID) (*controlmodel.AgentTask, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
@@ -640,6 +765,9 @@ func (r *collaborationRepo) GetAgentTask(_ context.Context, id uuid.UUID) (*cont
 		return nil, store.ErrNotFound
 	}
 	out := cloneAgentTask(task)
+	if _, err := store.TaskInputsBytes(r.s.taskInputs[id]); err != nil {
+		return nil, err
+	}
 	out.Inputs = append([]controlmodel.AgentTaskInput(nil), r.s.taskInputs[id]...)
 	return out, nil
 }
@@ -650,6 +778,12 @@ func (r *collaborationRepo) CreateRunAgentTask(_ context.Context, req store.RunT
 	run, node, issue := r.s.runs[req.RunID], r.s.runNodes[req.NodeID], r.s.issues[req.IssueID]
 	if run == nil || node == nil || issue == nil || node.RunID != run.ID || node.IssueID == nil || *node.IssueID != issue.ID || req.AgentRef == "" {
 		return nil, store.ErrNotFound
+	}
+	if err := r.s.coordinatorRunOpenLocked(run.ID); err != nil {
+		return nil, err
+	}
+	if controlmodel.IsOrchestrationRunTerminal(run.State) || controlmodel.IsRunNodeTerminal(node.State) {
+		return nil, store.ErrConflict
 	}
 	now := time.Now().UTC()
 	task := &controlmodel.AgentTask{ID: uuid.New(), Tenant: run.Tenant, Namespace: run.Namespace,
@@ -696,18 +830,52 @@ func (r *collaborationRepo) ListAgentTasks(ctx context.Context, filter store.Age
 	defer r.s.mu.RUnlock()
 	out := make([]*controlmodel.AgentTask, 0)
 	for _, task := range r.s.agentTasks {
+		if filter.PortalOnly && !r.s.portalRuntimeEventOwnedLocked("agent-task", task.ID.String()) {
+			continue
+		}
+		if filter.ActiveOnly && controlmodel.IsAgentTaskTerminal(task.Status) {
+			continue
+		}
 		if !r.s.canReadIssueLocked(ctx, task.IssueID) {
 			continue
 		}
 		if filter.Tenant != "" && task.Tenant != filter.Tenant || filter.Namespace != "" && task.Namespace != filter.Namespace || filter.IssueID != uuid.Nil && task.IssueID != filter.IssueID || filter.RunID != uuid.Nil && task.OrchestrationRunID != filter.RunID || filter.NodeID != uuid.Nil && task.RunNodeID != filter.NodeID || filter.AgentRef != "" && task.AgentRef != filter.AgentRef || filter.TeamID != uuid.Nil && (task.TeamID == nil || *task.TeamID != filter.TeamID) || filter.Status != "" && task.Status != filter.Status {
 			continue
 		}
-		copy := cloneAgentTask(task)
-		copy.Inputs = append([]controlmodel.AgentTaskInput(nil), r.s.taskInputs[task.ID]...)
-		out = append(out, copy)
+		if filter.AfterID != nil && task.ID.String() <= filter.AfterID.String() {
+			continue
+		}
+		out = append(out, cloneAgentTask(task))
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-	return page(out, filter.Offset, filter.Limit), nil
+	sort.Slice(out, func(i, j int) bool {
+		if filter.AfterID != nil {
+			return out[i].ID.String() < out[j].ID.String()
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	limit := filter.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	out = page(out, filter.Offset, limit)
+	bytes := 2
+	for _, task := range out {
+		if !filter.OmitInputs {
+			if _, err := store.TaskInputsBytes(r.s.taskInputs[task.ID]); err != nil {
+				return nil, err
+			}
+			task.Inputs = append([]controlmodel.AgentTaskInput(nil), r.s.taskInputs[task.ID]...)
+		}
+		raw, err := json.Marshal(task)
+		if err != nil {
+			return nil, err
+		}
+		bytes += len(raw) + 1
+		if bytes > store.MaxRunGraphBytes {
+			return nil, store.ErrResourceLimit
+		}
+	}
+	return out, nil
 }
 
 func (r *collaborationRepo) ClaimAgentTask(_ context.Context, claim store.TaskClaim) (*controlmodel.AgentTask, error) {
@@ -719,6 +887,9 @@ func (r *collaborationRepo) ClaimAgentTask(_ context.Context, claim store.TaskCl
 	}
 	if task.Status != controlmodel.AgentTaskQueued || claim.ExpectedVersion > 0 && task.Version != claim.ExpectedVersion {
 		return nil, store.ErrConflict
+	}
+	if _, err := store.TaskInputsBytes(r.s.taskInputs[task.ID]); err != nil {
+		return nil, err
 	}
 	now := time.Now().UTC()
 	task.Status, task.RuntimeBinding, task.SessionID = controlmodel.AgentTaskDispatched, cloneJSON(claim.RuntimeBinding), claim.SessionID
@@ -750,6 +921,9 @@ func (r *collaborationRepo) ClaimAgentTaskWithAttempt(_ context.Context, claim s
 	}
 	if task.Status != controlmodel.AgentTaskQueued || claim.ExpectedVersion > 0 && task.Version != claim.ExpectedVersion {
 		return nil, nil, store.ErrConflict
+	}
+	if _, err := store.TaskInputsBytes(r.s.taskInputs[task.ID]); err != nil {
+		return nil, nil, err
 	}
 	now := time.Now().UTC()
 	execution.ID = nonNilUUID(execution.ID)
@@ -812,10 +986,16 @@ func (r *collaborationRepo) ClaimAgentTaskWithAttempt(_ context.Context, claim s
 }
 
 func (r *collaborationRepo) AcknowledgeTaskInputs(_ context.Context, taskID uuid.UUID, inputIDs []uuid.UUID) ([]controlmodel.AgentTaskInput, error) {
+	if err := store.ValidateTaskInputIDs(inputIDs); err != nil {
+		return nil, err
+	}
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	if r.s.agentTasks[taskID] == nil {
 		return nil, store.ErrNotFound
+	}
+	if _, err := store.TaskInputsBytes(r.s.taskInputs[taskID]); err != nil {
+		return nil, err
 	}
 	set := uuidSet(inputIDs)
 	now := time.Now().UTC()
@@ -830,6 +1010,10 @@ func (r *collaborationRepo) AcknowledgeTaskInputs(_ context.Context, taskID uuid
 }
 
 func (r *collaborationRepo) FailTaskInputDelivery(_ context.Context, taskID uuid.UUID, inputIDs []uuid.UUID, message string, maxAttempts int) ([]controlmodel.AgentTaskInput, error) {
+	if err := store.ValidateTaskInputIDs(inputIDs); err != nil {
+		return nil, err
+	}
+	message = store.TaskInputErrorSummary(message)
 	if maxAttempts <= 0 {
 		maxAttempts = 5
 	}
@@ -839,9 +1023,19 @@ func (r *collaborationRepo) FailTaskInputDelivery(_ context.Context, taskID uuid
 	if task == nil {
 		return nil, store.ErrNotFound
 	}
+	if _, err := store.TaskInputsBytes(r.s.taskInputs[taskID]); err != nil {
+		return nil, err
+	}
 	set := uuidSet(inputIDs)
 	now := time.Now().UTC()
 	inputs := r.s.taskInputs[taskID]
+	for _, input := range inputs {
+		if set[input.ID] {
+			if err := store.ValidateTaskInputCapacity(input); err != nil {
+				return nil, err
+			}
+		}
+	}
 	for i := range inputs {
 		if !set[inputs[i].ID] || inputs[i].State == controlmodel.TaskInputProcessed || inputs[i].State == controlmodel.TaskInputDeferred {
 			continue
@@ -868,11 +1062,17 @@ func (r *collaborationRepo) FailTaskInputDelivery(_ context.Context, taskID uuid
 }
 
 func (r *collaborationRepo) ReplayDeadLetterInputs(_ context.Context, taskID uuid.UUID, inputIDs []uuid.UUID, actor controlmodel.Actor) (*controlmodel.AgentTask, error) {
+	if err := store.ValidateTaskInputIDs(inputIDs); err != nil {
+		return nil, err
+	}
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	source := r.s.agentTasks[taskID]
 	if source == nil {
 		return nil, store.ErrNotFound
+	}
+	if len(r.s.taskInputs[taskID]) > store.MaxTaskInputs {
+		return nil, store.ErrTaskInputCapacity
 	}
 	set := uuidSet(inputIDs)
 	selected := make([]controlmodel.AgentTaskInput, 0)
@@ -884,12 +1084,21 @@ func (r *collaborationRepo) ReplayDeadLetterInputs(_ context.Context, taskID uui
 	if len(selected) == 0 {
 		return nil, store.ErrConflict
 	}
+	for _, input := range selected {
+		if err := store.ValidateTaskInputCapacity(input); err != nil {
+			return nil, err
+		}
+	}
 	retryOf := source.ID
-	replay := r.newTaskLocked(r.s.issues[source.IssueID], source.AgentRef, "manual_replay", source.TriggerCommentID, source.TeamID, source.TeamRole, source.LeaderTask, actor, nil, &retryOf)
+	replay, err := r.newTaskLocked(r.s.issues[source.IssueID], source.AgentRef, "manual_replay", source.TriggerCommentID, source.TeamID, source.TeamRole, source.LeaderTask, actor, nil, &retryOf)
+	if err != nil {
+		return nil, err
+	}
 	replay.ParentTaskID = &source.ID
-	for _, old := range selected {
+	for i, old := range selected {
 		input := old
 		input.ID, input.TaskID, input.State = uuid.New(), replay.ID, controlmodel.TaskInputPlanned
+		input.Sequence = int64(i + 1)
 		input.Attempts, input.LastError, input.NextAttemptAt = 0, "", nil
 		input.DeliveredAt, input.AcknowledgedAt, input.ProcessedAt, input.ResponseCommentID = nil, nil, nil, nil
 		input.CreatedAt = time.Now().UTC()
@@ -898,20 +1107,31 @@ func (r *collaborationRepo) ReplayDeadLetterInputs(_ context.Context, taskID uui
 	return cloneAgentTask(replay), nil
 }
 
-func (r *collaborationRepo) RequeueRetryableInputs(_ context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
+func (r *collaborationRepo) RequeueRetryableInputs(_ context.Context, now time.Time, limit int, portalOnly bool) ([]uuid.UUID, error) {
 	if limit <= 0 {
 		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
 	}
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	seen := map[uuid.UUID]bool{}
 	out := make([]uuid.UUID, 0)
+	changed := 0
 	for taskID, inputs := range r.s.taskInputs {
+		if portalOnly && !r.s.portalRuntimeEventOwnedLocked("agent-task", taskID.String()) {
+			continue
+		}
 		for i := range inputs {
+			if changed >= limit {
+				break
+			}
 			if inputs[i].State != controlmodel.TaskInputRetrying || inputs[i].NextAttemptAt == nil || inputs[i].NextAttemptAt.After(now) {
 				continue
 			}
 			inputs[i].State, inputs[i].NextAttemptAt = controlmodel.TaskInputPlanned, nil
+			changed++
 			if !seen[taskID] && len(out) < limit {
 				seen[taskID] = true
 				out = append(out, taskID)
@@ -921,7 +1141,7 @@ func (r *collaborationRepo) RequeueRetryableInputs(_ context.Context, now time.T
 			}
 		}
 		r.s.taskInputs[taskID] = inputs
-		if len(out) >= limit {
+		if changed >= limit {
 			break
 		}
 	}
@@ -960,7 +1180,10 @@ func (r *collaborationRepo) StartAgentTask(_ context.Context, id uuid.UUID, expe
 		if !controlmodel.CanTransitionExecutionAttempt(attempt.State, controlmodel.ExecutionRunning) {
 			return nil, store.ErrConflict
 		}
-		attempt.State, attempt.Version, attempt.UpdatedAt, attempt.HeartbeatAt = controlmodel.ExecutionRunning, attempt.Version+1, now, &now
+		attempt.State, attempt.Version, attempt.UpdatedAt = controlmodel.ExecutionRunning, attempt.Version+1, now
+		if attempt.BackendKind != controlmodel.DataPlaneManaged {
+			attempt.HeartbeatAt = &now
+		}
 		if attempt.StartedAt == nil {
 			attempt.StartedAt = &now
 		}
@@ -994,6 +1217,9 @@ func (r *collaborationRepo) StartAgentTask(_ context.Context, id uuid.UUID, expe
 }
 
 func (r *collaborationRepo) CompleteAgentTask(_ context.Context, id uuid.UUID, completion store.TaskCompletion) (*controlmodel.AgentTask, error) {
+	if err := store.ValidateTaskInputIDs(completion.ProcessedInputIDs, completion.DeferredInputIDs); err != nil {
+		return nil, err
+	}
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	task := r.s.agentTasks[id]
@@ -1002,6 +1228,9 @@ func (r *collaborationRepo) CompleteAgentTask(_ context.Context, id uuid.UUID, c
 	}
 	if completion.ExpectedVersion > 0 && task.Version != completion.ExpectedVersion || !controlmodel.CanTransitionAgentTask(task.Status, controlmodel.AgentTaskCompleted) {
 		return nil, store.ErrConflict
+	}
+	if err := r.s.validateCoordinatorIntentLocked(task, completion); err != nil {
+		return nil, err
 	}
 	var attempt *controlmodel.ExecutionAttempt
 	if task.CurrentAttemptID != nil {
@@ -1024,7 +1253,7 @@ func (r *collaborationRepo) CompleteAgentTask(_ context.Context, id uuid.UUID, c
 	}
 	processed, deferred := uuidSet(completion.ProcessedInputIDs), uuidSet(completion.DeferredInputIDs)
 	now := time.Now().UTC()
-	inputs := r.s.taskInputs[id]
+	inputs := append([]controlmodel.AgentTaskInput(nil), r.s.taskInputs[id]...)
 	for i := range inputs {
 		switch {
 		case processed[inputs[i].ID]:
@@ -1047,6 +1276,9 @@ func (r *collaborationRepo) CompleteAgentTask(_ context.Context, id uuid.UUID, c
 			run.Usage = store.MergeUsage(run.Usage, usage)
 		}
 	}
+	if err := r.s.acceptCoordinatorIntentLocked(task, completion); err != nil {
+		return nil, err
+	}
 	task.Status, task.Result, task.Version, task.CompletedAt = controlmodel.AgentTaskCompleted, cloneJSON(completion.Result), task.Version+1, &now
 	task.ErrorCode, task.ErrorMessage = "", ""
 	if issue := r.s.issues[task.IssueID]; issue != nil {
@@ -1063,8 +1295,14 @@ func (r *collaborationRepo) CompleteAgentTask(_ context.Context, id uuid.UUID, c
 }
 
 func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id uuid.UUID, completion store.TaskCompletion, comment *controlmodel.Comment, targets []store.CommentTarget) (*controlmodel.AgentTask, *controlmodel.Comment, error) {
+	if err := store.ValidateTaskInputIDs(completion.ProcessedInputIDs, completion.DeferredInputIDs); err != nil {
+		return nil, nil, err
+	}
 	if comment == nil || strings.TrimSpace(comment.Content) == "" {
 		return nil, nil, store.ErrConflict
+	}
+	if len(targets) > store.MaxCommentTargets {
+		return nil, nil, store.ErrCommentCapacity
 	}
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
@@ -1074,6 +1312,9 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id u
 	}
 	if completion.ExpectedVersion > 0 && task.Version != completion.ExpectedVersion || !controlmodel.CanTransitionAgentTask(task.Status, controlmodel.AgentTaskCompleted) {
 		return nil, nil, store.ErrConflict
+	}
+	if err := r.s.validateCoordinatorIntentLocked(task, completion); err != nil {
+		return nil, nil, err
 	}
 	var attempt *controlmodel.ExecutionAttempt
 	if task.CurrentAttemptID != nil {
@@ -1121,6 +1362,9 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id u
 		created.ThreadRootID = created.ID
 	}
 	created.Version, created.CreatedAt, created.UpdatedAt = 1, now, now
+	if err := store.ValidateCommentWrite(created, nil, targets); err != nil {
+		return nil, nil, err
+	}
 	r.s.comments[created.ID] = created
 	routes := make([]controlmodel.CommentRoute, 0, len(targets))
 	for _, target := range targets {
@@ -1150,7 +1394,12 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id u
 		} else if target.AgentRef == task.AgentRef {
 			route.Outcome, route.ReasonCode = controlmodel.RouteSuppressed, "self_trigger"
 		} else {
-			routedTask, coalesced := r.routeTaskLocked(issue, created, target)
+			routedTask, coalesced, err := r.routeTaskLocked(issue, created, target)
+			if err != nil {
+				route.Outcome, route.ReasonCode = controlmodel.RouteBlocked, store.CapacityRouteReason(err)
+				routes = append(routes, route)
+				continue
+			}
 			route.TaskID = &routedTask.ID
 			if coalesced {
 				route.Outcome = controlmodel.RouteCoalesced
@@ -1179,6 +1428,9 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id u
 		if run := r.s.runs[task.OrchestrationRunID]; run != nil {
 			run.Usage = store.MergeUsage(run.Usage, usage)
 		}
+	}
+	if err := r.s.acceptCoordinatorIntentLocked(task, completion); err != nil {
+		return nil, nil, err
 	}
 	task.Status, task.Result, task.Version, task.CompletedAt = controlmodel.AgentTaskCompleted, cloneJSON(completion.Result), task.Version+1, &now
 	task.ErrorCode, task.ErrorMessage = "", ""
@@ -1236,6 +1488,10 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 			Payload:        payload,
 			IdempotencyKey: "node-" + string(next) + ":" + node.ID.String(), CausationID: task.CausationID,
 			CorrelationID: task.CorrelationID})
+	}
+	// The engine owns final aggregation for declared workflows and subruns.
+	if run.Mode == controlmodel.RunModeDeclared || run.Mode == controlmodel.RunModeSubrun {
+		return nil
 	}
 	if coordinatorAlreadyTerminal {
 		return nil
@@ -1416,11 +1672,23 @@ func (r *collaborationRepo) RetryAgentTask(_ context.Context, id uuid.UUID, acto
 	if failed.Status != controlmodel.AgentTaskFailed {
 		return nil, store.ErrConflict
 	}
+	if _, err := store.TaskInputsBytes(r.s.taskInputs[id]); err != nil {
+		return nil, err
+	}
+	for _, input := range r.s.taskInputs[id] {
+		if err := store.ValidateTaskInputCapacity(input); err != nil {
+			return nil, err
+		}
+	}
 	retryID := failed.ID
-	retry := r.newTaskLocked(r.s.issues[failed.IssueID], failed.AgentRef, "retry", failed.TriggerCommentID, failed.TeamID, failed.TeamRole, failed.LeaderTask, actor, nil, &retryID)
-	for _, old := range r.s.taskInputs[failed.ID] {
+	retry, err := r.newTaskLocked(r.s.issues[failed.IssueID], failed.AgentRef, "retry", failed.TriggerCommentID, failed.TeamID, failed.TeamRole, failed.LeaderTask, actor, nil, &retryID)
+	if err != nil {
+		return nil, err
+	}
+	for i, old := range r.s.taskInputs[failed.ID] {
 		input := old
 		input.ID, input.TaskID, input.State = uuid.New(), retry.ID, controlmodel.TaskInputPlanned
+		input.Sequence, input.Attempts, input.LastError, input.NextAttemptAt = int64(i+1), 0, "", nil
 		input.DeliveredAt, input.AcknowledgedAt, input.ProcessedAt, input.ResponseCommentID = nil, nil, nil, nil
 		input.CreatedAt = time.Now().UTC()
 		r.s.taskInputs[retry.ID] = append(r.s.taskInputs[retry.ID], input)
@@ -1901,6 +2169,9 @@ func (r *collaborationRepo) ListApprovals(ctx context.Context, filter store.Appr
 	defer r.s.mu.RUnlock()
 	out := make([]*controlmodel.Approval, 0)
 	for _, approval := range r.s.approvals {
+		if filter.PortalOnly && !r.s.portalRuntimeEventOwnedLocked("approval", approval.ID.String()) || filter.AfterID != nil && approval.ID.String() <= filter.AfterID.String() {
+			continue
+		}
 		if !r.s.canReadTargetLocked(ctx, approval.TargetType, approval.TargetRef) {
 			continue
 		}
@@ -1909,7 +2180,12 @@ func (r *collaborationRepo) ListApprovals(ctx context.Context, filter store.Appr
 		}
 		out = append(out, cloneApproval(approval))
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	sort.Slice(out, func(i, j int) bool {
+		if filter.AfterID != nil {
+			return out[i].ID.String() < out[j].ID.String()
+		}
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
 	return page(out, filter.Offset, filter.Limit), nil
 }
 
@@ -1996,7 +2272,7 @@ func (r *collaborationRepo) SweepOverdueIssues(_ context.Context, now time.Time,
 	return created, nil
 }
 
-func (r *collaborationRepo) SweepTimedOutAgentTasks(ctx context.Context, now time.Time, limit int) (int, error) {
+func (r *collaborationRepo) SweepTimedOutAgentTasks(ctx context.Context, now time.Time, limit int, portalOnly bool) (int, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -2007,6 +2283,9 @@ func (r *collaborationRepo) SweepTimedOutAgentTasks(ctx context.Context, now tim
 	items := make([]candidate, 0, limit)
 	r.s.mu.RLock()
 	for _, task := range r.s.agentTasks {
+		if portalOnly && !r.s.portalRuntimeEventOwnedLocked("agent-task", task.ID.String()) {
+			continue
+		}
 		if len(items) >= limit || task.TeamID == nil || task.Status != controlmodel.AgentTaskRunning && task.Status != controlmodel.AgentTaskDispatched {
 			continue
 		}
@@ -2074,12 +2353,24 @@ func (r *collaborationRepo) transitionTask(id uuid.UUID, expectedVersion int64, 
 	return cloneAgentTask(task), nil
 }
 
-func (r *collaborationRepo) routeTaskLocked(issue *controlmodel.Issue, comment *controlmodel.Comment, target store.CommentTarget) (*controlmodel.AgentTask, bool) {
+func (r *collaborationRepo) routeTaskLocked(issue *controlmodel.Issue, comment *controlmodel.Comment, target store.CommentTarget) (*controlmodel.AgentTask, bool, error) {
 	for _, task := range r.s.agentTasks {
 		if task.IssueID == issue.ID && task.AgentRef == target.AgentRef && task.TeamRole == target.TeamRole && task.Status == controlmodel.AgentTaskQueued {
-			r.addInputLocked(task, comment)
-			return task, true
+			if err := r.s.guardTaskCoordinatorLocked(task.ID, false); err != nil {
+				return nil, false, err
+			}
+			previous := len(r.s.taskInputs[task.ID])
+			if err := r.addInputLocked(task, comment); err != nil {
+				return nil, false, err
+			}
+			if len(r.s.taskInputs[task.ID]) > previous {
+				task.Version++
+			}
+			return task, true, nil
 		}
+	}
+	if err := store.ValidateTaskInputCapacity(controlmodel.AgentTaskInput{Tenant: issue.Tenant, Namespace: issue.Namespace}); err != nil {
+		return nil, false, err
 	}
 	parent := target.ParentTaskID
 	if parent == nil {
@@ -2092,12 +2383,17 @@ func (r *collaborationRepo) routeTaskLocked(issue *controlmodel.Issue, comment *
 		}
 	}
 	teamID := target.TeamID
-	task := r.newTaskLocked(issue, target.AgentRef, "comment", &comment.ID, teamID, target.TeamRole, target.RouteType == controlmodel.RouteTeamLeader, comment.Author, parent, nil)
-	r.addInputLocked(task, comment)
-	return task, false
+	task, err := r.newTaskLocked(issue, target.AgentRef, "comment", &comment.ID, teamID, target.TeamRole, target.RouteType == controlmodel.RouteTeamLeader, comment.Author, parent, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := r.addInputLocked(task, comment); err != nil {
+		return nil, false, err
+	}
+	return task, false, nil
 }
 
-func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, triggerType string, triggerCommentID *uuid.UUID, teamID *uuid.UUID, teamRole string, leader bool, originator controlmodel.Actor, parentTaskID, retryOf *uuid.UUID) *controlmodel.AgentTask {
+func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, triggerType string, triggerCommentID *uuid.UUID, teamID *uuid.UUID, teamRole string, leader bool, originator controlmodel.Actor, parentTaskID, retryOf *uuid.UUID) (*controlmodel.AgentTask, error) {
 	now := time.Now().UTC()
 	if retryOf != nil {
 		if previous := r.s.agentTasks[*retryOf]; previous != nil && previous.TriggerType == controlmodel.AgentTaskReviewComment {
@@ -2149,12 +2445,16 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 	}
 	if retryOf != nil && r.s.agentTasks[*retryOf] != nil {
 		source = r.s.agentTasks[*retryOf]
+		task.ParentTaskID, task.DelegatedFromTaskID = retryOf, retryOf
 	}
 	if triggerType == controlmodel.AgentTaskReviewComment {
 		source = nil
 	}
 	var rerunOf *uuid.UUID
 	if source != nil {
+		if err := r.s.guardTaskCoordinatorLocked(source.ID, true); err != nil {
+			return nil, err
+		}
 		if run := r.s.runs[source.OrchestrationRunID]; run != nil && !controlmodel.IsOrchestrationRunTerminal(run.State) {
 			task.OrchestrationRunID = source.OrchestrationRunID
 			reuseSourceNode := retryOf != nil || source.LeaderTask && leader &&
@@ -2163,9 +2463,26 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 			if reuseSourceNode && sourceNode != nil && !controlmodel.IsRunNodeTerminal(sourceNode.State) {
 				task.RunNodeID = source.RunNodeID
 			}
-		} else if source.OrchestrationRunID != uuid.Nil && !r.attachTeamContinuationLocked(issue, task, source) {
-			id := source.OrchestrationRunID
-			rerunOf = &id
+		} else if source.OrchestrationRunID != uuid.Nil {
+			attached, err := r.attachTeamContinuationLocked(issue, task, source)
+			if err != nil {
+				return nil, err
+			}
+			if !attached {
+				id := source.OrchestrationRunID
+				rerunOf = &id
+			}
+		}
+	}
+	if task.RunNodeID == uuid.Nil && task.OrchestrationRunID != uuid.Nil {
+		count := 0
+		for _, node := range r.s.runNodes {
+			if node.RunID == task.OrchestrationRunID {
+				count++
+			}
+		}
+		if count >= store.MaxRunNodes {
+			return nil, store.ErrResourceLimit
 		}
 	}
 	if task.OrchestrationRunID == uuid.Nil {
@@ -2176,7 +2493,7 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 		}
 		r.s.runs[task.OrchestrationRunID] = &controlmodel.OrchestrationRun{ID: task.OrchestrationRunID,
 			Tenant: task.Tenant, Namespace: task.Namespace, RootIssueID: task.IssueID, Mode: mode,
-			RerunOfRunID: rerunOf, TriggerType: triggerType, TriggerRef: task.CausationID,
+			RerunOfRunID: rerunOf, TriggerType: triggerType, TriggerRef: task.CausationID, PortalOwned: r.s.portalIssueOwnedLocked(task.IssueID),
 			State: controlmodel.RunRunning, Version: 1, CreatedBy: originator,
 			CreatedAt: now, UpdatedAt: now, StartedAt: &now}
 	}
@@ -2212,18 +2529,25 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 		IdempotencyKey: "agent-task-queued:" + task.ID.String(), OccurredAt: now}
 	r.s.runEvents[task.OrchestrationRunID] = append(r.s.runEvents[task.OrchestrationRunID], event)
 	r.enqueueEventLocked(task.Tenant, "agent-task", task.ID, "agent-task.queued.v1", task, "agent-task-queued:"+task.ID.String())
-	return task
+	return task, nil
 }
 
-func (r *collaborationRepo) addInputLocked(task *controlmodel.AgentTask, comment *controlmodel.Comment) {
+func (r *collaborationRepo) addInputLocked(task *controlmodel.AgentTask, comment *controlmodel.Comment) error {
 	inputs := r.s.taskInputs[task.ID]
 	for _, input := range inputs {
 		if input.CommentID == comment.ID && input.CommentVersion == comment.Version {
-			return
+			return nil
 		}
 	}
+	if len(inputs) >= store.MaxTaskInputs {
+		return store.ErrTaskInputCapacity
+	}
 	input := controlmodel.AgentTaskInput{ID: uuid.New(), Tenant: task.Tenant, Namespace: task.Namespace, TaskID: task.ID, CommentID: comment.ID, CommentVersion: comment.Version, Sequence: int64(len(inputs) + 1), State: controlmodel.TaskInputPlanned, CreatedAt: time.Now().UTC()}
+	if err := store.ValidateTaskInputCapacity(input); err != nil {
+		return err
+	}
 	r.s.taskInputs[task.ID] = append(inputs, input)
+	return nil
 }
 
 func (r *collaborationRepo) appendActivityLocked(activity *controlmodel.Activity) {
@@ -2252,6 +2576,7 @@ func (r *collaborationRepo) enqueueEventLocked(tenant, aggregateType string, agg
 		Actor: controlmodel.Actor{Type: controlmodel.ActorSystem}, OccurredAt: now, Payload: data,
 		DedupeKey: dedupe, AvailableAt: now, CreatedAt: now}
 	meta := inferMemoryEventMetadata(data)
+	event.PortalOwned = r.s.portalRuntimeEventOwnedLocked(aggregateType, aggregateID.String())
 	event.Namespace, event.Actor, event.CausationID, event.CorrelationID = meta.Namespace, meta.Actor, meta.CausationID, meta.CorrelationID
 	r.s.outboxEvents[event.ID] = event
 }

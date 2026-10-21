@@ -247,7 +247,7 @@ func (s *Server) confirmTeamProposalInternal(ctx context.Context, proposal *cont
 	}); err != nil {
 		return nil, nil, err
 	}
-	if err = (&orchestration.Engine{Store: s.store}).ReconcileRun(ctx, run.ID); err != nil {
+	if err = (&orchestration.Engine{Store: s.store, RequirePortal: s.portalExecution()}).ReconcileRun(ctx, run.ID); err != nil {
 		return nil, nil, err
 	}
 	confirmed, err := s.store.TeamProposals().Confirm(ctx, proposal.ID, proposal.Version, run.ID)

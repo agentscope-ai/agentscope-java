@@ -20,15 +20,15 @@ for (const scenario of ['ready', 'mcp-denied', 'unconfigured', 'attach-failed'] 
   test(`GitHub account connection: ${scenario}`, async ({ page, context }) => {
     const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
     const token = `test.${Buffer.from(JSON.stringify({ sub: 'alice', username: 'alice', roles: ['user'] })).toString('base64url')}.test`;
-    await page.addInitScript(t => localStorage.setItem('claw_token', t), token);
+    await page.addInitScript(t => localStorage.setItem('agentscope_service_token', t), token);
     const server = { name: 'github', transport: 'streamable-http', url: 'https://api.githubcopilot.com/mcp/' };
     let definition = { id: 'agent', name: 'GitHub assistant', version: 1, mcpServers: [server], tools: [], defaultVaultIds: [] as string[] };
     const catalog = { id: 'agent', agentKey: 'github-assistant', displayName: 'GitHub assistant', ownerId: 'alice', tenant: 'default', namespace: 'personal', status: 'active' };
     let connected = false, authorized = false, created = false, verified = false, attachFailed = scenario === 'attach-failed';
     const connection = () => ({ id: 'connection', vaultId: 'vault', provider: 'github', serverName: 'github', endpoint: server.url, settings: {}, connected, callbackUrl: 'https://console.example/api/oauth/mcp/callback/github' });
     await context.route('**/github-fixture/**', async route => {
-      if (route.request().url().endsWith('/consent')) { authorized = true; return route.fulfill({ contentType: 'text/html', body: '<h1>Return to AgentScope</h1>' }); }
-      return route.fulfill({ contentType: 'text/html', body: '<h1>Authorize GitHub</h1><a href="/github-fixture/consent">Authorize AgentScope</a>' });
+      if (route.request().url().endsWith('/consent')) { authorized = true; return route.fulfill({ contentType: 'text/html', body: '<h1>Return to AgentScope Service</h1>' }); }
+      return route.fulfill({ contentType: 'text/html', body: '<h1>Authorize GitHub</h1><a href="/github-fixture/consent">Authorize AgentScope Service</a>' });
     });
     await page.route('**/api/**', async route => {
       const req = route.request(), path = new URL(req.url()).pathname;
@@ -76,7 +76,7 @@ for (const scenario of ['ready', 'mcp-denied', 'unconfigured', 'attach-failed'] 
     const popupPromise = page.waitForEvent('popup');
     await dialog.getByRole('button', { name: 'Connect GitHub account' }).click();
     const popup = await popupPromise;
-    await popup.getByRole('link', { name: 'Authorize AgentScope' }).click();
+    await popup.getByRole('link', { name: 'Authorize AgentScope Service' }).click();
     await expect(dialog.getByText('@octocat')).toBeVisible();
     expect(verified).toBe(true);
     if (scenario === 'attach-failed') {
@@ -97,7 +97,7 @@ for (const scenario of ['ready', 'mcp-denied', 'unconfigured', 'attach-failed'] 
 
 test('Administrator configures GitHub once with a stable callback and write-only secret', async ({ page }) => {
   const token = `test.${Buffer.from(JSON.stringify({ sub: 'admin', username: 'admin', roles: ['admin'] })).toString('base64url')}.test`;
-  await page.addInitScript(t => localStorage.setItem('claw_token', t), token);
+  await page.addInitScript(t => localStorage.setItem('agentscope_service_token', t), token);
   let saved: Record<string, unknown> | undefined;
   await page.route('**/api/**', route => {
     const req = route.request(), path = new URL(req.url()).pathname;

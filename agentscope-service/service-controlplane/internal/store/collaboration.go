@@ -35,22 +35,29 @@ type IssueFilter struct {
 	Kind         controlmodel.IssueKind
 	Visibility   controlmodel.IssueVisibility
 	ParentID     *uuid.UUID
-	Limit        int
-	Offset       int
-	CursorTime   *time.Time
-	CursorID     uuid.UUID
-	Search       string
-	Archived     bool
+	// Stable child traversal is unaffected by writes changing updated_at.
+	ChildrenAfterID *uuid.UUID
+	CreatedBefore   *time.Time
+	Limit           int
+	Offset          int
+	CursorTime      *time.Time
+	CursorID        uuid.UUID
+	Search          string
+	Archived        bool
 }
 
 type CommentListOptions struct {
-	RootsOnly  bool
-	ThreadID   *uuid.UUID
-	Limit      int
-	Offset     int
-	Tail       int
-	CursorTime *time.Time
-	CursorID   uuid.UUID
+	// Internal consistency/summary reads can select persisted deliveries directly.
+	SourceTaskIDs []uuid.UUID
+	ResultOnly    bool
+	OmitRelations bool
+	RootsOnly     bool
+	ThreadID      *uuid.UUID
+	Limit         int
+	Offset        int
+	Tail          int
+	CursorTime    *time.Time
+	CursorID      uuid.UUID
 }
 
 type CommentTarget struct {
@@ -117,16 +124,34 @@ type CreateCommentResult struct {
 }
 
 type AgentTaskFilter struct {
-	Tenant    string
-	Namespace string
-	IssueID   uuid.UUID
-	RunID     uuid.UUID
-	NodeID    uuid.UUID
-	AgentRef  string
-	TeamID    uuid.UUID
-	Status    controlmodel.AgentTaskStatus
-	Limit     int
-	Offset    int
+	PortalOnly bool
+	Tenant     string
+	Namespace  string
+	IssueID    uuid.UUID
+	RunID      uuid.UUID
+	NodeID     uuid.UUID
+	AgentRef   string
+	TeamID     uuid.UUID
+	Status     controlmodel.AgentTaskStatus
+	Limit      int
+	Offset     int
+	ActiveOnly bool
+	OmitInputs bool
+	// Non-nil selects UUID keyset order for finite runtime traversals.
+	AfterID *uuid.UUID
+}
+
+// RuntimeArtifactFilter reads one admitted Turn's immutable deliverables.
+type RuntimeArtifactFilter struct {
+	Tenant, Namespace, PortalCommandID string
+	AfterCreatedAt                     *time.Time
+	AfterID                            uuid.UUID
+	Limit                              int
+}
+
+func ValidRuntimeArtifactFilter(f RuntimeArtifactFilter) bool {
+	return f.Tenant != "" && f.Namespace != "" && f.PortalCommandID != "" && len(f.PortalCommandID) <= 256 &&
+		f.Limit > 0 && f.Limit <= 128 && (f.AfterCreatedAt != nil || f.AfterID == uuid.Nil)
 }
 
 type TaskClaim struct {
@@ -148,18 +173,20 @@ type RunTaskRequest struct {
 }
 
 type TaskCompletion struct {
-	ExpectedVersion    int64           `json:"expectedVersion"`
-	AttemptID          uuid.UUID       `json:"attemptId,omitempty"`
-	DispatchGeneration int64           `json:"dispatchGeneration,omitempty"`
-	LeaseToken         string          `json:"-"`
-	FencingToken       int64           `json:"-"`
-	Checkpoint         json.RawMessage `json:"checkpoint,omitempty"`
-	Result             json.RawMessage `json:"result,omitempty"`
-	Usage              json.RawMessage `json:"usage,omitempty"`
-	Summary            string          `json:"summary,omitempty"`
-	ProcessedInputIDs  []uuid.UUID     `json:"processedInputIds,omitempty"`
-	DeferredInputIDs   []uuid.UUID     `json:"deferredInputIds,omitempty"`
-	ResponseCommentID  *uuid.UUID      `json:"responseCommentId,omitempty"`
+	// Internal semantic conclusion marker; callers cannot set it through JSON.
+	CoordinatorConclusion bool            `json:"-"`
+	ExpectedVersion       int64           `json:"expectedVersion"`
+	AttemptID             uuid.UUID       `json:"attemptId,omitempty"`
+	DispatchGeneration    int64           `json:"dispatchGeneration,omitempty"`
+	LeaseToken            string          `json:"-"`
+	FencingToken          int64           `json:"-"`
+	Checkpoint            json.RawMessage `json:"checkpoint,omitempty"`
+	Result                json.RawMessage `json:"result,omitempty"`
+	Usage                 json.RawMessage `json:"usage,omitempty"`
+	Summary               string          `json:"summary,omitempty"`
+	ProcessedInputIDs     []uuid.UUID     `json:"processedInputIds,omitempty"`
+	DeferredInputIDs      []uuid.UUID     `json:"deferredInputIds,omitempty"`
+	ResponseCommentID     *uuid.UUID      `json:"responseCommentId,omitempty"`
 }
 
 type TaskFailure struct {
@@ -188,6 +215,8 @@ type InboxFilter struct {
 }
 
 type ApprovalFilter struct {
+	PortalOnly  bool
+	AfterID     *uuid.UUID
 	Tenant      string
 	Namespace   string
 	ApproverRef string
@@ -386,6 +415,8 @@ type CollaborationRepository interface {
 	ResolveComment(ctx context.Context, id uuid.UUID, expectedVersion int64, actor controlmodel.Actor, resolved bool) (*controlmodel.Comment, error)
 
 	GetAgentTask(ctx context.Context, id uuid.UUID) (*controlmodel.AgentTask, error)
+	// Control transitions do not need to load the Input history.
+	GetAgentTaskWithoutInputs(ctx context.Context, id uuid.UUID) (*controlmodel.AgentTask, error)
 	CreateRunAgentTask(ctx context.Context, req RunTaskRequest) (*controlmodel.AgentTask, error)
 	ListAgentTasks(ctx context.Context, filter AgentTaskFilter) ([]*controlmodel.AgentTask, error)
 	ClaimAgentTask(ctx context.Context, claim TaskClaim) (*controlmodel.AgentTask, error)
@@ -393,7 +424,7 @@ type CollaborationRepository interface {
 	AcknowledgeTaskInputs(ctx context.Context, taskID uuid.UUID, inputIDs []uuid.UUID) ([]controlmodel.AgentTaskInput, error)
 	FailTaskInputDelivery(ctx context.Context, taskID uuid.UUID, inputIDs []uuid.UUID, message string, maxAttempts int) ([]controlmodel.AgentTaskInput, error)
 	ReplayDeadLetterInputs(ctx context.Context, taskID uuid.UUID, inputIDs []uuid.UUID, actor controlmodel.Actor) (*controlmodel.AgentTask, error)
-	RequeueRetryableInputs(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error)
+	RequeueRetryableInputs(ctx context.Context, now time.Time, limit int, portalOnly bool) ([]uuid.UUID, error)
 	StartAgentTask(ctx context.Context, id uuid.UUID, expectedVersion int64) (*controlmodel.AgentTask, error)
 	BeginReviewWork(ctx context.Context, id uuid.UUID, expectedVersion int64, requestQuote string) (*controlmodel.AgentTask, error)
 	CompleteAgentTask(ctx context.Context, id uuid.UUID, completion TaskCompletion) (*controlmodel.AgentTask, error)
@@ -415,6 +446,7 @@ type CollaborationRepository interface {
 	CreateArtifact(ctx context.Context, artifact *controlmodel.Artifact, links []controlmodel.ArtifactLink) (*controlmodel.Artifact, error)
 	GetArtifact(ctx context.Context, id uuid.UUID) (*controlmodel.Artifact, []controlmodel.ArtifactLink, error)
 	ListArtifacts(ctx context.Context, tenant, namespace, targetType, targetRef string) ([]*controlmodel.Artifact, error)
+	ListRuntimeArtifacts(ctx context.Context, filter RuntimeArtifactFilter) ([]*controlmodel.Artifact, error)
 	SubscribeIssue(ctx context.Context, subscriber *controlmodel.IssueSubscriber) (*controlmodel.IssueSubscriber, error)
 	UnsubscribeIssue(ctx context.Context, issueID uuid.UUID, subscriberType controlmodel.AssigneeType, subscriberRef string) error
 	ListIssueSubscribers(ctx context.Context, issueID uuid.UUID) ([]*controlmodel.IssueSubscriber, error)
@@ -432,7 +464,7 @@ type CollaborationRepository interface {
 	UpdateInbox(ctx context.Context, id uuid.UUID, recipientRef string, read, archived *bool) (*controlmodel.InboxItem, error)
 	ListActivities(ctx context.Context, issueID uuid.UUID, limit, offset int) ([]*controlmodel.Activity, error)
 	SweepOverdueIssues(ctx context.Context, now time.Time, limit int) (int, error)
-	SweepTimedOutAgentTasks(ctx context.Context, now time.Time, limit int) (int, error)
+	SweepTimedOutAgentTasks(ctx context.Context, now time.Time, limit int, portalOnly bool) (int, error)
 
 	CreateAutomation(ctx context.Context, automation *controlmodel.Automation) (*controlmodel.Automation, error)
 	GetAutomation(ctx context.Context, id uuid.UUID) (*controlmodel.Automation, error)

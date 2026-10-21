@@ -1,0 +1,11 @@
+{
+  "baseUrl": "http://127.0.0.1:18080",
+  "kubernetesNamespace": "agentscope-test",
+  "credentialSecret": "REPLACE_WITH_CREDENTIAL_SECRET",
+  "agentId": "REPLACE_WITH_AGENT_ID",
+  "environmentId": "REPLACE_WITH_ENVIRONMENT_ID",
+  "preparedSessionId": "",
+  "mcpUrl": "http://agentscope-service-long-tool-mcp.agentscope-test.svc.cluster.local:8000/mcp",
+  "toolName": "longwait__long_wait",
+  "defaultSeconds": 90
+}

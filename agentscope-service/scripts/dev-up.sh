@@ -5,8 +5,10 @@
 #   Gateway    :18080
 #   service-controlplane    :8081  (Go control plane: /api/*, /api/v1/*, console SPA)
 #   Data       :8082
-#   Scheduler  :8083
-#   Postgres   :5432  (schemas cp + rt + dp; via Docker)
+#   Portal     :8084
+#   Go Runtime :8086
+#   Hands      :8085 (platform HTTP/MQ service)
+#   Postgres   :5432  (schemas cp + rt + portal + dp + ma; via Docker)
 #
 # service-controlplane runs standalone here (CONTROL_PLANE_ENABLE_KUBERNETES=false), so no
 # reconcilers, CRD-backed APIs, or ASDP gRPC listener are started.
@@ -38,7 +40,8 @@ trap cleanup_failed_startup EXIT
 GATEWAY_PORT="${BUILDER_GATEWAY_PORT:-18080}"
 CONTROL_PORT="${BUILDER_CONTROL_PORT:-8081}"
 DATA_PORT="${BUILDER_DATA_PORT:-8082}"
-SCHED_PORT="${BUILDER_SCHEDULER_PORT:-8083}"
+PORTAL_PORT="${BUILDER_PORTAL_PORT:-8084}"
+HANDS_PORT="${BUILDER_HANDS_PORT:-8085}"
 PG_PORT="${BUILDER_PG_PORT:-5432}"
 PG_CONTAINER="${BUILDER_PG_CONTAINER:-agentscope-dev-pg}"
 RESET_DB="${BUILDER_RESET_DB:-${BUILDER_REBUILD:-0}}"
@@ -47,6 +50,17 @@ RESET_DB="${BUILDER_RESET_DB:-${BUILDER_REBUILD:-0}}"
 export BUILDER_LOCAL_DEV="${BUILDER_LOCAL_DEV:-true}"
 export BUILDER_INTERNAL_TOKEN="${BUILDER_INTERNAL_TOKEN:-local-dev-internal-token-at-least-32chars}"
 export BUILDER_JWT_SECRET="${BUILDER_JWT_SECRET:-builder-default-dev-secret-change-in-production-32chars}"
+export BUILDER_VAULT_MASTER_KEY="${BUILDER_VAULT_MASTER_KEY:-local-dev-stable-vault-key-at-least-32chars}"
+export BUILDER_SESSION_PORTAL_URL="http://localhost:${PORTAL_PORT}"
+export BUILDER_WORKSPACE_ROOT="$RUN_DIR/workspaces"
+export BUILDER_JPA_DDL_AUTO=validate
+export BUILDER_SCHEMA_INIT=false
+CONTROL_DB_PASSWORD="${CONTROL_DB_PASSWORD:-local-control-db-password}"
+PORTAL_DB_PASSWORD="${PORTAL_DB_PASSWORD:-local-portal-db-password}"
+DATA_DB_PASSWORD="${DATA_DB_PASSWORD:-local-data-db-password}"
+HANDS_DB_PASSWORD="${HANDS_DB_PASSWORD:-local-hands-db-password}"
+export BUILDER_HANDS_URL="http://localhost:${HANDS_PORT}"
+export BUILDER_MANAGED_BLOB_DIR="$RUN_DIR/managed-runtime-blobs"
 export SERVER_ADDRESS="127.0.0.1"
 export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-jdbc}"
 
@@ -65,8 +79,9 @@ managed_plane_name() {
     [ -n "$command" ] || return 1
     case "$command" in
         *"$ROOT/service-controlplane/bin/service-controlplane"*) echo control ;;
+        *"$ROOT/service-session-portal/target/service-session-portal-"*.jar*) echo portal ;;
+        *"$ROOT/service-hands/target/service-hands-"*.jar*) echo hands ;;
         *"$ROOT/service-dataplane/target/service-dataplane-"*.jar*) echo data ;;
-        *"$ROOT/service-scheduler/target/service-scheduler-"*.jar*) echo scheduler ;;
         *"$ROOT/service-gateway/target/service-gateway-"*.jar*) echo gateway ;;
         *) return 1 ;;
     esac
@@ -108,7 +123,7 @@ free_port() {
 
 ensure_service_ports_available() {
     local blocked=0 port
-    for port in "$GATEWAY_PORT" "$CONTROL_PORT" "$DATA_PORT" "$SCHED_PORT"; do
+    for port in "$GATEWAY_PORT" "$CONTROL_PORT" "$DATA_PORT" "$PORTAL_PORT" "$HANDS_PORT"; do
         free_port "$port" || blocked=1
     done
     if [ "$blocked" != "0" ]; then
@@ -165,6 +180,9 @@ PY
     echo "  * ${name} started (pid $!)"
 }
 
+: "${BUILDER_MANAGED_REDIS_URI:?Set Redis URI before starting Managed services}"
+: "${BUILDER_MANAGED_MQ_ENDPOINTS:?Set RocketMQ 5.5.1 Cluster Proxy endpoints}"
+
 # Check before expensive builds or database changes. On macOS, Docker Desktop
 # itself listens on ports published by containers, so arbitrary port-based kills
 # can terminate the entire Docker engine.
@@ -175,10 +193,10 @@ ensure_service_ports_available
 # fat jars embed ~/.m2 harness/core/extensions; a service-only build can keep a
 # stale snapshot. Root `mvn install` also walks agentscope-service children
 # (unlike `-pl agentscope-service`, which only builds the packaging=pom aggregator).
-if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -f "$(jar_of service-gateway || true)" ]; then
+if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -f "$(jar_of service-gateway || true)" ] || [ ! -f "$(jar_of service-session-portal || true)" ] || [ ! -f "$(jar_of service-hands || true)" ]; then
     echo "==> Building agentscope-java monorepo (mvn install -DskipTests)"
     MONOREPO_ROOT="$(cd "$ROOT/.." && pwd)"
-    (cd "$MONOREPO_ROOT" && mvn install -DskipTests -q)
+    (cd "$MONOREPO_ROOT" && mvn -T1 install -DskipTests -q)
 fi
 
 # ---------------------------------------------------------------- build console
@@ -235,9 +253,9 @@ done
 # disposable development schemas before either Hibernate or service-controlplane starts.
 # Set BUILDER_RESET_DB=0 explicitly when the current v4 development data should be kept.
 if [ "$RESET_DB" = "1" ]; then
-    echo "==> Resetting disposable Postgres schemas cp, rt, dp"
+    echo "==> Resetting disposable Postgres schemas cp, rt, portal, dp, ma"
     docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U builder -d builder -c \
-        "DROP SCHEMA IF EXISTS cp CASCADE; DROP SCHEMA IF EXISTS rt CASCADE; DROP SCHEMA IF EXISTS dp CASCADE;" >/dev/null
+        "DROP SCHEMA IF EXISTS cp CASCADE; DROP SCHEMA IF EXISTS rt CASCADE; DROP SCHEMA IF EXISTS portal CASCADE; DROP SCHEMA IF EXISTS dp CASCADE; DROP SCHEMA IF EXISTS ma CASCADE;" >/dev/null
 fi
 
 # Apply the bootstrap on every start, not only when Docker first creates the
@@ -246,11 +264,35 @@ docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U builder -d builder \
     <"$ROOT/docker/postgres-init.sql" >/dev/null
 
 schema_count="$(docker exec "$PG_CONTAINER" psql -U builder -d builder -Atc \
-    "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('cp','rt','dp')")"
-if [ "$schema_count" != "3" ]; then
-    echo "Expected cp, rt, and dp schemas, found ${schema_count}" >&2
+    "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('cp','rt','portal','dp','ma')")"
+if [ "$schema_count" != "5" ]; then
+    echo "Expected cp, rt, portal, dp, and ma schemas, found ${schema_count}" >&2
     exit 1
 fi
+
+# ---------------------------------------------------------------- independent schema jobs
+CONTROL_PLANE_PRODUCT_DSN="$CONTROL_PLANE_DSN" "$CONTROL_PLANE_BIN" \
+    --storage-driver=postgres --storage-dsn="$CONTROL_PLANE_RUNTIME_DSN" --migrate-only \
+    >"$LOG_DIR/schema-control.log" 2>&1
+for component in portal dataplane managed; do
+    module=service-dataplane
+    schema=dp
+    [ "$component" != portal ] || { module=service-session-portal; schema=portal; }
+    [ "$component" != managed ] || { module=service-session-portal; schema=ma; }
+    BUILDER_PORTAL_DB_PASSWORD=builder BUILDER_DB_PASSWORD=builder BUILDER_MANAGED_DB_PASSWORD=builder \
+    java -Dloader.main=io.agentscope.builder.web.persistence.ServiceSchemaMain \
+        -cp "$(jar_of "$module")" org.springframework.boot.loader.launch.PropertiesLauncher \
+        "--component=$component" "--schema=$schema" \
+        "--url=jdbc:postgresql://localhost:${PG_PORT}/builder" --username=builder \
+        >"$LOG_DIR/schema-${component}.log" 2>&1
+done
+docker exec -i -e PGHOST=127.0.0.1 -e PGDATABASE=builder -e PGUSER=builder -e PGPASSWORD=builder \
+    -e "CONTROL_DB_PASSWORD=$CONTROL_DB_PASSWORD" \
+    -e "PORTAL_DB_PASSWORD=$PORTAL_DB_PASSWORD" -e "DATA_DB_PASSWORD=$DATA_DB_PASSWORD" \
+    -e "HANDS_DB_PASSWORD=$HANDS_DB_PASSWORD" "$PG_CONTAINER" sh -s \
+    <"$ROOT/deploy/postgres-roles.sh" >"$LOG_DIR/schema-grants.log" 2>&1
+CONTROL_PLANE_DSN="postgres://agentscope_control:${CONTROL_DB_PASSWORD}@localhost:${PG_PORT}/builder?sslmode=disable"
+CONTROL_PLANE_RUNTIME_DSN="${CONTROL_PLANE_DSN}&search_path=rt"
 
 # ---------------------------------------------------------------- planes
 mkdir -p "$LOG_DIR" "$PID_DIR"
@@ -271,38 +313,43 @@ start control "$PID_DIR/control.pid" \
     "$CONTROL_PLANE_BIN" \
         --storage-driver=postgres \
         --storage-dsn="$CONTROL_PLANE_RUNTIME_DSN" \
-        --log-format=console
+        --schema-mode=validate --enable-runtime-workers=true --log-format=console
+
+start portal "$PID_DIR/portal.pid" \
+    env BUILDER_PORTAL_DB_URL="jdbc:postgresql://localhost:${PG_PORT}/builder?currentSchema=portal" \
+        BUILDER_PORTAL_DB_USER=agentscope_portal BUILDER_PORTAL_DB_PASSWORD="$PORTAL_DB_PASSWORD" \
+        BUILDER_PORTAL_SCHEMA_INIT=never BUILDER_PORTAL_PORT="$PORTAL_PORT" \
+        BUILDER_CONTROL_URL="http://localhost:${CONTROL_PORT}" \
+        BUILDER_DATA_URL="http://localhost:${DATA_PORT}" \
+    java -jar "$(jar_of service-session-portal)"
 
 start data "$PID_DIR/data.pid" \
     env BUILDER_DB_URL="$DB_URL" BUILDER_DB_DRIVER=org.postgresql.Driver \
-        BUILDER_DB_USER=builder BUILDER_DB_PASSWORD=builder \
+        BUILDER_DB_USER=agentscope_data BUILDER_DB_PASSWORD="$DATA_DB_PASSWORD" \
+        BUILDER_MANAGED_CONSUMERS_ENABLED=true \
         BUILDER_DATA_PORT="$DATA_PORT" \
         BUILDER_CONTROL_URL="http://localhost:${CONTROL_PORT}" \
         BUILDER_INTERNAL_TOKEN="$BUILDER_INTERNAL_TOKEN" \
         BUILDER_JWT_SECRET="$BUILDER_JWT_SECRET" \
     java -jar "$(jar_of service-dataplane)"
 
-start scheduler "$PID_DIR/scheduler.pid" \
-    env BUILDER_DB_URL="$DB_URL" BUILDER_DB_DRIVER=org.postgresql.Driver \
-        BUILDER_DB_USER=builder BUILDER_DB_PASSWORD=builder \
-        BUILDER_SCHEDULER_PORT="$SCHED_PORT" \
-        BUILDER_CONTROL_URL="http://localhost:${CONTROL_PORT}" \
-        BUILDER_DATA_URL="http://localhost:${DATA_PORT}" \
-        BUILDER_INTERNAL_TOKEN="$BUILDER_INTERNAL_TOKEN" \
-        BUILDER_JWT_SECRET="$BUILDER_JWT_SECRET" \
-    java -jar "$(jar_of service-scheduler)"
-
 start gateway "$PID_DIR/gateway.pid" \
     env BUILDER_GATEWAY_PORT="$GATEWAY_PORT" \
         BUILDER_CONTROL_URL="http://localhost:${CONTROL_PORT}" \
         BUILDER_DATA_URL="http://localhost:${DATA_PORT}" \
-        BUILDER_SCHEDULER_URL="http://localhost:${SCHED_PORT}" \
     java -jar "$(jar_of service-gateway)"
+
+start hands "$PID_DIR/hands.pid" \
+    env BUILDER_HANDS_DB_URL="jdbc:postgresql://localhost:${PG_PORT}/builder?currentSchema=ma" \
+        BUILDER_HANDS_DB_USER=agentscope_hands BUILDER_HANDS_DB_PASSWORD="$HANDS_DB_PASSWORD" \
+        BUILDER_HANDS_PORT="$HANDS_PORT" BUILDER_CONTROL_URL="http://localhost:${CONTROL_PORT}" \
+    java -jar "$(jar_of service-hands)" --platform-service
 
 echo "==> Waiting for health"
 wait_health control "$CONTROL_PORT" 60 /healthz
+wait_health portal "$PORTAL_PORT"
 wait_health data "$DATA_PORT"
-wait_health scheduler "$SCHED_PORT"
+wait_health hands "$HANDS_PORT"
 wait_health gateway "$GATEWAY_PORT" 30
 
 echo "==> Verifying database schemas and v4 terminal migrations"
@@ -319,7 +366,7 @@ STARTUP_SUCCEEDED=1
 
 cat <<EOF
 
-==> AgentScope Service stack is up (service-controlplane + Java DP)
+==> AgentScope Service stack is up (Control (Go orchestration, Cron and channels) + Portal + Harness + Hands + Gateway)
 
   Console (SPA via gateway):  http://localhost:${GATEWAY_PORT}/
   Default login:              admin / admin

@@ -19,7 +19,7 @@
  * Licensed under the Apache License, Version 2.0.
  */
 
-import type { SessionEvent as ManagedSessionEvent } from '@/api/managedSessions';
+import type { AgentSessionEvent } from '@/api/agentSessions';
 import type {
   SessionEventItem,
   SessionMessageItem,
@@ -327,17 +327,16 @@ function elapsed(start?: string, end?: string): number | undefined {
   return Number.isFinite(duration) && duration >= 0 ? duration : undefined;
 }
 
-export function managedEventsToConversation(events: ManagedSessionEvent[]): ConversationEvent[] {
+export function managedEventsToConversation(events: AgentSessionEvent[]): ConversationEvent[] {
   return events.map((event) => {
-    const payload = event.payload || {};
-    const callId = payload.toolCallId ?? payload.toolUseId ?? payload.tool_use_id ?? payload.id;
+    const payload = event.data;
+    const callId = payload.tool_call_id;
     const summary = payload.text ?? payload.message ?? payload.content ?? payload.output;
     return {
       id: `managed-event-${event.id}`,
-      seq: event.seq,
       type: event.type,
       category: eventCategory(event.type),
-      occurredAt: new Date(event.createdAt).toISOString(),
+      occurredAt: event.created_at == null ? undefined : new Date(event.created_at).toISOString(),
       role: event.type.startsWith('user.')
         ? 'user'
         : event.type.startsWith('agent.')

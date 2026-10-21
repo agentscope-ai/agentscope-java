@@ -38,6 +38,7 @@ async function fixture(page: Page) {
   await page.route('**/api/**', async route => {
     const req = route.request(), url = new URL(req.url()), path = url.pathname;
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (path === '/api/auth/dev-session') return route.fulfill({ status: 404 });
     if (path === '/api/auth/me') return json(users[0]);
     if (path === '/api/v1/me/scope') return json({ tenant: 'default', namespace: preference || 'personal', mode: 'multi', selectorVisible: true, namespaces: namespaces.filter(n => roles(n).length).map(summary) });
     if (path === '/api/v1/me/preferences') { if (req.method() === 'PUT') preference = req.postDataJSON().defaultNamespace; return json({ preferences: { defaultNamespace: preference } }); }

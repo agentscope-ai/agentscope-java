@@ -20,6 +20,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonUtils;
@@ -361,6 +362,11 @@ class ToolMethodInvoker {
      * @throws ToolSuspendException if found in the exception chain
      */
     private ToolResultBlock handleInvocationError(Throwable e) {
+        // A recovery boundary failure must reach the caller, never become model-visible output.
+        if (SessionLogException.causedBy(e)) {
+            for (Throwable cause = e; cause != null; cause = cause.getCause())
+                if (cause instanceof SessionLogException failure) throw failure;
+        }
         // Check if the exception itself is ToolSuspendException
         if (e instanceof ToolSuspendException) {
             throw (ToolSuspendException) e;

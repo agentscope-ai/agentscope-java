@@ -375,6 +375,11 @@ public final class JournalSessionLog implements SessionLog {
     }
 
     @Override
+    public Iterable<SessionEvent> scanMetadata(long after, long through) {
+        return scan(after, through);
+    }
+
+    @Override
     public List<SessionEvent> readAfter(long after, int limit) {
         if (limit < 1) throw new IllegalArgumentException("Invalid limit");
         long through = Math.min(head().seq(), after + (long) limit);

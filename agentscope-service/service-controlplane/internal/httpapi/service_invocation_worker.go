@@ -82,7 +82,7 @@ func (s *Server) dispatchEndpointInvocation(ctx context.Context, id uuid.UUID) e
 				return nil
 			}
 		}
-		contract, err := serviceapi.ReadContract(inv.Contract)
+		contract, err := serviceapi.ReadInvocationContract(ctx, s.store, inv)
 		if err != nil {
 			return err
 		}
@@ -100,7 +100,11 @@ func (s *Server) dispatchEndpointInvocation(ctx context.Context, id uuid.UUID) e
 			Input       json.RawMessage `json:"input"`
 			Message     string          `json:"message"`
 		}
-		if err = json.Unmarshal(inv.Input, &req); err != nil {
+		rawInput, err := serviceapi.InvocationInput(ctx, s.store, inv)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(rawInput, &req); err != nil {
 			return err
 		}
 		if contract.PublicSessionID != uuid.Nil {
@@ -111,7 +115,11 @@ func (s *Server) dispatchEndpointInvocation(ctx context.Context, id uuid.UUID) e
 				req.Description = req.Message
 			}
 			if len(req.Input) == 0 {
-				req.Input, _ = json.Marshal(req.Message)
+				if contract.PortalCommandID != "" && ep.TargetType != model.EndpointTargetAgent {
+					req.Input = rawInput
+				} else {
+					req.Input, _ = json.Marshal(req.Message)
+				}
 			}
 		}
 		sourceType := "endpoint"
@@ -120,6 +128,9 @@ func (s *Server) dispatchEndpointInvocation(ctx context.Context, id uuid.UUID) e
 		}
 		issueID := uuid.NewSHA1(inv.ID, []byte("issue"))
 		actor := model.Actor{Type: model.ActorSystem, Ref: "endpoint:" + ep.ID.String()}
+		if contract.PortalCommandID != "" {
+			actor = inv.Actor
+		}
 		issue, err := s.store.Collaboration().GetIssue(ctx, issueID)
 		if errors.Is(err, store.ErrNotFound) {
 			issue, err = s.store.Collaboration().CreateIssue(ctx, &model.Issue{ID: issueID, Tenant: ep.Tenant, Namespace: ep.Namespace,
@@ -181,7 +192,7 @@ func (s *Server) dispatchEndpointInvocation(ctx context.Context, id uuid.UUID) e
 				return err
 			}
 			if ep.TargetType == model.EndpointTargetTeam && len(inv.Contract) > 0 {
-				frozen, err := serviceapi.ReadContract(inv.Contract)
+				frozen, err := serviceapi.ReadInvocationContract(ctx, s.store, inv)
 				if err != nil {
 					return err
 				}
@@ -194,7 +205,7 @@ func (s *Server) dispatchEndpointInvocation(ctx context.Context, id uuid.UUID) e
 				if err != nil {
 					return err
 				}
-				err = (&orchestration.Engine{Store: s.store}).ReconcileRun(ctx, run.ID)
+				err = (&orchestration.Engine{Store: s.store, RequirePortal: s.portalExecution()}).ReconcileRun(ctx, run.ID)
 				if err != nil {
 					return err
 				}
@@ -279,6 +290,10 @@ func (s *Server) SweepServiceInvocations(ctx context.Context) error {
 	}
 }
 func (s *Server) runServiceInvocations(ctx context.Context) {
+	// Resource admission and public delivery belong to the control-plane role.
+	if s.runtimeOnly {
+		return
+	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {

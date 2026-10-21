@@ -52,6 +52,7 @@ import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
@@ -119,7 +120,9 @@ import io.agentscope.harness.agent.skill.curator.SkillPromotionGate;
 import io.agentscope.harness.agent.skill.curator.SkillUsageStore;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
+import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.SubagentExecution;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.ArtifactDeliveryTool;
 import io.agentscope.harness.agent.tool.FilesystemTool;
@@ -581,6 +584,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return dm.getAgentManager();
         }
         return null;
+    }
+
+    /** Reloads dynamic declarations in the target parent Session before host-owned recovery. */
+    public DefaultAgentManager getSubagentAgentManager(RuntimeContext context) {
+        if (subagentMiddleware instanceof DynamicSubagentsMiddleware dynamic)
+            return dynamic.refreshAgentManager(ensureSessionDefaults(context));
+        return getSubagentAgentManager();
     }
 
     /**
@@ -1079,6 +1089,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      */
     private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
         RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        boolean hostedChild = source.get(SubagentExecution.class) != null;
         String ctxSessionId = source.getSessionId();
         if (ctxSessionId == null || ctxSessionId.isBlank()) {
             ctxSessionId = getName();
@@ -1092,10 +1103,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         if (ctxSessionId.equals(source.getSessionId())
                 && sandboxCtx == source.get(SandboxContext.class)
-                && (fs == null || sourceFs != null)) {
+                && (fs == null || sourceFs != null)
+                && (!hostedChild
+                        || Boolean.TRUE.equals(source.get(ToolCallParam.CALL_CONTEXT_KEY)))) {
             return source;
         }
         RuntimeContext.Builder b = RuntimeContext.builder(source).sessionId(ctxSessionId);
+        if (hostedChild) b.put(ToolCallParam.CALL_CONTEXT_KEY, true);
         b.put(SandboxContext.class, sandboxCtx);
         if (sourceFs == null && fs != null) {
             b.put(AbstractFilesystem.class, fs);

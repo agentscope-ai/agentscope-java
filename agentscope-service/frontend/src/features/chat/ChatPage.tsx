@@ -41,6 +41,8 @@ import type { ConversationMessage } from '@/features/conversation/model';
 import { finishesConversationTurn } from '@/features/conversation/turnState';
 import { useSessionEvents } from '@/features/operate/lib/useSessionEvents';
 import { formatRelative } from '@/lib/format';
+import SessionExecution from '@/components/SessionExecution';
+import { submitAgentTurn } from '@/api/agentSessions';
 
 function firstTitle(message: string): string {
   const value = message.trim().replace(/\s+/g, ' ');
@@ -70,7 +72,7 @@ function ChatListItem({ chat, selected, disabled, onSelect, onDelete, onRestore 
   </DropdownMenu.Root>;
 }
 
-function ChatWorkspace({ chat, onChanged, initialDraft = '' }: { chat: Chat; onChanged: (chat?: Chat) => void; initialDraft?: string }) {
+function ReportedChatWorkspace({ chat, onChanged, initialDraft = '' }: { chat: Chat; onChanged: (chat?: Chat) => void; initialDraft?: string }) {
   const scope = useControlPlaneScope();
   const roles = getRoles().map(role => role.toLowerCase());
   const canInspectSession = roles.includes('admin') || roles.includes('operator');
@@ -190,6 +192,36 @@ function ChatWorkspace({ chat, onChanged, initialDraft = '' }: { chat: Chat; onC
   </div>;
 }
 
+function ChatWorkspace(props: { chat: Chat; onChanged: (chat?: Chat) => void; initialDraft?: string; initialRequestKey?: string }) {
+  if (props.chat.runtimeKind === 'managed') return <NativeChatWorkspace {...props} />;
+  return <ReportedChatWorkspace {...props} />;
+}
+
+function NativeChatWorkspace({ chat, onChanged, initialDraft = '', initialRequestKey }: { chat: Chat; onChanged: (chat?: Chat) => void; initialDraft?: string; initialRequestKey?: string }) {
+  const scope = useControlPlaneScope();
+  const canInspectSession = getRoles().some(role => ['admin', 'operator'].includes(role.toLowerCase()));
+  const queryClient = useQueryClient();
+  const [error, setError] = useState('');
+  const change = useMutation({
+    mutationFn: (patch: { pinned?: boolean; status?: ChatStatus }) => updateChat(chat, patch),
+    onSuccess: value => { void queryClient.invalidateQueries({ queryKey: ['chats'] }); onChanged(value.chat); },
+    onError: cause => setError(cause instanceof Error ? cause.message : String(cause)),
+  });
+  return <div className="flex min-w-0 flex-1 flex-col gap-4">
+    <div className="flex items-center justify-between gap-3">
+      <div><h2 className="font-semibold">{chat.title}</h2><p className="text-sm text-muted-foreground">{chat.agentName}</p></div>
+      <div className="flex items-center gap-2">
+        {canInspectSession && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/sessions/${encodeURIComponent(chat.sessionId)}`)}>Session diagnostics<ExternalLink className="h-3.5 w-3.5" /></Link></Button>}
+        <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/issues?new=1&fromChat=${encodeURIComponent(chat.id)}&title=${encodeURIComponent(chat.title)}&description=${encodeURIComponent(`Created from Chat with ${chat.agentName}.`)}`)}>Create issue</Link></Button>
+        <Button size="sm" variant="outline" disabled={change.isPending} onClick={() => change.mutate({ pinned: !chat.pinned })}>{chat.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}{chat.pinned ? 'Unpin' : 'Pin'}</Button>
+        <Button size="sm" variant="outline" disabled={change.isPending} onClick={() => change.mutate({ status: chat.status === 'active' ? 'archived' : 'active' })}>{chat.status === 'active' ? <Archive className="h-4 w-4" /> : <ArchiveRestore className="h-4 w-4" />}{chat.status === 'active' ? 'Archive' : 'Restore'}</Button>
+      </div>
+    </div>
+    {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+    <SessionExecution key={chat.id} sessionId={chat.runtimeSessionId} readOnly={chat.status !== 'active'} initialMessage={initialDraft} initialRequestKey={initialRequestKey} />
+  </div>;
+}
+
 export default function ChatPage() {
   const scope = useControlPlaneScope();
   const queryClient = useQueryClient();
@@ -197,7 +229,7 @@ export default function ChatPage() {
   const [view, setView] = useState<ChatStatus>('active');
   const [agentId, setAgentId] = useState(params.get('agent') ?? '');
   const [draft, setDraft] = useState('');
-  const [retryDraft, setRetryDraft] = useState<{ chatId: string; text: string }>();
+  const [retryDraft, setRetryDraft] = useState<{ chatId: string; text: string; key?: string }>();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const chats = useQuery({
@@ -261,10 +293,13 @@ export default function ChatPage() {
     setCreating(true);
     setError('');
     let created: Chat | undefined;
+    const key = crypto.randomUUID();
     try {
       const result = await createChat({ tenant: scope.tenant, namespace: scope.namespace, agentId, title: firstTitle(value) });
       created = result.chat;
-      await sendChatTurn(result.chat.id, value.trim());
+      if (created.runtimeKind === 'managed') await submitAgentTurn(created.runtimeSessionId,
+        { input: [{ role: 'user', content: [{ type: 'text', text: value.trim() }] }] }, key);
+      else await sendChatTurn(result.chat.id, value.trim());
       await queryClient.invalidateQueries({ queryKey: ['chats'] });
       setDraft('');
       select(result.chat);
@@ -272,7 +307,7 @@ export default function ChatPage() {
       if (created) {
         await queryClient.invalidateQueries({ queryKey: ['chats'] });
         select(created);
-        setRetryDraft({ chatId: created.id, text: value });
+        setRetryDraft({ chatId: created.id, text: value.trim(), key: created.runtimeKind === 'managed' ? key : undefined });
         setDraft('');
       }
       setError(cause instanceof Error ? cause.message : 'Failed to start Chat');
@@ -301,7 +336,7 @@ export default function ChatPage() {
           {!chats.isLoading && !(chats.data?.items ?? []).length && <p className="px-3 py-8 text-center text-sm text-muted-foreground">No {view} chats.</p>}
         </div>
       </aside>
-      {selected ? <ChatWorkspace key={selected.id} chat={selected} onChanged={select} initialDraft={retryDraft?.chatId === selected.id ? retryDraft.text : ''} /> : <div className="space-y-4 rounded-2xl border bg-white p-6">
+      {selected ? <ChatWorkspace key={selected.id} chat={selected} onChanged={select} initialDraft={retryDraft?.chatId === selected.id ? retryDraft.text : ''} initialRequestKey={retryDraft?.chatId === selected.id ? retryDraft.key : undefined} /> : <div className="space-y-4 rounded-2xl border bg-white p-6">
         <div><h2 className="text-xl font-semibold">Start a new chat</h2><p className="mt-1 text-sm text-muted-foreground">Choose one conversation-capable Agent. Team and Workflow work should start from an Issue.</p></div>
         <label className="grid max-w-xl gap-1.5 text-sm">Agent<select className="h-11 rounded-lg border bg-background px-3" value={agentId} onChange={event => setAgentId(event.target.value)}>
           <option value="">Choose an Agent…</option>

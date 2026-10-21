@@ -136,6 +136,28 @@ public final class SessionInbox {
             return command;
         }
 
+        /** Commits admission and rejection together; an existing acceptance is never revoked. */
+        public Command acceptRejected(Command command, String reason) {
+            for (var existing : snapshot().commands()) {
+                if (!existing.id().equals(command.id())) continue;
+                return accept(command);
+            }
+            long seq = journal.head().seq();
+            journal.commit(
+                    writer,
+                    UUID.randomUUID().toString(),
+                    seq,
+                    List.of(
+                            event("inbox/accepted", null, command.turnId(), command, seq + 1),
+                            event(
+                                    "inbox/rejected",
+                                    null,
+                                    command.turnId(),
+                                    Map.of("commandId", command.id(), "reason", reason),
+                                    seq + 2)));
+            return command;
+        }
+
         private Map<?, ?> comparable(Command command) {
             var value = JsonUtils.getJsonCodec().convertValue(command, Map.class);
             for (Object message : (List<?>) value.get("messages"))
@@ -169,17 +191,20 @@ public final class SessionInbox {
                     writer,
                     UUID.randomUUID().toString(),
                     seq,
-                    List.of(
-                            new SessionEvent(
-                                    1,
-                                    UUID.randomUUID().toString(),
-                                    seq + 1,
-                                    System.currentTimeMillis(),
-                                    type,
-                                    run,
-                                    turn,
-                                    true,
-                                    JsonUtils.getJsonCodec().toJson(data))));
+                    List.of(event(type, run, turn, data, seq + 1)));
+        }
+
+        private SessionEvent event(String type, String run, String turn, Object data, long seq) {
+            return new SessionEvent(
+                    1,
+                    UUID.randomUUID().toString(),
+                    seq,
+                    System.currentTimeMillis(),
+                    type,
+                    run,
+                    turn,
+                    true,
+                    JsonUtils.getJsonCodec().toJson(data));
         }
     }
 }

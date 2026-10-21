@@ -75,6 +75,8 @@ curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-definitions/$W
 
 节点 `key` 在流程中唯一，边把前一步的状态与后一步连接。`input` 将输入字段映射为 CEL 表达式；这里将请求里的 `request` 交给 draft 节点。表达式可读取 `run`、`issue`、`trigger` 和前序 `nodes`，不能作为任意脚本执行器。服务端校验检查节点类型、引用、表达式及环路；目标运行时是否可用仍要在实际执行前确认。
 
+定义最多接受 4 MiB JSON、4,096 个节点和 8,192 条边。每个 Run（包含动态 Team 委派）最多有 8,192 个节点、16,384 条边，完整节点集合和完整边集合各有 16 MiB 载荷限制。大交付内容应保存为产物。建图期间 Run 保持 `planned`，全部依赖持久化后才执行。超大图以 `resource_limit` 失败；评论目标超出节点容量时记录 `run_graph_capacity` 阻塞路由。已有排队任务仍可合并输入，不创建额外节点。
+
 ## 发布版本并开始执行
 
 校验通过后发布当前定义，保存返回的 revision ID。后续修改使用 `PATCH /api/v1/orchestration-definitions/{definitionId}`，传入 `draftSpec` 和 `expectedVersion`，然后再次发布。
@@ -196,26 +198,24 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID"
 
 ```bash
 REQUEST_ID="SIGNAL_REQUEST_ID_FROM_ACTIONS"
-EXPECTED_VERSION="SIGNAL_VERSION_FROM_ACTIONS"
 ARTIFACT_ID="YOUR_ARTIFACT_ID"
 ```
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: report-upload-001" \
   --data-binary @- <<JSON
 {
-  "request_id": "$REQUEST_ID",
-  "expected_version": $EXPECTED_VERSION,
-  "payload": {
-    "artifactId": "$ARTIFACT_ID"
-  }
+  "answers": [{
+    "request_id": "$REQUEST_ID",
+    "value": {"artifactId": "$ARTIFACT_ID"}
+  }]
 }
 JSON
 ```
 
-请求中的 ID 和版本必须取自当前 required_actions，不能直接使用示例占位值。signal 是流程的外部输入，不会自动替代审批。更复杂的流程先运行小样本，查看真实节点输出，再编写下游映射；不要假定不同运行时的结果结构完全相同。
+请求中的 ID 必须取自当前 `required_actions` 资源，不能直接使用示例占位值。signal 是流程的外部输入，不会自动替代审批。更复杂的流程先运行小样本，查看真实节点输出，再编写下游映射；不要假定不同运行时的结果结构完全相同。
 
 ## 取消任务与运维控制
 
@@ -225,6 +225,10 @@ JSON
 `POST /api/v1/orchestration-runs/{runId}/pause` 阻止新节点调度，已运行步骤仍可能返回；`/resume` 恢复调度；`/cancel` 请求取消节点、任务和子运行，不会删除或验收 Issue。请求体可使用 `{}`。
 
 终态后向 `/rerun` 提交 `{"idempotencyKey":"weekly-report-retry-001"}` 创建新的 Run，保留与原运行的关联；可加 `input` 替换输入。节点支持 `timeoutSeconds`、`retry` 和 `failurePolicy`，其中失败策略可选 `fail_fast`、`continue`、`partial_success`。重试不保证撤销已经发生的外部副作用。
+
+根 Run 失败后，未完成的 Issue 分批进入可恢复的 `blocked` 状态。收尾进度持久化，
+Runtime 重启后继续处理，执行进入终态也不会丢失收尾义务。较大的 Issue 树经过多轮
+收敛；失败后创建的 Issue 以及较新的恢复 Run 不由历史失败收尾处理。
 
 应用创建 Session 时，使用 `target:{"type":"workflow","id":"WORKFLOW_ID","revisionId":"REVISION_ID"}`。省略 `revisionId` 时，Service 在创建会话时选择最新的已发布版本；已有会话不会自动切换到新版本。控制台设计器与运行图见[控制台](/v2/zh/service/console/index#console-orchestration)。
 

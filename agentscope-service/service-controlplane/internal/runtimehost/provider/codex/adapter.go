@@ -288,6 +288,7 @@ func runAppServerSession(client *appServerClient, request provider.Request, cfg 
 	if cfg.ServiceTier != "" {
 		turnParams["serviceTier"] = cfg.ServiceTier
 	}
+	client.turnRequested = true
 	if err := client.call("turn/start", turnParams, nil); err != nil {
 		return nil, err
 	}
@@ -298,16 +299,17 @@ func runAppServerSession(client *appServerClient, request provider.Request, cfg 
 }
 
 type appServerClient struct {
-	rootThreadID string
-	context      context.Context
-	writer       io.Writer
-	scanner      *bufio.Scanner
-	sink         provider.EventSink
-	approver     provider.ToolApprover
-	nextID       int64
-	result       *provider.Result
-	terminal     bool
-	turnErr      error
+	rootThreadID  string
+	turnRequested bool
+	context       context.Context
+	writer        io.Writer
+	scanner       *bufio.Scanner
+	sink          provider.EventSink
+	approver      provider.ToolApprover
+	nextID        int64
+	result        *provider.Result
+	terminal      bool
+	turnErr       error
 }
 
 func newAppServerClient(ctx context.Context, writer io.Writer, reader io.Reader, sink provider.EventSink,
@@ -414,8 +416,15 @@ func (c *appServerClient) handleInbound(raw json.RawMessage, message rpcMessage)
 	if eventThreadID == "" {
 		eventThreadID = c.result.ProviderSessionID
 	}
-	if c.sink != nil {
-		if err := c.sink(provider.Event{Type: message.Method, ProviderSessionID: eventThreadID, Raw: raw}); err != nil {
+	// Resume may report historical thread usage before the new turn starts.
+	// Those counters belong to earlier Portal turns and must stay out of this
+	// attempt's usage stream.
+	if c.sink != nil && (message.Method != "thread/tokenUsage/updated" || c.turnRequested) {
+		checkpointID := c.rootThreadID
+		if checkpointID == "" {
+			checkpointID = eventThreadID
+		}
+		if err := c.sink(provider.Event{Type: message.Method, ProviderSessionID: eventThreadID, CheckpointSessionID: checkpointID, Raw: raw}); err != nil {
 			return err
 		}
 	}

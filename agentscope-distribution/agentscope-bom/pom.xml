@@ -92,6 +92,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- Public Service application client -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-service-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope All -->
             <dependency>
                 <groupId>io.agentscope</groupId>

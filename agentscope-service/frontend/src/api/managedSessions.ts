@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-import { getToken } from './auth';
 import { authHeaders, readApiError } from './http';
 
 export interface ManagedSession {
@@ -35,41 +34,28 @@ export interface ManagedSession {
   updatedAt: number;
   archivedAt?: number | null;
   externalKey?: string | null;
-}
-
-export interface SessionEvent {
-  id: string;
-  sessionId: string;
-  seq: number;
-  type: string;
-  payload?: Record<string, unknown>;
-  processedAt?: number | null;
-  createdAt: number;
+  title?: string | null;
+  metadata?: Record<string, string>;
+  runtimeStatus?: string;
+  configurationRevision?: string;
+  lifecycleCommandId?: string;
+  cleanupStatus?: string;
 }
 
 export interface CreateManagedSessionRequest {
   agent: string | { type?: string; id: string; version?: number };
   /** Optional when the agent has defaultEnvironmentId. */
   environmentId?: string;
-  memoryStoreIds?: string[];
-  vaultIds?: string[];
-  resources?: Array<{ type: string; fileId?: string; filename?: string; content?: string }>;
-  agentOverrides?: Record<string, unknown>;
+  title?: string | null;
+  metadata?: Record<string, string>;
 }
 
 export interface UpdateManagedSessionRequest {
-  agentOverrides?: Record<string, unknown>;
-  environmentId?: string;
-  memoryStoreIds?: string[];
-  vaultIds?: string[];
+  title?: string | null;
+  metadata?: Record<string, string>;
 }
 
 export type ManagedSessionListStatus = 'active' | 'archived' | 'all';
-
-export interface InboundEvent {
-  type: string;
-  payload?: Record<string, unknown>;
-}
 
 /** Parsed from product `externalKey` = `agent-task|{agentTaskId}`. */
 export interface AgentTaskSessionRef {
@@ -92,247 +78,112 @@ export function agentTaskDetailPath(ref: AgentTaskSessionRef): string {
 }
 
 
-export async function createManagedSession(req: CreateManagedSessionRequest): Promise<ManagedSession> {
-  const res = await fetch('/api/v1/agent-sessions', {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Idempotency-Key': crypto.randomUUID() },
-    body: JSON.stringify(req),
-  });
-  if (!res.ok) throw await readApiError(res, 'Failed to create session');
-  return normalizeManagedSession(await res.json() as ManagedSession);
-}
-
-export async function listManagedSessions(
-  agentId?: string,
-  status: ManagedSessionListStatus = 'active',
-): Promise<ManagedSession[]> {
-  const params = new URLSearchParams();
-  if (agentId) params.set('agentId', agentId);
-  if (status && status !== 'active') params.set('status', status);
-  // Always send status=active explicitly for clarity when listing active; server defaults match.
-  if (status === 'active') params.set('status', 'active');
-  const sessions: ManagedSession[] = [];
-  let offset: number | null = 0;
-  while (offset !== null) {
-    params.set('offset', String(offset));
-    const res = await fetch(`/api/v1/agent-sessions?${params}`, { headers: authHeaders() });
-    if (!res.ok) throw await readApiError(res, 'Failed to list sessions');
-    const page = await res.json() as { items: ManagedSession[]; next_offset?: number | null };
-    sessions.push(...page.items.map(normalizeManagedSession));
-    offset = page.next_offset ?? null;
-  }
-  return sessions.filter(session => !session.runtimeKind || session.runtimeKind === 'managed');
-}
-
-export async function getManagedSession(id: string): Promise<ManagedSession> {
-  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}`, { headers: authHeaders() });
-  if (!res.ok) throw await readApiError(res, 'Failed to load session');
-  return normalizeManagedSession(await res.json() as ManagedSession);
-}
-
-export async function updateManagedSession(
-  id: string,
-  req: UpdateManagedSessionRequest,
-): Promise<ManagedSession> {
-  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    headers: authHeaders(),
-    body: JSON.stringify(req),
-  });
-  if (!res.ok) throw await readApiError(res, 'Failed to update session');
-  return normalizeManagedSession(await res.json() as ManagedSession);
-}
-
-export async function archiveManagedSession(id: string): Promise<ManagedSession> {
-  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}/archive`, {
-    method: 'POST',
-    headers: authHeaders(),
-  });
-  if (!res.ok) throw await readApiError(res, 'Failed to archive session');
-  return normalizeManagedSession(await res.json() as ManagedSession);
-}
-
-export async function restoreManagedSession(id: string): Promise<ManagedSession> {
-  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}/restore`, {
-    method: 'POST',
-    headers: authHeaders(),
-  });
-  if (!res.ok) throw await readApiError(res, 'Failed to restore session');
-  return normalizeManagedSession(await res.json() as ManagedSession);
-}
-
-export async function deleteManagedSession(id: string): Promise<void> {
-  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-    headers: authHeaders(),
-  });
-  if (!res.ok && res.status !== 204) throw await readApiError(res, 'Failed to delete session');
-}
-
-export function normalizeManagedSession(value: ManagedSession): ManagedSession {
-  return { ...value, createdAt: typeof value.createdAt === 'string' ? Date.parse(value.createdAt) : value.createdAt, updatedAt: typeof value.updatedAt === 'string' ? Date.parse(value.updatedAt) : value.updatedAt };
-}
-
-export async function postEvents(sessionId: string, events: InboundEvent[]): Promise<SessionEvent[]> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/events`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ events }),
-  });
-  if (!res.ok) throw await readApiError(res, 'Failed to post events');
-  return res.json();
-}
-
-export async function listEvents(
-  sessionId: string,
-  options?: { after?: number; types?: string[] },
-): Promise<SessionEvent[]> {
-  const params = new URLSearchParams();
-  if (options?.after != null) params.set('after', String(options.after));
-  for (const t of options?.types ?? []) {
-    params.append('types', t);
-  }
-  const qs = params.toString();
-  const res = await fetch(
-    `/api/sessions/${encodeURIComponent(sessionId)}/events${qs ? `?${qs}` : ''}`,
-    { headers: authHeaders() },
-  );
-  if (!res.ok) throw await readApiError(res, 'Failed to list events');
-  return res.json();
-}
-
-export interface EventStreamHandle {
-  close: () => void;
-}
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-/**
- * Subscribes to session events over SSE. Uses fetch (not native EventSource) so JWT Bearer auth
- * works. Reconnects automatically when the stream ends or fails, resuming from the last seen
- * sequence via {@code getAfter} so no events are lost across plane restarts or network drops.
- */
-export function streamEvents(
-  sessionId: string,
-  onEvent: (event: SessionEvent) => void,
-  onError?: (err: Error) => void,
-  options?: {
-    eventDeltas?: string[];
-    after?: number;
-    /** Called before each (re)connect to compute the resume cursor. */
-    getAfter?: () => number | undefined;
-    /** Base reconnect delay; doubles up to {@link maxRetryMs} and resets on progress. */
-    retryMs?: number;
-    maxRetryMs?: number;
-  },
-): EventStreamHandle {
-  const token = getToken();
-  const controller = new AbortController();
-  let closed = false;
-  let backoffMs = Math.max(500, options?.retryMs ?? 2000);
-  const maxRetryMs = options?.maxRetryMs ?? 30000;
-  let previewSequence = 0;
-
-  async function connect(): Promise<void> {
-    const after = options?.getAfter ? options.getAfter() : options?.after;
-    const params = new URLSearchParams();
-    if (after != null && after > 0) {
-      params.set('after', String(after));
-    }
-    for (const t of options?.eventDeltas ?? []) {
-      params.append('event_deltas', t);
-    }
-    const qs = params.toString();
-    const res = await fetch(
-      `/api/sessions/${encodeURIComponent(sessionId)}/events/stream${qs ? `?${qs}` : ''}`,
-      {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...(after != null && after > 0 ? { 'Last-Event-ID': String(after) } : {}),
-        },
-        signal: controller.signal,
-      },
-    );
-    if (!res.ok || !res.body) {
-      throw new Error(`Event stream failed: ${res.status}`);
-    }
-    backoffMs = Math.max(500, options?.retryMs ?? 2000);
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    while (!closed) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf = (buf + dec.decode(value, { stream: true })).replace(/\r\n/g, '\n');
-      let idx;
-      while ((idx = buf.indexOf('\n\n')) >= 0) {
-        const block = buf.slice(0, idx);
-        buf = buf.slice(idx + 2);
-        let data = '';
-        for (const ln of block.split('\n')) {
-          if (ln.startsWith('data:')) data += ln.slice(5).trim();
-        }
-        if (!data) continue;
-        try {
-          const parsed = JSON.parse(data) as SessionEvent;
-          // Stream-only preview frames deliberately have no durable id. Give
-          // each frame a connection-local presentation id so the Events view
-          // does not collapse every delta into one React row.
-          if (!parsed.id) {
-            previewSequence += 1;
-            parsed.id = `preview:${sessionId}:${parsed.createdAt}:${previewSequence}`;
-          }
-          onEvent(parsed);
-          // Any delivered event means the connection is healthy; reset backoff.
-          backoffMs = Math.max(500, options?.retryMs ?? 2000);
-        } catch {
-          // ignore malformed frames
-        }
-      }
-    }
-  }
-
-  (async () => {
-    while (!closed) {
-      try {
-        await connect();
-      } catch (e: unknown) {
-        if (closed) return;
-        if (e instanceof Error && e.name === 'AbortError') return;
-        onError?.(e instanceof Error ? e : new Error(String(e)));
-      }
-      if (closed) return;
-      const delayMs = backoffMs;
-      backoffMs = Math.min(maxRetryMs, backoffMs * 2);
-      await sleep(delayMs);
-    }
-  })();
-
-  return {
-    close: () => {
-      closed = true;
-      controller.abort();
-    },
+export interface ManagedSessionWire {
+  id: string;
+  agent: { id: string; version?: number; name?: string };
+  environment_id: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  title?: string | null;
+  metadata?: Record<string, string>;
+  agentscope_service: {
+    runtime_kind: string;
+    lifecycle: string;
+    owner_id?: string;
+    agent_owner_id?: string;
+    memory_store_ids?: string[];
+    vault_ids?: string[];
+    archived_at?: string | null;
+    external_key?: string | null;
+    configuration_revision?: string;
+    lifecycle_command_id?: string;
+    cleanup_status?: string;
   };
 }
 
-export async function postToolConfirmation(
-  sessionId: string,
-  toolUseId: string,
-  allow: boolean,
-  denyMessage?: string,
-): Promise<SessionEvent[]> {
-  return postEvents(sessionId, [{
-    type: 'user.tool_confirmation',
-    payload: {
-      tool_use_id: toolUseId,
-      toolUseId,
-      allow,
-      ...(denyMessage ? { denyMessage } : {}),
-    },
-  }]);
+export interface ManagedLifecycleReceipt {
+  id: string;
+  session_id: string;
+  lifecycle: 'active' | 'archived' | 'deleted';
+  status: 'stopping' | 'cleaning' | 'completed';
+  revision: number;
+  failure_code?: string;
 }
 
-export async function postUserMessage(sessionId: string, text: string): Promise<SessionEvent[]> {
-  return postEvents(sessionId, [{ type: 'user.message', payload: { text } }]);
+export interface ManagedDeletionReceipt {
+  id: string;
+  type: 'session_deleted';
+  lifecycle_command_id: string;
+  cleanup_status: ManagedLifecycleReceipt['status'];
+}
+
+export function managedLifecyclePending(session: Pick<ManagedSession, 'cleanupStatus'>): boolean {
+  return session.cleanupStatus === 'stopping' || session.cleanupStatus === 'cleaning';
+}
+
+const base = '/v1/sessions';
+const path = (id: string) => `${base}/${encodeURIComponent(id)}`;
+async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(url, { ...init, headers: { ...authHeaders(), 'Content-Type': 'application/json', 'AgentScope-Extensions': 'turn-inputs-v1', ...init.headers } });
+  if (!response.ok) throw await readApiError(response, 'Session request failed');
+  return response.status === 204 ? undefined as T : response.json() as Promise<T>;
+}
+
+export function managedSessionCreateBody(req: CreateManagedSessionRequest): Record<string, unknown> {
+  if (Object.entries(req).some(([key, value]) => value !== undefined && !['agent', 'environmentId', 'title', 'metadata'].includes(key)))
+    throw new Error('unsupported_capability: Only agent, environment, title and metadata are supported');
+  return { agent: typeof req.agent === 'string' ? req.agent : { type: 'agent', id: req.agent.id, version: req.agent.version },
+    environment_id: req.environmentId, title: req.title, metadata: req.metadata };
+}
+
+export function normalizeManagedSession(value: ManagedSessionWire): ManagedSession {
+  if (!value.agent?.id || value.agentscope_service?.runtime_kind !== 'managed' || !value.agentscope_service.lifecycle)
+    throw new Error('Unsupported Managed Session resource schema');
+  const platform = value.agentscope_service;
+  return { id: value.id, ownerId: platform.owner_id, runtimeKind: platform.runtime_kind,
+    agentId: value.agent.id, agentOwnerId: platform.agent_owner_id, agentVersion: value.agent.version,
+    agentRefType: 'version', environmentId: value.environment_id,
+    memoryStoreIds: platform.memory_store_ids, vaultIds: platform.vault_ids,
+    status: platform.lifecycle, runtimeStatus: value.status, title: value.title, metadata: value.metadata,
+    configurationRevision: platform.configuration_revision,
+    lifecycleCommandId: platform.lifecycle_command_id, cleanupStatus: platform.cleanup_status,
+    createdAt: Date.parse(value.created_at), updatedAt: Date.parse(value.updated_at),
+    archivedAt: platform.archived_at ? Date.parse(platform.archived_at) : null, externalKey: platform.external_key };
+}
+
+export async function createManagedSession(req: CreateManagedSessionRequest, idempotencyKey = crypto.randomUUID()): Promise<ManagedSession> {
+  return normalizeManagedSession(await request<ManagedSessionWire>(base, { method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(managedSessionCreateBody(req)) }));
+}
+
+export async function listManagedSessions(agentId?: string, lifecycle: ManagedSessionListStatus = 'active'): Promise<ManagedSession[]> {
+  const sessions: ManagedSession[] = [];
+  let after: string | null = null;
+  do {
+    const query: URLSearchParams = new URLSearchParams({ lifecycle, limit: '100', ...(agentId ? { agent_id: agentId } : {}), ...(after ? { after } : {}) });
+    const page: { data: ManagedSessionWire[]; next_cursor: string | null } = await request<{ data: ManagedSessionWire[]; next_cursor: string | null }>(`${base}?${query}`);
+    sessions.push(...page.data.map(normalizeManagedSession));
+    after = page.next_cursor;
+  } while (after);
+  return sessions;
+}
+
+export async function getManagedSession(id: string): Promise<ManagedSession> {
+  return normalizeManagedSession(await request<ManagedSessionWire>(path(id)));
+}
+export async function updateManagedSession(id: string, req: UpdateManagedSessionRequest): Promise<ManagedSession> {
+  return normalizeManagedSession(await request<ManagedSessionWire>(path(id), { method: 'POST', body: JSON.stringify(req) }));
+}
+export async function archiveManagedSession(id: string): Promise<ManagedSession> {
+  return normalizeManagedSession(await request<ManagedSessionWire>(`${path(id)}/archive`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }));
+}
+export async function restoreManagedSession(id: string): Promise<ManagedSession> {
+  return normalizeManagedSession(await request<ManagedSessionWire>(`${path(id)}/restore`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }));
+}
+export function getManagedLifecycleReceipt(id: string, commandId: string): Promise<ManagedLifecycleReceipt> {
+  return request(`${path(id)}/lifecycle/${encodeURIComponent(commandId)}`);
+}
+export async function deleteManagedSession(id: string): Promise<ManagedDeletionReceipt> {
+  return request(`${path(id)}`, { method: 'DELETE', headers: { 'Idempotency-Key': crypto.randomUUID() } });
 }

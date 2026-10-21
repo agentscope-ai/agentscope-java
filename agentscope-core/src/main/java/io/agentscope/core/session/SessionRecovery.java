@@ -26,17 +26,74 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /** Explicit operator reconciliation, never automatic re-execution of an uncertain side effect. */
 public final class SessionRecovery {
     private SessionRecovery() {}
 
-    /** Cancel an idle pending interaction without inventing success or replaying external work. */
-    public static void cancelPending(SessionLog log, String turnId) {
+    /** Closes a prepared activation that never committed native execution, under its writer lock. */
+    public static void cancelUnstarted(
+            SessionLog log, String turnId, String preparedRun, Consumer<String> bindWriter) {
         var writer = log.acquire(UUID.randomUUID().toString(), Duration.ofMinutes(2));
         try {
+            var latest = SessionTurns.read(log).latest();
+            if (latest != null && turnId.equals(latest.turnId()) && latest.ended()) return;
+            if (latest != null && !latest.ended())
+                throw new SessionLogException("A native Turn is unfinished; use pending recovery");
+            for (var event : log.scan(0, log.head().seq()))
+                if (preparedRun.equals(event.executionRunId()) || turnId.equals(event.turnId()))
+                    throw new SessionLogException(
+                            "Prepared activation already committed native facts");
+            bindWriter.accept(writer.owner());
+            long before = log.head().seq();
+            log.commit(
+                    writer,
+                    UUID.randomUUID().toString(),
+                    before,
+                    List.of(
+                            new SessionEvent(
+                                    1,
+                                    UUID.randomUUID().toString(),
+                                    before + 1,
+                                    System.currentTimeMillis(),
+                                    "turn/cancelled",
+                                    writer.owner(),
+                                    turnId,
+                                    true,
+                                    JsonUtils.getJsonCodec()
+                                            .toJson(
+                                                    Map.of(
+                                                            "status",
+                                                            "cancelled",
+                                                            "reason",
+                                                            "cancelled_before_native_start")))));
+            rejectSteering(log, turnId);
+        } finally {
+            log.release(writer);
+        }
+    }
+
+    /** Cancel an idle pending interaction without inventing success or replaying external work. */
+    public static void cancelPending(SessionLog log, String turnId) {
+        cancelPending(log, turnId, ignored -> {});
+    }
+
+    /** Binds an administrative recovery writer before it commits cancellation facts. */
+    public static void cancelPending(SessionLog log, String turnId, Consumer<String> bindWriter) {
+        var writer = log.acquire(UUID.randomUUID().toString(), Duration.ofMinutes(2));
+        try {
+            var latest = SessionTurns.read(log).latest();
+            if (latest == null || !turnId.equals(latest.turnId()))
+                throw new SessionLogException(
+                        "Cancellation does not target the current native Turn");
+            if (latest.ended()) {
+                if ("cancelled".equals(latest.status())) rejectSteering(log, turnId);
+                return;
+            }
             var projection = SessionProjection.read(log);
             if (!projection.uncertainToolCalls().isEmpty())
                 throw new SessionLogException(
@@ -44,6 +101,7 @@ public final class SessionRecovery {
                                 + " turn");
             var state = projection.restore();
             if (state == null) return;
+            bindWriter.accept(writer.owner());
             for (var event : log.scan(0, log.head().seq()))
                 if (event.type().equals("turn/cancelled") && turnId.equals(event.turnId())) {
                     rejectSteering(log, turnId);

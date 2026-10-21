@@ -36,19 +36,20 @@ const (
 // Chat is a user-owned Work Hub conversation. It deliberately references, but
 // does not duplicate, the runtime Session that stores messages and events.
 type Chat struct {
-	ID             uuid.UUID  `json:"id"`
-	Tenant         string     `json:"tenant"`
-	Namespace      string     `json:"namespace"`
-	CreatorRef     string     `json:"creatorRef"`
-	AgentID        uuid.UUID  `json:"agentId"`
-	AgentName      string     `json:"agentName"`
-	SessionID      uuid.UUID  `json:"sessionId"`
-	RuntimeSession string     `json:"runtimeSessionId"`
-	Title          string     `json:"title"`
-	Status         ChatStatus `json:"status"`
-	Pinned         bool       `json:"pinned"`
-	LastReadSeq    int        `json:"lastReadSeq"`
-	Version        int64      `json:"version"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	ID             uuid.UUID     `json:"id"`
+	Tenant         string        `json:"tenant"`
+	Namespace      string        `json:"namespace"`
+	CreatorRef     string        `json:"creatorRef"`
+	AgentID        uuid.UUID     `json:"agentId"`
+	AgentName      string        `json:"agentName"`
+	SessionID      uuid.UUID     `json:"sessionId"`
+	RuntimeKind    DataPlaneKind `json:"runtimeKind,omitempty"`
+	RuntimeSession string        `json:"runtimeSessionId"`
+	Title          string        `json:"title"`
+	Status         ChatStatus    `json:"status"`
+	Pinned         bool          `json:"pinned"`
+	LastReadSeq    int           `json:"lastReadSeq"`
+	Version        int64         `json:"version"`
+	CreatedAt      time.Time     `json:"createdAt"`
+	UpdatedAt      time.Time     `json:"updatedAt"`
 }

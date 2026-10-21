@@ -20,9 +20,27 @@ imagePullPolicy: IfNotPresent
 imagePullSecrets: []
 # Pre-create a Secret using deploy/kubernetes.env.example. Never put credentials in values.
 existingSecret: ""
-# PostgreSQL is operated separately; create cp, rt, dp schemas before installing.
+# Explicit single-user development mode; production authentication is the default.
+localDev: false
+# Optional extra data connection Secret; self-hosted credentials remain the default.
+data:
+  existingSecret: ""
+# Migration credentials belong in a separate, pre-created Secret.
+schema:
+  enabled: true
+  # Render/run initialization Jobs without service workloads or PVCs.
+  only: false
+  existingSecret: ""
+  dataExistingSecret: ""
+  activeDeadlineSeconds: 600
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+# PostgreSQL is operated separately; create cp, rt, portal, dp, ma schemas before installing.
 # This Chart runs standalone service-controlplane: no Kubernetes reconcilers or ASDP gRPC.
 allowLocalEnvironment: false
+# Disable public file APIs and use per-pod scratch workspaces without shared user-file storage.
+userFilesEnabled: true
 publicURL: http://localhost:18080
 service:
   type: ClusterIP
@@ -36,24 +54,84 @@ persistence:
   artifacts:
     existingClaim: ""
     storageClass: ""
-    accessModes: [ReadWriteOnce]
+    accessModes: [ReadWriteMany]
     size: 10Gi
+managed:
+  # Redis URI / MQ Proxy endpoints belong in the workload Secret.
+  mq:
+    # Optional MQ credentials override, enabled only when explicitly configured.
+    existingSecret: ""
+    turnTopic: ma_turns_v3
+    toolEventTopic: ma_tool_events_v3
+    toolExecuteTopic: ma_tool_execute_v1
+    toolControlTopic: ma_tool_control_v1
+    toolExecuteGroup: ma_hands_execute_v1
+    toolControlGroup: ma_hands_control_v1
+    resumeTopic: ma_turn_resumes_v3
+    brainGroup: ma_brain_v3
+    resumeGroup: ma_brain_resumes_v3
+    toolEventsGroup: ma_brain_tool_events_v3
+    cacheMessages: 512
+    cacheBytes: 33554432
+    ssl: false
 control:
+  executionSlots: 32
+  workerBatch: 64
+  databaseMaxOpenConns: 20
+  databaseMaxIdleConns: 5
+  webhookSlots: 8
+  channelSlots: 8
+  replicas: 1
+  existingSecret: ""
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 1Gi}
 dataplane:
+  replicas: 1
+  existingSecret: ""
+  ddlAuto: validate
+  concurrency: 32
+  turnCallbacks: 64
+  resumeCallbacks: 64
+  toolEventConcurrency: 16
+  childControlConcurrency: 4
+  databasePoolSize: 10
+  nativeLogConnections: 8
+  fileTransferSlots: 16
   resources:
     requests: {cpu: 250m, memory: 512Mi}
     limits: {memory: 2Gi}
-scheduler:
-  resources:
-    requests: {cpu: 100m, memory: 512Mi}
-    limits: {memory: 1Gi}
+webhooks:
+  allowedHosts: []
 gateway:
+  replicas: 1
+  httpClientPool:
+    maxIdleTime: 10s
+    evictionInterval: 5s
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 1Gi}
+portal:
+  traceEnabled: false
+  replicas: 1
+  existingSecret: ""
+  databasePoolSize: 10
+  fileTransferSlots: 16
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 2Gi}
+hands:
+  # Empty inherits the global image tag.
+  imageTag: ""
+  # Platform HTTP / MQ service; customer Environment Workers connect through Gateway.
+  replicas: 1
+  existingSecret: ""
+  toolControlConcurrency: 4
+  toolConcurrency: 16
+  databasePoolSize: 16
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 2Gi}
 ingress:
   enabled: false
   className: ""

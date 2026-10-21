@@ -26,11 +26,21 @@ public final class SessionLogExporter {
     }
 
     public synchronized void drain() {
+        drain(sink.maxEventsPerDrain());
+    }
+
+    /** Drains a bounded committed prefix, retaining the same durable acknowledgement rules. */
+    public synchronized long drain(long maxEvents) {
+        if (maxEvents < 1) throw new IllegalArgumentException("Export limit must be positive");
         long cursor = log.exportCursor(sink.name());
-        for (var event : log.scan(cursor, log.head().seq())) {
+        long through = cursor + Math.min(maxEvents, log.head().seq() - cursor);
+        long count = 0;
+        for (var event : log.scan(cursor, through)) {
             sink.accept(event);
             log.advanceExportCursor(sink.name(), cursor, event.seq());
             cursor = event.seq();
+            count++;
         }
+        return count;
     }
 }

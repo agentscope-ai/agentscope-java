@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	model "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -64,6 +65,16 @@ func (s *Server) authorizeExecutionResources(c *gin.Context, body map[string]jso
 	return true
 }
 func (s *Server) authorizeTaskResources(ctx context.Context, task *model.AgentTask, candidate model.RuntimeBindingCandidate) error {
+	contract, err := serviceapi.ContractForIssue(ctx, s.store, task.IssueID)
+	if err != nil {
+		return err
+	}
+	if s.portalExecution() && (contract == nil || contract.PortalCommandID == "") {
+		return store.ErrForbidden
+	}
+	if contract != nil && contract.PortalCommandID != "" {
+		return serviceapi.CheckPortalExecution(ctx, s.store, contract, task.Tenant, task.Namespace)
+	}
 	if s.localDev {
 		return nil
 	}

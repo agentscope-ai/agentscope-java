@@ -109,7 +109,7 @@ func (s *Service) Publish(ctx context.Context, definitionID uuid.UUID, actor con
 }
 
 func (s *Service) Start(ctx context.Context, definitionID uuid.UUID, req StartRequest) (*controlmodel.OrchestrationRun, error) {
-	definition, err := s.Store.Orchestration().GetDefinition(ctx, definitionID)
+	definition, err := s.startDefinition(ctx, definitionID, req.RevisionID)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (s *Service) start(ctx context.Context, definitionID uuid.UUID, req StartRe
 	if (req.IssueID == nil) == (req.Issue == nil) {
 		return nil, fmt.Errorf("exactly one of issueId or issue is required")
 	}
-	definition, err := s.Store.Orchestration().GetDefinition(ctx, definitionID)
+	definition, err := s.startDefinition(ctx, definitionID, req.RevisionID)
 	if err != nil {
 		return nil, err
 	}
@@ -313,33 +313,11 @@ func (s *Service) Cancel(ctx context.Context, id uuid.UUID) (*controlmodel.Orche
 	return result, err
 }
 func (s *Service) cancelRun(ctx context.Context, id uuid.UUID) (*controlmodel.OrchestrationRun, error) {
-	run, err := s.Store.Orchestration().GetRun(ctx, id)
-	if err != nil {
-		return nil, err
+	run, err := s.markCancelling(ctx, id)
+	if err != nil || controlmodel.IsOrchestrationRunTerminal(run.State) {
+		return run, err
 	}
-	if controlmodel.IsOrchestrationRunTerminal(run.State) {
-		return run, nil
-	}
-	run, err = s.Store.Orchestration().TransitionRun(ctx, id, run.Version, controlmodel.RunCancelling, nil, "", "")
-	if err != nil {
-		return nil, err
-	}
-	nodes, err := s.Store.Orchestration().ListNodes(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	for _, n := range nodes {
-		if err := s.stopNodeWork(ctx, run, n); err != nil {
-			return nil, err
-		}
-		if !controlmodel.IsRunNodeTerminal(n.State) {
-			if _, err := s.Store.Orchestration().TransitionNode(ctx, n.ID, n.Version, controlmodel.RunNodeCancelled, nil, "", ""); err != nil {
-				return nil, err
-			}
-		}
-	}
-	run, _ = s.Store.Orchestration().GetRun(ctx, id)
-	return s.Store.Orchestration().TransitionRun(ctx, id, run.Version, controlmodel.RunCancelled, nil, "", "")
+	return s.advanceCancellation(ctx, run)
 }
 
 func (s *Service) Signal(ctx context.Context, id uuid.UUID, name, key string, payload json.RawMessage, actor controlmodel.Actor) error {
@@ -349,6 +327,15 @@ func (s *Service) Signal(ctx context.Context, id uuid.UUID, name, key string, pa
 	run, err := s.Store.Orchestration().GetRun(ctx, id)
 	if err != nil {
 		return err
+	}
+	contract, err := serviceapi.ContractForIssue(serviceapi.WithContract(ctx, nil), s.Store, run.RootIssueID)
+	if err != nil {
+		return err
+	}
+	if contract != nil && contract.PortalCommandID != "" {
+		// Portal-owned signals need a targeted durable control proof. A legacy
+		// broadcast would be ignored by that engine; never report it as accepted.
+		return store.ErrForbidden
 	}
 	event, err := s.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{RunID: id, Tenant: run.Tenant, Namespace: run.Namespace, Type: "run.signal." + name, Actor: actor, Payload: payload, IdempotencyKey: "signal:" + name + ":" + key})
 	if err != nil {
@@ -377,7 +364,7 @@ func (s *Service) ValidateCoordinatorNodeCompletion(ctx context.Context, taskID 
 		(node.State != controlmodel.RunNodeRunning && node.State != controlmodel.RunNodeWaiting) {
 		return nil, nil, store.ErrConflict
 	}
-	tasks, err := s.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID, Limit: 500})
+	tasks, err := store.ReadTasksBounded(ctx, s.Store.Collaboration(), store.AgentTaskFilter{Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -385,80 +372,67 @@ func (s *Service) ValidateCoordinatorNodeCompletion(ctx context.Context, taskID 
 	if err != nil {
 		return nil, nil, err
 	}
-	// Declared Team nodes own their delegated task tree, not sibling Workflow
-	// steps. A downstream step cannot finish before this coordinator completes.
-	scopedTasks := map[uuid.UUID]bool{}
-	scopedNodes := map[uuid.UUID]bool{node.ID: true}
-	for _, candidate := range tasks {
-		if candidate.RunNodeID == node.ID {
-			scopedTasks[candidate.ID] = true
-		}
-	}
-	for changed := true; changed; {
-		changed = false
-		for _, candidate := range tasks {
-			if !scopedTasks[candidate.ID] && candidate.ParentTaskID != nil && scopedTasks[*candidate.ParentTaskID] {
-				scopedTasks[candidate.ID] = true
-				changed = true
-			}
-			if scopedTasks[candidate.ID] {
-				scopedNodes[candidate.RunNodeID] = true
-			}
-		}
-	}
-
-	for _, candidate := range tasks {
-		if run.Mode != controlmodel.RunModeAdaptive && !scopedTasks[candidate.ID] {
-			continue
-		}
-		if candidate.ID == task.ID || controlmodel.IsAgentTaskTerminal(candidate.Status) {
-			continue
-		}
-		if candidate.LeaderTask && candidate.RunNodeID == node.ID {
-			// A routed leader follow-up owns worker outcome inputs. It is safe to
-			// retire an empty duplicate, but never cancel an unconsumed outcome.
-			if len(candidate.Inputs) > 0 {
-				return nil, nil, fmt.Errorf("coordinator has pending leader outcome task %s", candidate.ID)
-			}
-			continue
-		}
-		return nil, nil, fmt.Errorf("coordinator has active worker task %s", candidate.ID)
-	}
 	nodes, err := s.Store.Orchestration().ListNodes(ctx, task.OrchestrationRunID)
 	if err != nil {
 		return nil, nil, err
-	}
-	for _, candidate := range nodes {
-		if run.Mode != controlmodel.RunModeAdaptive && !scopedNodes[candidate.ID] {
-			continue
-		}
-		if candidate.ID != node.ID && !controlmodel.IsRunNodeTerminal(candidate.State) {
-			return nil, nil, fmt.Errorf("coordinator has active node %s", candidate.NodeKey)
-		}
 	}
 	coordinatorIssueID := task.IssueID
 	if node.IssueID != nil {
 		coordinatorIssueID = *node.IssueID
 	}
-	children, err := s.Store.Collaboration().ListIssues(ctx, store.IssueFilter{Tenant: task.Tenant, Namespace: task.Namespace, ParentID: &coordinatorIssueID, Limit: 500})
+	children, err := store.ReadChildIssuesBounded(ctx, s.Store.Collaboration(), store.IssueFilter{Tenant: task.Tenant, Namespace: task.Namespace, ParentID: &coordinatorIssueID})
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, child := range children {
-		if run.Mode != controlmodel.RunModeAdaptive {
-			sourceID, _ := uuid.Parse(child.SourceRef)
-			if child.SourceType != "agent-task" || !scopedTasks[sourceID] {
-				continue
-			}
-		}
-		if child.Status != controlmodel.IssueDone && child.Status != controlmodel.IssueCancelled {
-			return nil, nil, fmt.Errorf("coordinator has active child issue %s", child.ID)
-		}
+	if err = store.ValidateCoordinatorBarrier(run, node, task, tasks, nodes, children, true); err != nil {
+		return nil, nil, err
 	}
 	return task, node, nil
 }
 
 func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID, output json.RawMessage, actor controlmodel.Actor) (*controlmodel.RunNode, error) {
+	completed, err := s.completeCoordinatorNode(ctx, taskID, output, actor)
+	if err != nil {
+		return nil, err
+	}
+	if err = (&Engine{Store: s.Store, CEL: s.CEL}).ReconcileRun(ctx, completed.RunID); err != nil {
+		return nil, err
+	}
+	return completed, nil
+}
+
+func (s *Service) completeCoordinatorNode(ctx context.Context, taskID uuid.UUID, output json.RawMessage, actor controlmodel.Actor) (*controlmodel.RunNode, error) {
+	current, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := s.Store.Orchestration().GetNode(ctx, current.RunNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if existing.State == controlmodel.RunNodeSucceeded && existing.Type == controlmodel.RunNodeTeam && current.LeaderTask && current.Status == controlmodel.AgentTaskCompleted {
+		intent, readErr := s.coordinatorCompletionIntent(ctx, current)
+		if readErr != nil {
+			return nil, readErr
+		}
+		expected, e := canonicalCoordinatorOutput(intent.Output)
+		if e != nil {
+			return nil, e
+		}
+		requested, e := canonicalCoordinatorOutput(output)
+		if e != nil {
+			return nil, e
+		}
+		committed, e := canonicalCoordinatorOutput(existing.Output)
+		if e != nil {
+			return nil, e
+		}
+		if string(expected) != string(requested) || string(committed) != string(requested) {
+			return nil, store.ErrConflict
+		}
+		return existing, nil
+	}
+
 	task, node, err := s.ValidateCoordinatorNodeCompletion(ctx, taskID)
 	if err != nil {
 		return nil, err
@@ -474,8 +448,8 @@ func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID,
 	// same coordinator. They are redundant continuations, not worker barriers.
 	// Retire them before exposing the successful node so the Run cannot finish
 	// with a live leader task or Attempt left behind.
-	tasks, err := s.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
-		Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID, Limit: 500,
+	tasks, err := store.ReadTasksBounded(ctx, s.Store.Collaboration(), store.AgentTaskFilter{
+		Tenant: task.Tenant, Namespace: task.Namespace, RunID: task.OrchestrationRunID,
 	})
 	if err != nil {
 		return nil, err
@@ -489,6 +463,9 @@ func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID,
 			controlmodel.IsAgentTaskTerminal(candidate.Status) {
 			continue
 		}
+		if len(candidate.Inputs) > 0 {
+			return nil, fmt.Errorf("%w: coordinator has pending leader outcome task %s", store.ErrConflict, candidate.ID)
+		}
 		if _, cancelErr := taskPlane.CancelTask(ctx, candidate.ID, candidate.Version); cancelErr != nil && cancelErr != store.ErrConflict {
 			return nil, cancelErr
 		}
@@ -497,18 +474,16 @@ func (s *Service) CompleteCoordinatorNode(ctx context.Context, taskID uuid.UUID,
 	if err != nil {
 		return nil, err
 	}
-	if err = (&collaboration.Service{Store: s.Store}).PublishCoordinatorSummary(ctx, run, task, output, "", ""); err != nil {
+	if err = s.RequestCoordinatorCompletion(ctx, task, output, actor); err != nil {
 		return nil, err
 	}
-	completed, err := s.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, output, "", "")
+	completed, err := s.Store.Orchestration().FinalizeCoordinatorNode(ctx, task.ID, node.Version, output, actor)
 	if err != nil {
 		return nil, err
 	}
-	_, _ = s.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
-		Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &node.ID, AgentTaskID: &task.ID,
-		Type: "node.succeeded", Actor: actor, Payload: output,
-		IdempotencyKey: "coordinator-complete:" + node.ID.String()})
-	if err = (&Engine{Store: s.Store, CEL: s.CEL}).ReconcileRun(ctx, task.OrchestrationRunID); err != nil {
+	// Publication follows the durable barrier. A failed publication is recovered
+	// by terminal Run reconciliation using its stable summary identity.
+	if err = (&collaboration.Service{Store: s.Store}).PublishCoordinatorSummary(ctx, run, task, output, "", ""); err != nil {
 		return nil, err
 	}
 	return completed, nil
@@ -590,3 +565,19 @@ func (s *Service) Replan(ctx context.Context, taskID uuid.UUID, definition Defin
 }
 
 var _ = time.Second
+
+// Portal permissions govern whether the frozen revision can run. Runtime
+// materialization does not reread a mutable control-plane definition.
+func (s *Service) startDefinition(ctx context.Context, id uuid.UUID, revisionID *uuid.UUID) (*controlmodel.OrchestrationDefinition, error) {
+	if c := serviceapi.ContextContract(ctx); c != nil && c.PortalCommandID != "" {
+		if revisionID == nil {
+			return nil, store.ErrForbidden
+		}
+		revision := c.Revisions[revisionID.String()]
+		if revision == nil || revision.DefinitionID != id || revision.Tenant != c.Endpoint.Tenant || revision.Namespace != c.Endpoint.Namespace {
+			return nil, store.ErrForbidden
+		}
+		return &controlmodel.OrchestrationDefinition{ID: id, Tenant: revision.Tenant, Namespace: revision.Namespace}, nil
+	}
+	return s.Store.Orchestration().GetDefinition(ctx, id)
+}

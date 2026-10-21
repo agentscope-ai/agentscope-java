@@ -1,0 +1,67 @@
+{
+  "bootstrap": {
+    "context": {
+      "version": 1,
+      "tenant": "tenant-1",
+      "namespace": "default",
+      "applicationId": "app-1",
+      "sessionId": "session-1",
+      "turnId": null,
+      "commandId": "command-1",
+      "traceId": "trace-1",
+      "actor": {
+        "user": "user-1",
+        "key_hash": "",
+        "internal": false
+      },
+      "policyVersion": "policy-1",
+      "permissionExpiresAt": 2000000000000
+    },
+    "runtimeKind": "managed",
+    "configurationRevision": "revision-1",
+    "configuration": {
+      "session": {
+        "id": "session-1",
+        "ownerId": "user-1",
+        "agentId": "agent-1",
+        "agentOwnerId": "user-1",
+        "agentVersion": 1,
+        "agentRefType": "managed",
+        "agentOverridesJson": null,
+        "environmentId": "environment-1",
+        "externalKey": null,
+        "memoryStoreIds": [],
+        "vaultIds": [],
+        "resources": [],
+        "status": "active",
+        "stopReason": null,
+        "createdAt": 1000,
+        "updatedAt": 1000,
+        "archivedAt": null
+      },
+      "agentSnapshot": {
+        "name": "fixture"
+      },
+      "workspacePath": "/workspaces/session-1",
+      "workspaceId": "workspace-1",
+      "workspaceVersion": 1,
+      "definitionFiles": {},
+      "environment": null,
+      "vaultCredentials": [],
+      "memoryMounts": [],
+      "teamContext": null,
+      "executionContext": null
+    }
+  },
+  "policy": {
+    "tenant": "tenant-1",
+    "namespace": "default",
+    "enabled": true,
+    "valid_until": 2000000000000
+  },
+  "publicView": {
+    "id": "session-1",
+    "status": "active",
+    "runtimeKind": "managed"
+  }
+}

@@ -1,0 +1,1 @@
+DROP INDEX approvals_pending_runtime_cursor;

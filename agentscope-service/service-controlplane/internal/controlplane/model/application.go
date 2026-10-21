@@ -25,20 +25,21 @@ import (
 // Application is the durable business identity behind one or more Endpoint credentials.
 // Members grant explicit human access; a credential remains only an authentication instrument.
 type Application struct {
-	ID            uuid.UUID           `json:"id"`
-	Tenant        string              `json:"tenant"`
-	Namespace     string              `json:"namespace"`
-	Name          string              `json:"name"`
-	Description   string              `json:"description,omitempty"`
-	OwnerUserID   string              `json:"ownerUserId"`
-	Members       []ApplicationMember `json:"members"`
-	Status        string              `json:"status"`
-	MaxConcurrent int                 `json:"maxConcurrent"`
-	TokenBudget   int64               `json:"tokenBudget"`
-	TokensUsed    int64               `json:"tokensUsed"`
-	Version       int64               `json:"version"`
-	CreatedAt     time.Time           `json:"createdAt"`
-	UpdatedAt     time.Time           `json:"updatedAt"`
+	ID                uuid.UUID           `json:"id"`
+	Tenant            string              `json:"tenant"`
+	Namespace         string              `json:"namespace"`
+	Name              string              `json:"name"`
+	Description       string              `json:"description,omitempty"`
+	OwnerUserID       string              `json:"ownerUserId"`
+	Members           []ApplicationMember `json:"members"`
+	Status            string              `json:"status"`
+	MaxConcurrent     int                 `json:"maxConcurrent"`
+	TokenBudget       int64               `json:"tokenBudget"`
+	TokensUsed        int64               `json:"tokensUsed"`
+	RuntimeTokensUsed int64               `json:"runtimeTokensUsed"`
+	Version           int64               `json:"version"`
+	CreatedAt         time.Time           `json:"createdAt"`
+	UpdatedAt         time.Time           `json:"updatedAt"`
 }
 type ApplicationMember struct {
 	UserID string   `json:"userId"`

@@ -1,0 +1,31 @@
+{
+  "context": {
+    "version": 1,
+    "tenant": "tenant-1",
+    "namespace": "default",
+    "applicationId": "app-1",
+    "sessionId": "session-1",
+    "turnId": "turn-1",
+    "commandId": "command-1",
+    "traceId": "trace-1",
+    "actor": {
+      "user": "user-1",
+      "key_hash": "",
+      "internal": false
+    },
+    "policyVersion": "policy-1",
+    "permissionExpiresAt": 2000000000000
+  },
+  "taskId": "tool-task-1",
+  "toolCallId": "tool-call-1",
+  "environmentId": "environment-1",
+  "sandboxScope": "SESSION",
+  "workspaceRef": "workspace-1",
+  "authorizationGeneration": "tool-generation-1",
+  "name": "read_file",
+  "input": {
+    "path": "README.md"
+  },
+  "timeoutMs": 30000,
+  "retryKind": "read_only"
+}

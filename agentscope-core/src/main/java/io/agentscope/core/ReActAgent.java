@@ -17,6 +17,7 @@ package io.agentscope.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.AgentExecutionPosition;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.ExecutionIdentity;
@@ -98,6 +99,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.observation.ActionObservationException;
 import io.agentscope.core.observation.ActionObservations;
@@ -181,7 +183,6 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 import reactor.util.context.Context;
 
 /**
@@ -555,7 +556,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 scope.loadedVersion = newVersion;
                             }
                         })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(ModelSchedulers.requests());
     }
 
     /**
@@ -854,7 +855,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 throw error;
                             }
                         })
-                .subscribeOn(Schedulers.boundedElastic())
+                .subscribeOn(ModelSchedulers.requests())
                 .flatMap(
                         scope -> {
                             CallExecution ce = (CallExecution) scope;
@@ -895,7 +896,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             SessionExecution execution = SessionExecution.from(ce.rc);
                             if (execution != null) execution.close(recorder);
                         })
-                .subscribeOn(Schedulers.boundedElastic())
+                .subscribeOn(ModelSchedulers.requests())
                 .materialize()
                 .flatMap(
                         signal ->
@@ -987,6 +988,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 || inputs == null) return inputs;
         Set<String> accepted = SessionRecorder.from(ce.rc).acceptedMessageIds();
         return inputs.stream().filter(message -> !accepted.contains(message.getId())).toList();
+    }
+
+    @Override
+    protected Mono<Void> beforeCallComplete(Object scope, Msg result) {
+        if (!(scope instanceof CallExecution execution)) return Mono.empty();
+        Mono<Void> completion = Mono.empty();
+        for (var middleware : middlewaresAt(MiddlewareBase.ExtensionPoint.ON_AGENT_FINISH)) {
+            completion =
+                    completion.then(
+                            Mono.defer(() -> middleware.onAgentFinish(this, execution.rc, result)));
+        }
+        return completion;
     }
 
     @Override
@@ -2693,10 +2706,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // ==================== Core ReAct Loop ====================
 
         /**
-         * Entry point for a fresh agent invocation: kicks off the ReAct loop at iteration 0.
+         * Entry point for reasoning, optionally continuing a durable host's iteration budget.
          */
         private Mono<Msg> coreAgent() {
-            return settleSession(executeIteration(0));
+            AgentExecutionPosition position = rc.get(AgentExecutionPosition.class);
+            return settleSession(
+                    executeIteration(position == null ? 0 : position.reasoningIteration()));
         }
 
         /**
@@ -2704,7 +2719,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * jumps directly into the acting phase without another reasoning step.
          */
         private Mono<Msg> resumeAgent() {
-            return settleSession(acting(0));
+            AgentExecutionPosition position = rc.get(AgentExecutionPosition.class);
+            lastSessionIteration = position == null ? 0 : position.actingIteration();
+            return settleSession(acting(lastSessionIteration));
         }
 
         private int lastSessionIteration;
@@ -2718,7 +2735,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         .equals("completed")) return Mono.just(result);
                         return Mono.fromCallable(
                                         () -> execution.continueOrClose(SessionRecorder.from(rc)))
-                                .subscribeOn(Schedulers.boundedElastic())
+                                .subscribeOn(ModelSchedulers.requests())
                                 .flatMap(
                                         again ->
                                                 again
@@ -2763,7 +2780,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 if (execution != null)
                                                     execution.beforeStep(recorder, state);
                                             })
-                                    .subscribeOn(Schedulers.boundedElastic()))
+                                    .subscribeOn(ModelSchedulers.requests()))
                     .then(
                             Mono.defer(
                                     () ->
@@ -4003,7 +4020,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             Exception.class,
                             error -> {
                                 // Preserve interruption signal for agent stop policy
-                                if (ActionObservationException.causedBy(error))
+                                if (ActionObservationException.causedBy(error)
+                                        || SessionLogException.causedBy(error))
                                     return Mono.error(error);
                                 if (error instanceof InterruptedException) {
                                     return Mono.error(error);
@@ -4983,7 +5001,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             null,
                                             "message_observed",
                                             state -> state.contextMutable().add(msg)))
-                    .subscribeOn(Schedulers.boundedElastic());
+                    .subscribeOn(ModelSchedulers.requests());
         }
         if (msg != null) {
             getAgentState().contextMutable().add(msg);

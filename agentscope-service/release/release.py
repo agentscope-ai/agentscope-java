@@ -28,9 +28,12 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE = ROOT / 'agentscope-service'
-PLANES = ('control', 'gateway', 'dataplane', 'scheduler')
+PLANES = ('control', 'gateway', 'portal', 'dataplane', 'hands')
 IMAGE_NAMES = {'control': 'as-controlplane', 'gateway': 'as-gateway',
-               'dataplane': 'as-dataplane', 'scheduler': 'as-scheduler'}
+               'portal': 'as-session-portal', 'dataplane': 'as-dataplane',
+               'hands': 'as-hands'}
+JAVA_MODULES = {'gateway': 'service-gateway', 'portal': 'service-session-portal',
+                'dataplane': 'service-dataplane', 'hands': 'service-hands'}
 NPM_PACKAGE = '@agentscope-service/dsh-controlplane'
 NPM_REGISTRY = 'https://registry.npmjs.org'
 
@@ -82,14 +85,14 @@ def verify_npm(directory):
 
 def verify():
     tracked_hygiene()
-    run('mvn', '-B', '-ntp', '-T1', '-pl', 'agentscope-service/service-gateway,agentscope-service/service-dataplane,agentscope-service/service-scheduler', '-am', 'clean', 'verify')
+    run('mvn', '-B', '-ntp', '-T1', '-pl', ','.join('agentscope-service/' + module for module in (*JAVA_MODULES.values(), 'service-client')), '-am', 'clean', 'verify')
     # Integration packages share PostgreSQL migration locks; serialize packages.
     run('go', 'test', '-p', '1', './...', cwd=SERVICE / 'service-controlplane')
     run('go', 'vet', './...', cwd=SERVICE / 'service-controlplane')
     for directory in (SERVICE / 'frontend', SERVICE / 'service-controlplane/sdk/dsh'):
         verify_npm(directory)
     run(sys.executable, '-m', 'pytest', '-q', cwd=SERVICE / 'service-controlplane/sdk/python')
-    run('helm', 'lint', str(SERVICE / 'helm/agentscope-service'), '--set', 'imageRepository=example.com/ci', '--set', 'existingSecret=ci')
+    run('helm', 'lint', str(SERVICE / 'helm/agentscope-service'), '--set', 'imageRepository=example.com/ci', '--set', 'existingSecret=ci', '--set', 'schema.existingSecret=ci-migration')
     run(sys.executable, '-m', 'unittest', 'discover', '-s', str(SERVICE / 'release/tests'))
 
 
@@ -105,7 +108,7 @@ def manifest(args):
             'javaRevision': re.search(r'<revision>([^<]+)</revision>', (ROOT / 'pom.xml').read_text())[1],
             'sourceDirty': bool(run('git', 'status', '--porcelain', capture=True).strip()),
             'images': {p: f'{args.repository}/{IMAGE_NAMES[p]}:{args.version}' for p in PLANES},
-            'sdkVersions': {'python': re.search(r'^version = "([^"]+)"', (SERVICE / 'service-controlplane/sdk/python/pyproject.toml').read_text(), re.M)[1], 'dsh': json.loads((SERVICE / 'service-controlplane/sdk/dsh/package.json').read_text())['version']},
+            'sdkVersions': {'java': re.search(r'<revision>([^<]+)</revision>', (ROOT / 'pom.xml').read_text())[1], 'python': re.search(r'^version = "([^"]+)"', (SERVICE / 'service-controlplane/sdk/python/pyproject.toml').read_text(), re.M)[1], 'dsh': json.loads((SERVICE / 'service-controlplane/sdk/dsh/package.json').read_text())['version']},
             'platforms': {'images': ['linux/amd64', 'linux/arm64'], 'cli': ['linux/amd64', 'linux/arm64', 'darwin/amd64', 'darwin/arm64']},
             'notes': 'Image digests are recorded separately by the images command. Registry references are publication targets, not proof of availability.'}
 
@@ -118,7 +121,7 @@ def package(args):
     deploy = out / 'agentscope-service'
     # Explicit allowlist: never package local .env files or database backups.
     deploy.mkdir()
-    for name in ('compose.yaml', '.env.example', 'init-env.sh', 'postgres-init.sql', 'kubernetes.env.example', 'README.md'):
+    for name in ('compose.yaml', '.env.example', 'init-env.sh', 'postgres-init.sql', 'postgres-roles.sh', 'managed-mq-init.sh', 'kubernetes.env.example', 'kubernetes-migration.env.example', 'README.md'):
         shutil.copy2(SERVICE / 'deploy' / name, deploy / name)
     for name in ('LICENSE', 'NOTICE'):
         if (ROOT / name).exists():
@@ -130,7 +133,7 @@ def package(args):
         '--app-version', args.version, '--destination', str(out))
     deploy = out / 'agentscope-service-kubernetes'
     deploy.mkdir()
-    for name in ('kubernetes.env.example', 'postgres-init.sql'):
+    for name in ('kubernetes.env.example', 'kubernetes-migration.env.example', 'cloud-mq.env.example', 'managed-cloud-mq-init.py', 'postgres-init.sql', 'postgres-roles.sh'):
         shutil.copy2(SERVICE / 'deploy' / name, deploy / name)
     readme = (SERVICE / 'release/KUBERNETES_README.md').read_text()
     readme = readme.replace('@SERVICE_VERSION@', args.version).replace('@IMAGE_REPOSITORY@', args.repository)
@@ -159,6 +162,7 @@ def package(args):
                 archive.add(file, arcname=file.name)
         shutil.rmtree(stage)
     if not args.distributions_only:
+        package_java_client(out)
         run(sys.executable, '-m', 'build', '--outdir', str(out), cwd=SERVICE / 'service-controlplane/sdk/python')
         run('npm', 'ci', cwd=SERVICE / 'service-controlplane/sdk/dsh')
         run('npm', 'run', 'build', cwd=SERVICE / 'service-controlplane/sdk/dsh')
@@ -168,6 +172,17 @@ def package(args):
     data['artifacts'] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(out.iterdir()) if p.is_file()}
     (out / 'release-manifest.json').write_text(json.dumps(data, indent=2) + '\n')
     (out / 'SHA256SUMS').write_text(''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in sorted(out.iterdir()) if p.is_file()))
+
+
+def package_java_client(out):
+    revision = re.search(r'<revision>([^<]+)</revision>', (ROOT / 'pom.xml').read_text())[1]
+    run('mvn', '-B', '-ntp', '-T1', '-pl', 'agentscope-service/service-client', '-am', 'package', '-DskipTests')
+    module = SERVICE / 'service-client'
+    for suffix in ('', '-sources', '-javadoc'):
+        shutil.copy2(module / 'target' / f'agentscope-service-client-{revision}{suffix}.jar', out)
+    shutil.copy2(module / '.flattened-pom.xml', out / f'agentscope-service-client-{revision}.pom')
+    shutil.copy2(module / 'README.md', out / 'JAVA_SDK_README.md')
+    shutil.copy2(module / 'README_zh.md', out / 'JAVA_SDK_README_zh.md')
 
 
 def require_clean():
@@ -361,8 +376,8 @@ def build_image(args, plane, commit):
     if plane == 'control':
         cmd += ['--build-arg', 'VERSION=' + args.version,
                 '--build-arg', 'GIT_COMMIT=' + commit]
-    if plane != 'control':
-        cmd += ['--build-arg', 'MODULE=service-' + plane]
+    if plane in JAVA_MODULES:
+        cmd += ['--build-arg', 'MODULE=' + JAVA_MODULES[plane]]
     cmd += ['--push', '--sbom=true', '--provenance=mode=max'] if args.push else ['--load']
     run(*cmd, str(ROOT))
 

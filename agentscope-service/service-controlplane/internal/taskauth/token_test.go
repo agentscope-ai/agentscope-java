@@ -15,11 +15,48 @@
 package taskauth
 
 import (
+	"encoding/base64"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+func TestManagedCredentialBindsNativeLifetimeWithoutBecomingLegacyAuthority(t *testing.T) {
+	manager := Manager{Secret: []byte("0123456789abcdef0123456789abcdef"), TTL: time.Minute}
+	task, attempt, session := uuid.New(), uuid.New(), uuid.New()
+	token, err := manager.MintManaged(task, attempt, 7, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := manager.VerifyClaims(token, time.Now().Add(72*time.Hour))
+	if err != nil || claims.TaskID != task || claims.AttemptID != attempt || claims.Generation != 7 || claims.ManagedSessionID != session || !claims.ExpiresAt.IsZero() {
+		t.Fatalf("native identity: %+v %v", claims, err)
+	}
+	if err := manager.Verify(token, task, time.Now()); err == nil {
+		t.Fatal("signature-only legacy helper authorized a native credential")
+	}
+	if _, err := manager.VerifyAttemptClaims(token, time.Now()); err == nil {
+		t.Fatal("native credential became a backend reporting token")
+	}
+	parts := strings.Split(token, ".")
+	raw, _ := base64.RawURLEncoding.DecodeString(parts[0])
+	parts[0] = base64.RawURLEncoding.EncodeToString([]byte(strings.Replace(string(raw), session.String(), uuid.NewString(), 1)))
+	if _, err := manager.VerifyClaims(strings.Join(parts, "."), time.Now()); err == nil {
+		t.Fatal("Session identity was not signed")
+	}
+	for _, invalid := range []struct {
+		task, attempt, session uuid.UUID
+		generation             int64
+	}{
+		{uuid.Nil, attempt, session, 7}, {task, uuid.Nil, session, 7}, {task, attempt, uuid.Nil, 7}, {task, attempt, session, 0},
+	} {
+		if _, err := manager.MintManaged(invalid.task, invalid.attempt, invalid.generation, invalid.session); err == nil {
+			t.Fatal("incomplete native credential minted")
+		}
+	}
+}
 
 func TestVerifyAndExtractTaskToken(t *testing.T) {
 	now := time.Now().UTC()
@@ -57,5 +94,22 @@ func TestAttemptTokenIsFencedAndNotATaskToken(t *testing.T) {
 	}
 	if _, err := manager.VerifyClaims(token, now); err == nil {
 		t.Fatal("attempt token was accepted as a task token")
+	}
+}
+
+func TestHostedTaskTokenCarriesItsPhysicalLeaseFence(t *testing.T) {
+	manager := Manager{Secret: []byte("0123456789abcdef0123456789abcdef"), TTL: time.Minute}
+	taskID, attemptID, hostID := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+	token, err := manager.MintFenced(taskID, attemptID, 3, 19, hostID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := manager.VerifyClaims(token, now)
+	if err != nil || claims.TaskID != taskID || claims.AttemptID != attemptID || claims.Generation != 3 || claims.Fence != 19 || claims.HostID != hostID {
+		t.Fatalf("fenced claims=%+v %v", claims, err)
+	}
+	if _, err := manager.VerifyAttemptClaims(token, now); err == nil {
+		t.Fatal("task credential substituted for an attempt reporter")
 	}
 }

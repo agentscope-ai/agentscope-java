@@ -70,6 +70,7 @@ const ctxInternalAuth = "internalAuth"
 const (
 	ctxTaskAuth                 = "taskAuth"
 	ctxCompletedCoordinatorAuth = "completedCoordinatorAuth"
+	ctxManagedTaskReceiptAuth   = "managedTaskReceiptAuth"
 )
 
 // authzMiddleware performs SubjectAccessReview-based authorization.

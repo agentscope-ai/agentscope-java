@@ -2,6 +2,9 @@
   "$schema": "https://mintlify.com/docs.json",
   "name": "AgentScope Java",
   "theme": "mint",
+  "banner": {
+    "content": "**Alibaba Cloud AI Agent Handbook 已开源，汇集 50+ 工程师的一手实践经验，[点此了解](https://github.com/aliyun/ai-agent-handbook)**"
+  },
   "contextual": {
     "options": [
       "copy",
@@ -105,6 +108,7 @@
                     "group": "Delegate work and interact",
                     "pages": [
                       "v2/en/service/service-api",
+                      "v2/en/service/claude-session-api",
                       "v2/en/service/session-event-log",
                       "v2/en/service/sse-events",
                       "v2/en/service/files",
@@ -564,6 +568,7 @@
                     "group": "分派任务与交互",
                     "pages": [
                       "v2/zh/service/service-api",
+                      "v2/zh/service/claude-session-api",
                       "v2/zh/service/session-event-log",
                       "v2/zh/service/sse-events",
                       "v2/zh/service/files",

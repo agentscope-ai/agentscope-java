@@ -211,7 +211,7 @@ export default function MemoryStoresPage() {
         Store shared knowledge for use across sessions. Bind a store in the Agent’s resource settings or attach it when starting a Managed session.
       </p>
       <div className="mb-5 rounded-xl border bg-blue-50/50 p-4 text-sm leading-6">
-        Managed Agents discover and read bound documents through memory tools as needed. The full store is not automatically added to every model prompt. Shared knowledge is read-only during execution; update documents here. Session working memory remains separate from this shared store.
+        AgentScope Service discover and read bound documents through memory tools as needed. The full store is not automatically added to every model prompt. Shared knowledge is read-only during execution; update documents here. Session working memory remains separate from this shared store.
       </div>
       {err && <div style={S.err}>{err}</div>}
       {loading && <div style={{ color: '#64748b' }}>Loading…</div>}

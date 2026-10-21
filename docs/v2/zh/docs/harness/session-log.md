@@ -327,6 +327,8 @@ HarnessAgent.Builder sharedLogBuilder = HarnessAgent.builder()
 
 自定义 Filesystem 应提供 `sessionStorage` 能力，或者单独指定日志后端。使用 AgentSession 命令还要求 `SessionLog.inbox()` 支持持久输入队列；默认 Workspace 和内存日志已提供。需要列出会话时，使用 `SessionLogStore.list(RuntimeContext)`。
 
+把状态对象单独存储的后端可以覆盖 `readMetadataAfter` 和 `materialize`，避免加载无用的历史 checkpoint。`scanMetadata` 遍历同一个已提交前缀，保留普通载荷与外置状态引用。投影逐条校验事件，只加载最后一个 checkpoint；Recorder 在同一遍扫描中完成启动校验和历史消息 ID 收集，导入基线仍提供历史消息。默认实现沿用普通读取，`JournalSessionLog` 保留原有的高效链扫描。`readAfter` 和 `scan` 仍返回完整原始载荷，事件序列化格式与恢复协议不变。
+
 备份建议使用后端一致性快照，或先暂停写入，再保存会话记录。工作文件、沙箱内容、外部产物和工具依赖需要另外备份，只有日志不足以完整恢复所有外部环境。
 
 <Accordion title="需要运维或实现后端时：日志对象与输入队列">
@@ -393,6 +395,35 @@ static Mono<Void> recordReview(RuntimeContext context, String note) {
 将这个方法返回的 `Mono` 组合进工具或中间件的调用链，才能等待事件提交。这里的 `false` 表示该事件只提供诊断信息，恢复状态时不要求识别它。不要在调用结束后继续保留 recorder 写入。
 
 如果自定义事件还要参与状态恢复，需要在运行和恢复前通过 `SessionEventCodecRegistry` 注册校验器与状态还原逻辑。标记为 `required` 却无法识别的事件会阻止恢复，因此普通业务诊断事件通常使用 `required=false`。
+
+
+## 宿主托管的迭代预算
+
+持久执行宿主可以在本次 `RuntimeContext` 绑定
+`AgentExecutionPosition(reasoningIteration, actingIteration)`。Core 从指定位置进入推理或
+继续待处理工具，下一次推理仍检查 `maxIters`。宿主需根据已提交的 step 与工具事实确定位置，
+在挂起后保留，在新的逻辑 Turn 开始时重置，避免进程重建导致同一 Turn 的迭代预算重新计数。
+未绑定时，两个入口仍从迭代 0 开始。这个可选记录不增加 `AgentState` 或原生事件字段，
+也不负责重放中间件副作用或 Java 调用栈。
+
+## 宿主托管的收尾恢复
+
+宿主恢复完整 Agent 状态后，可以在本次 `RuntimeContext` 中绑定 `AgentFinalization`。
+只有收尾尚未结束时，`resumeResult()` 返回已产生的回复，Core 跳过主推理，完成收尾边界后
+仍通过 `call()` 或 `streamEvents()` 返回同一结果。未绑定时保持原生命周期；阶段持久化和
+执行权由宿主维护。
+
+同一上下文中的可选 `SessionModelInvocation` 提供模型调用边界。调用它的 `next` 函数仍会
+记录指定的模型调用 ID，并执行既有 `SessionModelPolicy`；宿主也可以重放已完整保存的响应。
+宿主需校验冻结请求，并区分尚未完成的模型尝试与完整响应。这两个接口不增加 `AgentState`
+字段，也不改变已有原生事件的载荷结构。
+
+`SessionRecorder.checkpointedRecordNow(state, reason, type, payload)` 将恢复关键事实与检查点
+放在同一批次提交，状态未变化时也会包含必要的检查点。已有检查点方法的行为保持不变。
+
+需要可重复的记忆收尾时，可在上下文提供 `Clock`；`MemoryFlushManager` 未收到 Clock 时仍用
+系统当前时间与默认时区。内联记忆刷新传播 `SessionLogException`，让宿主恢复挂起操作，
+不会把它当成刷新成功。宿主用于恢复的事实应注册为 required 事件类型。
 
 ## 迁移与分支会话
 

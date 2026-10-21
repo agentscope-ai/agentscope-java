@@ -102,7 +102,7 @@ class ExecutableAdapter(FrameworkAdapter):
         return ContextSnapshot(session_id=session_id, framework=self._framework)
 
     async def handle_agent_task(self, assignment: AgentTaskAssignment) -> TaskResult:
-        # Coordination APIs require a durably running attempt. A queued ASDP
+        # Coordination APIs require a durably running attempt. A queued RuntimeProtocol
         # start report is not an acknowledgement; it may arrive after a fast
         # leader has already delegated work and completed with outcome=waiting.
         start = asyncio.create_task(asyncio.to_thread(

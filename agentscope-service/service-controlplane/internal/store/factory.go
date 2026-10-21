@@ -30,7 +30,7 @@ func RegisterOpener(driver string, opener Opener) {
 	openers[driver] = opener
 }
 
-// Open creates a Store for the configured driver and runs Migrate.
+// Open creates a Store and initializes or validates its schema as configured.
 func Open(ctx context.Context, cfg Config) (Store, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -43,9 +43,14 @@ func Open(ctx context.Context, cfg Config) (Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := s.Migrate(ctx); err != nil {
+	if cfg.SchemaMode == "validate" {
+		err = s.ValidateSchema(ctx)
+	} else {
+		err = s.Migrate(ctx)
+	}
+	if err != nil {
 		_ = s.Close()
-		return nil, fmt.Errorf("store: migrate: %w", err)
+		return nil, fmt.Errorf("store: schema: %w", err)
 	}
 	return s, nil
 }

@@ -75,6 +75,8 @@ curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-definitions/$W
 
 Each node `key` is unique. Edges connect an upstream state to downstream work. `input` maps field names to CEL expressions; here it passes the request's `request` field to the draft node. Expressions can read `run`, `issue`, `trigger`, and predecessor `nodes`, rather than execute arbitrary scripts. Validation checks types, references, expressions, and cycles; verify target availability separately.
 
+A definition accepts at most 4 MiB of JSON, 4,096 nodes and 8,192 edges. Each Run, including dynamic Team delegation, permits 8,192 nodes and 16,384 edges; each complete node or edge view has a 16 MiB payload limit. Use artifacts for large deliverables. Graph construction keeps the Run `planned` until all dependencies are durable, then execution proceeds. An oversized graph fails with `resource_limit`; an over-capacity comment target records a blocked `run_graph_capacity` route. Existing queued tasks can still coalesce inputs without creating another node.
+
 ## Publish and start execution
 
 Publish the validated definition and save the revision ID. To edit later, call `PATCH /api/v1/orchestration-definitions/{definitionId}` with `draftSpec` and `expectedVersion`, then publish again.
@@ -196,26 +198,24 @@ After adding a signal node waiting for `report.ready`, a business system can sen
 
 ```bash
 REQUEST_ID="SIGNAL_REQUEST_ID_FROM_ACTIONS"
-EXPECTED_VERSION="SIGNAL_VERSION_FROM_ACTIONS"
 ARTIFACT_ID="YOUR_ARTIFACT_ID"
 ```
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: report-upload-001" \
   --data-binary @- <<JSON
 {
-  "request_id": "$REQUEST_ID",
-  "expected_version": $EXPECTED_VERSION,
-  "payload": {
-    "artifactId": "$ARTIFACT_ID"
-  }
+  "answers": [{
+    "request_id": "$REQUEST_ID",
+    "value": {"artifactId": "$ARTIFACT_ID"}
+  }]
 }
 JSON
 ```
 
-Read the request ID and version from the current required_actions rather than using the placeholders. Signals provide external process input; they do not replace approval. Run small examples and inspect real output before writing downstream mappings. Different runtimes do not necessarily return identical result structures.
+Read the request ID from the current `required_actions` resource rather than using the placeholder. Signals provide external process input; they do not replace approval. Run small examples and inspect real output before writing downstream mappings. Different runtimes do not necessarily return identical result structures.
 
 ## Cancellation and operational control
 
@@ -225,6 +225,11 @@ Applications cancel a Turn through `/cancel`, check capabilities before `/resume
 `POST /api/v1/orchestration-runs/{runId}/pause` stops new node dispatch while running steps may still return. `/resume` resumes scheduling; `/cancel` requests cancellation of nodes, tasks, and child runs without deleting or accepting the Issue. Use `{}` as the request body.
 
 After a terminal state, post `{"idempotencyKey":"weekly-report-retry-001"}` to `/rerun` to create a new Run with lineage. Include `input` to replace the input. Nodes support `timeoutSeconds`, `retry`, and `failurePolicy`, including `fail_fast`, `continue`, and `partial_success`. Retries do not undo existing external side effects.
+
+After a root Run fails, unfinished Issues are moved to the recoverable `blocked` state in
+bounded batches. Cleanup progress survives runtime restarts and remains schedulable after
+execution ends. Large Issue trees converge over several passes; Issues created after the
+failure and a newer recovery Run are excluded from historical cleanup.
 
 Create a Session with `target:{"type":"workflow","id":"WORKFLOW_ID","revisionId":"REVISION_ID"}`. Omitting `revisionId` selects the latest published revision at creation. Existing Sessions do not switch automatically. See [Console](/v2/en/service/console/index#console-orchestration) for the designer and run graph.
 

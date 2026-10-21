@@ -14,7 +14,7 @@
 
 apiVersion: v2
 name: agentscope-service
-description: AgentScope Service gateway, control plane, managed dataplane and scheduler
+description: AgentScope Service with a unified Go control plane, Gateway, Session Portal, Dataplane and Hands
 type: application
 version: 2.1.0-BETA1
 appVersion: "2.1.0-BETA1"

@@ -33,7 +33,7 @@ describe("managedToolApprovalRequest", () => {
     turnId: "turn-id",
     toolUseId: "tool-use-id",
     toolName: "web_search",
-    inputPreview: { query: "AgentScope" },
+    inputPreview: { query: "AgentScope Service" },
     expiresAt: "2026-09-06T12:00:00Z",
   };
 

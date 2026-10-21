@@ -166,7 +166,7 @@ func scanCollaborationMember(row scannable) (*controlmodel.CollaborationTeamMemb
 
 const artifactColumns = `id,tenant,namespace,storage_provider,storage_key,filename,
 	content_type,size_bytes,checksum,uploader_type,uploader_ref,source_task_id,
-	source_attempt_id,metadata,created_at,expires_at`
+	source_attempt_id,metadata,created_at,expires_at,portal_command_id`
 
 func scanArtifact(row scannable) (*controlmodel.Artifact, error) {
 	artifact := &controlmodel.Artifact{}
@@ -176,7 +176,7 @@ func scanArtifact(row scannable) (*controlmodel.Artifact, error) {
 		&artifact.StorageProvider, &artifact.StorageKey, &artifact.Filename,
 		&artifact.ContentType, &artifact.SizeBytes, &artifact.Checksum,
 		&artifact.Uploader.Type, &uploaderRef, &artifact.SourceTaskID,
-		&artifact.SourceAttemptID, &metadata, &artifact.CreatedAt, &artifact.ExpiresAt)
+		&artifact.SourceAttemptID, &metadata, &artifact.CreatedAt, &artifact.ExpiresAt, &artifact.PortalCommandID)
 	if err != nil {
 		return nil, collaborationScanError(err)
 	}

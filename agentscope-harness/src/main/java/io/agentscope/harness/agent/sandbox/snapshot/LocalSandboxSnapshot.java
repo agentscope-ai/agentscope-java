@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -78,6 +79,9 @@ public class LocalSandboxSnapshot implements SandboxSnapshot {
                             StandardOpenOption.CREATE,
                             StandardOpenOption.TRUNCATE_EXISTING)) {
                 workspaceArchive.transferTo(out);
+            }
+            try (var channel = FileChannel.open(tmpPath, StandardOpenOption.WRITE)) {
+                channel.force(true);
             }
             Files.move(
                     tmpPath,

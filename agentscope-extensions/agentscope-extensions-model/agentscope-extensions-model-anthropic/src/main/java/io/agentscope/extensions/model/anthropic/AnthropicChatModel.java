@@ -28,6 +28,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelException;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
@@ -43,7 +44,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * Anthropic Chat Model implementation using the official Anthropic Java SDK.
@@ -332,9 +332,7 @@ public class AnthropicChatModel extends ChatModelBase {
 
                                     // Convert the SDK's Stream to Flux
                                     return AnthropicResponseParser.parseStreamEvents(
-                                                    Flux.fromStream(streamResponse.stream())
-                                                            .subscribeOn(
-                                                                    Schedulers.boundedElastic()),
+                                                    Flux.fromStream(streamResponse.stream()),
                                                     startTime)
                                             .doFinally(
                                                     signalType -> {
@@ -369,7 +367,16 @@ public class AnthropicChatModel extends ChatModelBase {
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "anthropic");
+                responseFlux
+                        .subscribeOn(
+                                streamEnabled
+                                        ? ModelSchedulers.streams()
+                                        : ModelSchedulers.requests())
+                        .publishOn(ModelSchedulers.responses(), 32),
+                options,
+                defaultOptions,
+                modelName,
+                "anthropic");
     }
 
     /**

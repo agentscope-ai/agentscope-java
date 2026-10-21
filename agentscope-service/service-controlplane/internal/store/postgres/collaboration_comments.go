@@ -16,6 +16,8 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -29,6 +31,9 @@ import (
 func (r *collaborationRepo) CreateComment(ctx context.Context, req store.CreateCommentRequest) (*store.CreateCommentResult, error) {
 	if req.Comment == nil || req.Comment.Content == "" {
 		return nil, fmt.Errorf("comment content is required")
+	}
+	if len(req.Mentions) > store.MaxCommentTargets || len(req.Targets) > store.MaxCommentTargets {
+		return nil, store.ErrCommentCapacity
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -58,6 +63,9 @@ func (r *collaborationRepo) CreateComment(ctx context.Context, req store.CreateC
 		comment.ThreadRootID = parent.ThreadRootID
 	} else {
 		comment.ThreadRootID = comment.ID
+	}
+	if err := store.ValidateCommentWrite(comment, req.Mentions, req.Targets); err != nil {
+		return nil, err
 	}
 	created, err := scanComment(tx.QueryRow(ctx, `INSERT INTO comments
 		(id,tenant,namespace,issue_id,parent_id,thread_root_id,author_type,
@@ -147,16 +155,19 @@ func (r *collaborationRepo) CreateComment(ctx context.Context, req store.CreateC
 			route.Outcome, route.ReasonCode = controlmodel.RouteSuppressed, "self_trigger"
 		default:
 			task, _, coalesced, err := routeAgentTaskInputTx(ctx, tx, issue, created, target)
-			if err != nil {
+			if errors.Is(err, store.ErrResourceLimit) {
+				route.Outcome, route.ReasonCode = controlmodel.RouteBlocked, store.CapacityRouteReason(err)
+			} else if err != nil {
 				return nil, fmt.Errorf("route comment to AgentTask: %w", err)
-			}
-			route.TaskID = &task.ID
-			if coalesced {
-				route.Outcome = controlmodel.RouteCoalesced
 			} else {
-				route.Outcome = controlmodel.RouteQueued
+				route.TaskID = &task.ID
+				if coalesced {
+					route.Outcome = controlmodel.RouteCoalesced
+				} else {
+					route.Outcome = controlmodel.RouteQueued
+				}
+				tasks = append(tasks, *task)
 			}
-			tasks = append(tasks, *task)
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO comment_routes
 			(id,tenant,namespace,issue_id,comment_id,comment_version,target_type,target_ref,route_type,
@@ -206,8 +217,8 @@ func (r *collaborationRepo) CreateComment(ctx context.Context, req store.CreateC
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO control_outbox
 			(id,tenant,aggregate_type,aggregate_id,event_type,payload,dedupe_key,
-			 attempts,available_at,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,0,
-			 COALESCE($8,now()),COALESCE($9,now()))
+			 attempts,available_at,created_at,portal_owned) VALUES ($1,$2,$3,$4,$5,$6,$7,0,
+			 COALESCE($8,now()),COALESCE($9,now()),portal_runtime_event_owned($3,$4))
 			ON CONFLICT (tenant,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
 			nonNilUUIDPG(event.ID), issue.Tenant, event.AggregateType, event.AggregateID,
 			event.EventType, event.Payload, nullStr(event.DedupeKey), nullTime(event.AvailableAt),
@@ -245,29 +256,67 @@ func (r *collaborationRepo) ListComments(ctx context.Context, issueID uuid.UUID,
 	if opts.Tail > 0 {
 		order = " ORDER BY created_at DESC,id DESC"
 	}
+	sourceScope := "AND ($8::uuid[] IS NULL OR cardinality($8::uuid[])=0)"
+	if len(opts.SourceTaskIDs) > 0 {
+		sourceScope = "AND source_task_id=ANY($8::uuid[])"
+	}
+	if len(opts.SourceTaskIDs) > store.MaxRunTaskView {
+		return nil, store.ErrResourceLimit
+	}
+	resultScope := ""
+	if opts.ResultOnly {
+		resultScope = "AND type='result' AND deleted_at IS NULL"
+	}
 	rows, err := r.pool.Query(ctx, `SELECT `+commentColumns+` FROM comments WHERE
 		issue_id=$1 AND ($2=false OR parent_id IS NULL)
 		AND ($3::uuid IS NULL OR thread_root_id=$3 OR id=$3)
 		AND ($6::timestamptz IS NULL OR (created_at,id) > ($6,$7))
-		`+order+` LIMIT $4 OFFSET $5`, issueID, opts.RootsOnly,
-		opts.ThreadID, limit, maxInt(opts.Offset, 0), opts.CursorTime, opts.CursorID)
+		`+sourceScope+` `+resultScope+` `+order+` LIMIT $4 OFFSET $5`, issueID, opts.RootsOnly,
+		opts.ThreadID, limit, maxInt(opts.Offset, 0), opts.CursorTime, opts.CursorID, opts.SourceTaskIDs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := make([]*controlmodel.Comment, 0)
+	contentBytes := 0
 	for rows.Next() {
 		comment, err := scanComment(rows)
 		if err != nil {
 			return nil, err
 		}
-		if err := loadCommentRelations(ctx, r.pool, comment); err != nil {
-			return nil, err
+		contentBytes += len(comment.Content)
+		if contentBytes > store.MaxRunGraphBytes {
+			return nil, store.ErrResourceLimit
 		}
 		out = append(out, comment)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	// Free the scan connection before relation queries. Small shared pools
+	// otherwise deadlock when concurrent readers each hold their result rows.
+	rows.Close()
+	bytes := 0
+	for _, comment := range out {
+		if err := store.ValidateCommentCapacity(comment); err != nil {
+			return nil, err
+		}
+		if len(comment.Content) > store.MaxRunGraphBytes {
+			return nil, store.ErrResourceLimit
+		}
+		if !opts.OmitRelations {
+			if err := loadCommentRelations(ctx, r.pool, comment); err != nil {
+				return nil, err
+			}
+		}
+		raw, err := json.Marshal(comment)
+		if err != nil {
+			return nil, err
+		}
+		bytes += len(raw)
+		if bytes > store.MaxRunGraphBytes {
+			return nil, store.ErrResourceLimit
+		}
 	}
 	if opts.Tail > 0 {
 		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
@@ -290,19 +339,13 @@ func (r *collaborationRepo) UpdateComment(ctx context.Context, comment *controlm
 	if expectedVersion > 0 && current.Version != expectedVersion {
 		return nil, store.ErrConflict
 	}
-	updated, err := scanComment(tx.QueryRow(ctx, `UPDATE comments SET content=$2,
-		type=$3,version=version+1,updated_at=now() WHERE id=$1 RETURNING `+commentColumns,
-		comment.ID, comment.Content, comment.Type))
-	if err != nil {
-		return nil, err
-	}
-	issue, err := scanIssue(tx.QueryRow(ctx, `SELECT `+issueColumns+` FROM issues WHERE id=$1 FOR UPDATE`, updated.IssueID))
+	issue, err := scanIssue(tx.QueryRow(ctx, `SELECT `+issueColumns+` FROM issues WHERE id=$1 FOR UPDATE`, current.IssueID))
 	if err != nil {
 		return nil, err
 	}
 	rows, err := tx.Query(ctx, `SELECT DISTINCT t.agent_id,t.team_id,COALESCE(t.team_role,'')
 		FROM agent_tasks t JOIN agent_task_inputs i ON i.task_id=t.id
-		WHERE i.comment_id=$1 AND i.comment_version=$2`, current.ID, current.Version)
+		WHERE i.comment_id=$1 AND i.comment_version=$2 ORDER BY t.agent_id,t.team_id,COALESCE(t.team_role,'') LIMIT $3`, current.ID, current.Version, store.MaxCommentTargets+1)
 	if err != nil {
 		return nil, err
 	}
@@ -317,25 +360,53 @@ func (r *collaborationRepo) UpdateComment(ctx context.Context, comment *controlm
 		if target.TeamID != nil {
 			target.TargetType, target.TargetRef = controlmodel.AssigneeTeam, target.TeamID.String()
 		}
+		if len(targets) >= store.MaxCommentTargets {
+			rows.Close()
+			return nil, store.ErrCommentCapacity
+		}
 		targets = append(targets, target)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
 	rows.Close()
+	if err := loadCommentRelations(ctx, tx, current); err != nil {
+		return nil, err
+	}
+	projected := *current
+	projected.Content, projected.Type = comment.Content, comment.Type
+	if err := store.ValidateCommentWrite(&projected, nil, targets); err != nil {
+		return nil, err
+	}
+	updated, err := scanComment(tx.QueryRow(ctx, `UPDATE comments SET content=$2,
+		type=$3,version=version+1,updated_at=now() WHERE id=$1 RETURNING `+commentColumns,
+		comment.ID, comment.Content, comment.Type))
+	if err != nil {
+		return nil, err
+	}
 	for _, target := range targets {
 		task, _, coalesced, err := routeAgentTaskInputTx(ctx, tx, issue, updated, target)
-		if err != nil {
+		if err != nil && !errors.Is(err, store.ErrResourceLimit) {
 			return nil, err
 		}
-		outcome := controlmodel.RouteQueued
-		if coalesced {
+		outcome, reason := controlmodel.RouteQueued, "comment_correction"
+		var taskID *uuid.UUID
+		if errors.Is(err, store.ErrResourceLimit) {
+			outcome, reason = controlmodel.RouteBlocked, store.CapacityRouteReason(err)
+		} else {
+			taskID = &task.ID
+		}
+		if err == nil && coalesced {
 			outcome = controlmodel.RouteCoalesced
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO comment_routes
 			(id,tenant,namespace,issue_id,comment_id,comment_version,target_type,target_ref,
 			 route_type,outcome,task_id,reason_code)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'comment_correction')`,
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 			uuid.New(), updated.Tenant, updated.Namespace, updated.IssueID, updated.ID,
 			updated.Version, target.TargetType, target.TargetRef, controlmodel.RouteFollowUp,
-			outcome, task.ID); err != nil {
+			outcome, taskID, reason); err != nil {
 			return nil, err
 		}
 	}
@@ -350,10 +421,13 @@ func (r *collaborationRepo) UpdateComment(ctx context.Context, comment *controlm
 		"comment.updated.v1", updated, fmt.Sprintf("comment-updated:%s:%d", updated.ID, updated.Version)); err != nil {
 		return nil, err
 	}
+	if err := loadCommentRelations(ctx, tx, updated); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return r.GetComment(ctx, updated.ID)
+	return updated, nil
 }
 
 func (r *collaborationRepo) DeleteComment(ctx context.Context, id uuid.UUID, expectedVersion int64, actor controlmodel.Actor) (*controlmodel.Comment, error) {
@@ -434,9 +508,13 @@ type commentRelationQuerier interface {
 }
 
 func loadCommentRelations(ctx context.Context, q commentRelationQuerier, comment *controlmodel.Comment) error {
+	if err := store.ValidateCommentCapacity(comment); err != nil {
+		return err
+	}
+	var budget store.CommentRelationBudget
 	rows, err := q.Query(ctx, `SELECT id,tenant,namespace,issue_id,comment_id,
 		target_type,target_ref,created_at FROM comment_mentions WHERE comment_id=$1
-		ORDER BY created_at,id`, comment.ID)
+		ORDER BY created_at,id LIMIT $2`, comment.ID, store.MaxCommentRelations+1)
 	if err != nil {
 		return err
 	}
@@ -445,6 +523,10 @@ func loadCommentRelations(ctx context.Context, q commentRelationQuerier, comment
 		if err := rows.Scan(&mention.ID, &mention.Tenant, &mention.Namespace,
 			&mention.IssueID, &mention.CommentID, &mention.TargetType,
 			&mention.TargetRef, &mention.CreatedAt); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := budget.Add(mention); err != nil {
 			rows.Close()
 			return err
 		}
@@ -457,7 +539,7 @@ func loadCommentRelations(ctx context.Context, q commentRelationQuerier, comment
 	rows.Close()
 	rows, err = q.Query(ctx, `SELECT id,tenant,namespace,issue_id,comment_id,comment_version,
 		target_type,target_ref,route_type,outcome,task_id,reason_code,created_at
-		FROM comment_routes WHERE comment_id=$1 ORDER BY created_at,id`, comment.ID)
+		FROM comment_routes WHERE comment_id=$1 ORDER BY created_at,id LIMIT $2`, comment.ID, store.MaxCommentRelations+1)
 	if err != nil {
 		return err
 	}
@@ -471,6 +553,9 @@ func loadCommentRelations(ctx context.Context, q commentRelationQuerier, comment
 			return err
 		}
 		route.ReasonCode = deref(reason)
+		if err := budget.Add(route); err != nil {
+			return err
+		}
 		comment.Routes = append(comment.Routes, route)
 	}
 	return rows.Err()

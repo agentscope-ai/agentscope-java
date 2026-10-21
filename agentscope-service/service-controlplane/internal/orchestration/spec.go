@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	"time"
 
 	"cel.dev/cel-go/cel"
@@ -147,10 +148,22 @@ func (c *CEL) Eval(ctx context.Context, expr string, vars map[string]any) (any, 
 	return native, nil
 }
 
+const (
+	maxDefinitionBytes = 4 << 20
+	maxDefinitionNodes = 4096
+	maxDefinitionEdges = 8192
+)
+
 func ParseAndValidateSpec(raw json.RawMessage, evaluator *CEL) (*DefinitionSpec, error) {
+	if len(raw) > maxDefinitionBytes {
+		return nil, fmt.Errorf("%w: definition exceeds %d bytes", store.ErrResourceLimit, maxDefinitionBytes)
+	}
 	var spec DefinitionSpec
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		return nil, fmt.Errorf("decode definition spec: %w", err)
+	}
+	if len(spec.Nodes) > maxDefinitionNodes || len(spec.Edges) > maxDefinitionEdges {
+		return nil, fmt.Errorf("%w: definition permits at most %d nodes and %d edges", store.ErrResourceLimit, maxDefinitionNodes, maxDefinitionEdges)
 	}
 	if len(spec.Nodes) == 0 {
 		return nil, fmt.Errorf("definition requires at least one node")

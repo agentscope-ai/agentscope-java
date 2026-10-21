@@ -105,7 +105,7 @@ func (s *Server) refreshServiceInvocation(ctx context.Context, id uuid.UUID) (*m
 			}
 		}
 		if serviceapi.Terminal(inv.Status) {
-			ready, err := s.serviceMirrorsReady(ctx, run.ID)
+			ready, err := s.serviceExecutionsSettled(ctx, run.ID)
 			if err != nil {
 				return err
 			}
@@ -150,9 +150,9 @@ func (s *Server) serviceActiveAttempts(ctx context.Context, runID uuid.UUID) (bo
 	return false, nil
 }
 
-// A terminal public event is a delivery barrier: late Managed reports from
-// the original Attempt must be durable in the control plane before SSE closes.
-func (s *Server) serviceMirrorsReady(ctx context.Context, runID uuid.UUID) (bool, error) {
+// A Task result is not proof that its native Turn has committed its final
+// checkpoint/events. Keep the public invocation open until that durable fact.
+func (s *Server) serviceExecutionsSettled(ctx context.Context, runID uuid.UUID) (bool, error) {
 	tasks, err := s.serviceTasks(ctx, runID)
 	if err != nil {
 		return false, err
@@ -163,18 +163,12 @@ func (s *Server) serviceMirrorsReady(ctx context.Context, runID uuid.UUID) (bool
 			return false, err
 		}
 		for _, attempt := range attempts {
-			if attempt.BackendKind != model.DataPlaneManaged || attempt.SessionID == "" {
+			if attempt.BackendKind != model.DataPlaneManaged {
 				continue
 			}
-			if s.product == nil {
-				return false, fmt.Errorf("Managed event mirror unavailable")
-			}
-			_, ready, err := s.product.ManagedMirrorStatus(ctx, attempt.ManagedOwnerRef, attempt.SessionID, attempt.ID.String())
-			if err != nil {
+			settled, err := s.managedAttemptSettled(ctx, attempt.ID)
+			if err != nil || !settled {
 				return false, err
-			}
-			if !ready {
-				return false, nil
 			}
 		}
 	}
@@ -253,7 +247,11 @@ func (s *Server) projectServiceInvocationLocked(ctx context.Context, id uuid.UUI
 						return err
 					}
 				}
-				if a.SessionID != "" {
+				if a.BackendKind == model.DataPlaneManaged {
+					if err = s.projectNativeManagedTaskEvents(ctx, ep, inv, journal, a); err != nil {
+						return err
+					}
+				} else if a.SessionID != "" {
 					if err = s.projectServiceSession(ctx, ep, inv, journal, a.SessionID, a.ID.String()); err != nil {
 						return err
 					}
@@ -456,7 +454,7 @@ func (s *Server) projectServiceSession(ctx context.Context, ep *model.Endpoint, 
 }
 func publicServiceRuntimeType(kind string) bool {
 	switch kind {
-	case "required_action.created", "required_action.resolved", "run.ended", "item.started", "item.delta", "item.completed", "tool.requested", "tool.dispatched", "tool.delta", "tool.completed", "usage.recorded", "model.completed":
+	case "required_action.created", "required_action.resolved", "run.ended", "item.started", "item.delta", "item.completed", "item.finalized", "tool.requested", "tool.dispatched", "tool.waiting", "tool.delta", "tool.progress", "tool.output_gap", "tool.operation.completed", "tool.completed", "usage.recorded", "model.completed":
 		return true
 	}
 	return false

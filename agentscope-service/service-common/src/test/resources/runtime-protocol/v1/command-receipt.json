@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "sessionId": "session-1",
+  "turnId": "turn-1",
+  "commandId": "command-1",
+  "inputDigest": "sha256-example",
+  "admissionSequence": 1,
+  "status": "runtime_accepted"
+}

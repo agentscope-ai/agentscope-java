@@ -34,14 +34,16 @@ import (
 // safe to run on every control-plane replica because PostgreSQL repositories
 // claim expired rows with SKIP LOCKED and all updates are idempotent.
 type RuntimeControlSweeper struct {
-	Store            store.Store
-	ReconcileRun     func(context.Context, uuid.UUID) error
-	Interval         time.Duration
-	RuntimeTimeout   time.Duration
-	StartupTimeout   time.Duration
-	HeartbeatTimeout time.Duration
-	CancelGrace      time.Duration
-	Batch            int
+	PortalOnly              bool
+	Store                   store.Store
+	ReconcileRun            func(context.Context, uuid.UUID) error
+	ReconcileManagedAttempt func(context.Context, uuid.UUID) error
+	Interval                time.Duration
+	RuntimeTimeout          time.Duration
+	StartupTimeout          time.Duration
+	HeartbeatTimeout        time.Duration
+	CancelGrace             time.Duration
+	Batch                   int
 }
 
 func (w *RuntimeControlSweeper) Start(ctx context.Context) error {
@@ -86,28 +88,40 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 	if batch <= 0 {
 		batch = 100
 	}
+	if batch > 500 {
+		batch = 500
+	}
 	if _, err := w.Store.RuntimeRegistry().MarkRuntimeHostsOffline(ctx, now.Add(-timeout)); err != nil {
 		logger.Error(err, "marking runtime hosts offline")
 	}
 	if _, err := w.Store.RuntimeRegistry().MarkAgentInstancesOffline(ctx, now.Add(-timeout)); err != nil {
 		logger.Error(err, "marking agent instances offline")
 	}
-	if err := conversation.Sweep(ctx, w.Store, now); err != nil {
-		logger.Error(err, "recovering unresponsive conversation turns")
+	if !w.PortalOnly {
+		if err := conversation.Sweep(ctx, w.Store, now); err != nil {
+			logger.Error(err, "recovering unresponsive conversation turns")
+		}
+		if _, err := w.Store.Collaboration().SweepOverdueIssues(ctx, now, batch); err != nil {
+			logger.Error(err, "creating overdue Issue attention items")
+		}
 	}
-	if _, err := w.Store.Collaboration().RequeueRetryableInputs(ctx, now, batch); err != nil {
+	if _, err := w.Store.Collaboration().RequeueRetryableInputs(ctx, now, batch, w.PortalOnly); err != nil {
 		logger.Error(err, "requeueing retryable AgentTask inputs")
 	}
-	if _, err := w.Store.Collaboration().SweepOverdueIssues(ctx, now, batch); err != nil {
-		logger.Error(err, "creating overdue Issue attention items")
-	}
-	if _, err := w.Store.Collaboration().SweepTimedOutAgentTasks(ctx, now, batch); err != nil {
+	if _, err := w.Store.Collaboration().SweepTimedOutAgentTasks(ctx, now, batch, w.PortalOnly); err != nil {
 		logger.Error(err, "failing AgentTasks that exceeded Team timeout policy")
 	}
-	queued, err := w.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{Status: controlmodel.AgentTaskQueued, Limit: batch})
+
+	queuedAfter, queuedCommit, cursorErr := w.beginPortalSweep(ctx, "portal-queued-task-v1")
+	if cursorErr != nil {
+		logger.Error(cursorErr, "reading queued Task scan cursor")
+		return
+	}
+	queued, err := w.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{PortalOnly: w.PortalOnly, Status: controlmodel.AgentTaskQueued, Limit: batch, OmitInputs: true, AfterID: queuedAfter})
 	if err != nil {
 		logger.Error(err, "listing queued AgentTasks for policy timeout")
 	} else {
+		finished := true
 		for _, task := range queued {
 			policy, policyErr := serviceapi.RuntimePolicy(ctx, w.Store, task)
 			if policyErr != nil || policy.QueueTimeoutSeconds <= 0 || now.Before(task.CreatedAt.Add(time.Duration(policy.QueueTimeoutSeconds)*time.Second)) {
@@ -115,12 +129,23 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 			}
 			if _, failErr := w.Store.Collaboration().FailAgentTask(ctx, task.ID, task.Version,
 				"queue_timeout", "AgentTask exceeded its Runtime Policy queue timeout"); failErr != nil && !errors.Is(failErr, store.ErrConflict) {
+				finished = false
 				logger.Error(failErr, "failing queued AgentTask after policy timeout", "task", task.ID)
+			}
+		}
+
+		last := uuid.Nil
+		if len(queued) > 0 {
+			last = queued[len(queued)-1].ID
+		}
+		if finished {
+			if err := queuedCommit(last, len(queued) == batch); err != nil && !errors.Is(err, store.ErrConflict) {
+				logger.Error(err, "advancing queued Task scan cursor")
 			}
 		}
 	}
 	if w.ReconcileRun != nil {
-		runs, err := w.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{ActiveOnly: true, OldestFirst: true, Limit: batch})
+		runs, err := w.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{PortalOnly: w.PortalOnly, ActiveOnly: true, OldestFirst: true, Limit: batch})
 		if err != nil {
 			logger.Error(err, "listing active orchestration runs")
 		} else {
@@ -131,8 +156,10 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 			}
 		}
 	}
-	if err := w.reconcileEndpointJobInvocations(ctx, batch); err != nil {
-		logger.Error(err, "reconciling Endpoint Job invocation states")
+	if !w.PortalOnly {
+		if err := w.reconcileEndpointJobInvocations(ctx, batch); err != nil {
+			logger.Error(err, "reconciling Endpoint Job invocation states")
+		}
 	}
 	// A lease or heartbeat loss never resurrects an Attempt. Fence the old
 	// record and put the logical Task back on the durable queue atomically.
@@ -140,14 +167,35 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 		controlmodel.ExecutionAssigned, controlmodel.ExecutionPreparing, controlmodel.ExecutionRunning,
 		controlmodel.ExecutionWaiting,
 	} {
-		attempts, err := w.Store.ExecutionAttempts().List(ctx, store.ExecutionAttemptFilter{State: state, Limit: batch})
+
+		after, commit, err := w.beginPortalSweep(ctx, "portal-attempt-"+string(state)+"-v1")
+		if err != nil {
+			logger.Error(err, "reading Attempt scan cursor", "state", state)
+			continue
+		}
+		attempts, err := w.Store.ExecutionAttempts().List(ctx, store.ExecutionAttemptFilter{PortalOnly: w.PortalOnly, State: state, Limit: batch, SweepAfterID: after})
 		if err != nil {
 			logger.Error(err, "listing stale execution attempts", "state", state)
 			continue
 		}
+		finished := true
 		for _, attempt := range attempts {
+			// Managed liveness belongs to the native Turn's MQ/Redis guard.
+			// A stale control-plane timestamp cannot prove the Brain or its tool stopped.
+			if attempt.BackendKind == controlmodel.DataPlaneManaged {
+				if w.ReconcileManagedAttempt != nil {
+					if err := w.ReconcileManagedAttempt(ctx, attempt.ID); err != nil && !errors.Is(err, store.ErrConflict) {
+						finished = false
+						logger.Error(err, "reconciling native Managed Attempt", "attempt", attempt.ID)
+					}
+				}
+				continue
+			}
 			task, getErr := w.Store.Collaboration().GetAgentTask(ctx, attempt.AgentTaskID)
 			if getErr != nil || controlmodel.IsAgentTaskTerminal(task.Status) {
+				if getErr != nil && !errors.Is(getErr, store.ErrNotFound) {
+					finished = false
+				}
 				continue
 			}
 			absoluteExpired := false
@@ -180,6 +228,7 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 				ExpectedVersion: task.Version, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,
 				Code: code, Message: message})
 			if retryErr != nil && !errors.Is(retryErr, store.ErrConflict) {
+				finished = false
 				logger.Error(retryErr, "requeueing task after attempt failure", "task", task.ID, "attempt", attempt.ID)
 				continue
 			}
@@ -187,20 +236,56 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 				w.emit(ctx, failedAttempt, "execution.failed", code)
 			}
 		}
+
+		last := uuid.Nil
+		if len(attempts) > 0 {
+			last = attempts[len(attempts)-1].ID
+		}
+		if finished {
+			if err := commit(last, len(attempts) == batch); err != nil && !errors.Is(err, store.ErrConflict) {
+				logger.Error(err, "advancing Attempt scan cursor", "state", state)
+			}
+		}
 	}
-	cancelling, err := w.Store.ExecutionAttempts().List(ctx, store.ExecutionAttemptFilter{State: controlmodel.ExecutionCancelRequested, Limit: batch})
+	after, commit, cursorErr := w.beginPortalSweep(ctx, "portal-cancelling-attempt-v1")
+	if cursorErr != nil {
+		logger.Error(cursorErr, "reading cancelling Attempt scan cursor")
+		return
+	}
+	cancelling, err := w.Store.ExecutionAttempts().List(ctx, store.ExecutionAttemptFilter{PortalOnly: w.PortalOnly, State: controlmodel.ExecutionCancelRequested, Limit: batch, SweepAfterID: after})
 	if err != nil {
 		logger.Error(err, "listing attempts awaiting cancellation acknowledgement")
 	} else {
+		finished := true
 		for _, attempt := range cancelling {
+			if attempt.BackendKind == controlmodel.DataPlaneManaged {
+				if w.ReconcileManagedAttempt != nil {
+					if err := w.ReconcileManagedAttempt(ctx, attempt.ID); err != nil && !errors.Is(err, store.ErrConflict) {
+						finished = false
+						logger.Error(err, "observing native Managed cancellation", "attempt", attempt.ID)
+					}
+				}
+				continue
+			}
 			if attempt.UpdatedAt.After(now.Add(-cancelGrace)) {
 				continue
 			}
 			cancelled, cancelErr := w.Store.ExecutionAttempts().ForceCancelled(ctx, attempt.ID, attempt.Version)
 			if cancelErr != nil && !errors.Is(cancelErr, store.ErrConflict) {
+				finished = false
 				logger.Error(cancelErr, "forcing attempt cancellation after grace period", "attempt", attempt.ID)
 			} else if cancelled != nil {
 				w.emit(ctx, cancelled, "execution.cancelled", "cancel_grace_expired")
+			}
+		}
+
+		last := uuid.Nil
+		if len(cancelling) > 0 {
+			last = cancelling[len(cancelling)-1].ID
+		}
+		if finished {
+			if err := commit(last, len(cancelling) == batch); err != nil && !errors.Is(err, store.ErrConflict) {
+				logger.Error(err, "advancing cancelling Attempt scan cursor")
 			}
 		}
 	}
@@ -238,21 +323,9 @@ func (w *RuntimeControlSweeper) sweepManagedToolApprovals(ctx context.Context, n
 	// List a stable page set before mutating it. ListApprovals is newest-first;
 	// processing only its first page would permanently starve an old expired
 	// Approval whenever enough newer, non-expired Approvals remain pending.
-	approvals := make([]*controlmodel.Approval, 0, limit)
-	for offset := 0; ; offset += limit {
-		page, err := w.Store.Collaboration().ListApprovals(ctx, store.ApprovalFilter{
-			TargetType: controlmodel.ApprovalTargetExecutionAttempt,
-			Status:     controlmodel.ApprovalPending,
-			Limit:      limit,
-			Offset:     offset,
-		})
-		if err != nil {
-			return err
-		}
-		approvals = append(approvals, page...)
-		if len(page) < limit {
-			break
-		}
+	approvals, commit, err := w.toolApprovalSweepPage(ctx, limit)
+	if err != nil {
+		return err
 	}
 	for _, approval := range approvals {
 		var request managedToolApprovalRequest
@@ -305,7 +378,7 @@ func (w *RuntimeControlSweeper) sweepManagedToolApprovals(ctx context.Context, n
 			return decideErr
 		}
 	}
-	return nil
+	return commit()
 }
 
 func (w *RuntimeControlSweeper) reconcileEndpointJobInvocations(ctx context.Context, batch int) error {

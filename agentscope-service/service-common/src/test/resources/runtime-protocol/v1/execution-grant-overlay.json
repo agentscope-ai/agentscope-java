@@ -1,0 +1,50 @@
+{
+  "context": {
+    "version": 1,
+    "tenant": "tenant-1",
+    "namespace": "default",
+    "applicationId": "app-1",
+    "sessionId": "session-1",
+    "turnId": "turn-1",
+    "commandId": "command-1",
+    "traceId": "trace-1",
+    "actor": {
+      "user": "user-1",
+      "key_hash": "",
+      "internal": false
+    },
+    "policyVersion": "policy-1",
+    "permissionExpiresAt": 2000000000000
+  },
+  "executionGeneration": 1,
+  "executionFence": "runtime-1/lease-1",
+  "validUntil": 1999999999000,
+  "configurationOverlay": {
+    "scopeId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revision": 2,
+    "configuration": {
+      "environment": {
+        "id": "environment-1",
+        "type": "self_hosted",
+        "config": {}
+      },
+      "vaultCredentials": [
+        {
+          "id": "credential-1",
+          "revision": 2,
+          "secret": "fake-overlay-secret"
+        }
+      ],
+      "memoryMounts": []
+    }
+  },
+  "budgetSettings": {
+    "revision": 2,
+    "limits": {
+      "max_model_calls": 20,
+      "max_total_tokens": 10000,
+      "max_cost": 12.34,
+      "currency": "USD"
+    }
+  }
+}

@@ -19,6 +19,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,8 +34,11 @@ import (
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/asdp"
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/conversation"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
+
+type managedConversationIdentityKey struct{}
 
 type invocationModeCapability struct {
 	State  string `json:"state"`
@@ -174,14 +179,31 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 			if json.Unmarshal(binding.Configuration, &cfg) != nil {
 				continue
 			}
-			environmentID := ""
-			if frozen := serviceapi.ContextContract(ctx); frozen != nil {
-				environmentID = frozen.EnvironmentID
+			if cfg.OwnerRef == "" || cfg.ManagedDefinitionRef != agent.ID.String() {
+				continue
 			}
-			sessionID, err = s.product.FindOrCreateSessionID(ctx, cfg.OwnerRef, cfg.ManagedDefinitionRef, environmentID,
-				originType+"|"+originRef+"|"+requestedSessionID)
-			if err != nil {
-				return nil, err
+			if native, ok := ctx.Value(managedConversationIdentityKey{}).(uuid.UUID); ok {
+				sessionID = native.String()
+			} else if _, e := uuid.Parse(sessionID); e != nil {
+				identity, _ := json.Marshal([]string{agent.Tenant, agent.Namespace, agent.ID.String(), originType, originRef, sessionID})
+				sessionID = uuid.NewSHA1(uuid.NameSpaceURL, identity).String()
+			}
+			// Endpoint admission retains its own original Actor and frozen contract. Its
+			// worker registers this same native identity before submitting the Turn.
+			if originType != "endpoint" {
+				actor, e := s.managedConversationActor(ctx, agent)
+				if e != nil {
+					return nil, e
+				}
+				coordinate, _ := json.Marshal([]string{originType, originRef, sessionID})
+				sum := sha256.Sum256(coordinate)
+				_, e = s.product.SubmitManagedTrigger(ctx, product.ManagedTrigger{Operation: "provision",
+					OwnerID: cfg.OwnerRef, ActorID: actor, AgentID: agent.ID.String(), BindingID: binding.ID.String(),
+					SessionID: sessionID, RequestID: "conversation:" + hex.EncodeToString(sum[:]),
+					AgentVersion: serviceapi.ContextVersion(ctx, agent.ID.String())})
+				if e != nil {
+					return nil, e
+				}
 			}
 		case controlmodel.DataPlaneExternalApplication:
 			instances, listErr := s.store.RuntimeRegistry().ListAgentInstances(ctx, agent.Tenant, agent.Namespace, agent.ID)
@@ -208,6 +230,9 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 			continue
 		}
 		phase := store.SessionPhaseActive
+		if binding.Kind == controlmodel.DataPlaneManaged {
+			phase = store.SessionPhaseIdle
+		}
 		if binding.Kind == controlmodel.DataPlaneHostedRuntime {
 			phase = store.SessionPhaseIdle
 			if existing, listErr := s.store.Sessions().List(ctx, store.SessionFilter{Tenant: agent.Tenant,
@@ -240,12 +265,23 @@ func (s *Server) sendAgentConversationTurn(ctx context.Context, session *store.S
 		if json.Unmarshal(binding.Configuration, &cfg) != nil {
 			return fmt.Errorf("Managed binding configuration is invalid")
 		}
+		actor, err := s.managedConversationActor(ctx, nil)
+		if err != nil {
+			return err
+		}
+		requestID := uuid.NewString()
+		if caller, ok := ctx.(*gin.Context); ok && caller.GetHeader("Idempotency-Key") != "" {
+			requestID = caller.GetHeader("Idempotency-Key")
+		}
 		key := session.Tenant + "\x00" + session.Namespace + "\x00" + session.AgentID.String() + "\x00" + session.SessionID
 		return s.store.WithSessionLock(ctx, key, func(ctx context.Context) error {
 			if err := conversation.CheckChatActive(ctx, s.store, session); err != nil {
 				return err
 			}
-			return s.product.PostSessionWakeEvent(ctx, session.SessionID, cfg.OwnerRef, message)
+			_, err = s.product.SubmitManagedTrigger(ctx, product.ManagedTrigger{OwnerID: cfg.OwnerRef,
+				ActorID: actor, AgentID: session.AgentID.String(), BindingID: session.BindingID.String(),
+				SessionID: session.SessionID, RequestID: requestID, Text: message})
+			return err
 		})
 	case controlmodel.DataPlaneExternalApplication:
 		instance, instanceErr := s.store.RuntimeRegistry().GetAgentInstance(ctx, session.AgentInstanceID)
@@ -282,9 +318,38 @@ func (s *Server) sendAgentConversationTurn(ctx context.Context, session *store.S
 	}
 }
 
+// Chat and direct console requests retain the authenticated user; background callers
+// must use their own native admission context rather than adopting the resource owner.
+func (s *Server) managedConversationActor(ctx context.Context, agent *controlmodel.Agent) (string, error) {
+	if caller, ok := ctx.(*gin.Context); ok {
+		if access := accessFrom(caller); access != nil && access.User != "" {
+			return access.User, nil
+		}
+		actor := endpointActor(caller)
+		if actor.Type == controlmodel.ActorHuman && actor.Ref != "" {
+			return actor.Ref, nil
+		}
+	}
+	if s.localDev {
+		if agent != nil {
+			namespace, err := s.store.Access().GetNamespace(ctx, agent.Tenant, agent.Namespace)
+			if err == nil && namespace.Owner != "" {
+				return namespace.Owner, nil
+			}
+		}
+		return "local-developer", nil
+	}
+	return "", store.ErrForbidden
+}
+
 func writeConversationTurnError(c *gin.Context, err error) {
-	if errors.Is(err, store.ErrConflict) {
+	var native *product.ManagedServiceError
+	if errors.Is(err, store.ErrConflict) || errors.As(err, &native) && native.StatusCode == http.StatusConflict {
 		c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error(), Code: "conversation_turn_conflict"})
+		return
+	}
+	if errors.As(err, &native) && native.StatusCode >= 400 && native.StatusCode <= 599 {
+		c.JSON(native.StatusCode, ErrorResponse{Error: native.Error(), Code: "conversation_rejected"})
 		return
 	}
 	c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: err.Error(), Code: "conversation_unavailable"})

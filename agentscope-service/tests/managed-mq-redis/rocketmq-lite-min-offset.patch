@@ -1,0 +1,15 @@
+--- a/PopLiteMessageProcessor.java
++++ b/PopLiteMessageProcessor.java
+@@ -318,7 +318,11 @@
+         long offset = brokerController.getConsumerOffsetManager().queryOffset(group, lmqName, 0);
+         if (offset < 0L) {
+             try {
+-                offset = brokerController.getPopMessageProcessor().getInitOffset(lmqName, group, 0, ConsumeInitMode.MAX, true); // reuse code, init as max
++                SubscriptionGroupConfig groupConfig = brokerController.getSubscriptionGroupManager()
++                    .findSubscriptionGroupConfig(group);
++                int initMode = groupConfig != null && groupConfig.isConsumeFromMinEnable()
++                    ? ConsumeInitMode.MIN : ConsumeInitMode.MAX;
++                offset = brokerController.getPopMessageProcessor().getInitOffset(lmqName, group, 0, initMode, true);
+                 LOGGER.info("init offset, group:{}, topic:{}, offset:{}", group, lmqName, offset);
+             } catch (ConsumeQueueException e) {
+                 throw new RuntimeException(e);

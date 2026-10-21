@@ -119,3 +119,34 @@ def test_worker_and_async_runner_accept_nullable_task_context(monkeypatch):
 
     result = _result(context, {"answer": "done"}, lambda value: value)
     assert result.processed_input_ids == []
+
+
+@pytest.mark.parametrize("decision", ["approved", "rejected"])
+def test_cli_uses_portal_answers_and_resource_snapshot(monkeypatch, tmp_path, decision):
+    source = Path(__file__).resolve().parents[3] / "examples/service-api/client.py"
+    spec = importlib.util.spec_from_file_location("service_api_client", source)
+    client = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(client)
+    config = tmp_path / "demo.json"
+    config.write_text(json.dumps({"base_url": "http://unused", "key": "fixture-key",
+                                  "targets": {"agent": {"type": "agent", "id": "agent"}}}))
+    calls = []
+
+    class API:
+        def command(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            return {"id": "turn"}
+
+        def snapshot(self, *args):
+            return {"as_of": "cursor", "resources": {"turns": {"data": [
+                {"data": {"turn_id": "turn", "status": "running"}}]}}}
+
+    monkeypatch.setattr(client, "ServiceClient", lambda *args, **kwargs: API())
+    monkeypatch.setattr("sys.argv", ["client", "--config", str(config), "--session", "session",
+                                    "--turn", "turn", "--request-id", "request", "--decision", decision,
+                                    "--response", '{"reason":"reviewed"}', "--key", "retry-key", "--snapshot-only"])
+    client.main()
+    assert len(calls) == 1
+    assert calls[0][0][:3] == ("session", "turn", "actions")
+    assert calls[0][0][3] == {"answers": [{"request_id": "request", "allow": decision == "approved", "reason": "reviewed"}]}
+    assert calls[0][1] == {"idempotency_key": "retry-key"}

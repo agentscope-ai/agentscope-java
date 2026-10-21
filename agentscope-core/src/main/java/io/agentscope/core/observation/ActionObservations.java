@@ -49,9 +49,15 @@ public final class ActionObservations {
                         observer =
                                 (observation, result) -> {
                                     var payload = new LinkedHashMap<String, Object>();
-                                    if (observation.status() == ActionObservation.Status.STARTED)
+                                    if (observation.status() == ActionObservation.Status.STARTED) {
+                                        var current =
+                                                RuntimeContext.resolveAgentState(
+                                                        context, param.getAgent());
+                                        if (current != null)
+                                            recorder.captureState(current, "before_tool");
                                         recorder.actionStarted(
                                                 observation.toolCallId(), observation.actionId());
+                                    }
                                     if (result != null
                                             && (result.isSuspended()
                                                     || result.getState() == ToolResultState.DENIED))

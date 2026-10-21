@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 func newAPIClient() *http.Client {
@@ -40,6 +41,11 @@ func agentTaskToken() string {
 	return ""
 }
 
+var taskHTTPClient = &http.Client{
+	Timeout:       30 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("task API redirects are not permitted") },
+}
+
 func doTaskAPI(method, path string, body []byte, token string) (*http.Response, error) {
 	if token == "" {
 		return nil, fmt.Errorf("task-scoped authentication is required; run inside a hosted AgentTask or set AGENTSCOPE_TASK_TOKEN")
@@ -52,7 +58,7 @@ func doTaskAPI(method, path string, body []byte, token string) (*http.Response, 
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("X-Agent-Task-Token", token)
-	return http.DefaultClient.Do(req)
+	return taskHTTPClient.Do(req)
 }
 
 func doAgentOrHumanAPI(method, path string, body []byte) (*http.Response, error) {

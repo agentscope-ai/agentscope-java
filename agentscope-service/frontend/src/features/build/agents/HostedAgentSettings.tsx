@@ -131,7 +131,7 @@ function PermissionModeSetting({ provider, value, disabled, onChange }: {
     </select>
     {provider === 'claude-code' && <span className="text-xs text-muted-foreground">Dangerous permission bypass modes are intentionally not offered as Agent-level presets.</span>}
     {provider === 'qoder' && value === 'bypass_permissions' && <span className="text-xs text-muted-foreground">Tools run without Qoder approval prompts, with the permissions of the Host process. Applies to new executions after saving.</span>}
-    {provider === 'qoder' && <span className="text-xs text-muted-foreground">In default mode, sensitive tool requests are forwarded to AgentScope Approvals. Auto mode may decide without a human review.</span>}
+    {provider === 'qoder' && <span className="text-xs text-muted-foreground">In default mode, sensitive tool requests are forwarded to AgentScope Service Approvals. Auto mode may decide without a human review.</span>}
   </label>;
 }
 
@@ -258,24 +258,24 @@ export function HostedAgentSettings({ agent, canEdit }: { agent: AgentDefinition
         {provider === 'codex' && <>
           <label className="grid gap-1.5 text-sm"><span className="font-medium">Codex profile</span><Input value={String(providerConfiguration.profile ?? '')} disabled={!canEdit} onChange={event => setProviderValue('profile', event.target.value)} placeholder="Follow ~/.codex/config.toml" /><span className="text-xs text-muted-foreground">Optional named Codex profile. Leave blank to inherit the local CLI configuration.</span></label>
           <label className="grid gap-1.5 text-sm"><span className="font-medium">Sandbox</span><select className="h-10 rounded-md border bg-background px-3" value={String(providerConfiguration.sandbox ?? '')} disabled={!canEdit} onChange={event => setProviderValue('sandbox', event.target.value)}><option value="">Runtime Profile default</option><option value="read-only">read-only</option><option value="workspace-write">workspace-write</option></select><span className="text-xs text-muted-foreground">An Agent may make the Profile sandbox stricter, but cannot relax it.</span></label>
-          <span className="text-xs text-muted-foreground">Codex app-server natively supports AgentScope-created non-Git workspaces and routes sensitive-action approvals through the control plane.</span>
+          <span className="text-xs text-muted-foreground">Codex app-server natively supports AgentScope Service-created non-Git workspaces and routes sensitive-action approvals through the control plane.</span>
         </>}
         {provider === 'claude-code' && <>
           <PermissionModeSetting provider="claude-code" value={providerConfiguration.permissionMode} disabled={!canEdit} onChange={value => setProviderValue('permissionMode', value)} />
-          <StringListSetting label="Allowed tools" value={providerConfiguration.allowedTools} disabled={!canEdit} onChange={value => setProviderValue('allowedTools', value)} placeholder={'mcp__agentscope-collaboration__*\nRead\nGrep'} description="One Claude tool rule per line. AgentScope collaboration is pre-authorized by the automatic Runtime Profile." />
+          <StringListSetting label="Allowed tools" value={providerConfiguration.allowedTools} disabled={!canEdit} onChange={value => setProviderValue('allowedTools', value)} placeholder={'mcp__agentscope-service-collaboration__*\nRead\nGrep'} description="One Claude tool rule per line. AgentScope Service collaboration is pre-authorized by the automatic Runtime Profile." />
           <StringListSetting label="Disallowed tools" value={providerConfiguration.disallowedTools} disabled={!canEdit} onChange={value => setProviderValue('disallowedTools', value)} placeholder={'Bash(rm -rf:*)'} description="Deny rules take precedence over allow rules." />
           <label className="grid gap-1.5 text-sm"><span className="font-medium">Max turns</span><Input type="number" min="0" value={String(providerConfiguration.maxTurns ?? '')} disabled={!canEdit} onChange={event => setProviderValue('maxTurns', event.target.value ? Number(event.target.value) : '')} placeholder="Provider default" /><span className="text-xs text-muted-foreground">Bounds unattended agent loops; 0 or blank follows the Runtime Profile.</span></label>
         </>}
         {provider === 'qoder' && <>
           <PermissionModeSetting provider="qoder" value={providerConfiguration.permissionMode} disabled={!canEdit} onChange={value => setProviderValue('permissionMode', value)} />
-          <StringListSetting label="Allowed tools" value={providerConfiguration.allowedTools} disabled={!canEdit} onChange={value => setProviderValue('allowedTools', value)} placeholder={'mcp__agentscope-collaboration__*\nRead\nGrep'} description="One Qoder permission rule per line. Exact allow rules keep headless jobs usable without enabling YOLO mode." />
+          <StringListSetting label="Allowed tools" value={providerConfiguration.allowedTools} disabled={!canEdit} onChange={value => setProviderValue('allowedTools', value)} placeholder={'mcp__agentscope-service-collaboration__*\nRead\nGrep'} description="One Qoder permission rule per line. Exact allow rules keep headless jobs usable without enabling YOLO mode." />
           <StringListSetting label="Disallowed tools" value={providerConfiguration.disallowedTools} disabled={!canEdit} onChange={value => setProviderValue('disallowedTools', value)} placeholder={'Bash(rm -rf:*)'} description="Deny and safety rules take precedence over allow rules." />
           <div className="grid gap-4 md:grid-cols-3">
             <label className="grid gap-1.5 text-sm"><span className="font-medium">Max turns</span><Input type="number" min="0" value={String(providerConfiguration.maxTurns ?? '')} disabled={!canEdit} onChange={event => setProviderValue('maxTurns', event.target.value ? Number(event.target.value) : '')} placeholder="Default" /></label>
             <label className="grid gap-1.5 text-sm"><span className="font-medium">Max output tokens</span><Input type="number" min="0" value={String(providerConfiguration.maxOutputTokens ?? '')} disabled={!canEdit} onChange={event => setProviderValue('maxOutputTokens', event.target.value ? Number(event.target.value) : '')} placeholder="Default" /></label>
             <label className="grid gap-1.5 text-sm"><span className="font-medium">Context window</span><Input type="number" min="0" value={String(providerConfiguration.contextWindow ?? '')} disabled={!canEdit} onChange={event => setProviderValue('contextWindow', event.target.value ? Number(event.target.value) : '')} placeholder="Model default" /></label>
           </div>
-          <BooleanSetting label="Strict MCP configuration" value={providerConfiguration.strictMCPConfig} disabled={!canEdit} onChange={value => setProviderValue('strictMCPConfig', value)} description="Use only MCP servers materialized by AgentScope for this attempt; enabled in the automatic Qoder Profile." />
+          <BooleanSetting label="Strict MCP configuration" value={providerConfiguration.strictMCPConfig} disabled={!canEdit} onChange={value => setProviderValue('strictMCPConfig', value)} description="Use only MCP servers materialized by AgentScope Service for this attempt; enabled in the automatic Qoder Profile." />
           <label className="grid gap-1.5 text-sm"><span className="font-medium">Qoder Agent</span><Input value={String(providerConfiguration.agent ?? '')} disabled={!canEdit} onChange={event => setProviderValue('agent', event.target.value)} placeholder="Default agent" /><span className="text-xs text-muted-foreground">Optional installed Qoder Agent name passed through --agent.</span></label>
         </>}
         {provider === 'qwenpaw' && <>
@@ -304,7 +304,7 @@ export function HostedAgentSettings({ agent, canEdit }: { agent: AgentDefinition
       <details>
         <summary className="cursor-pointer list-none"><CardHeader><CardTitle>Advanced CLI arguments</CardTitle><CardDescription>Optional escape hatch for supported provider flags that do not yet have a structured field.</CardDescription></CardHeader></summary>
         <CardContent className="grid gap-4">
-          <p className="text-xs text-muted-foreground">One argv token per line. Workspace, model, sandbox, protocol, resume, MCP, and permission arguments are reserved by AgentScope.</p>
+          <p className="text-xs text-muted-foreground">One argv token per line. Workspace, model, sandbox, protocol, resume, MCP, and permission arguments are reserved by AgentScope Service.</p>
           <Textarea className="min-h-32 font-mono text-xs" value={customArgsText} disabled={!canEdit} onChange={event => setCustomArgsText(event.target.value)} placeholder={'--profile\nwork'} />
           <div><div className="mb-2 text-sm font-medium">Custom argument preview</div><code className="block overflow-auto rounded-lg bg-slate-950 p-4 text-xs text-slate-100">{[commandHeader(provider), ...customArgs.map(quoteArgument)].join(' ')}</code></div>
         </CardContent>

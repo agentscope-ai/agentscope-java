@@ -27,10 +27,15 @@ const (
 
 // Config holds store configuration.
 type Config struct {
-	Driver string
+	// SchemaMode is migrate for explicit initialization or validate for application replicas.
+	SchemaMode string
+	Driver     string
 
 	// Postgres DSN, e.g. postgres://user:pass@host:5432/controlplane?sslmode=require
 	PostgresDSN string
+	// RuntimeMasterKey protects Portal runtime configuration and command payloads.
+	// Resource-only control-plane instances do not need this key.
+	RuntimeMasterKey string
 
 	MaxOpenConns    int
 	MaxIdleConns    int
@@ -52,6 +57,9 @@ func DefaultConfig() Config {
 
 // Validate checks the config for consistency.
 func (c Config) Validate() error {
+	if c.SchemaMode != "" && c.SchemaMode != "migrate" && c.SchemaMode != "validate" {
+		return fmt.Errorf("schema mode must be migrate or validate")
+	}
 	switch c.Driver {
 	case DriverMemory:
 		return nil

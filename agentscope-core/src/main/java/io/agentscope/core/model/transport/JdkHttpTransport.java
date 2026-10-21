@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.model.transport;
 
+import io.agentscope.core.model.ModelSchedulers;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -48,9 +49,11 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.scheduler.Scheduler;
 
 /**
  * Pure JDK implementation of the HttpTransport interface.
@@ -75,6 +78,8 @@ public class JdkHttpTransport implements HttpTransport {
 
     private final HttpClient client;
     private final HttpTransportConfig config;
+    private final Scheduler streamScheduler;
+    private final Scheduler responseScheduler;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     /**
@@ -91,8 +96,7 @@ public class JdkHttpTransport implements HttpTransport {
      * @throws NullPointerException if config is null
      */
     JdkHttpTransport(HttpTransportConfig config) {
-        this.config = Objects.requireNonNull(config, "config must not be null");
-        this.client = buildClient(config);
+        this(buildClient(config), config);
     }
 
     /**
@@ -106,8 +110,18 @@ public class JdkHttpTransport implements HttpTransport {
      * @throws NullPointerException if client or config is null
      */
     public JdkHttpTransport(HttpClient client, HttpTransportConfig config) {
+        this(client, config, ModelSchedulers.streams(), ModelSchedulers.responses());
+    }
+
+    private JdkHttpTransport(
+            HttpClient client,
+            HttpTransportConfig config,
+            Scheduler streamScheduler,
+            Scheduler responseScheduler) {
         this.client = Objects.requireNonNull(client, "client must not be null");
         this.config = Objects.requireNonNull(config, "config must not be null");
+        this.streamScheduler = Objects.requireNonNull(streamScheduler, "streamScheduler");
+        this.responseScheduler = Objects.requireNonNull(responseScheduler, "responseScheduler");
     }
 
     private static HttpClient buildClient(HttpTransportConfig config) {
@@ -207,7 +221,7 @@ public class JdkHttpTransport implements HttpTransport {
                 () -> {
                     AtomicReference<InputStream> responseBody = new AtomicReference<>();
                     long requestStartNanos = System.nanoTime();
-                    return sendInputStreamAsync(jdkRequest, responseBody)
+                    return sendInputStream(jdkRequest, responseBody)
                             .timeout(Mono.delay(streamResponseTimeout()))
                             .flatMapMany(
                                     response ->
@@ -217,41 +231,48 @@ public class JdkHttpTransport implements HttpTransport {
                                                     responseBody,
                                                     requestStartNanos))
                             .doFinally(signal -> closeQuietly(responseBody.getAndSet(null)))
-                            .onErrorMap(this::mapStreamError);
+                            .onErrorMap(this::mapStreamError)
+                            .publishOn(responseScheduler, config.getResponsePrefetch());
                 });
     }
 
     /**
-     * Send a streaming request and propagate Reactor cancellation to the JDK future/socket.
+     * Use synchronous send on a dedicated worker: JDK sendAsync completion can depend on the
+     * common ForkJoinPool even when HttpClient has a custom executor. Cancellation interrupts the
+     * send and closes any body returned after cancellation.
      */
-    private Mono<java.net.http.HttpResponse<InputStream>> sendInputStreamAsync(
+    private Mono<java.net.http.HttpResponse<InputStream>> sendInputStream(
             java.net.http.HttpRequest request, AtomicReference<InputStream> responseBody) {
         return Mono.create(
                 sink -> {
                     AtomicBoolean cancelled = new AtomicBoolean(false);
-                    var future = client.sendAsync(request, BodyHandlers.ofInputStream());
+                    Disposable.Swap task = Disposables.swap();
                     sink.onCancel(
                             () -> {
                                 cancelled.set(true);
-                                future.cancel(true);
+                                task.dispose();
                                 closeQuietly(responseBody.getAndSet(null));
                             });
-                    future.whenComplete(
-                            (response, error) -> {
-                                if (error != null) {
-                                    if (!cancelled.get()) {
-                                        sink.error(error);
-                                    }
-                                    return;
-                                }
-
-                                responseBody.set(response.body());
-                                if (cancelled.get()) {
-                                    closeQuietly(responseBody.getAndSet(null));
-                                    return;
-                                }
-                                sink.success(response);
-                            });
+                    task.update(
+                            streamScheduler.schedule(
+                                    () -> {
+                                        try {
+                                            var response =
+                                                    client.send(
+                                                            request, BodyHandlers.ofInputStream());
+                                            responseBody.set(response.body());
+                                            if (cancelled.get()) {
+                                                closeQuietly(responseBody.getAndSet(null));
+                                            } else {
+                                                sink.success(response);
+                                            }
+                                        } catch (InterruptedException e) {
+                                            Thread.currentThread().interrupt();
+                                            if (!cancelled.get()) sink.error(e);
+                                        } catch (Exception e) {
+                                            if (!cancelled.get()) sink.error(e);
+                                        }
+                                    }));
                 });
     }
 
@@ -301,7 +322,7 @@ public class JdkHttpTransport implements HttpTransport {
     }
 
     /**
-     * Parse SSE or NDJSON lines on a bounded elastic worker because BufferedReader blocks.
+     * Parse SSE or NDJSON lines on a dedicated worker because BufferedReader blocks.
      */
     private Flux<String> processStreamResponse(InputStream inputStream, HttpRequest request) {
         if (inputStream == null) {
@@ -321,7 +342,8 @@ public class JdkHttpTransport implements HttpTransport {
                         reader -> isNdjson ? readNdJsonLines(reader) : readSseLines(reader),
                         this::closeQuietly)
                 // reader.lines() uses blocking I/O internally
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(streamScheduler)
+                .doOnCancel(() -> closeQuietly(inputStream));
     }
 
     /**
@@ -332,7 +354,6 @@ public class JdkHttpTransport implements HttpTransport {
                 .filter(line -> line.startsWith(SSE_DATA_PREFIX))
                 .map(line -> line.substring(SSE_DATA_PREFIX.length()).trim())
                 .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
-                .doOnNext(data -> log.debug("Received SSE data chunk"))
                 .filter(data -> !data.isEmpty());
     }
 
@@ -340,9 +361,7 @@ public class JdkHttpTransport implements HttpTransport {
      * Extract non-empty NDJSON records as already-delimited stream chunks.
      */
     private Flux<String> readNdJsonLines(BufferedReader reader) {
-        return Flux.fromStream(reader.lines())
-                .doOnNext(line -> log.debug("Received NDJSON line"))
-                .filter(line -> !line.isEmpty());
+        return Flux.fromStream(reader.lines()).filter(line -> !line.isEmpty());
     }
 
     @Override
@@ -484,7 +503,7 @@ public class JdkHttpTransport implements HttpTransport {
     private Mono<String> readInputStreamAsync(InputStream inputStream) {
         return Mono.fromCallable(() -> readInputStream(inputStream))
                 .defaultIfEmpty("")
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(streamScheduler);
     }
 
     /**
@@ -556,6 +575,32 @@ public class JdkHttpTransport implements HttpTransport {
     public static class Builder {
         private HttpTransportConfig config = HttpTransportConfig.defaults();
         private HttpClient existingClient = null;
+        private Scheduler streamScheduler;
+        private Scheduler responseScheduler;
+
+        /**
+         * Use a caller-owned scheduler for blocking connection and stream reads. The transport
+         * never disposes it. Defaults to {@link ModelSchedulers#streams()}.
+         *
+         * @param scheduler the stream scheduler
+         * @return this builder
+         */
+        public Builder streamScheduler(Scheduler scheduler) {
+            this.streamScheduler = Objects.requireNonNull(scheduler, "scheduler");
+            return this;
+        }
+
+        /**
+         * Use a caller-owned scheduler for ordered response delivery. The transport never disposes
+         * it. Defaults to {@link ModelSchedulers#responses()}.
+         *
+         * @param scheduler the response scheduler
+         * @return this builder
+         */
+        public Builder responseScheduler(Scheduler scheduler) {
+            this.responseScheduler = Objects.requireNonNull(scheduler, "scheduler");
+            return this;
+        }
 
         /**
          * Set the transport configuration.
@@ -588,10 +633,12 @@ public class JdkHttpTransport implements HttpTransport {
          * @return a new JdkHttpTransport instance
          */
         public JdkHttpTransport build() {
-            if (existingClient != null) {
-                return new JdkHttpTransport(existingClient, config);
-            }
-            return new JdkHttpTransport(config);
+            Objects.requireNonNull(config, "config must not be null");
+            return new JdkHttpTransport(
+                    existingClient != null ? existingClient : buildClient(config),
+                    config,
+                    streamScheduler != null ? streamScheduler : ModelSchedulers.streams(),
+                    responseScheduler != null ? responseScheduler : ModelSchedulers.responses());
         }
     }
 

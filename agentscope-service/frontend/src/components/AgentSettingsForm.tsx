@@ -225,7 +225,7 @@ export default function AgentSettingsForm({
     <div style={section === 'all' ? S.page : { padding: 0, width: '100%' }}>
       {isGlobal && (
         <div style={S.banner}>
-          Global agents are read-only from the UI. Edit <code>agentscope.json</code> to change them.
+          Global agents are read-only from the UI. Edit <code>platform.json</code> to change them.
         </div>
       )}
       {!isGlobal && !canEdit && (

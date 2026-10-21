@@ -48,7 +48,7 @@ export class CollaborationClient {
 	completeRunNode(taskId: string, token: string, output: unknown) { return this.taskSend('POST', taskId, 'run/node/complete', token, { output }, 'run.node.complete') }
 	failRunNode(taskId: string, token: string, code: string, message: string) { return this.taskSend('POST', taskId, 'run/node/fail', token, { code, message }, 'run.node.fail') }
 	replanRun(taskId: string, token: string, node: unknown) { return this.taskSend('POST', taskId, 'run/replan', token, node, 'run.replan') }
-	signalRun(taskId: string, token: string, name: string, idempotencyKey: string, payload: unknown) { return this.taskSend('POST', taskId, `run/signals/${encodePath(name)}`, token, { idempotencyKey, payload }, 'run.signal') }
+	signalRun(taskId: string, token: string, name: string, idempotencyKey: string, payload: unknown, requestId?: string) { return this.taskSend('POST', taskId, `run/signals/${encodePath(name)}`, token, { idempotencyKey, payload, requestId }, 'run.signal') }
 	runArtifacts(taskId: string, token: string) { return this.taskSend('GET', taskId, 'run/artifacts', token, undefined, 'run.artifacts') }
 
     async uploadArtifact(taskId: string, token: string, filename: string, bytes: Uint8Array, contentType = 'application/octet-stream', targetType = 'agent-task', targetRef = taskId) {

@@ -108,6 +108,76 @@ func TestClientUsesBearerForRuntimeHostCredential(t *testing.T) {
 	}
 }
 
+func TestPortalAttemptCredentialRetainedUntilPhysicalStopACK(t *testing.T) {
+	attemptID, hostID := uuid.New(), uuid.New()
+	binding, _ := json.Marshal(controlmodel.RuntimeDispatchSnapshot{PortalCommandID: "public-turn"})
+	attempt := &controlmodel.ExecutionAttempt{ID: attemptID, State: controlmodel.ExecutionRunning, RuntimeBinding: binding}
+	stopCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Execution-Attempt-Token") != "attempt-token" {
+			t.Error("credential lost before stop ACK")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/physical-stop") {
+			stopCalls++
+			if stopCalls == 1 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+		}
+		response := *attempt
+		response.State = controlmodel.ExecutionSucceeded
+		_ = json.NewEncoder(w).Encode(map[string]any{"attempt": response})
+	}))
+	defer server.Close()
+	client := &Client{BaseURL: server.URL, HTTPClient: server.Client()}
+	client.RestoreAttemptToken(attemptID, "attempt-token")
+	if err := client.Complete(t.Context(), hostID, attempt, json.RawMessage(`{"output":"done"}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.PhysicalStopped(t.Context(), hostID, attempt); err == nil {
+		t.Fatal("unknown stop ACK was accepted")
+	}
+	if err := client.PhysicalStopped(t.Context(), hostID, attempt); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := client.attemptTokens.Load(attemptID); exists {
+		t.Fatal("acknowledged stop retained its credential")
+	}
+}
+
+func TestDeniedRenewalCanObserveCancellationWithoutExtendingTheLease(t *testing.T) {
+	attemptID, hostID := uuid.New(), uuid.New()
+	binding, _ := json.Marshal(controlmodel.RuntimeDispatchSnapshot{PortalCommandID: "public-turn"})
+	expires := time.Now().Add(time.Minute)
+	attempt := &controlmodel.ExecutionAttempt{ID: attemptID, State: controlmodel.ExecutionRunning,
+		RuntimeBinding: binding, LeaseToken: "lease", FencingToken: 7, LeaseExpiresAt: &expires}
+	observed := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Execution-Attempt-Token") != "attempt-token" {
+			t.Error("observation lost the attempt credential")
+		}
+		if strings.HasSuffix(r.URL.Path, "/renew") {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		if !strings.HasSuffix(r.URL.Path, "/observe") {
+			t.Error("unexpected operation " + r.URL.Path)
+		}
+		observed = true
+		response := *attempt
+		response.State = controlmodel.ExecutionCancelRequested
+		_ = json.NewEncoder(w).Encode(map[string]any{"attempt": response})
+	}))
+	defer server.Close()
+	client := &Client{BaseURL: server.URL, HTTPClient: server.Client()}
+	client.RestoreAttemptToken(attemptID, "attempt-token")
+	if err := client.Renew(t.Context(), hostID, attempt, time.Minute); err != nil || !observed || attempt.State != controlmodel.ExecutionCancelRequested || !attempt.LeaseExpiresAt.Equal(expires) {
+		t.Fatalf("cancel observation=%+v %v", attempt, err)
+	}
+}
+
 func TestToolApprovalRetriesTransientCreatePollAndAck(t *testing.T) {
 	counts := map[string]int{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +244,7 @@ func TestToolApprovalRetriesConnectionFailure(t *testing.T) {
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"decisionVersion":2}`)), Request: r}, nil
 	})}}
 	var result map[string]any
-	status, err := client.approvalRequestWithRetry(context.Background(), http.MethodGet, "/decision", nil, &result, nil)
+	status, err := client.approvalRequestWithRetry(context.Background(), http.MethodGet, "/decision", nil, &result, func() string { return "task-token" })
 	if err != nil || status != 200 || calls != 2 {
 		t.Fatalf("connection retry: status=%d calls=%d err=%v", status, calls, err)
 	}
@@ -189,7 +259,7 @@ func TestToolApprovalRetryHonorsCancellation(t *testing.T) {
 		cancel()
 		return &http.Response{StatusCode: 503, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("restarting")), Request: r}, nil
 	})}}
-	_, err := client.approvalRequestWithRetry(ctx, http.MethodGet, "/decision", nil, nil, nil)
+	_, err := client.approvalRequestWithRetry(ctx, http.MethodGet, "/decision", nil, nil, func() string { return "task-token" })
 	if !errors.Is(err, context.Canceled) || calls != 1 {
 		t.Fatalf("cancelled retry continued: calls=%d err=%v", calls, err)
 	}

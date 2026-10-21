@@ -30,12 +30,12 @@ import (
 
 type applicationRepo struct{ pool *pgxpool.Pool }
 
-const applicationCols = `id,tenant,namespace,name,description,owner_user_id,members,status,version,created_at,updated_at,max_concurrent,token_budget,tokens_used`
+const applicationCols = `id,tenant,namespace,name,description,owner_user_id,members,status,version,created_at,updated_at,max_concurrent,token_budget,tokens_used,runtime_tokens_used`
 
 func scanApplication(row scannable) (*model.Application, error) {
 	v := &model.Application{}
 	var members json.RawMessage
-	if err := row.Scan(&v.ID, &v.Tenant, &v.Namespace, &v.Name, &v.Description, &v.OwnerUserID, &members, &v.Status, &v.Version, &v.CreatedAt, &v.UpdatedAt, &v.MaxConcurrent, &v.TokenBudget, &v.TokensUsed); err != nil {
+	if err := row.Scan(&v.ID, &v.Tenant, &v.Namespace, &v.Name, &v.Description, &v.OwnerUserID, &members, &v.Status, &v.Version, &v.CreatedAt, &v.UpdatedAt, &v.MaxConcurrent, &v.TokenBudget, &v.TokensUsed, &v.RuntimeTokensUsed); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, store.ErrNotFound
 		}
@@ -45,6 +45,21 @@ func scanApplication(row scannable) (*model.Application, error) {
 		return nil, err
 	}
 	return v, nil
+}
+
+// The data plane reports a monotonic Application total, so retry and reordering cannot double count.
+func (r *applicationRepo) RecordRuntimeTokens(ctx context.Context, id uuid.UUID, total int64) error {
+	if total < 0 {
+		return store.ErrConflict
+	}
+	result, err := r.pool.Exec(ctx, `UPDATE applications SET tokens_used=tokens_used+GREATEST($2-runtime_tokens_used,0),runtime_tokens_used=GREATEST(runtime_tokens_used,$2) WHERE id=$1`, id, total)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 func (r *applicationRepo) Create(ctx context.Context, in *model.Application) (*model.Application, error) {
 	members, _ := json.Marshal(in.Members)

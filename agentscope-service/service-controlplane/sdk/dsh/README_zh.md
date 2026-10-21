@@ -195,3 +195,65 @@ npm install
 npm test
 npm run build
 ```
+
+## 公开 Session Portal 客户端
+
+Managed 执行使用 `new ServiceClient(baseUrl, credentials).managedSessions()`，对应原生
+`/v1/sessions` 协议：
+
+```ts
+const managed = new ServiceClient(baseUrl, { apiKey, tenant, namespace }).managedSessions()
+const session = await managed.createSession({ agent: agentId, environment_id: environmentId }, 'create-001')
+const turn = await managed.submit(String(session.id), { message: '检查项目' }, 'turn-001')
+const receipt = await managed.input(String(session.id), String(turn.id), 'steer', { message: '优先检查测试' }, 'steer-001')
+const applied = await managed.inputReceipt(String(session.id), String(turn.id), receipt.id)
+const snapshot = await managed.snapshot(String(session.id))
+for await (const event of managed.stream(String(session.id), snapshot.as_of)) {
+    // 应用并保存 event.cursor；只观察某轮时按 data.turn_id 筛选。
+}
+```
+
+原生生命周期操作须保留幂等键，通过 `lifecycleReceipt` 查询清理完成，不能把受理当作
+完成。文件、显式 Artifact、预算与固定资源页已接入；Turn 快照在 Session resources
+路径翻页并保留 snapshot ID。usage 保留 data / as_of；Fork / 检查点恢复仍在实施。
+轮内操作使用 typed Input，不自动回退旧路径。
+
+以下平铺客户端继续用于其他运行类型的现有协议。
+
+`ServiceClient` 使用 Application API key 或原始平台用户 token，与 DSH 注册使用的内部/
+bootstrap 身份分开。`OrchestrationClient` 管理定义与策略，执行的创建和控制使用 Portal
+Session 和 Turn。
+
+```ts
+import { ServiceClient } from '@agentscope-service/dsh-controlplane'
+const api = new ServiceClient(baseUrl, { apiKey, tenant, namespace })
+const session = await api.createSession({ type: 'workflow', id: workflowId }, 'create-001')
+const turn = await api.submit(String(session.id), { input: { request: 'Review' } }, 'turn-001')
+const snapshot = await api.snapshot(String(session.id), String(turn.id))
+for await (const event of api.stream(String(session.id), snapshot.as_of, String(turn.id))) {
+    // 应用事件后保存 event.cursor，超时后从该游标续传。
+}
+```
+
+资源分页保持 `snapshot_id` 与 `as_of`，使用 `resources(..., { after, snapshotId, turn,
+limit })` 续读。动作统一使用 `{ answers: [...] }`；`commandStatus` 查询 Session 命令并
+检查 Turn 归属。`queued` 与 `runtime_accepted` 为准入状态，`command_status`/
+`input_status` 才是原生应用状态。`usage` 返回权威汇总，`artifactContent` 只请求授权
+`/content` 路径，不抓取调用者 URI。客户端限制 JSON 16 MiB、单 SSE 事件 1 MiB、内容
+100 MiB，默认请求总时限 30 秒；观察断开不停止任务。使用配套 SDK/Service 版本及
+capabilities，客户端不假设审批、恢复或文件输入能力。
+
+Managed 文件 API 提供 `uploadFile`、`files`、`fileMetadata` 和 `fileContent`。
+Turn 文件输入前读取 `capabilities(session).capabilities.file_input`。上传及 JSON 响应
+限制为 16 MiB，缓冲下载为 100 MiB。公开调用拒绝重定向，原始凭据不会被转发到新地址。
+
+`api.exportEvents(sessionId, { through: snapshot.as_of, limit: 1000 })` 逐窗口异步
+迭代固定水位的公开 JSONL。保存已应用游标，重启时作为 after 传入并保留原 through。
+不完整记录和数量不符会报错；提前结束循环会关闭响应。单事件上限 1 MiB，
+每个窗口使用配置的请求总时限。
+
+Managed Session 预算使用 `budget(session)` 与 `setBudget(session, limits, revision)`。可传当前版本防止覆盖并发修改（412）。设置返回 202，在下一次模型调用前应用；GET 分别返回设置版本与数据面已应用版本。
+
+`trace(session, after, through, limit)` 使用人类特权 trace 身份读取原生日志。服务端须显式启用；续读沿用 `as_of_seq` 水位和 `next_seq`。Application API key 不可调用。
+
+`checkpoints(session, after, through, limit)` 经 Portal 查询 checkpoint 元数据。续页保持同一 `as_of` 作为 `through`，在 `has_more` 为真时推进 `next_cursor`，包括空页。原始 Agent 状态不公开；`restoreCheckpoint`/`fork` 写接口返回持久化 202 命令，使用 `command` 查询到 completed/rejected；相关根 Session 要求 interact 权限且执行和输入均已结清。

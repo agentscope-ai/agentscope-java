@@ -1,0 +1,1 @@
+DROP INDEX agent_task_inputs_retry_due;

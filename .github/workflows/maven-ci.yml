@@ -36,6 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test Maven release version and module selection checks
+        run: python3 -m unittest discover -s .github/scripts/tests -p 'test_maven_release_version.py' -v
       - name: Check extension modules are synced to agentscope-all and agentscope-bom
         run: |
           chmod +x .github/scripts/check-shade-and-bom-sync.sh

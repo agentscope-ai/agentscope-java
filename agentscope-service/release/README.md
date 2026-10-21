@@ -9,14 +9,19 @@ Run all commands from the monorepo root. Development continues in the existing c
 | Component | Delivery | Version source |
 | --- | --- | --- |
 | Control plane + Dashboard | `as-controlplane` image | Service release version, injected into Go build |
-| Gateway / Dataplane / Scheduler | `as-gateway`, `as-dataplane`, `as-scheduler` images | Service release tag; Java revision recorded separately |
+| Gateway / Portal / Dataplane / Hands | `as-gateway`, `as-session-portal`, `as-dataplane`, `as-hands` images | Service release tag; Java revision recorded separately |
 | Complete deployment | Compose archive + `agentscope-service` Helm Chart (public HTTP repository) | Service release version |
 | `as`, Runtime Host | Linux/macOS amd64/arm64 archives | Service release version |
 | Java Application SDK | `io.agentscope:agentscope-extensions-controlplane` and reactor dependencies | Root `revision` |
+| Java public Session client | `io.agentscope:agentscope-service-client`; jar, sources, javadoc, POM and README in SDK packages | Root `revision` |
 | Python SDK | `agentscope-service-sdk` wheel and sdist | `service-controlplane/sdk/python/pyproject.toml` and `service-controlplane/sdk/python/agentscope_service/__init__.py` |
 | DSH plugin | `@agentscope-service/dsh-controlplane` npm tarball | `service-controlplane/sdk/dsh/package.json` and lockfile |
 
 The front end is private and bundled into the control image. `service-common` and executable Service modules remain excluded from Maven Central (`maven.deploy.skip=true`); they are not required by external Java SDK users. PostgreSQL is a separately operated dependency, not an AgentScope-published image. The legacy Control Plane Chart remains a separate Kubernetes-native offering. The complete Service Chart uses standalone HTTP, without ASDP gRPC.
+
+The public Java Session client uses Java 17/Jackson and has no Service server dependency.
+`package` includes its local artifacts and records its revision in `sdkVersions.java`;
+Maven repository publication follows the separate Java publication process below.
 
 ## 1. Freeze source and choose versions
 
@@ -35,7 +40,7 @@ pip install -r agentscope-service/release/requirements.txt -e 'agentscope-servic
 python agentscope-service/release/release.py verify
 ```
 
-Set `CONTROL_PLANE_TEST_POSTGRES_DSN` to a **disposable test database** for PostgreSQL integration tests; never point tests at development or production data. The verifier uses `go test -p 1` so packages sharing one PostgreSQL database do not contend during concurrent-index migrations. Some Go controller tests additionally require envtest assets (`make test-integration` in `service-controlplane`). Run the repository-wide `mvn clean verify` before release submission. The release verifier explicitly selects all three Java service modules and their dependencies: selecting only the aggregator with `-pl agentscope-service` does not test its children.
+Set `CONTROL_PLANE_TEST_POSTGRES_DSN` to a **disposable test database** for PostgreSQL integration tests; never point tests at development or production data. The verifier uses `go test -p 1` so packages sharing one PostgreSQL database do not contend during concurrent-index migrations. Some Go controller tests additionally require envtest assets (`make test-integration` in `service-controlplane`). Run the repository-wide `mvn clean verify` before release submission. The release verifier explicitly selects all four Java executable service modules and their dependencies: selecting only the aggregator with `-pl agentscope-service` does not test its children.
 
 ```bash
 mvn -B -ntp -T1 clean verify
@@ -56,7 +61,7 @@ python agentscope-service/release/release.py package \
 
 Default output: `agentscope-service/release/dist/2.0.3-rc.1/`. Existing output directories are not overwritten. Use another `--output` for a new rehearsal. The package includes deploy files, CLI/Host archives, Helm, Python and npm artifacts, `release-manifest.json` and `SHA256SUMS`. Packaging uses an explicit allowlist and never includes deploy `.env` files. Dirty source is recorded for local candidates.
 
-Each CLI archive includes both executables and a bilingual installation README. The Kubernetes bundle `agentscope-service-VERSION-kubernetes.tar.gz` contains the Chart, Secret configuration template, database schema SQL, and installation README; the Chart is also emitted as a standalone `.tgz`. If SDKs are published separately, add `--distributions-only` to build just the CLI, Compose, Kubernetes, and Chart assets.
+Each CLI archive includes both executables and a bilingual installation README. The Kubernetes bundle `agentscope-service-VERSION-kubernetes.tar.gz` contains the Chart, Secret configuration template, schema SQL, business-role grant script, separate migration Secret template, and installation README; the Chart is also emitted as a standalone `.tgz`. If SDKs are published separately, add `--distributions-only` to build just the CLI, Compose, Kubernetes, and Chart assets.
 
 ```bash
 cd agentscope-service/release/dist/2.0.3-rc.1
@@ -107,14 +112,14 @@ Configure these repository secrets in **Settings → Secrets and variables → A
 
 | Secret | Value |
 | --- | --- |
-| `SERVICE_REGISTRY_USER` | ACR registry login username with access to all four repositories |
+| `SERVICE_REGISTRY_USER` | ACR registry login username with access to all five repositories |
 | `SERVICE_REGISTRY_TOKEN` | The corresponding ACR registry password (not the Alibaba Cloud console password) |
 
 The automatic workflow derives the login host from `SERVICE_IMAGE_REPOSITORY` (default `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`); it does not need `SERVICE_REGISTRY_HOST`. Local Docker login does not authenticate GitHub-hosted runners. See [ACR access credentials](https://help.aliyun.com/zh/acr/user-guide/configure-access-credentials/).
 
-Once the release version is set in the Java POMs and Go version constant and the source is merged into `main`, pushing `vVERSION` runs packaging, then builds and pushes `as-controlplane`, `as-gateway`, `as-dataplane` and `as-scheduler` as `linux/amd64,linux/arm64` manifest lists with the image tag `VERSION` (without `v`). Buildx requests SBOM and provenance. Existing tags are reused only when both platforms and their version/source-commit labels match; conflicts and authentication/network errors stop the workflow. Missing images are built and checked after pushing. Retry a failed images job to resume a partial release. The current Maven `2.1.0-SNAPSHOT` is a development version; prepare the actual release versions before creating the next main tag.
+Once the release version is set in the Java POMs and Go version constant and the source is merged into `main`, pushing `vVERSION` runs packaging, then builds and pushes `as-controlplane`, `as-gateway`, `as-session-portal`, `as-dataplane` and `as-hands` as `linux/amd64,linux/arm64` manifest lists with the image tag `VERSION` (without `v`). Buildx requests SBOM and provenance. Existing tags are reused only when both platforms and their version/source-commit labels match; conflicts and authentication/network errors stop the workflow. Missing images are built and checked after pushing. Retry a failed images job to resume a partial release. The current Maven `2.1.0-SNAPSHOT` is a development version; prepare the actual release versions before creating the next main tag.
 
-The GitHub Release publish job waits for all four images. It attaches `images.json` containing the verified references, digests, source commit and platforms and includes its checksum in `SHA256SUMS`. Individual Buildx metadata files are available in the `service-image-metadata` Actions artifact. The public HTTP Helm repository and Homebrew tap keep their independent publication workflows; the automatic image job does not require Helm OCI login.
+The GitHub Release publish job waits for all five images. It attaches `images.json` containing the verified references, digests, source commit and platforms and includes its checksum in `SHA256SUMS`. Individual Buildx metadata files are available in the `service-image-metadata` Actions artifact. A following job synchronizes the public HTTP Helm repository; the Homebrew tap remains manual. The automatic image job does not require Helm OCI login.
 
 ## 6. Publish SDK packages
 
@@ -173,7 +178,18 @@ Attach package archives, manifest, checksums and image metadata to the Release. 
 
 The public HTTP Helm repository is [chickenlj/helm-charts](https://github.com/chickenlj/helm-charts).
 After publishing the upstream `vVERSION` Release with its standalone Chart asset,
-run the independent repository's workflow; OCI publication is optional for this channel:
+the distribution workflow automatically runs the Helm repository's `publish.yml` on `main`,
+waits for its Pages deployment, and verifies the public index and downloaded Chart against
+the original Release SHA-256. OCI publication is optional for this channel.
+
+Configure the upstream repository Actions secret `HELM_REPOSITORY_TOKEN` with a
+fine-grained PAT: resource owner `chickenlj`, selected repository `helm-charts`,
+repository permission **Actions: Read and write** (Metadata read is included).
+The default upstream `GITHUB_TOKEN` cannot dispatch workflows in this other repository.
+The Helm workflow uses its own `GITHUB_TOKEN` to update its index and deploy Pages;
+the cross-repository token does not need Contents write permission.
+
+For manual recovery, after the upstream Release is public:
 
 ```bash
 gh workflow run publish.yml --repo chickenlj/helm-charts --ref main -f version=2.1.0-BETA1
@@ -185,7 +201,9 @@ helm pull agentscope/agentscope-service --version 2.1.0-BETA1
 Use the intended version for future releases. The workflow fetches the original
 Release archive, verifies its SHA256 and Chart metadata, preserves existing index
 entries, refuses different bytes under an existing version, and deploys Pages.
-No extra registry credential or cross-repository write token is required. Production checks currently return 404 for the official `/helm/index.yaml` route despite the merged redirects, so installation guides use the verified direct Pages URL until the alias passes real Helm checks.
+No Helm registry credential is required. If synchronization fails, the GitHub Release remains published;
+fix the credential or downstream failure and rerun only the **helm** job. Existing versions are immutable.
+Production checks currently return 404 for the official `/helm/index.yaml` route despite the merged redirects, so installation guides use the verified direct Pages URL until the alias passes real Helm checks.
 
 The `AgentScope Service distribution release` workflow (`service-dist-release.yml`) runs when a main `v*` tag is pushed. First update the root Java revision and Go version constant, complete release validation, and merge the release source and this workflow into `main`. Then create only the main tag from the reviewed commit; for example, after preparing the next version:
 
@@ -196,9 +214,9 @@ git tag -a "$RELEASE_TAG" origin/main -m "$RELEASE_TAG"
 git push origin "$RELEASE_TAG"
 ```
 
-The workflow checks that the tagged commit is on `main`, that Java/Go versions match the tag, and that the Go module major matches. It tests packaging and the CLI commands, builds all four Linux/macOS amd64/arm64 CLI/Runtime Host archives, the Compose and Kubernetes archives, and the standalone Helm Chart. After pushing all four multi-platform images, it attaches these seven archives plus `release-manifest.json`, `images.json` and `SHA256SUMS` to a draft, creates `agentscope-service/service-controlplane/vVERSION` at the exact main-tag commit, then publishes the GitHub Release. Versions containing a prerelease suffix are marked as prereleases. Release notes contain one sentence linking to the official English and Chinese documentation.
+The workflow checks that the tagged commit is on `main`, that Java/Go versions match the tag, and that the Go module major matches. It tests packaging and the CLI commands, builds all four Linux/macOS amd64/arm64 CLI/Runtime Host archives, the Compose and Kubernetes archives, and the standalone Helm Chart. After pushing all five multi-platform images, it attaches these seven archives plus `release-manifest.json`, `images.json` and `SHA256SUMS` to a draft, creates `agentscope-service/service-controlplane/vVERSION` at the exact main-tag commit, then publishes the GitHub Release. Versions containing a prerelease suffix are marked as prereleases. Release notes contain one sentence linking to the official English and Chinese documentation.
 
-Only the GitHub Release publish job needs `contents: write`, using the built-in `GITHUB_TOKEN`; the images job uses the two ACR secrets described in section 5. `SERVICE_IMAGE_REPOSITORY` is an optional repository variable for image references in the packages; it defaults to `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`. This workflow builds and pushes the four images; it does not publish Maven/npm/PyPI packages or update the separate HTTP Helm repository or Homebrew tap. Those channels retain their existing workflows and configuration. The SDK tag workflows also run independently on the main tag.
+Only the GitHub Release publish job needs `contents: write`, using the built-in `GITHUB_TOKEN`; the images job uses the two ACR secrets described in section 5. The following **helm** job uses `HELM_REPOSITORY_TOKEN` as described above. `SERVICE_IMAGE_REPOSITORY` is an optional repository variable for image references in the packages; it defaults to `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`. This workflow builds and pushes the five images and synchronizes the separate HTTP Helm repository. It does not publish Maven/npm/PyPI packages or update the Homebrew tap. Those channels retain their existing workflows and configuration. The SDK tag workflows also run independently on the main tag.
 
 For an existing tag containing this workflow, rerun it without creating another tag:
 
@@ -209,7 +227,7 @@ gh workflow run service-dist-release.yml --repo agentscope-ai/agentscope-java \
 
 Published Releases are left unchanged. Matching Go tags and matching draft assets are reused; a conflicting tag or checksum stops publication without overwriting it. Rerun a failed **publish job** with its original Actions artifacts; rebuilding archives can produce different bytes and is deliberately not allowed to replace existing draft assets. Keep the already published `v2.1.0-BETA1` and its Go tag unchanged; they predate this workflow. New automation applies to future tagged source containing the workflow. Tags created by `GITHUB_TOKEN` do not trigger further push workflows, so the generated Go module tag does not recursively run release jobs. See [GitHub workflow triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 
-The HTTP Helm repository and optional Homebrew tap remain independent publication channels.
+The HTTP Helm repository remains a separate repository, synchronized automatically after Release publication. The optional Homebrew tap still requires manual updates.
 
 Users install CLI and Runtime Host with the `go install` commands in the [Runtime Host guide](https://java.agentscope.io/v2/en/service/runtime-host). The optional public personal tap is [chickenlj/homebrew-tap](https://github.com/chickenlj/homebrew-tap). The formula source is retained under `release/homebrew/agentscope-cli.rb`. For each new CLI release, update all four URLs, their verified SHA-256 values, the formula version and its version assertion, then publish the updated formula to the tap. Existing binary archives remain immutable. A future CI job updating this personal repository from the organization repository needs a separate credential with Contents write permission on the tap; the organization's default `GITHUB_TOKEN` does not grant that access.
 

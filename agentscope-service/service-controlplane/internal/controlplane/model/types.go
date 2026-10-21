@@ -139,6 +139,9 @@ type RuntimeBinding struct {
 // RuntimeDispatchSnapshot freezes the selected backend for one AgentTask
 // dispatch. Registry or Team configuration changes never mutate this record.
 type RuntimeDispatchSnapshot struct {
+	SnapshotCipherVersion         int                       `json:"snapshotCipherVersion,omitempty"`
+	SealedConfiguration           []byte                    `json:"sealedConfiguration,omitempty"`
+	PortalCommandID               string                    `json:"portalCommandId,omitempty"`
 	Definition                    json.RawMessage           `json:"definition,omitempty"`
 	Binding                       RuntimeBinding            `json:"binding"`
 	RuntimeProfile                *RuntimeProfile           `json:"runtimeProfile,omitempty"`
@@ -149,6 +152,7 @@ type RuntimeDispatchSnapshot struct {
 	CandidateIndex                int32                     `json:"candidateIndex,omitempty"`
 	AgentInstanceID               *uuid.UUID                `json:"agentInstanceId,omitempty"`
 	SessionID                     string                    `json:"sessionId,omitempty"`
+	ManagedInput                  string                    `json:"managedInput,omitempty"`
 	Capabilities                  json.RawMessage           `json:"capabilities,omitempty"`
 	SecurityConstraints           json.RawMessage           `json:"securityConstraints,omitempty"`
 	Policy                        json.RawMessage           `json:"policy,omitempty"`
@@ -387,6 +391,7 @@ type ExecutionAttempt struct {
 // OutboxEvent is a durable notification. Delivery is at least once; consumers
 // must deduplicate by ID or DedupeKey.
 type OutboxEvent struct {
+	PortalOwned    bool            `json:"-"`
 	ID             uuid.UUID       `json:"id"`
 	Tenant         string          `json:"tenant"`
 	Namespace      string          `json:"namespace"`

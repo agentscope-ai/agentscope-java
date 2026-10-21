@@ -3,11 +3,38 @@ title: "执行参考：Session、Run 与 Attempt"
 en_link: /v2/en/service/sessions
 ---
 
+当前 Portal 重建版本保留 Managed 完整原生身份，在 Service 私有存储分区中使用
+固定长度键保存日志路径；该版本使用新的运行数据空间。fail-fast Run 先持久化
+原始失败，再分批清理兄弟工作；节点 timeout 也等待自身义务排空。公开 Turn
+终态仍需物理停止证明，之后才释放并发预留。
+
 <Note>
 本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 应用通常从 Agent API 会话、Issue 或Session API 提交工作。本页用于沿业务请求查找 Run、Task、Attempt 和 Session，理解它们的状态与控制接口。执行详情仍受空间、工作自身权限及运维能力约束。
+
+在源码 MQ/Redis 部署中，Managed Console Chat 在第一条消息前注册原生 Session。
+Chat 与 Session 诊断页读取 `/v1/sessions/{id}` 的快照、Turn 和持久游标事件。
+长工具挂起后恢复同一逻辑 Turn，后续 Turn 等待它结束。删除 Chat 要求没有待执行的
+Turn，仅从个人列表移除，原生 Session 与执行记录仍然保留；归档 Chat 可以继续查看。
+
+源码重构版本中的 Managed AgentTask 通过持久 Outbox 派发，每个 Attempt 使用独立原生
+Session。受理响应不确定时，重试复用原始输入与请求键，不创建替代 Attempt。
+控制面查询原生 Turn 状态，取消要等到原生执行确认停止后才结束。私有任务工具凭据在挂起
+与 Resume 后仍绑定当前 Attempt 和 Session，每次调用都检查当前执行与资源授权。
+配置的执行超时先请求原生取消，确认停止后才记录失败。其他调用来源与故障恢复仍在验收中。
+
+单 Agent Managed 任务的终态 MCP 响应丢失后，可在原始原生 Turn 仍活动时只读重试已提交
+结论；不能替换结果或发起新工作。其他外部工具的副作用仍需要各自的幂等与恢复约定。
+
+源码重构版本已删除旧 Managed 的 start、heartbeat 和事件上报回调。公开 Invocation
+结束前还会等待原始原生 Turn 的持久终态；查询失败时保持等待。Hosted 与 External
+继续使用各自的执行与工具确认协议。
+
+共享 Run 诊断中的 Managed 任务进度直接读取原生事件，每个 Attempt 使用独立游标。
+原生 Required Action 的回复与回执重试保留原 Attempt、Turn 和命令身份；取消后的
+Attempt 不会因迟到的工具决定被重新释放。
 
 ## 关联一项工作
 
@@ -182,9 +209,9 @@ curl -sS --fail-with-body -G "$BASE_URL/api/v1/sessions/$DIAGNOSTIC_SESSION_ID" 
 
 ## Managed Session 的日志与恢复入口
 
-Agent API 使用 session_id → turn_id → run_id 关联推理工作；run_id 不是编排 Run ID。GET snapshot 返回已保存的 items/tools/turns/required_actions 与公共 as_of cursor，再从 events/stream 续传。GET turns 按提交返回的 turn ID 查询队列和结果。
+Managed 原生执行使用 `/v1/sessions/{sessionId}`，其中 `turn_id` 标识该 Session 内的工作；内部执行 run 与编排 Run 不同。快照在 `resources` 下返回有界分页，并提供公共 `as_of` 游标。继续订阅 Session 事件流，使用受理时返回的 Turn ID 查询状态。
 
-完整执行历史与 checkpoint 在原生 Session Log；普通客户端读公共投影，授权管理员才能读取 trace/recovery。断线只重连，不再 POST 输入；中断的执行先检查未知工具结果，再按 actions/resume 流程继续。具体位置、HTTP 示例和边界见 [Agent API、会话日志与持久 SSE](/v2/zh/service/session-event-log)。
+完整原生日志和检查点对象属于私有恢复记录。普通调用方读取公共投影及检查点元数据，这里不提供旧的特权 trace/recovery 路由。断线后重连，不另发任务。长工具自动恢复；真实待办通过 Turn Input 答复。当前原生 capabilities 未开放显式失败 Turn resume、checkpoint restore 或 Fork。详见[会话日志与恢复](/v2/zh/service/session-event-log)。
 
 ## 一次排障应记录什么
 

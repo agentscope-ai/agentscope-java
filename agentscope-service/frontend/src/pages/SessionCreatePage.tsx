@@ -58,7 +58,7 @@ export default function SessionCreatePage() {
       .then(list => {
         if (cancelled) return;
         setAgents(list);
-        if (!prefAgentId && list.length === 1) {
+        if (!prefAgentId && list.length === 1 && list[0].runtimeKind === 'managed') {
           setAgentId(list[0].id);
         }
       })
@@ -79,14 +79,14 @@ export default function SessionCreatePage() {
       </button>
       <h1 style={S.title}>New session</h1>
       <p style={S.hint}>
-        Creates a session resource bound to an agent and mounts. No turn starts until you send a
-        message in Chat.
+        Creates a text Session using the selected Managed Agent and Environment. Send a message to
+        start the first Turn.
       </p>
       {loadErr && <div style={S.err}>{loadErr}</div>}
 
       <label style={S.field}>Agent</label>
       <div style={{ marginBottom: 18 }}>
-        <AgentPicker value={agentId} onChange={setAgentId} required aria-label="Session Agent" />
+        <AgentPicker value={agentId} onChange={setAgentId} excludeIds={agents.filter(agent => agent.runtimeKind !== 'managed').map(agent => agent.id)} required aria-label="Session Agent" />
       </div>
 
       {agentId ? (
@@ -104,7 +104,7 @@ export default function SessionCreatePage() {
         </div>
       ) : (
         <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-          Choose an agent to configure environment, vaults, and memory mounts.
+          Choose a Managed Agent, then select its Environment and Session title.
         </div>
       )}
     </div>

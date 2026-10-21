@@ -1,0 +1,2 @@
+DROP INDEX execution_attempts_runtime_state_cursor;
+DROP INDEX agent_tasks_runtime_queue_cursor;

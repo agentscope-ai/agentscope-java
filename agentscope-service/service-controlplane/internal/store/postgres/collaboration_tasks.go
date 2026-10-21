@@ -17,6 +17,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -66,6 +67,10 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 		}
 	}
 	var sourceTaskID = parentTaskID
+	if sourceTaskID == nil && retryOfTaskID != nil {
+		sourceTaskID = retryOfTaskID
+		task.ParentTaskID, task.DelegatedFromTaskID = retryOfTaskID, retryOfTaskID
+	}
 	if triggerCommentID != nil {
 		task.CausationID = triggerCommentID.String()
 		var commentSourceTaskID *uuid.UUID
@@ -111,8 +116,8 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 		if task.TeamID != nil && (sourceTeamID == nil || *task.TeamID != *sourceTeamID) {
 			task.TeamDepth = source.TeamDepth + 1
 		}
-		var runState controlmodel.OrchestrationRunState
-		if err := tx.QueryRow(ctx, `SELECT state FROM orchestration_runs WHERE id=$1`, source.OrchestrationRunID).Scan(&runState); err != nil {
+		runState, err := guardTaskCoordinatorTx(ctx, tx, *sourceTaskID, true)
+		if err != nil {
 			return nil, err
 		}
 		if !controlmodel.IsOrchestrationRunTerminal(runState) {
@@ -232,8 +237,8 @@ func createTaskRunNodeTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Iss
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO orchestration_runs
 		(id,tenant,namespace,root_issue_id,mode,rerun_of_run_id,trigger_type,trigger_ref,state,
-		 version,created_by_type,created_by_ref,started_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10,$11,now())`, task.OrchestrationRunID,
+		 version,created_by_type,created_by_ref,started_at,portal_owned)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10,$11,now(),portal_issue_owned($4))`, task.OrchestrationRunID,
 		issue.Tenant, issue.Namespace, issue.ID, mode, rerunOf, task.TriggerType,
 		task.CausationID, controlmodel.RunRunning, task.Originator.Type, nullStr(task.Originator.Ref))
 	if err != nil {
@@ -243,6 +248,9 @@ func createTaskRunNodeTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Iss
 }
 
 func createTaskNodeTx(ctx context.Context, tx pgx.Tx, task *controlmodel.AgentTask) error {
+	if err := checkRunGraphCapacityTx(ctx, tx, task.OrchestrationRunID, 1, 0); err != nil {
+		return err
+	}
 	task.RunNodeID = uuid.New()
 	nodeType := controlmodel.RunNodeAgent
 	// TeamID records the roster/policy context for both coordinators and workers.
@@ -292,6 +300,27 @@ func appendRunEventTx(ctx context.Context, tx pgx.Tx, event *controlmodel.RunEve
 
 func routeAgentTaskInputTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue,
 	comment *controlmodel.Comment, target store.CommentTarget) (*controlmodel.AgentTask, *controlmodel.AgentTaskInput, bool, error) {
+	// A capacity rejection becomes a blocked route while the surrounding
+	// comment/completion transaction remains valid. Undo continuation effects.
+	if _, err := tx.Exec(ctx, "SAVEPOINT graph_route"); err != nil {
+		return nil, nil, false, err
+	}
+	task, input, coalesced, err := routeAgentTaskInputUncheckedTx(ctx, tx, issue, comment, target)
+	if errors.Is(err, store.ErrResourceLimit) {
+		if _, rollbackErr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT graph_route"); rollbackErr != nil {
+			return nil, nil, false, rollbackErr
+		}
+	}
+	if err == nil || errors.Is(err, store.ErrResourceLimit) {
+		if _, releaseErr := tx.Exec(ctx, "RELEASE SAVEPOINT graph_route"); releaseErr != nil {
+			return nil, nil, false, releaseErr
+		}
+	}
+	return task, input, coalesced, err
+}
+
+func routeAgentTaskInputUncheckedTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue,
+	comment *controlmodel.Comment, target store.CommentTarget) (*controlmodel.AgentTask, *controlmodel.AgentTaskInput, bool, error) {
 	// PostgreSQL text values cannot contain NUL. Length-prefix both variable
 	// components so different Agent/role pairs cannot alias the advisory lock.
 	lockKey := fmt.Sprintf("%s|%d:%s|%d:%s", issue.ID, len(target.AgentRef), target.AgentRef, len(target.TeamRole), target.TeamRole)
@@ -330,25 +359,55 @@ func routeAgentTaskInputTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.I
 			return nil, nil, false, fmt.Errorf("create routed AgentTask: %w", err)
 		}
 	}
+	if _, err = guardTaskCoordinatorTx(ctx, tx, task.ID, false); err != nil {
+		return nil, nil, false, err
+	}
+	// Existing delivery identities remain idempotent even at the limit.
+	existing, err := scanTaskInput(tx.QueryRow(ctx, `SELECT `+taskInputColumns+` FROM agent_task_inputs
+		WHERE task_id=$1 AND comment_id=$2 AND comment_version=$3`, task.ID, comment.ID, comment.Version))
+	if err == nil {
+		return task, existing, coalesced, nil
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return nil, nil, false, err
+	}
+	if err := store.ValidateTaskInputCapacity(controlmodel.AgentTaskInput{Tenant: task.Tenant, Namespace: task.Namespace}); err != nil {
+		return nil, nil, false, err
+	}
 	var sequence int64
 	if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(sequence),0)+1 FROM agent_task_inputs
 		WHERE task_id=$1`, task.ID).Scan(&sequence); err != nil {
 		return nil, nil, false, fmt.Errorf("allocate AgentTask input sequence: %w", err)
 	}
+	if sequence > store.MaxTaskInputs {
+		return nil, nil, false, store.ErrTaskInputCapacity
+	}
+	inputID := uuid.New()
 	input, err := scanTaskInput(tx.QueryRow(ctx, `INSERT INTO agent_task_inputs
 		(id,tenant,namespace,task_id,comment_id,comment_version,sequence,state)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		ON CONFLICT (task_id,comment_id,comment_version) DO UPDATE SET task_id=EXCLUDED.task_id
-		RETURNING `+taskInputColumns, uuid.New(), task.Tenant, task.Namespace, task.ID,
+		RETURNING `+taskInputColumns, inputID, task.Tenant, task.Namespace, task.ID,
 		comment.ID, comment.Version, sequence, controlmodel.TaskInputPlanned))
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("create AgentTask input: %w", err)
 	}
+	// Queue changes participate in Task CAS so retiring an empty duplicate
+	// cannot discard an input that arrived after the preflight snapshot.
+	if coalesced && input.ID == inputID {
+		if err := tx.QueryRow(ctx, `UPDATE agent_tasks SET version=version+1 WHERE id=$1 RETURNING version`, task.ID).Scan(&task.Version); err != nil {
+			return nil, nil, false, err
+		}
+	}
 	return task, input, coalesced, nil
 }
 
+func (r *collaborationRepo) GetAgentTaskWithoutInputs(ctx context.Context, id uuid.UUID) (*controlmodel.AgentTask, error) {
+	return scanAgentTask(r.pool.QueryRow(ctx, `SELECT `+agentTaskColumns+` FROM agent_tasks WHERE id=$1`, id))
+}
+
 func (r *collaborationRepo) GetAgentTask(ctx context.Context, id uuid.UUID) (*controlmodel.AgentTask, error) {
-	task, err := scanAgentTask(r.pool.QueryRow(ctx, `SELECT `+agentTaskColumns+` FROM agent_tasks WHERE id=$1`, id))
+	task, err := r.GetAgentTaskWithoutInputs(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -366,15 +425,23 @@ func (r *collaborationRepo) CreateRunAgentTask(ctx context.Context, req store.Ru
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	state, err := lockCoordinatorRunTx(ctx, tx, req.RunID)
+	if err != nil {
+		return nil, err
+	}
+	if controlmodel.IsOrchestrationRunTerminal(state) {
+		return nil, store.ErrConflict
+	}
 	var tenant, namespace string
 	var nodeRunID uuid.UUID
 	var nodeIssueID *uuid.UUID
-	if err := tx.QueryRow(ctx, `SELECT n.run_id,n.issue_id,r.tenant,r.namespace FROM orchestration_run_nodes n
+	var nodeState controlmodel.RunNodeState
+	if err := tx.QueryRow(ctx, `SELECT n.run_id,n.issue_id,r.tenant,r.namespace,n.state FROM orchestration_run_nodes n
 		JOIN orchestration_runs r ON r.id=n.run_id WHERE n.id=$1 AND r.id=$2 FOR UPDATE OF n,r`,
-		req.NodeID, req.RunID).Scan(&nodeRunID, &nodeIssueID, &tenant, &namespace); err != nil {
+		req.NodeID, req.RunID).Scan(&nodeRunID, &nodeIssueID, &tenant, &namespace, &nodeState); err != nil {
 		return nil, collaborationScanError(err)
 	}
-	if nodeIssueID == nil || *nodeIssueID != req.IssueID || req.AgentRef == "" {
+	if nodeIssueID == nil || *nodeIssueID != req.IssueID || req.AgentRef == "" || controlmodel.IsRunNodeTerminal(nodeState) {
 		return nil, store.ErrConflict
 	}
 	var issuePriorityValue string
@@ -429,25 +496,65 @@ func (r *collaborationRepo) ListAgentTasks(ctx context.Context, filter store.Age
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
+	nodeScope := "AND ($10::uuid=$11::uuid OR run_node_id=$10)"
+	activeScope := "AND (NOT $14 OR status NOT IN ('completed','failed','cancelled'))"
+	if filter.NodeID != uuid.Nil {
+		nodeScope = "AND run_node_id=$10"
+	}
+	if filter.ActiveOnly {
+		activeScope = "AND $14 AND status NOT IN ('completed','failed','cancelled')"
+	}
+	afterScope := "AND ($15::uuid IS NULL OR id>$15)"
+	issueScope := "AND ($3::uuid=$11::uuid OR issue_id=$3)"
+	if filter.IssueID != uuid.Nil {
+		issueScope = "AND issue_id=$3"
+	}
+	order := "priority DESC,created_at,id"
+	if filter.AfterID != nil {
+		afterScope = "AND id>$15"
+		order = "id"
+	}
+	runScope := "AND ($9::uuid=$11::uuid OR orchestration_run_id=$9)"
+	if filter.RunID != uuid.Nil {
+		runScope = "AND orchestration_run_id=$9"
+	}
+	ownerScope := ""
+	if filter.PortalOnly {
+		ownerScope = "AND EXISTS(SELECT 1 FROM orchestration_runs r WHERE r.id=agent_tasks.orchestration_run_id AND r.portal_owned)"
+		if filter.Status == controlmodel.AgentTaskQueued {
+			ownerScope += " AND status='queued'"
+		}
+	}
 	rows, err := r.pool.Query(ctx, `SELECT `+agentTaskColumns+` FROM agent_tasks WHERE
 		($1='' OR tenant=$1) AND ($2='' OR namespace=$2)
-		AND ($3::uuid=$11::uuid OR issue_id=$3) AND ($4='' OR agent_id=$4)
+		`+issueScope+` AND ($4='' OR agent_id=$4)
 		AND ($5::uuid=$11::uuid OR team_id=$5) AND ($6='' OR status=$6)
-		AND ($9::uuid=$11::uuid OR orchestration_run_id=$9)
-		AND ($10::uuid=$11::uuid OR run_node_id=$10)
+		`+runScope+`
+		`+nodeScope+`
+		`+activeScope+`
 		AND (NOT $12 OR issue_access_allowed(issue_id,$13::text[]))
-		ORDER BY priority DESC,created_at LIMIT $7 OFFSET $8`, filter.Tenant,
+		`+afterScope+` `+ownerScope+`
+		ORDER BY `+order+` LIMIT $7 OFFSET $8`, filter.Tenant,
 		filter.Namespace, filter.IssueID, filter.AgentRef, filter.TeamID, filter.Status,
-		limit, maxInt(filter.Offset, 0), filter.RunID, filter.NodeID, uuid.Nil, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
+		limit, maxInt(filter.Offset, 0), filter.RunID, filter.NodeID, uuid.Nil, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs, filter.ActiveOnly, filter.AfterID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := make([]*controlmodel.AgentTask, 0)
+	bytes := 2
 	for rows.Next() {
 		task, err := scanAgentTask(rows)
 		if err != nil {
 			return nil, err
+		}
+		raw, err := json.Marshal(task)
+		if err != nil {
+			return nil, err
+		}
+		bytes += len(raw) + 1
+		if bytes > store.MaxRunGraphBytes {
+			return nil, store.ErrResourceLimit
 		}
 		out = append(out, task)
 	}
@@ -457,12 +564,24 @@ func (r *collaborationRepo) ListAgentTasks(ctx context.Context, filter store.Age
 	// Release the result connection before fetching inputs. Otherwise a small
 	// pool (or concurrent lists consuming every connection) deadlocks here.
 	rows.Close()
+	if filter.OmitInputs {
+		return out, nil
+	}
+	bytes = 2
 	for _, task := range out {
 		inputs, err := listTaskInputs(ctx, r.pool, task.ID)
 		if err != nil {
 			return nil, err
 		}
 		task.Inputs = inputs
+		raw, err := json.Marshal(task)
+		if err != nil {
+			return nil, err
+		}
+		bytes += len(raw) + 1
+		if bytes > store.MaxRunGraphBytes {
+			return nil, store.ErrResourceLimit
+		}
 	}
 	return out, nil
 }
@@ -510,18 +629,41 @@ func (r *collaborationRepo) ClaimAgentTask(ctx context.Context, claim store.Task
 }
 
 func (r *collaborationRepo) AcknowledgeTaskInputs(ctx context.Context, taskID uuid.UUID, inputIDs []uuid.UUID) ([]controlmodel.AgentTaskInput, error) {
+	if err := store.ValidateTaskInputIDs(inputIDs); err != nil {
+		return nil, err
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var id uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT id FROM agent_tasks WHERE id=$1 FOR UPDATE`, taskID).Scan(&id); err != nil {
+		return nil, collaborationScanError(err)
+	}
 	if len(inputIDs) > 0 {
-		if _, err := r.pool.Exec(ctx, `UPDATE agent_task_inputs SET state=$2,
+		if _, err := tx.Exec(ctx, `UPDATE agent_task_inputs SET state=$2,
 			acknowledged_at=now() WHERE task_id=$1 AND id=ANY($3::uuid[])
 			AND state IN ($4,$2)`, taskID, controlmodel.TaskInputAcknowledged,
 			inputIDs, controlmodel.TaskInputDelivered); err != nil {
 			return nil, err
 		}
 	}
-	return listTaskInputs(ctx, r.pool, taskID)
+	inputs, err := listTaskInputs(ctx, tx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return inputs, nil
 }
 
 func (r *collaborationRepo) FailTaskInputDelivery(ctx context.Context, taskID uuid.UUID, inputIDs []uuid.UUID, message string, maxAttempts int) ([]controlmodel.AgentTaskInput, error) {
+	if err := store.ValidateTaskInputIDs(inputIDs); err != nil {
+		return nil, err
+	}
+	message = store.TaskInputErrorSummary(message)
 	if maxAttempts <= 0 {
 		maxAttempts = 5
 	}
@@ -546,7 +688,15 @@ func (r *collaborationRepo) FailTaskInputDelivery(ctx context.Context, taskID uu
 			rows.Close()
 			return nil, scanErr
 		}
+		if err := store.ValidateTaskInputCapacity(*input); err != nil {
+			rows.Close()
+			return nil, err
+		}
 		selected = append(selected, input)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
 	}
 	rows.Close()
 	for _, input := range selected {
@@ -579,13 +729,20 @@ func (r *collaborationRepo) FailTaskInputDelivery(ctx context.Context, taskID uu
 			}
 		}
 	}
+	inputs, err := listTaskInputs(ctx, tx, taskID)
+	if err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return listTaskInputs(ctx, r.pool, taskID)
+	return inputs, nil
 }
 
 func (r *collaborationRepo) ReplayDeadLetterInputs(ctx context.Context, taskID uuid.UUID, inputIDs []uuid.UUID, actor controlmodel.Actor) (*controlmodel.AgentTask, error) {
+	if err := store.ValidateTaskInputIDs(inputIDs); err != nil {
+		return nil, err
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -603,6 +760,9 @@ func (r *collaborationRepo) ReplayDeadLetterInputs(ctx context.Context, taskID u
 	if count == 0 {
 		return nil, store.ErrConflict
 	}
+	if err := store.ValidateTaskInputCapacity(controlmodel.AgentTaskInput{Tenant: source.Tenant, Namespace: source.Namespace}); err != nil {
+		return nil, err
+	}
 	issue, err := scanIssue(tx.QueryRow(ctx, `SELECT `+issueColumns+` FROM issues WHERE id=$1`, source.IssueID))
 	if err != nil {
 		return nil, err
@@ -617,7 +777,7 @@ func (r *collaborationRepo) ReplayDeadLetterInputs(ctx context.Context, taskID u
 	if _, err := tx.Exec(ctx, `INSERT INTO agent_task_inputs
 		(id,tenant,namespace,task_id,comment_id,comment_version,sequence,state)
 		SELECT gen_random_uuid(),tenant,namespace,$3,comment_id,comment_version,
-		row_number() OVER (ORDER BY sequence),$4 FROM agent_task_inputs
+		row_number() OVER (ORDER BY sequence,id),$4 FROM agent_task_inputs
 		WHERE task_id=$1 AND id=ANY($2::uuid[]) AND state=$5`, taskID, inputIDs,
 		replay.ID, controlmodel.TaskInputPlanned, controlmodel.TaskInputDeadLetter); err != nil {
 		return nil, err
@@ -635,39 +795,52 @@ func minIntPG(a, b int) int {
 	return b
 }
 
-func (r *collaborationRepo) RequeueRetryableInputs(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
+func (r *collaborationRepo) RequeueRetryableInputs(ctx context.Context, now time.Time, limit int, portalOnly bool) ([]uuid.UUID, error) {
 	if limit <= 0 {
 		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	rows, err := tx.Query(ctx, `SELECT task_id FROM agent_task_inputs
-		WHERE state=$1 AND next_attempt_at<=$2 ORDER BY next_attempt_at,id LIMIT $3 FOR UPDATE SKIP LOCKED`,
+	ownerScope := ""
+	if portalOnly {
+		ownerScope = " AND EXISTS(SELECT 1 FROM agent_tasks t JOIN orchestration_runs r ON r.id=t.orchestration_run_id WHERE t.id=agent_task_inputs.task_id AND r.portal_owned)"
+	}
+	rows, err := tx.Query(ctx, `SELECT id,task_id FROM agent_task_inputs
+		WHERE state='retrying' AND state=$1 AND next_attempt_at<=$2 `+ownerScope+` ORDER BY next_attempt_at,id LIMIT $3 FOR UPDATE SKIP LOCKED`,
 		controlmodel.TaskInputRetrying, now, limit)
 	if err != nil {
 		return nil, err
 	}
 	ids := make([]uuid.UUID, 0)
+	inputIDs := make([]uuid.UUID, 0, limit)
 	seen := map[uuid.UUID]bool{}
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		var id, inputID uuid.UUID
+		if err := rows.Scan(&inputID, &id); err != nil {
 			rows.Close()
 			return nil, err
 		}
+		inputIDs = append(inputIDs, inputID)
 		if !seen[id] {
 			seen[id] = true
 			ids = append(ids, id)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
 	rows.Close()
 	if len(ids) > 0 {
 		if _, err := tx.Exec(ctx, `UPDATE agent_task_inputs SET state=$1,next_attempt_at=NULL
-			WHERE task_id=ANY($2::uuid[]) AND state=$3 AND next_attempt_at<=$4`,
-			controlmodel.TaskInputPlanned, ids, controlmodel.TaskInputRetrying, now); err != nil {
+			WHERE id=ANY($2::uuid[]) AND state=$3 AND next_attempt_at<=$4`,
+			controlmodel.TaskInputPlanned, inputIDs, controlmodel.TaskInputRetrying, now); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE agent_tasks SET status=$1,version=version+1,dispatched_at=NULL
@@ -713,7 +886,9 @@ func (r *collaborationRepo) StartAgentTask(ctx context.Context, id uuid.UUID, ex
 			return nil, store.ErrConflict
 		}
 		if _, err = tx.Exec(ctx, `UPDATE execution_attempts SET state=$2,version=version+1,updated_at=now(),
-			started_at=COALESCE(started_at,now()),heartbeat_at=now() WHERE id=$1`, attempt.ID, controlmodel.ExecutionRunning); err != nil {
+			started_at=COALESCE(started_at,now()),
+			heartbeat_at=CASE WHEN backend_kind=$3 THEN heartbeat_at ELSE now() END
+			WHERE id=$1`, attempt.ID, controlmodel.ExecutionRunning, controlmodel.DataPlaneManaged); err != nil {
 			return nil, err
 		}
 		if err = appendRunEventTx(ctx, tx, &controlmodel.RunEvent{RunID: task.OrchestrationRunID,
@@ -784,6 +959,9 @@ func startIssueForAgentTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 }
 
 func (r *collaborationRepo) CompleteAgentTask(ctx context.Context, id uuid.UUID, completion store.TaskCompletion) (*controlmodel.AgentTask, error) {
+	if err := store.ValidateTaskInputIDs(completion.ProcessedInputIDs, completion.DeferredInputIDs); err != nil {
+		return nil, err
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -796,6 +974,9 @@ func (r *collaborationRepo) CompleteAgentTask(ctx context.Context, id uuid.UUID,
 	}
 	if completion.ExpectedVersion > 0 && task.Version != completion.ExpectedVersion || !controlmodel.CanTransitionAgentTask(task.Status, controlmodel.AgentTaskCompleted) {
 		return nil, store.ErrConflict
+	}
+	if err = acceptCoordinatorIntentTx(ctx, tx, task, completion); err != nil {
+		return nil, err
 	}
 	var attempt *controlmodel.ExecutionAttempt
 	if task.CurrentAttemptID != nil {
@@ -916,6 +1097,15 @@ func (r *collaborationRepo) RetryAgentTask(ctx context.Context, id uuid.UUID, ac
 	if failed.Status != controlmodel.AgentTaskFailed {
 		return nil, store.ErrConflict
 	}
+	inputs, err := listTaskInputs(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	for _, input := range inputs {
+		if err := store.ValidateTaskInputCapacity(input); err != nil {
+			return nil, err
+		}
+	}
 	issue, err := scanIssue(tx.QueryRow(ctx, `SELECT `+issueColumns+` FROM issues WHERE id=$1`, failed.IssueID))
 	if err != nil {
 		return nil, err
@@ -929,8 +1119,8 @@ func (r *collaborationRepo) RetryAgentTask(ctx context.Context, id uuid.UUID, ac
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO agent_task_inputs
 		(id,tenant,namespace,task_id,comment_id,comment_version,sequence,state)
-		SELECT gen_random_uuid(),tenant,namespace,$2,comment_id,comment_version,sequence,$3
-		FROM agent_task_inputs WHERE task_id=$1 ORDER BY sequence`, id, retry.ID,
+		SELECT gen_random_uuid(),tenant,namespace,$2,comment_id,comment_version,row_number() OVER (ORDER BY sequence,id),$3
+		FROM agent_task_inputs WHERE task_id=$1 ORDER BY sequence,id`, id, retry.ID,
 		controlmodel.TaskInputPlanned); err != nil {
 		return nil, err
 	}
@@ -1007,16 +1197,25 @@ type taskInputQuerier interface {
 
 func listTaskInputs(ctx context.Context, q taskInputQuerier, taskID uuid.UUID) ([]controlmodel.AgentTaskInput, error) {
 	rows, err := q.Query(ctx, `SELECT `+taskInputColumns+` FROM agent_task_inputs
-		WHERE task_id=$1 ORDER BY sequence,id`, taskID)
+		WHERE task_id=$1 ORDER BY sequence,id LIMIT $2`, taskID, store.MaxTaskInputs+1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := make([]controlmodel.AgentTaskInput, 0)
+	bytes := 2
 	for rows.Next() {
 		input, err := scanTaskInput(rows)
 		if err != nil {
 			return nil, err
+		}
+		raw, err := json.Marshal(input)
+		if err != nil {
+			return nil, err
+		}
+		bytes += len(raw) + 1
+		if len(out) >= store.MaxTaskInputs || bytes > store.MaxRunGraphBytes {
+			return nil, store.ErrTaskInputCapacity
 		}
 		out = append(out, *input)
 	}

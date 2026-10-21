@@ -169,3 +169,32 @@ func TestChecklistUpdateUsesLeaderScopeAndPreservesRequirements(t *testing.T) {
 		t.Fatal("root summary omitted lead replacement or partial result")
 	}
 }
+
+func TestCoordinatorSummaryCapacityPublishesExplicitDetailReference(t *testing.T) {
+	for _, size := range []int{store.MaxRunGraphBytes - 32, store.MaxCommentBodyBytes + 4096} {
+		svc, root, task := outcomeLeader(t)
+		run, err := svc.Store.Orchestration().GetRun(t.Context(), task.OrchestrationRunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		output, _ := json.Marshal(strings.Repeat("x", size))
+		if err = svc.PublishCoordinatorSummary(t.Context(), run, task, output, "", ""); err != nil {
+			t.Fatal("summary prevented convergence", err)
+		}
+		comments, err := svc.Store.Collaboration().ListComments(t.Context(), root.ID, store.CommentListOptions{Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(comments) != 1 || comments[0].Type != controlmodel.CommentStatus || comments[0].Author.Type != controlmodel.ActorSystem || !strings.Contains(comments[0].Content, "不包含完整交付正文") || !strings.Contains(comments[0].Content, run.ID.String()) || len(comments[0].Content) > 4096 || strings.Contains(comments[0].Content, strings.Repeat("x", 100)) {
+			t.Fatal("unlabelled partial delivery", comments)
+		}
+		// The same final identity must not create a duplicate status on recovery.
+		if err = svc.PublishCoordinatorSummary(t.Context(), run, task, output, "", ""); err != nil {
+			t.Fatal(err)
+		}
+		comments, err = svc.Store.Collaboration().ListComments(t.Context(), root.ID, store.CommentListOptions{Limit: 10})
+		if err != nil || len(comments) != 1 {
+			t.Fatal("duplicate reference summary", len(comments), err)
+		}
+	}
+}

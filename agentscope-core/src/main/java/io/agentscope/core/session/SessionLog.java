@@ -16,7 +16,10 @@
 package io.agentscope.core.session;
 
 import java.time.Duration;
+import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.function.BiFunction;
 
 /** Blocking persistence SPI; runtime integration schedules it on boundedElastic. */
 public interface SessionLog {
@@ -40,16 +43,40 @@ public interface SessionLog {
 
     /** Stable-prefix scan. Implementations can avoid repeatedly traversing a commit chain. */
     default Iterable<SessionEvent> scan(long after, long through) {
+        return scanRange(after, through, this::readAfter);
+    }
+
+    /**
+     * Reads event envelopes and ordinary payloads without loading external state bodies. Backends
+     * that externalize state may return references for those bodies; use {@link #materialize} when
+     * a consumer needs the original payload. Existing backends return their ordinary events.
+     */
+    default List<SessionEvent> readMetadataAfter(long after, int limit) {
+        return readAfter(after, limit);
+    }
+
+    /** Scans the same stable prefix as {@link #scan}, retaining events whose state is external. */
+    default Iterable<SessionEvent> scanMetadata(long after, long through) {
+        return scanRange(after, through, this::readMetadataAfter);
+    }
+
+    /** Resolves and validates an external state body without changing the event's identity. */
+    default SessionEvent materialize(SessionEvent event) {
+        return event;
+    }
+
+    private static Iterable<SessionEvent> scanRange(
+            long after, long through, BiFunction<Long, Integer, List<SessionEvent>> read) {
         return () ->
-                new java.util.Iterator<SessionEvent>() {
+                new Iterator<SessionEvent>() {
                     long cursor = after;
-                    java.util.Iterator<SessionEvent> batch = List.<SessionEvent>of().iterator();
+                    Iterator<SessionEvent> batch = List.<SessionEvent>of().iterator();
 
                     public boolean hasNext() {
                         if (cursor >= through) return false;
                         if (!batch.hasNext())
                             batch =
-                                    readAfter(cursor, (int) Math.min(256, through - cursor))
+                                    read.apply(cursor, (int) Math.min(256, through - cursor))
                                             .iterator();
                         if (!batch.hasNext())
                             throw new SessionLogException("Missing committed prefix");
@@ -57,7 +84,7 @@ public interface SessionLog {
                     }
 
                     public SessionEvent next() {
-                        if (!hasNext()) throw new java.util.NoSuchElementException();
+                        if (!hasNext()) throw new NoSuchElementException();
                         var event = batch.next();
                         cursor = event.seq();
                         return event;

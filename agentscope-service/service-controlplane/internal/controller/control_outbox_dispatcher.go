@@ -52,6 +52,7 @@ type ControlOutboxDispatcher struct {
 	ClaimTTL   time.Duration
 	Batch      int
 	MaxBackoff time.Duration
+	PortalOnly bool
 }
 
 func (d *ControlOutboxDispatcher) Start(ctx context.Context) error {
@@ -88,7 +89,11 @@ func (d *ControlOutboxDispatcher) DispatchOnce(ctx context.Context, now time.Tim
 	if batch <= 0 {
 		batch = 100
 	}
-	events, err := d.Store.Outbox().Claim(ctx, d.WorkerID, now, lease, batch)
+	claim := d.Store.Outbox().Claim
+	if d.PortalOnly {
+		claim = d.Store.Outbox().ClaimPortalRuntime
+	}
+	events, err := claim(ctx, d.WorkerID, now, lease, batch)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "claiming control outbox")
 		return
@@ -139,6 +144,7 @@ type CollaborationOutboxHandler struct {
 	Store                    store.Store
 	Sink                     CollaborationEventSink
 	DispatchAgentTask        func(context.Context, uuid.UUID) error
+	DispatchManagedAttempt   func(context.Context, uuid.UUID) error
 	DispatchApprovalDecision func(context.Context, uuid.UUID) error
 	DispatchManagedAbort     func(context.Context, uuid.UUID) error
 	ReconcileRun             func(context.Context, uuid.UUID) error
@@ -192,6 +198,30 @@ func (h *CollaborationOutboxHandler) HandleControlEvent(ctx context.Context, eve
 			// A process may have stopped after dispatch committed but before the
 			// diagnostic was appended or the outbox event was acknowledged.
 			h.recordDispatchRecovered(ctx, task, event)
+		}
+	}
+	if event.EventType == "agent-task.dispatched.v1" {
+		var dispatched controlmodel.AgentTask
+		if err := json.Unmarshal(event.Payload, &dispatched); err != nil {
+			return err
+		}
+		if dispatched.ID.String() != event.AggregateID || dispatched.CurrentAttemptID == nil || h.Store == nil {
+			return errors.New("invalid dispatched AgentTask receipt")
+		}
+		attempt, err := h.Store.ExecutionAttempts().Get(ctx, *dispatched.CurrentAttemptID)
+		if err != nil {
+			return err
+		}
+		if attempt.AgentTaskID != dispatched.ID {
+			return errors.New("dispatched Attempt does not belong to AgentTask")
+		}
+		if attempt.BackendKind == controlmodel.DataPlaneManaged {
+			if h.DispatchManagedAttempt == nil {
+				return errors.New("Managed Attempt dispatcher is unavailable")
+			}
+			if err = h.DispatchManagedAttempt(ctx, attempt.ID); err != nil {
+				return fmt.Errorf("%w: %v", ErrControlEventDeferred, err)
+			}
 		}
 	}
 	if event.EventType == "approval.decided.v1" {

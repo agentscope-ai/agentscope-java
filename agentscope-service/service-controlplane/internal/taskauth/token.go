@@ -35,10 +35,13 @@ type Manager struct {
 }
 
 type Claims struct {
-	TaskID     uuid.UUID
-	AttemptID  uuid.UUID
-	Generation int64
-	ExpiresAt  time.Time
+	TaskID           uuid.UUID
+	AttemptID        uuid.UUID
+	Generation       int64
+	Fence            int64
+	HostID           uuid.UUID
+	ExpiresAt        time.Time
+	ManagedSessionID uuid.UUID
 }
 
 // AttemptClaims are backend-scoped reporting credentials. They intentionally
@@ -73,6 +76,36 @@ func (m Manager) MintScoped(taskID, attemptID uuid.UUID, generation int64, now t
 		base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
+// MintManaged binds a private workload credential to a native Attempt's lifetime.
+// Verification of its signature is not authorization: callers must also check
+// the current Task, Session, native execution and resource grants on every use.
+func (m Manager) MintManaged(taskID, attemptID uuid.UUID, generation int64, sessionID uuid.UUID) (string, error) {
+	if taskID == uuid.Nil || attemptID == uuid.Nil || sessionID == uuid.Nil || generation <= 0 || len(m.Secret) < 16 {
+		return "", fmt.Errorf("Managed task credential requires task, attempt, generation, session and secret")
+	}
+	payload := "managed1." + taskID.String() + "." + attemptID.String() + "." + strconv.FormatInt(generation, 10) + "." + sessionID.String()
+	mac := hmac.New(sha256.New, m.Secret)
+	_, _ = mac.Write([]byte(payload))
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
+
+// MintFenced binds Hosted collaboration authority to one physical lease. A
+// newer owner can reuse an Attempt ID, but cannot reuse the old host's token.
+func (m Manager) MintFenced(taskID, attemptID uuid.UUID, generation, fence int64, hostID uuid.UUID, now time.Time) (string, error) {
+	if taskID == uuid.Nil || attemptID == uuid.Nil || hostID == uuid.Nil || generation <= 0 || fence <= 0 || len(m.Secret) < 16 {
+		return "", fmt.Errorf("fenced task token requires task, attempt, generation, lease fence and host")
+	}
+	ttl := m.TTL
+	if ttl <= 0 {
+		ttl = time.Hour
+	}
+	payload := "task2." + taskID.String() + "." + attemptID.String() + "." + strconv.FormatInt(generation, 10) + "." +
+		strconv.FormatInt(fence, 10) + "." + hostID.String() + "." + strconv.FormatInt(now.Add(ttl).Unix(), 10)
+	mac := hmac.New(sha256.New, m.Secret)
+	_, _ = mac.Write([]byte(payload))
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
+
 func (m Manager) Verify(token string, taskID uuid.UUID, now time.Time) error {
 	actual, err := m.VerifyAndExtract(token, now)
 	if err != nil {
@@ -89,6 +122,9 @@ func (m Manager) VerifyAndExtract(token string, now time.Time) (uuid.UUID, error
 	if err != nil {
 		return uuid.Nil, err
 	}
+	if claims.ManagedSessionID != uuid.Nil {
+		return uuid.Nil, fmt.Errorf("Managed credential requires native execution authorization")
+	}
 	return claims.TaskID, nil
 }
 
@@ -103,7 +139,11 @@ func (m Manager) VerifyClaims(token string, now time.Time) (Claims, error) {
 	}
 	payload := string(payloadBytes)
 	payloadParts := strings.Split(payload, ".")
-	if len(payloadParts) != 4 {
+	fenced := len(payloadParts) == 7 && payloadParts[0] == "task2"
+	managed := len(payloadParts) == 5 && payloadParts[0] == "managed1"
+	if fenced || managed {
+		payloadParts = payloadParts[1:]
+	} else if len(payloadParts) != 4 {
 		return Claims{}, fmt.Errorf("invalid task token")
 	}
 	taskID, err := uuid.Parse(payloadParts[0])
@@ -118,9 +158,13 @@ func (m Manager) VerifyClaims(token string, now time.Time) (Claims, error) {
 	if err != nil {
 		return Claims{}, fmt.Errorf("invalid task token")
 	}
-	expires, err := strconv.ParseInt(payloadParts[3], 10, 64)
-	if err != nil || !now.Before(time.Unix(expires, 0)) {
-		return Claims{}, fmt.Errorf("task token expired")
+	var expiresAt time.Time
+	if !managed {
+		expires, e := strconv.ParseInt(payloadParts[len(payloadParts)-1], 10, 64)
+		if e != nil || !now.Before(time.Unix(expires, 0)) {
+			return Claims{}, fmt.Errorf("task token expired")
+		}
+		expiresAt = time.Unix(expires, 0)
 	}
 	want, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
@@ -131,8 +175,24 @@ func (m Manager) VerifyClaims(token string, now time.Time) (Claims, error) {
 	if !hmac.Equal(want, mac.Sum(nil)) {
 		return Claims{}, fmt.Errorf("invalid task token")
 	}
-	return Claims{TaskID: taskID, AttemptID: attemptID, Generation: generation,
-		ExpiresAt: time.Unix(expires, 0)}, nil
+	claims := Claims{TaskID: taskID, AttemptID: attemptID, Generation: generation, ExpiresAt: expiresAt}
+	if managed {
+		claims.ManagedSessionID, err = uuid.Parse(payloadParts[3])
+		if err != nil || claims.ManagedSessionID == uuid.Nil || taskID == uuid.Nil || attemptID == uuid.Nil || generation <= 0 {
+			return Claims{}, fmt.Errorf("invalid Managed task credential")
+		}
+	}
+	if fenced {
+		claims.Fence, err = strconv.ParseInt(payloadParts[3], 10, 64)
+		if err != nil || claims.Fence <= 0 || generation <= 0 || attemptID == uuid.Nil {
+			return Claims{}, fmt.Errorf("invalid task lease fence")
+		}
+		claims.HostID, err = uuid.Parse(payloadParts[4])
+		if err != nil || claims.HostID == uuid.Nil {
+			return Claims{}, fmt.Errorf("invalid task lease host")
+		}
+	}
+	return claims, nil
 }
 
 // MintAttempt binds reporting authority to one immutable backend target and

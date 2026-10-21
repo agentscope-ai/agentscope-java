@@ -46,11 +46,22 @@ Set `AGENTSCOPE_APPROVER_USER_ID` to a real platform user ID to append a Workflo
 ```bash
 export AGENTSCOPE_PLATFORM_TOKEN='DESIGNATED_APPROVER_PLATFORM_TOKEN'
 python client.py --target workflow --session SESSION_ID --turn TURN_ID --human \
-  --request-id REQUEST_ID --expected-version 1 --decision approved \
+  --request-id REQUEST_ID --decision approved \
   --response '{"reason":"Reviewed"}' --key approval-001
 ```
 
-Copy the actual version from the snapshot. Native Managed tool confirmations use `--response '{"allow":true,"reason":"Reviewed"}'`; external tool results use `--response '{"output":"result","is_error":false}'`. Only an authorized owner or delegated approver can confirm them. Workflow signals use the same request/version envelope with business JSON in `--response` and no decision.
+Read pending actions from `snapshot["resources"]["required_actions"]["data"]` and use their
+`data.request_id`. All backends use `{"answers":[...]}`. Confirmations use
+`--decision approved --response '{"reason":"Reviewed"}'`; external tool results use
+`--response '{"output":"result","is_error":false}'`. Workflow signals use
+`--response '{"value":{"business":"data"}}'` without a decision. The original caller must
+hold the action's permission; use the designated user's platform token for a human confirmation.
+Commands return `command_id` or `input_id`, `status` (`queued` or `runtime_accepted`), and a separate
+native `command_status` or `input_status`. Follow `--command-id` to read the Session command route.
+Snapshot pages contain a stable `as_of`, `snapshot_id` and per-resource `next_cursor`; fetch additional
+pages with `client.resources(...)`, then resume SSE from the snapshot cursor. Command support is
+reported by `turn_capabilities`; requesting an unavailable operation does not create a new Turn.
+
 
 ## Connect real async frameworks
 

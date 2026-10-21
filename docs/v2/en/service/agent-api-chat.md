@@ -6,19 +6,17 @@ zh_link: /v2/zh/service/agent-api-chat
 
 This example connects a Managed notes assistant to a business chat page. After a user submits a task, the page shows the Agent's replies and tool calls. When execution requires confirmation, the page lets the user inspect the request and decide. Returning to the conversation restores saved messages, tool results, and pending actions before following further progress.
 
-This example uses the same interface introduced in [Integrate applications with the Session API](/v2/en/service/service-api). It selects a Managed Agent to demonstrate continuous conversation and interaction during execution. Teams, Workflows, and other Agent types use the same entry point to create Sessions and submit Turns; the target's capabilities determine which content and controls an application can provide.
+This example uses the native Managed `/v1/sessions` API. It pins one Managed Agent and its Environment; see [Managed Session, Turn and Input API](/v2/en/service/claude-session-api) for the contract. Other execution backends use their own admission and cursor protocols.
 
 First, [create a Managed Agent](/v2/en/service/create-managed-agent), configure its model and Environment, and verify that it can answer. To try tool calls, bind usable tools following the [Tools guide](/v2/en/service/tools). For user confirmation, also set the relevant tool's `permissionPolicy.type` to `always_ask`. Without tools, you can still start with text conversation and refresh recovery.
 
 ## 1. Create a session and submit work
 
-Use curl and jq in local development mode without authentication headers. Substitute actual resource IDs; omit `environmentId` if the Agent has a default Environment. Local Gateway defaults to port 18080. See [production deployment](/v2/en/service/kubernetes#production-api-access) for identities.
+Use curl and jq in local development mode without authentication headers. Substitute actual resource IDs; omit `environment_id` if the Agent has a default Environment. Local Gateway defaults to port 18080. See [production deployment](/v2/en/service/kubernetes#production-api-access) for identities.
 
 ```bash
 set -euo pipefail
 export BASE_URL="http://localhost:18080"
-export TENANT="default"
-export NAMESPACE="default"
 export AGENT_ID="YOUR_MANAGED_AGENT_ID"
 export ENVIRONMENT_ID="YOUR_ENVIRONMENT_ID"
 ```
@@ -27,21 +25,18 @@ Create the conversation’s Session:
 
 ```bash
 SESSION_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+  curl -sS --fail-with-body "$BASE_URL/v1/sessions" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: notes-session-001" \
     --data-binary @- <<JSON
 {
-  "target": {
-    "type": "agent",
-    "id": "$AGENT_ID"
-  },
-  "environmentId": "$ENVIRONMENT_ID"
+  "agent": "$AGENT_ID",
+  "environment_id": "$ENVIRONMENT_ID"
 }
 JSON
 )
 SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
-SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+SESSION_URL="$BASE_URL/v1/sessions/$SESSION_ID"
 ```
 
 Submit the first question:
@@ -54,7 +49,7 @@ TURN_JSON=$(
     -H "Idempotency-Key: $TURN_KEY" \
     --data-binary @- <<'JSON'
 {
-  "message": "Organize meeting actions: Alex finishes the installation guide Friday. Review is Monday; time unconfirmed. List the information still needed."
+  "input": {"message": "Organize meeting actions: Alex finishes the installation guide Friday. Review is Monday; time unconfirmed. List the information still needed."}
 }
 JSON
 )
@@ -71,7 +66,7 @@ The two example idempotency keys identify Session creation and task submission s
 SNAPSHOT=$(
   curl -sS --fail-with-body "$SESSION_URL/snapshot"
 )
-jq '{items, tools, turns, required_actions}' <<< "$SNAPSHOT"
+jq '{snapshot_id, as_of, resources}' <<< "$SNAPSHOT"
 CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
 ```
 
@@ -88,6 +83,8 @@ A Session SSE connection can stay open across multiple Turns, so closing it does
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
 ```
+
+The HTTP snapshot contains bounded pages under `resources.<kind>.data`. Continue every needed page with the same `snapshot_id` through `/resources/{kind}`. The Console helper below flattens these first pages into its own view type; its `snapshot.items` is not the raw HTTP shape.
 
 ## 3. Connect your page
 
@@ -153,131 +150,62 @@ The client reconnects brief network interruptions from the last successfully app
 
 Refresh can occur while tool arguments are still being generated. The reducer uses snapshot's active_tool_call_id to attach later fragments without a call ID. A task can produce multiple assistant items and tool calls; do not append every delta to the last message.
 
-## 4. Wire user actions to commands
+## 4. Submit interactions as Turn Inputs
 
-The following table connects chat page actions to the Session API. Paths are relative to `SESSION_URL`. Use Session, Turn, and request IDs returned by the service to identify existing work; Service manages the execution process.
+Read `$SESSION_URL/turns/$TURN_ID/capabilities` and the Turn's `inputs_open` before displaying controls. The native API accepts all four interaction types through the same route:
 
-Read current Turn capabilities before displaying controls. Choose the following operations according to user intent rather than running them in sequence:
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities"
-```
-
-| Button / scenario | Request | Next step |
+| User intent | Input body | What confirms application |
 | --- | --- | --- |
-| Send a new question | POST `/turns`, `{message}` | New turn and key, same session stream |
-| Correct the current task | POST `/turns/{turn}/steer`, `{message}` | Wait for input.applied; reload task state after 409 |
-| Add context only | POST `/inputs/inject`, `{message}` | Does not wake an idle Agent; later steps consume it |
-| Allow / deny a tool | POST `/turns/{turn}/actions` | Build an answer for the pending action; follow command status and action changes |
-| Stop | POST `/turns/{turn}/cancel` | Wait for the explicit turn outcome; cancel_requested is not stopped |
-| Continue interrupted work | POST `/turns/{turn}/resume` | Resolve pending actions/unknown tool results first; same turn, possibly a new run |
+| Correct the current task | `{"type":"steer","payload":{"message":"New requirement"}}` | Input receipt reaches `applied` |
+| Add context to this Turn | `{"type":"inject","payload":{"message":"Additional context"}}` | Input is applied at a safe boundary or explicitly rejected |
+| Answer a required action | `{"type":"reply","action_id":"REQUEST_ID","payload":{...}}` | Reply is applied and the action is resolved |
+| Stop the current task | `{"type":"cancel","payload":{}}` | The Turn reaches its actual terminal state |
+| Ask a new question | Submit another `POST /turns` with `{"input":{"message":"Next question"}}` | A new Turn is admitted in the same Session |
 
-<AccordionGroup>
-
-<Accordion title="Correct requirements or add context">
-
-Correct a running task:
+For example, correct an open Turn and retain its Input receipt:
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/steer" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: notes-correction-001" \
-  --data-binary @- <<'JSON'
-{
-  "message": "List open questions first; do not write files yet."
-}
-JSON
-```
-
-Save context without starting inference:
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/inputs/inject" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: notes-context-001" \
-  --data-binary @- <<'JSON'
-{
-  "message": "Additional context: the installation guide maintainer also joins the review."
-}
-JSON
-```
-
-</Accordion>
-
-<Accordion title="Stop the current task">
-
-```bash
-CANCEL_JSON=$(
-  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/cancel" \
-    -H "Idempotency-Key: notes-cancel-001"
+INPUT_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notes-correction-001" \
+    --data-binary '{"type":"steer","payload":{"message":"List open questions first; do not write files yet."}}'
 )
-CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
+INPUT_ID=$(jq -er '.id' <<< "$INPUT_JSON")
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs/$INPUT_ID"
 ```
 
-Read the cancellation command, then the Turn state to confirm termination:
+`accepted` means durable admission, and `delivery_status=delivered` is transport progress. Only `status=applied` confirms runtime application. A rejected Input retains a reason. Reuse the same key and body after a timeout. A new intent requires a new key. Inputs do not create another Turn, and steering cannot alter a model request already sent.
+
+Read `resources.required_actions.data` from the snapshot. After the user chooses a response, use that card's actual `data.request_id` as `action_id`:
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$CANCEL_COMMAND_ID"
+ACTION_ID="REQUEST_ID_FROM_PENDING_ACTION"
+REPLY_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notes-answer-001" \
+    --data-binary @- <<JSON
+{"type":"reply","action_id":"$ACTION_ID","payload":{"allow":true,"reason":"Confirmed by the user"}}
+JSON
+)
+REPLY_ID=$(jq -er '.id' <<< "$REPLY_JSON")
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs/$REPLY_ID"
 ```
 
+A confirmation uses `allow`; a request for external execution uses actual `content` and `is_error`, as described in [required action replies](/v2/en/service/session-event-log#answer-a-required-action). Answering does not establish completion; continue observing the same Turn. General external-result and persistent input-wait acceptance remains part of the ongoing migration.
+
+Cancellation uses the same endpoint:
+
 ```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: notes-cancel-001" \
+  --data-binary '{"type":"cancel","payload":{}}'
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
 ```
 
-</Accordion>
-
-<Accordion title="Continue resumable work">
-
-Resume only when `available_commands` includes `resume` and pending actions and uncertain tool results are resolved:
-
-```bash
-RESUME_JSON=$(
-  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/resume" \
-    -H "Idempotency-Key: notes-resume-001"
-)
-RESUME_COMMAND_ID=$(jq -er '.command.id' <<< "$RESUME_JSON")
-```
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$RESUME_COMMAND_ID"
-```
-
-</Accordion>
-
-</AccordionGroup>
-
-Provide a stable `Idempotency-Key` when creating a Turn, changing requirements, adding context, or answering a pending action. The example below submits confirmation after the user inspects the tool request and chooses “Allow”. `REQUEST_ID` must come from the pending card's `request_id`; a tool call ID cannot replace it:
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions"
-```
-
-```bash
-REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
-COMMAND_JSON=$(
-  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-    -H "Content-Type: application/json" \
-    -H "Idempotency-Key: notes-approval-001" \
-    --data-binary @- <<JSON
-{
-  "request_id": "$REQUEST_ID",
-  "payload": {
-    "allow": true,
-    "reason": "Confirmed by the user"
-  }
-}
-JSON
-)
-COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
-```
-
-After the answer is accepted, follow the returned command status and observe whether the action has been handled and execution continues. A successful HTTP request only means the service received this operation; it does not immediately resolve the pending action. If the command fails or the action remains pending, reload the latest records before asking the user to decide whether to retry.
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID"
-```
-
-For an action requesting external tool execution, submit the actual `output` and `is_error` inside `payload`. Local mode accepts confirmation answers directly; see [production deployment](/v2/en/service/kubernetes#production-api-access) for approval identities. See [Answer a required action](/v2/en/service/session-event-log#answer-a-required-action) for locating the action and following command receipts. These answers advance the existing task; its Turn result still determines completion.
+An accepted cancel is not proof that external work has stopped. Wait for `completed`, `failed` or `cancelled`. `waiting_tool` resumes automatically after Hands commits the result; it does not require the caller to supply a result or start another Turn. Current native capabilities declare `resume=false`, so the old explicit `/resume` and `/commands` flow is unavailable here.
 
 ## 5. Exercise the flow with real tools
 
@@ -292,6 +220,6 @@ To verify the full interaction, bind at least two usable tool operations and req
 | Disconnect SSE and inspect work | Background execution continues; no cancel is sent |
 | Ask a follow-up after completion | New turn in the same session with history retained |
 
-Page recovery above only restores the display of existing work. Restoring an earlier checkpoint changes Agent context and is followed by a new Turn. To continue the original interrupted task, check recovery conditions before using `resume`. See [Sessions, tasks, and budgets](/v2/en/service/session-event-log) for these execution operations.
+Page recovery restores the display of existing work. Checkpoint restore and Fork remain disabled in native capabilities pending complete historical-state acceptance. Automatic long-tool continuation retains the original Turn; see [logs and recovery](/v2/en/service/session-event-log) for the current boundary.
 
-When the page also needs file upload or result download, add those capabilities with [Files and artifacts](/v2/en/service/files). To notify your business backend after users leave the page, configure Webhooks in [SSE and event replay](/v2/en/service/sse-events#webhooks).
+When the page also needs file upload or result download, add those capabilities with [Files and artifacts](/v2/en/service/files). For background observation, consume durable SSE in your backend. Native webhook registration is still pending; the [Webhook guide](/v2/en/service/sse-events#webhooks) describes the existing backend protocol.

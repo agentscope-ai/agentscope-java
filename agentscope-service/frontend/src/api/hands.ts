@@ -35,9 +35,9 @@ function authHeaders(): Record<string, string> {
 }
 
 export async function fetchHandsStatus(): Promise<HandsStatus> {
-  const res = await fetch('/api/hands/status', { headers: authHeaders() });
+  const res = await fetch('/api/handss/status', { headers: authHeaders() });
   if (!res.ok) {
-    throw new Error(`hands status failed: ${res.status}`);
+    throw new Error(`tool worker status failed: ${res.status}`);
   }
   return res.json();
 }

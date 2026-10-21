@@ -18,6 +18,12 @@ MCP 还需要 `definition.mcpServers` 描述如何连接服务。连接中的 `n
 
 下面的配置方式适用于 Service 托管的 Managed Agent。External Agent 的工具由外部应用管理，Hosted Agent 则需要遵循其运行时提供方支持的工具映射。当前 Managed 定义 API 接受 `agent_toolset` 和 `mcp_toolset` 两种工具集；如果希望它调用自己的业务函数，可以将函数暴露为 MCP 工具，再通过 `mcpServers` 连接。
 
+源码 Managed 运行时由 Hands 负责 MCP 发现与调用。Brain 使用返回的工具描述和原有权限链，持久提交不可变工具意图后交接给 Hands。工具描述在一个 Turn 内固定，下一 Turn 重新发现，可选服务可在此时恢复。托管与自建 Sandbox 使用 HTTP/SSE；stdio 要求显式 local Environment。RPC 发出后丢失响应时保留未知状态，不自动重新调用。
+
+取消请求仍会尝试停止结果未知的原执行。已确认的原结果仍然有效；无法确认已经停止时，
+操作继续保持未知状态，不因取消重新执行。
+
+
 ## 准备内置工具与 MCP 配置
 
 下面使用一个资料助手说明完整配置。它可以通过产品目录 MCP 查询产品，也可以在执行环境中读写文件。请先准备一个实际提供 `lookup_product` 工具的 MCP 服务，将下面的 URL 替换为其真实地址，并把 JSON 保存为终端当前目录中的 `agent-definition.json`。如果你的服务使用其他工具名，应同时修改 `configs` 中的名称和后面验证任务的要求。

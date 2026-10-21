@@ -63,7 +63,7 @@ interface UpstreamMeta {
 }
 
 /**
- * ASDP bidirectional gRPC client. Connection failure only logs a warning —
+ * RuntimeProtocol bidirectional gRPC client. Connection failure only logs a warning —
  * it never takes down the DSH agent loop.
  */
 export class GrpcTransport {
@@ -178,7 +178,7 @@ export class GrpcTransport {
                 this.connected = false
                 if (!this.stop) {
                     this.options.log.warn(
-                        `ASDP gRPC ${this.options.addr} unavailable: ${
+                        `Runtime Protocol gRPC ${this.options.addr} unavailable: ${
                             error instanceof Error ? error.message : String(error)
                         }`,
                     )
@@ -321,7 +321,7 @@ export class GrpcTransport {
             }
         } catch (error) {
             this.options.log.debug(
-                `ASDP SessionCommand ${command} failed: ${
+                `Runtime Protocol SessionCommand ${command} failed: ${
                     error instanceof Error ? error.message : String(error)
                 }`,
             )

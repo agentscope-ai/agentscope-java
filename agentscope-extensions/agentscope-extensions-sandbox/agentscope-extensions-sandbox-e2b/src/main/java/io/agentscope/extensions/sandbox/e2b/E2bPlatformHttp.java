@@ -68,6 +68,19 @@ final class E2bPlatformHttp {
                 opt.getMaxRetries(), () -> postJson(url, body, /* apiKey */ true));
     }
 
+    JsonNode getSandbox(String sandboxId) throws IOException {
+        Request.Builder request =
+                new Request.Builder()
+                        .url(trimSlash(opt.getApiBaseUrl()) + "/sandboxes/" + sandboxId)
+                        .get();
+        request.header("X-API-Key", requireApiKey());
+        try (Response response = http.newCall(request.build()).execute()) {
+            if (!response.isSuccessful())
+                throw new E2bSandboxApiException(response.code(), "Sandbox lookup failed");
+            return json.readTree(response.body().string());
+        }
+    }
+
     JsonNode connectSandbox(String sandboxId, int timeoutSeconds) throws IOException {
         ObjectNode body = json.createObjectNode();
         body.put("timeout", timeoutSeconds);
@@ -193,9 +206,8 @@ final class E2bPlatformHttp {
         try (Response res = http.newCall(rb.build()).execute()) {
             String text = res.body() != null ? res.body().string() : "";
             if (!res.isSuccessful()) {
-                throw new SandboxException.SandboxRuntimeException(
-                        SandboxErrorCode.WORKSPACE_START_ERROR,
-                        "E2B HTTP " + res.code() + ": " + text);
+                throw new E2bSandboxApiException(
+                        res.code(), "E2B HTTP " + res.code() + ": " + text);
             }
             if (text.isBlank()) {
                 return json.createObjectNode();

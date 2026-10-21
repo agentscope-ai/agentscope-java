@@ -180,6 +180,22 @@ func (r *executionAttemptRepo) List(ctx context.Context, filter store.ExecutionA
 	if filter.NewestFirst {
 		order = "DESC"
 	}
+	portalScope := "AND ($13='' OR runtime_binding->>'portalCommandId'=$13)"
+	if filter.PortalCommandID != "" {
+		// Keep the indexed ownership predicate visible to generic query plans.
+		portalScope = "AND runtime_binding->>'portalCommandId'=$13 AND runtime_binding->>'portalCommandId' IS NOT NULL"
+	}
+	if filter.PortalOnly {
+		portalScope += " AND EXISTS(SELECT 1 FROM orchestration_runs r WHERE r.id=execution_attempts.run_id AND r.portal_owned)"
+	}
+	sweepScope, sortOrder := "AND ($18::uuid IS NULL OR id>$18)", "created_at "+order+",id "+order
+	if filter.SweepAfterID != nil {
+		sweepScope = "AND id>$18"
+		sortOrder = "id"
+		if filter.State != "" {
+			portalScope += " AND state IN ('assigned','preparing','running','waiting','cancel_requested')"
+		}
+	}
 	rows, err := r.pool.Query(ctx, `SELECT `+executionAttemptColumns+` FROM execution_attempts WHERE
 		($1::uuid='00000000-0000-0000-0000-000000000000' OR agent_task_id=$1)
 		AND ($2::uuid='00000000-0000-0000-0000-000000000000' OR agent_id=$2)
@@ -187,9 +203,15 @@ func (r *executionAttemptRepo) List(ctx context.Context, filter store.ExecutionA
 		AND ($4='' OR tenant=$4) AND ($5='' OR namespace=$5)
 		AND ($6='' OR session_id=$6) AND ($7='' OR runtime_pool_name=$7)
 		AND ($8::uuid='00000000-0000-0000-0000-000000000000' OR host_id=$8)
-		AND ($9='' OR state=$9) AND (NOT $11 OR EXISTS(SELECT 1 FROM agent_tasks t WHERE t.id=execution_attempts.agent_task_id AND issue_access_allowed(t.issue_id,$12::text[]))) ORDER BY created_at `+order+` LIMIT $10`, filter.AgentTaskID,
+		AND ($9='' OR state=$9) AND (NOT $11 OR EXISTS(SELECT 1 FROM agent_tasks t WHERE t.id=execution_attempts.agent_task_id AND issue_access_allowed(t.issue_id,$12::text[])))
+		`+portalScope+`
+		AND ($14::timestamptz IS NULL OR (created_at,id)>($14,$15::uuid))
+		AND (NOT $16 OR state NOT IN ('succeeded','failed','cancelled'))
+		AND (NOT $17 OR state<>'cancel_requested')
+		`+sweepScope+` ORDER BY `+sortOrder+` LIMIT $10`, filter.AgentTaskID,
 		filter.AgentID, filter.BindingID, filter.Tenant, filter.Namespace, filter.SessionID,
-		filter.RuntimePoolName, filter.HostID, filter.State, limit, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
+		filter.RuntimePoolName, filter.HostID, filter.State, limit, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs,
+		filter.PortalCommandID, filter.AfterCreatedAt, filter.AfterID, filter.ActiveOnly, filter.ExcludeCancelRequested, filter.SweepAfterID)
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +234,16 @@ func scanExecutionAttemptRows(rows pgx.Rows) ([]*controlmodel.ExecutionAttempt, 
 func (r *executionAttemptRepo) Claim(ctx context.Context, claim store.ExecutionClaim) (*controlmodel.ExecutionAttempt, error) {
 	if claim.HostID == uuid.Nil || claim.LeaseOwner == "" || claim.LeaseToken == "" || claim.LeaseTTL <= 0 {
 		return nil, fmt.Errorf("execution claim requires hostId, leaseOwner, leaseToken, and positive leaseTTL")
+	}
+	ownerScope, fairness := "", `(SELECT COUNT(*) FROM execution_attempts active WHERE active.tenant=e.tenant
+		AND active.namespace=e.namespace AND active.state NOT IN('succeeded','failed','cancelled')) ASC,`
+	if claim.PortalOnly {
+		ownerScope = "AND EXISTS(SELECT 1 FROM orchestration_runs r WHERE r.id=e.run_id AND r.portal_owned)"
+		// The enrolled machine credential already fixes one tenant/namespace.
+		// Counting that same scope for every candidate cannot alter its order.
+		if claim.Tenant != "" && claim.Namespace != "" {
+			fairness = ""
+		}
 	}
 	execution, err := scanExecutionAttempt(r.pool.QueryRow(ctx, `WITH candidate AS (
 		SELECT e.id AS execution_id FROM execution_attempts e
@@ -238,8 +270,7 @@ func (r *executionAttemptRepo) Claim(ctx context.Context, claim store.ExecutionC
 					COALESCE(h.labels,'{}'::jsonb))
 			AND COALESCE(e.runtime_binding->'securityConstraints','{}'::jsonb) <@
 				(jsonb_build_object('backendKind',e.backend_kind) || COALESCE(h.labels,'{}'::jsonb))
-		ORDER BY (SELECT COUNT(*) FROM execution_attempts active WHERE active.tenant=e.tenant
-				AND active.namespace=e.namespace AND active.state NOT IN('succeeded','failed','cancelled')) ASC,
+			`+ownerScope+` ORDER BY `+fairness+`
 			t.priority + LEAST(50,FLOOR(EXTRACT(EPOCH FROM (now()-e.created_at))/600)) DESC,
 			i.due_at NULLS LAST,e.created_at
 		FOR UPDATE OF e SKIP LOCKED LIMIT 1
@@ -397,6 +428,42 @@ func (r *executionAttemptRepo) ForceCancelled(ctx context.Context, id uuid.UUID,
 		return nil, store.ErrConflict
 	}
 	return attempt, err
+}
+
+func (r *executionAttemptRepo) BindManagedTurn(ctx context.Context, binding store.ManagedTurnBinding) (*controlmodel.ExecutionAttempt, error) {
+	current, err := r.Get(ctx, binding.AttemptID)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// Match the Task -> Attempt lock order used by completion, cancellation and retry.
+	task := &controlmodel.AgentTask{ID: current.AgentTaskID}
+	if err = tx.QueryRow(ctx, `SELECT current_attempt_id,status FROM agent_tasks WHERE id=$1 FOR UPDATE`, task.ID).
+		Scan(&task.CurrentAttemptID, &task.Status); err != nil {
+		return nil, err
+	}
+	current, err = scanExecutionAttempt(tx.QueryRow(ctx, `SELECT `+executionAttemptColumns+` FROM execution_attempts WHERE id=$1 FOR UPDATE`, binding.AttemptID))
+	if err != nil {
+		return nil, err
+	}
+	if err = store.ValidateManagedTurnBinding(task, current, binding); err != nil {
+		return nil, err
+	}
+	if current.TurnID == binding.TurnID {
+		return current, nil
+	}
+	current, err = scanExecutionAttempt(tx.QueryRow(ctx, `UPDATE execution_attempts SET turn_id=$2,version=version+1,updated_at=now() WHERE id=$1 RETURNING `+executionAttemptColumns, current.ID, binding.TurnID))
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return current, nil
 }
 
 func (r *executionAttemptRepo) Report(ctx context.Context, report store.ExecutionAttemptReport) (*controlmodel.ExecutionAttempt, error) {

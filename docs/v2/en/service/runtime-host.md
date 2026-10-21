@@ -137,6 +137,7 @@ After claiming work, paths below are relative to `/api/v1/runtime-hosts/{hostId}
 | POST suffix | Additional fields | Purpose |
 | --- | --- | --- |
 | `/renew` | Optional `leaseSeconds`, default 30 | Renew the lease and observe cancellation/terminal state |
+| `/observe` | None | Read the current Attempt without extending its lease or execution grant; the original lease token and fence are required |
 | `/preparing` | None | Report preparation |
 | `/running` | Optional `providerSessionId`, `workspaceKey` | Report provider execution start |
 | `/checkpoint` | `checkpoint`, optional `providerSessionId` | Save provider recovery information |
@@ -144,8 +145,19 @@ After claiming work, paths below are relative to `/api/v1/runtime-hosts/{hostId}
 | `/complete` | Optional `result`, `checkpoint` | Report completion |
 | `/fail` | `failureCode`, `failureMessage`, optional `checkpoint` | Report failure |
 | `/cancelled` | None | Confirm cancellation |
+| `/physical-stop` | None | For Portal-owned work, seal events after the provider has stopped and its durable event outbox has drained |
 
 State operations return `attempt`. For events, inspect `accepted` and stop submitting after the Attempt is sealed. A Host checkpoint is provider recovery material, not a unified Agent API checkpoint restore operation. See [Hosted recovery](/v2/en/service/runtime-host#hosted-agent-execution) for the distinction.
+
+In the new Portal execution path, `/complete`, `/fail` and `/cancelled` record the native outcome. The original Host then uploads any remaining committed events and calls `/physical-stop` with the same Attempt credential and fence. Portal publishes the Turn terminal state only after this proof and the final output and usage have been collected. The Host journal retains this operation across restarts and retries an unknown acknowledgment with the same identity. Permission expiry rejects new execution and renewal; it does not prevent the original Host from draining committed results and proving that execution stopped.
+
+When renewal is rejected, the daemon uses `/observe` to distinguish cancellation from an expired grant. Observation does not authorize execution. A cancellation stops the provider and reports `/cancelled` before the final stop proof. Keep the Attempt credential until the stop acknowledgment succeeds.
+
+Portal-owned Hosted tool confirmations use task-scoped `POST /api/v1/agent-tasks/{taskId}/runtime-approvals`, `GET /{approvalId}/decision` and `POST /{approvalId}/ack` under that path. Portal preserves the original physical task credential and sends the callbacks to the private Go runtime. Waiting renews only the physical lease; it does not extend the root execution grant. A human answers the standard `required_action.created` through the public Turn actions API. Durable acceptance fences the previous activation, refreshes invocation and approver permissions, and records the original human decision. The runtime releases the decision only with its matching current grant. `required_action.resolved` and an applied command receipt follow the Host acknowledgment; acceptance alone is not delivery.
+
+Provider events are committed to individual local journal files before delivery. Each pass delivers at most 64 events and processes at most 8 pending Attempts. The journal admits at most 256 pending Attempts, 65,536 events and 256 MiB of events per Attempt, with at most 1 MiB per encoded event. Delivery failures retain the records and use bounded backoff; a full journal stops new claims. Cleanup also runs in finite batches. This recovers committed delivery operations across restart; it does not guarantee recovery of an interrupted provider process.
+
+For Portal-owned Hosted tasks, collaboration MCP uses `POST /mcp/collaboration` with the original task bearer. The signed task identity includes the Attempt generation, physical fence and Host ID; the runtime verifies the root grant and current physical lease before allowing work. Portal adds its own internal transport credential, which is not exposed to the provider. The daemon acquires an OS lock on its state directory before registering; a second daemon using that directory is rejected. Keep the lock file in place. Process exit releases the lock automatically.
 
 <span id="hosted-agent-execution"></span>
 
@@ -188,7 +200,7 @@ Platform accounts assign work through Issues or Sessions. Host credentials are f
 | Read Workflow progress | `GET /api/v1/orchestration-runs/{runId}/graph`, `/events` | Node graph and run events reflecting execution results |
 | Restore an application view | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}/snapshot`, then `/events/stream` | Resume SSE from the snapshot cursor with the invocation credential |
 
-The Host protocol's `/checkpoint` operation saves `providerSessionId` and checkpoint data for supported adapter recovery. It is not an application API for restoring any backend from an arbitrary checkpoint. Unified invocations currently report `checkpoint_restore: false`. Hosted conversations support cancellation; do not assume Managed input, approval, or resume features are available. Read `available_commands` from `/api/v1/agent-sessions/{sessionId}/turns/{turnId}/capabilities` before offering interactions.
+The Host protocol's `/checkpoint` operation saves `providerSessionId` and checkpoint data for supported adapter recovery. It is not an application API for restoring any backend from an arbitrary checkpoint. Unified invocations currently report `checkpoint_restore: false`. Hosted conversations support cancellation and pending root tool confirmations through Turn actions. Managed input and explicit resume features are not available on Hosted. Read `available_commands` from `/api/v1/agent-sessions/{sessionId}/turns/{turnId}/capabilities` before offering interactions.
 
 SSE reconnection restores recorded output. It does not rerun tools or recover a Host process. Upload durable deliverables as Artifacts; Host files, provider sessions, and framework state retain their own lifecycles. See [Runtime Host protocol](/v2/en/service/runtime-host#runtime-host-protocol) for API parameters.
 
@@ -261,3 +273,132 @@ curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/runtime-hosts/$HOST_ID/resum
 ```
 
 </Accordion>
+
+
+During the Session Portal refactoring, the Host machine protocol (register, heartbeat/state and Attempt claim/renew/checkpoint/events/terminal callbacks) can enter through Portal and reach the separate Go orchestration runtime. Portal preserves the Host credential and task fences; a service credential alone cannot identify a Host. User management operations such as capacity and enrollment remain on the control plane. This path currently has local process verification; other backend integration and deployment updates are still in progress.
+
+
+The refactoring development role requires `BUILDER_VAULT_MASTER_KEY` when using
+PostgreSQL. The key must have at least 32 bytes and remain stable across runtime
+replicas. Portal bootstrap and Turn inbox payloads are encrypted at rest.
+The shared configuration/inbox process path has been verified across Portal and
+Go restarts. Hosted Job and Conversation execution from that inbox is connected;
+other controls and backend integrations remain in progress. Local process checks
+run the real daemon with a fake Codex app-server CLI, without external model calls.
+
+
+Workflow interactions in the new Portal path, including nested subgraphs, use
+`POST /api/v1/agent-sessions/{sessionId}/turns/{turnId}/actions`. Read pending
+`required_actions` resources and submit either confirmations (`request_id`,
+`allow`, optional `reason`) or signals (`request_id`, `value`) in one batch.
+Signal values are limited to 64 KiB. Replies preserve the caller, refresh admission
+before advancement, and become applied only after the native node consumes them.
+Waiting for a human does not suspend independent runnable branches. Read Turn
+capabilities before displaying these controls. Graph and step UUIDs keep repeated
+node names distinct, with graph and parent references on events. The `steps`
+resource in Session and Turn snapshots retains these graph and node states;
+continue paginated reads with the same `snapshot_id` to keep a consistent view.
+Agent tasks can submit a targeted signal through collaboration MCP:
+
+```json
+{"name":"run.signal","arguments":{"name":"report.ready","requestId":"PENDING_SIGNAL_NODE_UUID","idempotencyKey":"report-001","payload":{"artifactId":"ARTIFACT_ID"}}}
+```
+
+The task CLI equivalent is `as task run signal report.ready --request-id PENDING_SIGNAL_NODE_UUID --idempotency-key report-001 --file signal.json`.
+Read the node UUID from the current run graph or pending actions. The courier verifies the physical
+Task/Attempt lease, root execution grant and pending Signal node before creating a durable Portal
+command. Its receipt distinguishes `queued` from native application; poll the Session command API
+for `applied`. Retries with the same key and content return the original command ID. Changing the
+content is a conflict. Task signals retain the original Turn caller's invocation permission and are
+attributed to the Agent, so they cannot answer human confirmations. One pending signal command is
+accepted per Turn; submit another after its receipt becomes `applied`. A durably accepted signal may
+apply after the sender finishes, provided its Attempt/fence has not been replaced and the root Turn
+still has a current grant.
+
+Pause, explicit resume and independent Issue child runs are still being connected.
+
+Hosted task and reporting tokens expire after 15 minutes. The daemon refreshes
+them through `POST /api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/credentials`
+before expiry and when replaying an expired journal credential. Refresh requires
+the current Host credential and matching lease token and fence. It does not
+extend the lease or restore a revoked execution permit. A stopped or revoked task
+can refresh reporting authority to finish delivering its stop receipt; it receives
+no new task authority. Providers use an attempt-local loopback credential relay
+for collaboration MCP and the task CLI, so their static environment can use the
+latest task token. The relay permits eight concurrent calls and bounded bodies,
+and closes with the attempt. Host enrollment credentials retain their separate
+expiry and rotation policy.
+
+Public Session creation also accepts Hosted Team Jobs. The coordinator concludes
+through its fenced collaboration MCP identity, after outstanding work nodes have
+finished. The public Turn waits for every Hosted worker's physical stop receipt.
+Local checks cover dynamic parallel nodes, completion and cancellation; full
+delegation and the remaining graph controls are still being connected.
+
+Portal resource snapshots return bounded pages in `resources`; continue each page with its
+`snapshot_id` and `next_cursor`. The UI reads latest Turns with `order=desc` and may filter
+`status=running`, so a long queue does not hide an earlier running Turn. Registry cursors
+are bound to the order and status filter. Turn capabilities govern the selected Turn's
+controls. Usage events carry authoritative `session_usage` and `turn_usage` summaries;
+loading only part of model history does not reduce the reported totals. Budgets check
+reported usage, and concurrent calls can exceed them with no fixed bound on that excess.
+
+The UI replays live changes over a later historical page, including failed partial output
+and deleted artifacts. Its display window is bounded to 4,096 live events, 8,192 indexed
+records and 16 MiB of serialized text. When the window is full, refresh the view from a
+new snapshot; this closes only the reader and does not stop execution.
+
+Managed Turn capabilities also expose `tool_retry` while waiting for tools and
+`workspace_recover` when the Session is ready. `resume` applies to failed or
+interrupted Turns; pending tool or confirmation work uses its specific action.
+The UI's tool execution panel reads a bounded task page and shows the current
+authorization and Workspace generations. Unknown tool retry requires confirmation
+of possible repeated side effects. Workspace reconnect requires verified idle state;
+restore or discard requires verified provider absence and acceptance of lost file
+changes. Workspace recovery does not retry the unknown tool. Check the persisted
+command status, refresh generations, and then issue a separate tool retry if needed.
+
+Hosted dispatch records keep scheduling identities, provider capabilities and profile/pool
+versions in readable metadata. Frozen provider configuration, per-Agent overrides and
+Workspace definitions are sealed with the runtime's stable vault key before the native
+Task, Attempt and dispatch outbox are written. The authenticated Host claim resolves
+the same frozen configuration; retry and node selection also open it under the original
+Task identity. A runtime restart needs the same key. New Portal Hosted dispatch records
+require this format; plaintext records from an earlier reconstruction are not accepted
+as new Portal execution configuration. This does not encrypt every control-plane resource
+definition or provider's local files.
+
+In the current reconstruction, both Go service entry points default to
+`--schema-mode=validate`. Run `--migrate-only` separately with the database owner
+before starting ordinary replicas; the orchestration runtime migrates its runtime
+schema, and the control plane can also migrate the enabled Product schema. The job
+exits before HTTP and workers start, and does not bootstrap users. Runtime replicas
+still need their stable internal credential, task signing secret and vault key.
+See the repository's `agentscope-service/docs/session-portal-schema.md` for the Java
+Portal/dataplane jobs and verified account separation. Compose/Helm now wire the
+separate roles and migration jobs; complete runtime table ownership is still being implemented.
+
+The separate Go runtime requires a Portal-owned execution contract before it
+reconciles a Run, dispatches a Task, hands a physical Attempt to a Host, or renews
+its execution authority. Legacy resource operations are still being migrated to
+durable Portal intents; their old tasks do not become executable simply because
+the new runtime reads the same store.
+
+The private Go runtime image supports `--healthcheck`; it probes `/readyz` without
+opening a database or starting workers. Execution ancestry rejects cycles and stops
+after 256 Issue lookups, so a malformed parent chain cannot cause unlimited queries.
+
+The daemon renews a Host machine credential when less than 24 hours remain. The
+request passes through Gateway and Portal to the runtime, using the valid Host
+bearer and current registration generation. Renewal preserves tenant, namespace
+and Host key, and does not extend registration or Attempt leases or grant task
+execution authority. Console enrollment retains the namespace authorized for the caller.
+
+Renewed credentials are saved in `host-credential.json` under the locked state
+directory and reused after restart with the same original enrollment credential.
+The cache is bound to that credential and machine scope; a new enrollment takes
+precedence. Keep the state directory private (the file uses mode 0600 on Unix and
+inherits directory ACLs on Windows). A temporary renewal failure leaves the
+current valid credential in use. If the daemon is offline until all its machine
+credentials expire, enroll it again. Renewal does not revoke previously issued
+tokens or rotate the service signing key.

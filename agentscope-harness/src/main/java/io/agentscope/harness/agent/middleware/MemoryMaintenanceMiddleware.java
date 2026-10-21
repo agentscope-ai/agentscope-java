@@ -16,9 +16,12 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
@@ -131,7 +134,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_AGENT);
+        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_AGENT_FINISH);
     }
 
     @Override
@@ -141,6 +144,8 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        if (Boolean.TRUE.equals(rc.get(MemoryFlushMiddleware.INLINE_CONTEXT_KEY)))
+            return next.apply(input);
         // The maintenance body — including the gate claim, which is remote I/O under a
         // store-backed gate — runs on the background scheduler. Only the in-flight counter is
         // updated synchronously, so a quiescence check can never observe an empty in-flight
@@ -161,13 +166,29 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                         });
     }
 
+    @Override
+    public Mono<Void> onAgentFinish(Agent agent, RuntimeContext rc, Msg result) {
+        if (!Boolean.TRUE.equals(rc.get(MemoryFlushMiddleware.INLINE_CONTEXT_KEY))
+                || SessionRecorder.from(rc) == null
+                || !"completed".equals(SessionRecorder.outcome(result.getGenerateReason())))
+            return Mono.empty();
+        return Mono.defer(() -> doMaintenance(rc))
+                .subscribeOn(Schedulers.boundedElastic())
+                .contextWrite(context -> context.put(AgentBase.RUNTIME_CONTEXT_KEY, rc))
+                .onErrorResume(
+                        error -> {
+                            log.warn("Memory maintenance failed: {}", error.getMessage());
+                            return Mono.empty();
+                        });
+    }
+
     private Mono<Void> doMaintenance(RuntimeContext rc) {
         if (!periodicGate.tryClaim(compositeTimerKey(rc), minGap)) {
             // Throttled out; the in-flight slot acquired at dispatch is released when this
             // Mono completes.
             return Mono.empty();
         }
-        return Mono.fromRunnable(() -> runMaintenance(rc));
+        return runMaintenance(rc);
     }
 
     /**
@@ -195,11 +216,14 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         };
     }
 
-    private void runMaintenance(RuntimeContext rc) {
-        log.debug("Running memory maintenance...");
-        expireDailyFiles(rc);
-        consolidateMemory(rc);
-        log.debug("Memory maintenance completed");
+    private Mono<Void> runMaintenance(RuntimeContext rc) {
+        return Mono.fromRunnable(
+                        () -> {
+                            log.debug("Running memory maintenance...");
+                            expireDailyFiles(rc);
+                        })
+                .then(Mono.defer(() -> consolidateMemory(rc)))
+                .doOnSuccess(ignored -> log.debug("Memory maintenance completed"));
     }
 
     private void expireDailyFiles(RuntimeContext rc) {
@@ -239,15 +263,14 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         }
     }
 
-    private void consolidateMemory(RuntimeContext rc) {
-        if (consolidator == null) {
-            return;
-        }
-        try {
-            consolidator.consolidate(rc).block();
-        } catch (Exception e) {
-            log.warn("Memory consolidation failed: {}", e.getMessage());
-        }
+    private Mono<Void> consolidateMemory(RuntimeContext rc) {
+        if (consolidator == null) return Mono.empty();
+        return Mono.defer(() -> consolidator.consolidate(rc))
+                .onErrorResume(
+                        error -> {
+                            log.warn("Memory consolidation failed: {}", error.getMessage());
+                            return Mono.empty();
+                        });
     }
 
     private static String fileName(String path) {

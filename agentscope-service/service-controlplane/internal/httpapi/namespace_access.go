@@ -100,6 +100,12 @@ func (s *Server) ensurePersonalNamespace(ctx context.Context, user string) (*con
 }
 
 func namespaceAction(c *gin.Context) string {
+	// Portal configuration admission authenticates the original public caller
+	// before this middleware. Its private transport is not a different resource
+	// permission; the handler separately checks the selected target's use graph.
+	if c.Request.URL.Path == "/api/internal/runtime-admissions/sessions" && c.Request.Method == http.MethodPost {
+		return "work.write"
+	}
 	path := strings.TrimPrefix(c.Request.URL.Path, "/api/v1/")
 	resource, rest, _ := strings.Cut(path, "/")
 	read := c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead
@@ -191,7 +197,7 @@ func (s *Server) namespaceAccessMiddleware() gin.HandlerFunc {
 			return
 		}
 		body := map[string]json.RawMessage{}
-		if !publicSessionFileRequest(c) && c.Request.Body != nil && strings.Contains(c.ContentType(), "application/json") {
+		if !publicSessionProtocolRequest(c) && c.Request.Body != nil && strings.Contains(c.ContentType(), "application/json") {
 			data, readErr := io.ReadAll(io.LimitReader(c.Request.Body, (16<<20)+1))
 			if readErr != nil || len(data) > 16<<20 {
 				c.AbortWithStatusJSON(400, ErrorResponse{Error: "request body is invalid or too large"})

@@ -21,6 +21,7 @@ import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ToolSchema;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -63,8 +64,27 @@ public final class SessionModels {
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             return Flux.defer(
                     () -> {
+                        var invocation = context.get(SessionModelInvocation.class);
+                        return invocation == null
+                                ? invoke(UUID.randomUUID().toString(), messages, tools, options)
+                                : invocation.stream(
+                                        delegate.getModelName(),
+                                        purpose,
+                                        messages,
+                                        tools,
+                                        options,
+                                        id -> invoke(id, messages, tools, options));
+                    });
+        }
+
+        private Flux<ChatResponse> invoke(
+                String callId,
+                List<Msg> messages,
+                List<ToolSchema> tools,
+                GenerateOptions options) {
+            return Flux.defer(
+                    () -> {
                         var recorder = SessionRecorder.from(context);
-                        String callId = UUID.randomUUID().toString();
                         var last = new AtomicReference<ChatResponse>();
                         return Flux.usingWhen(
                                 Mono.fromRunnable(
@@ -76,6 +96,7 @@ public final class SessionModels {
                                                                 delegate.getModelName(),
                                                                 context);
                                                 })
+                                        .subscribeOn(ModelSchedulers.requests())
                                         .then(
                                                 recorder.prepareModel(
                                                         new ModelCallInput(
@@ -126,17 +147,18 @@ public final class SessionModels {
             if (error != null) payload.put("errorType", error.getClass().getName());
             return recorder.record("model/end", payload)
                     .then(
-                            Mono.fromRunnable(
-                                    () -> {
-                                        if (context.get(SessionModelPolicy.CONTEXT_KEY)
-                                                instanceof SessionModelPolicy policy)
-                                            policy.afterCall(
-                                                    id,
-                                                    delegate.getModelName(),
-                                                    status,
-                                                    last == null ? null : last.getUsage(),
-                                                    context);
-                                    }));
+                            Mono.<Void>fromRunnable(
+                                            () -> {
+                                                if (context.get(SessionModelPolicy.CONTEXT_KEY)
+                                                        instanceof SessionModelPolicy policy)
+                                                    policy.afterCall(
+                                                            id,
+                                                            delegate.getModelName(),
+                                                            status,
+                                                            last == null ? null : last.getUsage(),
+                                                            context);
+                                            })
+                                    .subscribeOn(ModelSchedulers.requests()));
         }
     }
 }

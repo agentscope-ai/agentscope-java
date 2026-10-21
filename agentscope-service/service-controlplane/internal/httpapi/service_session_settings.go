@@ -65,6 +65,11 @@ func (s *Server) validatePublicSessionOptions(c *gin.Context, raw []byte) bool {
 
 func (s *Server) publicSessionView(ctx context.Context, v *sessionapi.Session) map[string]any {
 	view := v.View()
+	view["tenant"] = v.Tenant
+	view["namespace"] = v.Namespace
+	if v.RuntimeOwner == "dataplane" {
+		view["runtimeStatus"] = v.RuntimeStatus
+	}
 	c, err := serviceapi.ReadContract(v.Contract)
 	if err != nil {
 		return view
@@ -92,7 +97,7 @@ func (s *Server) publicSessionView(ctx context.Context, v *sessionapi.Session) m
 			view[key] = value
 		}
 	}
-	if s.product != nil && s.publicSessionIsManaged(c) {
+	if s.product != nil && v.RuntimeOwner != "dataplane" && s.publicSessionIsManaged(c) {
 		if _, e := s.store.Endpoints().GetConversation(ctx, v.ID); e == nil {
 			owner, native, e := s.publicNativeSession(ctx, v, c)
 			if e == nil {

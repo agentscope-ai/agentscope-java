@@ -55,6 +55,8 @@ type Engine struct {
 	capabilities json.RawMessage
 	active       atomic.Int32
 	workers      sync.WaitGroup
+	inFlight     sync.Map
+	replayCursor string
 }
 
 func (e *Engine) Run(ctx context.Context) error {
@@ -111,7 +113,13 @@ func (e *Engine) Run(ctx context.Context) error {
 		if capacity <= 0 {
 			capacity = e.Config.Registration.Capacity
 		}
+		e.replayPendingTerminals(ctx)
 		if e.active.Load() >= capacity {
+			waitContext(ctx, e.Config.PollInterval)
+			continue
+		}
+		pending, journalErr := (&Journal{Root: e.Config.StateRoot}).IDs()
+		if journalErr != nil || len(pending)+int(e.active.Load()) >= maxJournalAttempts {
 			waitContext(ctx, e.Config.PollInterval)
 			continue
 		}
@@ -127,7 +135,6 @@ func (e *Engine) Run(ctx context.Context) error {
 				e.execute(ctx, host.ID, work)
 			}()
 		case errors.Is(err, ErrNoWork):
-			e.replayPendingTerminals(ctx)
 			waitContext(ctx, e.Config.PollInterval)
 		default:
 			e.clearHost()
@@ -217,11 +224,19 @@ func (e *Engine) heartbeatLoop(ctx context.Context) {
 
 func (e *Engine) execute(parent context.Context, hostID uuid.UUID, work *ClaimedWork) {
 	execution := work.Attempt
+	attemptID := execution.ID
+	e.inFlight.Store(execution.ID, true)
+	defer e.inFlight.Delete(execution.ID)
 	logAttempt("claimed", hostID, execution, "")
 	record := &JournalRecord{Attempt: execution, Task: work.Task, Context: work.Context,
 		HostID: hostID, AttemptToken: work.AttemptToken}
+	if work.Profile != nil {
+		record.ProviderName = work.Profile.Provider
+	}
 	journal := &Journal{Root: e.Config.StateRoot}
-	_ = journal.Save(record)
+	if !saveHostJournal(journal, record) {
+		return
+	}
 	logAttempt("preparing", hostID, execution, "")
 	if err := e.Client.Prepare(parent, hostID, execution); err != nil {
 		e.failAndFinalize(parent, journal, record, hostID, execution, "prepare_failed", err.Error(), nil)
@@ -248,7 +263,9 @@ func (e *Engine) execute(parent context.Context, hostID uuid.UUID, work *Claimed
 			". Read the relevant SKILL.md before using a skill."
 	}
 	record.Workspace = path
-	_ = journal.Save(record)
+	if !saveHostJournal(journal, record) {
+		return
+	}
 	if work.Profile == nil {
 		e.failAndFinalize(parent, journal, record, hostID, execution, "runtime_profile_missing", "claim did not include a runtime profile", nil)
 		return
@@ -263,8 +280,20 @@ func (e *Engine) execute(parent context.Context, hostID uuid.UUID, work *Claimed
 		return
 	}
 
+	collaborationMCP, controlPlane, taskToken := e.Config.CollaborationMCP, e.Config.ControlPlane, work.TaskToken
+	if credentials, ok := e.Client.(interface{ CurrentTaskToken(uuid.UUID) string }); ok {
+		relay, relayErr := startTaskCredentialRelay(controlPlane, collaborationMCP, func() string {
+			return credentials.CurrentTaskToken(attemptID)
+		})
+		if relayErr != nil {
+			e.failAndFinalize(parent, journal, record, hostID, execution, "credential_relay_failed", relayErr.Error(), nil)
+			return
+		}
+		defer relay.Close()
+		collaborationMCP, controlPlane, taskToken = relay.MCP, relay.URL, relay.Token
+	}
 	prompt, err = appendRuntimeContext(prompt, work.Context.Task, provider.Describe(adapter),
-		e.Config.CollaborationMCP, e.Config.CollaborationCLI, work.TaskToken)
+		collaborationMCP, e.Config.CollaborationCLI, taskToken)
 	if err != nil {
 		e.failAndFinalize(parent, journal, record, hostID, execution, "provider_capability_missing", err.Error(), nil)
 		return
@@ -278,29 +307,41 @@ func (e *Engine) execute(parent context.Context, hostID uuid.UUID, work *Claimed
 	runCtx, cancel := context.WithCancel(parent)
 	defer cancel()
 	leaseFailures := make(chan error, 1)
-	go e.renewLoop(runCtx, cancel, hostID, execution, leaseFailures)
+	var attemptMutex sync.Mutex
+	renewed := make(chan struct{})
 	providerRequest := provider.Request{
 		Prompt: prompt, Workspace: path, RuntimeStateRoot: e.Config.StateRoot,
 		ProviderSessionID: execution.ProviderSessionID,
 		Configuration:     work.Profile.Configuration, Definition: work.Definition,
 		CustomArgs:       hostedCustomArgs(work.ExecutionOverrides),
-		CollaborationMCP: e.Config.CollaborationMCP, CollaborationCLI: e.Config.CollaborationCLI,
-		ControlPlane: e.Config.ControlPlane, TaskToken: work.TaskToken,
+		CollaborationMCP: collaborationMCP, CollaborationCLI: e.Config.CollaborationCLI,
+		ControlPlane: controlPlane, TaskToken: taskToken,
 		TaskID: work.Context.Task.ID.String(), IssueID: work.Context.Task.IssueID.String(),
 		AgentID: work.Context.Task.AgentRef, RunID: work.Context.Task.OrchestrationRunID.String(),
 		TeamID: taskTeamID(work.Context.Task),
 	}
 	if approver, ok := e.Client.(interface {
+		AwaitToolApprovalRefreshing(context.Context, string, uuid.UUID, provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error)
+	}); ok {
+		providerRequest.ApproveTool = func(ctx context.Context, request provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
+			return approver.AwaitToolApprovalRefreshing(ctx, work.Context.Task.ID.String(), attemptID, request)
+		}
+	} else if approver, ok := e.Client.(interface {
 		AwaitToolApproval(context.Context, string, string, provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error)
 	}); ok {
 		providerRequest.ApproveTool = func(ctx context.Context, request provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
 			return approver.AwaitToolApproval(ctx, work.Context.Task.ID.String(), work.TaskToken, request)
 		}
 	}
+	go func() {
+		defer close(renewed)
+		e.renewLoop(runCtx, cancel, hostID, execution, leaseFailures, &attemptMutex)
+	}()
 	result, runErr := adapter.Run(runCtx, providerRequest, func(event provider.Event) error {
-		record.Events = append(record.Events, event)
-		ordinal := int64(len(record.Events))
-		if err := journal.Save(record); err != nil {
+		attemptMutex.Lock()
+		defer attemptMutex.Unlock()
+		ordinal, err := journal.AppendEvent(record, event)
+		if err != nil {
 			return err
 		}
 		if publisher, ok := e.Client.(interface {
@@ -319,22 +360,46 @@ func (e *Engine) execute(parent context.Context, hostID uuid.UUID, work *Claimed
 				return context.Canceled
 			}
 		}
-		if event.ProviderSessionID != "" && event.ProviderSessionID != execution.ProviderSessionID {
-			checkpoint, _ := json.Marshal(map[string]string{"providerSessionId": event.ProviderSessionID})
-			if err := e.Client.Checkpoint(runCtx, hostID, execution, event.ProviderSessionID, checkpoint); err != nil {
+		checkpointID := event.CheckpointSessionID
+		if checkpointID == "" {
+			checkpointID = event.ProviderSessionID
+		}
+		if checkpointID != "" && checkpointID != execution.ProviderSessionID {
+			checkpoint, _ := json.Marshal(map[string]string{"providerSessionId": checkpointID})
+			if err := e.Client.Checkpoint(runCtx, hostID, execution, checkpointID, checkpoint); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+	// The provider has exited. Join the renewal loop before sealing its journal
+	// or submitting a terminal result; both HTTP paths update the Attempt value.
+	cancel()
+	<-renewed
 	if controlmodel.IsExecutionAttemptTerminal(execution.State) {
 		logAttempt("terminal_observed", hostID, execution, work.Profile.Provider)
-		_ = journal.Remove(execution.ID)
+		var snapshot controlmodel.RuntimeDispatchSnapshot
+		_ = json.Unmarshal(execution.RuntimeBinding, &snapshot)
+		if snapshot.PortalCommandID == "" {
+			record.PendingTerminal = &PendingTerminal{Action: "cleanup"}
+			if saveHostJournal(journal, record) {
+				e.deliverPendingTerminal(context.WithoutCancel(parent), journal, record)
+			}
+			return
+		}
+		record.ProviderName = work.Profile.Provider
+		record.PendingTerminal = &PendingTerminal{Action: "physical-stop"}
+		if !saveHostJournal(journal, record) {
+			return
+		}
+		e.deliverPendingTerminal(context.WithoutCancel(parent), journal, record)
 		return
 	}
 	if execution.State == controlmodel.ExecutionCancelRequested {
 		record.PendingTerminal = &PendingTerminal{Action: "cancelled"}
-		_ = journal.Save(record)
+		if !saveHostJournal(journal, record) {
+			return
+		}
 		e.deliverPendingTerminal(context.WithoutCancel(parent), journal, record)
 		return
 	}
@@ -359,7 +424,9 @@ func (e *Engine) execute(parent context.Context, hostID uuid.UUID, work *Claimed
 	}
 	resultJSON, _ := json.Marshal(map[string]any{"output": result.Output})
 	record.PendingTerminal = &PendingTerminal{Action: "complete", Result: resultJSON, Checkpoint: result.Checkpoint}
-	_ = journal.Save(record)
+	if !saveHostJournal(journal, record) {
+		return
+	}
 	e.deliverPendingTerminal(context.WithoutCancel(parent), journal, record)
 }
 
@@ -479,27 +546,60 @@ func (e *Engine) failAndFinalize(parent context.Context, journal *Journal, recor
 	logAttempt("failed", hostID, execution, "", slog.String("failure_code", code), slog.String("failure_message", message))
 	record.PendingTerminal = &PendingTerminal{Action: "fail", FailureCode: code,
 		FailureMessage: message, Checkpoint: checkpoint}
-	_ = journal.Save(record)
+	if !saveHostJournal(journal, record) {
+		return
+	}
 	e.deliverPendingTerminal(context.WithoutCancel(parent), journal, record)
 }
 
+func saveHostJournal(journal *Journal, record *JournalRecord) bool {
+	if err := journal.Save(record); err != nil {
+		logAttempt("journal_commit_failed", record.HostID, record.Attempt, record.ProviderName, slog.Any("error", err))
+		return false
+	}
+	return true
+}
+
 func (e *Engine) replayPendingTerminals(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	j := &Journal{Root: e.Config.StateRoot}
-	records, err := j.List()
+	ids, err := j.IDs()
 	if err != nil {
 		return
 	}
-	for _, record := range records {
-		if record.PendingTerminal == nil || record.HostID == uuid.Nil {
+	loaded := 0
+	last := e.replayCursor
+	for _, id := range ids {
+		if ctx.Err() != nil {
+			return
+		}
+		if id.String() <= last {
+			continue
+		}
+		e.replayCursor = id.String()
+		if _, active := e.inFlight.Load(id); active {
+			continue
+		}
+		record, err := j.Load(id)
+		loaded++
+		if err != nil || record.PendingTerminal == nil || record.HostID == uuid.Nil || record.NextDeliveryAt > time.Now().UnixMilli() {
+			if loaded >= 8 {
+				return
+			}
 			continue
 		}
 		if restorer, ok := e.Client.(interface {
 			RestoreAttemptToken(uuid.UUID, string)
-		}); ok {
+		}); ok && record.PendingTerminal.Action != "cleanup" {
 			restorer.RestoreAttemptToken(record.Attempt.ID, record.AttemptToken)
 		}
 		e.deliverPendingTerminal(ctx, j, record)
+		if loaded >= 8 {
+			return
+		}
 	}
+	e.replayCursor = ""
 }
 
 func (e *Engine) deliverPendingTerminal(ctx context.Context, journal *Journal, record *JournalRecord) {
@@ -507,7 +607,41 @@ func (e *Engine) deliverPendingTerminal(ctx context.Context, journal *Journal, r
 		return
 	}
 	terminal := record.PendingTerminal
+	if terminal.Action == "cleanup" {
+		_ = journal.Remove(record.Attempt.ID)
+		return
+	}
 	var err error
+	var snapshot controlmodel.RuntimeDispatchSnapshot
+	_ = json.Unmarshal(record.Attempt.RuntimeBinding, &snapshot)
+	if snapshot.PortalCommandID != "" {
+		if publisher, ok := e.Client.(interface {
+			PublishProviderEvent(context.Context, uuid.UUID, *controlmodel.ExecutionAttempt, string, int64, provider.Event) error
+		}); ok {
+			end := min(journalEventCount(record), record.FinalEventsDelivered+64)
+			for record.FinalEventsDelivered < end {
+				event, readErr := journal.Event(record, record.FinalEventsDelivered)
+				if readErr != nil {
+					e.deferTerminalRetry(journal, record, readErr)
+					return
+				}
+				if shouldPublishProviderEvent(event) {
+					if err = publisher.PublishProviderEvent(ctx, record.HostID, record.Attempt, record.ProviderName, int64(record.FinalEventsDelivered+1), event); err != nil {
+						e.deferTerminalRetry(journal, record, err)
+						return
+					}
+				}
+				record.FinalEventsDelivered++
+			}
+			record.DeliveryFailures, record.NextDeliveryAt = 0, 0
+			if err = journal.Save(record); err != nil {
+				return
+			}
+			if record.FinalEventsDelivered < journalEventCount(record) {
+				return
+			}
+		}
+	}
 	switch terminal.Action {
 	case "complete":
 		err = e.Client.Complete(ctx, record.HostID, record.Attempt, terminal.Result, terminal.Checkpoint)
@@ -516,16 +650,50 @@ func (e *Engine) deliverPendingTerminal(ctx context.Context, journal *Journal, r
 			terminal.FailureMessage, terminal.Checkpoint)
 	case "cancelled":
 		err = e.Client.Cancelled(ctx, record.HostID, record.Attempt)
+	case "physical-stop":
 	default:
 		return
 	}
+	if err == nil && snapshot.PortalCommandID != "" {
+		if finalizer, ok := e.Client.(interface {
+			PhysicalStopped(context.Context, uuid.UUID, *controlmodel.ExecutionAttempt) error
+		}); ok {
+			err = finalizer.PhysicalStopped(ctx, record.HostID, record.Attempt)
+		} else {
+			err = fmt.Errorf("Portal execution requires physical-stop receipts")
+		}
+	}
 	if err == nil {
 		logAttempt("terminal_delivered", record.HostID, record.Attempt, "", slog.String("action", terminal.Action))
-		_ = journal.Remove(record.Attempt.ID)
+		record.PendingTerminal = &PendingTerminal{Action: "cleanup"}
+		record.DeliveryFailures, record.NextDeliveryAt = 0, 0
+		if saveHostJournal(journal, record) {
+			_ = journal.Remove(record.Attempt.ID)
+		}
 	} else {
-		logAttempt("terminal_delivery_failed", record.HostID, record.Attempt, "",
-			slog.String("action", terminal.Action), slog.Any("error", err))
+		if observer, ok := e.Client.(interface {
+			Observe(context.Context, uuid.UUID, *controlmodel.ExecutionAttempt) error
+		}); ok && snapshot.PortalCommandID != "" {
+			if observeErr := observer.Observe(ctx, record.HostID, record.Attempt); observeErr == nil {
+				if controlmodel.IsExecutionAttemptTerminal(record.Attempt.State) {
+					record.PendingTerminal = &PendingTerminal{Action: "physical-stop"}
+				} else if record.Attempt.State == controlmodel.ExecutionCancelRequested {
+					record.PendingTerminal = &PendingTerminal{Action: "cancelled"}
+				}
+			}
+		}
+		e.deferTerminalRetry(journal, record, err)
 	}
+}
+
+func (e *Engine) deferTerminalRetry(journal *Journal, record *JournalRecord, err error) {
+	record.DeliveryFailures = min(16, record.DeliveryFailures+1)
+	delay := min(30*time.Second, time.Second<<min(5, record.DeliveryFailures-1))
+	delay += delay * time.Duration(record.Attempt.ID[0]%26) / 100
+	record.NextDeliveryAt = time.Now().Add(delay).UnixMilli()
+	logAttempt("terminal_delivery_failed", record.HostID, record.Attempt, record.ProviderName,
+		slog.String("action", record.PendingTerminal.Action), slog.Duration("retry_after", delay), slog.Any("error", err))
+	_ = saveHostJournal(journal, record)
 }
 
 func logAttempt(stage string, hostID uuid.UUID, attempt *controlmodel.ExecutionAttempt,
@@ -551,7 +719,7 @@ func logAttempt(stage string, hostID uuid.UUID, attempt *controlmodel.ExecutionA
 }
 
 func (e *Engine) renewLoop(ctx context.Context, cancel context.CancelFunc, hostID uuid.UUID,
-	execution *controlmodel.ExecutionAttempt, failures chan<- error) {
+	execution *controlmodel.ExecutionAttempt, failures chan<- error, attemptMutex *sync.Mutex) {
 	interval := e.Config.LeaseTTL / 3
 	if interval < time.Second {
 		interval = time.Second
@@ -559,17 +727,24 @@ func (e *Engine) renewLoop(ctx context.Context, cancel context.CancelFunc, hostI
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	leaseDeadline := time.Now().Add(e.Config.LeaseTTL)
+	attemptMutex.Lock()
 	if execution.LeaseExpiresAt != nil && execution.LeaseExpiresAt.After(time.Now()) {
 		leaseDeadline = *execution.LeaseExpiresAt
 	}
+	attemptMutex.Unlock()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := e.Client.Renew(ctx, hostID, execution, e.Config.LeaseTTL); err != nil {
+			attemptMutex.Lock()
+			err := e.Client.Renew(ctx, hostID, execution, e.Config.LeaseTTL)
+			snapshot := *execution
+			stopped := controlmodel.IsExecutionAttemptTerminal(execution.State) || execution.State == controlmodel.ExecutionCancelRequested
+			attemptMutex.Unlock()
+			if err != nil {
 				if !time.Now().Before(leaseDeadline) {
-					logAttempt("lease_expired", hostID, execution, "", slog.Any("error", err))
+					logAttempt("lease_expired", hostID, &snapshot, "", slog.Any("error", err))
 					cancel()
 					select {
 					case failures <- err:
@@ -577,16 +752,12 @@ func (e *Engine) renewLoop(ctx context.Context, cancel context.CancelFunc, hostI
 					}
 					return
 				}
-				logAttempt("lease_renew_failed", hostID, execution, "",
+				logAttempt("lease_renew_failed", hostID, &snapshot, "",
 					slog.Time("lease_deadline", leaseDeadline), slog.Any("error", err))
 				continue
 			}
 			leaseDeadline = time.Now().Add(e.Config.LeaseTTL)
-			if controlmodel.IsExecutionAttemptTerminal(execution.State) {
-				cancel()
-				return
-			}
-			if execution.State == controlmodel.ExecutionCancelRequested {
+			if stopped {
 				cancel()
 				return
 			}

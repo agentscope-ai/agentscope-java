@@ -67,6 +67,9 @@ func TestApplicationCredentialsShareOwnerButKeepActor(t *testing.T) {
 			t.Fatalf("accepted scopes %s", scopes)
 		}
 	}
+	if scopes, err := validateEndpointScopes(json.RawMessage(`["read","approve"]`)); err != nil || len(scopes) != 2 || scopes[1] != "approve" {
+		t.Fatalf("explicit approval scope rejected: %v %v", scopes, err)
+	}
 	legacy, secret, _ := s.buildEndpointCredential(ep.ID, "unbound", json.RawMessage(`["read"]`), nil, nil)
 	_, _ = st.Endpoints().CreateCredential(ctx, legacy)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

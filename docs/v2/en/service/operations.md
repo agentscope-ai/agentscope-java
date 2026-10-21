@@ -59,7 +59,9 @@ Kubernetes also requires database backups and PVC snapshots. Follow the storage 
 
 Read the release's migration and compatibility notes and rehearse against a test copy first. After backing up, update `SERVICE_VERSION` in Docker's `.env`, pull images and recreate containers. For Helm, upgrade using the specific Chart version.
 
-Go runs product and runtime migrations on startup; Java currently updates schema through Hibernate. Rolling back images does not establish that an older version can read a newer schema.
+Current-source deployments run separate migration jobs before ordinary replicas, which validate the schema using business credentials. Include both business and native journal pools in the PostgreSQL connection budget: each Dataplane replica has an additional bounded pool configured by `BUILDER_RUNTIME_NATIVE_LOG_CONNECTIONS` (default 8), or Helm `dataplane.nativeLogConnections`.
+
+Managed native history is stored in indexed dataplane tables. This format requires rebuilt runtime data; existing Workspace journals are explicitly refused rather than read as empty history. Drain old Sessions and prepare a new runtime data space before switching. Database migrations do not convert those journals. Back up Portal state, native tables, shared files and original keys together. Rolling back images does not establish that an older version can read a newer schema.
 
 ## Recover
 
@@ -175,6 +177,16 @@ kubectl -n agentscope describe pod POD_NAME
 ```
 
 Gateway health does not verify model or tool execution. Inspect Dataplane for Managed Session failures, Scheduler for channel/Worker scheduling, and Control for product Automations, resources, accounts and orchestration. Hosted provider failures also need the machine's daemon logs.
+
+### Trace Managed execution across replicas
+
+The source Managed MQ runtime writes INFO messages prefixed with `managed_runtime ` followed by one JSON object. Deploy a build containing this instrumentation and restart the affected services; previously released images and running JVMs do not acquire it automatically. Assign each replica a distinct `BUILDER_INSTANCE_ID`, such as its Pod name. Without an override, `instance_id` uses hostname and PID. Every record also includes `host`, `pid` and a per-process `boot_id` so a restart remains distinguishable from the prior process.
+
+Follow `session_id` and `turn_id`, then correlate `run_id`, `epoch`, `checkpoint_id`, `task_id` and `execution_id`. `brain.checkpoint.published` means Broker acceptance; `hands.checkpoint.committed` confirms persistence. Match that checkpoint with `brain.checkpoint.loaded` and the new run on the replacement Brain. `hands.tool.querying_existing` queries an existing execution; it does not start the command again. `hands.sandbox.attached` identifies the Sandbox and distinguishes cloud creation from reconnection.
+
+`brain.execution.released` ends the active execution without evicting the Agent construction cache. Actual cache removal and close produce `brain.agent.cache.closed`; join its `cache_entry` with `brain.agent.cache.resolved` for Session attribution. Neither event proves JVM garbage collection. Consumer startup and SDK callback-return records can also lack a current Session; join them through `consumer_id` and `delivery_id`. A `SUCCESS` callback return is not a Broker ACK confirmation: verify consumption offsets too.
+
+These lifecycle records contain identifiers and finite states, not context bodies, tool arguments, complete tool results, credentials or Guard tokens. Cross-machine recovery still requires shared checkpoint storage and access to the same remote Sandbox; adding replicas and seeing successful requests alone does not establish recovery correctness.
 
 ## Restarting did not reset the administrator password
 

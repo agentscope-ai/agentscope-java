@@ -364,9 +364,10 @@ func definitionMCPServers(request Request) (map[string]any, error) {
 }
 
 type Event struct {
-	Type              string          `json:"type"`
-	ProviderSessionID string          `json:"providerSessionId,omitempty"`
-	Raw               json.RawMessage `json:"raw"`
+	Type                string          `json:"type"`
+	ProviderSessionID   string          `json:"providerSessionId,omitempty"`
+	CheckpointSessionID string          `json:"checkpointSessionId,omitempty"`
+	Raw                 json.RawMessage `json:"raw"`
 }
 
 type Result struct {

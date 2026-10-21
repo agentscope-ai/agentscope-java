@@ -1,0 +1,9 @@
+{
+  "proxyMode": "CLUSTER",
+  "rocketMQClusterName": "ManagedLiteTest",
+  "namesrvAddr": "namesrv:9876",
+  "grpcServerPort": 19982,
+  "remotingListenPort": 19980,
+  "enableProxyAutoRenew": true,
+  "renewMaxTimeMillis": 10800000
+}

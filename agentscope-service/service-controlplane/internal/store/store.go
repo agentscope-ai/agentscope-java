@@ -17,6 +17,8 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/policychanges"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/runtimeportal"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,6 +27,9 @@ import (
 // Store is the runtime-data persistence facade.
 // Implementations: PostgreSQL (production), memory (dev/tests).
 type Store interface {
+	RuntimeSnapshots() runtimeportal.DispatchCodec
+	RuntimePortal() runtimeportal.Repository
+	PolicyChanges() policychanges.Repository
 	Access() AccessRepository
 	Sessions() SessionRepository
 	Turns() TurnRepository
@@ -55,6 +60,8 @@ type Store interface {
 
 	// Migrate applies schema migrations. No-op for memory.
 	Migrate(ctx context.Context) error
+	// ValidateSchema checks the supported migration version without performing DDL.
+	ValidateSchema(ctx context.Context) error
 	// Ping checks connectivity (used by /readyz).
 	Ping(ctx context.Context) error
 	// Close releases resources.

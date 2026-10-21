@@ -15,6 +15,7 @@
 **
 !docker/
 !docker/Dockerfile.plane
+!docker/Dockerfile.go-plane
 !service-gateway/
 !service-gateway/target/
 !service-gateway/target/*.jar
@@ -24,3 +25,15 @@
 !service-scheduler/
 !service-scheduler/target/
 !service-scheduler/target/*.jar
+!service-session-portal/
+!service-session-portal/target/
+!service-session-portal/target/*.jar
+!service-hands/
+!service-hands/target/
+!service-hands/target/*.jar
+!service-controlplane/
+!service-controlplane/target/
+!service-controlplane/target/local-linux/
+!service-controlplane/target/local-linux/**
+!service-controlplane/ui/
+!service-controlplane/ui/**

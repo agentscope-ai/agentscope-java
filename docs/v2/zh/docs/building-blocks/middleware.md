@@ -8,7 +8,7 @@ en_link: /v2/en/docs/building-blocks/middleware
 
 Agent middleware 是在不修改 agent 或 model 代码的前提下，向 agent 执行流程中的关键位置注入自定义逻辑（日志、追踪、输入改写、访问控制等）的机制。
 
-AgentScope Java 中，可以在 6 个位置上设置 hook，覆盖了从外层 reply 流程一路下沉到底层模型 API 调用的全链路：
+AgentScope Java 中，可以在 7 个位置上设置 hook，覆盖了从外层 reply 流程一路下沉到底层模型 API 调用的全链路：
 
 | 位置 | 类型 | 说明 |
 |------|------|------|
@@ -18,6 +18,7 @@ AgentScope Java 中，可以在 6 个位置上设置 hook，覆盖了从外层 r
 | `onModelCall` | Onion | 包裹一次底层 `ChatModel` API 调用，最贴近模型 |
 | `onSystemPrompt` | Transformer | 在每次组装 system prompt 时触发；多个 middleware 串行接力，每一个把上一个的输出再做一次变换 |
 | `onAgentStateReady` | Notification | 每次调用触发一次：本次调用的 `AgentState` 就绪时——早于输入进入流水线（pre-call 钩子、记忆、推理） |
+| `onAgentFinish` | 等待完成的通知 | 在调用结果产生后、原生 checkpoint 与 writer 释放前返回 `Mono<Void>`；保留当前调用上下文。 |
 
 三种类型的差别：
 
@@ -47,7 +48,7 @@ onAgent/
 
 ## 装备 Middleware
 
-AgentScope 把一组 hook 装在一个 `MiddlewareBase` 实现里 —— 同一个 middleware 类可以同时实现 6 个位置中任意子集的 hook（未实现的 Onion / Transformer 位置默认 `next.apply(input)`；通知式位置默认不做任何事）。把实例传给 builder 的 `middlewares(...)` 即可装备：
+AgentScope 把一组 hook 装在一个 `MiddlewareBase` 实现里 —— 同一个 middleware 类可以同时实现 7 个位置中任意子集的 hook（未实现的 Onion / Transformer 位置默认 `next.apply(input)`；通知式位置默认不做任何事）。把实例传给 builder 的 `middlewares(...)` 即可装备：
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -669,3 +670,5 @@ ReActAgent agent =
                 .middlewares(List.of(new StopOnAllDeniedMiddleware()))
                 .build();
 ```
+
+`onAgentFinish` 按 middleware 顺序串行执行，通过 `ON_AGENT_FINISH` 参与。服务托管的记忆提取与整理使用这个扩展点，使授权与用量留在当前 Turn 内。独立 Harness 调用保持默认的后台记忆行为。

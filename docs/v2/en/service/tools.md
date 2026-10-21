@@ -18,6 +18,16 @@ When creating an Agent through `POST /api/v1/agents`, place these fields inside 
 
 The configuration below applies to Managed Agents hosted by Service. External Agents manage their tools in the external application; Hosted Agents depend on the tool mappings supported by their runtime provider. The Managed definition API currently accepts `agent_toolset` and `mcp_toolset`. To call your own business functions, expose them as MCP tools and connect them through `mcpServers`.
 
+For the source Managed runtime, Hands performs MCP discovery and invocation. Brain uses the
+returned descriptors and its normal permission chain, then persists an immutable tool intent before
+handing execution to Hands. Descriptors are pinned for a Turn and rediscovered on the next Turn;
+an optional unavailable server can recover then. Hosted or self-hosted Environments use HTTP/SSE;
+stdio requires an explicit local Environment. A lost in-flight RPC response remains unknown and is
+not automatically called again.
+Cancellation still asks the original execution to stop when its outcome is unknown. A confirmed
+original result remains valid; without confirmation that it stopped, the operation stays unknown
+and is never restarted because of cancellation.
+
 ## Prepare built-in tools and an MCP connection
 
 The following document assistant can query a product catalog through MCP and read or write files in its execution environment. Prepare a real MCP server exposing `lookup_product`, replace the URL with its address, and save the JSON below as `agent-definition.json` in your terminal's current directory. If your server uses another tool name, update both `configs` and the verification task later in this guide.

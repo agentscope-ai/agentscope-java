@@ -1,0 +1,9 @@
+FROM apache/rocketmq:5.5.0@sha256:7e8f6c9dbd9df742ed26ba69c00d4ad69e2f86a56f3ca7782ff8144dd0798132
+USER root
+COPY rocketmq-all-5.5.1-bin-release /home/rocketmq/rocketmq-5.5.1
+RUN chown -R 3000:3000 /home/rocketmq/rocketmq-5.5.1 && chmod +x /home/rocketmq/rocketmq-5.5.1/bin/*
+ENV ROCKETMQ_HOME=/home/rocketmq/rocketmq-5.5.1
+ENV PATH=/home/rocketmq/rocketmq-5.5.1/bin:$PATH
+WORKDIR /home/rocketmq/rocketmq-5.5.1/bin
+ENTRYPOINT ["/home/rocketmq/rocketmq-5.5.0/bin/docker-entrypoint.sh"]
+USER 3000

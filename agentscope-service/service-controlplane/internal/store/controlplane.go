@@ -120,23 +120,31 @@ type RuntimeRegistryRepository interface {
 
 // ExecutionAttemptFilter limits physical attempt queries.
 type ExecutionAttemptFilter struct {
-	AgentTaskID     uuid.UUID
-	AgentID         uuid.UUID
-	BindingID       uuid.UUID
-	Tenant          string
-	Namespace       string
-	SessionID       string
-	RuntimePoolName string
-	HostID          uuid.UUID
-	State           controlmodel.ExecutionAttemptState
-	NewestFirst     bool
-	Limit           int
+	PortalOnly             bool
+	SweepAfterID           *uuid.UUID
+	PortalCommandID        string
+	AfterCreatedAt         *time.Time
+	AfterID                uuid.UUID
+	AgentTaskID            uuid.UUID
+	AgentID                uuid.UUID
+	BindingID              uuid.UUID
+	Tenant                 string
+	Namespace              string
+	SessionID              string
+	RuntimePoolName        string
+	HostID                 uuid.UUID
+	State                  controlmodel.ExecutionAttemptState
+	ActiveOnly             bool
+	ExcludeCancelRequested bool
+	NewestFirst            bool
+	Limit                  int
 }
 
 // ExecutionClaim asks the store to atomically claim the oldest compatible
 // queued execution. Capability matching is performed by the scheduler before
 // claim; pool/profile constraints are enforced again by the store.
 type ExecutionClaim struct {
+	PortalOnly      bool
 	Tenant          string
 	Namespace       string
 	RuntimePoolName string
@@ -156,10 +164,36 @@ type ExecutionAttemptReport struct {
 	FailureCode, FailureMessage string
 }
 
+// ManagedTurnBinding records the native admission receipt for one immutable task attempt.
+// It does not claim execution or create a second liveness lease.
+type ManagedTurnBinding struct {
+	AttemptID          uuid.UUID
+	DispatchGeneration int64
+	SessionID          string
+	TurnID             string
+}
+
+func ValidateManagedTurnBinding(task *controlmodel.AgentTask, attempt *controlmodel.ExecutionAttempt, binding ManagedTurnBinding) error {
+	finishedCurrent := task != nil && attempt != nil &&
+		(task.Status == controlmodel.AgentTaskCompleted && attempt.State == controlmodel.ExecutionSucceeded ||
+			task.Status == controlmodel.AgentTaskFailed && attempt.State == controlmodel.ExecutionFailed)
+	if task == nil || attempt == nil || binding.AttemptID == uuid.Nil || binding.DispatchGeneration <= 0 ||
+		binding.SessionID == "" || binding.TurnID == "" || len(binding.TurnID) > 256 ||
+		attempt.ID != binding.AttemptID || attempt.BackendKind != controlmodel.DataPlaneManaged ||
+		attempt.DispatchGeneration != binding.DispatchGeneration || attempt.SessionID != binding.SessionID ||
+		task.ID != attempt.AgentTaskID || task.CurrentAttemptID == nil || *task.CurrentAttemptID != attempt.ID ||
+		(controlmodel.IsAgentTaskTerminal(task.Status) || controlmodel.IsExecutionAttemptTerminal(attempt.State)) && !finishedCurrent ||
+		attempt.State == controlmodel.ExecutionCancelRequested || attempt.TurnID != "" && attempt.TurnID != binding.TurnID {
+		return ErrConflict
+	}
+	return nil
+}
+
 // ExecutionAttemptRepository manages physical execution attempts and leases.
 type ExecutionAttemptRepository interface {
 	Create(ctx context.Context, execution *controlmodel.ExecutionAttempt) (*controlmodel.ExecutionAttempt, error)
 	Get(ctx context.Context, id uuid.UUID) (*controlmodel.ExecutionAttempt, error)
+	BindManagedTurn(ctx context.Context, binding ManagedTurnBinding) (*controlmodel.ExecutionAttempt, error)
 	List(ctx context.Context, filter ExecutionAttemptFilter) ([]*controlmodel.ExecutionAttempt, error)
 	Claim(ctx context.Context, claim ExecutionClaim) (*controlmodel.ExecutionAttempt, error)
 	RenewLease(ctx context.Context, id uuid.UUID, leaseToken string, fencingToken int64, ttl time.Duration) (*controlmodel.ExecutionAttempt, error)
@@ -178,6 +212,7 @@ type ExecutionAttemptRepository interface {
 type OutboxRepository interface {
 	Enqueue(ctx context.Context, event *controlmodel.OutboxEvent) (*controlmodel.OutboxEvent, error)
 	Claim(ctx context.Context, worker string, now time.Time, ttl time.Duration, limit int) ([]*controlmodel.OutboxEvent, error)
+	ClaimPortalRuntime(ctx context.Context, worker string, now time.Time, ttl time.Duration, limit int) ([]*controlmodel.OutboxEvent, error)
 	MarkDelivered(ctx context.Context, id uuid.UUID, worker string) error
 	MarkFailed(ctx context.Context, id uuid.UUID, worker, lastError string, retryAt time.Time) error
 	MarkDeferred(ctx context.Context, id uuid.UUID, worker, lastError string, retryAt time.Time) error

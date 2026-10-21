@@ -385,18 +385,20 @@ type CollaborationTeamMember struct {
 }
 
 type Artifact struct {
-	ID              uuid.UUID       `json:"id"`
-	Tenant          string          `json:"tenant"`
-	Namespace       string          `json:"namespace"`
-	StorageProvider string          `json:"storageProvider"`
-	StorageKey      string          `json:"storageKey"`
-	Filename        string          `json:"filename"`
-	ContentType     string          `json:"contentType"`
-	SizeBytes       int64           `json:"sizeBytes"`
-	Checksum        string          `json:"checksum"`
-	Uploader        Actor           `json:"uploader"`
-	SourceTaskID    *uuid.UUID      `json:"sourceTaskId,omitempty"`
-	SourceAttemptID *uuid.UUID      `json:"sourceAttemptId,omitempty"`
+	ID              uuid.UUID  `json:"id"`
+	Tenant          string     `json:"tenant"`
+	Namespace       string     `json:"namespace"`
+	StorageProvider string     `json:"storageProvider"`
+	StorageKey      string     `json:"storageKey"`
+	Filename        string     `json:"filename"`
+	ContentType     string     `json:"contentType"`
+	SizeBytes       int64      `json:"sizeBytes"`
+	Checksum        string     `json:"checksum"`
+	Uploader        Actor      `json:"uploader"`
+	SourceTaskID    *uuid.UUID `json:"sourceTaskId,omitempty"`
+	SourceAttemptID *uuid.UUID `json:"sourceAttemptId,omitempty"`
+	// Assigned by the authenticated runtime transport, never by public input.
+	PortalCommandID string          `json:"-"`
 	Metadata        json.RawMessage `json:"metadata,omitempty"`
 	CreatedAt       time.Time       `json:"createdAt"`
 	ExpiresAt       *time.Time      `json:"expiresAt,omitempty"`

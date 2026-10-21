@@ -31,6 +31,7 @@ import (
 	"github.com/google/uuid"
 
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	serviceapi "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/orchestration"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
@@ -378,6 +379,20 @@ func (s *Server) signalOrchestrationRun(c *gin.Context) {
 	if !ok {
 		return
 	}
+	run, err := s.store.Orchestration().GetRun(c.Request.Context(), id)
+	if err != nil {
+		s.writeOrchestrationError(c, err)
+		return
+	}
+	contract, err := serviceapi.ContractForIssue(serviceapi.WithContract(c.Request.Context(), nil), s.store, run.RootIssueID)
+	if err != nil {
+		s.writeOrchestrationError(c, err)
+		return
+	}
+	if contract != nil && contract.PortalCommandID != "" {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "Portal-owned signals require the Session Turn actions API"})
+		return
+	}
 	name := strings.TrimSpace(c.Param("name"))
 	var req struct {
 		IdempotencyKey string          `json:"idempotencyKey"`
@@ -650,6 +665,7 @@ func (s *Server) signalTaskRun(c *gin.Context) {
 	}
 	name := c.Param("name")
 	var req struct {
+		RequestID      string          `json:"requestId"`
 		IdempotencyKey string          `json:"idempotencyKey"`
 		Payload        json.RawMessage `json:"payload"`
 	}
@@ -657,11 +673,19 @@ func (s *Server) signalTaskRun(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
-	if err := s.orchestrationService().Signal(c.Request.Context(), task.OrchestrationRunID, name, req.IdempotencyKey, req.Payload, collaborationActor(c, s)); err != nil {
-		s.writeOrchestrationError(c, err)
+	token := c.GetHeader("X-Agent-Task-Token")
+	if token == "" {
+		token = requestBearerToken(c)
+	}
+	if len(req.Payload) == 0 {
+		req.Payload = json.RawMessage(`null`)
+	}
+	receipt, err := s.submitTaskRunSignal(c.Request.Context(), task, token, name, req.RequestID, req.IdempotencyKey, req.Payload)
+	if err != nil {
+		runtimeHTTPError(c, err)
 		return
 	}
-	c.Status(http.StatusAccepted)
+	c.JSON(http.StatusAccepted, receipt)
 }
 func (s *Server) getTaskRunArtifacts(c *gin.Context) {
 	task, ok := taskPrincipal(c)

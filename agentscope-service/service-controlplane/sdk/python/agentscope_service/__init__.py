@@ -15,7 +15,7 @@
 """AgentScope Service Python SDK — 异构 Agent 框架的数据面适配层。
 
 旁路拦截各框架 Session / Context / Subagent / Workspace 数据，经混合通道
-（ASDP gRPC 上行推送 + 内嵌 HTTP 合约服务）送到 Control Plane 控制面。
+（Runtime Protocol gRPC 上行推送 + 内嵌 HTTP 合约服务）送到 Control Plane 控制面。
 
 用户入口（sdk-design §5.4）::
 
@@ -25,8 +25,8 @@
     client = ClaudeSDKClient(ClaudeAgentOptions(...))
     agentscope_service.instrument(
         client,
-        control_plane="service-controlplane.controlplane-system:9090",
-        control_plane_http="http://service-controlplane.controlplane-system:8080",
+        control_plane="localhost:9090",
+        control_plane_http="http://localhost:8080",
         agent_key="my-claude-agent",
         namespace="default",
         enable_events=True,       # 持久化事件是会话历史的默认事实源
@@ -94,7 +94,7 @@ def instrument(
     Pod 名），再缺省取主机名。
 
     传入 ``control_plane_http`` 时，SDK 会先通过 v5 注册接口获得稳定的
-    ``agentId/bindingId/generation`` 和 registration credential，再建立 ASDP。
+    ``agentId/bindingId/generation`` 和 registration credential，再建立 RuntimeProtocol。
     已持久化这些值的实例也可直接传入，跳过首次注册。
     """
     if adapter is None:
@@ -170,7 +170,8 @@ __all__ = [
 
 from .adapters.executable import ExecutableAdapter, TaskContext, TaskResult
 from .service import ServiceClient
-__all__ += ["ExecutableAdapter", "TaskContext", "TaskResult", "ServiceClient"]
+from .managed import ManagedSessionClient
+__all__ += ["ExecutableAdapter", "TaskContext", "TaskResult", "ServiceClient", "ManagedSessionClient"]
 
 from .adapters.runners import AgentScopeRunnerAdapter, AsyncInvokeAdapter
 

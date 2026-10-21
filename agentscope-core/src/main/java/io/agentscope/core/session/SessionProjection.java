@@ -26,25 +26,33 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /** Read-only recovery view. Inspection never repairs records or invokes models/tools. */
 public record SessionProjection(
         long asOfSeq, String stateJson, Set<String> uncertainToolCalls, Set<String> activeRuns) {
     public static SessionProjection read(SessionLog log) {
+        return read(log, event -> {});
+    }
+
+    /** Builds one projection while allowing startup readers to inspect that same metadata prefix. */
+    public static SessionProjection read(SessionLog log, Consumer<SessionEvent> observer) {
         long cursor = 0;
         String state = null;
+        SessionEvent checkpoint = null;
         var uncertain = new LinkedHashSet<String>();
         var runs = new LinkedHashSet<String>();
         var results = new LinkedHashMap<String, ToolResultBlock>();
         var verifications = new ArrayList<io.agentscope.core.state.TaskVerification>();
         var extensions = new ArrayList<SessionEvent>();
         long upper = log.head().seq();
-        for (var event : log.scan(0, upper)) {
+        for (var event : log.scanMetadata(0, upper)) {
             SessionEventTypes.validate(event);
+            observer.accept(event);
             var data = event.data();
             switch (event.type()) {
                 case "state/checkpoint", "migration/baseline", "state/restored" -> {
-                    state = (String) data.get("stateJson");
+                    checkpoint = event;
                     results.clear();
                     verifications.clear();
                     extensions.clear();
@@ -86,6 +94,8 @@ public record SessionProjection(
             }
             cursor = event.seq();
         }
+        if (checkpoint != null)
+            state = (String) log.materialize(checkpoint).data().get("stateJson");
         if (state != null
                 && (!results.isEmpty() || !verifications.isEmpty() || !extensions.isEmpty())) {
             AgentState restored = AgentState.fromJsonString(state);
@@ -106,7 +116,8 @@ public record SessionProjection(
                         .recordVerification(
                                 report, restored.getTasksContext().snapshot().getRevision());
             for (var extension : extensions)
-                SessionEventCodecRegistry.defaultRegistry().applyExtension(restored, extension);
+                SessionEventCodecRegistry.defaultRegistry()
+                        .applyExtension(restored, log.materialize(extension));
             state = restored.toJson();
         }
         return new SessionProjection(cursor, state, Set.copyOf(uncertain), Set.copyOf(runs));

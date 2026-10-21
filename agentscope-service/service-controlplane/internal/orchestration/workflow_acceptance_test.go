@@ -315,6 +315,27 @@ func TestWorkflowAcceptance(t *testing.T) {
 					t.Fatal(err)
 				}
 				run, _ = st.Orchestration().GetRun(ctx, run.ID)
+				if run.State != controlmodel.RunCancelling || run.FailureCode != "business" {
+					t.Fatalf("failure drain intent=%+v", run)
+				}
+				children, err := st.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{RootIssueID: run.RootIssueID, Limit: 10})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, child := range children {
+					if child.ParentRunID != nil && *child.ParentRunID == run.ID {
+						if child.State != controlmodel.RunCancelling {
+							t.Fatalf("child cancellation intent=%+v", child)
+						}
+						if err = (&Engine{Store: st}).ReconcileRun(ctx, child.ID); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				if err = (&Engine{Store: st}).ReconcileRun(ctx, run.ID); err != nil {
+					t.Fatal(err)
+				}
+				run, _ = st.Orchestration().GetRun(ctx, run.ID)
 				if run.State != controlmodel.RunFailed {
 					t.Fatalf("run=%+v", run)
 				}

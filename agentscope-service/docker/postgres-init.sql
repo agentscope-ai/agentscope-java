@@ -1,10 +1,12 @@
--- Shared Postgres bootstrap. One instance, three schemas:
+-- Shared Postgres bootstrap. One instance, five schemas:
 --   cp  Managed Agents control plane (service-controlplane, product module)
 --   rt  service-controlplane runtime store (sessions, events, context snapshots, metrics)
---   dp  Java data plane / scheduler
+--   dp  Java data plane
 CREATE SCHEMA IF NOT EXISTS cp;
 CREATE SCHEMA IF NOT EXISTS rt;
+CREATE SCHEMA IF NOT EXISTS portal;
 CREATE SCHEMA IF NOT EXISTS dp;
+CREATE SCHEMA IF NOT EXISTS ma;
 GRANT ALL ON SCHEMA cp TO builder;
 GRANT ALL ON SCHEMA rt TO builder;
 GRANT ALL ON SCHEMA dp TO builder;

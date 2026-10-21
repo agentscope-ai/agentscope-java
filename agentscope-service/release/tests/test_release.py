@@ -167,12 +167,12 @@ class ReleaseTests(unittest.TestCase):
             self.assertGreaterEqual(len(settings['CONTROL_PLANE_BOOTSTRAP_PASSWORD']), 12)
             self.assertNotEqual(settings['BUILDER_JWT_SECRET'], settings['BUILDER_INTERNAL_TOKEN'])
 
-    def test_chart_has_four_planes_shared_storage_and_no_demo_users(self):
+    def test_chart_has_seven_services_schema_jobs_and_no_demo_users(self):
         rendered = subprocess.check_output(['helm', 'template', 'test', str(SERVICE / 'helm/agentscope-service'),
-                                           '--set', 'imageRepository=example.com/test', '--set', 'existingSecret=credentials'], text=True)
+                                           '--set', 'imageRepository=example.com/test', '--set', 'existingSecret=credentials', '--set', 'schema.existingSecret=migration-credentials'], text=True)
         objects = [o for o in yaml.safe_load_all(rendered) if o]
         deployments = [o for o in objects if o['kind'] == 'Deployment']
-        self.assertEqual(len(deployments), 4)
+        self.assertEqual(len(deployments), 5)
         claims = []
         image_tag = yaml.safe_load((SERVICE / 'helm/agentscope-service/Chart.yaml').read_text())['appVersion']
         for dep in deployments:
@@ -189,9 +189,9 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(env['CONTROL_PLANE_ENABLE_KUBERNETES'], 'false')
             if container['name'] == 'gateway':
                 self.assertNotIn('envFrom', container)
-            else:
+            elif container['name'] in ('control', 'dataplane'):
                 claims.append(next(v for v in pod['volumes'] if v['name'] == 'workspaces')['persistentVolumeClaim']['claimName'])
-        self.assertEqual(len(claims), 3)
+        self.assertEqual(len(claims), 2)
         self.assertEqual(len(set(claims)), 1)
         for pvc in [o for o in objects if o['kind'] == 'PersistentVolumeClaim']:
             self.assertEqual(pvc['metadata']['annotations']['helm.sh/resource-policy'], 'keep')
@@ -200,6 +200,100 @@ class ReleaseTests(unittest.TestCase):
         result = subprocess.run(['helm', 'template', 'test', str(SERVICE / 'helm/agentscope-service')], capture_output=True)
         self.assertNotEqual(result.returncode, 0)
 
+    def test_schema_jobs_have_separate_credentials_and_can_run_before_business_grants(self):
+        command = ['helm', 'template', 'schema', str(SERVICE / 'helm/agentscope-service'),
+                   '--set', 'imageRepository=example.com/test', '--set', 'schema.only=true',
+                   '--set', 'schema.existingSecret=migration-credentials']
+        objects = [o for o in yaml.safe_load_all(subprocess.check_output(command, text=True)) if o]
+        self.assertEqual(len(objects), 4)
+        self.assertEqual({o['kind'] for o in objects}, {'Job'})
+        for job in objects:
+            container = job['spec']['template']['spec']['containers'][0]
+            self.assertEqual(container['envFrom'][0]['secretRef']['name'], 'migration-credentials')
+            self.assertEqual(job['metadata']['annotations']['helm.sh/hook'], 'pre-install,pre-upgrade')
+            self.assertNotIn('ports', container)
+        for settings in [[], ['--set', 'portal.existingSecret=migration-credentials']]:
+            ordinary = ['helm', 'template', 'test', str(SERVICE / 'helm/agentscope-service'),
+                        '--set', 'imageRepository=example.com/test', '--set', 'existingSecret=credentials',
+                        '--set', 'schema.existingSecret=' + ('credentials' if not settings else 'migration-credentials')]
+            result = subprocess.run(ordinary + settings, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Secret', result.stderr)
+
+    def test_platform_hands_uses_http_mq_and_postgres_private_objects(self):
+        rendered = subprocess.check_output(['helm', 'template', 'test', str(SERVICE / 'helm/agentscope-service'),
+            '--set', 'imageRepository=example.com/test', '--set', 'existingSecret=credentials',
+            '--set', 'schema.existingSecret=migration-credentials', '--set', 'hands.replicas=2'], text=True)
+        objects = [o for o in yaml.safe_load_all(rendered) if o]
+        workloads = {o['metadata']['labels']['app.kubernetes.io/component']: o
+                     for o in objects if o['kind'] == 'Deployment'}
+        hands = workloads['hands']
+        self.assertEqual(hands['spec']['replicas'], 2)
+        container = hands['spec']['template']['spec']['containers'][0]
+        self.assertEqual(container['args'], ['--platform-service'])
+        self.assertEqual(container['ports'], [{'name': 'http', 'containerPort': 8085}])
+        self.assertEqual(hands['spec']['template']['spec']['terminationGracePeriodSeconds'], 45)
+        self.assertEqual({m['name'] for m in container['volumeMounts']}, {'workspaces'})
+        for component in ['portal', 'dataplane', 'hands']:
+            pod = workloads[component]['spec']['template']['spec']
+            env = {e['name']: e['value'] for e in pod['containers'][0]['env']}
+            self.assertEqual(env['BUILDER_MANAGED_MQ_TURN_TOPIC'], 'ma_turns_v3')
+            self.assertNotIn('BUILDER_MANAGED_MQ_EVENT_TOPIC', env)
+            self.assertNotIn('BUILDER_MANAGED_CALLBACK_HOLD_SECONDS', env)
+            self.assertEqual(env['BUILDER_MANAGED_MQ_RESUME_TOPIC'], 'ma_turn_resumes_v3')
+            self.assertEqual(env['BUILDER_MANAGED_MQ_CACHE_BYTES'], '33554432')
+            self.assertNotIn('BUILDER_MANAGED_BLOB_DIR', env)
+            self.assertNotIn('managed-blobs', {v['name'] for v in pod.get('volumes', [])})
+        env = {e['name']: e['value'] for e in workloads['dataplane']['spec']['template']['spec']['containers'][0]['env']}
+        self.assertEqual(env['BUILDER_MANAGED_CONSUMERS_ENABLED'], 'true')
+        self.assertNotIn('BUILDER_RUNTIME_DISPATCH_ENABLED', env)
+        hands_service = next(o for o in objects if o['kind'] == 'Service'
+                             and o['metadata']['labels']['app.kubernetes.io/component'] == 'hands')
+        self.assertEqual(hands_service['spec']['type'], 'ClusterIP')
+        self.assertEqual(hands_service['spec']['ports'][0]['port'], 8085)
+
+    def test_multiple_dataplane_replicas_use_shared_storage_and_schema_validation(self):
+        rendered = subprocess.check_output([
+            'helm', 'template', 'test', str(SERVICE / 'helm/agentscope-service'),
+            '--set', 'imageRepository=example.com/test', '--set', 'existingSecret=credentials', '--set', 'schema.existingSecret=migration-credentials',
+            '--set', 'dataplane.replicas=2', '--set', 'dataplane.ddlAuto=validate'], text=True)
+        deployments = [o for o in yaml.safe_load_all(rendered) if o and o['kind'] == 'Deployment']
+        for deployment in deployments:
+            component = deployment['metadata']['labels']['app.kubernetes.io/component']
+            self.assertEqual(deployment['spec']['replicas'], 2 if component == 'dataplane' else 1)
+            if component == 'dataplane':
+                self.assertEqual(deployment['spec']['strategy']['type'], 'RollingUpdate')
+                env = {e['name']: e['value'] for e in deployment['spec']['template']['spec']['containers'][0]['env']}
+                self.assertEqual(env['BUILDER_JPA_DDL_AUTO'], 'validate')
+
+    def test_multiple_dataplane_replicas_reject_unsafe_storage_or_ddl(self):
+        command = ['helm', 'template', 'test', str(SERVICE / 'helm/agentscope-service'),
+                   '--set', 'imageRepository=example.com/test', '--set', 'existingSecret=credentials', '--set', 'schema.existingSecret=migration-credentials',
+                   '--set', 'dataplane.replicas=2']
+        for settings, message in [(['--set', 'dataplane.ddlAuto=update'], 'ddlAuto must be validate'),
+                                  (['--set', 'dataplane.ddlAuto=validate', '--set',
+                                    'persistence.workspaces.accessModes[0]=ReadWriteOnce'], 'ReadWriteMany')]:
+            result = subprocess.run(command + settings, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(message, result.stderr)
+
+    def test_two_replicas_without_user_files_require_no_shared_volumes(self):
+        command = ['helm', 'template', 'test', str(SERVICE / 'helm/agentscope-service'),
+                   '--set', 'imageRepository=example.com/test', '--set', 'existingSecret=credentials',
+                   '--set', 'schema.existingSecret=migration-credentials', '--set', 'userFilesEnabled=false']
+        for component in release.PLANES:
+            command += ['--set', component + '.replicas=2']
+        objects = [o for o in yaml.safe_load_all(subprocess.check_output(command, text=True)) if o]
+        self.assertFalse(any(o['kind'] == 'PersistentVolumeClaim' for o in objects))
+        workloads = [o for o in objects if o['kind'] == 'Deployment']
+        self.assertEqual(len(workloads), 5)
+        for workload in workloads:
+            self.assertEqual(workload['spec']['replicas'], 2)
+            pod = workload['spec']['template']['spec']
+            self.assertFalse(any('persistentVolumeClaim' in volume for volume in pod.get('volumes', [])))
+            env = {item['name']: item['value'] for item in pod['containers'][0]['env']}
+            self.assertEqual(env['BUILDER_USER_FILES_ENABLED'], 'false')
+
     def test_compose_has_no_build_or_public_internal_ports(self):
         compose = yaml.safe_load((SERVICE / 'deploy/compose.yaml').read_text())
         for name, service in compose['services'].items():
@@ -207,7 +301,15 @@ class ReleaseTests(unittest.TestCase):
             if name != 'gateway':
                 self.assertNotIn('ports', service)
         self.assertEqual(compose['services']['control']['environment']['CONTROL_PLANE_SEED_USERS'], 'false')
-        for name, plane in {'control': 'control', 'data': 'dataplane', 'gateway': 'gateway', 'scheduler': 'scheduler'}.items():
+        hands = compose['services']['hands']
+        self.assertNotIn('profiles', hands)
+        self.assertEqual(hands['command'], ['--platform-service'])
+        self.assertIn('schema-managed', compose['services']['schema-grants']['depends_on'])
+        self.assertEqual(compose['services']['schema-managed']['command'], ['--component=managed'])
+        self.assertEqual(compose['services']['data']['environment']['BUILDER_MANAGED_CONSUMERS_ENABLED'], 'true')
+        self.assertFalse(any('managed-runtime-blobs' in volume for volume in hands['volumes']))
+
+        for name, plane in {'control': 'control', 'data': 'dataplane', 'portal': 'portal', 'hands': 'hands', 'gateway': 'gateway'}.items():
             self.assertIn('/' + release.IMAGE_NAMES[plane] + ':', compose['services'][name]['image'])
 
 
@@ -267,7 +369,7 @@ class ReleaseImageTests(unittest.TestCase):
                     mock.patch.object(release, 'build_image') as build:
                 release.images(args)
             build.assert_called_once_with(args, 'gateway', 'commit')
-            self.assertEqual(inspections.call_count, 5)
+            self.assertEqual(inspections.call_count, len(release.PLANES) + 1)
             metadata = json.loads((args.output / 'images.json').read_text())
             self.assertEqual(metadata['sourceCommit'], 'commit')
             self.assertEqual(set(metadata['images']), set(release.PLANES))
@@ -299,7 +401,7 @@ class ReleaseImageTests(unittest.TestCase):
                     self.assertIn('VERSION=version', command)
                     self.assertIn('GIT_COMMIT=commit', command)
                 else:
-                    self.assertIn('MODULE=service-' + plane, command)
+                    self.assertIn('MODULE=' + release.JAVA_MODULES[plane], command)
 
 
 if __name__ == '__main__':

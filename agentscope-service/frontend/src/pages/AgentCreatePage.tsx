@@ -82,9 +82,9 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 const managedRuntime: DiscoveredRuntimeOption = {
-  id: 'managed', name: 'AgentScope Managed', provider: 'agentscope', runtimeProfileId: '', runtimePoolId: '', hostCount: 1,
+  id: 'managed', name: 'AgentScope Service', provider: 'agentscope-service', runtimeProfileId: '', runtimePoolId: '', hostCount: 1,
   capabilities: {
-    displayName: 'AgentScope Managed', instructions: { supported: true, mode: 'native' },
+    displayName: 'AgentScope Service', instructions: { supported: true, mode: 'native' },
     workspace: { supported: true, mode: 'native' }, skills: { supported: true, mode: 'native' },
     tools: { supported: true, mode: 'native' }, mcp: { supported: true, mode: 'native' },
     model: { supported: true, mode: 'registry' }, resume: true,
@@ -257,7 +257,7 @@ export default function AgentCreatePage() {
                   {runtimes.map(runtime => <option key={runtime.id} value={runtime.id}>{runtime.name}</option>)}
                   <option value="managed">{managedRuntime.name}</option>
                 </select>
-                {runtimes.length === 0 && <div style={S.hint}>No local agent runtime is online, so AgentScope Managed is selected.</div>}
+                {runtimes.length === 0 && <div style={S.hint}>No local agent runtime is online, so AgentScope Service is selected.</div>}
                 {labels.length > 0 && <div style={S.capabilityList}>{labels.map(label => <span key={label} style={S.capability}>{label}</span>)}</div>}
                 {capabilityDetail && <div style={S.hint}>{capabilityDetail}</div>}
               </div>
