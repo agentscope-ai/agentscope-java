@@ -198,9 +198,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 "if [ -e "
                         + escapedPath
                         + " ]; then echo 'EXISTS'; exit 1; fi; "
-                        + "mkdir -p \"$(dirname "
-                        + escapedPath
-                        + ")\" 2>&1";
+                        + FilesystemUtils.mkdirParent(filePath)
+                        + " 2>&1";
 
         ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
         if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
@@ -211,7 +210,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                                 + " because it already exists. Read and then make an"
                                 + " edit, or write to a new path.");
             }
-            return WriteResult.fail("Failed to write file '" + filePath + "'");
+            return WriteResult.fail(executeFailureMessage(checkResult, "writing", filePath));
         }
 
         List<FileUploadResponse> responses =
@@ -440,7 +439,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         AbstractFilesystem.validatePath(toPath);
         String escapedFrom = FilesystemUtils.shellQuote(fromPath);
         String escapedTo = FilesystemUtils.shellQuote(toPath);
-        String cmd = "mkdir -p $(dirname " + escapedTo + ") && mv " + escapedFrom + " " + escapedTo;
+        String cmd =
+                FilesystemUtils.mkdirParent(toPath) + " && mv " + escapedFrom + " " + escapedTo;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         if (result.exitCode() != 0) {
             return WriteResult.fail(
