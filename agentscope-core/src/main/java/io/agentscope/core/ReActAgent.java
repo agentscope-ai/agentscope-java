@@ -143,6 +143,7 @@ import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolExecutionCallback;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolRequestConfig;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
@@ -172,7 +173,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -3758,51 +3758,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             parentCtx ->
                                     Flux.<AgentEvent>create(
                                             sink -> {
+                                                ToolResultCallback callback =
+                                                        new ToolResultCallback(
+                                                                replyId, sink, parentCtx);
                                                 for (ToolUseBlock tool : approved) {
-                                                    sink.next(
-                                                            new ToolResultStartEvent(
-                                                                    replyId,
-                                                                    tool.getId(),
-                                                                    tool.getName()));
+                                                    callback.onStart(tool);
                                                 }
-
-                                                BiConsumer<ToolUseBlock, ToolResultBlock>
-                                                        internalChunkCallback =
-                                                                (toolUse, chunk) -> {
-                                                                    if (chunk.getOutput() != null
-                                                                            && !chunk.getOutput()
-                                                                                    .isEmpty()) {
-                                                                        for (ContentBlock block :
-                                                                                chunk.getOutput()) {
-                                                                            sink.next(
-                                                                                    new ToolProgressEvent(
-                                                                                                    replyId,
-                                                                                                    toolUse
-                                                                                                            .getId(),
-                                                                                                    toolUse
-                                                                                                            .getName(),
-                                                                                                    block)
-                                                                                            .withMetadata(
-                                                                                                    chunk
-                                                                                                            .getMetadata()));
-                                                                        }
-                                                                    }
-                                                                    hookDispatcher
-                                                                            .fireActingChunk(
-                                                                                    toolUse, chunk,
-                                                                                    toolkit)
-                                                                            .contextWrite(
-                                                                                    ctx ->
-                                                                                            ctx
-                                                                                                    .putAll(
-                                                                                                            parentCtx))
-                                                                            .subscribe();
-                                                                };
-
                                                 Disposable toolCallsDisposable =
-                                                        executeToolCalls(
-                                                                        approved,
-                                                                        internalChunkCallback)
+                                                        executeToolCalls(approved, callback)
                                                                 .contextWrite(
                                                                         ctx -> {
                                                                             Context merged =
@@ -3850,36 +3813,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                             merged.addAll(results);
                                                                             resultHolder.set(
                                                                                     merged);
-                                                                            for (Map.Entry<
-                                                                                            ToolUseBlock,
-                                                                                            ToolResultBlock>
-                                                                                    entry :
-                                                                                            results) {
-                                                                                if (entry.getValue()
-                                                                                        .isSuspended()) {
-                                                                                    continue;
-                                                                                }
-                                                                                emitToolResultDelta(
-                                                                                        sink,
-                                                                                        replyId,
-                                                                                        entry);
-                                                                                ToolResultState
-                                                                                        state =
-                                                                                                determineToolResultState(
-                                                                                                        entry
-                                                                                                                .getValue());
-                                                                                sink.next(
-                                                                                        new ToolResultEndEvent(
-                                                                                                        replyId,
-                                                                                                        entry.getKey()
-                                                                                                                .getId(),
-                                                                                                        entry.getKey()
-                                                                                                                .getName(),
-                                                                                                        state)
-                                                                                                .withMetadata(
-                                                                                                        entry.getValue()
-                                                                                                                .getMetadata()));
-                                                                            }
                                                                             List<ToolUseBlock>
                                                                                     suspendedCalls =
                                                                                             getSuspendedToolCalls(
@@ -4000,29 +3933,73 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Emit delta events carrying the tool method's return value.
+         * Publish start, progress, and result events for locally dispatched tool calls.
          */
-        private void emitToolResultDelta(
-                FluxSink<AgentEvent> sink,
-                String replyId,
-                Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
-            String toolId = entry.getKey().getId();
-            String toolName = entry.getKey().getName();
-            ToolResultBlock toolResult = entry.getValue();
-            List<ContentBlock> output = toolResult.getOutput();
-            if (output == null || output.isEmpty()) {
-                return;
+        private final class ToolResultCallback implements ToolExecutionCallback {
+            private final String replyId;
+            private final FluxSink<AgentEvent> sink;
+            private final reactor.util.context.ContextView parentContext;
+
+            private ToolResultCallback(
+                    String replyId,
+                    FluxSink<AgentEvent> sink,
+                    reactor.util.context.ContextView parentContext) {
+                this.replyId = replyId;
+                this.sink = sink;
+                this.parentContext = parentContext;
             }
-            for (ContentBlock block : output) {
-                if (block instanceof TextBlock tb) {
-                    sink.next(
-                            new ToolResultTextDeltaEvent(replyId, toolId, toolName, tb.getText())
-                                    .withMetadata(toolResult.getMetadata()));
-                } else {
-                    sink.next(
-                            new ToolResultDataDeltaEvent(replyId, toolId, toolName, block)
-                                    .withMetadata(toolResult.getMetadata()));
+
+            private void emit(AgentEvent event) {
+                sink.next(event);
+            }
+
+            @Override
+            public void onStart(ToolUseBlock call) {
+                ToolResultStartEvent event =
+                        new ToolResultStartEvent(replyId, call.getId(), call.getName());
+                emit(event);
+            }
+
+            @Override
+            public void onProgress(ToolUseBlock call, ToolResultBlock progress) {
+                if (progress.getOutput() != null) {
+                    for (ContentBlock block : progress.getOutput()) {
+                        emit(
+                                new ToolProgressEvent(replyId, call.getId(), call.getName(), block)
+                                        .withMetadata(progress.getMetadata()));
+                    }
                 }
+                hookDispatcher
+                        .fireActingChunk(call, progress, toolkit)
+                        .contextWrite(ctx -> ctx.putAll(parentContext))
+                        .subscribe();
+            }
+
+            @Override
+            public void onResult(ToolUseBlock call, ToolResultBlock result) {
+                if (result.isSuspended()) return;
+                Map<String, Object> metadata = result.getMetadata();
+                if (result.getOutput() != null) {
+                    for (ContentBlock block : result.getOutput()) {
+                        AgentEvent event =
+                                block instanceof TextBlock text
+                                        ? new ToolResultTextDeltaEvent(
+                                                replyId,
+                                                call.getId(),
+                                                call.getName(),
+                                                text.getText())
+                                        : new ToolResultDataDeltaEvent(
+                                                replyId, call.getId(), call.getName(), block);
+                        emit(event.withMetadata(metadata));
+                    }
+                }
+                emit(
+                        new ToolResultEndEvent(
+                                        replyId,
+                                        call.getId(),
+                                        call.getName(),
+                                        determineToolResultState(result))
+                                .withMetadata(metadata));
             }
         }
 
@@ -4093,14 +4070,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * <p>If tool execution fails (timeout, error, etc.), this method generates error tool results
          * for all pending tool calls instead of propagating the error. This ensures the agent can
          * continue processing and the model receives proper error feedback.
+         * The generated error results are also passed to the callback.
          *
          * @param toolCalls The list of tool calls (potentially modified by PreActingEvent hooks)
          * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
          */
         private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
-                List<ToolUseBlock> toolCalls,
-                BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
-            return dispatchToolCalls(toolCalls, internalChunkCallback)
+                List<ToolUseBlock> toolCalls, ToolResultCallback callback) {
+            return dispatchToolCalls(toolCalls, callback)
                     .map(
                             results ->
                                     IntStream.range(0, toolCalls.size())
@@ -4138,6 +4115,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                             "Tool execution failed:"
                                                                                     + " "
                                                                                     + errorMsg);
+                                                            callback.onResult(
+                                                                    toolCall, errorResult);
                                                             return Map.entry(toolCall, errorResult);
                                                         })
                                                 .toList();
@@ -4149,23 +4128,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Resolve tool results for {@code toolCalls}, in the same order. When this call is a
          * structured-output call, any {@code generate_response} invocations are executed against
          * the per-call {@link #soTool} (never registered on the shared toolkit); all other tools go
-         * through {@link Toolkit#callTools}.
+         * through {@link Toolkit#callToolsWithCallback}.
          */
         private Mono<List<ToolResultBlock>> dispatchToolCalls(
-                List<ToolUseBlock> toolCalls,
-                BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+                List<ToolUseBlock> toolCalls, ToolResultCallback callback) {
             boolean hasStructured =
                     soTool != null
                             && toolCalls.stream()
                                     .anyMatch(t -> STRUCTURED_OUTPUT_TOOL_NAME.equals(t.getName()));
             if (!hasStructured) {
-                return activeToolkit.callTools(
+                return activeToolkit.callToolsWithCallback(
                         toolCalls,
                         toolExecutionConfig,
                         ReActAgent.this,
                         buildMergedRuntimeContext(rc),
                         toolRequestConfig,
-                        internalChunkCallback);
+                        callback);
             }
 
             List<ToolUseBlock> regular =
@@ -4176,13 +4154,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     regular.isEmpty()
                             ? Mono.just(Map.of())
                             : activeToolkit
-                                    .callTools(
+                                    .callToolsWithCallback(
                                             regular,
                                             toolExecutionConfig,
                                             ReActAgent.this,
                                             buildMergedRuntimeContext(rc),
                                             toolRequestConfig,
-                                            internalChunkCallback)
+                                            callback)
                                     .map(
                                             list -> {
                                                 Map<String, ToolResultBlock> byId = new HashMap<>();
@@ -4198,7 +4176,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             use -> {
                                                 if (STRUCTURED_OUTPUT_TOOL_NAME.equals(
                                                         use.getName())) {
-                                                    return executeStructuredTool(use);
+                                                    return executeStructuredTool(use)
+                                                            .doOnNext(
+                                                                    result ->
+                                                                            callback.onResult(
+                                                                                    use, result));
                                                 }
                                                 ToolResultBlock result = byId.get(use.getId());
                                                 if (result == null) {

@@ -696,3 +696,11 @@ agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
 `Toolkit.callTool` 和 `callTools` 同样读取显式传入的 RuntimeContext。无配置的 `getTool(name)` 查看原始注册表；需要请求视图时使用 `getTool(name, config)`。工具组激活状态保存在会话的 `ToolContextState`，流式工具回调绑定本次调用。
 
 需要按用户或会话加载技能的仓库实现 Core 中的 `io.agentscope.core.skill.repository.RuntimeContextSkillRepository`。Core 和 Harness 都将当前上下文传给仓库。动态 Skill 视图按内容签名缓存，并发缓存未命中共享一次完整的资源物化；淘汰后重建视图使用新目录，保留运行中执行所引用的文件。缓存淘汰只限制保留的 SkillBox 数量，不限制磁盘占用：自动生成的目录保留到 JVM 退出时清理。调用方指定的工作目录由调用方负责清理；不要在仍有执行引用资源时删除它。
+
+## 工具执行生命周期回调
+
+`ToolExecutionCallback` 提供 `onStart(call)`、`onProgress(call, chunk)` 和 `onResult(call, result)`。Agent 在原来的批次位置发送 Start；`Toolkit.callToolsWithCallback(...)` 转发进度和最终结果，原 `callTools(...)` 与 chunk callback 签名保持兼容。
+
+最终结果在有序汇总前通知，快工具无需等待慢工具。重试、超时和工具错误转换沿用原逻辑；progress callback 异常沿用原有日志隔离；最终结果 callback 异常通过返回的 Publisher 传播。实现必须线程安全且不能阻塞。取消或基础设施异常可能没有最终结果。
+
+Agent 默认渐进发布结果，无需配置开关。普通工具和合成 `generate_response` 使用该回调，服务端结果与权限拒绝保留直接事件转换。callback 只发布事件，不创建 Msg 或修改上下文；消息结算与中断恢复沿用原流程，提前收到事件不代表结果已保存。

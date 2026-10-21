@@ -619,6 +619,36 @@ public class Toolkit {
             RuntimeContext agentRuntimeContext,
             ToolRequestConfig requestConfig,
             BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+        ToolExecutionCallback callback =
+                internalChunkCallback == null
+                        ? null
+                        : new ToolExecutionCallback() {
+                            @Override
+                            public void onProgress(ToolUseBlock call, ToolResultBlock chunk) {
+                                internalChunkCallback.accept(call, chunk);
+                            }
+                        };
+        return callToolsWithCallback(
+                toolCalls,
+                agentExecutionConfig,
+                agent,
+                agentRuntimeContext,
+                requestConfig,
+                callback);
+    }
+
+    /**
+     * Execute a batch with progress and final-result notifications before ordered aggregation.
+     * The returned list retains declaration order; notifications may arrive in completion order.
+     * This method does not invoke {@link ToolExecutionCallback#onStart}.
+     */
+    public Mono<List<ToolResultBlock>> callToolsWithCallback(
+            List<ToolUseBlock> toolCalls,
+            ExecutionConfig agentExecutionConfig,
+            Agent agent,
+            RuntimeContext agentRuntimeContext,
+            ToolRequestConfig requestConfig,
+            ToolExecutionCallback executionCallback) {
         // Merge execution configs: agent-level > toolkit-level > system default
         ExecutionConfig effectiveConfig =
                 ExecutionConfig.mergeConfigs(
@@ -637,7 +667,7 @@ public class Toolkit {
                         : agentRuntimeContext == null
                                 ? ToolRequestConfig.NONE
                                 : agentRuntimeContext.getToolRequestConfig(),
-                internalChunkCallback);
+                executionCallback);
     }
 
     // ==================== MCP Client Registration (Delegated) ====================
