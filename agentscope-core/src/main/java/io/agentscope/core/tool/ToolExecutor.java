@@ -370,19 +370,19 @@ class ToolExecutor {
                                                                         .input(iv.input())
                                                                         .build())));
         return applyResultErrorMapping(
-                        Mono.defer(
-                                () ->
-                                        applyInterceptorChain(
-                                                interceptors,
-                                                new ToolInvocation(
-                                                        toolCall.getName(),
-                                                        tool,
-                                                        mergedInput,
-                                                        effectiveRuntimeContext,
-                                                        agentId,
-                                                        agentName),
-                                                terminal)),
-                        toolCall);
+                Mono.defer(
+                        () ->
+                                applyInterceptorChain(
+                                        interceptors,
+                                        new ToolInvocation(
+                                                toolCall.getName(),
+                                                tool,
+                                                mergedInput,
+                                                effectiveRuntimeContext,
+                                                agentId,
+                                                agentName),
+                                        terminal)),
+                toolCall);
     }
 
     /**
