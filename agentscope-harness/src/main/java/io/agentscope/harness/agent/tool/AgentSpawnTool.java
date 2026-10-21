@@ -215,7 +215,10 @@ public class AgentSpawnTool {
             wait_async_results(task_ids=...) to wait for a chosen group, \
             wait_async_results(wait_all=true) to wait for all current background tasks, \
             task_cancel(task_id='%s') to cancel, or task_list() to see all tasks. \
-            Do NOT call task_output immediately — the task has just started.\
+            Do NOT call task_output immediately — the task has just started. \
+            Do not redo the task's work yourself while it runs in the background. \
+            Never mention task_id, agent_key, or session_id to the user — they are internal handles. \
+            Do not read the task's output files to watch progress; wait for the result instead.\
             """;
 
     /** Short poll interval used while waiting for a remote sync task, to detect awaiting_confirm promptly. */
@@ -302,7 +305,12 @@ public class AgentSpawnTool {
                     async (timeout_seconds=0) adds task_id for task_output or wait_async_results; \
                     task_id is NOT agent_key. Multiple sync tool calls in one turn run in parallel \
                     by default; pass a Toolkit with parallel=false to serialize, \
-                    or use async tasks for fire-and-forget parallelism.\
+                    or use async tasks for fire-and-forget parallelism. \
+                    The subagent does not inherit the parent conversation, so include every \
+                    file path, constraint, and expected output format the task needs. New \
+                    sessions start from the supplied task; persistent sessions may retain their own history. \
+                    Do not re-spawn the same task reworded to bypass a permission denial; \
+                    report the limitation instead.\
                     """)
     public Mono<ToolResultBlock> agentSpawn(
             RuntimeContext runtimeContext,
@@ -575,7 +583,10 @@ public class AgentSpawnTool {
                     Send a message to an existing subagent. Use the exact string from the \
                     agent_key line of agent_spawn output (starts with agent:), or the label \
                     you set at spawn. Do not pass agent_id, session_id, or task_id here. \
-                    timeout_seconds=0 returns task_id for task_output or wait_async_results.\
+                    timeout_seconds=0 returns task_id for task_output or wait_async_results. \
+                    Sends are follow-ups to a subagent that already holds the context you \
+                    gave it. Use follow-ups to steer the task or continue its work. Do not \
+                    re-send the same request reworded to bypass a permission denial.\
                     """)
     public Mono<ToolResultBlock> agentSend(
             RuntimeContext runtimeContext,
@@ -1196,7 +1207,8 @@ public class AgentSpawnTool {
         return String.format(
                 """
                 status: timeout
-                The task exceeded the %ds sync timeout and was interrupted because force_sync                 is enabled. Background promotion is disabled for this call.\
+                The task exceeded the %ds sync timeout and was interrupted because force_sync \
+                is enabled. Background promotion is disabled for this call.\
                 """,
                 timeoutMs / 1000);
     }
