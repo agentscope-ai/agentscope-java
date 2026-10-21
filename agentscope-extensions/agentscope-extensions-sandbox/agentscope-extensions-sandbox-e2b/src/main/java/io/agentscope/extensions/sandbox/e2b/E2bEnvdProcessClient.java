@@ -232,7 +232,7 @@ final class E2bEnvdProcessClient {
      * setup distribution short of extreme degradation; larger values would approach the
      * agent retry interval and buy nothing further.
      */
-    static final long CLIENT_TIMEOUT_SLACK_MILLIS = 5000;
+    private static final long CLIENT_TIMEOUT_SLACK_MILLIS = 5000;
 
     /** End-stream frame carrying a Connect error (e.g. server-side timeout kill). */
     static final class ConnectStreamException extends IOException {
