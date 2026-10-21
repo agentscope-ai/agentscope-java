@@ -34,6 +34,7 @@
     <modules>
         <module>documentation</module>
         <module>jev</module>
+        <module>openai-decisions</module>
         <module>agents/agentscope-paw</module>
         <module>agents/agentscope-chat</module>
         <module>agents/agentscope-dataagent</module>

@@ -87,7 +87,7 @@ DecisionRequest imageRequest = DecisionRequest.builder()
 client.decide(imageRequest).subscribe(imageResult -> System.out.println(imageResult.answers()));
 ```
 
-The client accepts image data URLs and publicly accessible HTTP(S) image URLs, matching the API reference and official guide. The Java client sends these values to the provider without fetching the images locally; repository tests do not verify compatibility with a live service. This initial extension supports text and a single user message with text/image parts; conversation histories, tool-call inputs, and prompt-cache options are not exposed.
+The client accepts image data URLs and publicly accessible HTTP(S) image URLs, matching the API reference and official guide. The Java client sends these values to the provider without fetching the images locally; repository tests do not verify compatibility with a live service. The request API supports text and a single user message with text/image parts. The middleware examples below project conversation text and tool-call evidence into a text input; they do not add native tool calling or expose prompt-cache options.
 
 ## Configuration and failures
 
@@ -95,7 +95,69 @@ The default API base is `https://api.openai.com/v1`. `baseUrl()` accepts a versi
 
 The default timeout is 30 seconds and must be positive. Blocking SDK calls run on Reactor's `boundedElastic` scheduler. The timeout is also passed to the SDK. Timeout and cancellation interrupt the executing task; the SDK transport determines when an in-flight network call stops. Close clients created by the wrapper with `close()` or try-with-resources to release SDK connections. Spring closes the auto-configured client when its context shuts down.
 
-HTTP failures expose a status code through `OpenAIDecisionsException.getStatusCode()`. HTTP 429, 5xx, and client timeout errors carry a retry hint; `isRetryable()` does not trigger a retry. SDK I/O failures and errors explicitly marked retryable by the SDK also retain a retry hint. The wrapper disables automatic retries on SDK clients it creates. `builder().client(openAIClient)` borrows an existing official SDK client, whose credentials, base URL, retry configuration, and lifecycle remain controlled by its owner. The wrapper still applies its model and request timeout. Provider bodies and raw SDK causes are omitted from client-generated exceptions.
+HTTP failures expose a status code through `OpenAIDecisionsException.getStatusCode()`. HTTP 429, 5xx, client timeouts, SDK I/O failures, and errors explicitly marked retryable by the SDK carry a retry hint. Invalid responses and permanent HTTP errors are not retried. Provider bodies and raw SDK causes are omitted from client-generated exceptions.
+
+Wrapper retries are disabled by default, preserving one attempt per subscription. To opt into the same retry count and initial backoff as JEV, configure:
+
+```java
+import io.agentscope.extensions.judge.openaidecisions.OpenAIDecisionsRetryPolicy;
+
+OpenAIDecisionsClient retryingClient = OpenAIDecisionsClient.builder()
+        .retryPolicy(OpenAIDecisionsRetryPolicy.defaults())
+        .build();
+```
+
+`defaults()` allows two additional attempts with an initial 500 ms exponential backoff and jitter. A custom `new OpenAIDecisionsRetryPolicy(maxRetries, initialBackoff)` controls the limit; `disabled()` allows none. The timeout applies separately to each attempt, so total latency also includes retries and backoff. Exhaustion emits the last sanitized failure. Refusal answers remain ordinary results and are not retried.
+
+The wrapper disables SDK retries on clients it creates. `builder().client(openAIClient)` borrows an SDK client whose credentials, base URL, retry settings, and lifecycle remain controlled by its owner. Disable that SDK client's retries before enabling wrapper retries to avoid multiplying attempts. Cancellation stops the reactive retry sequence; termination of in-flight network I/O remains transport-dependent.
+
+## Agent middleware examples
+
+Three opt-in middleware implementations live in `io.agentscope.extensions.judge.openaidecisions.example`. They follow the JEV model-routing, tool-selection, and automatic-execution use cases without depending on the JEV extension. Each is disabled by default and requires `.enabled(true)`. They are application wiring examples rather than automatic Spring beans.
+
+| Middleware | Behavior when enabled | Default fallback |
+| --- | --- | --- |
+| `OpenAIDecisionsModelRouterMiddleware` | One choice per agent invocation; stores the route in `RuntimeContext` and applies it in `onModelCall` | Keeps the original model on refusal, confidence below 0.8, or request failure |
+| `OpenAIDecisionsToolSelectionMiddleware` | Scores each optional tool with an independent predicate on every reasoning step; selects up to three tools at probability 0.8 or above | Keeps the original tool set on refusal, request failure, or any probability strictly between 0.2 and 0.8 |
+| `OpenAIDecisionsAutoModeMiddleware` | Checks each configured guarded call before dispatch; requires P(safe) of at least 0.8 | Denies guarded calls on refusal, missing context, or request failure |
+
+The router accepts 2–255 named model choices. By default it retains the original model for requests containing tools, and checks native structured-output support when a response format is present. Use `.compatible((input, choice) -> ...)` only after checking the candidate model against your tools, input modalities, and output requirements. Routing and selection use `failOpen(true)` by default; setting it to `false` propagates request failures. Guard `failOpen(true)` explicitly allows request failures and missing context, but never turns a refusal into permission to execute.
+
+The selector preserves `load_skill_through_path`, `reset_tools`, and `generate_response` outside its optional-tool limit. Customize this set with `alwaysIncludeTools(Set.of(...))`. A confident rejection can remove every optional tool. Selection uses at most eight recent nonblank text messages and 8,000 text characters by default; `maxContextMessages` and `maxContextChars` configure the window. The guard uses the same fixed window and includes the exact tool names and arguments as separate JSON evidence. Images in the conversation are not forwarded by these examples. The selector and guard split more than 400 questions into sequential requests.
+
+```java
+import io.agentscope.extensions.judge.openaidecisions.example.OpenAIDecisionsModelRouterMiddleware;
+import io.agentscope.extensions.judge.openaidecisions.example.OpenAIDecisionsToolSelectionMiddleware;
+import io.agentscope.extensions.judge.openaidecisions.example.OpenAIDecisionsAutoModeMiddleware;
+
+var router = OpenAIDecisionsModelRouterMiddleware.builder(client)
+        .enabled(true)
+        .choice("fast", fastModel, "Simple lookups")
+        .choice("capable", capableModel, "Complex analysis")
+        .build();
+var selector = OpenAIDecisionsToolSelectionMiddleware.builder(client)
+        .enabled(true).maxTools(3).build();
+var guard = OpenAIDecisionsAutoModeMiddleware.builder(client)
+        .enabled(true).guardedTool("execute").guardedTool("write_file").build();
+// Add these with ReActAgent.builder().middleware(router).middleware(selector).middleware(guard).
+```
+
+The guard skips calls already marked `ALLOWED` by the permission workflow. Passing its assessment does not grant core permission: allowed and unguarded calls still go through the normal acting pipeline. Denied calls never reach the downstream dispatcher; they produce `DENIED` tool-result messages and start/text/end events so that the model can continue from the result. Cancellation during an assessment neither dispatches tools nor creates denial messages.
+
+These examples do not implement JEV's broader execution modes, confirmation ledger, phase routing, RAG, compaction, or evaluation extensions. Tests use local fixtures and stub decisions; they establish neither live-provider quality nor production safety thresholds.
+
+### Runnable scenarios
+
+The `agentscope-examples/openai-decisions` module provides `io.agentscope.examples.decisions.OpenAIDecisionsMiddlewareExample` with three independent modes: `route`, `select`, and `guard`. It prints decision answers, the actual model and tool schemas, and tool-result states. All business tools are simulated, including file deletion. Running the main method makes real Decisions and Chat Completions requests.
+
+From the repository root:
+
+```shell
+mvn -B -T1C -pl agentscope-dependencies-bom,agentscope-distribution/agentscope-bom,agentscope-examples/openai-decisions -am install -DskipTests
+mvn -B -T1C -pl agentscope-examples/openai-decisions org.codehaus.mojo:exec-maven-plugin:3.5.0:java "-Dexec.mainClass=io.agentscope.examples.decisions.OpenAIDecisionsMiddlewareExample" "-Dexec.args=route"
+```
+
+Set `OPENAI_API_KEY`, `OPENAI_MODEL` (a Chat Completions model supporting tools), and `OPENAI_FAST_MODEL` (required only for `route`). Supply model names without the `openai:` prefix. Replace `route` with `select` or `guard`, or append a custom prompt using `"-Dexec.args=route Design a distributed task scheduler"`. The module README includes environment setup and offline verification commands. Real decision results and whether the chat model calls a tool depend on the models; the sample prompts do not guarantee a particular route or denial.
 
 ## Spring Boot
 
@@ -116,8 +178,13 @@ agentscope:
     model: gpt-6-luna
     base-url: https://api.openai.com/v1
     timeout: 30s
+    retry:
+      max-retries: 0
+      initial-backoff: 500ms
 ```
 
 The defaults above also apply to the starter. `agentscope.openai-decisions.enabled=false` disables client creation. A user-defined client bean takes precedence. Implement `OpenAIDecisionsClientBuilderCustomizer` to supply an official SDK client or override properties; Spring applies ordered customizers after binding properties.
+
+Set `retry.max-retries` to `2` to enable wrapper retries. Counts must be nonnegative and the backoff must be positive. These properties configure the client, not the middleware; register the desired middleware explicitly on each agent.
 
 A complete three-question example and image-input helper are available in `agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/judge/OpenAIDecisionsExample.java`.
