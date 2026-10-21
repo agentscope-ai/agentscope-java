@@ -95,13 +95,6 @@ public class CompositeFilesystem implements AbstractFilesystem {
         this.sortedRoutes = List.copyOf(entries);
     }
 
-    // ==================== Routing ====================
-
-    private record RouteEntry(String prefix, AbstractFilesystem backend) {}
-
-    private record RouteResult(
-            AbstractFilesystem backend, String backendPath, String routePrefix) {}
-
     /**
      * Returns the backend filesystem that would serve {@code path}: the longest matching prefix
      * route, or the default backend when no route matches.
@@ -109,6 +102,13 @@ public class CompositeFilesystem implements AbstractFilesystem {
     public AbstractFilesystem filesystemFor(String path) {
         return routeForPath(path).backend();
     }
+
+    // ==================== Routing ====================
+
+    private record RouteEntry(String prefix, AbstractFilesystem backend) {}
+
+    private record RouteResult(
+            AbstractFilesystem backend, String backendPath, String routePrefix) {}
 
     private RouteResult routeForPath(String path) {
         // Canonicalize both sides by stripping any leading slash before matching so callers can
