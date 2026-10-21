@@ -29,7 +29,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   gemini:
  *     enabled: true
  *     api-key: ${GEMINI_API_KEY}
- *     model-name: gemini-2.0-flash
+ *     model-name: gemini-3.8-flash
  *     # base-url: # optional
  *     stream: true
  * }</pre>
@@ -44,7 +44,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     enabled: true
  *     project: your-gcp-project-id
  *     location: us-central1
- *     model-name: gemini-2.0-flash
+ *     model-name: gemini-3.8-flash
  *     vertex-ai: true
  *     stream: true
  * }</pre>
@@ -63,9 +63,9 @@ public class GeminiProperties {
     private String apiKey;
 
     /**
-     * Gemini model name, for example {@code gemini-2.0-flash}.
+     * Gemini model name, for example {@code gemini-3.8-flash}.
      */
-    private String modelName = "gemini-2.0-flash";
+    private String modelName = "gemini-3.8-flash";
 
     /**
      * Optional base URL for Gemini API compatible endpoints.

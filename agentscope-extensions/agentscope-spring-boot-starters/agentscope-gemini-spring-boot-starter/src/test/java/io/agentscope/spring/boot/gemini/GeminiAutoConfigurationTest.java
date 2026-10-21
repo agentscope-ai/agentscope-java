@@ -56,6 +56,18 @@ class GeminiAutoConfigurationTest {
     }
 
     @Test
+    void shouldDefaultToCurrentGeminiModelWhenModelNameIsNotSet() {
+        contextRunner
+                .withPropertyValues(
+                        "agentscope.model.provider=gemini",
+                        "agentscope.gemini.api-key=test-gemini-key")
+                .run(
+                        context ->
+                                assertThat(context.getBean(Model.class).getModelName())
+                                        .isEqualTo("gemini-3.8-flash"));
+    }
+
+    @Test
     void shouldCreateGeminiModelWithVertexAIProject() {
         contextRunner
                 .withPropertyValues(

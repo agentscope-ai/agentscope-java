@@ -408,7 +408,7 @@ public final class ModelRegistry {
                 + "\", instance).\n"
                 + "  - No matching provider factory or extension SPI provider.\n"
                 + "    Format: \"<provider>:<model-name>\", e.g. \"openai:gpt-5.5\","
-                + " \"gemini:gemini-2.0-flash\", \"dashscope:qwen-max\","
+                + " \"gemini:gemini-3.8-flash\", \"dashscope:qwen-max\","
                 + " \"dashscope:qwen3.7-plus\".\n"
                 + "  - OpenAI models require the agentscope-extensions-model-openai module on the"
                 + " classpath and OPENAI_API_KEY.\n"

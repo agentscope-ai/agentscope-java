@@ -5914,7 +5914,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Configures the model from a string id resolved via {@link ModelRegistry}: a named
          * registration ({@link ModelRegistry#register(String, Model)}) or an extension provider
          * pattern such as {@code openai:gpt-5.5}, {@code dashscope:qwen-max}, {@code
-         * anthropic:claude-sonnet-4-5}, {@code gemini:gemini-2.0-flash}, or {@code ollama:llama3}.
+         * anthropic:claude-sonnet-4-5}, {@code gemini:gemini-3.8-flash}, or {@code ollama:llama3}.
          * Extension modules read API keys from their standard environment variables when auto-created.
          *
          * @param modelId registry id or {@code provider:model} string
