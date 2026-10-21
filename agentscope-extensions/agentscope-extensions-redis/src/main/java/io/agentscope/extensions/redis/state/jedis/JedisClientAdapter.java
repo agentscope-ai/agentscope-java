@@ -23,8 +23,6 @@ import redis.clients.jedis.RedisClient;
 import redis.clients.jedis.RedisClusterClient;
 import redis.clients.jedis.RedisSentinelClient;
 import redis.clients.jedis.UnifiedJedis;
-import redis.clients.jedis.params.ScanParams;
-import redis.clients.jedis.resps.ScanResult;
 
 /**
  * Adapter for Jedis Redis client.
@@ -154,18 +152,18 @@ public class JedisClientAdapter implements RedisClientAdapter {
     @Override
     public Set<String> findKeysByPattern(String pattern) {
         Set<String> matchingKeys = new HashSet<>();
-        String cursor = ScanParams.SCAN_POINTER_START;
-        ScanParams scanParams = new ScanParams().match(pattern);
-        do {
-            ScanResult<String> scanResult = unifiedJedis.scan(cursor, scanParams);
-            if (scanResult != null) {
-                matchingKeys.addAll(scanResult.getResult());
-                cursor = scanResult.getCursor();
-            } else {
-                break;
-            }
-        } while (!cursor.equals(ScanParams.SCAN_POINTER_START));
+        // Unlike a single-node SCAN, Jedis' iteration traverses every master in cluster mode.
+        unifiedJedis.scanIteration(1000, pattern).collect(matchingKeys);
         return matchingKeys;
+    }
+
+    @Override
+    public long evalScript(String script, List<String> keys, List<String> args) {
+        Object result = unifiedJedis.eval(script, keys, args);
+        if (result instanceof Number number) {
+            return number.longValue();
+        }
+        throw new IllegalStateException("Unexpected Lua script result: " + result);
     }
 
     @Override

@@ -40,7 +40,10 @@ import java.util.List;
  *     .apiKey(apiKey)
  *     .build();
  * }</pre>
+ *
+ * @deprecated use {@link io.agentscope.extensions.model.openai.compat.glm.GLMMultiAgentFormatter}.
  */
+@Deprecated
 public class GLMMultiAgentFormatter extends OpenAIMultiAgentFormatter {
 
     public GLMMultiAgentFormatter() {

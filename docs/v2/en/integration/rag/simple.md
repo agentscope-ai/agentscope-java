@@ -1,4 +1,7 @@
-# Simple Knowledge
+---
+title: Simple
+zh_link: /v2/zh/integration/rag/simple
+---
 
 `agentscope-extensions-rag-simple` is the "DIY end-to-end" RAG implementation: it bundles document readers, chunking strategies, embedding adapters, and five out-of-the-box vector store adapters.
 
@@ -74,6 +77,13 @@ The resulting `Document` objects already carry metadata; pair with `TextChunker`
 | `OllamaTextEmbedding` | Local Ollama | Text |
 
 Implement `EmbeddingModel` to add your own.
+
+`EmbeddingModel.embed(ContentBlock)` returns `Mono<EmbeddingResponse>`; the response carries the
+embedding vector and, when the provider reports it, `EmbeddingUsage` token counts.
+
+Pass a `usageListener` to `SimpleKnowledge.builder()` to receive each non-null embedding usage
+report. The listener runs on the embedding response thread and should be non-blocking and
+thread-safe; providers that omit usage do not invoke it.
 
 ## Built-in vector stores
 

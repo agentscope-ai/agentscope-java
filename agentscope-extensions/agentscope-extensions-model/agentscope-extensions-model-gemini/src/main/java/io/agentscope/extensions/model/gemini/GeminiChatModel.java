@@ -31,9 +31,12 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelException;
+import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.gemini.formatter.GeminiChatFormatter;
+import io.agentscope.extensions.model.gemini.formatter.GeminiToolsHelper;
+import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -55,6 +58,7 @@ import reactor.core.scheduler.Schedulers;
  * <ul>
  * <li>Text generation with streaming and non-streaming modes</li>
  * <li>Tool/function calling support</li>
+ * <li>Gemini server-side tools</li>
  * <li>Multi-agent conversation with history merging</li>
  * <li>Vision capabilities (images, audio, video)</li>
  * <li>Thinking mode (extended reasoning)</li>
@@ -77,6 +81,12 @@ public class GeminiChatModel extends ChatModelBase {
     private final GenerateOptions defaultOptions;
     private final Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder>
             formatter;
+    private final List<GeminiServerTool> serverTools;
+
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
+    }
 
     /**
      * Creates a new Gemini chat model instance.
@@ -96,6 +106,7 @@ public class GeminiChatModel extends ChatModelBase {
      * @param defaultOptions default generation options
      * @param formatter      the message formatter to use (null for default Gemini
      *                       formatter)
+     * @param serverTools    Gemini built-in tools executed by the model provider
      */
     public GeminiChatModel(
             String apiKey,
@@ -109,7 +120,8 @@ public class GeminiChatModel extends ChatModelBase {
             GoogleCredentials credentials,
             ClientOptions clientOptions,
             GenerateOptions defaultOptions,
-            Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder> formatter) {
+            Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder> formatter,
+            List<GeminiServerTool> serverTools) {
         this.apiKey = apiKey;
         this.modelName = Objects.requireNonNull(modelName, "Model name is required");
         this.streamEnabled = streamEnabled;
@@ -122,6 +134,7 @@ public class GeminiChatModel extends ChatModelBase {
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new GeminiChatFormatter();
+        this.serverTools = serverTools != null ? List.copyOf(serverTools) : List.of();
 
         // Initialize Gemini client
         Client.Builder clientBuilder = Client.builder();
@@ -154,6 +167,56 @@ public class GeminiChatModel extends ChatModelBase {
         }
 
         this.client = clientBuilder.build();
+    }
+
+    /**
+     * Creates a new Gemini chat model instance.
+     *
+     * <p>This overload preserves the pre-server-tools API and configures no server-side tools.
+     *
+     * @param apiKey         the API key for authentication (for Gemini API)
+     * @param baseUrl        the custom base URL for Gemini API (null for default)
+     * @param modelName      the model name to use (e.g., "gemini-2.0-flash",
+     *                       "gemini-1.5-pro")
+     * @param streamEnabled  whether streaming should be enabled
+     * @param project        the Google Cloud project ID (for Vertex AI)
+     * @param location       the Google Cloud location (for Vertex AI, e.g.,
+     *                       "us-central1")
+     * @param vertexAI       whether to use Vertex AI APIs (null for auto-detection)
+     * @param httpOptions    HTTP options for the client
+     * @param credentials    Google credentials (for Vertex AI)
+     * @param clientOptions  client options for the API client
+     * @param defaultOptions default generation options
+     * @param formatter      the message formatter to use (null for default Gemini
+     *                       formatter)
+     */
+    public GeminiChatModel(
+            String apiKey,
+            String baseUrl,
+            String modelName,
+            boolean streamEnabled,
+            String project,
+            String location,
+            Boolean vertexAI,
+            HttpOptions httpOptions,
+            GoogleCredentials credentials,
+            ClientOptions clientOptions,
+            GenerateOptions defaultOptions,
+            Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder> formatter) {
+        this(
+                apiKey,
+                baseUrl,
+                modelName,
+                streamEnabled,
+                project,
+                location,
+                vertexAI,
+                httpOptions,
+                credentials,
+                clientOptions,
+                defaultOptions,
+                formatter,
+                null);
     }
 
     /**
@@ -202,7 +265,8 @@ public class GeminiChatModel extends ChatModelBase {
                 credentials,
                 clientOptions,
                 defaultOptions,
-                formatter);
+                formatter,
+                null);
     }
 
     private static HttpOptions resolveHttpOptions(String baseUrl, HttpOptions httpOptions) {
@@ -213,6 +277,24 @@ public class GeminiChatModel extends ChatModelBase {
             return HttpOptions.builder().baseUrl(baseUrl).build();
         }
         return httpOptions.toBuilder().baseUrl(baseUrl).build();
+    }
+
+    /**
+     * Builds the provider request configuration.
+     */
+    GenerateContentConfig buildGenerateContentConfig(
+            List<ToolSchema> tools, GenerateOptions options) {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+
+        if (tools != null && !tools.isEmpty()) {
+            formatter.applyTools(configBuilder, tools);
+            if (options != null && options.getToolChoice() != null) {
+                formatter.applyToolChoice(configBuilder, options.getToolChoice());
+            }
+        }
+
+        formatter.applyOptions(configBuilder, options, defaultOptions);
+        return GeminiToolsHelper.mergeServerTools(configBuilder.build(), serverTools);
     }
 
     /**
@@ -232,6 +314,12 @@ public class GeminiChatModel extends ChatModelBase {
     @Override
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+        return ModelUtils.applyTimeoutAndRetry(
+                doStream0(messages, tools, options), options, defaultOptions, modelName, "gemini");
+    }
+
+    protected Flux<ChatResponse> doStream0(
+            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant startTime = Instant.now();
         log.debug(
                 "Gemini stream: model={}, messages={}, tools_present={}, streaming={}",
@@ -243,29 +331,12 @@ public class GeminiChatModel extends ChatModelBase {
         return Flux.defer(
                         () -> {
                             try {
-                                // Build generate content config
-                                GenerateContentConfig.Builder configBuilder =
-                                        GenerateContentConfig.builder();
-
                                 // Use formatter to convert Msg to Gemini
                                 // Content
                                 List<Content> formattedMessages = formatter.format(messages);
 
-                                // Add tools if provided
-                                if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(configBuilder, tools);
-
-                                    // Apply tool choice if present
-                                    if (options != null && options.getToolChoice() != null) {
-                                        formatter.applyToolChoice(
-                                                configBuilder, options.getToolChoice());
-                                    }
-                                }
-
-                                // Apply generation options via formatter
-                                formatter.applyOptions(configBuilder, options, defaultOptions);
-
-                                GenerateContentConfig config = configBuilder.build();
+                                GenerateContentConfig config =
+                                        buildGenerateContentConfig(tools, options);
 
                                 // Choose API based on streaming flag
                                 if (streamEnabled) {
@@ -362,6 +433,7 @@ public class GeminiChatModel extends ChatModelBase {
         private GenerateOptions defaultOptions;
         private Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder>
                 formatter;
+        private List<GeminiServerTool> serverTools;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
 
@@ -500,6 +572,17 @@ public class GeminiChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets the Gemini built-in tools that are executed by the model provider.
+         *
+         * @param serverTools Gemini server-side tools
+         * @return this builder
+         */
+        public Builder serverTools(List<GeminiServerTool> serverTools) {
+            this.serverTools = serverTools;
+            return this;
+        }
+
+        /**
          * Sets the proxy configuration for HTTP traffic.
          *
          * <p><b>Interaction with {@link #clientOptions(ClientOptions)}:</b>
@@ -567,8 +650,9 @@ public class GeminiChatModel extends ChatModelBase {
                             httpOptions,
                             credentials,
                             resolvedClientOptions,
-                            defaultOptions,
-                            formatter);
+                            ModelUtils.ensureDefaultExecutionConfig(defaultOptions),
+                            formatter,
+                            serverTools);
             model.setContextWindowSize(
                     contextWindowSize >= 0
                             ? contextWindowSize

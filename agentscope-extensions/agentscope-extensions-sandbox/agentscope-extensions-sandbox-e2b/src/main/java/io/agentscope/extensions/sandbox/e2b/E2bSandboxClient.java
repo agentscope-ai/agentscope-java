@@ -69,6 +69,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         state.setPersistenceMode(merged.getPersistenceMode());
         state.setCodec(merged.getCodec());
         state.setSandboxDomain(merged.getDomain());
+        state.setEnvdSandboxUrl(merged.getEnvdSandboxUrl());
 
         if (snapshotSpec != null) {
             state.setSnapshot(snapshotSpec.build(sessionId));
@@ -84,8 +85,9 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             throw new IllegalArgumentException(
                     "Expected E2bSandboxState but got: " + state.getClass().getName());
         }
-        E2bSandboxClientOptions resumed = merge(null);
+        E2bSandboxClientOptions resumed = copy(defaultOptions);
         resumed.setCodec(e2b.getCodec());
+        resumed.setEnvdSandboxUrl(e2b.getEnvdSandboxUrl());
         return new E2bSandbox(e2b, resumed);
     }
 
@@ -126,6 +128,9 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         if (call.getDomain() != null) {
             o.setDomain(call.getDomain());
         }
+        if (call.getEnvdSandboxUrl() != null) {
+            o.setEnvdSandboxUrl(call.getEnvdSandboxUrl());
+        }
         if (call.getSandboxTimeoutSeconds() > 0) {
             o.setSandboxTimeoutSeconds(call.getSandboxTimeoutSeconds());
         }
@@ -150,6 +155,14 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         o.setConnectTimeoutSeconds(call.getConnectTimeoutSeconds());
         o.setReadTimeoutSeconds(call.getReadTimeoutSeconds());
         o.setMaxRetries(call.getMaxRetries());
+        // 0 means "left at default" (indistinguishable from an explicit disable on a primitive),
+        // so only a positive per-call value overrides; the client default governs otherwise.
+        if (call.getSnapshotRetention() > 0) {
+            o.setSnapshotRetention(call.getSnapshotRetention());
+        }
+        if (!call.getEnvs().isEmpty()) {
+            o.getEnvs().putAll(call.getEnvs());
+        }
         return o;
     }
 
@@ -158,6 +171,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         o.setApiKey(src.getApiKey());
         o.setApiBaseUrl(src.getApiBaseUrl());
         o.setDomain(src.getDomain());
+        o.setEnvdSandboxUrl(src.getEnvdSandboxUrl());
         o.setTemplateId(src.getTemplateId());
         o.setWorkspaceRoot(src.getWorkspaceRoot());
         o.setSandboxTimeoutSeconds(src.getSandboxTimeoutSeconds());
@@ -168,6 +182,8 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         o.setConnectTimeoutSeconds(src.getConnectTimeoutSeconds());
         o.setReadTimeoutSeconds(src.getReadTimeoutSeconds());
         o.setMaxRetries(src.getMaxRetries());
+        o.setSnapshotRetention(src.getSnapshotRetention());
+        o.setEnvs(src.getEnvs());
         return o;
     }
 }

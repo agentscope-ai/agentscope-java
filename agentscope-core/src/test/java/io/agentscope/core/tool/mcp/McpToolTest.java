@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,12 +48,46 @@ class McpToolTest {
 
     @BeforeEach
     void setUp() {
-        mockClientWrapper = mock(McpClientWrapper.class);
-        when(mockClientWrapper.getName()).thenReturn("test-client");
+        // McpTool.callAsync reads the connection-level switch live; default it to on.
+        mockClientWrapper = McpClientWrapperTestSupport.mockWrapper("test-client", true);
 
         parameters = new HashMap<>();
         parameters.put("type", "object");
         parameters.put("properties", new HashMap<>());
+    }
+
+    @Test
+    void testMergeArguments_NullInputWithoutPresetReturnsEmptyMap() {
+        McpTool tool = new McpTool("test-tool", "A test tool", parameters, mockClientWrapper);
+
+        Map<String, Object> result = tool.mergeArguments(null);
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testMergeArguments_NullInputWithPresetReturnsPresetCopy() {
+        Map<String, Object> preset = new HashMap<>();
+        preset.put("presetKey", "presetValue");
+        McpTool tool =
+                new McpTool(
+                        "test-tool",
+                        "A test tool",
+                        parameters,
+                        null,
+                        mockClientWrapper,
+                        preset,
+                        "test-client",
+                        false);
+
+        Map<String, Object> result = tool.mergeArguments(null);
+
+        assertEquals(1, result.size());
+        assertEquals("presetValue", result.get("presetKey"));
+        // The result must be a defensive copy: mutating it must not affect the preset
+        result.put("mutated", "value");
+        assertFalse(preset.containsKey("mutated"));
     }
 
     @Test
@@ -151,7 +184,8 @@ class McpToolTest {
         Map<String, Object> input = new HashMap<>();
         input.put("param1", "value1");
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success result");
+        McpSchema.TextContent resultContent =
+                McpSchema.TextContent.builder("Success result").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -175,7 +209,7 @@ class McpToolTest {
     void testCallAsync_WithEmptyInput() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -197,7 +231,7 @@ class McpToolTest {
     void testCallAsync_WithNullInput() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -227,7 +261,7 @@ class McpToolTest {
         input.put("input_key", "input_value");
         input.put("override_me", "new_value"); // Should override preset
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -257,7 +291,7 @@ class McpToolTest {
         McpTool tool =
                 new McpTool("test-tool", "Description", parameters, mockClientWrapper, presetArgs);
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -350,8 +384,11 @@ class McpToolTest {
 
         List<String> required = List.of("param1");
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema("object", properties, required, true, null, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
+        schema.put("additionalProperties", true);
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -363,8 +400,49 @@ class McpToolTest {
     }
 
     @Test
+    void testConvertMcpSchemaToParameters_PreservesAdvancedJsonSchemaKeywords() {
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("visible", Map.of("type", "string"));
+        properties.put("hidden", Map.of("type", "string"));
+
+        List<String> required = List.of("visible", "hidden");
+        List<Map<String, Object>> allOf = List.of(Map.of("$ref", "#/$defs/base"));
+        Map<String, Object> patternProperties = Map.of("^metadata_", Map.of("type", "string"));
+        List<Map<String, Object>> prefixItems =
+                List.of(Map.of("type", "string"), Map.of("type", "number"));
+
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("$schema", "https://json-schema.org/draft/2020-12/schema");
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
+        schema.put("allOf", allOf);
+        schema.put("patternProperties", patternProperties);
+        schema.put("prefixItems", prefixItems);
+        schema.put("propertyNames", Map.of("pattern", "^[a-z][a-zA-Z0-9]*$"));
+        schema.put("$defs", Map.of("base", Map.of("type", "object")));
+
+        Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, Set.of("hidden"));
+
+        assertEquals("https://json-schema.org/draft/2020-12/schema", result.get("$schema"));
+        assertEquals(allOf, result.get("allOf"));
+        assertEquals(patternProperties, result.get("patternProperties"));
+        assertEquals(prefixItems, result.get("prefixItems"));
+        assertEquals(Map.of("pattern", "^[a-z][a-zA-Z0-9]*$"), result.get("propertyNames"));
+        assertEquals(Map.of("base", Map.of("type", "object")), result.get("$defs"));
+
+        Map<?, ?> resultProperties = (Map<?, ?>) result.get("properties");
+        assertTrue(resultProperties.containsKey("visible"));
+        assertFalse(resultProperties.containsKey("hidden"));
+
+        List<?> resultRequired = (List<?>) result.get("required");
+        assertTrue(resultRequired.contains("visible"));
+        assertFalse(resultRequired.contains("hidden"));
+    }
+
+    @Test
     void testConvertMcpSchemaToParameters_NullType() {
-        McpSchema.JsonSchema schema = new McpSchema.JsonSchema(null, null, null, null, null, null);
+        Map<String, Object> schema = new HashMap<>();
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -376,9 +454,10 @@ class McpToolTest {
 
     @Test
     void testConvertMcpSchemaToParameters_EmptyProperties() {
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema(
-                        "object", new HashMap<>(), new ArrayList<>(), null, null, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", new HashMap<>());
+        schema.put("required", new ArrayList<>());
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -390,8 +469,9 @@ class McpToolTest {
 
     @Test
     void testConvertMcpSchemaToParameters_WithAdditionalProperties() {
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema("object", null, null, false, null, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("additionalProperties", false);
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -409,8 +489,10 @@ class McpToolTest {
 
         List<String> required = List.of("user");
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema("object", properties, required, null, null, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -427,7 +509,7 @@ class McpToolTest {
                 new McpTool(
                         "test-tool", "Description", parameters, mockClientWrapper, new HashMap<>());
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -456,9 +538,12 @@ class McpToolTest {
         Map<String, Object> input = new HashMap<>();
         input.put("key", "input_value");
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
-                new McpSchema.CallToolResult(List.of(resultContent), false);
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
 
         when(mockClientWrapper.callTool(eq("test-tool"), any(), any()))
                 .thenReturn(Mono.just(mcpResult));
@@ -482,8 +567,10 @@ class McpToolTest {
 
         List<String> required = List.of("param1", "param2", "param3");
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema("object", properties, required, null, null, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
 
         // Exclude some parameters
         Set<String> excludeParams = Set.of("param2", "param3");
@@ -515,8 +602,10 @@ class McpToolTest {
 
         List<String> required = List.of("param1", "param2");
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema("object", properties, required, null, null, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
 
         // Pass empty exclude set
         Set<String> excludeParams = Set.of();
@@ -545,8 +634,10 @@ class McpToolTest {
 
         List<String> required = List.of("param1", "param2");
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema("object", properties, required, null, null, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
 
         // Pass null exclude set
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
@@ -573,8 +664,10 @@ class McpToolTest {
 
         List<String> required = List.of("param1", "param2");
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema("object", properties, required, null, null, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
 
         // Exclude parameters that don't exist in the schema
         Set<String> excludeParams = Set.of("nonexistent1", "nonexistent2");
@@ -621,9 +714,11 @@ class McpToolTest {
         properties.put("request", materialProperty);
 
         // Create MCP JsonSchema with defs
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema(
-                        "object", properties, List.of("request"), null, defs, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", List.of("request"));
+        schema.put("$defs", defs);
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -648,9 +743,11 @@ class McpToolTest {
         Map<String, Object> definitions = new HashMap<>();
         definitions.put("Material", materialDef);
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema(
-                        "object", new HashMap<>(), new ArrayList<>(), null, null, definitions);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", new HashMap<>());
+        schema.put("required", new ArrayList<>());
+        schema.put("definitions", definitions);
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -674,9 +771,12 @@ class McpToolTest {
         Map<String, Object> definitions = new HashMap<>();
         definitions.put("OldType", Map.of("type", "integer"));
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema(
-                        "object", new HashMap<>(), new ArrayList<>(), null, defs, definitions);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", new HashMap<>());
+        schema.put("required", new ArrayList<>());
+        schema.put("$defs", defs);
+        schema.put("definitions", definitions);
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -688,14 +788,10 @@ class McpToolTest {
     @Test
     void testConvertMcpSchemaToParameters_WithEmptyDefsAndDefinitions() {
         // Empty maps should not be added to result
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema(
-                        "object",
-                        new HashMap<>(),
-                        new ArrayList<>(),
-                        null,
-                        new HashMap<>(),
-                        new HashMap<>());
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", new HashMap<>());
+        schema.put("required", new ArrayList<>());
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -718,8 +814,11 @@ class McpToolTest {
                 "items", Map.of("type", "array", "items", Map.of("$ref", "#/$defs/Material")));
         properties.put("category", Map.of("$ref", "#/$defs/Category"));
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema("object", properties, List.of("items"), null, defs, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", List.of("items"));
+        schema.put("$defs", defs);
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -741,9 +840,11 @@ class McpToolTest {
         properties.put("name", Map.of("type", "string"));
         properties.put("hidden", Map.of("type", "string"));
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema(
-                        "object", properties, List.of("name", "hidden"), null, defs, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", List.of("name", "hidden"));
+        schema.put("$defs", defs);
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, Set.of("hidden"));
 
@@ -760,8 +861,10 @@ class McpToolTest {
         Map<String, Object> properties = new HashMap<>();
         properties.put("name", Map.of("type", "string"));
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema("object", properties, List.of("name"), null, null, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", List.of("name"));
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -776,9 +879,11 @@ class McpToolTest {
         Map<String, Object> definitions = new HashMap<>();
         definitions.put("OldType", Map.of("type", "integer"));
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema(
-                        "object", new HashMap<>(), new ArrayList<>(), null, null, definitions);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", new HashMap<>());
+        schema.put("required", new ArrayList<>());
+        schema.put("definitions", definitions);
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -793,9 +898,11 @@ class McpToolTest {
         Map<String, Object> defs = new HashMap<>();
         defs.put("NewType", Map.of("type", "string"));
 
-        McpSchema.JsonSchema schema =
-                new McpSchema.JsonSchema(
-                        "object", new HashMap<>(), new ArrayList<>(), null, defs, null);
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", new HashMap<>());
+        schema.put("required", new ArrayList<>());
+        schema.put("$defs", defs);
 
         Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
 
@@ -929,7 +1036,7 @@ class McpToolTest {
     void testCallAsync_WithMcpMetaInRuntimeContext() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -962,7 +1069,7 @@ class McpToolTest {
     void testCallAsync_WithEmptyMcpMeta() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -995,7 +1102,7 @@ class McpToolTest {
     void testCallAsync_WithNullRuntimeContext() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -1021,7 +1128,7 @@ class McpToolTest {
     void testCallAsync_WithNullToolCallParam() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -1062,7 +1169,7 @@ class McpToolTest {
         McpTool tool =
                 new McpTool("test-tool", "Description", parameters, mockClientWrapper, presetArgs);
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))
@@ -1082,7 +1189,7 @@ class McpToolTest {
     void testMergeArguments_NullInput_NoPresets() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))

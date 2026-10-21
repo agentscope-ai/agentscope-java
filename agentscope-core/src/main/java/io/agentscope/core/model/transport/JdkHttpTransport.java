@@ -34,13 +34,15 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -111,7 +113,13 @@ public class JdkHttpTransport implements HttpTransport {
     private static HttpClient buildClient(HttpTransportConfig config) {
         HttpClient.Builder builder =
                 HttpClient.newBuilder()
-                        .version(config.getHttpVersion().toJdkHttpVersion())
+                        // Client-level HTTP/2 serves https via ALPN; cleartext requests are
+                        // downgraded per request in buildJdkRequest, so one connection per
+                        // version per origin — intentional.
+                        .version(
+                                config.getHttpVersion() != null
+                                        ? config.getHttpVersion().toJdkHttpVersion()
+                                        : HttpClient.Version.HTTP_2)
                         .followRedirects(Redirect.NORMAL)
                         .connectTimeout(config.getConnectTimeout());
 
@@ -174,7 +182,7 @@ public class JdkHttpTransport implements HttpTransport {
             throw new HttpTransportException("Transport has been closed");
         }
 
-        var jdkRequest = buildJdkRequest(request);
+        var jdkRequest = buildJdkRequest(request, false);
 
         try {
             var response = client.send(jdkRequest, BodyHandlers.ofString());
@@ -193,55 +201,109 @@ public class JdkHttpTransport implements HttpTransport {
             return Flux.error(new HttpTransportException("Transport has been closed"));
         }
 
-        var jdkRequest = buildJdkRequest(request);
+        var jdkRequest = buildJdkRequest(request, true);
 
-        // Check status code and read error body immediately when CompletableFuture completes
-        // to avoid stream being closed before we can read it
-        CompletableFuture<java.net.http.HttpResponse<InputStream>> future =
-                client.sendAsync(jdkRequest, BodyHandlers.ofInputStream())
-                        .thenApply(
-                                response -> {
-                                    int statusCode = response.statusCode();
-                                    if (statusCode < 200 || statusCode >= 300) {
-                                        // Read error body immediately while stream is still open
-                                        String errorBody = readInputStream(response.body());
-                                        log.warn(
-                                                "HTTP request failed. URL: {} | Status: {} | Error:"
-                                                        + " {}",
-                                                request.getUrl(),
-                                                statusCode,
-                                                errorBody);
-                                        throw new CompletionException(
-                                                new HttpTransportException(
-                                                        "HTTP request failed with status "
-                                                                + statusCode
-                                                                + " | "
-                                                                + errorBody,
-                                                        statusCode,
-                                                        errorBody));
-                                    }
-                                    return response;
-                                });
-
-        return Mono.fromCompletionStage(future)
-                .flatMapMany(response -> processStreamResponse(response, request))
-                .publishOn(Schedulers.boundedElastic())
-                .onErrorMap(
-                        e -> !(e instanceof HttpTransportException),
-                        e -> {
-                            Throwable cause = e instanceof CompletionException ? e.getCause() : e;
-                            if (cause instanceof HttpTransportException) {
-                                return (HttpTransportException) cause;
-                            }
-                            return new HttpTransportException(
-                                    "SSE/NDJSON stream failed: " + e.getMessage(), e);
-                        })
-                .subscribeOn(Schedulers.boundedElastic());
+        return Flux.defer(
+                () -> {
+                    AtomicReference<InputStream> responseBody = new AtomicReference<>();
+                    long requestStartNanos = System.nanoTime();
+                    return sendInputStreamAsync(jdkRequest, responseBody)
+                            .timeout(Mono.delay(streamResponseTimeout()))
+                            .flatMapMany(
+                                    response ->
+                                            handleStreamResponse(
+                                                    response,
+                                                    request,
+                                                    responseBody,
+                                                    requestStartNanos))
+                            .doFinally(signal -> closeQuietly(responseBody.getAndSet(null)))
+                            .onErrorMap(this::mapStreamError);
+                });
     }
 
-    private Flux<String> processStreamResponse(
-            java.net.http.HttpResponse<InputStream> response, HttpRequest request) {
+    /**
+     * Send a streaming request and propagate Reactor cancellation to the JDK future/socket.
+     */
+    private Mono<java.net.http.HttpResponse<InputStream>> sendInputStreamAsync(
+            java.net.http.HttpRequest request, AtomicReference<InputStream> responseBody) {
+        return Mono.create(
+                sink -> {
+                    AtomicBoolean cancelled = new AtomicBoolean(false);
+                    var future = client.sendAsync(request, BodyHandlers.ofInputStream());
+                    sink.onCancel(
+                            () -> {
+                                cancelled.set(true);
+                                future.cancel(true);
+                                closeQuietly(responseBody.getAndSet(null));
+                            });
+                    future.whenComplete(
+                            (response, error) -> {
+                                if (error != null) {
+                                    if (!cancelled.get()) {
+                                        sink.error(error);
+                                    }
+                                    return;
+                                }
+
+                                responseBody.set(response.body());
+                                if (cancelled.get()) {
+                                    closeQuietly(responseBody.getAndSet(null));
+                                    return;
+                                }
+                                sink.success(response);
+                            });
+                });
+    }
+
+    /**
+     * Validate the streaming response and apply first-chunk and inter-chunk timeouts.
+     */
+    private Flux<String> handleStreamResponse(
+            java.net.http.HttpResponse<InputStream> response,
+            HttpRequest request,
+            AtomicReference<InputStream> responseBody,
+            long requestStartNanos) {
         InputStream inputStream = response.body();
+        responseBody.set(inputStream);
+
+        int statusCode = response.statusCode();
+        if (statusCode < 200 || statusCode >= 300) {
+            return readInputStreamAsync(inputStream)
+                    .timeout(streamResponseTimeout())
+                    .onErrorReturn("")
+                    .flatMapMany(
+                            errorBody -> {
+                                log.warn(
+                                        "HTTP request failed. URL: {} | Status: {} | Error: {}",
+                                        request.getUrl(),
+                                        statusCode,
+                                        errorBody);
+                                return Flux.error(
+                                        new HttpTransportException(
+                                                "HTTP request failed with status "
+                                                        + statusCode
+                                                        + " | "
+                                                        + errorBody,
+                                                statusCode,
+                                                errorBody));
+                            });
+        }
+
+        return processStreamResponse(inputStream, request)
+                .timeout(
+                        // Timeout strategy 1: Time To First Chunk.
+                        // This uses the remaining response timeout budget from request start.
+                        Mono.delay(remainingResponseTimeout(requestStartNanos)),
+
+                        // Timeout strategy 2: Inter-token gap (Stream Idle Timeout).
+                        // The maximum time to wait between receiving two consecutive data chunks.
+                        data -> Mono.delay(streamIdleTimeout()));
+    }
+
+    /**
+     * Parse SSE or NDJSON lines on a bounded elastic worker because BufferedReader blocks.
+     */
+    private Flux<String> processStreamResponse(InputStream inputStream, HttpRequest request) {
         if (inputStream == null) {
             return Flux.empty();
         }
@@ -253,13 +315,18 @@ public class JdkHttpTransport implements HttpTransport {
 
         // Use Flux.using to manage resource lifecycle
         return Flux.using(
-                () ->
-                        new BufferedReader(
-                                new InputStreamReader(inputStream, StandardCharsets.UTF_8)),
-                reader -> isNdjson ? readNdJsonLines(reader) : readSseLines(reader),
-                this::closeQuietly);
+                        () ->
+                                new BufferedReader(
+                                        new InputStreamReader(inputStream, StandardCharsets.UTF_8)),
+                        reader -> isNdjson ? readNdJsonLines(reader) : readSseLines(reader),
+                        this::closeQuietly)
+                // reader.lines() uses blocking I/O internally
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
+    /**
+     * Extract non-empty SSE data payloads and stop before the terminal marker.
+     */
     private Flux<String> readSseLines(BufferedReader reader) {
         return Flux.fromStream(reader.lines())
                 .filter(line -> line.startsWith(SSE_DATA_PREFIX))
@@ -269,6 +336,9 @@ public class JdkHttpTransport implements HttpTransport {
                 .filter(data -> !data.isEmpty());
     }
 
+    /**
+     * Extract non-empty NDJSON records as already-delimited stream chunks.
+     */
     private Flux<String> readNdJsonLines(BufferedReader reader) {
         return Flux.fromStream(reader.lines())
                 .doOnNext(line -> log.debug("Received NDJSON line"))
@@ -310,7 +380,7 @@ public class JdkHttpTransport implements HttpTransport {
         return closed.get();
     }
 
-    private java.net.http.HttpRequest buildJdkRequest(HttpRequest request) {
+    private java.net.http.HttpRequest buildJdkRequest(HttpRequest request, boolean isStreaming) {
         URI uri;
         try {
             uri = URI.create(request.getUrl());
@@ -318,8 +388,16 @@ public class JdkHttpTransport implements HttpTransport {
             throw new HttpTransportException("Invalid URL: " + request.getUrl(), e);
         }
 
-        var builder =
-                java.net.http.HttpRequest.newBuilder().uri(uri).timeout(config.getReadTimeout());
+        var builder = java.net.http.HttpRequest.newBuilder().uri(uri);
+
+        HttpClient.Version requestVersion = resolveRequestVersion(config.getHttpVersion(), uri);
+        if (requestVersion != null) {
+            builder.version(requestVersion);
+        }
+
+        if (!isStreaming && config.getReadTimeout() != null) {
+            builder.timeout(config.getReadTimeout());
+        }
 
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
             builder.header(header.getKey(), header.getValue());
@@ -346,6 +424,24 @@ public class JdkHttpTransport implements HttpTransport {
         }
 
         return builder.build();
+    }
+
+    /**
+     * Resolves the per-request HTTP version: explicit values win verbatim (including HTTP_2 on
+     * cleartext as an h2c opt-in); null (auto) downgrades cleartext requests to HTTP/1.1 (the
+     * JDK's h2c upgrade makes some servers drop the request body) and lets https requests
+     * return null to inherit the client-level version (HTTP/2 via ALPN).
+     *
+     * @param configured the configured version, or null for auto
+     * @param uri the request URI
+     * @return the version to set on the request, or null to inherit the client version
+     */
+    static HttpClient.Version resolveRequestVersion(HttpVersion configured, URI uri) {
+        if (configured != null) {
+            return configured.toJdkHttpVersion();
+        }
+        boolean isCleartext = uri == null || !"https".equalsIgnoreCase(uri.getScheme());
+        return isCleartext ? HttpClient.Version.HTTP_1_1 : null;
     }
 
     private java.net.http.HttpRequest.BodyPublisher bodyPublisher(String body) {
@@ -380,6 +476,59 @@ public class JdkHttpTransport implements HttpTransport {
             log.warn("Failed to read response body: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Read an error response body away from the JDK HTTP worker threads.
+     */
+    private Mono<String> readInputStreamAsync(InputStream inputStream) {
+        return Mono.fromCallable(() -> readInputStream(inputStream))
+                .defaultIfEmpty("")
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Resolve the configured request-start-to-first-chunk timeout.
+     */
+    private Duration streamResponseTimeout() {
+        return config.getResponseTimeout() != null
+                ? config.getResponseTimeout()
+                : HttpTransportConfig.DEFAULT_RESPONSE_TIMEOUT;
+    }
+
+    /**
+     * Keep the first-chunk timeout as one budget across header wait and body parsing.
+     */
+    private Duration remainingResponseTimeout(long requestStartNanos) {
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - requestStartNanos);
+        Duration remaining = streamResponseTimeout().minus(elapsed);
+        return remaining.isNegative() || remaining.isZero() ? Duration.ZERO : remaining;
+    }
+
+    /**
+     * Resolve the configured maximum idle gap between emitted stream chunks.
+     */
+    private Duration streamIdleTimeout() {
+        return config.getStreamIdleTimeout() != null
+                ? config.getStreamIdleTimeout()
+                : HttpTransportConfig.DEFAULT_STREAM_IDLE_TIMEOUT;
+    }
+
+    /**
+     * Normalize low-level streaming failures into the transport exception type.
+     */
+    private Throwable mapStreamError(Throwable e) {
+        if (e instanceof TimeoutException) {
+            return new HttpTransportException("Stream timeout: " + e.getMessage(), e);
+        }
+        if (e instanceof HttpTransportException) {
+            return e;
+        }
+        Throwable cause = e instanceof CompletionException ? e.getCause() : e;
+        if (cause instanceof HttpTransportException) {
+            return cause;
+        }
+        return new HttpTransportException("SSE/NDJSON stream failed: " + e.getMessage(), e);
     }
 
     private void closeQuietly(AutoCloseable closeable) {

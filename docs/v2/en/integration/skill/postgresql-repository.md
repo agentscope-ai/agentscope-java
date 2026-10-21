@@ -1,5 +1,10 @@
-# PostgreSQL Skill Repository
+---
+title: PostgreSQL Skill Repository
+zh_link: /v2/zh/integration/skill/postgresql-repository
+---
 
+
+> **Deprecated**: migrate to [`JdbcAgentSkillRepository`](/v2/en/integration/distributed/jdbc) in the unified JDBC module — one implementation for MySQL, PostgreSQL, H2, SQLite, and future dialects. Tables from this module work as-is; pre-`metadata_json` tables need one ALTER first. See the [migration notes](/v2/en/integration/distributed/jdbc#migrating-from-legacy-modules).
 `agentscope-extensions-skill-postgresql-repository` stores skills in PostgreSQL with full CRUD: edit and save in your admin console / business system, and the Agent picks up changes immediately on the next read.
 
 ## When to use

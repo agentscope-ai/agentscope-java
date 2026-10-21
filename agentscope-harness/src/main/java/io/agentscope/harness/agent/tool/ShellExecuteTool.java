@@ -16,6 +16,9 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolExecutionDetails;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
@@ -47,7 +50,7 @@ public class ShellExecuteTool {
                         + " operations. Returns combined output and exit code. If a dedicated tool"
                         + " exists (e.g., read_file, write_file), you MUST use it instead of shell"
                         + " commands.")
-    public String execute(
+    public ToolResultBlock execute(
             RuntimeContext runtimeContext,
             @ToolParam(name = "command", description = "Shell command to execute") String command,
             @ToolParam(
@@ -65,10 +68,15 @@ public class ShellExecuteTool {
         if (workingDirectory != null && !workingDirectory.isBlank()) {
             String wd = workingDirectory.strip();
             if (wd.startsWith("/") || wd.startsWith("~") || wd.contains("..")) {
-                return "Error: working_directory must be a relative path within the workspace"
-                        + " (absolute paths, '~', and '..' are not allowed).";
+                return ToolResultBlock.error(
+                        "working_directory must be a relative path within the workspace"
+                                + " (absolute paths, '~', and '..' are not allowed).");
             }
-            effectiveCommand = "cd '" + wd.replace("'", "'\\''") + "' && " + command;
+            effectiveCommand =
+                    commandWithWorkingDirectory(
+                            wd,
+                            command,
+                            System.getProperty("os.name").toLowerCase().contains("win"));
         }
 
         int timeoutSeconds = timeout != null && timeout > 0 ? timeout : 30;
@@ -82,6 +90,24 @@ public class ShellExecuteTool {
         if (result.truncated()) {
             sb.append("\n(output was truncated)");
         }
-        return sb.toString();
+        ToolExecutionDetails.Outcome outcome =
+                result.exitCode() == null
+                        ? ToolExecutionDetails.Outcome.UNKNOWN
+                        : result.isSuccess()
+                                ? ToolExecutionDetails.Outcome.SUCCEEDED
+                                : ToolExecutionDetails.Outcome.FAILED;
+        return ToolResultBlock.text(sb.toString())
+                .withExecutionDetails(
+                        new ToolExecutionDetails(
+                                "shell", outcome, result.exitCode(), result.truncated()))
+                .withState(result.isSuccess() ? ToolResultState.SUCCESS : ToolResultState.ERROR);
+    }
+
+    static String commandWithWorkingDirectory(
+            String workingDirectory, String command, boolean windows) {
+        if (windows) {
+            return "cd /d \"" + workingDirectory.replace("\"", "\"\"") + "\" && " + command;
+        }
+        return "cd '" + workingDirectory.replace("'", "'\\''") + "' && " + command;
     }
 }

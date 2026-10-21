@@ -17,6 +17,7 @@ package io.agentscope.extensions.channel.common;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -25,6 +26,14 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Defaults follow OpenClaw: {@code 20} events / {@code 60s} window. Once tripped the peer is
  * placed in a {@code 60s} cooldown during which {@link #allow(String)} returns {@code false}.
+ *
+ * <p>Tracked peers do not accumulate forever: a peer with no recorded event for longer than
+ * {@code windowMillis + cooldownMillis} is evicted (by then its sliding window is empty and any
+ * cooldown has expired, so the entry carries no information). Sweeping is opportunistic — no
+ * background thread is started: the first {@link #allow(String)} call after each
+ * {@code windowMillis + cooldownMillis} period sweeps idle peers, so a peer is reclaimed within
+ * roughly one further period after going idle. {@link #evictIdlePeers()} offers the same sweep
+ * explicitly. This class is thread-safe.
  */
 public final class BotLoopGuard {
 
@@ -33,6 +42,7 @@ public final class BotLoopGuard {
     private final long cooldownMillis;
 
     private final ConcurrentHashMap<String, PeerState> states = new ConcurrentHashMap<>();
+    private volatile long lastSweepMs;
 
     public BotLoopGuard() {
         this(20, 60_000L, 60_000L);
@@ -57,7 +67,8 @@ public final class BotLoopGuard {
             return true;
         }
         long now = System.currentTimeMillis();
-        PeerState state = states.computeIfAbsent(peerKey, k -> new PeerState());
+        maybeSweep(now);
+        PeerState state = states.computeIfAbsent(peerKey, k -> new PeerState(now));
         synchronized (state) {
             if (state.cooldownUntilMs > now) {
                 return false;
@@ -69,10 +80,24 @@ public final class BotLoopGuard {
             if (state.events.size() >= maxEventsPerWindow) {
                 state.cooldownUntilMs = now + cooldownMillis;
                 state.events.clear();
+                state.lastEventMs = now;
                 return false;
             }
             state.events.addLast(now);
+            state.lastEventMs = now;
             return true;
+        }
+    }
+
+    /**
+     * Sweeps idle peers piggybacked on {@link #allow(String)} calls: the first call after each
+     * {@code windowMillis + cooldownMillis} period sweeps. No background thread is started;
+     * concurrent callers may sweep redundantly, which is harmless.
+     */
+    private void maybeSweep(long now) {
+        if (now - lastSweepMs >= windowMillis + cooldownMillis) {
+            lastSweepMs = now;
+            evictIdlePeers(now);
         }
     }
 
@@ -87,8 +112,49 @@ public final class BotLoopGuard {
         }
     }
 
+    /** Returns the number of currently tracked peers; mostly for tests/observability. */
+    public int trackedPeers() {
+        return states.size();
+    }
+
+    /**
+     * Removes peers that have recorded no event for longer than {@code windowMillis +
+     * cooldownMillis}; by then the sliding window is empty and any cooldown has expired, so an
+     * evicted peer simply restarts with a fresh window on its next event. A newly created entry
+     * carries its creation time as its last-event stamp, so it can never be mistaken for idle
+     * here.
+     *
+     * @return the number of peers removed
+     */
+    public int evictIdlePeers() {
+        return evictIdlePeers(System.currentTimeMillis());
+    }
+
+    private int evictIdlePeers(long now) {
+        long idleThreshold = windowMillis + cooldownMillis;
+        int removed = 0;
+        for (Map.Entry<String, PeerState> entry : states.entrySet()) {
+            PeerState state = entry.getValue();
+            synchronized (state) {
+                // Conditional remove: only drops the entry if it still maps to this exact,
+                // validated-idle object — a concurrent re-acquire cannot lose its fresh state.
+                if (now - state.lastEventMs > idleThreshold
+                        && states.remove(entry.getKey(), state)) {
+                    removed++;
+                }
+            }
+        }
+        return removed;
+    }
+
     private static final class PeerState {
         final Deque<Long> events = new ArrayDeque<>();
         long cooldownUntilMs;
+        long lastEventMs;
+
+        PeerState(long now) {
+            // Stamped at creation: a newly created entry can never satisfy the idle check.
+            this.lastEventMs = now;
+        }
     }
 }

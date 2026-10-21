@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.gateway.channel;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import java.util.Objects;
@@ -33,6 +34,9 @@ import java.util.Set;
  *       HarnessAgent namespace isolation. In DM scenarios these are equal; in group/channel
  *       scenarios {@code peer.id} is the group and {@code senderId} is the individual author.
  * </ul>
+ *
+ * <p>{@link #runtimeContext()} is <em>not</em> used for routing and does not participate in session
+ * key computation. It is forwarded to the Gateway as the caller merge base for the agent turn.
  *
  * @param channelId identifier of the originating channel (e.g. {@code "chatui"}, {@code "slack"})
  * @param accountId optional multi-account identifier (e.g. Slack app installation id); null for
@@ -53,6 +57,8 @@ import java.util.Set;
  *     card); the router still builds session and outbound context normally so bindings continue to
  *     control {@code sessionScope} and outbound addressing. {@code null} for normal binding-driven
  *     routing.
+ * @param runtimeContext optional caller-supplied {@link RuntimeContext} merged into the agent
+ *     turn; {@code null} when none. Not part of routing / session identity.
  */
 public record InboundMessage(
         String channelId,
@@ -64,7 +70,8 @@ public record InboundMessage(
         String team,
         Set<String> roles,
         List<Msg> messages,
-        String preferredAgentId) {
+        String preferredAgentId,
+        RuntimeContext runtimeContext) {
 
     public InboundMessage {
         Objects.requireNonNull(channelId, "channelId");
@@ -90,6 +97,7 @@ public record InboundMessage(
                 null,
                 Set.of(),
                 List.copyOf(messages),
+                null,
                 null);
     }
 
@@ -110,7 +118,8 @@ public record InboundMessage(
                 null,
                 Set.of(),
                 List.copyOf(messages),
-                agentId);
+                agentId,
+                null);
     }
 
     /**
@@ -129,6 +138,7 @@ public record InboundMessage(
                 null,
                 Set.of(),
                 List.copyOf(messages),
+                null,
                 null);
     }
 
@@ -148,6 +158,7 @@ public record InboundMessage(
                 null,
                 Set.of(),
                 List.copyOf(messages),
+                null,
                 null);
     }
 
@@ -159,6 +170,22 @@ public record InboundMessage(
     /** Whether this message is a thread-nested reply. */
     public boolean isThread() {
         return peer.kind().isThread();
+    }
+
+    /** Returns a copy carrying the given {@link RuntimeContext}. */
+    public InboundMessage withRuntimeContext(RuntimeContext runtimeContext) {
+        return new InboundMessage(
+                channelId,
+                accountId,
+                peer,
+                senderId,
+                parentPeer,
+                guild,
+                team,
+                roles,
+                messages,
+                preferredAgentId,
+                runtimeContext);
     }
 
     /** Returns a builder for constructing messages with all optional fields. */
@@ -177,6 +204,7 @@ public record InboundMessage(
         private String team;
         private Set<String> roles = Set.of();
         private String preferredAgentId;
+        private RuntimeContext runtimeContext;
 
         private Builder(String channelId, Peer peer, List<Msg> messages) {
             this.channelId = channelId;
@@ -219,6 +247,11 @@ public record InboundMessage(
             return this;
         }
 
+        public Builder runtimeContext(RuntimeContext runtimeContext) {
+            this.runtimeContext = runtimeContext;
+            return this;
+        }
+
         public InboundMessage build() {
             return new InboundMessage(
                     channelId,
@@ -230,7 +263,8 @@ public record InboundMessage(
                     team,
                     roles,
                     messages,
-                    preferredAgentId);
+                    preferredAgentId,
+                    runtimeContext);
         }
     }
 }

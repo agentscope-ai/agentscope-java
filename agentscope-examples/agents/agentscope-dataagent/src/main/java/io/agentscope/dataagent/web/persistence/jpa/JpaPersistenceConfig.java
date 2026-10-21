@@ -15,7 +15,9 @@
  */
 package io.agentscope.dataagent.web.persistence.jpa;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.dataagent.web.auth.UserStore;
+import io.agentscope.dataagent.web.binding.UserBindingStore;
 import io.agentscope.dataagent.web.catalog.UserAgentDefinitionStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +70,13 @@ public class JpaPersistenceConfig {
     public UserStore jpaUserStore(UserEntityRepository repository) {
         log.info("Persistence: user store backed by JPA");
         return new JpaUserStore(repository);
+    }
+
+    @Bean
+    public UserBindingStore jpaUserBindingStore(
+            UserEntityRepository repository, ObjectMapper objectMapper) {
+        log.info("Persistence: user binding store backed by JPA");
+        return new JpaUserBindingStore(repository, objectMapper);
     }
 
     @Bean

@@ -1,6 +1,7 @@
 ---
-title: "Skill"
-description: "Four-layer skill composition, skill marketplaces, the self-learning loop"
+title: Skill
+description: Four-layer skill composition, skill marketplaces, the self-learning loop
+zh_link: /v2/zh/docs/harness/skill
 ---
 
 A skill is a packaged capability: a directory with a `SKILL.md` (purpose + instructions the agent reads), optional reference docs, scripts, samples. Hand it to the agent and it will use it when relevant.
@@ -22,6 +23,10 @@ code-reviewer/
 └── scripts/           # optional — executable scripts the agent can shell out to
     └── run-checks.sh
 ```
+
+Save `SKILL.md` as UTF-8. A byte order mark (BOM) before the opening `---` is supported.
+
+Close the YAML frontmatter with an unindented line containing only `---` and optional spaces or tabs. A `---` inside a description or an indented YAML block scalar remains part of the metadata.
 
 SKILL.md format:
 
@@ -170,13 +175,13 @@ workspace/
 
 This requires the caller to pass `userId="alice"` in `RuntimeContext`.
 
-`workspace/<userId>/skills/` is a **logical path**, not necessarily "a directory on the local disk." Skill files are read and written through the `AbstractFilesystem` abstraction, and where they physically land depends on the [filesystem mode](./filesystem.md) you configure — so per-user skill isolation is decoupled from the storage backend:
+`workspace/<userId>/skills/` is a **logical path**, not necessarily "a directory on the local disk." Skill files are read and written through the `AbstractFilesystem` abstraction, and where they physically land depends on the [filesystem mode](/v2/en/docs/harness/filesystem) you configure — so per-user skill isolation is decoupled from the storage backend:
 
 - **Local + shell** — literally `workspace/alice/skills/...` on the host disk.
-- **Shared store (remote filesystem)** — the `skills/` prefix is routed to the KV store; per-user isolation shows up as the namespace key `agents/<agentId>/users/alice/skills/...`, consistent across replicas, and edits from an admin console take effect on the next reasoning step.
+- **Shared store (remote filesystem)** — the `skills/` prefix is routed to the KV store; per-user isolation shows up as the namespace key `agents/<agentId>/users/alice/skills/...`, consistent across replicas, and edits from an admin console take effect on the next call.
 - **Sandbox (sandbox filesystem)** — the host-side user directory is hydrated into the container's `/workspace` via workspace projection at sandbox start, so the agent reads the same copy inside the sandbox.
 
-Whichever mode you run, `<userId>/skills/` overrides the shared version at the same priority. For the per-mode isolation keys, physical representation, and the role of `userId`, see [Filesystem](./filesystem.md#how-multi-user-isolation-works).
+Whichever mode you run, `<userId>/skills/` overrides the shared version at the same priority. For the per-mode isolation keys, physical representation, and the role of `userId`, see [Filesystem](/v2/en/docs/harness/filesystem#how-multi-user-isolation-works).
 
 ## Conflict resolution
 
@@ -200,11 +205,11 @@ Example: the team Git has a generic `code-reviewer`; the project's `workspace/sk
 | `skillRepository(repo)` | Append a marketplace; callable multiple times |
 | `skillRepositories(list)` | Replace all marketplaces at once |
 | `projectGlobalSkillsDir(path)` | Enable the project-global dir; skipped if missing |
-| `disableDynamicSkills()` | Turn off "re-merge before each reasoning"; merge once at build |
+| `disableDynamicSkills()` | Turn off "re-merge before each call"; merge once at build |
 
 Subagents inherit the parent's marketplaces and project-global dir automatically.
 
-When to use `disableDynamicSkills()`: one-shot tasks; or slow marketplace stores you don't want to refetch per turn. Usually don't touch it.
+When to use `disableDynamicSkills()`: one-shot tasks; or slow marketplace stores you don't want to refetch per call. Usually don't touch it.
 
 ## Self-learning loop (optional)
 
@@ -248,7 +253,6 @@ The framework also auto-bumps a usage counter every time the agent calls `load_s
 ```java
 .enableSkillCurator(SkillCuratorConfig.builder()
     .intervalHours(7 * 24)        // weekly
-    .minIdleHours(2)              // only when call-gap ≥ 2h
     .staleAfterDays(30)
     .archiveAfterDays(90)
     .build())
@@ -272,7 +276,7 @@ agent.promoteSkill("notes-taker", "alice")                   // manually promote
 
 ## How the agent reads and runs skills
 
-When the agent reasons, it sees an `<available_skills>` block in the system prompt listing every skill currently in scope:
+On each call, harness builds an `<available_skills>` block in the system prompt listing every skill currently in scope. The block is built once per call (during PreCall, seeded together with the system message) and then stays visible as-is across every reasoning step of that call — it is not rebuilt per step:
 
 ```xml
 <available_skills>
@@ -308,7 +312,7 @@ The agent doesn't see this difference — `load_skill_through_path` always works
 
 ### `<files-root>` and shell execution
 
-When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an absolute path to invoke them via `execute_shell_command`. That path comes from the `<files-root>` element on each skill entry. Resolution depends on the filesystem mode:
+When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an absolute path to invoke them via `execute`. That path comes from the `<files-root>` element on each skill entry. Resolution depends on the filesystem mode:
 
 | FS mode (shell available?) | Workspace skill `<files-root>` | Marketplace skill `<files-root>` |
 |----------------------------|--------------------------------|-----------------------------------|
@@ -316,11 +320,11 @@ When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an ab
 | Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
 | Local without shell / Composite | (not rendered — no shell tool registered) | (not rendered) |
 
-So the agent's shell call is always `execute_shell_command("python3 <files-root>/scripts/foo.py")` — no path guessing, no per-source variations to remember.
+So the agent's shell call is always `execute("python3 <files-root>/scripts/foo.py")` — no path guessing, no per-source variations to remember.
 
 ### Where marketplace files actually live
 
-Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each reasoning step:
+Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each call (during PreCall, in the same `onSystemPrompt` pass that builds `<available_skills>`):
 
 - Per-file SHA-256 dedup — only changed files are rewritten
 - Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass
@@ -332,7 +336,7 @@ If two repositories report the same `getSource()`, the second is auto-suffixed (
 
 ## Running skills in a sandbox
 
-In [sandbox mode](./filesystem.md#mode-2-sandbox-sandboxfilesystemspec-family) every file operation and shell command runs inside an isolated container — the host is untouched. That creates a problem: a skill's scripts (`scripts/run-checks.sh`, `scripts/foo.py`, …) are authored on the host, yet the agent has to execute them inside the container. Harness makes this transparent with a three-step "materialize → project → execute-in-container" pipeline, broken down below.
+In [sandbox mode](/v2/en/docs/harness/filesystem#mode-2-sandbox-sandboxfilesystemspec-family) every file operation and shell command runs inside an isolated container — the host is untouched. That creates a problem: a skill's scripts (`scripts/run-checks.sh`, `scripts/foo.py`, …) are authored on the host, yet the agent has to execute them inside the container. Harness makes this transparent with a three-step "materialize → project → execute-in-container" pipeline, broken down below.
 
 ### Which skills end up in the sandbox
 
@@ -345,7 +349,7 @@ Two classes of skills can run in the container, with different staging points:
 
 ### Step 1: materialize marketplace skills to the host
 
-Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each reasoning step, `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<source>/<name>/`:
+Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each call (during PreCall), `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<source>/<name>/`:
 
 - **Per-file SHA-256 dedup** — only changed files are rewritten; unchanged ones are skipped.
 - **Orphan cleanup** — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass.
@@ -382,7 +386,7 @@ In sandbox mode, each skill's `<files-root>` in the `<available_skills>` block i
 So the agent simply issues:
 
 ```
-execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <target>")
+execute("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <target>")
 ```
 
 That command runs in the container and reads exactly the file that was projected in. The agent doesn't need to know which layer a skill came from — the framework computes the prefix.
@@ -391,7 +395,7 @@ That command runs in the container and reads exactly the file that was projected
 
 ### Persisting script side effects across calls
 
-If a script installs dependencies or generates artifacts (`npm install`, `pip install`, build output) and you want them on the next `call()`, give the sandbox a [snapshot](./filesystem.md#snapshot-strategies) (`snapshotSpec(...)`). A snapshot captures the whole `/workspace`; the next call on the same scope key restores the snapshot first and then layers projection on top, so installed dependencies don't have to be reinstalled.
+If a script installs dependencies or generates artifacts (`npm install`, `pip install`, build output) and you want them on the next `call()`, give the sandbox a [snapshot](/v2/en/docs/harness/filesystem#snapshot-strategies) (`snapshotSpec(...)`). A snapshot captures the whole `/workspace`; the next call on the same scope key restores the snapshot first and then layers projection on top, so installed dependencies don't have to be reinstalled.
 
 ### Note: reading SKILL.md doesn't need the sandbox
 
@@ -413,6 +417,6 @@ A common point of confusion: **reading** a skill (`load_skill_through_path` fetc
 
 ## Related Pages
 
-- [Workspace](./workspace.md) — overall layout of `skills/`
-- [Filesystem](./filesystem.md) — multi-tenant isolation and per-user bucketing
-- [Architecture](./architecture.md) — how the skill set is rebuilt each reasoning step
+- [Workspace](/v2/en/docs/harness/workspace) — overall layout of `skills/`
+- [Filesystem](/v2/en/docs/harness/filesystem) — multi-tenant isolation and per-user bucketing
+- [Architecture](/v2/en/docs/harness/architecture) — how the skill set is rebuilt each call

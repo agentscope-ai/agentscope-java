@@ -22,21 +22,24 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * Represents token usage information for chat completion responses.
  *
  * <p>This immutable data class tracks the number of tokens used during a chat completion,
- * including input tokens (prompt), output tokens (generated response), cached input tokens, and
- * execution time.
+ * including input tokens (prompt), output tokens (generated response), input/output token
+ * breakdowns, and execution time.
  */
 public class ChatUsage {
 
     private final int inputTokens;
     private final int outputTokens;
     private final int cachedTokens;
+    private final int cacheCreationTokens;
+    private final int reasoningTokens;
+    private final int toolUsePromptTokens;
     private final double time;
 
     /**
-     * Creates a new ChatUsage instance without cached token information.
+     * Creates a new ChatUsage instance without token breakdowns.
      *
-     * <p>This constructor is retained for backward compatibility and delegates to {@link
-     * #ChatUsage(int, int, int, double)} with {@code cachedTokens} defaulting to {@code 0}.
+     * <p>This constructor is retained for backward compatibility. All token breakdowns default to
+     * {@code 0}.
      *
      * @param inputTokens the number of tokens used for the input/prompt
      * @param outputTokens the number of tokens used for the output/generated response
@@ -55,15 +58,49 @@ public class ChatUsage {
      *     {@code inputTokens}); {@code 0} when the provider does not report cache information
      * @param time the execution time in seconds
      */
-    @JsonCreator
     public ChatUsage(
             @JsonProperty("inputTokens") int inputTokens,
             @JsonProperty("outputTokens") int outputTokens,
             @JsonProperty("cachedTokens") int cachedTokens,
             @JsonProperty("time") double time) {
+        this(inputTokens, outputTokens, cachedTokens, 0, 0, 0, time);
+    }
+
+    /**
+     * Creates a new ChatUsage instance with all token breakdowns.
+     *
+     * <p>This constructor is also used by Jackson to deserialize a {@code ChatUsage} object. When
+     * a breakdown property is omitted from JSON, its primitive value defaults to {@code 0}.
+     *
+     * @param inputTokens the number of tokens used for the input/prompt
+     * @param outputTokens the number of tokens used for the output/generated response
+     * @param cachedTokens the number of input tokens served from the prompt cache (a subset of
+     *     {@code inputTokens}); {@code 0} when the provider does not report cache information
+     * @param cacheCreationTokens the number of input tokens used to create a prompt cache entry
+     *     (a subset of {@code inputTokens}); {@code 0} when the provider does not report this
+     *     information
+     * @param reasoningTokens the number of output tokens used for model reasoning (a subset of
+     *     {@code outputTokens}); {@code 0} when the provider does not report this information
+     * @param toolUsePromptTokens the number of input tokens representing tool results returned to
+     *     the model (a subset of {@code inputTokens}); {@code 0} when the provider does not report
+     *     this information
+     * @param time the execution time in seconds
+     */
+    @JsonCreator
+    public ChatUsage(
+            @JsonProperty("inputTokens") int inputTokens,
+            @JsonProperty("outputTokens") int outputTokens,
+            @JsonProperty("cachedTokens") int cachedTokens,
+            @JsonProperty("cacheCreationTokens") int cacheCreationTokens,
+            @JsonProperty("reasoningTokens") int reasoningTokens,
+            @JsonProperty("toolUsePromptTokens") int toolUsePromptTokens,
+            @JsonProperty("time") double time) {
         this.inputTokens = inputTokens;
         this.outputTokens = outputTokens;
         this.cachedTokens = cachedTokens;
+        this.cacheCreationTokens = cacheCreationTokens;
+        this.reasoningTokens = reasoningTokens;
+        this.toolUsePromptTokens = toolUsePromptTokens;
         this.time = time;
     }
 
@@ -96,6 +133,43 @@ public class ChatUsage {
      */
     public int getCachedTokens() {
         return cachedTokens;
+    }
+
+    /**
+     * Gets the number of input tokens used to create a prompt cache entry.
+     *
+     * <p>Cache creation tokens are a subset of {@link #getInputTokens()}, not an additional
+     * amount, and may be billed separately from a cache hit. Returns {@code 0} when the provider
+     * does not report this metric.
+     *
+     * @return the number of cache-creation input tokens
+     */
+    public int getCacheCreationTokens() {
+        return cacheCreationTokens;
+    }
+
+    /**
+     * Gets the number of output tokens used for model reasoning.
+     *
+     * <p>Reasoning tokens are a subset of {@link #getOutputTokens()}, not an additional amount.
+     * Returns {@code 0} when the provider does not report this metric.
+     *
+     * @return the number of reasoning output tokens
+     */
+    public int getReasoningTokens() {
+        return reasoningTokens;
+    }
+
+    /**
+     * Gets the number of input tokens representing tool results returned to the model.
+     *
+     * <p>Tool-use prompt tokens are a subset of {@link #getInputTokens()}, not an additional
+     * amount. Returns {@code 0} when the provider does not report this metric.
+     *
+     * @return the number of tool-result input tokens
+     */
+    public int getToolUsePromptTokens() {
+        return toolUsePromptTokens;
     }
 
     /**
@@ -132,6 +206,9 @@ public class ChatUsage {
         private int inputTokens;
         private int outputTokens;
         private int cachedTokens;
+        private int cacheCreationTokens;
+        private int reasoningTokens;
+        private int toolUsePromptTokens;
         private double time;
 
         /**
@@ -169,6 +246,42 @@ public class ChatUsage {
         }
 
         /**
+         * Sets the number of input tokens used to create a prompt cache entry.
+         *
+         * @param cacheCreationTokens the number of cache-creation input tokens (a subset of
+         *     {@code inputTokens})
+         * @return this builder instance
+         */
+        public Builder cacheCreationTokens(int cacheCreationTokens) {
+            this.cacheCreationTokens = cacheCreationTokens;
+            return this;
+        }
+
+        /**
+         * Sets the number of output tokens used for model reasoning.
+         *
+         * @param reasoningTokens the number of output tokens used for reasoning (a subset of
+         *     {@code outputTokens})
+         * @return this builder instance
+         */
+        public Builder reasoningTokens(int reasoningTokens) {
+            this.reasoningTokens = reasoningTokens;
+            return this;
+        }
+
+        /**
+         * Sets the number of input tokens representing tool results returned to the model.
+         *
+         * @param toolUsePromptTokens the number of tool-result input tokens (a subset of
+         *     {@code inputTokens})
+         * @return this builder instance
+         */
+        public Builder toolUsePromptTokens(int toolUsePromptTokens) {
+            this.toolUsePromptTokens = toolUsePromptTokens;
+            return this;
+        }
+
+        /**
          * Sets the execution time.
          *
          * @param time the execution time in seconds
@@ -185,7 +298,14 @@ public class ChatUsage {
          * @return a new ChatUsage instance
          */
         public ChatUsage build() {
-            return new ChatUsage(inputTokens, outputTokens, cachedTokens, time);
+            return new ChatUsage(
+                    inputTokens,
+                    outputTokens,
+                    cachedTokens,
+                    cacheCreationTokens,
+                    reasoningTokens,
+                    toolUsePromptTokens,
+                    time);
         }
     }
 }

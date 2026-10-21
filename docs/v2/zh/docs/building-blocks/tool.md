@@ -1,6 +1,7 @@
 ---
-title: "Tool"
-description: "定义、注册并管理 agent 可调用的能力"
+title: Tool
+description: 定义、注册并管理 agent 可调用的能力
+en_link: /v2/en/docs/building-blocks/tool
 ---
 
 ## 概述
@@ -70,9 +71,13 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
 ```
 
-:::{note}
+
+<Note>
+
 Toolkit 在出现额外 tool group 或 skill 时会自动注册 `reset_tools` meta tool 与 skill 查看器工具 `load_skill_through_path`，开发者无需手动实例化。详见 [自我管理 Tool](#自我管理-tool) 与 [Skill](#skill)。
-:::
+
+</Note>
+
 
 ### 自定义 Tool（注解式）
 
@@ -112,10 +117,16 @@ toolkit.registerTool(new SimpleTools());
 | `name` | `String` | tool 名（默认取方法名） |
 | `description` | `String` | 面向 agent 的描述 |
 | `readOnly` | `boolean` | 是否只读（默认 `false`） |
-| `concurrencySafe` | `boolean` | 是否可并发调用（默认 `false`） |
+| `concurrencySafe` | `boolean` | 是否可并发调用（默认 `true`） |
 | `stateInjected` | `boolean` | 是否在调用时注入 `AgentState` 作为额外参数（默认 `false`） |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
 | `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |
+
+#### 显式返回执行状态
+
+工具调用成功时返回 `ToolResultBlock.success(text)`，失败时返回 `ToolResultBlock.error(message)`；两者既可直接返回，也可包装在 `Mono<ToolResultBlock>` 中。不要通过文本前缀判断失败。`ToolResultBlock.text(text)` 默认是 `RUNNING`；如需保留既有 JSON 或多行输出，请用 `withState(...)` 明确终态。
+
+内置工具已改为结构化结果。直接调用时用 `getState()` 判断状态，用 `getOutput()` 读取文本；`Toolkit` 注册方式不变。
 
 ### 自定义 Tool（继承 `ToolBase`）
 
@@ -125,10 +136,10 @@ toolkit.registerTool(new SimpleTools());
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
-import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
@@ -153,7 +164,7 @@ public class WebSearchTool extends ToolBase {
 
     @Override
     public Mono<PermissionDecision> checkPermissions(
-            Map<String, Object> toolInput, ToolExecutionContext context) {
+            Map<String, Object> toolInput, PermissionContextState context) {
         return Mono.just(PermissionDecision.allow("Web search is read-only."));
     }
 
@@ -173,16 +184,16 @@ public class WebSearchTool extends ToolBase {
 
 ### 定义外部执行 Tool
 
-外部执行 tool 把实际执行委派给 agent 运行时之外 —— 通常是人工操作员或外部系统。Agent 调用此类 tool 时会发出 `RequireExternalExecutionEvent` 并暂停，直到结果通过 `ExternalExecutionResultEvent` 回传。
+外部执行 tool 把实际执行委派给 agent 运行时之外 —— 通常是人工操作员或外部系统。Agent 调用此类 tool 时会发出 `RequireExternalExecutionEvent` 并暂停。下一次调用回传匹配的 `ToolResultBlock` 后，agent 会发出带有相同 `replyId` 的 `ExternalExecutionResultEvent`，然后继续执行。
 
-这种模式是 [human-in-the-loop](./agent.md) 工作流的基础 —— 某些动作需要人工确认或人工执行。
+这种模式是 [human-in-the-loop](/v2/zh/docs/building-blocks/agent) 工作流的基础 —— 某些动作需要人工确认或人工执行。
 
 创建外部执行 tool 只需把 `externalTool` 设为 `true`，不必实现 `callAsync`：
 
 ```java
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.tool.ToolBase;
-import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
@@ -207,7 +218,7 @@ public class HumanApprovalTool extends ToolBase {
 
     @Override
     public Mono<PermissionDecision> checkPermissions(
-            Map<String, Object> toolInput, ToolExecutionContext context) {
+            Map<String, Object> toolInput, PermissionContextState context) {
         return Mono.just(PermissionDecision.allow("External tool dispatch is always allowed."));
     }
 }
@@ -217,7 +228,7 @@ public class HumanApprovalTool extends ToolBase {
 
 ## 接收 Context
 
-每次 `agent.call(msgs, runtimeContext)` 传入的 [`RuntimeContext`](./agent.md#runtimecontext-per-call-上下文) 会自动透传到所在 reply 内每一次工具调用。Tool 可以用两种方式拿到它：注解式 tool 走自动注入，`ToolBase.callAsync` 走 `ToolCallParam`。
+每次 `agent.call(msgs, runtimeContext)` 传入的 [`RuntimeContext`](/v2/zh/docs/building-blocks/agent#runtimecontext-per-call-上下文) 会自动透传到所在 reply 内每一次工具调用。Tool 可以用两种方式拿到它：注解式 tool 走自动注入，`ToolBase.callAsync` 走 `ToolCallParam`。
 
 ### 自动注入（`@Tool` 方法）
 
@@ -225,12 +236,27 @@ public class HumanApprovalTool extends ToolBase {
 
 | 参数类型 | 注入来源 |
 |---------|---------|
-| `ToolEmitter` | 流式中间产物 emitter（无配置时为 no-op） |
+| `ToolEmitter` | 流式中间产物 emitter 和工具调用上下文（无配置时为 no-op） |
 | `Agent` | 当前 agent 实例 |
 | `AgentState` | 当前 call 的 per-session 状态（通过 `RuntimeContext.getAgentState()` 获取） |
 | `RuntimeContext` | 当前 per-call 上下文 |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()`（兼容层，已 deprecated） |
 | 其它用户自定义 POJO 类型 | `runtimeContext.get(ParamType.class)` —— 即调用方在 `RuntimeContext.builder().put(ParamType.class, value)` 注册的对象 |
+
+注入的 `ToolEmitter` 会提供当前工具调用 ID，可用于把进度与前端状态或其它共享存储关联起来：
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    String toolCallId = emitter.getToolCallId();
+    if (toolCallId != null) {
+        progressByToolCall.put(toolCallId, "running");
+    }
+    return "done";
+}
+```
+
+当 emitter 没有工具调用上下文时（例如 no-op 或自定义 emitter），`getToolCallId()` 返回 `null`。
 
 「用户自定义 POJO」的判定：参数没有 `@ToolParam`、不是基本类型、不是 `ContentBlock` / `Msg`、不在 `java.*` / `javax.*` 包下。其余参数（带 `@ToolParam` 或属于上述兜底类型）从 LLM 提供的 JSON 输入按名称取值。
 
@@ -265,6 +291,25 @@ agent.call(List.of(new UserMessage("Greet me.")), ctx).block();
 ```
 
 模型不需要把 `userCtx` 写进 JSON 参数——schema 里也不会出现它。完整示例：`agentscope-examples/documentation/.../tool/ToolExecutionContextExample.java`。
+
+### 工具进度流式输出
+
+长时间运行的工具可以通过 `ToolEmitter.emit()` 发布中间进度。进度以 [`ToolProgressEvent`](/v2/zh/docs/building-blocks/message-and-event#事件类型) 的形式出现在事件流中——仅用于展示，不会发送给 LLM。工具的返回值才是模型实际接收到的内容，它以 `ToolResultTextDeltaEvent` / `ToolResultDataDeltaEvent` 的形式单独传递。
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    emitter.emit(ToolResultBlock.text("正在扫描 3 个目录..."));
+    // ... 执行工作 ...
+    emitter.emit(ToolResultBlock.text("正在索引结果..."));
+    // ... 继续执行 ...
+
+    // 只有这个返回值会作为工具结果发送给 LLM。
+    return "3 files found";
+}
+```
+
+从事件流重建工具结果的客户端必须累积 `ToolResult*DeltaEvent`，并忽略 `ToolProgressEvent`。如果混用两者，进度文本会进入工具消息并在下一轮被送回模型，违背 `ToolEmitter` 的契约。
 
 ### `ToolBase.callAsync` 中访问
 
@@ -313,57 +358,72 @@ MCP tool 在 toolkit 中以 `mcp__{server_name}__{tool_name}` 命名，避免冲
 
 通过 `McpClientBuilder` 构建 `McpClientWrapper`，再注册到 `Toolkit`：
 
-::::{tab-set}
-:::{tab-item} STDIO
+
+<Tabs>
+
+
+<Tab title="STDIO">
+
 ```java
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper filesystem =
-        McpClientBuilder.stdio()
-                .name("filesystem")
-                .command("mcp-server-filesystem")
-                .args("--root", "/my/project")
-                .build();
+        McpClientBuilder.create("filesystem")
+                .stdioTransport("mcp-server-filesystem", "--root", "/my/project")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(filesystem).block();
 ```
-:::
-:::{tab-item} Streamable HTTP
+
+</Tab>
+
+
+<Tab title="Streamable HTTP">
+
 ```java
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper weather =
-        McpClientBuilder.streamableHttp()
-                .name("weather")
-                .url("https://api.weather.com/mcp")
+        McpClientBuilder.create("weather")
+                .streamableHttpTransport("https://api.weather.com/mcp")
                 .header("Authorization", "Bearer xxx")
-                .build();
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
 ```
-:::
-:::{tab-item} SSE
+
+</Tab>
+
+
+<Tab title="SSE">
+
 ```java
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper search =
-        McpClientBuilder.sse()
-                .name("search")
-                .url("https://api.search.com/mcp/sse")
-                .build();
+        McpClientBuilder.create("search")
+                .sseTransport("https://api.search.com/mcp/sse")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(search).block();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 完整运行示例：`agentscope-examples/documentation/.../mcp/McpStdioExample.java`、`mcp/McpSseExample.java`、`mcp/McpStreamableHttpExample.java`。
 
@@ -402,7 +462,7 @@ ReActAgent agent =
 初始化阶段：
 
 - Toolkit 扫描所有注册的 skill 来源，收集每个 skill 的名称、描述与目录。
-- 自动把内置查看器工具 `load_skill_through_path`（实现位于 `io.agentscope.core.skill.SkillToolFactory`）注册到 `skill-build-in-tools` 这个 tool group。
+- 自动把内置查看器工具 `load_skill_through_path`（实现位于 `io.agentscope.core.skill.SkillToolFactory`）作为无分组、始终可见的工具注册。
 - 组装一段 system prompt 片段，列出可用 skill（仅名称与描述），并指示 agent 通过 `load_skill_through_path` 读取完整内容。
 
 运行时阶段，agent 用两个必填参数调用查看器：
@@ -426,9 +486,13 @@ ReActAgent agent =
 1. 返回请求的内容（`SKILL.md` markdown，或指定的资源文件）。
 2. **激活该 skill** —— Toolkit 中与之绑定的 tool group 被启用，本轮对话余下时段都可调用 skill 自带的工具。如果 `path` 不存在，查看器会返回错误并列出可用资源路径（`SKILL.md` 始终排在第一位），便于 agent 重试。
 
-:::{note}
+
+<Note>
+
 Skill 不是 tool —— agent 不能直接调用 skill。它必须先用 `load_skill_through_path` 读取指令，再用其他 tool 按描述的步骤执行。
-:::
+
+</Note>
+
 
 ### Skill 执行脚本：配置 Shell 工具
 
@@ -516,22 +580,24 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new BasicTools());
 
 ToolGroup database =
-        new ToolGroup(
-                "database",
-                "Tools for database operations.",
-                ToolGroupScope.SESSION,
-                /* active = */ false);
+        ToolGroup.builder()
+                .name("database")
+                .description("Tools for database operations.")
+                .scope(ToolGroupScope.SESSION)
+                .active(false)
+                .build();
 database.addTool("db_query");
 database.addTool("db_migrate");
 toolkit.registerTool(new DatabaseTools());
 toolkit.registerToolGroup(database);
 
 ToolGroup deployment =
-        new ToolGroup(
-                "deployment",
-                "Tools for deploying services.",
-                ToolGroupScope.SESSION,
-                /* active = */ false);
+        ToolGroup.builder()
+                .name("deployment")
+                .description("Tools for deploying services.")
+                .scope(ToolGroupScope.SESSION)
+                .active(false)
+                .build();
 deployment.addTool("deploy");
 deployment.addTool("rollback");
 toolkit.registerTool(new DeploymentTools());
@@ -558,33 +624,173 @@ ReActAgent agent =
 - 对每个本次切换为激活的 group，其 description 与（若提供的）使用说明会被拼接进 meta tool 的返回值，告诉 agent 如何正确使用该组。
 - 未激活 group 中的 tool 不会出现在 agent 的工具 schema 中，从而把上下文留给当前激活的工具集。
 
-:::{warning}
+
+<Warning>
+
 Meta tool 的输入表示所有 group 的**最终状态**而非增量。任何未显式置为 `true` 的 group 都会被停用，无论之前的状态如何。
-:::
+
+</Warning>
+
+
+## 工具调用拦截器
+
+`ToolCallInterceptor` 是 Toolkit 层、单次调用级的参数拦截扩展点。它运行在 JSON Schema 校验与预置参数合并**之后**、会话分发记录与真实执行**之前** —— 因此它能看到工具将收到的确切参数与调用者身份,并决定实际执行的内容。
+
+用它表达[权限系统](/v2/zh/docs/building-blocks/permission-system)无法覆盖的**参数级业务规则**:工具本身被允许调用,但*本次*调用的 `file_path` 是否在当前用户的沙箱内?这条 SQL 是否超出调用者的数据范围?工具级策略(ALLOW/ASK/DENY、人审)仍归权限引擎;批次级、事件流层面的关注点仍归[中间件](/v2/zh/docs/building-blocks/middleware)的 `onActing`。
+
+拦截器在 `ToolkitConfig` 构建期注册:
+
+```java
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptor(new AuditInterceptor())                    // 追加;可重复调用
+        .interceptor(new PathSandboxInterceptor(                // 追加
+                userId -> Path.of("/data/workspaces", userId)))
+        .build());
+
+// 也可整体设置 —— interceptors(list) 是覆盖语义,而非追加
+Toolkit toolkit2 = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptors(List.of(audit, sandbox))
+        .build());
+```
+
+`interceptor(...)` 为追加语义,可重复调用;`interceptors(List)` 为覆盖语义,替换此前注册的全部拦截器 —— 适合已在别处组装好拦截器列表的场景。拦截器按 `order()` **降序稳定排序**(数值越大越靠外层:先拦截、后收到结果;同序保持注册顺序),排序后运行期不可变。`Toolkit` 被并发会话共享,拦截器实现必须无状态或线程安全;运行期可变的*策略*(熔断开关、租户规则)以拦截器**内部的可变状态**表达。
+
+钩子形状与中间件同构(洋葱模式):
+
+```java
+public final class PathSandboxInterceptor implements ToolCallInterceptor {
+
+    private final Function<String, Path> workspaceRootResolver;
+
+    public PathSandboxInterceptor(Function<String, Path> workspaceRootResolver) {
+        this.workspaceRootResolver = workspaceRootResolver;
+    }
+
+    @Override
+    public Mono<ToolResultBlock> intercept(
+            ToolInvocation invocation,
+            Function<ToolInvocation, Mono<ToolResultBlock>> next) {
+        if (!invocation.toolName().equals("write_text_file")) {
+            return next.apply(invocation);        // 非目标工具 —— 直接放行
+        }
+        // 注入参数:调用方经 RuntimeContext.builder().put(FileAuditLog.class, log)
+        // 注册,模型不可见
+        FileAuditLog audit = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().get(FileAuditLog.class) : null;
+        String userId = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().getUserId() : null;
+        if (userId == null || userId.isBlank()) { // 身份缺失即拒绝(fail closed)
+            return deny("no authenticated user context; cannot scope file access");
+        }
+        Path root = workspaceRootResolver.apply(userId).toAbsolutePath().normalize();
+        // 工具参数:"file_path" 来自模型的 JSON 输入(含 preset)
+        Path resolved = root
+                .resolve(invocation.input().get("file_path").toString())
+                .normalize();                     // 绝对路径同样过不了下面的检查
+        // 前置处理:校验参数并改写为沙箱内路径
+        if (!resolved.startsWith(root)) {
+            return deny("path must stay inside your workspace; use relative paths");
+        }
+        Map<String, Object> rewritten = new HashMap<>(invocation.input());
+        rewritten.put("file_path", resolved.toString());
+        // 后置处理:审计执行结果而不影响执行
+        return next.apply(invocation.withInput(rewritten))
+                .doOnSuccess(result -> {
+                    if (audit != null) audit.record(userId, resolved, result);
+                });
+    }
+
+    private static Mono<ToolResultBlock> deny(String message) {
+        return Mono.just(ToolResultBlock.text("PathSandbox: " + message)
+                .withState(ToolResultState.DENIED));
+    }
+}
+```
+
+拦截器可执行的动作:
+
+| 动作 | 表达方式 | 效果 |
+|------|----------|------|
+| 放行 | `next.apply(invocation)` | 继续后续链 / 执行工具 |
+| 策略拒绝 | `ToolResultBlock.text(msg).withState(ToolResultState.DENIED)` | 工具不执行;结果回传模型自我纠正;自动记录 `denied` 决策 |
+| 调用非法 | `ToolResultBlock.error(msg)` | "本次调用失败"语义,与 Schema 校验失败一致;不产生 denied 记录 |
+| 改写参数 | `next.apply(invocation.withInput(newInput))` | 工具收到改写后的参数(可覆盖 preset;不做 Schema 重校验 —— 开发者产物,与 preset 同信任级别) |
+| 审计 | `next.apply(invocation).doOnSuccess(...)` | 观察结果而不影响执行 |
+| 挂起(HITL) | 抛出 `ToolSuspendException` | 由既有管线转为 `suspended` 结果 |
+
+需要注意的语义:
+
+- **按 agent 身份分发**。快照携带 `agentId`(审计关联)与 `agentName`(写规则的依据,如"planner 禁止写操作");直连无 agent 时两者为 `null`。刻意只透出标识而非 `Agent` 句柄 —— 其操作属于中间件层且带重入风险;结构性的按 agent 差异宜在构建期表达于各 agent 自己的 `ToolkitConfig`。
+- **改写发生在权限批准之后**。权限引擎判定的是模型原始输入;若安全敏感参数(路径、SQL、URL)改写后的*最终值*需要用户确认,应挂起人审而非静默改写。拦截器拒绝一个已获批准的调用属预期行为 —— 拒绝结果直接回馈模型。
+- **拒绝消息应面向模型可行动**("请使用工作区内的相对路径"),不泄露服务端信息,并带拦截器身份前缀(如 `PathSandbox:`)。在示例之外加固路径守卫:调用者可控的 id 先校验格式再用作路径组件;已存在路径(及新建文件的最近已存在祖先)用 `toRealPath()` 复检 —— `normalize()` 不消解符号链接、Windows 8.3 短名与 ADS,且 `Path#startsWith` 区分大小写;改写时避免把服务端绝对根路径回显给模型。
+- **会话记录保持真实**。`tool/dispatch` 记录位于链终点,记录的永远是实际执行的参数;被拒绝的调用不会留下 `allowed`/`dispatch` 记录。
+- **超时与重试**在批处理 `callTools` 路径包裹整条链:拦截器耗时计入工具超时,重试时每次尝试都会重新走链。直连 `Toolkit#callTool` 路径保持现状 —— 无超时包装 —— 因此拦截器绝不能阻塞;阻塞 IO 用 `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())` 卸载。
+- **外部工具不会被拦截**。`externalTool=true` / `SchemaOnlyTool` 在链之前短路返回 `suspended`,校验由外部执行方负责。挂起后回填的结果属数据注入而非执行,同样不经过链。框架内部合成工具 `generate_response` 亦不经过链。
+- **传播**。`Toolkit#copy()`(Harness 子代理即经此构建)会携带拦截器;以全新 `Toolkit` 构建的子代理则没有,除非显式注册。工具体内再委托其他工具(工具在 `callAsync` 内部调用别的工具)不会被二次拦截 —— 按外层工具名分发守卫。
 
 ## 延伸阅读
 
-::::{grid} 2
 
-:::{grid-item-card} Agent
-:link: ./agent.html
+<CardGroup cols={2}>
+
+
+
+<Card title="Agent" href="/v2/zh/docs/building-blocks/agent">
+
 
 Agent 如何在 ReAct 循环中编排 tool 调用
-:::
-  :::{grid-item-card} Permission System
-:link: ./permission-system.html
+
+</Card>
+
+
+<Card title="Permission System" href="/v2/zh/docs/building-blocks/permission-system">
+
 
 精细控制哪个 tool 可以执行、何时执行
-:::
-  :::{grid-item-card} Middleware
-:link: ./middleware.html
+
+</Card>
+
+
+<Card title="Middleware" href="/v2/zh/docs/building-blocks/middleware">
+
 
 用洋葱式 middleware 拦截并改写 tool 调用
-:::
-  :::{grid-item-card} Human-in-the-Loop
-:link: ./agent.html
+
+</Card>
+
+
+<Card title="Human-in-the-Loop" href="/v2/zh/docs/building-blocks/agent">
+
 
 外部执行 tool 与人工审批工作流
-:::
 
-::::
+</Card>
+
+
+
+</CardGroup>
+
+
+## 请求级工具视图与会话隔离
+
+Agent 构建时复制工具注册表和注册元数据；已有工具实例仍按引用共享，因此自定义工具需要自行保证并发安全。构建某个 Agent 时添加的 Hook、知识库等工具不会覆盖其他 Agent 的注册。
+
+调用期间不要通过修改共享 Toolkit 注入外部工具或切换会话的工具组。使用 `io.agentscope.core.tool.ToolRequestConfig` 描述本次请求的工具视图：
+
+```java
+ToolRequestConfig tools = new ToolRequestConfig(
+        Map.of(schema.getName(), new SchemaOnlyTool(schema)),
+        ToolMergeMode.MERGE_EXTERNAL_PRIORITY);
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId(userId).sessionId(sessionId)
+        .toolRequestConfig(tools).build();
+agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
+```
+
+外部工具只包含 schema，执行时返回 suspended，由调用方执行后提交结果。同名外部工具覆盖后端工具；`EXTERNAL_ONLY` 隐藏全部后端工具，即使外部列表为空或 Toolkit 禁止删除工具也一样，因为请求视图不会删除注册。`AGENT_ONLY` 不允许同时配置外部工具。
+
+`Toolkit.callTool` 和 `callTools` 同样读取显式传入的 RuntimeContext。无配置的 `getTool(name)` 查看原始注册表；需要请求视图时使用 `getTool(name, config)`。工具组激活状态保存在会话的 `ToolContextState`，流式工具回调绑定本次调用。
+
+需要按用户或会话加载技能的仓库实现 Core 中的 `io.agentscope.core.skill.repository.RuntimeContextSkillRepository`。Core 和 Harness 都将当前上下文传给仓库。动态 Skill 视图按内容签名缓存，并发缓存未命中共享一次完整的资源物化；淘汰后重建视图使用新目录，保留运行中执行所引用的文件。缓存淘汰只限制保留的 SkillBox 数量，不限制磁盘占用：自动生成的目录保留到 JVM 退出时清理。调用方指定的工作目录由调用方负责清理；不要在仍有执行引用资源时删除它。

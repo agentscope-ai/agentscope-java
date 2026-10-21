@@ -15,6 +15,11 @@
  */
 package io.agentscope.extensions.model.dashscope;
 
+import static io.agentscope.core.model.ModelProviderSupport.booleanOption;
+import static io.agentscope.core.model.ModelProviderSupport.findAssignableComponent;
+import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
+import static io.agentscope.core.model.ModelProviderSupport.intOption;
+
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -25,6 +30,8 @@ import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.regex.Pattern;
 
 /** DashScope provider registered through {@link java.util.ServiceLoader}. */
@@ -37,6 +44,7 @@ public final class DashScopeModelProvider implements ModelProvider {
     private static final String OPTION_ENABLE_ENCRYPT = "enableEncrypt";
     private static final String OPTION_ENABLE_SEARCH = "enableSearch";
     private static final String OPTION_ENDPOINT_TYPE = "endpointType";
+    private static final String OPTION_MULTIMODAL_MODEL_PATTERNS = "multimodalModelPatterns";
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT = "nativeStructuredOutput";
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS =
             "nativeStructuredOutputWithTools";
@@ -74,7 +82,7 @@ public final class DashScopeModelProvider implements ModelProvider {
         DashScopeChatModel.Builder builder =
                 DashScopeChatModel.builder().apiKey(apiKey).modelName(modelName).stream(
                         context.getStream() != null ? context.getStream() : true);
-        String baseUrl = trimToNull(context.getBaseUrl());
+        String baseUrl = firstNonBlank(context.getBaseUrl(), System.getenv("DASHSCOPE_BASE_URL"));
         if (baseUrl != null) {
             builder.baseUrl(baseUrl);
         }
@@ -85,7 +93,6 @@ public final class DashScopeModelProvider implements ModelProvider {
         return builder.build();
     }
 
-    @SuppressWarnings("unchecked")
     private static void applyAdvancedOptions(
             DashScopeChatModel.Builder builder, ModelCreationContext context) {
         GenerateOptions defaultOptions = context.component(GenerateOptions.class);
@@ -101,8 +108,7 @@ public final class DashScopeModelProvider implements ModelProvider {
             builder.proxy(proxyConfig);
         }
         Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter =
-                (Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest>)
-                        findAssignableComponent(context, Formatter.class);
+                findAssignableComponent(context, Formatter.class);
         if (formatter != null) {
             builder.formatter(formatter);
         }
@@ -113,6 +119,11 @@ public final class DashScopeModelProvider implements ModelProvider {
         EndpointType endpointType = endpointTypeOption(context, OPTION_ENDPOINT_TYPE);
         if (endpointType != null) {
             builder.endpointType(endpointType);
+        }
+        Collection<String> multimodalModelPatterns =
+                stringCollectionOption(context, OPTION_MULTIMODAL_MODEL_PATTERNS);
+        if (multimodalModelPatterns != null) {
+            builder.multimodalModelPatterns(multimodalModelPatterns);
         }
         Boolean enableEncrypt = booleanOption(context, OPTION_ENABLE_ENCRYPT);
         if (enableEncrypt != null) {
@@ -133,53 +144,6 @@ public final class DashScopeModelProvider implements ModelProvider {
         }
     }
 
-    private static String firstNonBlank(String preferred, String fallback) {
-        String normalized = trimToNull(preferred);
-        return normalized != null ? normalized : trimToNull(fallback);
-    }
-
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private static Object findAssignableComponent(
-            ModelCreationContext context, Class<?> componentType) {
-        for (Object value : context.getComponents().values()) {
-            if (componentType.isInstance(value)) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private static Integer intOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a number");
-    }
-
-    private static Boolean booleanOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a boolean");
-    }
-
     private static EndpointType endpointTypeOption(ModelCreationContext context, String key) {
         Object value = context.option(key);
         if (value == null) {
@@ -193,5 +157,28 @@ public final class DashScopeModelProvider implements ModelProvider {
         }
         throw new IllegalArgumentException(
                 "ModelCreationContext option " + key + " must be an EndpointType or string");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Collection<String> stringCollectionOption(
+            ModelCreationContext context, String key) {
+        Object value = context.option(key);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Collection<?> raw) {
+            if (raw.isEmpty()) {
+                return null;
+            }
+            Collection<String> result = new ArrayList<>(raw.size());
+            for (Object element : raw) {
+                if (element != null) {
+                    result.add(element.toString());
+                }
+            }
+            return result;
+        }
+        throw new IllegalArgumentException(
+                "ModelCreationContext option " + key + " must be a Collection of strings");
     }
 }

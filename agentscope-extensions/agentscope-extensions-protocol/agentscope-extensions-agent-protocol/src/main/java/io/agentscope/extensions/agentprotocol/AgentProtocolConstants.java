@@ -15,7 +15,13 @@
  */
 package io.agentscope.extensions.agentprotocol;
 
-/** Workspace partitioning for persisted task records served by the protocol endpoints. */
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Workspace partitioning for persisted task records served by the protocol endpoints, plus the
+ * contract for caller-supplied context attributes.
+ */
 public final class AgentProtocolConstants {
 
     private AgentProtocolConstants() {}
@@ -25,4 +31,49 @@ public final class AgentProtocolConstants {
 
     /** Single session bucket file holding all protocol tasks as a task-id map. */
     public static final String PROTOCOL_SESSION_ID = "_tasks";
+
+    /**
+     * Field inside the submission {@code context} that carries caller-defined attributes. Keeping
+     * them nested separates them from the protocol's own context fields ({@code user_id},
+     * {@code parent_session_id}, {@code stream}, {@code detail}, {@code deny_rules}).
+     */
+    public static final String CONTEXT_ATTRIBUTES_FIELD = "attributes";
+
+    /**
+     * {@link io.agentscope.core.agent.RuntimeContext} key holding the whole {@code
+     * context.attributes} map as an unmodifiable {@code Map<String, Object>}.
+     *
+     * <p>Attributes are namespaced under this single key so that no caller-controlled name can
+     * shadow a framework key. Tools and middlewares read them with {@code ctx.get(
+     * AgentProtocolConstants.RUNTIME_CONTEXT_ATTRIBUTES_KEY)}; to expose an attribute under its own
+     * top-level key instead, use {@link RuntimeContextCustomizer#flatten(String...)}.
+     */
+    public static final String RUNTIME_CONTEXT_ATTRIBUTES_KEY = "agentprotocol.context.attributes";
+
+    /** Exact runtime-context keys the framework reads; never overwritten by flattening. */
+    private static final Set<String> RESERVED_KEYS = Set.of("agentId", "outboundAddress");
+
+    /** Runtime-context key prefixes owned by the framework; never overwritten by flattening. */
+    private static final List<String> RESERVED_PREFIXES =
+            List.of("agentscope.", "agui.", "io.agentscope.");
+
+    /**
+     * Whether {@code key} is read by the framework itself and therefore unsafe to overwrite with a
+     * caller-supplied value. Examples: {@code agentId} drives async tool wakeup routing and
+     * {@code outboundAddress} carries the gateway reply address.
+     */
+    public static boolean isReservedRuntimeContextKey(String key) {
+        if (key == null || key.isBlank()) {
+            return true;
+        }
+        if (RESERVED_KEYS.contains(key)) {
+            return true;
+        }
+        for (String prefix : RESERVED_PREFIXES) {
+            if (key.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

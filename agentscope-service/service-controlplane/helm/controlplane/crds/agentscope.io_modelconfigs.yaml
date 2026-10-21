@@ -1,0 +1,130 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: modelconfigs.agentscope.io
+spec:
+  group: agentscope.io
+  names:
+    kind: ModelConfig
+    listKind: ModelConfigList
+    plural: modelconfigs
+    shortNames:
+    - mc
+    singular: modelconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.provider
+      name: Provider
+      type: string
+    - jsonPath: .spec.model
+      name: Model
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Accepted")].status
+      name: Accepted
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ModelConfig defines model provider configuration.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ModelConfigSpec defines the desired state of ModelConfig.
+            properties:
+              apiKeySecret:
+                description: APIKeySecret references the Secret containing the API
+                  key.
+                type: string
+              apiKeySecretKey:
+                default: api-key
+                description: APIKeySecretKey is the key within the Secret.
+                type: string
+              model:
+                description: Model is the model identifier.
+                minLength: 1
+                type: string
+              options:
+                additionalProperties:
+                  type: string
+                description: Options holds provider-specific configuration (temperature,
+                  maxTokens, etc).
+                type: object
+              provider:
+                description: Provider identifies the model vendor.
+                enum:
+                - DashScope
+                - OpenAI
+                - Anthropic
+                - Gemini
+                - Ollama
+                - Moonshot
+                - Custom
+                type: string
+              tls:
+                description: TLS configuration for provider endpoint.
+                properties:
+                  caCertSecretRef:
+                    type: string
+                  disableVerify:
+                    type: boolean
+                type: object
+            required:
+            - model
+            - provider
+            type: object
+          status:
+            description: ModelConfigStatus defines the observed state of ModelConfig.
+            properties:
+              conditions:
+                items:
+                  description: Condition represents a status condition.
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      description: ConditionType defines the type of condition.
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              secretHash:
+                description: SecretHash tracks changes to the referenced Secret.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

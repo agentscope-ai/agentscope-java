@@ -17,7 +17,7 @@
 package io.agentscope.core.a2a.server.executor.runner;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Event;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import java.util.Map;
@@ -49,14 +49,14 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
     }
 
     @Override
-    public Flux<Event> stream(List<Msg> requestMessages, AgentRequestOptions options) {
+    public Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options) {
         if (agentCache.containsKey(options.getTaskId())) {
             throw new IllegalStateException(
                     "Agent already exists for taskId: " + options.getTaskId());
         }
         ReActAgent agent = buildReActAgent();
         agentCache.put(options.getTaskId(), agent);
-        return agent.stream(requestMessages)
+        return agent.streamEvents(requestMessages)
                 .doFinally(signal -> agentCache.remove(options.getTaskId()));
     }
 

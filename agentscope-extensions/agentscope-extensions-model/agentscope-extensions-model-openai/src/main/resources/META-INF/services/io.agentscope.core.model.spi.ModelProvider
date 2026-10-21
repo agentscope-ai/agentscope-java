@@ -1,1 +1,5 @@
 io.agentscope.extensions.model.openai.OpenAIModelProvider
+io.agentscope.extensions.model.openai.compat.kimi.KimiModelProvider
+io.agentscope.extensions.model.openai.compat.minimax.MiniMaxModelProvider
+io.agentscope.extensions.model.openai.compat.glm.GLMModelProvider
+io.agentscope.extensions.model.openai.compat.deepseek.DeepSeekModelProvider

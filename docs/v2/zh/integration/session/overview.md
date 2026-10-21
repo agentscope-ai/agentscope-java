@@ -1,8 +1,14 @@
-# Agent 状态存储（AgentStateStore）
+---
+title: 概览
+en_link: /v2/en/integration/session/overview
+---
 
-```{note}
-**推荐使用 [DistributedStore](../distributed/index.md) 一键配置**——它同时覆盖 AgentStateStore、BaseStore、SandboxSnapshotSpec、SandboxExecutionGuard。如果只需要单独配置 AgentStateStore，继续阅读本页。
-```
+<Note>
+
+**推荐使用 [DistributedStore](/v2/zh/integration/distributed/index) 一键配置**——它同时覆盖 AgentStateStore、BaseStore、SandboxSnapshotSpec、SandboxExecutionGuard。如果只需要单独配置 AgentStateStore，继续阅读本页。
+
+</Note>
+
 
 `io.agentscope.core.state.AgentStateStore` 是 AgentScope 用来持久化 Agent 状态的接口——比如 Memory、Workspace、Plan 等组件都会被序列化为 `State` 后由 `AgentStateStore` 落盘，从而支持重启恢复、跨节点共享。
 
@@ -11,15 +17,19 @@
 - `sessionId`——非空、非空白，标识一次会话 / session。
 - `userId`——可空。`null` 表示匿名 / 单租户调用方（CLI、测试等）。
 
+## 与原生 Session Log 的区别
+
+本页是 AgentStateStore 接口参考。HarnessAgent 默认 EVENT_LOG 通过 SessionLogStore 恢复 checkpoint；仅替换 stateStore 不会迁移或共享原生日志。LEGACY 仍使用本页的状态存储。Workspace 的 BaseStore 能存文件，也不代表具备日志所需的原子 CAS，例如当前 OSS/COS 需配合独立日志后端。存储位置和支持矩阵见 [会话日志与恢复](/v2/zh/docs/harness/session-log)。
+
 ## 可用实现
 
 | 实现 | 模块 | 适合场景 |
 | --- | --- | --- |
 | `InMemoryAgentStateStore` | `agentscope-core` | 单元测试 |
 | `JsonFileAgentStateStore` | `agentscope-core` | 单机开发（**HarnessAgent 默认**） |
-| `RedisAgentStateStore` | `agentscope-extensions-redis` | [多副本生产首选](../distributed/redis.md) |
-| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | [已有数据库的场景](../distributed/mysql.md) |
-| `OssAgentStateStore` | `agentscope-extensions-oss` | [阿里云生态](../distributed/oss.md) |
+| `RedisAgentStateStore` | `agentscope-extensions-redis` | [多副本生产首选](/v2/zh/integration/distributed/redis) |
+| `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | [已有数据库的场景](/v2/zh/integration/distributed/jdbc) |
+| `OssAgentStateStore` | `agentscope-extensions-oss` | [阿里云生态](/v2/zh/integration/distributed/oss) |
 
 ## 单独配置
 
@@ -33,6 +43,6 @@ ReActAgent agent = ReActAgent.builder()
 
 详细用法和代码示例请参阅各后端的文档：
 
-- [Redis](../distributed/redis.md#1-redisagentstatestore)
-- [MySQL](../distributed/mysql.md#1-mysqlagentstatestore)
-- [OSS](../distributed/oss.md#1-ossagentstatestore)
+- [Redis](/v2/zh/integration/distributed/redis#1-redisagentstatestore)
+- [JDBC](/v2/zh/integration/distributed/jdbc#1-jdbcagentstatestore)
+- [OSS](/v2/zh/integration/distributed/oss#1-ossagentstatestore)

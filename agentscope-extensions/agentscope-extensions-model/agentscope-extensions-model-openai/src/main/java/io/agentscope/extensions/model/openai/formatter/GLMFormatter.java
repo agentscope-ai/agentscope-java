@@ -44,7 +44,10 @@ import org.slf4j.LoggerFactory;
  *     .apiKey(apiKey)
  *     .build();
  * }</pre>
+ *
+ * @deprecated use {@link io.agentscope.extensions.model.openai.compat.glm.GLMFormatter}.
  */
+@Deprecated
 public class GLMFormatter extends OpenAIChatFormatter {
 
     private static final Logger log = LoggerFactory.getLogger(GLMFormatter.class);
