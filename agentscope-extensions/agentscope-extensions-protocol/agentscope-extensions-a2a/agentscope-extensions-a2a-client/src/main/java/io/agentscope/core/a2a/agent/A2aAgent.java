@@ -38,7 +38,14 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.MiddlewareBase.ExtensionPoint;
+import io.agentscope.core.middleware.MiddlewareChain;
+import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.model.GenerateOptions;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
@@ -61,6 +68,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.util.context.ContextView;
 
 /**
  * The implementation of Agent for A2A(Agent2Agent).
@@ -99,6 +107,12 @@ public class A2aAgent extends AgentBase {
     /** Replaces the client built for a call, for tests; {@code null} to keep it. */
     private final UnaryOperator<Client> clientReplacer;
 
+    /** The middlewares active at onAgent, outermost first. */
+    private final List<MiddlewareBase> agentMiddlewares;
+
+    /** The middlewares active at onReasoning, outermost first. */
+    private final List<MiddlewareBase> reasoningMiddlewares;
+
     /**
      * The call in progress, which {@link #interrupt()} cancels. According to the design, one agent
      * should not be called with multiple threads and tasks at the same time.
@@ -112,12 +126,17 @@ public class A2aAgent extends AgentBase {
             List<Hook> hooks,
             AgentCardResolver agentCardResolver,
             A2aAgentConfig a2aAgentConfig,
-            UnaryOperator<Client> clientReplacer) {
+            UnaryOperator<Client> clientReplacer,
+            List<MiddlewareBase> middlewares) {
         super(name, description, hooks);
         this.a2aAgentConfig = a2aAgentConfig;
         this.agentCardResolver = agentCardResolver;
         this.memory = memory;
         this.clientReplacer = clientReplacer;
+        List<MiddlewareBase> ordered = new ArrayList<>(middlewares);
+        ordered.sort(Comparator.comparingInt(MiddlewareBase::order).reversed());
+        this.agentMiddlewares = activeAt(ordered, ExtensionPoint.ON_AGENT);
+        this.reasoningMiddlewares = activeAt(ordered, ExtensionPoint.ON_REASONING);
         LoggerUtil.debug(log, "A2aAgent init with config: {}", a2aAgentConfig);
         this.clientEventHandlerRouter = new ClientEventHandlerRouter();
     }
@@ -170,7 +189,25 @@ public class A2aAgent extends AgentBase {
                 .next();
     }
 
+    private static List<MiddlewareBase> activeAt(
+            List<MiddlewareBase> middlewares, ExtensionPoint point) {
+        return middlewares.stream()
+                .filter(each -> null == each.activePoints() || each.activePoints().contains(point))
+                .toList();
+    }
+
     private Flux<AgentEvent> buildAgentStream(
+            List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
+        return MiddlewareChain.build(
+                        agentMiddlewares,
+                        this,
+                        null == context ? RuntimeContext.empty() : context,
+                        MiddlewareBase::onAgent,
+                        input -> runAgent(input.msgs(), context, doCallFn))
+                .apply(new AgentInput(null == msgs ? List.of() : msgs));
+    }
+
+    private Flux<AgentEvent> runAgent(
             List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
         String replyId = UUID.randomUUID().toString().replace("-", "");
         return Flux.create(
@@ -216,16 +253,7 @@ public class A2aAgent extends AgentBase {
                         view ->
                                 Mono.using(
                                         this::startCall,
-                                        call -> {
-                                            ReplyEvents events =
-                                                    view.getOrDefault(EVENT_EMITTER_KEY, null);
-                                            if (null != events) {
-                                                call.eventContext()
-                                                        .setEventEmitter(
-                                                                events.replyId(), events.emitter());
-                                            }
-                                            return execute(call);
-                                        },
+                                        call -> execute(call, view),
                                         this::endCall))
                 .doOnNext(this.memory::addMessage);
     }
@@ -243,22 +271,69 @@ public class A2aAgent extends AgentBase {
         return call;
     }
 
-    private Mono<Msg> execute(A2aCall call) {
+    private Mono<Msg> execute(A2aCall call, ContextView view) {
         LoggerUtil.info(log, "[{}] A2aAgent start call.", call.requestId());
         LoggerUtil.debug(log, "[{}] A2aAgent call with input messages: ", call.requestId());
         LoggerUtil.logTextMsgDetail(log, memory.getMessages());
         call.eventContext().setHooks(getSortedHooks());
         call.eventContext().setInputMessages(memory.getMessages());
+        ReplyEvents events = view.getOrDefault(EVENT_EMITTER_KEY, null);
+        RuntimeContext context = view.getOrDefault(RUNTIME_CONTEXT_KEY, RuntimeContext.empty());
+        AtomicReference<Msg> reply = new AtomicReference<>();
+        Function<ReasoningInput, Flux<AgentEvent>> exchange =
+                input -> exchange(call, input.messages(), events, reply);
         return Mono.defer(
-                        () -> {
-                            Message message =
-                                    MessageConvertUtil.convertFromMsg(memory.getMessages());
-                            return checkInterruptedAsync().then(doExecute(call, message));
-                        })
+                        () ->
+                                checkInterruptedAsync()
+                                        .thenMany(
+                                                MiddlewareChain.build(
+                                                                reasoningMiddlewares,
+                                                                this,
+                                                                context,
+                                                                MiddlewareBase::onReasoning,
+                                                                exchange)
+                                                        .apply(
+                                                                new ReasoningInput(
+                                                                        memory.getMessages(),
+                                                                        List.of(),
+                                                                        GenerateOptions.builder()
+                                                                                .build())))
+                                        .doOnNext(
+                                                event -> {
+                                                    if (null != events) {
+                                                        events.emitter().emit(event);
+                                                    }
+                                                })
+                                        .then(Mono.fromSupplier(reply::get)))
                 .doOnError(
                         e ->
                                 LoggerUtil.error(
                                         log, "[{}] A2aAgent execute error.", call.requestId(), e));
+    }
+
+    /**
+     * Sends {@code msgs} to the remote agent. Streams the text and thinking it replies with, and
+     * keeps its reply in {@code reply}.
+     */
+    private Flux<AgentEvent> exchange(
+            A2aCall call, List<Msg> msgs, ReplyEvents events, AtomicReference<Msg> reply) {
+        return Flux.create(
+                sink -> {
+                    call.eventContext()
+                            .setEventEmitter(
+                                    null == events ? call.requestId() : events.replyId(),
+                                    sink::next);
+                    Disposable disposable =
+                            doExecute(call, MessageConvertUtil.convertFromMsg(msgs))
+                                    .subscribe(
+                                            msg -> {
+                                                reply.set(msg);
+                                                sink.complete();
+                                            },
+                                            sink::error);
+                    sink.onCancel(disposable);
+                },
+                FluxSink.OverflowStrategy.BUFFER);
     }
 
     private void endCall(A2aCall call) {
@@ -396,6 +471,8 @@ public class A2aAgent extends AgentBase {
 
         private final List<Hook> hooks = new ArrayList<>();
 
+        private final List<MiddlewareBase> middlewares = new ArrayList<>();
+
         private UnaryOperator<Client> clientReplacer;
 
         /**
@@ -504,6 +581,32 @@ public class A2aAgent extends AgentBase {
             return this;
         }
 
+        /**
+         * Add a {@link MiddlewareBase} to the A2aAgent. {@code onAgent} wraps the whole call and
+         * {@code onReasoning} wraps the exchange with the remote agent: its input messages are
+         * the messages sent, and its events are the text and thinking the remote agent streams.
+         * The other extension points do not apply to a remote agent.
+         *
+         * @param middleware the middleware to add
+         * @return the current Builder instance for method chaining
+         */
+        public Builder middleware(MiddlewareBase middleware) {
+            this.middlewares.add(middleware);
+            return this;
+        }
+
+        /**
+         * Add multiple {@link MiddlewareBase}s to the A2aAgent, see {@link
+         * #middleware(MiddlewareBase)}.
+         *
+         * @param middlewares the middlewares to add
+         * @return the current Builder instance for method chaining
+         */
+        public Builder middlewares(List<? extends MiddlewareBase> middlewares) {
+            this.middlewares.addAll(middlewares);
+            return this;
+        }
+
         /** Replaces the client built for a call, for tests. */
         Builder clientReplacer(UnaryOperator<Client> clientReplacer) {
             this.clientReplacer = clientReplacer;
@@ -530,7 +633,8 @@ public class A2aAgent extends AgentBase {
                     this.hooks,
                     this.agentCardResolver,
                     this.a2aAgentConfig,
-                    this.clientReplacer);
+                    this.clientReplacer,
+                    this.middlewares);
         }
 
         private String getDescriptionFromAgentCard() {

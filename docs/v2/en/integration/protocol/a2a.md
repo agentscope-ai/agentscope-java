@@ -60,6 +60,27 @@ remote.streamEvents(new UserMessage("Translate to English: 你好"))
     .blockLast();
 ```
 
+### Middleware
+
+`A2aAgent` runs `MiddlewareBase` at two points: `onAgent` wraps the whole call, and `onReasoning` wraps the exchange with the remote agent. The input messages of `onReasoning` are the messages sent to the remote agent, and its events are the text and thinking the remote agent streams. The other extension points do not apply to a remote agent.
+
+```java
+A2aAgent remote = A2aAgent.builder()
+    .name("remote")
+    .agentCardResolver(resolver)
+    .middleware(new MiddlewareBase() {
+        @Override
+        public Flux<AgentEvent> onAgent(
+                Agent agent, RuntimeContext ctx, AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
+            long start = System.currentTimeMillis();
+            return next.apply(input).doFinally(signal ->
+                    log.info("remote call took {} ms", System.currentTimeMillis() - start));
+        }
+    })
+    .build();
+```
+
 ### Auto-discover via well-known
 
 ```java
