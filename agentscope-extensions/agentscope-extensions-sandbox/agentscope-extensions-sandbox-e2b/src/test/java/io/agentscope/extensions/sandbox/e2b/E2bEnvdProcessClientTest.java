@@ -1128,7 +1128,28 @@ class E2bEnvdProcessClientTest {
     }
 
     @Test
-    void nonPositiveTimeoutFailsFastWithoutRequest() throws Exception {
+    void zeroTimeoutSendsNoDeadlineHeaderAndIsNotATimeout() throws Exception {
+        AtomicReference<String> header = new AtomicReference<>();
+        Interceptor capture =
+                chain -> {
+                    header.set(chain.request().header("Connect-Timeout-Ms"));
+                    throw new SocketTimeoutException("must surface as-is");
+                };
+        E2bEnvdProcessClient client = clientWithInterceptor(capture);
+
+        SocketTimeoutException e =
+                assertThrows(
+                        SocketTimeoutException.class,
+                        () -> client.runShell(state(), "/workspace", "sleep 120", 0));
+
+        // With no deadline, a transport timeout is not an exec timeout.
+        assertEquals("must surface as-is", e.getMessage());
+        // Connect-Timeout-Ms: 0 means "deadline already exceeded", so it must be omitted.
+        assertNull(header.get(), "timeout=0 means no deadline: header must be omitted");
+    }
+
+    @Test
+    void negativeTimeoutFailsFastWithoutRequest() throws Exception {
         AtomicReference<String> header = new AtomicReference<>();
         Interceptor capture =
                 chain -> {
@@ -1137,12 +1158,6 @@ class E2bEnvdProcessClientTest {
                 };
         E2bEnvdProcessClient client = clientWithInterceptor(capture);
 
-        IllegalArgumentException zero =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () -> client.runShell(state(), "/workspace", "echo hi", 0));
-        assertTrue(zero.getMessage().contains("must be positive"));
-        assertTrue(zero.getMessage().contains("caller bug"));
         IllegalArgumentException negative =
                 assertThrows(
                         IllegalArgumentException.class,
@@ -1314,6 +1329,19 @@ class E2bEnvdProcessClientTest {
                 new E2bEnvdProcessClient.MissingExitCodeException();
 
         assertSame(e, E2bEnvdProcessClient.mapPrematureEnd(e, "sleep 1000", 30, System.nanoTime()));
+    }
+
+    @Test
+    void prematureEndWithoutDeadlineStaysStreamError() {
+        E2bEnvdProcessClient.MissingExitCodeException e =
+                new E2bEnvdProcessClient.MissingExitCodeException();
+
+        // The same elapsed time with a positive timeout would map to ExecTimeoutException;
+        // with no deadline it must never become "timed out after 0s".
+        assertSame(
+                e,
+                E2bEnvdProcessClient.mapPrematureEnd(
+                        e, "sleep 1000", 0, System.nanoTime() - 6_000_000_000L));
     }
 
     private static E2bEnvdProcessClient clientWithInterceptor(Interceptor interceptor)

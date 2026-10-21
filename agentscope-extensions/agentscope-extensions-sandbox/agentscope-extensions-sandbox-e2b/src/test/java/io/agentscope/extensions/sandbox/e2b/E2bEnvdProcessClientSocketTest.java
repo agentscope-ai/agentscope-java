@@ -23,7 +23,6 @@ import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.SandboxException;
-import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import okhttp3.HttpUrl;
@@ -49,8 +48,14 @@ import org.junit.jupiter.api.Test;
  */
 class E2bEnvdProcessClientSocketTest {
 
-    private static final int TIMEOUT_SECONDS = 1;
+    // Larger than BASE_READ_TIMEOUT_SECONDS on purpose: if a per-call client inherited
+    // the base read timeout, the call would die at ~base (1s) and the elapsed-time
+    // assertions below would turn red instead of silently passing.
+    private static final int TIMEOUT_SECONDS = 3;
     private static final int BASE_READ_TIMEOUT_SECONDS = 1;
+    // Short enough to catch an inherited callTimeout on the timeout=0 path, long enough
+    // that the bounded cases (which override it) never race it.
+    private static final int BASE_CALL_TIMEOUT_SECONDS = 2;
 
     private MockWebServer server;
     private E2bEnvdProcessClient client;
@@ -78,10 +83,13 @@ class E2bEnvdProcessClientSocketTest {
         OkHttpClient http =
                 new OkHttpClient.Builder()
                         .addInterceptor(redirectToLocalServer)
-                        // Equal to T on purpose: if the per-call client inherited the base
-                        // read timeout, an idle socket would be killed at ~T with a
-                        // SocketTimeoutException instead of surviving to the client backup.
+                        // Well below T on purpose: if the per-call client inherited the
+                        // base read timeout, an idle socket would be killed at ~1s with a
+                        // SocketTimeoutException, well before either T or the client backup.
                         .readTimeout(BASE_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                        // A base call timeout too: without an explicit callTimeout(0), a
+                        // timeout=0 call would inherit it and stop being unbounded.
+                        .callTimeout(BASE_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                         .build();
 
         E2bSandboxClientOptions opt = new E2bSandboxClientOptions();
@@ -111,13 +119,11 @@ class E2bEnvdProcessClientSocketTest {
 
         assertEquals("Command timed out after " + TIMEOUT_SECONDS + "s", e.getMessage());
         // Survived past T: only the T+slack client backup could end this call, which means the
-        // idle socket was not killed by an inherited read timeout.
+        // idle socket was not killed by an inherited read timeout. Because
+        // BASE_READ_TIMEOUT_SECONDS is well below T, reverting readTimeout(0) makes this red.
         assertTrue(
                 elapsedMs >= TIMEOUT_SECONDS * 1000L,
                 "call must outlive T, got " + elapsedMs + "ms");
-        assertTrue(
-                !(e.getCause() instanceof SocketTimeoutException),
-                "must not be an inherited read timeout");
     }
 
     @Test
@@ -134,6 +140,26 @@ class E2bEnvdProcessClientSocketTest {
 
         assertTrue(elapsedMs >= TIMEOUT_SECONDS * 1000L, "returned before T: " + elapsedMs + "ms");
         assertTrue(elapsedMs < 30_000, "client backup did not bound the call: " + elapsedMs + "ms");
+    }
+
+    @Test
+    void zeroTimeoutHasNoClientDeadline() throws Exception {
+        // The base client has a 1s read timeout and a 2s call timeout. A timeout=0 call
+        // must override both: the server delays the body by 3s and the call still succeeds.
+        server.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "application/connect+proto")
+                        .setBody(new Buffer().write(dataFrame(protoExitEvent(0))))
+                        .setBodyDelay(3, TimeUnit.SECONDS));
+
+        long start = System.nanoTime();
+        ExecResult r = client.runShell(state(), "/workspace", "echo hi", 0);
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+        assertEquals(0, r.exitCode());
+        assertTrue(
+                elapsedMs >= 2500, "call must outlive the base timeouts, got " + elapsedMs + "ms");
     }
 
     @Test

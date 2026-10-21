@@ -116,19 +116,18 @@ final class E2bEnvdProcessClient {
     private ShellCapture runShellCapture(
             E2bSandboxState state, String cwd, String shellCommand, int timeoutSeconds)
             throws Exception {
-        // Deliberately fail fast instead of clamping like daytona/agentrun, and
-        // unlike the official SDKs where 0 means unbounded: this transport cannot
-        // model an unbounded stream (OkHttp needs an explicit callTimeout, and the
-        // base read timeout would otherwise misreport idleness as a 0s exec
-        // timeout), so 0/negative is rejected as a caller bug rather than silently
-        // clamped to 1s, which would mask it.
-        if (timeoutSeconds <= 0) {
+        // 0 means "no deadline", matching the official E2B SDKs (Python maps 0/None to
+        // no deadline) and the merged integration test that runs `sleep 120` with 0 to
+        // block until killed. Clamping to 1s like daytona/agentrun would turn that
+        // contract into an unexplained 1s timeout. Negative values stay a caller bug.
+        if (timeoutSeconds < 0) {
             throw new IllegalArgumentException(
-                    "[e2b] timeoutSeconds must be positive, got "
+                    "[e2b] timeoutSeconds must be zero or positive, got "
                             + timeoutSeconds
                             + ". This is a caller bug, not a sandbox failure;"
                             + " check the timeout argument.");
         }
+        boolean bounded = timeoutSeconds > 0;
         // Snapshot the interrupt bit: a stale bit set before this call must neither
         // turn a genuine exec timeout into a fake cancellation below, nor block an
         // already-cancelled caller for the full timeout.
@@ -137,30 +136,36 @@ final class E2bEnvdProcessClient {
             Thread.currentThread().interrupt();
             throw new InterruptedIOException("exec cancelled before start");
         }
-        OkHttpClient callClient =
-                http.newBuilder()
-                        // Server deadline stays exact so the kill lands on time; the
-                        // client backup runs CLIENT_TIMEOUT_SLACK_MILLIS later as a
-                        // pure failsafe (mishaving server / hung stream) that never
-                        // wins the race itself in the normal path.
-                        .callTimeout(
-                                timeoutSeconds * 1000L + CLIENT_TIMEOUT_SLACK_MILLIS,
-                                TimeUnit.MILLISECONDS)
-                        // Disable the idle read timeout: it fires on gaps between bytes and
-                        // would preempt callTimeout (both surface as InterruptedIOException),
-                        // misreporting a short idle stall as a full exec timeout (#2974).
-                        // Total-duration semantics is owned solely by callTimeout.
-                        .readTimeout(0, TimeUnit.SECONDS)
-                        .build();
+        // Disable the idle read timeout: it fires on gaps between bytes and would
+        // preempt callTimeout (both surface as InterruptedIOException), misreporting a
+        // short idle stall as a full exec timeout (#2974). Total-duration semantics is
+        // owned solely by callTimeout, or by nothing when no deadline was requested.
+        OkHttpClient.Builder callClientBuilder = http.newBuilder().readTimeout(0, TimeUnit.SECONDS);
+        if (bounded) {
+            // Server deadline stays exact so the kill lands on time; the client backup
+            // runs CLIENT_TIMEOUT_SLACK_MILLIS later as a pure failsafe (mishaving
+            // server / hung stream) that never wins the race itself in the normal path.
+            callClientBuilder.callTimeout(
+                    timeoutSeconds * 1000L + CLIENT_TIMEOUT_SLACK_MILLIS, TimeUnit.MILLISECONDS);
+        } else {
+            // Explicitly unbounded: a callTimeout inherited from an injected client would
+            // otherwise still cap a call that asked for no deadline. This also overrides
+            // a global callTimeout the caller configured on that client.
+            callClientBuilder.callTimeout(0, TimeUnit.MILLISECONDS);
+        }
+        OkHttpClient callClient = callClientBuilder.build();
         String host = envdHost(state);
         String url = host + "/process.Process/Start";
         byte[] envelope = encodeStartRequestEnvelope(shellCommand, cwd);
-        // Ask envd to kill the remote process when this lapses; otherwise a
-        // client-side timeout only drops our HTTP stream and leaks the process.
-        Request req =
-                buildEnvdRequest(url, envelope, connectMediaType(), state)
-                        .addHeader("Connect-Timeout-Ms", String.valueOf(timeoutSeconds * 1000L))
-                        .build();
+        Request.Builder requestBuilder = buildEnvdRequest(url, envelope, connectMediaType(), state);
+        if (bounded) {
+            // Ask envd to kill the remote process when this lapses; otherwise a
+            // client-side timeout only drops our HTTP stream and leaks the process.
+            // Omitted for 0: Connect-Timeout-Ms: 0 means "deadline already exceeded",
+            // not "no deadline".
+            requestBuilder.addHeader("Connect-Timeout-Ms", String.valueOf(timeoutSeconds * 1000L));
+        }
+        Request req = requestBuilder.build();
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
@@ -184,9 +189,14 @@ final class E2bEnvdProcessClient {
             if (Thread.currentThread().isInterrupted()) {
                 throw e;
             }
+            if (!bounded) {
+                // No deadline was requested, so this is a transport fault (for
+                // example the connect timeout), never an exec timeout.
+                throw e;
+            }
             throw new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
         } catch (ConnectStreamException e) {
-            if (CONNECT_DEADLINE_EXCEEDED.equals(e.code())) {
+            if (bounded && CONNECT_DEADLINE_EXCEEDED.equals(e.code())) {
                 logPartialStreams(
                         "timed out (server deadline_exceeded)",
                         timeoutSeconds,
@@ -222,7 +232,7 @@ final class E2bEnvdProcessClient {
      * setup distribution short of extreme degradation; larger values would approach the
      * agent retry interval and buy nothing further.
      */
-    private static final long CLIENT_TIMEOUT_SLACK_MILLIS = 5000;
+    static final long CLIENT_TIMEOUT_SLACK_MILLIS = 5000;
 
     /** End-stream frame carrying a Connect error (e.g. server-side timeout kill). */
     static final class ConnectStreamException extends IOException {
@@ -251,7 +261,8 @@ final class E2bEnvdProcessClient {
 
     static Exception mapPrematureEnd(
             MissingExitCodeException e, String shellCommand, int timeoutSeconds, long startNanos) {
-        if (elapsedSeconds(startNanos) >= timeoutSeconds) {
+        // With no deadline (0) an early end is never a timeout, however long it ran.
+        if (timeoutSeconds > 0 && elapsedSeconds(startNanos) >= timeoutSeconds) {
             return new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
         }
         return e;
@@ -267,11 +278,11 @@ final class E2bEnvdProcessClient {
             return;
         }
         log.debug(
-                "[e2b] exec {} after {}s of {}s timeout;"
+                "[e2b] exec {} after {}s with {};"
                         + " partial stdout tail: {}; partial stderr tail: {}",
                 why,
                 elapsedSeconds(startNanos),
-                timeoutSeconds,
+                timeoutSeconds > 0 ? timeoutSeconds + "s timeout" : "no deadline",
                 tailUtf8(stdout),
                 tailUtf8(stderr));
     }
