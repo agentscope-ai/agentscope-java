@@ -159,7 +159,9 @@ class ToolExecutor {
     // ==================== Single Tool Execution ====================
 
     /**
-     * Execute a single tool call with full infrastructure support.
+     * Execute a single tool call (core execution only: Tracer + {@link #executeCore};
+     * no scheduling, timeout, retry, shutdown guard, or id/name stamping). Use
+     * {@link #executeWithInfrastructure(ToolCallParam, ExecutionConfig)} for the full-infrastructure path.
      *
      * @param param Tool call parameters
      * @return Mono containing execution result
@@ -175,8 +177,9 @@ class ToolExecutor {
 
     /**
      * Execute a single tool call with a per-call tool request config and progress notifications
-     * through the execution callback. This is the single core entry point; the no-arg {@link #execute(ToolCallParam)}
-     * resolves the request config from its explicit runtime context and uses no internal callback.
+     * through the execution callback. This is the single core entry point; the 1-param {@link
+     * #execute(ToolCallParam)} overload resolves the request config from its explicit runtime
+     * context and uses no callback.
      */
     Mono<ToolResultBlock> execute(
             ToolCallParam param,
@@ -507,7 +510,8 @@ class ToolExecutor {
     // ==================== Batch Tool Execution ====================
 
     /**
-     * Execute multiple tool calls with concurrency control, timeout, and retry.
+     * Execute multiple tool calls with concurrency control plus full per-call infrastructure
+     * (scheduling, timeout, retry, shutdown guard, id/name stamping).
      *
      * @param toolCalls List of tool calls to execute
      * @param parallel Whether to execute in parallel
@@ -619,9 +623,10 @@ class ToolExecutor {
     }
 
     /**
-     * Execute a single tool call with infrastructure (scheduling, timeout, retry).
+     * Execute a single tool call with infrastructure (scheduling, timeout, retry, shutdown
+     * guard), and stamps the result with the tool call's id/name.
      */
-    private Mono<ToolResultBlock> executeWithInfrastructure(
+    Mono<ToolResultBlock> executeWithInfrastructure(
             ToolUseBlock toolCall,
             ExecutionConfig executionConfig,
             Agent agent,
@@ -636,8 +641,39 @@ class ToolExecutor {
                         .runtimeContext(agentRuntimeContext)
                         .build();
 
-        // Get core execution
-        // Persist outside the execution timeout so a slow observation commit cannot replay a tool.
+        return executeWithInfrastructure(param, executionConfig, requestConfig, executionCallback);
+    }
+
+    /**
+     * Execute a single tool call with full infrastructure, preserving every field of the original
+     * {@link ToolCallParam} (including caller-provided input).
+     */
+    Mono<ToolResultBlock> executeWithInfrastructure(
+            ToolCallParam param, ExecutionConfig executionConfig) {
+        return executeWithInfrastructure(
+                param,
+                executionConfig,
+                param.getRuntimeContext() == null
+                        ? ToolRequestConfig.NONE
+                        : param.getRuntimeContext().getToolRequestConfig(),
+                null);
+    }
+
+    /**
+     * Shared infrastructure path for batch and direct tool calls.
+     *
+     * <p>Observation wraps the timeout and scheduling layers so a slow observation commit cannot
+     * be timed out and retried. Each retry receives a separate observed attempt. Observation and
+     * session-log failures remain error signals; all other failures become model-visible tool
+     * errors carrying the call identity.
+     */
+    private Mono<ToolResultBlock> executeWithInfrastructure(
+            ToolCallParam param,
+            ExecutionConfig executionConfig,
+            ToolRequestConfig requestConfig,
+            ToolExecutionCallback executionCallback) {
+        ToolUseBlock toolCall = param.getToolUseBlock();
+
         Mono<ToolResultBlock> execution =
                 ActionObservations.observe(
                         param,
