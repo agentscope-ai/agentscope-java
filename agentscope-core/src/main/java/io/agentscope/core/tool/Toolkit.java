@@ -640,6 +640,38 @@ public class Toolkit {
             RuntimeContext agentRuntimeContext,
             ToolRequestConfig requestConfig,
             BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+        ToolExecutionCallback callback =
+                internalChunkCallback == null
+                        ? null
+                        : new ToolExecutionCallback() {
+                            @Override
+                            public void onProgress(ToolUseBlock call, ToolResultBlock chunk) {
+                                internalChunkCallback.accept(call, chunk);
+                            }
+                        };
+        return callToolsWithCallback(
+                toolCalls,
+                agentExecutionConfig,
+                agent,
+                agentRuntimeContext,
+                requestConfig,
+                callback);
+    }
+
+    /**
+     * Execute a batch with start, progress, and final-result notifications before ordered
+     * aggregation. The returned list retains declaration order. {@link
+     * ToolExecutionCallback#onStart} fires when the executor begins each invocation (in
+     * sequential batches, when the call's turn arrives) and results may arrive in completion
+     * order.
+     */
+    public Mono<List<ToolResultBlock>> callToolsWithCallback(
+            List<ToolUseBlock> toolCalls,
+            ExecutionConfig agentExecutionConfig,
+            Agent agent,
+            RuntimeContext agentRuntimeContext,
+            ToolRequestConfig requestConfig,
+            ToolExecutionCallback executionCallback) {
         ExecutionConfig effectiveConfig = resolveToolExecutionConfig(agentExecutionConfig);
 
         return executor.executeAll(
@@ -653,7 +685,7 @@ public class Toolkit {
                         : agentRuntimeContext == null
                                 ? ToolRequestConfig.NONE
                                 : agentRuntimeContext.getToolRequestConfig(),
-                internalChunkCallback);
+                executionCallback);
     }
 
     // ==================== MCP Client Registration (Delegated) ====================
