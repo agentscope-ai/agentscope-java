@@ -16,10 +16,10 @@
 
 package io.agentscope.core.a2a.server.registry;
 
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
 import java.util.List;
 import java.util.Set;
+import org.a2aproject.sdk.spec.AgentCard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

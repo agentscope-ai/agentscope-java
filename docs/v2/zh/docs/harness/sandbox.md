@@ -64,6 +64,7 @@ agent.call(msg, RuntimeContext.builder()
 - 容器还在 + 工作区还在 → 直接接着用（最快）
 - 容器没了 → 拿快照重新起一个，恢复工作区
 - 没快照 → 按 `WorkspaceSpec` 全量初始化（冷启动）
+- 快照读取或恢复失败 → 本次 `call()` 报错，可重试；不会静默丢弃快照状态
 
 快照存到哪里取决于你配的 `snapshotSpec`：
 

@@ -232,7 +232,7 @@ Anthropic's Claude series models.
 ```java
 AnthropicChatModel model = AnthropicChatModel.builder()
         .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-        .modelName("claude-sonnet-4-5-20250929")  // Default
+        .modelName("claude-sonnet-5-5")  // Default
         .build();
 ```
 
@@ -241,7 +241,7 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 | Option | Description |
 |--------|-------------|
 | `apiKey` | Anthropic API key |
-| `modelName` | Model name, default `claude-sonnet-4-5-20250929` |
+| `modelName` | Model name, default `claude-sonnet-5-5` |
 | `baseUrl` | Custom API endpoint (optional) |
 | `stream` | Enable streaming, default `true` |
 

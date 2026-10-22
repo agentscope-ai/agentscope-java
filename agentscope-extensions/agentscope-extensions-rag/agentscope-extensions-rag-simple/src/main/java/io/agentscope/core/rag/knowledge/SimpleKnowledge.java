@@ -16,6 +16,7 @@
 package io.agentscope.core.rag.knowledge;
 
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingUsage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.Knowledge;
@@ -27,6 +28,7 @@ import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -74,6 +76,7 @@ public class SimpleKnowledge implements Knowledge {
 
     private final EmbeddingModel embeddingModel;
     private final VDBStoreBase embeddingStore;
+    private final Consumer<EmbeddingUsage> usageListener;
 
     /**
      * Creates a new SimpleKnowledge instance.
@@ -82,7 +85,10 @@ public class SimpleKnowledge implements Knowledge {
      * @param embeddingStore the vector store to use for storage and search
      * @throws IllegalArgumentException if any parameter is null
      */
-    private SimpleKnowledge(EmbeddingModel embeddingModel, VDBStoreBase embeddingStore) {
+    private SimpleKnowledge(
+            EmbeddingModel embeddingModel,
+            VDBStoreBase embeddingStore,
+            Consumer<EmbeddingUsage> usageListener) {
         if (embeddingModel == null) {
             throw new IllegalArgumentException("Embedding model cannot be null");
         }
@@ -91,6 +97,7 @@ public class SimpleKnowledge implements Knowledge {
         }
         this.embeddingModel = embeddingModel;
         this.embeddingStore = embeddingStore;
+        this.usageListener = usageListener;
     }
 
     @Override
@@ -116,7 +123,11 @@ public class SimpleKnowledge implements Knowledge {
                             // Generate embedding for document content
                             return embeddingModel
                                     .embed(contentBlock)
-                                    .doOnNext(embedding -> doc.setEmbedding(embedding))
+                                    .doOnNext(
+                                            response -> {
+                                                doc.setEmbedding(response.getEmbedding());
+                                                notifyUsage(response.getUsage());
+                                            })
                                     .thenReturn(doc);
                         })
                 .collectList()
@@ -147,12 +158,13 @@ public class SimpleKnowledge implements Knowledge {
         TextBlock queryBlock = TextBlock.builder().text(query).build();
         return embeddingModel
                 .embed(queryBlock)
+                .doOnNext(response -> notifyUsage(response.getUsage()))
                 .flatMap(
-                        queryEmbedding ->
+                        response ->
                                 embeddingStore.search(
                                         SearchDocumentDto.builder()
                                                 .vectorName(config.getVectorName())
-                                                .queryEmbedding(queryEmbedding)
+                                                .queryEmbedding(response.getEmbedding())
                                                 .limit(config.getLimit())
                                                 .scoreThreshold(null)
                                                 .build()))
@@ -207,6 +219,20 @@ public class SimpleKnowledge implements Knowledge {
     }
 
     /**
+     * Notifies the optional usage listener after an embedding response is received.
+     *
+     * <p>The listener is not called when the provider does not report usage. It runs on the
+     * thread that emits the embedding response and should remain non-blocking and thread-safe.
+     *
+     * @param usage the usage reported by the embedding provider
+     */
+    private void notifyUsage(EmbeddingUsage usage) {
+        if (usageListener != null && usage != null) {
+            usageListener.accept(usage);
+        }
+    }
+
+    /**
      * Creates a new builder for SimpleKnowledge.
      *
      * @return a new Builder instance
@@ -221,6 +247,7 @@ public class SimpleKnowledge implements Knowledge {
     public static class Builder {
         private EmbeddingModel embeddingModel;
         private VDBStoreBase embeddingStore;
+        private Consumer<EmbeddingUsage> usageListener;
 
         private Builder() {}
 
@@ -247,6 +274,23 @@ public class SimpleKnowledge implements Knowledge {
         }
 
         /**
+         * Sets an optional listener for embedding usage reported by the provider.
+         *
+         * <p>The listener runs on the thread that emits the embedding response. Any exception
+         * thrown by the listener will propagate through the reactive chain and cause the
+         * surrounding {@code addDocuments} or {@code retrieve} call to fail. Callers are
+         * responsible for catching exceptions inside the listener or ensuring it never throws.
+         *
+         * @param usageListener the listener to invoke after each embedding call that reports
+         *     usage
+         * @return this builder instance
+         */
+        public Builder usageListener(Consumer<EmbeddingUsage> usageListener) {
+            this.usageListener = usageListener;
+            return this;
+        }
+
+        /**
          * Builds a new SimpleKnowledge instance.
          *
          * @return a new SimpleKnowledge instance
@@ -259,7 +303,7 @@ public class SimpleKnowledge implements Knowledge {
             if (embeddingStore == null) {
                 throw new IllegalArgumentException("Embedding store is required");
             }
-            return new SimpleKnowledge(embeddingModel, embeddingStore);
+            return new SimpleKnowledge(embeddingModel, embeddingStore, usageListener);
         }
     }
 }

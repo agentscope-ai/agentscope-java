@@ -119,7 +119,7 @@ public class GeminiResponseParser {
                         parsePartsToBlocks(parts, blocks);
                     }
                 }
-                finishReason = candidate.finishMessage().orElse(null);
+                finishReason = candidate.finishReason().map(Object::toString).orElse(null);
 
                 candidate
                         .groundingMetadata()

@@ -78,9 +78,9 @@
         <google-genai.version>1.78.0</google-genai.version>
         <dashscope-sdk-java.version>2.23.2</dashscope-sdk-java.version>
         <bailian.version>2.14.4</bailian.version>
-        <openai-java.version>4.78.0</openai-java.version>
+        <openai-java.version>4.85.0</openai-java.version>
         <anthropic.version>2.72.0</anthropic.version>
-        <mcp.version>0.17.2</mcp.version>
+        <mcp.version>2.0.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.17.0</qdrant.version>
         <milvus.version>2.6.17</milvus.version>
@@ -96,9 +96,7 @@
         <opentelemetry-reactor.version>2.27.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.41.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.2.0</redisson.version>
-        <a2a-client.version>0.3.3.Final</a2a-client.version>
-        <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
-        <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
+        <a2a-java-sdk.version>1.4.0.Final</a2a-java-sdk.version>
         <jedis.version>7.4.1</jedis.version>
         <lettuce.version>6.4.2.RELEASE</lettuce.version>
         <mongodb-driver.version>5.3.1</mongodb-driver.version>
@@ -117,7 +115,7 @@
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
         <jgit.version>7.6.0.202603022253-r</jgit.version>
         <fabric8.kubernetes-client.version>7.8.0</fabric8.kubernetes-client.version>
-        <protobuf.java.version>4.29.3</protobuf.java.version>
+        <protobuf.java.version>4.35.0</protobuf.java.version>
 
         <spotless.version>3.4.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
@@ -250,10 +248,16 @@
                 <version>${anthropic.version}</version>
             </dependency>
 
-            <!-- Model Context Protocol (MCP) SDK -->
+            <!-- Model Context Protocol (MCP) SDK: use core + Jackson 2 module
+                 instead of the mcp aggregator (which defaults to Jackson 3) -->
             <dependency>
                 <groupId>io.modelcontextprotocol.sdk</groupId>
-                <artifactId>mcp</artifactId>
+                <artifactId>mcp-core</artifactId>
+                <version>${mcp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.modelcontextprotocol.sdk</groupId>
+                <artifactId>mcp-json-jackson2</artifactId>
                 <version>${mcp.version}</version>
             </dependency>
 
@@ -381,14 +385,14 @@
 
             <!-- A2A dependencies -->
             <dependency>
-                <groupId>io.github.a2asdk</groupId>
+                <groupId>org.a2aproject.sdk</groupId>
                 <artifactId>a2a-java-sdk-client</artifactId>
-                <version>${a2a-client.version}</version>
+                <version>${a2a-java-sdk.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.github.a2asdk</groupId>
+                <groupId>org.a2aproject.sdk</groupId>
                 <artifactId>a2a-java-sdk-server-common</artifactId>
-                <version>${a2a-server-common.version}</version>
+                <version>${a2a-java-sdk.version}</version>
                 <exclusions>
                     <exclusion>
                         <groupId>org.eclipse.microprofile.config</groupId>
@@ -397,9 +401,9 @@
                 </exclusions>
             </dependency>
             <dependency>
-                <groupId>io.github.a2asdk</groupId>
+                <groupId>org.a2aproject.sdk</groupId>
                 <artifactId>a2a-java-sdk-transport-jsonrpc</artifactId>
-                <version>${a2a-transport-jsonrpc.version}</version>
+                <version>${a2a-java-sdk.version}</version>
             </dependency>
 
             <!-- Jedis client for Redis-based session implementation -->

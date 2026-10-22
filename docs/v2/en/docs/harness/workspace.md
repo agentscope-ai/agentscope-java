@@ -386,7 +386,7 @@ There are four registration layers (low → high priority):
 3. `workspace/skills/` — workspace shared
 4. `<userId>/skills/` — per-user (overrides all above)
 
-Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each call, `HarnessSkillMiddleware` re-merges and renders an `<available_skills>` block (name + description only) into the system prompt. The agent calls `load_skill_through_path` to pull full details when relevant. Full mechanics in [Skills](/v2/en/docs/harness/skill).
+Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each call, `HarnessSkillMiddleware` re-merges and renders an `<available_skills>` block (name + description only) as a per-call runtime material placed after the conversation. The agent calls `load_skill_through_path` to pull full details when relevant. Full mechanics in [Skills](/v2/en/docs/harness/skill).
 
 ### `subagents/`
 

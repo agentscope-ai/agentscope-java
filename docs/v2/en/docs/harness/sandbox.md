@@ -64,6 +64,7 @@ The sandbox snapshots its workspace at each `call()` end and restores at the nex
 - Container still alive + workspace still there → just continue (fastest)
 - Container gone → reboot from snapshot, restore workspace
 - No snapshot → full init from `WorkspaceSpec` (cold start)
+- Snapshot read or restore failure → this `call()` fails and can be retried; snapshot state is never silently discarded
 
 Where snapshots land is decided by `snapshotSpec`:
 

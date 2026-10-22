@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent;
 
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -99,6 +98,9 @@ final class HarnessAgentBuilderSupport {
             3. **Don't initiate** — No heartbeats, no proactive actions, no side quests
             4. **Be ephemeral** — You may be terminated after task completion. That's fine.
             5. **Recover from truncated tool output** — If you see `[truncated: output exceeded context limit]`, re-read only what you need using smaller chunks (read with offset/limit, or targeted grep/head/tail) instead of full re-reads
+            6. **Land everything in your final message** — It is the ONLY thing the main agent receives. Every conclusion, finding, and answer must be in it, and there must be no tool calls after it: your run ends there
+            7. **Cite evidence** — Back each claim with `path:line` references (e.g. `src/Main.java:42`) so the main agent can verify without re-reading
+            8. **No report files** — Do not write your results to a file as the deliverable; the main agent reads your final text message only. Write files only when the task itself asks for them
 
             ## Output Format
             When complete, your final response should include:
@@ -115,6 +117,7 @@ final class HarnessAgentBuilderSupport {
 
     // @formatter:on
 
+    /** Identity line prepended to {@link #SUBAGENT_CONTEXT_SECTION} for the general-purpose subagent. */
     static final String GENERAL_PURPOSE_BASE_PROMPT =
             "You are a highly capable general-purpose subagent.";
 
@@ -129,10 +132,15 @@ final class HarnessAgentBuilderSupport {
     }
 
     /**
-     * Custom-supplied subagent factory entry: name + optional description + factory function from
-     * name to Agent.
+     * Custom-supplied subagent factory entry: name + optional description + factory, plus an
+     * optional {@link SubagentDeclaration} whose spawn-time options (e.g. {@code persistSession})
+     * apply to the custom instances.
      */
-    record SubagentFactoryEntry(String name, String description, Function<String, Agent> factory) {
+    record SubagentFactoryEntry(
+            String name,
+            String description,
+            SubagentFactory factory,
+            SubagentDeclaration declaration) {
 
         /** Description shown to the orchestrator, falling back to the name when unset. */
         String displayDescription() {
@@ -230,12 +238,8 @@ final class HarnessAgentBuilderSupport {
                     new SubagentEntry(
                             custom.name(),
                             custom.displayDescription(),
-                            // custom factory uses Function<String, Agent> — pre-B-0 signature
-                            // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
-                            // that need parent-aware isolation should register a programmatic
-                            // SubagentEntry directly with a B-0 SubagentFactory lambda.
-                            (rc) -> custom.factory().apply(custom.name()),
-                            null));
+                            custom.factory(),
+                            custom.declaration()));
         }
 
         return entries;
@@ -273,12 +277,8 @@ final class HarnessAgentBuilderSupport {
                     new SubagentEntry(
                             custom.name(),
                             custom.displayDescription(),
-                            // custom factory uses Function<String, Agent> — pre-B-0 signature
-                            // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
-                            // that need parent-aware isolation should register a programmatic
-                            // SubagentEntry directly with a B-0 SubagentFactory lambda.
-                            (rc) -> custom.factory().apply(custom.name()),
-                            null));
+                            custom.factory(),
+                            custom.declaration()));
         }
 
         return entries;
@@ -369,7 +369,7 @@ final class HarnessAgentBuilderSupport {
                             .name("general-purpose-subagent")
                             .enablePendingToolRecovery(capturedPendingToolRecovery)
                             .description("General-purpose subagent for isolated task execution")
-                            .sysPrompt(buildSubagentSysPrompt(null))
+                            .sysPrompt(buildSubagentSysPrompt(GENERAL_PURPOSE_BASE_PROMPT))
                             .model(capturedModel)
                             .toolkit(capturedParentToolkit.copy())
                             .workspace(workspace)
