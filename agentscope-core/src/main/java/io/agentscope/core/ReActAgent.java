@@ -4513,10 +4513,35 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 summaryModel)
                                         .then(
                                                 Mono.defer(
-                                                        () ->
-                                                                Mono.justOrEmpty(
-                                                                        context
-                                                                                .buildFinalMessage())))
+                                                        () -> {
+                                                            Msg finalMsg =
+                                                                    context.buildFinalMessage();
+                                                            if (finalMsg == null) {
+                                                                // The summary stream produced no
+                                                                // visible output — completing
+                                                                // empty here would leak an
+                                                                // empty Mono to callers who
+                                                                // cannot distinguish "no
+                                                                // output" from "completed
+                                                                // normally" (#3650).
+                                                                log.warn(
+                                                                        "Summary stream completed"
+                                                                            + " without any visible"
+                                                                            + " output; synthesizing"
+                                                                            + " a terminal message");
+                                                                return Mono.just(
+                                                                        Msg.builder()
+                                                                                .role(
+                                                                                        MsgRole.ASSISTANT)
+                                                                                .content(
+                                                                                        TextBlock.builder()
+                                                                                                .text(
+                                                                                                        "No output was produced before the iteration limit was reached.")
+                                                                                                .build())
+                                                                                .build());
+                                                            }
+                                                            return Mono.just(finalMsg);
+                                                        }))
                                         .flatMap(
                                                 msg ->
                                                         hookDispatcher
