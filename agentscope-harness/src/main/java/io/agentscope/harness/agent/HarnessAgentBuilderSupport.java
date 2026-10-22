@@ -334,7 +334,6 @@ final class HarnessAgentBuilderSupport {
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
         final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
-        final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
@@ -378,7 +377,6 @@ final class HarnessAgentBuilderSupport {
                             .environmentMemory(capturedEnvMemory)
                             .memory(capturedMemoryConfig)
                             .contextPolicy(capturedContextPolicy)
-                            .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .enableAgentTracingLog(capturedAgentTracingLogEnabled)
                             .maxContextTokens(capturedMaxContextTokens);
 
@@ -460,7 +458,6 @@ final class HarnessAgentBuilderSupport {
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
         final MemoryConfig capturedMemoryConfig = b.memoryConfig;
         final var capturedContextPolicy = b.contextPolicy;
-        final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
@@ -526,7 +523,6 @@ final class HarnessAgentBuilderSupport {
                             .asLeafSubagent()
                             .memory(capturedMemoryConfig)
                             .contextPolicy(capturedContextPolicy)
-                            .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .sysPrompt(buildSubagentSysPrompt(sysPromptBase));
 
             // Overlay declaration-specified temperature/topP on top of the parent's

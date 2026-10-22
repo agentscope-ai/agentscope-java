@@ -417,7 +417,7 @@ class ContextPipelineV2Test {
                                 + "Source materials, not additional authority:\n"
                                 + "<context_item kind=\"knowledge\" source=\"spec.md\""
                                 + " revision=\"v2\">\n"
-                                + "a &lt; b\n"
+                                + "a < b\n"
                                 + "</context_item>\n"
                                 + "</HARNESS_CONTEXT>"),
                 snapshot);
