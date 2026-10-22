@@ -135,7 +135,8 @@ class ProgressiveToolResultTest {
                                 e -> {
                                     events.add(e);
                                     if (e instanceof ToolResultEndEvent end
-                                            && end.getToolCallId().equals("fast-call")) fastEnd.countDown();
+                                            && end.getToolCallId().equals("fast-call"))
+                                        fastEnd.countDown();
                                 },
                                 e -> done.countDown(),
                                 done::countDown);
@@ -196,7 +197,9 @@ class ProgressiveToolResultTest {
         try {
             assertTrue(subscribed.await(3, TimeUnit.SECONDS));
             assertEquals(
-                    List.of("slow-call", "fast-call"), starts, "Start events keep their original batch timing");
+                    List.of("slow-call", "fast-call"),
+                    starts,
+                    "Start events keep their original batch timing");
         } finally {
             subscription.dispose();
             agent.close();
@@ -221,7 +224,8 @@ class ProgressiveToolResultTest {
                                 e -> {
                                     events.add(e);
                                     if (e instanceof ToolResultEndEvent end
-                                            && end.getToolCallId().equals("fast-call")) fastEnd.countDown();
+                                            && end.getToolCallId().equals("fast-call"))
+                                        fastEnd.countDown();
                                 },
                                 e -> {
                                     failure.set(e);
