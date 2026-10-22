@@ -41,6 +41,8 @@ public interface ToolExecutionCallback {
 
     /**
      * Report the result of a tool invocation, which may indicate success, error, or suspension.
+     * Notified at most once per invocation, as soon as the result resolves and before ordered
+     * batch aggregation.
      *
      * @param call the tool invocation
      * @param result the invocation result

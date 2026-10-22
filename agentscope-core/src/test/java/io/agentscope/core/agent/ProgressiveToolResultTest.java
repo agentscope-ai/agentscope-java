@@ -16,12 +16,15 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
@@ -30,14 +33,18 @@ import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.observation.ActionObservationException;
+import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolSuspendException;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.ToolkitConfig;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -256,6 +263,147 @@ class ProgressiveToolResultTest {
             subscription.dispose();
             agent.close();
         }
+    }
+
+    @Test
+    void sessionLogFailurePreservesResolvedResultAndEmitsEachToolOnce() throws Exception {
+        Sinks.One<ToolResultBlock> slow = Sinks.one();
+        CountDownLatch fastEnd = new CountDownLatch(1);
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(tool("slow", p -> slow.asMono()));
+        toolkit.registerTool(tool("fast", p -> Mono.just(ToolResultBlock.text("keep me"))));
+        ReActAgent agent =
+                ReActAgent.builder().name("test").model(model()).toolkit(toolkit).build();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        List<AgentEvent> events = new CopyOnWriteArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        Disposable subscription =
+                agent.streamEvents(List.of())
+                        .subscribe(
+                                e -> {
+                                    events.add(e);
+                                    if (e instanceof ToolResultEndEvent end
+                                            && "fast-call".equals(end.getToolCallId())) {
+                                        fastEnd.countDown();
+                                    }
+                                },
+                                e -> {
+                                    failure.set(e);
+                                    done.countDown();
+                                },
+                                done::countDown);
+        try {
+            assertTrue(
+                    fastEnd.await(3, TimeUnit.SECONDS), "fast must finish while slow is pending");
+            slow.tryEmitError(new SessionLogException("commit failed"));
+            assertTrue(done.await(3, TimeUnit.SECONDS), "batch must settle through the fallback");
+            assertNull(failure.get(), "the fallback converts the failure into tool results");
+
+            List<String> fastText =
+                    events.stream()
+                            .filter(ToolResultTextDeltaEvent.class::isInstance)
+                            .map(ToolResultTextDeltaEvent.class::cast)
+                            .filter(e -> "fast-call".equals(e.getToolCallId()))
+                            .map(ToolResultTextDeltaEvent::getDelta)
+                            .toList();
+            assertEquals(
+                    List.of("keep me"), fastText, "fast keeps its real output, no second round");
+
+            assertEquals(
+                    List.of(ToolResultState.SUCCESS),
+                    endStates(events, "fast-call"),
+                    "exactly one SUCCESS end for the finished tool");
+            assertEquals(
+                    List.of(ToolResultState.ERROR),
+                    endStates(events, "slow-call"),
+                    "exactly one ERROR end for the failing tool");
+
+            Map<String, String> resultsById = new HashMap<>();
+            agent.getAgentState()
+                    .getContext()
+                    .forEach(
+                            m ->
+                                    m.getContentBlocks(ToolResultBlock.class)
+                                            .forEach(
+                                                    b ->
+                                                            resultsById.putIfAbsent(
+                                                                    b.getId(),
+                                                                    b.getOutput().toString())));
+            assertTrue(
+                    resultsById.get("fast-call").contains("keep me"),
+                    "the model keeps the real result of the finished tool");
+            assertFalse(
+                    resultsById.get("fast-call").contains("Tool execution failed"),
+                    "the model must not be told the finished tool failed");
+            assertTrue(
+                    resultsById.get("slow-call").contains("Tool execution failed"),
+                    "the failing tool reports the error");
+        } finally {
+            subscription.dispose();
+            agent.close();
+        }
+    }
+
+    @Test
+    void sessionLogFailureKeepsEarlierSuspensionAlive() throws Exception {
+        // Sequential mode makes the ordering deterministic: "ask" resolves as suspended before
+        // "boom" ever starts, so a session-log failure on "boom" must not demote "ask".
+        Toolkit toolkit = new Toolkit(ToolkitConfig.builder().parallel(false).build());
+        toolkit.registerTool(
+                tool("ask", p -> Mono.error(new ToolSuspendException("external execution"))));
+        toolkit.registerTool(
+                tool("boom", p -> Mono.error(new SessionLogException("commit failed"))));
+        MockModel model =
+                new MockModel(
+                        messages ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                call("ask", "ask-call"),
+                                                                call("boom", "boom-call")))
+                                                .build()));
+        ReActAgent agent = ReActAgent.builder().name("test").model(model).toolkit(toolkit).build();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        List<AgentEvent> events = new CopyOnWriteArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        Disposable subscription =
+                agent.streamEvents(List.of())
+                        .subscribe(
+                                events::add,
+                                e -> {
+                                    failure.set(e);
+                                    done.countDown();
+                                },
+                                done::countDown);
+        try {
+            assertTrue(done.await(3, TimeUnit.SECONDS), "batch must settle through the fallback");
+            assertNull(failure.get());
+            assertTrue(
+                    events.stream().anyMatch(RequireExternalExecutionEvent.class::isInstance),
+                    "the earlier suspension must survive the batch error");
+            assertEquals(
+                    List.of(ToolResultState.ERROR),
+                    endStates(events, "boom-call"),
+                    "the failing tool reports the error exactly once");
+            assertTrue(
+                    endStates(events, "ask-call").isEmpty(), "suspended calls emit no end events");
+            // Suspended results live in the pending external-execution flow, not the context;
+            // RequireExternalExecutionEvent above is the proof that "ask" stayed suspended
+            // instead of being demoted to an error result by the fallback.
+        } finally {
+            subscription.dispose();
+            agent.close();
+        }
+    }
+
+    private static List<ToolResultState> endStates(List<AgentEvent> events, String callId) {
+        return events.stream()
+                .filter(ToolResultEndEvent.class::isInstance)
+                .map(ToolResultEndEvent.class::cast)
+                .filter(e -> callId.equals(e.getToolCallId()))
+                .map(ToolResultEndEvent::getState)
+                .toList();
     }
 
     static MockModel model() {

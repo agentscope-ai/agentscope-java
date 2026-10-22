@@ -3934,11 +3934,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * Publish start, progress, and result events for locally dispatched tool calls.
+         *
+         * <p>Tracks resolved results per call id: the batch error fallback re-processes every
+         * call, but calls that already resolved must keep their real result and must not receive
+         * a second round of events. The instance is created per batch inside {@code
+         * Flux.create}, so this state never outlives one batch and the shared {@link Toolkit}
+         * stays stateless.
          */
         private final class ToolResultCallback implements ToolExecutionCallback {
             private final String replyId;
             private final FluxSink<AgentEvent> sink;
             private final reactor.util.context.ContextView parentContext;
+
+            /** Results resolved before batch settlement, by call id. */
+            private final ConcurrentHashMap<String, ToolResultBlock> resolvedResults =
+                    new ConcurrentHashMap<>();
 
             private ToolResultCallback(
                     String replyId,
@@ -3977,6 +3987,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             @Override
             public void onResult(ToolUseBlock call, ToolResultBlock result) {
+                // Record before the suspended check so an earlier suspension survives the batch
+                // error fallback; only the first resolution publishes events.
+                if (resolvedResults.putIfAbsent(call.getId(), result) != null) return;
                 if (result.isSuspended()) return;
                 Map<String, Object> metadata = result.getMetadata();
                 if (result.getOutput() != null) {
@@ -4000,6 +4013,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         call.getName(),
                                         determineToolResultState(result))
                                 .withMetadata(metadata));
+            }
+
+            /** Result already resolved for {@code call}, or {@code null} if it never settled. */
+            private ToolResultBlock resolvedResult(ToolUseBlock call) {
+                return resolvedResults.get(call.getId());
             }
         }
 
@@ -4069,8 +4087,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *
          * <p>If tool execution fails (timeout, error, etc.), this method generates error tool results
          * for all pending tool calls instead of propagating the error. This ensures the agent can
-         * continue processing and the model receives proper error feedback.
-         * The generated error results are also passed to the callback.
+         * continue processing and the model receives proper error feedback. Calls that already
+         * resolved keep their real result and are not re-notified; the generated error results
+         * for the remaining calls are passed to the callback.
          *
          * @param toolCalls The list of tool calls (potentially modified by PreActingEvent hooks)
          * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
@@ -4109,6 +4128,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         toolCalls.stream()
                                                 .map(
                                                         toolCall -> {
+                                                            // A call that already resolved keeps
+                                                            // its real result: the event layer
+                                                            // already published it, and telling
+                                                            // the model a finished tool failed
+                                                            // invites pointless retries.
+                                                            ToolResultBlock resolved =
+                                                                    callback.resolvedResult(
+                                                                            toolCall);
+                                                            if (resolved != null) {
+                                                                return Map.entry(
+                                                                        toolCall, resolved);
+                                                            }
                                                             ToolResultBlock errorResult =
                                                                     ToolResultBlock.error(
                                                                             toolCall.getId(),
@@ -4184,13 +4215,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 }
                                                 ToolResultBlock result = byId.get(use.getId());
                                                 if (result == null) {
-                                                    return Mono.just(
+                                                    ToolResultBlock missing =
                                                             ToolResultBlock.error(
                                                                     use.getId(),
                                                                     "Internal error: missing tool"
                                                                             + " result for '"
                                                                             + use.getName()
-                                                                            + "'"));
+                                                                            + "'");
+                                                    callback.onResult(use, missing);
+                                                    return Mono.just(missing);
                                                 }
                                                 return Mono.just(result);
                                             })
