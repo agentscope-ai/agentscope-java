@@ -112,7 +112,7 @@ class ToolExecutionCallbackTest {
         assertEquals(2, attempts.get());
         assertEquals("a", results.get(0).getId());
         assertEquals("retried", ((TextBlock) results.get(0).getOutput().get(0)).getText());
-        assertEquals(List.of("result"), events);
+        assertEquals(List.of("start", "result"), events);
     }
 
     @Test
@@ -124,7 +124,7 @@ class ToolExecutionCallbackTest {
         List<ToolResultBlock> results = run(toolkit, recording(events), null).block(TIMEOUT);
         assertEquals("a", results.get(0).getId());
         assertTrue(results.get(0).getOutput().toString().contains("business failure"));
-        assertEquals(List.of("result"), events);
+        assertEquals(List.of("start", "result"), events);
     }
 
     @Test
@@ -145,7 +145,10 @@ class ToolExecutionCallbackTest {
             assertTrue(started.await(3, TimeUnit.SECONDS));
             subscription.dispose();
             assertTrue(cancelled.await(3, TimeUnit.SECONDS));
-            assertTrue(events.isEmpty());
+            assertEquals(
+                    List.of("start"),
+                    events,
+                    "start fires at subscription; no final result after cancellation");
         } finally {
             subscription.dispose();
         }
@@ -178,7 +181,7 @@ class ToolExecutionCallbackTest {
         assertEquals(1, user.get());
         execution.block(TIMEOUT);
         execution.block(TIMEOUT);
-        assertEquals(List.of("progress", "result", "progress", "result"), events);
+        assertEquals(List.of("start", "progress", "result", "start", "progress", "result"), events);
         assertEquals(3, user.get());
     }
 

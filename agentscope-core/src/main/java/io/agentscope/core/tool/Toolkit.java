@@ -638,9 +638,11 @@ public class Toolkit {
     }
 
     /**
-     * Execute a batch with progress and final-result notifications before ordered aggregation.
-     * The returned list retains declaration order; notifications may arrive in completion order.
-     * This method does not invoke {@link ToolExecutionCallback#onStart}.
+     * Execute a batch with start, progress, and final-result notifications before ordered
+     * aggregation. The returned list retains declaration order. {@link
+     * ToolExecutionCallback#onStart} fires when the executor begins each invocation (in
+     * sequential batches, when the call's turn arrives) and results may arrive in completion
+     * order.
      */
     public Mono<List<ToolResultBlock>> callToolsWithCallback(
             List<ToolUseBlock> toolCalls,

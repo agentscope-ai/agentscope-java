@@ -559,6 +559,14 @@ class ToolExecutor {
                                         agentRuntimeContext,
                                         requestConfig,
                                         executionCallback)
+                                // Both hooks sit outside the retry wrapper inside
+                                // executeWithInfrastructure, so one logical invocation fires
+                                // onStart/onResult exactly once even across retries.
+                                .doOnSubscribe(
+                                        s -> {
+                                            if (executionCallback != null)
+                                                executionCallback.onStart(toolCall);
+                                        })
                                 .doOnNext(
                                         result -> {
                                             if (executionCallback != null)

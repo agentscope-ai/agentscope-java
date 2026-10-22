@@ -298,7 +298,7 @@ sequenceDiagram
 
 <Accordion title="工具结果流式事件">
 
-**ToolResultStartEvent** — 工具结果段开始（带 `toolCallId`、`toolCallName`）。在批次执行前发送，不代表单个工具已开始执行。
+**ToolResultStartEvent** — 工具开始执行（带 `toolCallId`、`toolCallName`）。串行批次中在该工具轮到执行时发送，而非批次受理时。
 
     **ToolProgressEvent** — 工具执行过程中通过 `ToolEmitter` 发布的中间进度。进度仅用于展示，不会发送给 LLM，也不属于工具结果的一部分。
 

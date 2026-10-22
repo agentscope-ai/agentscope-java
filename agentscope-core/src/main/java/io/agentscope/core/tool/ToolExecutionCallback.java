@@ -25,7 +25,8 @@ import io.agentscope.core.message.ToolUseBlock;
  */
 public interface ToolExecutionCallback {
     /**
-     * Notify that a tool invocation is starting.
+     * Notify that a tool invocation is starting — fired when the executor begins the invocation
+     * (when the call's turn arrives), not when the batch is admitted.
      *
      * @param call the tool invocation
      */

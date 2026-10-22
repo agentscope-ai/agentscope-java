@@ -184,7 +184,7 @@ class ProgressiveToolResultTest {
     }
 
     @Test
-    void serialToolsKeepOriginalBatchStartEvents() throws Exception {
+    void serialToolsEmitStartWhenExecutionBegins() throws Exception {
         Sinks.One<ToolResultBlock> slow = Sinks.one();
         CountDownLatch subscribed = new CountDownLatch(1);
         Toolkit toolkit = new Toolkit(ToolkitConfig.builder().parallel(false).build());
@@ -194,19 +194,28 @@ class ProgressiveToolResultTest {
         ReActAgent agent =
                 ReActAgent.builder().name("test").model(model()).toolkit(toolkit).build();
         List<String> starts = new CopyOnWriteArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
         Disposable subscription =
                 agent.streamEvents(List.of())
                         .subscribe(
                                 e -> {
                                     if (e instanceof ToolResultStartEvent start)
                                         starts.add(start.getToolCallId());
-                                });
+                                },
+                                e -> done.countDown(),
+                                done::countDown);
         try {
             assertTrue(subscribed.await(3, TimeUnit.SECONDS));
             assertEquals(
+                    List.of("slow-call"),
+                    starts,
+                    "while slow is still running, fast must not have a Start event yet");
+            slow.tryEmitValue(ToolResultBlock.text("slow result"));
+            assertTrue(done.await(3, TimeUnit.SECONDS));
+            assertEquals(
                     List.of("slow-call", "fast-call"),
                     starts,
-                    "Start events keep their original batch timing");
+                    "fast starts only when its turn arrives, so Start→End spans actual execution");
         } finally {
             subscription.dispose();
             agent.close();

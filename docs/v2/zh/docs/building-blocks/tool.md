@@ -797,7 +797,7 @@ agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
 
 ## 工具执行生命周期回调
 
-`ToolExecutionCallback` 提供 `onStart(call)`、`onProgress(call, chunk)` 和 `onResult(call, result)`。Agent 在原来的批次位置发送 Start；`Toolkit.callToolsWithCallback(...)` 转发进度和最终结果，原 `callTools(...)` 与 chunk callback 签名保持兼容。
+`ToolExecutionCallback` 提供 `onStart(call)`、`onProgress(call, chunk)` 和 `onResult(call, result)`。执行器在工具真正开始执行时（串行批次中为轮到该工具时）发送 `onStart`；`onResult` 每次调用至多触发一次，先于有序汇总。`Toolkit.callToolsWithCallback(...)` 转发全部生命周期通知，原 `callTools(...)` 与 chunk callback 签名保持兼容。
 
 最终结果在有序汇总前通知，快工具无需等待慢工具。重试、超时和工具错误转换沿用原逻辑；progress callback 异常沿用原有日志隔离；最终结果 callback 异常通过返回的 Publisher 传播。实现必须线程安全且不能阻塞。取消或基础设施异常可能没有最终结果。
 

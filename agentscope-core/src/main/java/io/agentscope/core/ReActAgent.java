@@ -3758,12 +3758,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             parentCtx ->
                                     Flux.<AgentEvent>create(
                                             sink -> {
+                                                // Start/progress/result events now come from the
+                                                // executor as it reaches each tool, so
+                                                // ToolResultStartEvent reflects actual execution
+                                                // start instead of batch admission.
                                                 ToolResultCallback callback =
                                                         new ToolResultCallback(
                                                                 replyId, sink, parentCtx);
-                                                for (ToolUseBlock tool : approved) {
-                                                    callback.onStart(tool);
-                                                }
                                                 Disposable toolCallsDisposable =
                                                         executeToolCalls(approved, callback)
                                                                 .contextWrite(
@@ -3950,6 +3951,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private final ConcurrentHashMap<String, ToolResultBlock> resolvedResults =
                     new ConcurrentHashMap<>();
 
+            /** Ids of calls whose start has been published. */
+            private final Set<String> startedCalls = ConcurrentHashMap.newKeySet();
+
             private ToolResultCallback(
                     String replyId,
                     FluxSink<AgentEvent> sink,
@@ -3965,9 +3969,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             @Override
             public void onStart(ToolUseBlock call) {
-                ToolResultStartEvent event =
-                        new ToolResultStartEvent(replyId, call.getId(), call.getName());
-                emit(event);
+                // Idempotent: the executor fires this once per invocation, and the batch error
+                // fallback calls it defensively for calls that never reached the executor.
+                if (!startedCalls.add(call.getId())) return;
+                emit(new ToolResultStartEvent(replyId, call.getId(), call.getName()));
             }
 
             @Override
@@ -4089,7 +4094,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * for all pending tool calls instead of propagating the error. This ensures the agent can
          * continue processing and the model receives proper error feedback. Calls that already
          * resolved keep their real result and are not re-notified; the generated error results
-         * for the remaining calls are passed to the callback.
+         * for the remaining calls are passed to the callback, and calls that never started
+         * receive their start notification first.
          *
          * @param toolCalls The list of tool calls (potentially modified by PreActingEvent hooks)
          * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
@@ -4140,6 +4146,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 return Map.entry(
                                                                         toolCall, resolved);
                                                             }
+                                                            // No-op for calls the executor
+                                                            // already started; queued calls
+                                                            // (e.g. behind the failure in
+                                                            // sequential mode) get their Start
+                                                            // here so no End arrives orphaned.
+                                                            callback.onStart(toolCall);
                                                             ToolResultBlock errorResult =
                                                                     ToolResultBlock.error(
                                                                             toolCall.getId(),
@@ -4208,6 +4220,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 if (STRUCTURED_OUTPUT_TOOL_NAME.equals(
                                                         use.getName())) {
                                                     return executeStructuredTool(use)
+                                                            .doOnSubscribe(
+                                                                    s -> callback.onStart(use))
                                                             .doOnNext(
                                                                     result ->
                                                                             callback.onResult(

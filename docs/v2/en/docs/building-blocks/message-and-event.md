@@ -298,7 +298,7 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
 <Accordion title="Tool-result streaming events">
 
-**ToolResultStartEvent** — a result segment starts (carries `toolCallId`, `toolCallName`). Emitted before batch execution; it does not mean the individual tool has started running.
+**ToolResultStartEvent** — the tool starts executing (carries `toolCallId`, `toolCallName`); in sequential batches it fires when the tool's turn arrives, not when the batch is admitted.
 
     **ToolProgressEvent** — an intermediate update published by a running tool through `ToolEmitter`. Progress is for display only and is never sent to the LLM; it must not be treated as part of the tool result.
 

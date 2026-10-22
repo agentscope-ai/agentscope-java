@@ -797,7 +797,7 @@ Repositories with user- or session-dependent visibility implement `io.agentscope
 
 ## Tool execution lifecycle callbacks
 
-`ToolExecutionCallback` provides `onStart(call)`, `onProgress(call, chunk)`, and `onResult(call, result)`. The Agent emits Start at its existing batch boundary. `Toolkit.callToolsWithCallback(...)` forwards progress and final results; existing `callTools(...)` and chunk callback signatures remain supported.
+`ToolExecutionCallback` provides `onStart(call)`, `onProgress(call, chunk)`, and `onResult(call, result)`. The executor emits `onStart` when a tool actually begins executing (in sequential batches, when the tool's turn arrives) and `onResult` at most once per invocation, before ordered batch aggregation. `Toolkit.callToolsWithCallback(...)` forwards all lifecycle notifications; existing `callTools(...)` and chunk callback signatures remain supported.
 
 Final results are notified before ordered batch aggregation, so a fast tool does not wait for a slow tool. Retry, timeout, and tool error handling retain their existing behavior. Progress callback exceptions retain the existing logging and isolation; final-result callback exceptions propagate through the returned publisher. Implementations must be thread-safe and nonblocking. Cancellation or infrastructure failure can terminate without a final result.
 
