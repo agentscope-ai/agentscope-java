@@ -128,7 +128,7 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                                                 UUID.randomUUID()
                                                                         .toString()
                                                                         .replace("-", ""),
-                                                                "<system-notification>Tool '"
+                                                                "<system-reminder>Tool '"
                                                                         + rec.toolName()
                                                                         + "' (id="
                                                                         + rec.toolCallId()
@@ -137,7 +137,7 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                                                         + " timeout). You may"
                                                                         + " retry or proceed"
                                                                         + " without the result."
-                                                                        + "</system-notification>",
+                                                                        + "</system-reminder>",
                                                                 "system"));
                                             }
                                             return Mono.just(hints);

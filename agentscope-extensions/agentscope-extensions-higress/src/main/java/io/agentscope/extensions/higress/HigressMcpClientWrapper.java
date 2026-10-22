@@ -207,44 +207,23 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
     /**
      * Converts a HigressToolSearchResult.ToolInfo to McpSchema.Tool.
      */
-    @SuppressWarnings("unchecked")
     private McpSchema.Tool convertToMcpTool(HigressToolSearchResult.ToolInfo toolInfo) {
-        // Convert inputSchema Map to McpSchema.JsonSchema
-        McpSchema.JsonSchema inputSchema = null;
         Map<String, Object> inputSchemaMap = toolInfo.inputSchema();
-        if (inputSchemaMap != null) {
-            Map<String, Object> properties =
-                    inputSchemaMap.get("properties") instanceof Map<?, ?>
-                            ? (Map<String, Object>) inputSchemaMap.get("properties")
-                            : null;
-            List<String> required =
-                    inputSchemaMap.get("required") instanceof List<?>
-                            ? ((List<?>) inputSchemaMap.get("required"))
-                                    .stream()
-                                            .filter(item -> item instanceof String)
-                                            .map(item -> (String) item)
-                                            .toList()
-                            : null;
-            inputSchema =
-                    new McpSchema.JsonSchema(
-                            (String) inputSchemaMap.get("type"),
-                            properties,
-                            required,
-                            null, // additionalProperties
-                            null, // definitions
-                            null // defs
-                            );
+        if (inputSchemaMap == null) {
+            inputSchemaMap = new java.util.HashMap<>();
         }
 
-        return new McpSchema.Tool(
-                toolInfo.name(),
-                toolInfo.title(), // title
-                toolInfo.description(),
-                inputSchema,
-                null, // outputSchema
-                null, // annotations
-                null // extensions
-                );
+        McpSchema.Tool.Builder builder = McpSchema.Tool.builder(toolInfo.name(), inputSchemaMap);
+        if (toolInfo.title() != null) {
+            builder.title(toolInfo.title());
+        }
+        if (toolInfo.description() != null) {
+            builder.description(toolInfo.description());
+        }
+        if (toolInfo.outputSchema() != null) {
+            builder.outputSchema(toolInfo.outputSchema());
+        }
+        return builder.build();
     }
 
     /**
