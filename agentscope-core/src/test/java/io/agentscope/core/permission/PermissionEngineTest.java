@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.permission.AdditionalWorkingDirectory;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import java.nio.file.Path;
@@ -108,8 +107,7 @@ class PermissionEngineTest {
         return PermissionContextState.builder().mode(mode).build();
     }
 
-    private static PermissionContextState contextWithWorkingDir(
-            PermissionMode mode, String path) {
+    private static PermissionContextState contextWithWorkingDir(PermissionMode mode, String path) {
         return PermissionContextState.builder()
                 .mode(mode)
                 .addWorkingDirectory(path, new AdditionalWorkingDirectory(path, "userSettings"))
@@ -185,8 +183,7 @@ class PermissionEngineTest {
         FakePermissionTool tool = new FakePermissionTool("read_file", true);
 
         PermissionDecision decision =
-                engine.checkPermission(tool, Map.of("path", wd.resolve("a.md").toString()))
-                        .block();
+                engine.checkPermission(tool, Map.of("path", wd.resolve("a.md").toString())).block();
 
         assertEquals(PermissionBehavior.ALLOW, decision.getBehavior());
     }
