@@ -90,6 +90,11 @@ Deny rules and dangerous-path checks are **non-bypassable** — they apply even 
 </Note>
 
 
+### Interceptors and the permission engine
+
+Use [tool call interceptors](/v2/en/docs/building-blocks/tool#tool-call-interceptors) (`ToolkitConfig.interceptor(...)`) for business rules on a specific call's arguments — sandboxing, tenant scoping, auditing; use the permission engine for human-review policy (ALLOW/ASK/DENY). The engine judges the raw model input (that is also what an ASK prompt shows); interceptors run afterwards on the final arguments, so a rewrite lands *after* user approval — when the final value of a security-sensitive argument (path, SQL, URL) must be user-confirmed, suspend for human review from the interceptor instead of rewriting silently. An interceptor denying an already-approved call is expected: the denial feeds back to the model without a second approval round.
+
+
 ## Permission Mode
 
 The `PermissionMode` enum (`io.agentscope.core.permission.PermissionMode`) supports the following modes:

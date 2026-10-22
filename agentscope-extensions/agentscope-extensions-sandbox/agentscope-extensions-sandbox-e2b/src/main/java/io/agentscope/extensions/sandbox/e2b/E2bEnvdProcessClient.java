@@ -30,6 +30,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
+import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -115,36 +116,182 @@ final class E2bEnvdProcessClient {
     private ShellCapture runShellCapture(
             E2bSandboxState state, String cwd, String shellCommand, int timeoutSeconds)
             throws Exception {
-        OkHttpClient callClient =
-                timeoutSeconds > 0
-                        ? http.newBuilder().callTimeout(timeoutSeconds, TimeUnit.SECONDS).build()
-                        : http;
+        // 0 means "no deadline", matching the official E2B SDKs (Python maps 0/None to
+        // no deadline) and the merged integration test that runs `sleep 120` with 0 to
+        // block until killed. Clamping to 1s like daytona/agentrun would turn that
+        // contract into an unexplained 1s timeout. Negative values stay a caller bug.
+        if (timeoutSeconds < 0) {
+            throw new IllegalArgumentException(
+                    "[e2b] timeoutSeconds must be zero or positive, got "
+                            + timeoutSeconds
+                            + ". This is a caller bug, not a sandbox failure;"
+                            + " check the timeout argument.");
+        }
+        boolean bounded = timeoutSeconds > 0;
+        // Snapshot the interrupt bit: a stale bit set before this call must neither
+        // turn a genuine exec timeout into a fake cancellation below, nor block an
+        // already-cancelled caller for the full timeout.
+        boolean preInterrupted = Thread.interrupted();
+        if (preInterrupted) {
+            Thread.currentThread().interrupt();
+            throw new InterruptedIOException("exec cancelled before start");
+        }
+        // Disable the idle read timeout: it fires on gaps between bytes and would
+        // preempt callTimeout (both surface as InterruptedIOException), misreporting a
+        // short idle stall as a full exec timeout (#2974). Total-duration semantics is
+        // owned solely by callTimeout, or by nothing when no deadline was requested.
+        OkHttpClient.Builder callClientBuilder = http.newBuilder().readTimeout(0, TimeUnit.SECONDS);
+        if (bounded) {
+            // Server deadline stays exact so the kill lands on time; the client backup
+            // runs CLIENT_TIMEOUT_SLACK_MILLIS later as a pure failsafe (mishaving
+            // server / hung stream) that never wins the race itself in the normal path.
+            callClientBuilder.callTimeout(
+                    timeoutSeconds * 1000L + CLIENT_TIMEOUT_SLACK_MILLIS, TimeUnit.MILLISECONDS);
+        } else {
+            // Explicitly unbounded: a callTimeout inherited from an injected client would
+            // otherwise still cap a call that asked for no deadline. This also overrides
+            // a global callTimeout the caller configured on that client.
+            callClientBuilder.callTimeout(0, TimeUnit.MILLISECONDS);
+        }
+        OkHttpClient callClient = callClientBuilder.build();
         String host = envdHost(state);
         String url = host + "/process.Process/Start";
         byte[] envelope = encodeStartRequestEnvelope(shellCommand, cwd);
-        Request req = buildEnvdRequest(url, envelope, connectMediaType(), state).build();
+        Request.Builder requestBuilder = buildEnvdRequest(url, envelope, connectMediaType(), state);
+        if (bounded) {
+            // Ask envd to kill the remote process when this lapses; otherwise a
+            // client-side timeout only drops our HTTP stream and leaks the process.
+            // Omitted for 0: Connect-Timeout-Ms: 0 means "deadline already exceeded",
+            // not "no deadline".
+            requestBuilder.addHeader("Connect-Timeout-Ms", String.valueOf(timeoutSeconds * 1000L));
+        }
+        Request req = requestBuilder.build();
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
         int exit;
+        long startNanos = System.nanoTime();
         try (Response res = callClient.newCall(req).execute()) {
             if (!res.isSuccessful()) {
-                String err = res.body() != null ? res.body().string() : "";
+                String err = Objects.requireNonNull(res.body(), "envd response body").string();
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_START_ERROR,
                         "envd Start failed HTTP " + res.code() + ": " + err);
             }
-            try (InputStream in = res.body().byteStream()) {
+            try (InputStream in =
+                    Objects.requireNonNull(res.body(), "envd response body").byteStream()) {
                 exit = drainStartStream(in, stdout, stderr);
             }
         } catch (InterruptedIOException e) {
+            // External cancellation surfaces here too; don't misreport it as a timeout
+            // and don't swallow the interrupt bit. Only a bit set during this call
+            // counts (pre-existing stale bits were cleared above).
+            if (Thread.currentThread().isInterrupted()) {
+                throw e;
+            }
+            if (!bounded) {
+                // No deadline was requested, so this is a transport fault (for
+                // example the connect timeout), never an exec timeout.
+                throw e;
+            }
             throw new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
+        } catch (ConnectStreamException e) {
+            if (bounded && CONNECT_DEADLINE_EXCEEDED.equals(e.code())) {
+                logPartialStreams(
+                        "timed out (server deadline_exceeded)",
+                        timeoutSeconds,
+                        startNanos,
+                        stdout,
+                        stderr);
+                throw new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
+            }
+            throw new IOException(
+                    "envd process stream error [" + e.code() + "]: " + e.getMessage(), e);
+        } catch (MissingExitCodeException e) {
+            logPartialStreams(
+                    "ended without exit code", timeoutSeconds, startNanos, stdout, stderr);
+            throw mapPrematureEnd(e, shellCommand, timeoutSeconds, startNanos);
         }
         return new ShellCapture(exit, stdout, stderr);
     }
 
     private record ShellCapture(
             int exitCode, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr) {}
+
+    /** Connect error code envd returns when the server-side exec deadline fires. */
+    private static final String CONNECT_DEADLINE_EXCEEDED = "deadline_exceeded";
+
+    /**
+     * Fault-grading threshold between the server deadline and the client backup timeout.
+     * Within T: the server kills on time and the client observes it via {@code
+     * deadline_exceeded} — the slack is never consumed. Within T+slack: engineering
+     * tolerance absorbing connect/setup jitter (cold handshakes, weak networks), so the
+     * kill still lands before any retry can overlap a running process. Beyond T+slack:
+     * treated as a network-layer fault (request never arrived, or the server hung) and
+     * the client backup fires to guarantee a local return. 5s covers the connection
+     * setup distribution short of extreme degradation; larger values would approach the
+     * agent retry interval and buy nothing further.
+     */
+    private static final long CLIENT_TIMEOUT_SLACK_MILLIS = 5000;
+
+    /** End-stream frame carrying a Connect error (e.g. server-side timeout kill). */
+    static final class ConnectStreamException extends IOException {
+        private final String code;
+
+        ConnectStreamException(String code, String message) {
+            super(message);
+            this.code = code;
+        }
+
+        String code() {
+            return code;
+        }
+    }
+
+    /** Stream ended without a process exit code (#2828). */
+    static final class MissingExitCodeException extends IOException {
+        MissingExitCodeException() {
+            super("envd process stream ended before receiving a process exit code");
+        }
+    }
+
+    private static long elapsedSeconds(long startNanos) {
+        return TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startNanos);
+    }
+
+    static Exception mapPrematureEnd(
+            MissingExitCodeException e, String shellCommand, int timeoutSeconds, long startNanos) {
+        // With no deadline (0) an early end is never a timeout, however long it ran.
+        if (timeoutSeconds > 0 && elapsedSeconds(startNanos) >= timeoutSeconds) {
+            return new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
+        }
+        return e;
+    }
+
+    private static void logPartialStreams(
+            String why,
+            int timeoutSeconds,
+            long startNanos,
+            ByteArrayOutputStream stdout,
+            ByteArrayOutputStream stderr) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
+        log.debug(
+                "[e2b] exec {} after {}s with {};"
+                        + " partial stdout tail: {}; partial stderr tail: {}",
+                why,
+                elapsedSeconds(startNanos),
+                timeoutSeconds > 0 ? timeoutSeconds + "s timeout" : "no deadline",
+                tailUtf8(stdout),
+                tailUtf8(stderr));
+    }
+
+    private static String tailUtf8(ByteArrayOutputStream out) {
+        byte[] b = out.toByteArray();
+        int n = Math.min(b.length, 512);
+        return new String(b, b.length - n, n, StandardCharsets.UTF_8);
+    }
 
     private int drainStartStream(
             InputStream in, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr)
@@ -189,6 +336,12 @@ final class E2bEnvdProcessClient {
                             "drainStartStream: endStream error code={} msg={}",
                             endMsg.code(),
                             endMsg.message());
+                    // A server-side exec deadline kill surfaces here as
+                    // deadline_exceeded; propagate it typed so the caller maps it to
+                    // an exec timeout instead of a generic stream failure (#2974).
+                    if (CONNECT_DEADLINE_EXCEEDED.equals(endMsg.code())) {
+                        throw new ConnectStreamException(endMsg.code(), endMsg.message());
+                    }
                     throw new SandboxException.SandboxRuntimeException(
                             SandboxErrorCode.WORKSPACE_START_ERROR,
                             "Process start failed: " + endMsg.description());
@@ -204,21 +357,7 @@ final class E2bEnvdProcessClient {
                         Integer.toHexString(flags));
                 continue;
             }
-            DynamicMessage sr;
-            try {
-                sr = parseStartResponseFrame(data);
-            } catch (IOException ignored) {
-                // A corrupt data frame must not abort the whole stream: skip it and keep
-                // draining. A missing EndEvent then surfaces as IOException below.
-                // Note: end-stream envelope parse errors (handled above, outside this try)
-                // intentionally propagate as IOException — a corrupt stream trailer means
-                // the stream itself is untrustworthy.
-                log.debug(
-                        "drainStartStream: skipping undecodable frame flags=0x{} len={}",
-                        Integer.toHexString(flags),
-                        len);
-                continue;
-            }
+            DynamicMessage sr = parseStartResponseFrame(data);
             if (!sr.hasField(srEventF)) {
                 log.debug("drainStartStream: frame with no event");
                 continue;
@@ -259,7 +398,7 @@ final class E2bEnvdProcessClient {
             }
         }
         if (exit == null) {
-            throw new IOException("envd process stream ended before receiving a process exit code");
+            throw new MissingExitCodeException();
         }
         return exit;
     }
@@ -548,6 +687,9 @@ final class E2bEnvdProcessClient {
 
         JsonNode endNode = eventNode.path("end");
         if (!endNode.isMissingNode() && !endNode.isNull()) {
+            if (!endNode.isObject()) {
+                throw new IOException("Invalid EndEvent: " + endNode);
+            }
             Descriptors.Descriptor endDesc = processEventDesc.findNestedTypeByName("EndEvent");
             DynamicMessage.Builder endBuilder = DynamicMessage.newBuilder(endDesc);
             Descriptors.FieldDescriptor exitCodeField = endDesc.findFieldByName("exit_code");
@@ -559,8 +701,8 @@ final class E2bEnvdProcessClient {
             if (exitCodeNode.isMissingNode() || exitCodeNode.isNull()) {
                 exitCodeNode = endNode.path("exit_code");
             }
-            if (exitCodeNode.canConvertToInt()) {
-                endBuilder.setField(exitCodeField, exitCodeNode.intValue());
+            if (!exitCodeNode.isMissingNode() && !exitCodeNode.isNull()) {
+                endBuilder.setField(exitCodeField, parseExitCode(exitCodeNode));
             }
             Descriptors.FieldDescriptor errorField = endDesc.findFieldByName("error");
             // EndEvent.error — populated when cmd.Wait() returns ExitError
@@ -572,19 +714,30 @@ final class E2bEnvdProcessClient {
             if (errorNode.isTextual()) {
                 endBuilder.setField(errorField, errorNode.textValue());
             }
-            // Only retain end when it carries an exit code or a textual error.
-            // An end event with neither must not fabricate exit 0: without it the
-            // stream falls through to "ended before receiving a process exit code".
-            // (Real envd always populates exit_code; this guards malformed streams.)
-            if (exitCodeNode.canConvertToInt() || errorNode.isTextual()) {
-                event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
-            }
+            // exit_code is an implicit-presence proto3 scalar: when an EndEvent is present,
+            // an omitted value is its default 0. Keep the message even when it has no fields.
+            event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
         }
 
         if (!event.getAllFields().isEmpty()) {
             response.setField(startResponseDesc.findFieldByName("event"), event.build());
         }
         return response.build();
+    }
+
+    // EndEvent.exit_code is an int32. ProtoJSON (used by the official Python/JS SDKs) accepts
+    // either a JSON number or a decimal string, requires a zero fractional part, and rejects
+    // values outside the int32 range. https://protobuf.dev/programming-guides/json/
+    private static int parseExitCode(JsonNode node) throws IOException {
+        String text = node.isTextual() ? node.textValue() : node.isNumber() ? node.asText() : null;
+        if (text == null) {
+            throw new IOException("Invalid EndEvent exit_code: " + node);
+        }
+        try {
+            return new BigDecimal(text).intValueExact();
+        } catch (NumberFormatException | ArithmeticException e) {
+            throw new IOException("Invalid EndEvent exit_code: " + node);
+        }
     }
 
     private static void setBytesIfPresent(

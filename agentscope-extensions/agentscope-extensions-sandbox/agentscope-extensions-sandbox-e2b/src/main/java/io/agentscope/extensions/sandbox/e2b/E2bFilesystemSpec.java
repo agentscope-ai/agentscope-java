@@ -21,6 +21,8 @@ import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.List;
+import java.util.function.Supplier;
 
 /** {@link SandboxFilesystemSpec} for E2B cloud sandboxes. */
 public class E2bFilesystemSpec extends SandboxFilesystemSpec {
@@ -84,6 +86,21 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    /** Registers a sandbox-creation environment variable with a fixed value. */
+    public E2bFilesystemSpec env(String name, String value) {
+        options.env(name, value);
+        return this;
+    }
+
+    /**
+     * Registers a sandbox-creation environment variable whose value is resolved on every sandbox
+     * creation — use this for short-lived values such as access tokens.
+     */
+    public E2bFilesystemSpec env(String name, Supplier<String> valueSupplier) {
+        options.env(name, valueSupplier);
+        return this;
+    }
+
     public E2bFilesystemSpec persistenceMode(E2bPersistenceMode persistenceMode) {
         options.setPersistenceMode(persistenceMode);
         return this;
@@ -91,6 +108,30 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
 
     public E2bFilesystemSpec codec(E2bCodec codec) {
         options.setCodec(codec);
+        return this;
+    }
+
+    public E2bFilesystemSpec volumeMount(String name, String path) {
+        options.addVolumeMount(name, path);
+        return this;
+    }
+
+    public E2bFilesystemSpec volumeMount(E2bVolumeMount mount) {
+        options.addVolumeMount(mount);
+        return this;
+    }
+
+    /**
+     * Replaces all configured volume mounts.
+     *
+     * <p>A null or empty list clears mounts on this spec, but note that {@link E2bSandboxClient}
+     * merging treats an empty call-level list as "not set" (same convention as AgentRun OSS
+     * mounts), so clearing only takes effect when these options are also the client defaults.
+     *
+     * @param mounts replacement mounts (null or empty clears previously added ones)
+     */
+    public E2bFilesystemSpec volumeMounts(List<E2bVolumeMount> mounts) {
+        options.setVolumeMounts(mounts);
         return this;
     }
 
