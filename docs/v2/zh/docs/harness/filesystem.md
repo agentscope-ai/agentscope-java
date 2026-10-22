@@ -516,6 +516,8 @@ workspace/
 | 共享存储 | `CompositeFilesystem`：命中路由的路径走 KV overlay（远端上层 + 本地模板下层），其余走本地 |
 | 沙箱 | 所有文件操作转发到沙箱容器内 |
 
+`edit_file` 的 `oldString` 不能为空，`newString` 不能为 `null`；要删除匹配文本，请将 `newString` 设为空字符串 `""`。替换前会把 CRLF 和单独的 CR 行尾统一为 LF，所有文件系统模式下的匹配与写回语义一致，写回内容使用 LF 行尾。
+
 ### Shell 执行（execute）
 
 | 模式 | Shell 可用？ | 执行位置 |

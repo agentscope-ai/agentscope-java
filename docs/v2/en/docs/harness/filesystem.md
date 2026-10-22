@@ -522,6 +522,8 @@ All file tools call through the `AbstractFilesystem` interface, passing the curr
 | Shared store | `CompositeFilesystem`: routed paths go through KV overlay (remote upper + local template lower); others go local |
 | Sandbox | All file operations forwarded into the sandbox container |
 
+`edit_file` requires a non-empty `oldString` and a non-null `newString`; pass `""` as `newString` to delete the matched text. Replacement normalizes CRLF and lone-CR line endings to LF before matching and writes the edited content with LF line endings, consistently across filesystem modes.
+
 ### Shell execution (execute)
 
 | Mode | Shell available? | Where it runs |
