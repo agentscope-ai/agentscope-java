@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.examples.decisions;
+package io.agentscope.examples.documentation2.judge;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;

@@ -84,6 +84,11 @@
             <artifactId>agentscope-extensions-model-dashscope</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-openai</artifactId>
+        </dependency>
+
         <!-- RAG Extensions -->
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -153,10 +158,15 @@
             <artifactId>agentscope-extensions-model-gemini</artifactId>
         </dependency>
 
-        <!-- Jev extension for example middlewares -->
+        <!-- Jev/OpenAI-Decisions extension for example middlewares -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-jev</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-openai-decisions</artifactId>
         </dependency>
 
         <!-- Git-based Skill Repository -->
