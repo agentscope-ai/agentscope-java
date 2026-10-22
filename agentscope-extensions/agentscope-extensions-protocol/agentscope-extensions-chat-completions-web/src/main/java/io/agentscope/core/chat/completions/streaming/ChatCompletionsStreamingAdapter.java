@@ -20,9 +20,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
-import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.model.ChatCompletionsChunk;
+import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
 import io.agentscope.core.chat.completions.model.ToolCall;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -30,9 +38,9 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import reactor.core.publisher.Flux;
 
 /**
@@ -50,19 +58,17 @@ import reactor.core.publisher.Flux;
  *   <li>Framework adapters (in starter modules) handle SSE/transport specifics
  * </ul>
  *
- * <p><b>Supported Event Types:</b>
- *
- * <ul>
- *   <li>{@link EventType#REASONING} - Text content and tool call decisions
- *   <li>{@link EventType#TOOL_RESULT} - Tool execution results
- * </ul>
+ * <p>{@link #stream} consumes {@link ReActAgent#streamEvents(List)}; see the five-argument
+ * overload for how each event maps to chunks.
  *
  * <p><b>Output Chunk Types:</b>
  *
  * <ul>
  *   <li>Text chunks - Incremental text content
  *   <li>Tool call chunks - When agent decides to call tools
- *   <li>Finish chunks - Stream completion with finish_reason
+ *   <li>Tool result chunks - Tool output, sent as assistant text
+ *   <li>Finish chunk - Once, at the end of the stream, with finish_reason
+ *   <li>Usage chunk - Only with {@code stream_options.include_usage}
  * </ul>
  */
 public class ChatCompletionsStreamingAdapter {
@@ -75,13 +81,8 @@ public class ChatCompletionsStreamingAdapter {
     /**
      * Stream agent events as OpenAI-compatible chunks.
      *
-     * <p>Subscribes to agent's event stream and converts each event to one or more {@link
-     * ChatCompletionsChunk} objects following OpenAI's streaming format.
-     *
-     * <p><b>Text Deduplication:</b> In incremental mode, agents send text deltas (isLast=false)
-     * followed by a final accumulated event (isLast=true). To avoid duplication, we filter text
-     * from the last REASONING event if incremental chunks were seen, while preserving tool calls
-     * and finish reasons.
+     * <p>Same as {@link #stream(ReActAgent, List, String, String, boolean)} without the usage
+     * chunk.
      *
      * @param agent The agent to stream from
      * @param messages The messages to send to the agent
@@ -91,37 +92,144 @@ public class ChatCompletionsStreamingAdapter {
      */
     public Flux<ChatCompletionsChunk> stream(
             ReActAgent agent, List<Msg> messages, String requestId, String model) {
-        StreamOptions options =
-                StreamOptions.builder()
-                        .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
-                        .incremental(true)
-                        .build();
+        return stream(agent, messages, requestId, model, false);
+    }
 
-        // Track if we've seen non-last REASONING events (indicates incremental mode)
-        AtomicBoolean hasSeenIncrementalReasoning = new AtomicBoolean(false);
+    /**
+     * Stream agent events as OpenAI-compatible chunks, optionally ending with a usage chunk.
+     *
+     * <p>Built on {@link ReActAgent#streamEvents(List)}:
+     *
+     * <ul>
+     *   <li>{@link TextBlockDeltaEvent} becomes a text chunk.
+     *   <li>{@link ToolCallStartEvent} becomes a tool call chunk with the call's id and name, and
+     *       each {@link ToolCallDeltaEvent} a chunk with the next piece of its arguments, as in
+     *       OpenAI's streaming format.
+     *   <li>A tool's {@link ToolResultTextDeltaEvent}s are collected and sent as one tool result
+     *       chunk when its {@link ToolResultEndEvent} arrives.
+     *   <li>{@link AgentResultEvent} ends the stream with a single finish chunk, and, when {@code
+     *       includeUsage} is true, a chunk with empty {@code choices} carrying the usage of the
+     *       whole request ({@link Msg#getInvocationUsage()}). No usage chunk is sent when no model
+     *       call reported usage.
+     * </ul>
+     *
+     * <p>Events forwarded from subagents (those with a {@code source}) and internal tools (names
+     * starting with {@code "__"}) are not sent to the client.
+     *
+     * @param agent The agent to stream from
+     * @param messages The messages to send to the agent
+     * @param requestId The request ID for tracking (used as chunk ID)
+     * @param model The model name to include in chunks
+     * @param includeUsage Whether to end with a usage chunk ({@code
+     *     stream_options.include_usage})
+     * @return A {@link Flux} of {@link ChatCompletionsChunk} objects
+     */
+    public Flux<ChatCompletionsChunk> stream(
+            ReActAgent agent,
+            List<Msg> messages,
+            String requestId,
+            String model,
+            boolean includeUsage) {
+        return Flux.defer(
+                () -> {
+                    StreamState state = new StreamState();
+                    return agent.streamEvents(messages)
+                            .filter(event -> event.getSource() == null)
+                            .concatMapIterable(
+                                    event ->
+                                            toChunks(event, state, requestId, model, includeUsage));
+                });
+    }
 
-        return agent.stream(messages, options)
-                .filter(event -> event.getMessage() != null)
-                .doOnNext(
-                        event -> {
-                            // Track if we see a non-last REASONING event (incremental chunk)
-                            if (event.getType() == EventType.REASONING && !event.isLast()) {
-                                hasSeenIncrementalReasoning.set(true);
-                            }
-                        })
-                .flatMap(
-                        event -> {
-                            // Filter out text from last REASONING events if we've seen incremental
-                            // ones
-                            if (event.getType() == EventType.REASONING
-                                    && event.isLast()
-                                    && hasSeenIncrementalReasoning.get()) {
-                                // This is the final accumulated text event, filter out its text
-                                // but keep tool calls and finish reason
-                                return convertEventToChunksWithoutText(event, requestId, model);
-                            }
-                            return convertEventToChunks(event, requestId, model);
-                        });
+    /** Per-stream bookkeeping for {@link #toChunks}. */
+    private static final class StreamState {
+
+        /** OpenAI tool call index of each visible tool call, per assistant reply. */
+        final Map<String, Integer> toolCallIndex = new HashMap<>();
+
+        String toolCallReplyId;
+
+        /** Text of each tool result, collected until its end event. */
+        final Map<String, StringBuilder> toolResultText = new HashMap<>();
+    }
+
+    private List<ChatCompletionsChunk> toChunks(
+            AgentEvent event,
+            StreamState state,
+            String requestId,
+            String model,
+            boolean includeUsage) {
+        if (event instanceof TextBlockDeltaEvent text) {
+            String delta = text.getDelta();
+            return delta == null || delta.isEmpty()
+                    ? List.of()
+                    : List.of(ChatCompletionsChunk.textChunk(requestId, model, delta));
+        }
+        if (event instanceof ToolCallStartEvent start) {
+            if (isInternalTool(start.getToolCallName())) {
+                return List.of();
+            }
+            if (!start.getReplyId().equals(state.toolCallReplyId)) {
+                // Tool call indexes restart for each assistant message, as in OpenAI's format.
+                state.toolCallReplyId = start.getReplyId();
+                state.toolCallIndex.clear();
+            }
+            int index = state.toolCallIndex.size();
+            state.toolCallIndex.put(start.getToolCallId(), index);
+            ToolCall call = new ToolCall(index, start.getToolCallId(), start.getToolCallName(), "");
+            return List.of(ChatCompletionsChunk.toolCallChunk(requestId, model, List.of(call)));
+        }
+        if (event instanceof ToolCallDeltaEvent delta) {
+            Integer index = state.toolCallIndex.get(delta.getToolCallId());
+            if (index == null || delta.getDelta() == null || delta.getDelta().isEmpty()) {
+                return List.of();
+            }
+            // Continuation deltas carry only the index and the next piece of the arguments.
+            ToolCall call = new ToolCall(index, null, null, delta.getDelta());
+            call.setType(null);
+            return List.of(ChatCompletionsChunk.toolCallChunk(requestId, model, List.of(call)));
+        }
+        if (event instanceof ToolResultTextDeltaEvent resultText) {
+            if (!isInternalTool(resultText.getToolCallName()) && resultText.getDelta() != null) {
+                state.toolResultText
+                        .computeIfAbsent(resultText.getToolCallId(), id -> new StringBuilder())
+                        .append(resultText.getDelta());
+            }
+            return List.of();
+        }
+        if (event instanceof ToolResultEndEvent resultEnd) {
+            if (isInternalTool(resultEnd.getToolCallName())) {
+                return List.of();
+            }
+            StringBuilder text = state.toolResultText.remove(resultEnd.getToolCallId());
+            return List.of(
+                    ChatCompletionsChunk.toolResultChunk(
+                            requestId,
+                            model,
+                            resultEnd.getToolCallId(),
+                            resultEnd.getToolCallName(),
+                            text != null ? text.toString() : ""));
+        }
+        if (event instanceof AgentResultEvent result) {
+            Msg reply = result.getResult();
+            List<ChatCompletionsChunk> chunks = new ArrayList<>(2);
+            chunks.add(
+                    ChatCompletionsChunk.finishChunk(
+                            requestId,
+                            model,
+                            ChatCompletionsResponseBuilder.finishReasonOf(reply)));
+            ChatCompletionsResponse.Usage usage =
+                    includeUsage ? ChatCompletionsResponseBuilder.usageOf(reply) : null;
+            if (usage != null) {
+                chunks.add(ChatCompletionsChunk.usageChunk(requestId, model, usage));
+            }
+            return chunks;
+        }
+        return List.of();
+    }
+
+    private static boolean isInternalTool(String toolName) {
+        return toolName != null && toolName.startsWith("__");
     }
 
     /**
@@ -133,39 +241,13 @@ public class ChatCompletionsStreamingAdapter {
      * @param requestId The request ID for tracking
      * @param model The model name
      * @return Flux of ChatCompletionsChunk objects
+     * @deprecated since 2.1.0. Converts the deprecated {@link Event} type, which {@link #stream}
+     *     no longer uses; it now consumes {@link ReActAgent#streamEvents(List)}. Kept for
+     *     callers that drive {@code ReActAgent#stream(List, StreamOptions)} themselves.
      */
+    @Deprecated(since = "2.1.0")
     public Flux<ChatCompletionsChunk> convertEventToChunks(
             Event event, String requestId, String model) {
-        return convertEventToChunksInternal(event, requestId, model, true);
-    }
-
-    /**
-     * Convert an agent event to chunks, excluding text content.
-     *
-     * <p>This is used for final accumulated events in incremental mode where we want to keep tool
-     * calls and finish reason but filter out duplicate text.
-     *
-     * @param event The agent event
-     * @param requestId The request ID
-     * @param model The model name
-     * @return Flux of ChatCompletionsChunk objects (without text chunks)
-     */
-    private Flux<ChatCompletionsChunk> convertEventToChunksWithoutText(
-            Event event, String requestId, String model) {
-        return convertEventToChunksInternal(event, requestId, model, false);
-    }
-
-    /**
-     * Internal method to convert an agent event to chunks with optional text filtering.
-     *
-     * @param event The agent event
-     * @param requestId The request ID
-     * @param model The model name
-     * @param includeText Whether to include text content
-     * @return Flux of ChatCompletionsChunk objects
-     */
-    private Flux<ChatCompletionsChunk> convertEventToChunksInternal(
-            Event event, String requestId, String model, boolean includeText) {
         Msg msg = event.getMessage();
         if (msg == null) {
             return Flux.empty();
@@ -190,7 +272,7 @@ public class ChatCompletionsStreamingAdapter {
         }
 
         String textContent = textBuilder.toString();
-        if (!textContent.isEmpty() && includeText) {
+        if (!textContent.isEmpty()) {
             chunks.add(ChatCompletionsChunk.textChunk(requestId, model, textContent));
         }
 
