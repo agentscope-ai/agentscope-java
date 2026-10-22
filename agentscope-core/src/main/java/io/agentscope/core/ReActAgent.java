@@ -467,19 +467,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Internal slot identifier — {@code (userId or "__anon__") + "/" + sessionId}.
-     * Not part of the public API.
+     * Internal slot identifier — the pair joined with {@code "/"}, plus a length prefix on the
+     * userId so distinct pairs can never collide: {@code ("u1/a", "b")} and {@code ("u1",
+     * "a/b")} would otherwise both join to {@code u1/a/b} and share one cached state, CAS
+     * version, call gate and interrupt routing (#3337). Not part of the public API. In-memory
+     * only — persisted store keys use the raw (userId, sessionId) pair.
      */
     private static String slotKey(String userId, String sessionId) {
         Objects.requireNonNull(sessionId, "sessionId must not be null");
-        return (userId == null || userId.isBlank() ? "__anon__" : userId) + "/" + sessionId;
+        String uid = userId == null || userId.isBlank() ? "__anon__" : userId;
+        return uid.length() + ":" + uid + "/" + sessionId;
     }
 
     /** Reverse of {@link #slotKey}: the parsed {@code (userId, sessionId)} pair. */
     private record SlotRef(String userId, String sessionId) {
         static SlotRef parse(String slotKey) {
-            int slash = slotKey.lastIndexOf('/');
-            String u = slotKey.substring(0, slash);
+            int sep = slotKey.indexOf(':');
+            int uidLen = Integer.parseInt(slotKey.substring(0, sep));
+            int slash = sep + 1 + uidLen;
+            String u = slotKey.substring(sep + 1, slash);
             String s = slotKey.substring(slash + 1);
             return new SlotRef("__anon__".equals(u) ? null : u, s);
         }
