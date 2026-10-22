@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.memory.compaction;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -35,11 +37,14 @@ import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -67,6 +72,12 @@ public class ConversationCompactor {
 
     /** Marker stored in message name to identify injected summary messages. */
     public static final String SUMMARY_MSG_NAME = "__compaction_summary__";
+
+    /** Custom event emitted on the parent stream when compaction work begins. */
+    public static final String STARTED_EVENT_NAME = "context_compaction_started";
+
+    /** Custom event emitted on the parent stream when compaction settles. */
+    public static final String FINISHED_EVENT_NAME = "context_compaction_finished";
 
     private final Model model;
     private final MemoryFlushManager flushManager;
@@ -101,6 +112,40 @@ public class ConversationCompactor {
             CompactionConfig config,
             String agentId,
             String sessionId) {
+        return compactIfNeeded(
+                rc, conversationMessages, config, agentId, sessionId, null, "NORMAL");
+    }
+
+    /**
+     * Runs compaction and, when triggered, mirrors safe lifecycle statistics onto the parent
+     * {@code streamEvents()} stream as two {@link CustomEvent}s: {@code context_compaction_started}
+     * before the work begins and {@code context_compaction_finished} once it settles.
+     *
+     * <p>The lifecycle events are independent of the {@link SessionRecorder}: they are emitted
+     * whenever an {@link AgentEventEmitter} is present, and compaction still runs when no emitter
+     * exists (e.g. {@code call()}). The owning execution settles exactly once — including when
+     * resource acquisition fails (settled before the failure reaches downstream), when the work
+     * errors and when the subscription is cancelled. Delivery is best-effort: a terminal event
+     * emitted while the parent sink is already cancelled (e.g. cancellation during resource
+     * acquisition) cannot reach that subscriber, but the durable {@code compaction/end} record is
+     * still attempted for a healthy recorder. Payloads reuse the same execution id and sanitized
+     * statistics as the durable {@code compaction/start}/{@code compaction/end} session events,
+     * carry a controlled {@code mode} ({@code NORMAL}/{@code EMERGENCY}), and never contain
+     * messages, media, URLs, tokens or raw exception text. A failing emission or session recording
+     * is logged with a controlled class name and never fails the compaction.
+     *
+     * @param emitter optional parent-stream emitter; {@code null} runs compaction silently
+     * @param mode compaction mode label; any value other than {@code EMERGENCY} is treated as
+     *     {@code NORMAL}
+     */
+    public Mono<Optional<List<Msg>>> compactIfNeeded(
+            RuntimeContext rc,
+            List<Msg> conversationMessages,
+            CompactionConfig config,
+            String agentId,
+            String sessionId,
+            AgentEventEmitter emitter,
+            String mode) {
         var recorder = SessionRecorder.from(rc);
         int beforeMsgCount = conversationMessages == null ? 0 : conversationMessages.size();
         int beforeTokenCount = TokenCounterUtil.calculateToken(conversationMessages);
@@ -108,51 +153,229 @@ public class ConversationCompactor {
                 conversationMessages != null
                         && !conversationMessages.isEmpty()
                         && shouldCompact(conversationMessages, beforeTokenCount, config);
-        if (recorder == null || !triggered)
+        if (!triggered)
             return compactCandidate(rc, conversationMessages, config, agentId, sessionId);
-        String id = UUID.randomUUID().toString();
-        return Mono.usingWhen(
-                recorder.record(
-                                "compaction/start",
-                                Map.of("compactionId", id, "inputMessages", conversationMessages))
-                        .thenReturn(new CompactionExecution(id)),
-                execution ->
-                        compactCandidate(rc, conversationMessages, config, agentId, sessionId)
-                                .doOnSuccess(execution.result::set),
-                execution ->
-                        recorder.record(
-                                "compaction/end",
-                                completedCompactionEndPayload(
-                                        execution.id,
-                                        beforeMsgCount,
-                                        beforeTokenCount,
-                                        execution.afterMessages(conversationMessages))),
-                (execution, error) ->
-                        SessionLogException.causedBy(error)
-                                ? Mono.empty()
-                                : recorder.record(
-                                        "compaction/end",
-                                        compactionEndPayload(
-                                                execution.id,
-                                                "failed",
-                                                beforeMsgCount,
-                                                beforeTokenCount)),
-                execution ->
-                        recorder.record(
-                                "compaction/end",
-                                compactionEndPayload(
-                                        execution.id,
-                                        "cancelled",
-                                        beforeMsgCount,
-                                        beforeTokenCount)));
+        String safeMode = safeMode(mode);
+        return Mono.defer(
+                () -> {
+                    // Per-subscription execution state: id, timing and result must not be shared
+                    // across subscribers of the returned Mono.
+                    CompactionExecution execution =
+                            new CompactionExecution(UUID.randomUUID().toString());
+                    Map<String, Object> startPayload =
+                            compactionStartPayload(execution.id, beforeMsgCount, beforeTokenCount);
+                    emitCompactionEvent(emitter, STARTED_EVENT_NAME, startPayload, safeMode);
+                    Mono<CompactionExecution> start =
+                            recorder == null
+                                    ? Mono.just(execution)
+                                    : recorder.record("compaction/start", startPayload)
+                                            .thenReturn(execution)
+                                            // Settle before the failure reaches downstream: the
+                                            // owning sink is still open here (doFinally would run
+                                            // only after the terminal signal has closed it).
+                                            .onErrorResume(
+                                                    error -> {
+                                                        if (execution.markSettled()) {
+                                                            emitCompactionEvent(
+                                                                    emitter,
+                                                                    FINISHED_EVENT_NAME,
+                                                                    compactionEndPayload(
+                                                                            execution.id,
+                                                                            "failed",
+                                                                            beforeMsgCount,
+                                                                            beforeTokenCount,
+                                                                            execution.durationMs()),
+                                                                    safeMode);
+                                                        }
+                                                        return Mono.error(error);
+                                                    });
+                    return Mono.usingWhen(
+                                    start,
+                                    exec ->
+                                            compactCandidate(
+                                                            rc,
+                                                            conversationMessages,
+                                                            config,
+                                                            agentId,
+                                                            sessionId)
+                                                    .doOnSuccess(exec.result::set),
+                                    exec ->
+                                            settleCompaction(
+                                                    emitter,
+                                                    recorder,
+                                                    safeMode,
+                                                    exec,
+                                                    exec.finalEndPayload(
+                                                            beforeMsgCount,
+                                                            beforeTokenCount,
+                                                            conversationMessages),
+                                                    false),
+                                    (exec, error) ->
+                                            settleCompaction(
+                                                    emitter,
+                                                    recorder,
+                                                    safeMode,
+                                                    exec,
+                                                    failedCompactionEndPayload(
+                                                            exec.id,
+                                                            beforeMsgCount,
+                                                            beforeTokenCount,
+                                                            error,
+                                                            exec.durationMs()),
+                                                    SessionLogException.causedBy(error)),
+                                    exec ->
+                                            settleCompaction(
+                                                    emitter,
+                                                    recorder,
+                                                    safeMode,
+                                                    exec,
+                                                    compactionEndPayload(
+                                                            exec.id,
+                                                            "cancelled",
+                                                            beforeMsgCount,
+                                                            beforeTokenCount,
+                                                            exec.durationMs()),
+                                                    false))
+                            .doFinally(
+                                    signal -> {
+                                        // Safety net for paths that bypass the usingWhen cleanups
+                                        // (e.g. a cancel before the start-record resource lands),
+                                        // so every started event has one matching terminal event
+                                        // and durable end.
+                                        if (!execution.markSettled()) {
+                                            return;
+                                        }
+                                        Map<String, Object> endPayload =
+                                                switch (signal) {
+                                                    case CANCEL ->
+                                                            compactionEndPayload(
+                                                                    execution.id,
+                                                                    "cancelled",
+                                                                    beforeMsgCount,
+                                                                    beforeTokenCount,
+                                                                    execution.durationMs());
+                                                    case ON_ERROR ->
+                                                            compactionEndPayload(
+                                                                    execution.id,
+                                                                    "failed",
+                                                                    beforeMsgCount,
+                                                                    beforeTokenCount,
+                                                                    execution.durationMs());
+                                                    default ->
+                                                            execution.finalEndPayload(
+                                                                    beforeMsgCount,
+                                                                    beforeTokenCount,
+                                                                    conversationMessages);
+                                                };
+                                        emitCompactionEvent(
+                                                emitter, FINISHED_EVENT_NAME, endPayload, safeMode);
+                                        recordTerminal(recorder, endPayload);
+                                    });
+                });
+    }
+
+    /**
+     * Emits the finished lifecycle event exactly once and, unless recording is skipped or no
+     * recorder is open, writes its durable counterpart. A recording failure is logged with a
+     * controlled class name and swallowed, so a cancel-time cleanup failure can never surface a raw
+     * throwable (and its cause chain) on the Reactor logging path.
+     */
+    private static Mono<Void> settleCompaction(
+            AgentEventEmitter emitter,
+            SessionRecorder recorder,
+            String mode,
+            CompactionExecution execution,
+            Map<String, Object> endPayload,
+            boolean skipRecording) {
+        if (!execution.markSettled()) {
+            return Mono.empty();
+        }
+        emitCompactionEvent(emitter, FINISHED_EVENT_NAME, endPayload, mode);
+        if (skipRecording || recorder == null) {
+            return Mono.empty();
+        }
+        return recorder.record("compaction/end", endPayload)
+                .then()
+                .onErrorResume(
+                        error -> {
+                            log.warn(
+                                    "compaction/end recording failed: {}",
+                                    error.getClass().getSimpleName());
+                            return Mono.empty();
+                        });
+    }
+
+    /**
+     * Best-effort durable terminal for the {@code doFinally} safety net. Claims no settlement (the
+     * caller already did) and only buffers the record in memory: the cancel thread must never run
+     * storage I/O. A recorder owned by a call execution is flushed by its managed shutdown
+     * ({@code SessionRecorder.finish}) on {@code boundedElastic} before the recorder closes, and by
+     * its periodic heartbeat otherwise. A recording failure is logged with a controlled class name
+     * and swallowed.
+     */
+    private static void recordTerminal(SessionRecorder recorder, Map<String, Object> endPayload) {
+        if (recorder == null) return;
+        try {
+            recorder.append("compaction/end", endPayload);
+        } catch (RuntimeException error) {
+            log.warn("compaction/end recording failed: {}", error.getClass().getSimpleName());
+        }
+    }
+
+    /** Restricts the mode label to the two controlled values carried on lifecycle events. */
+    private static String safeMode(String mode) {
+        return "EMERGENCY".equalsIgnoreCase(mode) ? "EMERGENCY" : "NORMAL";
+    }
+
+    /**
+     * Publishes one sanitized lifecycle event on the parent stream. Never throws: a notification
+     * failure must not fail an otherwise successful compaction.
+     */
+    private static void emitCompactionEvent(
+            AgentEventEmitter emitter, String name, Map<String, Object> payload, String mode) {
+        if (emitter == null) return;
+        Map<String, Object> value = new LinkedHashMap<>(payload);
+        value.put("mode", mode);
+        try {
+            emitter.emit(new CustomEvent(name, value));
+        } catch (RuntimeException error) {
+            log.warn("{} emission failed: {}", name, error.getClass().getSimpleName());
+        }
     }
 
     private static final class CompactionExecution {
         private final String id;
+        private final long startNanos = System.nanoTime();
         private final AtomicReference<Optional<List<Msg>>> result = new AtomicReference<>();
+        private final AtomicBoolean settled = new AtomicBoolean(false);
 
         private CompactionExecution(String id) {
             this.id = id;
+        }
+
+        /** Claims the single terminal slot; returns {@code false} when already claimed. */
+        private boolean markSettled() {
+            return settled.compareAndSet(false, true);
+        }
+
+        private long durationMs() {
+            return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+        }
+
+        /**
+         * Builds the terminal payload: {@code skipped} when the candidate is {@code Optional.empty()}
+         * (messages unchanged), otherwise {@code completed}. Skipped runs still report the unchanged
+         * after-counts so the contract's after metrics are always populated for terminal success.
+         */
+        private Map<String, Object> finalEndPayload(
+                int beforeMsgCount, int beforeTokenCount, List<Msg> original) {
+            Optional<List<Msg>> compacted = result.get();
+            if (compacted != null && compacted.isEmpty()) {
+                return skippedCompactionEndPayload(
+                        id, beforeMsgCount, beforeTokenCount, original, durationMs());
+            }
+            return completedCompactionEndPayload(
+                    id, beforeMsgCount, beforeTokenCount, afterMessages(original), durationMs());
         }
 
         private List<Msg> afterMessages(List<Msg> fallback) {
@@ -163,25 +386,70 @@ public class ConversationCompactor {
         }
     }
 
+    private static Map<String, Object> compactionStartPayload(
+            String compactionId, int beforeMsgCount, int beforeTokenCount) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("compactionId", compactionId);
+        payload.put("status", "started");
+        payload.put("beforeMsgCount", beforeMsgCount);
+        payload.put("beforeTokenCount", beforeTokenCount);
+        return payload;
+    }
+
+    private static Map<String, Object> skippedCompactionEndPayload(
+            String compactionId,
+            int beforeMsgCount,
+            int beforeTokenCount,
+            List<Msg> unchangedMessages,
+            long durationMs) {
+        Map<String, Object> payload =
+                compactionEndPayload(
+                        compactionId, "skipped", beforeMsgCount, beforeTokenCount, durationMs);
+        List<Msg> unchanged = unchangedMessages == null ? List.of() : unchangedMessages;
+        payload.put("afterMsgCount", unchanged.size());
+        payload.put("afterTokenCount", TokenCounterUtil.calculateToken(unchanged));
+        return payload;
+    }
+
     private static Map<String, Object> completedCompactionEndPayload(
             String compactionId,
             int beforeMsgCount,
             int beforeTokenCount,
-            List<Msg> afterMessages) {
+            List<Msg> afterMessages,
+            long durationMs) {
         Map<String, Object> payload =
-                compactionEndPayload(compactionId, "completed", beforeMsgCount, beforeTokenCount);
+                compactionEndPayload(
+                        compactionId, "completed", beforeMsgCount, beforeTokenCount, durationMs);
         payload.put("afterMsgCount", afterMessages.size());
         payload.put("afterTokenCount", TokenCounterUtil.calculateToken(afterMessages));
         return payload;
     }
 
+    private static Map<String, Object> failedCompactionEndPayload(
+            String compactionId,
+            int beforeMsgCount,
+            int beforeTokenCount,
+            Throwable error,
+            long durationMs) {
+        Map<String, Object> payload =
+                compactionEndPayload(
+                        compactionId, "failed", beforeMsgCount, beforeTokenCount, durationMs);
+        payload.put("errorType", error.getClass().getSimpleName());
+        return payload;
+    }
+
     private static Map<String, Object> compactionEndPayload(
-            String compactionId, String status, int beforeMsgCount, int beforeTokenCount) {
+            String compactionId,
+            String status,
+            int beforeMsgCount,
+            int beforeTokenCount,
+            long durationMs) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("compactionId", compactionId);
         payload.put("status", status);
         payload.put("beforeMsgCount", beforeMsgCount);
         payload.put("beforeTokenCount", beforeTokenCount);
+        payload.put("durationMs", durationMs);
         return payload;
     }
 
@@ -286,7 +554,7 @@ public class ConversationCompactor {
                                             }
                                             log.warn(
                                                     "Memory flush before compaction failed: {}",
-                                                    e.getMessage());
+                                                    e.getClass().getSimpleName());
                                             return Mono.empty();
                                         })
                         : Mono.empty();
