@@ -35,7 +35,8 @@ en_link: /v2/en/docs/building-blocks/message-and-event
 | `getContent()` | `List<ContentBlock>` | 有序内容块列表（不可变） |
 | `getMetadata()` | `Map<String, Object>` | 任意键值元数据 |
 | `getTimestamp()` | `String` | 创建时间（`yyyy-MM-dd HH:mm:ss.SSS`） |
-| `getUsage()` | `ChatUsage` | Token 用量（仅 assistant 消息） |
+| `getUsage()` | `ChatUsage` | 产生这条消息的那一次模型调用的 Token 用量（仅 assistant 消息） |
+| `getInvocationUsage()` | `ChatUsage` | 返回这条消息的那次 agent 调用中所有模型调用的 Token 用量总和。出现在 `call()` 的最终回复上（`AgentResultEvent` 携带的也是它）；没有任何用量上报时为 `null` |
 | `getGenerateReason()` | `GenerateReason` | 退出原因：`MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `ALL_TOOLS_DENIED` / `INTERRUPTED` / `MAX_ITERATIONS` |
 
 ### 内容块

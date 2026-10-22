@@ -580,10 +580,33 @@ public class Msg implements State {
         if (this.usage != null) {
             return this.usage;
         }
+        return metadataUsage(MessageMetadataKeys.CHAT_USAGE);
+    }
+
+    /**
+     * Gets the total usage of the agent invocation that returned this message.
+     *
+     * <p>Unlike {@link #getChatUsage()}, which covers only the model call that produced this
+     * message, this is the sum over every model call made during the invocation. It is present
+     * on the final reply of an agent call; see {@link MessageMetadataKeys#INVOCATION_USAGE}.
+     *
+     * @return The total usage of the invocation, or null if not available
+     */
+    @Transient
+    @JsonIgnore
+    public ChatUsage getInvocationUsage() {
+        return metadataUsage(MessageMetadataKeys.INVOCATION_USAGE);
+    }
+
+    /**
+     * Reads a {@link ChatUsage} stored under {@code key}, converting (and caching) the map form
+     * produced by JSON deserialization.
+     */
+    private ChatUsage metadataUsage(String key) {
         if (metadata == null) {
             return null;
         }
-        Object metaUsage = metadata.get(MessageMetadataKeys.CHAT_USAGE);
+        Object metaUsage = metadata.get(key);
         if (metaUsage instanceof ChatUsage) {
             return (ChatUsage) metaUsage;
         }
@@ -600,7 +623,7 @@ public class Msg implements State {
                             .toolUsePromptTokens(toInt(map.get("toolUsePromptTokens")))
                             .time(toDouble(map.get("time")))
                             .build();
-            metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+            metadata.put(key, chatUsage);
             return chatUsage;
         }
         return null;
