@@ -195,6 +195,8 @@ The sandbox paragraph in the system prompt and file-tool path normalization use 
 
 For E2B, the default root is `/home/user`. Set `new E2bFilesystemSpec().workspaceRoot("/home/user/project")` to change it. Alternatively, supply a `WorkspaceSpec` with that root. If both are explicitly supplied, their roots must match (trailing slashes are ignored); conflicting values fail when the sandbox context is built. The effective workspace specification is copied, so caller-owned entries and environment are preserved without modifying the supplied object. When older E2B state has inconsistent root fields, its saved execution directory remains authoritative and the manifest is aligned with it; no files are moved. Docker's default remains `/workspace`.
 
+Supplying a `WorkspaceSpec` only for entries or environment does not explicitly configure its root: its untouched `/workspace` default inherits the E2B execution root. Calling `setRoot("/workspace")`, however, is an explicit choice and conflicts with a different explicit `workspaceRoot(...)`.
+
 ## Runtime image contract
 
 You choose the sandbox image (Docker `image`, the Kubernetes agent-sandbox runtime image, etc.), but **not every image works**. Harness file tools (`read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files`) and the snapshot machinery are all implemented by running POSIX shell commands inside the sandbox. The image must satisfy the contract below, or tools will fail in hard-to-diagnose ways.

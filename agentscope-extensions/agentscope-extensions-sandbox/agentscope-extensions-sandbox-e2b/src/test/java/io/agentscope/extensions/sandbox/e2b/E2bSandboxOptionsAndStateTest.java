@@ -29,6 +29,7 @@ import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import io.agentscope.harness.agent.sandbox.layout.FileEntry;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,6 +38,62 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class E2bSandboxOptionsAndStateTest {
+
+    @Test
+    void executionRootAloneAlignsDefaultManifest() {
+        var context = new E2bFilesystemSpec().workspaceRoot("/home/user").toSandboxContext();
+        assertEquals("/home/user", context.getClientOptions().getWorkspaceRoot());
+        assertEquals("/home/user", context.getWorkspaceSpec().getRoot());
+    }
+
+    @Test
+    void defaultManifestWithEnvironmentIsNotAnExplicitRootConflict() {
+        WorkspaceSpec supplied = new WorkspaceSpec();
+        supplied.getEnvironment().put("KEEP", "yes");
+        supplied.getEntries().put("README.md", new FileEntry("keep"));
+        for (boolean manifestFirst : new boolean[] {true, false}) {
+            E2bFilesystemSpec spec = new E2bFilesystemSpec();
+            WorkspaceSpec manifest = supplied.copy();
+            if (manifestFirst) {
+                spec.workspaceSpec(manifest).workspaceRoot("/home/user");
+            } else {
+                spec.workspaceRoot("/home/user").workspaceSpec(manifest);
+            }
+            var context = spec.toSandboxContext();
+            assertEquals("/home/user", context.getClientOptions().getWorkspaceRoot());
+            assertEquals("/home/user", context.getWorkspaceSpec().getRoot());
+            assertEquals("yes", context.getWorkspaceSpec().getEnvironment().get("KEEP"));
+            assertEquals(
+                    "keep",
+                    ((FileEntry) context.getWorkspaceSpec().getEntries().get("README.md"))
+                            .getContent());
+            assertEquals("/workspace", manifest.getRoot());
+            assertFalse(manifest.isRootExplicitlySet());
+            assertEquals("/workspace", supplied.getRoot());
+        }
+    }
+
+    @Test
+    void explicitlySettingDefaultRootStillConflicts() {
+        WorkspaceSpec supplied = new WorkspaceSpec();
+        supplied.setRoot("/workspace");
+        for (boolean manifestFirst : new boolean[] {true, false}) {
+            E2bFilesystemSpec spec = new E2bFilesystemSpec();
+            if (manifestFirst) {
+                spec.workspaceSpec(supplied.copy()).workspaceRoot("/home/user");
+            } else {
+                spec.workspaceRoot("/home/user").workspaceSpec(supplied.copy());
+            }
+            assertThrows(IllegalArgumentException.class, spec::toSandboxContext);
+        }
+    }
+
+    @Test
+    void defaultManifestAloneKeepsE2bDefaultRoot() {
+        var context = new E2bFilesystemSpec().workspaceSpec(new WorkspaceSpec()).toSandboxContext();
+        assertEquals("/home/user", context.getClientOptions().getWorkspaceRoot());
+        assertEquals("/home/user", context.getWorkspaceSpec().getRoot());
+    }
 
     @Test
     void invalidWorkspaceRootsFailBeforeSandboxCreation() {

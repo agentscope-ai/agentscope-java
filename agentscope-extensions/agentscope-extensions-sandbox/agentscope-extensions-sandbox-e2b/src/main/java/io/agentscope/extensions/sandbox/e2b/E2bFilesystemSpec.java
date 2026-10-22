@@ -73,7 +73,7 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
 
     /**
      * Sets the execution and filesystem root (default {@code /home/user}). If a workspace
-     * specification is also supplied, its root must match when the context is built.
+     * specification also has an explicitly set root, it must match when the context is built.
      *
      * @param workspaceRoot absolute sandbox directory
      * @return this spec
@@ -151,8 +151,9 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     /**
-     * Supplies workspace layout and environment. Its root also sets the execution directory
-     * unless an explicit, matching {@link #workspaceRoot(String)} is supplied.
+     * Supplies workspace layout and environment. An explicitly set root also sets the execution
+     * directory unless an explicit, matching {@link #workspaceRoot(String)} is supplied.
+     * An untouched default root inherits the execution directory.
      *
      * @param workspaceSpec workspace configuration, copied when building the context
      * @return this spec
@@ -189,7 +190,9 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
     private String resolveWorkspaceRoot() {
         String optionRoot = normalizeRoot(options.getWorkspaceRoot());
         String specRoot =
-                defaultWorkspaceSpec != null ? normalizeRoot(defaultWorkspaceSpec.getRoot()) : null;
+                defaultWorkspaceSpec != null && defaultWorkspaceSpec.isRootExplicitlySet()
+                        ? normalizeRoot(defaultWorkspaceSpec.getRoot())
+                        : null;
         if (explicitWorkspaceRoot && specRoot != null && !optionRoot.equals(specRoot)) {
             throw new IllegalArgumentException("workspaceRoot and workspaceSpec.root must match");
         }
