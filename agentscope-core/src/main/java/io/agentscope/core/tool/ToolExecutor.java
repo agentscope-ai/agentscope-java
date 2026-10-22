@@ -530,9 +530,7 @@ class ToolExecutor {
 
     /**
      * Execute multiple tool calls with concurrency control plus full per-call infrastructure
-     * (scheduling, timeout, retry, shutdown guard, id/name stamping). Each single call is routed
-     * through {@link #executeWithInfrastructure(ToolUseBlock, ExecutionConfig, Agent,
-     * RuntimeContext, ToolRequestConfig, BiConsumer)}.
+     * (scheduling, timeout, retry, shutdown guard, id/name stamping).
      *
      * @param toolCalls List of tool calls to execute
      * @param parallel Whether to execute in parallel
@@ -641,10 +639,6 @@ class ToolExecutor {
     /**
      * Execute a single tool call with infrastructure (scheduling, timeout, retry, shutdown
      * guard), and stamps the result with the tool call's id/name.
-     *
-     * <p>This overload is used by the batch path ({@link #executeAll(List, boolean,
-     * ExecutionConfig, Agent, RuntimeContext)}), which routes each {@link ToolUseBlock} with
-     * the infrastructure config, per-call request config, and chunk callback.
      */
     Mono<ToolResultBlock> executeWithInfrastructure(
             ToolUseBlock toolCall,
@@ -653,6 +647,7 @@ class ToolExecutor {
             RuntimeContext agentRuntimeContext,
             ToolRequestConfig requestConfig,
             BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+        // Build tool call parameter
         ToolCallParam param =
                 ToolCallParam.builder()
                         .toolUseBlock(toolCall)
@@ -707,9 +702,11 @@ class ToolExecutor {
                                         executionConfig,
                                         toolCall));
 
+        // Every retry receives a separate observed attempt.
         execution = applyRetry(execution, executionConfig, toolCall);
         execution = applyShutdownGuard(execution);
 
+        // Add tool metadata and error handling
         return execution
                 .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()))
                 .onErrorResume(
@@ -735,8 +732,7 @@ class ToolExecutor {
 
     private Mono<ToolResultBlock> applyTimeout(
             Mono<ToolResultBlock> execution, ExecutionConfig config, ToolUseBlock toolCall) {
-        // null = inherit from fallback, NO_TIMEOUT sentinel = explicitly disabled
-        if (config == null || config.getTimeout() == null || config.isTimeoutDisabled()) {
+        if (config == null || config.getTimeout() == null) {
             return execution;
         }
 

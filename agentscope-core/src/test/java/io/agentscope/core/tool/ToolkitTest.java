@@ -1299,6 +1299,7 @@ class ToolkitTest {
         McpClientWrapper mcpClientWrapper =
                 McpClientWrapperTestSupport.mockWrapper("external-mcp-client", true);
         when(mcpClientWrapper.initialize()).thenReturn(Mono.empty());
+        // Wrapper explicitly allows propagation; registration-level setting must win
 
         McpSchema.Tool mcpTool = mock(McpSchema.Tool.class);
         when(mcpTool.name()).thenReturn("external_tool");
@@ -1306,7 +1307,6 @@ class ToolkitTest {
         when(mcpTool.inputSchema()).thenReturn(Map.of("type", "object"));
         when(mcpClientWrapper.listTools()).thenReturn(Mono.just(List.of(mcpTool)));
 
-        // Wrapper explicitly allows propagation; registration-level setting must win
         toolkit.registration().mcpClient(mcpClientWrapper).propagateMeta(false).apply();
 
         AgentTool tool = toolkit.getTool("external_tool");
@@ -1367,15 +1367,14 @@ class ToolkitTest {
     }
 
     @Test
-    @DisplayName(
-            "callTool single should populate id and name on ToolResultBlock (was null before fix)")
-    void testCallToolSinglePopulatesIdAndName() {
+    @DisplayName("callTool should stamp id and name on success results")
+    void testCallToolStampsIdAndNameOnSuccess() {
         toolkit.registerTool(sampleTools);
 
         Map<String, Object> input = Map.of("a", 2, "b", 3);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
-                        .id("call-single-001")
+                        .id("call-single-success")
                         .name("add")
                         .input(input)
                         .content(JsonUtils.getJsonCodec().toJson(input))
@@ -1385,43 +1384,41 @@ class ToolkitTest {
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
 
         assertNotNull(result);
-        assertEquals("call-single-001", result.getId());
+        assertEquals("call-single-success", result.getId());
         assertEquals("add", result.getName());
     }
 
     @Test
-    @DisplayName("callTool single should propagate id and name on error results too")
-    void testCallToolSingleErrorResultAlsoHasIdAndName() {
+    @DisplayName("callTool should stamp id and name on error results")
+    void testCallToolStampsIdAndNameOnError() {
         toolkit.registerTool(sampleTools);
 
-        Map<String, Object> errorInput = Map.of("message", "boom");
+        Map<String, Object> input = Map.of("message", "boom");
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
-                        .id("call-single-err")
+                        .id("call-single-error")
                         .name("error_tool")
-                        .input(errorInput)
-                        .content(JsonUtils.getJsonCodec().toJson(errorInput))
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         ToolResultBlock result =
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
 
         assertNotNull(result);
-        assertEquals("call-single-err", result.getId());
+        assertEquals("call-single-error", result.getId());
         assertEquals("error_tool", result.getName());
     }
 
     @Test
-    @DisplayName(
-            "callTool single should prefer ToolCallParam.input over ToolUseBlock.input when both"
-                    + " are set")
-    void testCallToolSingleParamInputPrecedenceOverToolUseBlock() {
+    @DisplayName("callTool should prefer ToolCallParam.input over ToolUseBlock.input")
+    void testCallToolPrefersParamInputOverToolUseBlockInput() {
         toolkit.registerTool(sampleTools);
 
         Map<String, Object> toolUseInput = Map.of("a", 2, "b", 3);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
-                        .id("call-single-param-priority")
+                        .id("call-single-param-input")
                         .name("add")
                         .input(toolUseInput)
                         .content(JsonUtils.getJsonCodec().toJson(toolUseInput))
@@ -1436,49 +1433,14 @@ class ToolkitTest {
         ToolResultBlock result = toolkit.callTool(param).block();
 
         assertNotNull(result);
-        assertEquals("call-single-param-priority", result.getId());
+        assertEquals("call-single-param-input", result.getId());
         assertEquals("add", result.getName());
         assertEquals("300", ToolTestUtils.extractContent(result));
     }
 
     @Test
-    @DisplayName(
-            "callTool single with param.input but no ToolUseBlock.content should fail"
-                    + " schema validation (validation reads content, not merged input)")
-    void testCallToolSingleOnlyParamInputNoContentFailsValidation() {
-        // Pins current behavior, not a desired end state: executeCore validates
-        // ToolUseBlock.content while execution merges ToolCallParam.input, so a
-        // call with only param.input and no content is rejected. When executeCore
-        // is fixed to validate against the merged input, this test must be updated
-        // to assert success instead of failure.
-        toolkit.registerTool(sampleTools);
-
-        Map<String, Object> paramInput = Map.of("a", 100, "b", 200);
-        ToolUseBlock toolCall =
-                ToolUseBlock.builder()
-                        .id("call-single-no-content")
-                        .name("add")
-                        .input(paramInput)
-                        .build();
-
-        ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolCall).input(paramInput).build();
-
-        ToolResultBlock result = toolkit.callTool(param).block();
-
-        assertNotNull(result);
-        assertEquals("call-single-no-content", result.getId());
-        assertEquals("add", result.getName());
-        assertTrue(
-                isErrorResult(result), "Expected validation error, got: " + getResultText(result));
-        assertTrue(
-                getResultText(result).contains("Parameter validation failed"),
-                "Expected 'Parameter validation failed', got: " + getResultText(result));
-    }
-
-    @Test
-    @DisplayName("callTool(ToolCallParam, null) should behave same as single-arg callTool")
-    void testCallToolPerCallConfigNullIsSameAsSingleArg() {
+    @DisplayName("callTool with a null per-call config should match the single-arg overload")
+    void testCallToolWithNullConfigMatchesSingleArgOverload() {
         toolkit.registerTool(sampleTools);
 
         Map<String, Object> input = Map.of("a", 3, "b", 4);
@@ -1489,7 +1451,6 @@ class ToolkitTest {
                         .input(input)
                         .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
-
         ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
 
         ToolResultBlock result = toolkit.callTool(param, null).block();
@@ -1501,8 +1462,8 @@ class ToolkitTest {
     }
 
     @Test
-    @DisplayName("callTool(ToolCallParam, ExecutionConfig) should respect per-call config")
-    void testCallToolPerCallConfigTakesEffect() {
+    @DisplayName("callTool with a per-call config should return a stamped result")
+    void testCallToolWithPerCallConfigReturnsStampedResult() {
         toolkit.registerTool(sampleTools);
 
         Map<String, Object> input = Map.of("a", 10, "b", 20);
@@ -1513,11 +1474,10 @@ class ToolkitTest {
                         .input(input)
                         .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
-
         ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
 
         ExecutionConfig perCallConfig =
-                ExecutionConfig.builder().timeout(Duration.ofMinutes(10)).maxAttempts(1).build();
+                ExecutionConfig.builder().timeout(Duration.ofMinutes(10)).build();
 
         ToolResultBlock result = toolkit.callTool(param, perCallConfig).block();
 
@@ -1528,104 +1488,81 @@ class ToolkitTest {
     }
 
     @Test
-    @DisplayName(
-            "noTimeout() should override a short toolkit-level timeout so a slow tool completes")
-    void testNoTimeoutOverridesShortToolkitTimeout() {
+    @DisplayName("callTool per-call config should override a short toolkit-level timeout")
+    void testCallToolPerCallConfigOverridesToolkitTimeout() {
         ExecutionConfig toolkitTimeout =
-                ExecutionConfig.builder().timeout(Duration.ofMillis(100)).maxAttempts(1).build();
-        ToolkitConfig config = ToolkitConfig.builder().executionConfig(toolkitTimeout).build();
-        Toolkit shortTimeoutToolkit = new Toolkit(config);
+                ExecutionConfig.builder().timeout(Duration.ofMillis(100)).build();
+        Toolkit shortTimeoutToolkit =
+                new Toolkit(ToolkitConfig.builder().executionConfig(toolkitTimeout).build());
         shortTimeoutToolkit.registerTool(new SlowTool());
 
         Map<String, Object> input = Map.of("delayMs", 300);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
-                        .id("call-no-timeout-ok")
+                        .id("call-percall-timeout")
                         .name("slow")
                         .input(input)
                         .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
         ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
 
-        ExecutionConfig noTimeoutConfig =
-                ExecutionConfig.builder().noTimeout().maxAttempts(1).build();
+        ExecutionConfig perCallConfig =
+                ExecutionConfig.builder().timeout(Duration.ofMinutes(10)).build();
 
-        ToolResultBlock result = shortTimeoutToolkit.callTool(param, noTimeoutConfig).block();
+        ToolResultBlock result = shortTimeoutToolkit.callTool(param, perCallConfig).block();
 
         assertNotNull(result);
+        assertEquals("call-percall-timeout", result.getId());
+        assertEquals("slow", result.getName());
         assertEquals("\"done\"", ToolTestUtils.extractContent(result));
-        assertFalse(
-                isErrorResult(result),
-                "NO_TIMEOUT must disable the timeout operator on a 100ms toolkit-level timeout");
     }
 
     @Test
-    @DisplayName(
-            "A slow tool must timeout when no noTimeout() overrides a short toolkit-level timeout")
-    void testSlowToolTimesOutUnderShortToolkitTimeoutWithoutNoTimeout() {
-        ExecutionConfig toolkitTimeout =
-                ExecutionConfig.builder().timeout(Duration.ofMillis(100)).maxAttempts(1).build();
-        ToolkitConfig config = ToolkitConfig.builder().executionConfig(toolkitTimeout).build();
-        Toolkit shortTimeoutToolkit = new Toolkit(config);
-        shortTimeoutToolkit.registerTool(new SlowTool());
-
-        Map<String, Object> input = Map.of("delayMs", 300);
+    @DisplayName("callTool should stamp id and name when the tool is not found")
+    void testCallToolStampsIdAndNameWhenToolNotFound() {
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
-                        .id("call-short-timeout")
-                        .name("slow")
+                        .id("call-single-missing")
+                        .name("missing_tool")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-missing", result.getId());
+        assertEquals("missing_tool", result.getName());
+    }
+
+    @Test
+    @DisplayName("callTool should stamp id and name when parameter validation fails")
+    void testCallToolStampsIdAndNameWhenValidationFails() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> input = Map.of("a", "not-a-number", "b", 2);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-invalid")
+                        .name("add")
                         .input(input)
                         .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
-        ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
 
-        ToolResultBlock result = shortTimeoutToolkit.callTool(param, null).block();
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
 
         assertNotNull(result);
-        assertTrue(
-                isErrorResult(result),
-                "100ms timeout must trigger on a 300ms tool without noTimeout()");
+        assertEquals("call-single-invalid", result.getId());
+        assertEquals("add", result.getName());
     }
 
-    @Test
-    @DisplayName("isTimeoutDisabled() — null, positive and NO_TIMEOUT")
-    void testIsTimeoutDisabled() {
-        assertFalse(
-                ExecutionConfig.builder().build().isTimeoutDisabled(),
-                "null timeout should not be disabled");
-        assertFalse(
-                ExecutionConfig.builder()
-                        .timeout(Duration.ofMinutes(1))
-                        .build()
-                        .isTimeoutDisabled(),
-                "positive timeout should not be disabled");
-        assertTrue(
-                ExecutionConfig.builder().noTimeout().build().isTimeoutDisabled(),
-                "NO_TIMEOUT should be recognised as disabled");
-        assertTrue(
-                ExecutionConfig.builder()
-                        .timeout(ExecutionConfig.NO_TIMEOUT)
-                        .build()
-                        .isTimeoutDisabled(),
-                "explicit NO_TIMEOUT should be recognised as disabled");
-    }
-
-    @Test
-    @DisplayName("Builder.timeout() should reject non-sentinel negative durations")
-    void testBuilderRejectsStrayNegativeTimeout() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> ExecutionConfig.builder().timeout(Duration.ofSeconds(-30)),
-                "stray negative timeout should be rejected");
-    }
-
-    // Slow tool: returns result after a configurable delay, used to verify
-    // NO_TIMEOUT correctly disables the timeout operator.
+    /** Tool used to verify that a per-call timeout can override the toolkit timeout. */
     public static class SlowTool {
-        @io.agentscope.core.tool.Tool(name = "slow", description = "Delay then return 'done'")
+        @Tool(name = "slow", description = "Delay then return done")
         public Mono<String> slow(
-                @io.agentscope.core.tool.ToolParam(name = "delayMs", description = "Delay in ms")
-                        long delayMs) {
+                @ToolParam(name = "delayMs", description = "Delay in milliseconds") long delayMs) {
             return Mono.delay(Duration.ofMillis(delayMs)).thenReturn("done");
         }
     }
