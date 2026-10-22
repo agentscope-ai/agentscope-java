@@ -229,6 +229,89 @@ class HttpSelfRegistrationTest {
         assertEquals(7, deleteBody.get().path("generation").asLong());
     }
 
+    @Test
+    void heartbeatNonSuccessReRegistersSoTheControlPlaneKeepsTheInstance() throws Exception {
+        AtomicInteger registrations = new AtomicInteger();
+        AtomicInteger heartbeats = new AtomicInteger();
+        AtomicReference<JsonNode> lastHeartbeatBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/api/v1/agent-registrations",
+                exchange -> {
+                    long generation = registrations.incrementAndGet();
+                    respond(
+                            exchange,
+                            201,
+                            "{\"agent\":{\"id\":\"11111111-1111-1111-1111-111111111111\"},"
+                                + "\"binding\":{\"id\":\"22222222-2222-2222-2222-222222222222\"},"
+                                + "\"instance\":{\"id\":\"instance-1\",\"generation\":"
+                                    + generation
+                                    + "},"
+                                    + "\"registrationCredential\":\"asreg_test\"}");
+                });
+        server.createContext(
+                "/api/v1/dataplanes/instance-1/heartbeat",
+                exchange -> {
+                    int attempt = heartbeats.incrementAndGet();
+                    lastHeartbeatBody.set(readJson(exchange));
+                    if (attempt == 1) {
+                        // E.g. a rotated internal token: the lease stops being refreshed and the
+                        // control plane expires the instance within its heartbeat timeout.
+                        respond(exchange, 401, "{\"error\":\"invalid internal token\"}");
+                    } else {
+                        respond(exchange, 200, "{\"generation\":2,\"status\":\"ok\"}");
+                    }
+                });
+        server.start();
+
+        Handler handler = mock(Handler.class);
+        Logger logger = Logger.getLogger(HttpSelfRegistration.class.getName());
+        logger.addHandler(handler);
+        try (HttpSelfRegistration registration =
+                new HttpSelfRegistration(
+                        "http://127.0.0.1:" + server.getAddress().getPort(),
+                        "secret-token",
+                        "",
+                        "reviewer",
+                        "tenant-a",
+                        "namespace-a",
+                        "runtime-instance-key",
+                        "http://127.0.0.1:9191",
+                        "agentscope-java",
+                        "agentscope",
+                        3,
+                        List.of("sessions"),
+                        20)) {
+            registration.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (registrations.get() < 2 && System.nanoTime() < deadline) {
+                Thread.sleep(5);
+            }
+            assertTrue(
+                    registrations.get() >= 2,
+                    "A non-2xx heartbeat must re-register so the control plane keeps the"
+                            + " instance; without this the agent silently turns unavailable");
+            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (heartbeats.get() < 2 && System.nanoTime() < deadline) {
+                Thread.sleep(5);
+            }
+            assertTrue(heartbeats.get() >= 2, "Heartbeat should continue after recovery");
+            assertEquals(
+                    2,
+                    lastHeartbeatBody.get().path("generation").asLong(),
+                    "The recovered heartbeat must carry the generation from re-registration");
+            verify(handler)
+                    .publish(
+                            argThat(
+                                    record ->
+                                            record.getLevel().intValue() >= Level.WARNING.intValue()
+                                                    && record.getMessage().contains("heartbeat")));
+        } finally {
+            logger.removeHandler(handler);
+            server.stop(0);
+        }
+    }
+
     private static JsonNode readJson(HttpExchange exchange) throws IOException {
         byte[] bytes = exchange.getRequestBody().readAllBytes();
         if (bytes.length == 0) {
