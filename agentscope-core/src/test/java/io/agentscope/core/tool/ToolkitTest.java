@@ -1266,9 +1266,7 @@ class ToolkitTest {
         McpSchema.Tool mcpTool = mock(McpSchema.Tool.class);
         when(mcpTool.name()).thenReturn("structured_mcp_tool");
         when(mcpTool.description()).thenReturn("Returns structured MCP output");
-        when(mcpTool.inputSchema())
-                .thenReturn(
-                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(mcpTool.inputSchema()).thenReturn(Map.of("type", "object"));
         when(mcpTool.outputSchema())
                 .thenReturn(
                         Map.of(
@@ -1305,9 +1303,7 @@ class ToolkitTest {
         McpSchema.Tool mcpTool = mock(McpSchema.Tool.class);
         when(mcpTool.name()).thenReturn("external_tool");
         when(mcpTool.description()).thenReturn("Tool from an untrusted MCP server");
-        when(mcpTool.inputSchema())
-                .thenReturn(
-                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(mcpTool.inputSchema()).thenReturn(Map.of("type", "object"));
         when(mcpClientWrapper.listTools()).thenReturn(Mono.just(List.of(mcpTool)));
 
         // Wrapper explicitly allows propagation; registration-level setting must win
@@ -1329,16 +1325,12 @@ class ToolkitTest {
         McpSchema.Tool trustedTool = mock(McpSchema.Tool.class);
         when(trustedTool.name()).thenReturn("trusted_tool");
         when(trustedTool.description()).thenReturn("Tool that still needs its callback URL");
-        when(trustedTool.inputSchema())
-                .thenReturn(
-                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(trustedTool.inputSchema()).thenReturn(Map.of("type", "object"));
 
         McpSchema.Tool noisyTool = mock(McpSchema.Tool.class);
         when(noisyTool.name()).thenReturn("noisy_tool");
         when(noisyTool.description()).thenReturn("Tool that must not leak metadata");
-        when(noisyTool.inputSchema())
-                .thenReturn(
-                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(noisyTool.inputSchema()).thenReturn(Map.of("type", "object"));
 
         when(mcpClientWrapper.listTools()).thenReturn(Mono.just(List.of(trustedTool, noisyTool)));
 

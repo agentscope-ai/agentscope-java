@@ -122,6 +122,12 @@ toolkit.registerTool(new SimpleTools());
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
 | `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |
 
+#### 显式返回执行状态
+
+工具调用成功时返回 `ToolResultBlock.success(text)`，失败时返回 `ToolResultBlock.error(message)`；两者既可直接返回，也可包装在 `Mono<ToolResultBlock>` 中。不要通过文本前缀判断失败。`ToolResultBlock.text(text)` 默认是 `RUNNING`；如需保留既有 JSON 或多行输出，请用 `withState(...)` 明确终态。
+
+内置工具已改为结构化结果。直接调用时用 `getState()` 判断状态，用 `getOutput()` 读取文本；`Toolkit` 注册方式不变。
+
 ### 自定义 Tool（继承 `ToolBase`）
 
 需要自定义权限策略、外部执行或更复杂的 schema 时，继承 `ToolBase`：
@@ -230,12 +236,27 @@ public class HumanApprovalTool extends ToolBase {
 
 | 参数类型 | 注入来源 |
 |---------|---------|
-| `ToolEmitter` | 流式中间产物 emitter（无配置时为 no-op） |
+| `ToolEmitter` | 流式中间产物 emitter 和工具调用上下文（无配置时为 no-op） |
 | `Agent` | 当前 agent 实例 |
 | `AgentState` | 当前 call 的 per-session 状态（通过 `RuntimeContext.getAgentState()` 获取） |
 | `RuntimeContext` | 当前 per-call 上下文 |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()`（兼容层，已 deprecated） |
 | 其它用户自定义 POJO 类型 | `runtimeContext.get(ParamType.class)` —— 即调用方在 `RuntimeContext.builder().put(ParamType.class, value)` 注册的对象 |
+
+注入的 `ToolEmitter` 会提供当前工具调用 ID，可用于把进度与前端状态或其它共享存储关联起来：
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    String toolCallId = emitter.getToolCallId();
+    if (toolCallId != null) {
+        progressByToolCall.put(toolCallId, "running");
+    }
+    return "done";
+}
+```
+
+当 emitter 没有工具调用上下文时（例如 no-op 或自定义 emitter），`getToolCallId()` 返回 `null`。
 
 「用户自定义 POJO」的判定：参数没有 `@ToolParam`、不是基本类型、不是 `ContentBlock` / `Msg`、不在 `java.*` / `javax.*` 包下。其余参数（带 `@ToolParam` 或属于上述兜底类型）从 LLM 提供的 JSON 输入按名称取值。
 
@@ -270,6 +291,25 @@ agent.call(List.of(new UserMessage("Greet me.")), ctx).block();
 ```
 
 模型不需要把 `userCtx` 写进 JSON 参数——schema 里也不会出现它。完整示例：`agentscope-examples/documentation/.../tool/ToolExecutionContextExample.java`。
+
+### 工具进度流式输出
+
+长时间运行的工具可以通过 `ToolEmitter.emit()` 发布中间进度。进度以 [`ToolProgressEvent`](/v2/zh/docs/building-blocks/message-and-event#事件类型) 的形式出现在事件流中——仅用于展示，不会发送给 LLM。工具的返回值才是模型实际接收到的内容，它以 `ToolResultTextDeltaEvent` / `ToolResultDataDeltaEvent` 的形式单独传递。
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    emitter.emit(ToolResultBlock.text("正在扫描 3 个目录..."));
+    // ... 执行工作 ...
+    emitter.emit(ToolResultBlock.text("正在索引结果..."));
+    // ... 继续执行 ...
+
+    // 只有这个返回值会作为工具结果发送给 LLM。
+    return "3 files found";
+}
+```
+
+从事件流重建工具结果的客户端必须累积 `ToolResult*DeltaEvent`，并忽略 `ToolProgressEvent`。如果混用两者，进度文本会进入工具消息并在下一轮被送回模型，违背 `ToolEmitter` 的契约。
 
 ### `ToolBase.callAsync` 中访问
 
@@ -591,6 +631,104 @@ Meta tool 的输入表示所有 group 的**最终状态**而非增量。任何�
 
 </Warning>
 
+
+## 工具调用拦截器
+
+`ToolCallInterceptor` 是 Toolkit 层、单次调用级的参数拦截扩展点。它运行在 JSON Schema 校验与预置参数合并**之后**、会话分发记录与真实执行**之前** —— 因此它能看到工具将收到的确切参数与调用者身份,并决定实际执行的内容。
+
+用它表达[权限系统](/v2/zh/docs/building-blocks/permission-system)无法覆盖的**参数级业务规则**:工具本身被允许调用,但*本次*调用的 `file_path` 是否在当前用户的沙箱内?这条 SQL 是否超出调用者的数据范围?工具级策略(ALLOW/ASK/DENY、人审)仍归权限引擎;批次级、事件流层面的关注点仍归[中间件](/v2/zh/docs/building-blocks/middleware)的 `onActing`。
+
+拦截器在 `ToolkitConfig` 构建期注册:
+
+```java
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptor(new AuditInterceptor())                    // 追加;可重复调用
+        .interceptor(new PathSandboxInterceptor(                // 追加
+                userId -> Path.of("/data/workspaces", userId)))
+        .build());
+
+// 也可整体设置 —— interceptors(list) 是覆盖语义,而非追加
+Toolkit toolkit2 = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptors(List.of(audit, sandbox))
+        .build());
+```
+
+`interceptor(...)` 为追加语义,可重复调用;`interceptors(List)` 为覆盖语义,替换此前注册的全部拦截器 —— 适合已在别处组装好拦截器列表的场景。拦截器按 `order()` **降序稳定排序**(数值越大越靠外层:先拦截、后收到结果;同序保持注册顺序),排序后运行期不可变。`Toolkit` 被并发会话共享,拦截器实现必须无状态或线程安全;运行期可变的*策略*(熔断开关、租户规则)以拦截器**内部的可变状态**表达。
+
+钩子形状与中间件同构(洋葱模式):
+
+```java
+public final class PathSandboxInterceptor implements ToolCallInterceptor {
+
+    private final Function<String, Path> workspaceRootResolver;
+
+    public PathSandboxInterceptor(Function<String, Path> workspaceRootResolver) {
+        this.workspaceRootResolver = workspaceRootResolver;
+    }
+
+    @Override
+    public Mono<ToolResultBlock> intercept(
+            ToolInvocation invocation,
+            Function<ToolInvocation, Mono<ToolResultBlock>> next) {
+        if (!invocation.toolName().equals("write_text_file")) {
+            return next.apply(invocation);        // 非目标工具 —— 直接放行
+        }
+        // 注入参数:调用方经 RuntimeContext.builder().put(FileAuditLog.class, log)
+        // 注册,模型不可见
+        FileAuditLog audit = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().get(FileAuditLog.class) : null;
+        String userId = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().getUserId() : null;
+        if (userId == null || userId.isBlank()) { // 身份缺失即拒绝(fail closed)
+            return deny("no authenticated user context; cannot scope file access");
+        }
+        Path root = workspaceRootResolver.apply(userId).toAbsolutePath().normalize();
+        // 工具参数:"file_path" 来自模型的 JSON 输入(含 preset)
+        Path resolved = root
+                .resolve(invocation.input().get("file_path").toString())
+                .normalize();                     // 绝对路径同样过不了下面的检查
+        // 前置处理:校验参数并改写为沙箱内路径
+        if (!resolved.startsWith(root)) {
+            return deny("path must stay inside your workspace; use relative paths");
+        }
+        Map<String, Object> rewritten = new HashMap<>(invocation.input());
+        rewritten.put("file_path", resolved.toString());
+        // 后置处理:审计执行结果而不影响执行
+        return next.apply(invocation.withInput(rewritten))
+                .doOnSuccess(result -> {
+                    if (audit != null) audit.record(userId, resolved, result);
+                });
+    }
+
+    private static Mono<ToolResultBlock> deny(String message) {
+        return Mono.just(ToolResultBlock.text("PathSandbox: " + message)
+                .withState(ToolResultState.DENIED));
+    }
+}
+```
+
+拦截器可执行的动作:
+
+| 动作 | 表达方式 | 效果 |
+|------|----------|------|
+| 放行 | `next.apply(invocation)` | 继续后续链 / 执行工具 |
+| 策略拒绝 | `ToolResultBlock.text(msg).withState(ToolResultState.DENIED)` | 工具不执行;结果回传模型自我纠正;自动记录 `denied` 决策 |
+| 调用非法 | `ToolResultBlock.error(msg)` | "本次调用失败"语义,与 Schema 校验失败一致;不产生 denied 记录 |
+| 改写参数 | `next.apply(invocation.withInput(newInput))` | 工具收到改写后的参数(可覆盖 preset;不做 Schema 重校验 —— 开发者产物,与 preset 同信任级别) |
+| 审计 | `next.apply(invocation).doOnSuccess(...)` | 观察结果而不影响执行 |
+| 挂起(HITL) | 抛出 `ToolSuspendException` | 由既有管线转为 `suspended` 结果 |
+
+需要注意的语义:
+
+- **按 agent 身份分发**。快照携带 `agentId`(审计关联)与 `agentName`(写规则的依据,如"planner 禁止写操作");直连无 agent 时两者为 `null`。刻意只透出标识而非 `Agent` 句柄 —— 其操作属于中间件层且带重入风险;结构性的按 agent 差异宜在构建期表达于各 agent 自己的 `ToolkitConfig`。
+- **改写发生在权限批准之后**。权限引擎判定的是模型原始输入;若安全敏感参数(路径、SQL、URL)改写后的*最终值*需要用户确认,应挂起人审而非静默改写。拦截器拒绝一个已获批准的调用属预期行为 —— 拒绝结果直接回馈模型。
+- **拒绝消息应面向模型可行动**("请使用工作区内的相对路径"),不泄露服务端信息,并带拦截器身份前缀(如 `PathSandbox:`)。在示例之外加固路径守卫:调用者可控的 id 先校验格式再用作路径组件;已存在路径(及新建文件的最近已存在祖先)用 `toRealPath()` 复检 —— `normalize()` 不消解符号链接、Windows 8.3 短名与 ADS,且 `Path#startsWith` 区分大小写;改写时避免把服务端绝对根路径回显给模型。
+- **会话记录保持真实**。`tool/dispatch` 记录位于链终点,记录的永远是实际执行的参数;被拒绝的调用不会留下 `allowed`/`dispatch` 记录。
+- **超时与重试**在批处理 `callTools` 路径包裹整条链:拦截器耗时计入工具超时,重试时每次尝试都会重新走链。直连 `Toolkit#callTool` 路径保持现状 —— 无超时包装 —— 因此拦截器绝不能阻塞;阻塞 IO 用 `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())` 卸载。
+- **外部工具不会被拦截**。`externalTool=true` / `SchemaOnlyTool` 在链之前短路返回 `suspended`,校验由外部执行方负责。挂起后回填的结果属数据注入而非执行,同样不经过链。框架内部合成工具 `generate_response` 亦不经过链。
+- **传播**。`Toolkit#copy()`(Harness 子代理即经此构建)会携带拦截器;以全新 `Toolkit` 构建的子代理则没有,除非显式注册。工具体内再委托其他工具(工具在 `callAsync` 内部调用别的工具)不会被二次拦截 —— 按外层工具名分发守卫。
 
 ## 延伸阅读
 

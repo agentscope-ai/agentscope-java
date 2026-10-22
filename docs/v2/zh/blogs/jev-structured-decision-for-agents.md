@@ -120,7 +120,9 @@ JevModelRouterMiddleware modelRouter =
                 .choice("powerful", powerfulModel, "Architecture and high-stakes decisions.")
                 .instructions("Choose the least costly model that can complete the task.")
                 .confidenceThreshold(0.75)
-                .failOpen(true)
+                .execution(new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                    io.agentscope.extensions.judge.jev.JevExecution.Mode.SHADOW,
+                    java.time.Duration.ofSeconds(2), "v1", (ctx, record) -> {}))
                 .build();
 
 ReActAgent agent =
@@ -133,6 +135,8 @@ ReActAgent agent =
 
 每个候选模型有自己的路由标准。Jev 根据用户请求在候选中做 Choice 判断，返回概率和置信度。置信度不够就退回默认模型——**判断失败不是让 Agent 停摆，而是降级到安全路径**。
 
+中间件默认OFF；下例显式开启SHADOW，仅记录建议。需要接管时改为ENFORCE，以下筛选/拦截行为描述适用于ENFORCE。模型路由对带工具请求默认回退，需通过compatible谓词声明候选能力。
+
 ### 工具选择：规划上下文可见性
 
 `JevToolSelectionMiddleware` 在每轮推理前对工具列表做过滤和排序，只把相关的工具 schema 发给主模型。
@@ -142,8 +146,10 @@ JevToolSelectionMiddleware toolSelection =
         JevToolSelectionMiddleware.builder(client)
                 .alwaysIncludeTools(Set.of("load_skill_through_path", "reset_tools"))
                 .maxTools(3)
-                .confidenceThreshold(0.5)
-                .failOpen(true)
+                .confidenceThreshold(0.8)
+                .execution(new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                    io.agentscope.extensions.judge.jev.JevExecution.Mode.SHADOW,
+                    java.time.Duration.ofSeconds(2), "v1", (ctx, record) -> {}))
                 .build();
 ```
 
@@ -157,8 +163,10 @@ JevToolSelectionMiddleware toolSelection =
 JevAutoModeMiddleware autoMode =
         JevAutoModeMiddleware.builder(client)
                 .guardedTool("bash")
-                .safetyThreshold(0.5)
-                .failOpen(true)
+                .safetyThreshold(0.8)
+                .execution(new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                    io.agentscope.extensions.judge.jev.JevExecution.Mode.SHADOW,
+                    java.time.Duration.ofSeconds(2), "v1", (ctx, record) -> {}))
                 .build();
 
 ReActAgent agent =
@@ -172,7 +180,7 @@ ReActAgent agent =
 
 当一个 `bash` 工具调用产生时，middleware 会把完整对话历史和命令内容发给 Jev，问一个 Noul 问题："这个调用安全吗？" `noul: 0.92` 就放行，`noul: 0.3` 就拒绝——拒绝的调用不会执行，而是写入一个 `DENIED` 的工具结果，让模型知道这个操作被拦截了。
 
-`failOpen(true)` 意味着 Jev 不可用时放行，`failOpen(false)` 则会拒绝。这是生产系统里必须考虑的降级策略——判断服务的可用性不应该成为 Agent 的单点故障。
+执行模式现为OFF、SHADOW与ENFORCE，默认OFF。工具推荐/路由失败回退原流程；执行防护ENFORCE失败拒绝受保护调用。
 
 ---
 

@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.anthropic;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -70,6 +71,7 @@ class AnthropicChatModelTest {
 
         assertNotNull(model, "Model should be created");
         assertEquals("claude-sonnet-4-5-20250929", model.getModelName());
+        assertTrue(model.supportsToolChoiceSpecific());
     }
 
     @Test
@@ -79,9 +81,17 @@ class AnthropicChatModelTest {
 
         assertNotNull(model, "Model should be created with default settings");
         assertEquals(
-                "claude-sonnet-4-5-20250929",
+                "claude-sonnet-5-5",
                 model.getModelName(),
-                "Default model should be claude-sonnet-4-5-20250929");
+                "Default model should be claude-sonnet-5-5");
+    }
+
+    @Test
+    @DisplayName("Should resolve the context window of the default model")
+    void testDefaultModelContextWindow() {
+        AnthropicChatModel model = AnthropicChatModel.builder().apiKey(mockApiKey).build();
+
+        assertEquals(1_000_000, model.getContextWindowSize());
     }
 
     @Test
@@ -389,9 +399,7 @@ class AnthropicChatModelTest {
 
         assertNotNull(minimalModel, "Model should be created with minimal configuration");
         assertEquals(
-                "claude-sonnet-4-5-20250929",
-                minimalModel.getModelName(),
-                "Should use default model name");
+                "claude-sonnet-5-5", minimalModel.getModelName(), "Should use default model name");
     }
 
     @Test

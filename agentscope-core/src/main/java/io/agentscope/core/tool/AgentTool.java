@@ -88,6 +88,21 @@ public interface AgentTool {
     }
 
     /**
+     * Gets deferred tool definition loading configuration for this tool.
+     *
+     * <p>Providers that support tool search (such as the OpenAI Responses {@code tool_search}
+     * server tool) can defer loading this tool's parameter schema until the model searches for
+     * it. Returning {@code null} means no explicit preference is provided, which leaves the tool
+     * eagerly loaded.
+     *
+     * @return deferred loading value ({@code true}/{@code false}) or {@code null} when
+     *     unspecified
+     */
+    default Boolean getDeferLoading() {
+        return null;
+    }
+
+    /**
      * Gets the optional output schema for this tool in JSON Schema format.
      *
      * <p>Most tools do not expose a structured output schema to models, so the default
@@ -97,6 +112,24 @@ public interface AgentTool {
      * @return Map representing the JSON Schema for tool outputs, or null if unsupported
      */
     default Map<String, Object> getOutputSchema() {
+        return null;
+    }
+
+    /**
+     * Gets the human-readable display name of this tool, for rendering to an end user.
+     *
+     * <p>{@link #getName()} is a programmatic identifier chosen for model consumption and
+     * {@link #getDescription()} is model-facing guidance; neither is suitable as a UI label. MCP
+     * servers may supply a display name via the spec's {@code Tool.title} (falling back to
+     * {@code ToolAnnotations.title}), which {@link io.agentscope.core.tool.mcp.McpTool} surfaces
+     * here.
+     *
+     * <p>Local {@code @Tool} methods have no display name, so the default implementation returns
+     * {@code null}. Callers must fall back to {@link #getName()} when this is {@code null}.
+     *
+     * @return the display title, or {@code null} when the tool provides none
+     */
+    default String getTitle() {
         return null;
     }
 

@@ -17,9 +17,14 @@ package io.agentscope.builder;
 
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.extensions.channel.feishu.FeishuCallbackController;
+import io.agentscope.extensions.channel.github.GitHubWebhookController;
+import io.agentscope.extensions.channel.gitlab.GitLabWebhookController;
+import io.agentscope.extensions.channel.wecom.WeComCallbackController;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -36,6 +41,10 @@ import org.springframework.test.context.TestPropertySource;
             "builder.internal-token=test-internal-token-must-be-at-least-32-chars",
             "builder.control-plane-url=http://localhost:8081",
             "builder.data-plane-url=http://localhost:8082",
+            // Nothing listens on the test control-plane URL, so SchedulerChannelRuntime.start()
+            // would sleep through its default 12 retries x 5s backoff before giving up; one
+            // attempt fails fast with the same "zero channels" outcome.
+            "builder.scheduler.channel-config-retries=1",
             "builder.workspace=${java.io.tmpdir}/agentscope-builder-scheduler-ctx",
             // INIT pre-creates the dp schema required by hibernate.default_schema (see
             // application.yml); without it schema-qualified H2 statements fail.
@@ -49,8 +58,26 @@ import org.springframework.test.context.TestPropertySource;
         })
 class SchedulerAppContextLoadTest {
 
+    @Autowired private FeishuCallbackController feishuCallbackController;
+
+    @Autowired private WeComCallbackController weComCallbackController;
+
+    @Autowired private GitHubWebhookController gitHubWebhookController;
+
+    @Autowired private GitLabWebhookController gitLabWebhookController;
+
     @Test
     void contextLoads() {}
+
+    @Test
+    void channelCallbackControllersAreRegistered() {
+        // The advertised /api/channels/... callback paths answer 404 with no trace unless the
+        // extensions packages are component-scanned; assert the controllers are beans.
+        org.junit.jupiter.api.Assertions.assertNotNull(feishuCallbackController);
+        org.junit.jupiter.api.Assertions.assertNotNull(weComCallbackController);
+        org.junit.jupiter.api.Assertions.assertNotNull(gitHubWebhookController);
+        org.junit.jupiter.api.Assertions.assertNotNull(gitLabWebhookController);
+    }
 
     @TestConfiguration
     static class StubConfig {

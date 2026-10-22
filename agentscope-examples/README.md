@@ -2,6 +2,18 @@
 
 This directory contains examples demonstrating core features of AgentScope Java framework.
 
+## Complete chat application
+
+[Session Chat](agents/agentscope-chat/README.md) ([中文](agents/agentscope-chat/README_zh.md)) is a standalone Web Chat for durable history, live events, SSE reconnection and checkpoint continuation. It runs with an offline demo model by default, with no API key or frontend build required.
+
+```bash
+# From the agentscope-java repository root
+mvn -pl agentscope-examples/agents/agentscope-chat -am package -DskipTests
+java -jar agentscope-examples/agents/agentscope-chat/target/agentscope-chat.jar
+```
+
+Open http://127.0.0.1:8087 and follow the walkthrough in its README.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
