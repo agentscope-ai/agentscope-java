@@ -22,8 +22,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Objects;
 import reactor.core.publisher.Mono;
 
@@ -213,7 +211,7 @@ public final class PermissionEngine {
             ToolBase tool, Map<String, Object> input) {
         if (context.getMode() == PermissionMode.EXPLORE
                 || context.getMode() == PermissionMode.ACCEPT_EDITS) {
-            PermissionDecision modeDecision = checkExploreMode(tool, input);
+            PermissionDecision modeDecision = checkExploreMode(tool);
             if (modeDecision != null) {
                 return Mono.just(modeDecision);
             }
@@ -228,7 +226,7 @@ public final class PermissionEngine {
                         });
     }
 
-    private PermissionDecision checkExploreMode(ToolBase tool, Map<String, Object> input) {
+    private PermissionDecision checkExploreMode(ToolBase tool) {
         if (context.getMode() == PermissionMode.EXPLORE) {
             if (tool.isReadOnly()) {
                 return PermissionDecision.builder()
@@ -259,54 +257,6 @@ public final class PermissionEngine {
                                         + " (accept edits mode - read-only tool)")
                         .decisionReason("Accept edits mode allows read-only operations")
                         .build();
-            }
-            // Documented ACCEPT_EDITS contract: file edits inside configured working
-            // directories are auto-allowed. Without this check the configured directories
-            // were dead configuration — in-scope edit tools always fell through to ASK
-            // (#2870). Unresolvable/outside targets return null and fall through to the
-            // tool's own checkPermissions (ASK by default).
-            String target = extractTargetPath(input);
-            if (target != null) {
-                for (AdditionalWorkingDirectory wd :
-                        context.getWorkingDirectories().values()) {
-                    if (wd == null || wd.path() == null || wd.path().isBlank()) {
-                        continue;
-                    }
-                    Path base = Paths.get(wd.path()).toAbsolutePath().normalize();
-                    Path candidate = base.resolve(target).normalize();
-                    if (candidate.startsWith(base)) {
-                        return PermissionDecision.builder()
-                                .behavior(PermissionBehavior.ALLOW)
-                                .message(
-                                        "Permission granted for "
-                                                + tool.getName()
-                                                + " (accept edits mode - target inside"
-                                                + " working directory)")
-                                .decisionReason(
-                                        "Accept edits mode auto-allows edits inside working"
-                                                + " directory: "
-                                                + base)
-                                .build();
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Extracts the file target an edit tool operates on. Edit tools in this SDK name the
-     * parameter {@code path} (write_file / edit_file / read_file family); unknown shapes
-     * return {@code null} and fall through to ASK.
-     */
-    private static String extractTargetPath(Map<String, Object> input) {
-        if (input == null) {
-            return null;
-        }
-        for (String key : new String[] {"path", "file_path", "filePath"}) {
-            Object value = input.get(key);
-            if (value instanceof String s && !s.isBlank()) {
-                return s;
             }
         }
         return null;
