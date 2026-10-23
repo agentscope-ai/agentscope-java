@@ -16,9 +16,11 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -234,6 +236,37 @@ class ToolExecutorTest {
         assertTrue(
                 response.getOutput().isEmpty(),
                 "External tool suspension must not fabricate output");
+    }
+
+    @Test
+    @DisplayName("Should report backend tools hidden by EXTERNAL_ONLY as not unavailable")
+    void shouldReportHiddenBackendAsNotUnavailable() {
+        toolkit.createToolGroup("hiddenBackend", "Hidden backend tools", false);
+        toolkit.addToolToGroup("hiddenBackend", "add");
+
+        ToolRequestConfig externalOnly =
+                new ToolRequestConfig(Map.of(), ToolMergeMode.EXTERNAL_ONLY);
+        assertFalse(toolkit.isBackendToolUnavailable("add", externalOnly, null));
+
+        ToolUseBlock hiddenCall =
+                ToolUseBlock.builder()
+                        .id("call-hidden-backend")
+                        .name("add")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+        ToolResultBlock response =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(hiddenCall)
+                                        .runtimeContext(
+                                                RuntimeContext.builder()
+                                                        .toolRequestConfig(externalOnly)
+                                                        .build())
+                                        .build())
+                        .block(TIMEOUT);
+
+        assertEquals("Error: Tool not found: add", extractFirstText(response));
     }
 
     @Test

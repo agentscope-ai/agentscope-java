@@ -69,7 +69,8 @@ public final class ToolValidator {
      * string.
      *
      * @param toolUse the proposed tool call
-     * @return the string to validate, or null when the block itself is null
+     * @return the string to validate, or null when the block is null or its input cannot be
+     *     serialized
      */
     public static String resolveArgsForValidation(ToolUseBlock toolUse) {
         if (toolUse == null) {
@@ -85,8 +86,12 @@ public final class ToolValidator {
         }
         try {
             return JsonUtils.getJsonCodec().toJson(input);
-        } catch (Exception ignored) {
-            return content == null || content.isBlank() ? "{}" : content;
+        } catch (Exception exception) {
+            log.warn(
+                    "Failed to serialize tool call arguments for '{}'",
+                    toolUse.getName(),
+                    exception);
+            return null;
         }
     }
 
