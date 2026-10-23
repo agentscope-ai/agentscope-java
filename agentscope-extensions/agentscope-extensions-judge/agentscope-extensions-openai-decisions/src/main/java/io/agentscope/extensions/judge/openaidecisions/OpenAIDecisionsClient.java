@@ -42,15 +42,17 @@ import java.util.List;
 import java.util.Objects;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.retry.Retry;
 
 /**
  * OpenAI Decisions client backed by the official OpenAI Java SDK.
  *
  * <p>Each subscription performs a blocking SDK call on boundedElastic. Timeout and cancellation
  * interrupt the executing task; the SDK transport determines when in-flight network I/O stops.
- * Clients created by this wrapper have automatic retries disabled and
- * are closed by {@link #close()}. An injected SDK client is borrowed and retains its own retry and
- * resource ownership policies.
+ * Clients created by this wrapper have SDK automatic retries disabled and are closed by
+ * {@link #close()}. Wrapper retries are opt-in through {@link Builder#retryPolicy}. An injected
+ * SDK client is borrowed and retains its own retry and resource ownership policies; disable its
+ * retries before enabling wrapper retries to avoid multiplying attempts.
  */
 public final class OpenAIDecisionsClient implements AutoCloseable {
     public static final String DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -62,6 +64,7 @@ public final class OpenAIDecisionsClient implements AutoCloseable {
     private final boolean ownsClient;
     private final String model;
     private final Duration timeout;
+    private final OpenAIDecisionsRetryPolicy retryPolicy;
 
     private OpenAIDecisionsClient(Builder builder) {
         model = Objects.requireNonNull(builder.model, "model");
@@ -69,6 +72,7 @@ public final class OpenAIDecisionsClient implements AutoCloseable {
             throw new IllegalArgumentException("model must not be blank");
         }
         timeout = Objects.requireNonNull(builder.timeout, "timeout");
+        retryPolicy = Objects.requireNonNull(builder.retryPolicy, "retryPolicy");
         if (timeout.isNegative() || timeout.isZero()) {
             throw new IllegalArgumentException("timeout must be positive");
         }
@@ -128,7 +132,15 @@ public final class OpenAIDecisionsClient implements AutoCloseable {
                         Mono.error(
                                 () ->
                                         new OpenAIDecisionsException(
-                                                "Decisions request timed out", null, true)));
+                                                "Decisions request timed out", null, true)))
+                .retryWhen(
+                        Retry.backoff(retryPolicy.maxRetries(), retryPolicy.initialBackoff())
+                                .jitter(0.2)
+                                .filter(
+                                        error ->
+                                                error instanceof OpenAIDecisionsException failure
+                                                        && failure.isRetryable())
+                                .onRetryExhaustedThrow((spec, signal) -> signal.failure()));
     }
 
     /** Blocking convenience method; do not call from a reactive event-loop thread. */
@@ -438,6 +450,7 @@ public final class OpenAIDecisionsClient implements AutoCloseable {
         private String baseUrl = DEFAULT_BASE_URL;
         private String model = DEFAULT_MODEL;
         private Duration timeout = DEFAULT_TIMEOUT;
+        private OpenAIDecisionsRetryPolicy retryPolicy = OpenAIDecisionsRetryPolicy.disabled();
         private OpenAIClient client;
 
         private Builder() {}
@@ -460,6 +473,12 @@ public final class OpenAIDecisionsClient implements AutoCloseable {
 
         public Builder timeout(Duration timeout) {
             this.timeout = timeout;
+            return this;
+        }
+
+        /** Optional wrapper retries; disabled by default to preserve single-attempt behavior. */
+        public Builder retryPolicy(OpenAIDecisionsRetryPolicy retryPolicy) {
+            this.retryPolicy = retryPolicy;
             return this;
         }
 
