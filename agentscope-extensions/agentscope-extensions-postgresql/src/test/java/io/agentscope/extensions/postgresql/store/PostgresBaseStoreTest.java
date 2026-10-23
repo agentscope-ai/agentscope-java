@@ -96,6 +96,19 @@ class PostgresBaseStoreTest {
     }
 
     @Test
+    void builderWithCustomSchemaNameUsesQualifiedTableName() throws SQLException {
+        PostgresBaseStore store =
+                PostgresBaseStore.builder(dataSource).schemaName("custom_schema").build();
+
+        store.get(List.of("namespace"), "key");
+
+        verify(connection)
+                .prepareStatement(
+                        "SELECT value_json, version FROM \"custom_schema\".\"agentscope_store\""
+                                + " WHERE namespace_path = ? AND item_key = ?");
+    }
+
+    @Test
     void builderRejectsInvalidTableName() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -106,6 +119,19 @@ class PostgresBaseStoreTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PostgresBaseStore.builder(dataSource).tableName(null).build());
+    }
+
+    @Test
+    void builderRejectsInvalidSchemaName() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PostgresBaseStore.builder(dataSource).schemaName("schema;drop").build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PostgresBaseStore.builder(dataSource).schemaName("").build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PostgresBaseStore.builder(dataSource).schemaName(null).build());
     }
 
     @Test
@@ -121,6 +147,23 @@ class PostgresBaseStoreTest {
                 PostgresBaseStore.builder(dataSource).initializeSchema(true).build();
         assertNotNull(store);
         verify(connection).createStatement();
+    }
+
+    @Test
+    void initializeSchemaTrueCreatesCustomSchemaAndTable() throws SQLException {
+        PostgresBaseStore store =
+                PostgresBaseStore.builder(dataSource)
+                        .schemaName("custom_schema")
+                        .initializeSchema(true)
+                        .build();
+
+        assertNotNull(store);
+        verify(statement).executeUpdate("CREATE SCHEMA IF NOT EXISTS \"custom_schema\"");
+        verify(statement)
+                .executeUpdate(
+                        org.mockito.ArgumentMatchers.contains(
+                                "CREATE TABLE IF NOT EXISTS"
+                                        + " \"custom_schema\".\"agentscope_store\""));
     }
 
     @Test

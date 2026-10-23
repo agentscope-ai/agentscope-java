@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.memory.compaction;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
@@ -33,6 +34,7 @@ import java.util.Map;
  * <p>Token estimation strategy:
  * <ul>
  *   <li>Text content: ~1 token per 2-4 characters (varies by language)
+ *   <li>Thinking content: Uses the same character-based estimate as text content
  *   <li>Tool calls: Includes tool name, parameters, and structure overhead
  *   <li>Tool results: Includes output content and structure overhead
  *   <li>Message structure: Role, name, and formatting overhead
@@ -127,6 +129,8 @@ public class TokenCounterUtil {
 
         if (block instanceof TextBlock textBlock) {
             return estimateTextTokens(textBlock.getText());
+        } else if (block instanceof ThinkingBlock thinkingBlock) {
+            return estimateTextTokens(thinkingBlock.getThinking());
         } else if (block instanceof ToolUseBlock toolUseBlock) {
             return estimateToolUseBlockTokens(toolUseBlock);
         } else if (block instanceof ToolResultBlock toolResultBlock) {

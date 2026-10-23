@@ -25,6 +25,9 @@ import io.agentscope.claw2.runtime.session.SessionEntry;
 import io.agentscope.claw2.runtime.session.SessionView;
 import io.agentscope.claw2.runtime.session.SpawnResult;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -73,7 +76,7 @@ public class SessionsTool {
             """;
 
     private final SessionAgentManager sessionAgentManager;
-    private final TaskRepository taskRepository;
+    private final java.util.function.Supplier<TaskRepository> taskRepository;
     private final String parentSessionKey;
     private final int parentSpawnDepth;
 
@@ -90,9 +93,18 @@ public class SessionsTool {
             int parentSpawnDepth) {
         this.sessionAgentManager =
                 Objects.requireNonNull(sessionAgentManager, "sessionAgentManager");
-        this.taskRepository = taskRepository;
+        this.taskRepository = () -> taskRepository;
         this.parentSessionKey = parentSessionKey;
         this.parentSpawnDepth = parentSpawnDepth;
+    }
+
+    /** Resolve the same repository that the owning HarnessAgent exposes to task tools. */
+    public SessionsTool(
+            SessionAgentManager manager, java.util.function.Supplier<TaskRepository> repository) {
+        this.sessionAgentManager = Objects.requireNonNull(manager);
+        this.taskRepository = Objects.requireNonNull(repository);
+        this.parentSessionKey = null;
+        this.parentSpawnDepth = 0;
     }
 
     // -----------------------------------------------------------------
@@ -111,7 +123,8 @@ public class SessionsTool {
                     sessions_pending_completions. Returns run_id and session_key for follow-up \
                     with sessions_send.\
                     """)
-    public String sessionsSpawn(
+    public ToolResultBlock sessionsSpawn(
+            RuntimeContext runtimeContext,
             @ToolParam(name = "agent_id", description = "Subagent identifier to instantiate")
                     String agentId,
             @ToolParam(
@@ -163,57 +176,72 @@ public class SessionsTool {
                     SessionEntry e = existingEntry.get();
                     String resumeInfo = formatExistingSessionInfo(e);
                     if (!hasTask) {
-                        return resumeInfo + "\nstatus: resumed";
+                        return ToolResultBlock.success(resumeInfo + "\nstatus: resumed");
                     }
                     long tMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
                     if (tMs == 0) {
                         String taskId = "task_" + UUID.randomUUID();
                         final String capturedTask = task;
-                        taskRepository.putTask(
-                                RuntimeContext.empty(),
-                                taskId,
-                                e.agentId(),
-                                parentSessionScope(),
-                                new TaskRunSpec.LocalTaskRunSpec(
-                                        () -> {
-                                            SendResult r =
-                                                    sessionAgentManager.execute(
-                                                            e.sessionKey(),
-                                                            capturedTask,
-                                                            0,
-                                                            true,
-                                                            CommandLane.SUBAGENT);
-                                            return "ok".equals(r.status())
-                                                    ? r.reply()
-                                                    : "Error: " + r.error();
-                                        }));
-                        return resumeInfo
-                                + "\n"
-                                + String.format(BG_RESULT_TEMPLATE, taskId, taskId);
+                        taskRepository
+                                .get()
+                                .putTask(
+                                        runtimeContext,
+                                        taskId,
+                                        e.agentId(),
+                                        parentSessionScope(runtimeContext),
+                                        new TaskRunSpec.LocalTaskRunSpec(
+                                                () -> {
+                                                    SendResult r =
+                                                            sessionAgentManager.execute(
+                                                                    e.sessionKey(),
+                                                                    capturedTask,
+                                                                    0,
+                                                                    false,
+                                                                    CommandLane.SUBAGENT,
+                                                                    runtimeContext);
+                                                    return requireReply(r);
+                                                }))
+                                .whenComplete(
+                                        (value, error) ->
+                                                announce(
+                                                        runtimeContext,
+                                                        e.sessionKey(),
+                                                        value,
+                                                        error));
+                        return ToolResultBlock.success(
+                                resumeInfo
+                                        + "\n"
+                                        + String.format(BG_RESULT_TEMPLATE, taskId, taskId));
                     }
                     SendResult result =
                             sessionAgentManager.execute(
-                                    e.sessionKey(), task, tMs, false, CommandLane.SUBAGENT);
+                                    e.sessionKey(),
+                                    task,
+                                    tMs,
+                                    false,
+                                    CommandLane.SUBAGENT,
+                                    runtimeContext);
                     if ("error".equals(result.status())) {
-                        return resumeInfo + "\nstatus: error\nerror: " + result.error();
+                        return failure(resumeInfo + "\nstatus: error\nerror: " + result.error());
                     }
-                    return resumeInfo + "\nstatus: ok\nreply:\n" + result.reply();
+                    return ToolResultBlock.success(
+                            resumeInfo + "\nstatus: ok\nreply:\n" + result.reply());
                 }
             }
         }
 
         SpawnResult reg =
                 sessionAgentManager.registerSession(
-                        agentId, canonLabel, parentSessionKey, parentSpawnDepth);
+                        agentId, canonLabel, requesterKey(runtimeContext), parentSpawnDepth);
 
         if ("error".equals(reg.status())) {
-            return "Error: " + reg.error();
+            return ToolResultBlock.error(reg.error());
         }
 
         String spawnedInfo = formatSpawnInfo(reg);
 
         if (sessionMode || !hasTask) {
-            return spawnedInfo + "\nstatus: accepted";
+            return ToolResultBlock.success(spawnedInfo + "\nstatus: accepted");
         }
 
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
@@ -222,32 +250,44 @@ public class SessionsTool {
             String taskId = "task_" + UUID.randomUUID();
             final String capturedTask = task;
             final String spawnedSessionKey = reg.sessionKey();
-            taskRepository.putTask(
-                    RuntimeContext.empty(),
-                    taskId,
-                    agentId,
-                    parentSessionScope(),
-                    new TaskRunSpec.LocalTaskRunSpec(
-                            () -> {
-                                SendResult r =
-                                        sessionAgentManager.execute(
-                                                spawnedSessionKey,
-                                                capturedTask,
-                                                0,
-                                                true,
-                                                CommandLane.SUBAGENT);
-                                return "ok".equals(r.status()) ? r.reply() : "Error: " + r.error();
-                            }));
-            return spawnedInfo + "\n" + String.format(BG_RESULT_TEMPLATE, taskId, taskId);
+            taskRepository
+                    .get()
+                    .putTask(
+                            runtimeContext,
+                            taskId,
+                            agentId,
+                            parentSessionScope(runtimeContext),
+                            new TaskRunSpec.LocalTaskRunSpec(
+                                    () -> {
+                                        SendResult r =
+                                                sessionAgentManager.execute(
+                                                        spawnedSessionKey,
+                                                        capturedTask,
+                                                        0,
+                                                        false,
+                                                        CommandLane.SUBAGENT,
+                                                        runtimeContext);
+                                        return requireReply(r);
+                                    }))
+                    .whenComplete(
+                            (value, error) ->
+                                    announce(runtimeContext, spawnedSessionKey, value, error));
+            return ToolResultBlock.success(
+                    spawnedInfo + "\n" + String.format(BG_RESULT_TEMPLATE, taskId, taskId));
         }
 
         SendResult result =
                 sessionAgentManager.execute(
-                        reg.sessionKey(), task, timeoutMs, false, CommandLane.SUBAGENT);
+                        reg.sessionKey(),
+                        task,
+                        timeoutMs,
+                        false,
+                        CommandLane.SUBAGENT,
+                        runtimeContext);
         if ("error".equals(result.status())) {
-            return spawnedInfo + "\nstatus: error\nerror: " + result.error();
+            return failure(spawnedInfo + "\nstatus: error\nerror: " + result.error());
         }
-        return spawnedInfo + "\nstatus: ok\nreply:\n" + result.reply();
+        return ToolResultBlock.success(spawnedInfo + "\nstatus: ok\nreply:\n" + result.reply());
     }
 
     // -----------------------------------------------------------------
@@ -261,7 +301,8 @@ public class SessionsTool {
                     Send a message to an existing managed session by session_key or label. \
                     timeout_seconds=0 fires and forgets — returns task_id for task_output.\
                     """)
-    public String sessionsSend(
+    public ToolResultBlock sessionsSend(
+            RuntimeContext runtimeContext,
             @ToolParam(
                             name = "session_key",
                             description =
@@ -297,13 +338,13 @@ public class SessionsTool {
         boolean hasKey = sessionKey != null && !sessionKey.isBlank();
         boolean hasLabel = label != null && !label.isBlank();
         if (hasKey && hasLabel) {
-            return "Error: Provide either session_key or label, not both.";
+            return ToolResultBlock.error("Provide either session_key or label, not both.");
         }
         if (!hasKey && !hasLabel) {
-            return "Error: Either session_key or label is required.";
+            return ToolResultBlock.error("Either session_key or label is required.");
         }
         if (message == null || message.isBlank()) {
-            return "Error: message is required";
+            return ToolResultBlock.error("message is required");
         }
 
         String target = hasKey ? sessionKey.trim() : label.trim();
@@ -318,36 +359,43 @@ public class SessionsTool {
                             .map(e -> e.agentId())
                             .orElse("unknown");
             final String capturedTarget = target;
-            taskRepository.putTask(
-                    RuntimeContext.empty(),
-                    taskId,
-                    resolvedAgentId,
-                    parentSessionScope(),
-                    new TaskRunSpec.LocalTaskRunSpec(
-                            () -> {
-                                SendResult r =
-                                        sessionAgentManager.execute(
-                                                capturedTarget,
-                                                message,
-                                                0,
-                                                true,
-                                                CommandLane.SUBAGENT);
-                                return "ok".equals(r.status()) ? r.reply() : "Error: " + r.error();
-                            }));
-            return String.format(BG_RESULT_TEMPLATE, taskId, taskId);
+            taskRepository
+                    .get()
+                    .putTask(
+                            runtimeContext,
+                            taskId,
+                            resolvedAgentId,
+                            parentSessionScope(runtimeContext),
+                            new TaskRunSpec.LocalTaskRunSpec(
+                                    () -> {
+                                        SendResult r =
+                                                sessionAgentManager.execute(
+                                                        capturedTarget,
+                                                        message,
+                                                        0,
+                                                        false,
+                                                        CommandLane.SUBAGENT,
+                                                        runtimeContext);
+                                        return requireReply(r);
+                                    }))
+                    .whenComplete(
+                            (value, error) ->
+                                    announce(runtimeContext, capturedTarget, value, error));
+            return ToolResultBlock.success(String.format(BG_RESULT_TEMPLATE, taskId, taskId));
         }
 
         SendResult result =
                 sessionAgentManager.execute(
-                        target, message, timeoutMs, false, CommandLane.SUBAGENT);
+                        target, message, timeoutMs, false, CommandLane.SUBAGENT, runtimeContext);
         return switch (result.status()) {
             case "ok" ->
-                    "session_key: "
-                            + result.sessionKey()
-                            + "\nstatus: ok\nreply:\n"
-                            + result.reply();
-            case "error" -> "Error: " + result.error();
-            default -> "status: " + result.status();
+                    ToolResultBlock.success(
+                            "session_key: "
+                                    + result.sessionKey()
+                                    + "\nstatus: ok\nreply:\n"
+                                    + result.reply());
+            case "error" -> ToolResultBlock.error(result.error());
+            default -> ToolResultBlock.success("status: " + result.status());
         };
     }
 
@@ -433,7 +481,7 @@ public class SessionsTool {
                     written when messages are offloaded from memory. Returns the \
                     session_file_path and transcript content.\
                     """)
-    public String sessionsHistory(
+    public ToolResultBlock sessionsHistory(
             @ToolParam(
                             name = "session_key",
                             description = "AgentStateStore key or label of the target session")
@@ -445,21 +493,26 @@ public class SessionsTool {
                     Integer limit) {
 
         if (sessionKey == null || sessionKey.isBlank()) {
-            return "Error: session_key is required";
+            return ToolResultBlock.error("session_key is required");
         }
 
         int effectiveLimit = limit != null && limit > 0 ? limit : 0;
         HistoryResult result = sessionAgentManager.history(sessionKey.trim(), effectiveLimit);
 
         if (result.error() != null) {
-            return "Error: " + result.error();
+            return ToolResultBlock.error(result.error());
         }
-        return "session_key: "
-                + result.sessionKey()
-                + "\nsession_file_path: "
-                + result.sessionFilePath()
-                + "\n\n"
-                + result.content();
+        return ToolResultBlock.success(
+                "session_key: "
+                        + result.sessionKey()
+                        + "\nsession_file_path: "
+                        + result.sessionFilePath()
+                        + "\n\n"
+                        + result.content());
+    }
+
+    private static ToolResultBlock failure(String text) {
+        return ToolResultBlock.text(text).withState(ToolResultState.ERROR);
     }
 
     // -----------------------------------------------------------------
@@ -475,7 +528,8 @@ public class SessionsTool {
                     children, or omit for the top-level harness. Each entry includes \
                     announce_text for merging into your next reply.\
                     """)
-    public String sessionsPendingCompletions(
+    public ToolResultBlock sessionsPendingCompletions(
+            RuntimeContext runtimeContext,
             @ToolParam(
                             name = "requester_session_key",
                             description =
@@ -491,39 +545,69 @@ public class SessionsTool {
                             required = false)
                     Integer limit) {
 
-        String rk =
-                requesterSessionKey != null && !requesterSessionKey.isBlank()
-                        ? requesterSessionKey.trim()
-                        : SessionConstants.resolveRequesterKey(parentSessionKey);
-        int lim = limit != null && limit > 0 ? limit : 10;
-        List<PendingCompletion> pending = sessionAgentManager.drainPendingCompletions(rk, lim);
-        if (pending.isEmpty()) {
-            return "No pending completion events for requester_session_key=" + rk + ".";
+        String rk = requesterKey(runtimeContext);
+        if (requesterSessionKey != null
+                && !requesterSessionKey.isBlank()
+                && !requesterSessionKey.equals(rk)) {
+            return ToolResultBlock.error(
+                    "Completion queries are scoped to the current requester session");
         }
-        StringBuilder sb = new StringBuilder();
-        sb.append("Pending completions (")
-                .append(pending.size())
-                .append(") for ")
-                .append(rk)
-                .append(":\n\n");
-        for (PendingCompletion p : pending) {
-            sb.append("---\n");
-            sb.append("run_id: ").append(p.runId()).append("\n");
-            sb.append("child_session_key: ").append(p.childSessionKey()).append("\n");
-            sb.append("status: ").append(p.status()).append("\n");
-            if (p.error() != null) {
-                sb.append("error: ").append(p.error()).append("\n");
-            }
-            sb.append("\n").append(p.announceText()).append("\n");
+        int lim = limit == null ? 10 : Math.max(1, Math.min(limit, 100));
+        TaskRepository repo = taskRepository.get();
+        String sid = parentSessionScope(runtimeContext);
+        var deliveries = repo.findPendingDeliveries(runtimeContext, sid);
+        if (deliveries.isEmpty()) {
+            long running =
+                    repo.listTasks(runtimeContext, sid, null).stream()
+                            .filter(t -> !t.getTaskStatus().isTerminal())
+                            .count();
+            return ToolResultBlock.success(
+                    "status: no_pending_completions\nrunning_tasks: "
+                            + running
+                            + "\nNo pending completion events for requester_session_key="
+                            + rk
+                            + ". An empty completion queue alone does not mean a task is"
+                            + " running.");
         }
-        return sb.toString().trim();
+        StringBuilder out = new StringBuilder("status: completed_events\n");
+        int count = 0;
+        ToolResultState state = ToolResultState.SUCCESS;
+        for (var delivery : deliveries) {
+            if (count++ >= lim) break;
+            ToolResultBlock taskResult =
+                    new io.agentscope.harness.agent.tool.TaskTool(repo)
+                            .taskOutput(runtimeContext, delivery.taskId(), false, 0L);
+            state = aggregateState(state, taskResult.getState());
+            taskResult.getOutput().stream()
+                    .filter(TextBlock.class::isInstance)
+                    .map(TextBlock.class::cast)
+                    .map(TextBlock::getText)
+                    .forEach(out::append);
+            out.append('\n');
+        }
+        return ToolResultBlock.text(out.toString()).withState(state);
+    }
+
+    private static ToolResultState aggregateState(ToolResultState current, ToolResultState next) {
+        if (current == ToolResultState.ERROR || next == ToolResultState.ERROR) {
+            return ToolResultState.ERROR;
+        }
+        if (current == ToolResultState.INTERRUPTED || next == ToolResultState.INTERRUPTED) {
+            return ToolResultState.INTERRUPTED;
+        }
+        return ToolResultState.SUCCESS;
     }
 
     // -----------------------------------------------------------------
     //  Helpers
     // -----------------------------------------------------------------
 
-    private String parentSessionScope() {
+    private String parentSessionScope(RuntimeContext context) {
+        if (context != null
+                && context.getSessionId() != null
+                && !context.getSessionId().isBlank()) {
+            return context.getSessionId();
+        }
         if (parentSessionKey == null || parentSessionKey.isBlank()) {
             return null;
         }
@@ -531,6 +615,32 @@ public class SessionsTool {
                 .getSession(parentSessionKey)
                 .map(e -> e.sessionId())
                 .orElse(parentSessionKey);
+    }
+
+    private String requesterKey(RuntimeContext context) {
+        if (context != null) {
+            String key = context.get("sessionKey");
+            if (key != null && !key.isBlank()) return key;
+            if (context.getSessionId() != null && !context.getSessionId().isBlank()) {
+                return sessionAgentManager.requesterKeyForSession(context.getSessionId());
+            }
+        }
+        return SessionConstants.resolveRequesterKey(parentSessionKey);
+    }
+
+    private void announce(RuntimeContext context, String key, String value, Throwable error) {
+        // AgentTaskStarter owns continuation and completion for managed work. Ordinary chat
+        // sessions retain gateway wakeups, after durable task state has been written.
+        if (context == null || !Boolean.TRUE.equals(context.get("agentTaskManaged"))) {
+            sessionAgentManager.announceCompletion(key, value, error);
+        }
+    }
+
+    private static String requireReply(SendResult result) {
+        if (!"ok".equals(result.status())) {
+            throw new IllegalStateException(result.error());
+        }
+        return result.reply();
     }
 
     private static long resolveTimeoutMs(Integer timeoutSeconds, int defaultSeconds) {

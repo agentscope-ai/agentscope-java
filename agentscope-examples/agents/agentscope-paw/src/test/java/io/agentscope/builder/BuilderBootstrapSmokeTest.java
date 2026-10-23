@@ -47,40 +47,42 @@ class BuilderBootstrapSmokeTest {
     @Test
     void singleAgent_chatUiChannel() throws Exception {
         Model model = stubModel("single-agent-reply");
-        ClawBootstrap bootstrap =
+        try (ClawBootstrap bootstrap =
                 ClawBootstrap.builder()
                         .skipConfigFile(true)
                         .cwd(tempDir)
                         .model(model)
                         .configureAgent("main", b -> b.name("main").description("main"))
                         .mainAgent("main")
-                        .build();
-
-        ChatUiChannel chat = bootstrap.chatUiChannel();
-        Msg reply = chat.send("Hello from test").block();
-        assertTrue(reply.getTextContent().contains("single-agent-reply"));
+                        .build()) {
+            ChatUiChannel chat = bootstrap.chatUiChannel();
+            Msg reply = chat.send("Hello from test").block();
+            assertTrue(reply.getTextContent().contains("single-agent-reply"));
+        }
     }
 
     @Test
     void singleAgent_chatUiChannel_perPeer() throws Exception {
         Model model = stubModel("per-peer-reply");
-        ClawBootstrap bootstrap =
+        try (ClawBootstrap bootstrap =
                 ClawBootstrap.builder()
                         .skipConfigFile(true)
                         .cwd(tempDir)
                         .model(model)
                         .configureAgent("main", b -> b.name("main"))
                         .mainAgent("main")
-                        .build();
+                        .build()) {
+            ChannelConfig perPeerConfig =
+                    ChannelConfig.builder(ChatUiChannel.CHANNEL_ID)
+                            .dmScope(DmScope.PER_PEER)
+                            .build();
+            ChatUiChannel chat = bootstrap.chatUiChannel(perPeerConfig);
 
-        ChannelConfig perPeerConfig =
-                ChannelConfig.builder(ChatUiChannel.CHANNEL_ID).dmScope(DmScope.PER_PEER).build();
-        ChatUiChannel chat = bootstrap.chatUiChannel(perPeerConfig);
-
-        Msg reply1 = chat.send("alice", "Hi!").block();
-        Msg reply2 = chat.send("bob", "Hi!").block();
-        assertTrue(reply1.getTextContent().contains("per-peer-reply"));
-        assertTrue(reply2.getTextContent().contains("per-peer-reply"));
+            Msg reply1 = chat.send("alice", "Hi!").block();
+            Msg reply2 = chat.send("bob", "Hi!").block();
+            assertTrue(reply1.getTextContent().contains("per-peer-reply"));
+            assertTrue(reply2.getTextContent().contains("per-peer-reply"));
+        }
     }
 
     @Test
@@ -88,7 +90,7 @@ class BuilderBootstrapSmokeTest {
         Model mainModel = stubModel("from-main");
         Model supportModel = stubModel("from-support");
 
-        ClawBootstrap bootstrap =
+        try (ClawBootstrap bootstrap =
                 ClawBootstrap.builder()
                         .skipConfigFile(true)
                         .cwd(tempDir)
@@ -96,11 +98,52 @@ class BuilderBootstrapSmokeTest {
                         .configureAgent("main", b -> b.name("main-agent").model(mainModel))
                         .configureAgent("support", b -> b.name("support-agent").model(supportModel))
                         .mainAgent("main")
-                        .build();
+                        .build()) {
+            ChatUiChannel chat = bootstrap.chatUiChannel();
+            Msg reply = chat.send("hello").block();
+            assertTrue(reply.getTextContent().contains("from-main"));
+        }
+    }
 
-        ChatUiChannel chat = bootstrap.chatUiChannel();
-        Msg reply = chat.send("hello").block();
-        assertTrue(reply.getTextContent().contains("from-main"));
+    @Test
+    void spawnedWorkUsesTheOwningHarnessRepository() throws Exception {
+        try (ClawBootstrap bootstrap =
+                ClawBootstrap.builder()
+                        .skipConfigFile(true)
+                        .cwd(tempDir)
+                        .model(stubModel("EV research evidence"))
+                        .configureAgent("main", b -> b.name("main"))
+                        .mainAgent("main")
+                        .build()) {
+            var agent = bootstrap.mainAgent();
+            var context =
+                    io.agentscope.core.agent.RuntimeContext.builder()
+                            .sessionId("assigned-issue-session")
+                            .put("agentTaskManaged", true)
+                            .build();
+            var output =
+                    agent.getToolkit()
+                            .getTool("sessions_spawn")
+                            .callAsync(
+                                    io.agentscope.core.tool.ToolCallParam.builder()
+                                            .runtimeContext(context)
+                                            .input(
+                                                    Map.of(
+                                                            "agent_id",
+                                                            "general-purpose",
+                                                            "task",
+                                                            "Research EV",
+                                                            "timeout_seconds",
+                                                            0))
+                                            .build())
+                            .block();
+            assertTrue(output != null);
+            var tasks = agent.getTaskRepository().listTasks(context, context.getSessionId(), null);
+            assertTrue(tasks.size() == 1, "spawn must share the Harness task repository");
+            var task = tasks.iterator().next();
+            assertTrue(task.waitForCompletion(5000));
+            assertTrue(task.getResult().contains("EV research evidence"));
+        }
     }
 
     private static Model stubModel(String assistantText) {

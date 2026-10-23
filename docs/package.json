@@ -1,0 +1,20 @@
+{
+  "name": "agentscope-java-docs",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "mint dev",
+    "check": "node scripts/check-docs.mjs",
+    "test": "node --test scripts/tests/*.test.mjs",
+    "validate": "npm run check && mint validate",
+    "broken-links": "mint broken-links"
+  },
+  "devDependencies": {
+    "@mdx-js/mdx": "3.1.1",
+    "github-slugger": "2.0.0",
+    "gray-matter": "4.0.3",
+    "mint": "4.2.876",
+    "remark-gfm": "4.0.1"
+  }
+}

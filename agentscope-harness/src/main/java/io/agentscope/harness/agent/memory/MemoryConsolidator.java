@@ -23,11 +23,15 @@ import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -93,17 +97,22 @@ public class MemoryConsolidator {
             Output the COMPLETE new MEMORY.md content (not just a diff). Use markdown.\
             """;
 
+    private static final List<String> WATERMARK_NAMESPACE = List.of("memory", "consolidation");
+    private static final String WATERMARK_KEY = "watermark";
+    private static final int MAX_CAS_RETRIES = 5;
+
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private final String consolidationPrompt;
     private final int maxMemoryTokens;
+    private final BaseStore baseStore;
 
     public MemoryConsolidator(WorkspaceManager workspaceManager, Model model) {
-        this(workspaceManager, model, DEFAULT_CONSOLIDATION_PROMPT, 4000);
+        this(workspaceManager, model, DEFAULT_CONSOLIDATION_PROMPT, 4000, null);
     }
 
     public MemoryConsolidator(WorkspaceManager workspaceManager, Model model, int maxMemoryTokens) {
-        this(workspaceManager, model, DEFAULT_CONSOLIDATION_PROMPT, maxMemoryTokens);
+        this(workspaceManager, model, DEFAULT_CONSOLIDATION_PROMPT, maxMemoryTokens, null);
     }
 
     /**
@@ -116,11 +125,25 @@ public class MemoryConsolidator {
             Model model,
             String consolidationPrompt,
             int maxMemoryTokens) {
+        this(workspaceManager, model, consolidationPrompt, maxMemoryTokens, null);
+    }
+
+    /**
+     * @param baseStore optional distributed store for the consolidation watermark; when set,
+     *     watermark reads prefer the store and writes use CAS with a filesystem fallback
+     */
+    public MemoryConsolidator(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String consolidationPrompt,
+            int maxMemoryTokens,
+            BaseStore baseStore) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.consolidationPrompt =
                 consolidationPrompt != null ? consolidationPrompt : DEFAULT_CONSOLIDATION_PROMPT;
         this.maxMemoryTokens = maxMemoryTokens;
+        this.baseStore = baseStore;
     }
 
     /**
@@ -283,6 +306,27 @@ public class MemoryConsolidator {
 
     /** Reads the last consolidation Instant, or {@link Instant#EPOCH} if none recorded. */
     Instant readWatermark(RuntimeContext rc) {
+        BaseStore store = this.baseStore;
+        if (store != null) {
+            try {
+                StoreItem item = store.get(WATERMARK_NAMESPACE, WATERMARK_KEY);
+                if (item != null && item.value() != null) {
+                    Object ts = item.value().get("ts");
+                    if (ts instanceof Number n) {
+                        return Instant.ofEpochMilli(n.longValue());
+                    }
+                }
+            } catch (RuntimeException e) {
+                log.warn(
+                        "Failed to read consolidation watermark from store: {} — falling back to"
+                                + " file",
+                        e.getMessage());
+            }
+        }
+        return readWatermarkFromFile(rc);
+    }
+
+    private Instant readWatermarkFromFile(RuntimeContext rc) {
         try {
             String value = workspaceManager.readManagedWorkspaceFileUtf8(rc, STATE_REL_PATH);
             if (value == null || value.isBlank()) {
@@ -299,6 +343,9 @@ public class MemoryConsolidator {
     }
 
     private void writeWatermark(RuntimeContext rc, Instant ts) {
+        if (baseStore != null) {
+            writeWatermarkToStore(ts);
+        }
         try {
             workspaceManager.writeUtf8WorkspaceRelative(rc, STATE_REL_PATH, ts.toString());
         } catch (Exception e) {
@@ -307,5 +354,32 @@ public class MemoryConsolidator {
                     STATE_REL_PATH,
                     e.getMessage());
         }
+    }
+
+    private void writeWatermarkToStore(Instant ts) {
+        Map<String, Object> value = new HashMap<>();
+        value.put("ts", ts.toEpochMilli());
+        for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
+            StoreItem item;
+            try {
+                item = baseStore.get(WATERMARK_NAMESPACE, WATERMARK_KEY);
+            } catch (RuntimeException e) {
+                log.warn("Failed to read consolidation watermark for CAS: {}", e.getMessage());
+                return;
+            }
+            long expectedVersion = item != null ? item.version() : 0L;
+            try {
+                if (baseStore.putIfVersion(
+                        WATERMARK_NAMESPACE, WATERMARK_KEY, value, expectedVersion)) {
+                    return;
+                }
+            } catch (RuntimeException e) {
+                log.warn("Failed to write consolidation watermark to store: {}", e.getMessage());
+                return;
+            }
+        }
+        log.warn(
+                "Failed to advance consolidation watermark in store after {} CAS retries",
+                MAX_CAS_RETRIES);
     }
 }

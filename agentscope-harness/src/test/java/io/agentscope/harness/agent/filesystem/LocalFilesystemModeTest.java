@@ -18,10 +18,12 @@ package io.agentscope.harness.agent.filesystem;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
@@ -32,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -41,6 +44,32 @@ import org.junit.jupiter.api.io.TempDir;
  * UNRESTRICTED accepts any absolute path.
  */
 class LocalFilesystemModeTest {
+
+    @Test
+    void edit_rejectsNullNewString_andEmptyOldString(@TempDir Path workspace) throws IOException {
+        Path file = workspace.resolve("f.txt");
+        Files.writeString(file, "Hello World");
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.UNRESTRICTED, null, 10, null);
+        RuntimeContext rt = RuntimeContext.empty();
+
+        // null is not a deletion: pass "" instead. Uniform across filesystems.
+        EditResult nullNew = fs.edit(rt, file.toString(), "World", null, false);
+        assertFalse(nullNew.isSuccess());
+        assertTrue(nullNew.error().contains("must not be null"));
+        assertEquals("Hello World", Files.readString(file), "file must be untouched");
+
+        // "" is a real deletion and keeps the normal occurrence count.
+        EditResult emptyNew = fs.edit(rt, file.toString(), "World", "", false);
+        assertTrue(emptyNew.isSuccess(), () -> "expected success, got: " + emptyNew.error());
+        assertEquals(1, emptyNew.occurrences());
+        assertEquals("Hello ", Files.readString(file));
+
+        // An empty oldString would make the occurrence counter loop forever.
+        EditResult emptyOld = fs.edit(rt, file.toString(), "", "x", false);
+        assertFalse(emptyOld.isSuccess());
+        assertEquals("Hello ", Files.readString(file), "file must be untouched");
+    }
 
     @Test
     void sandboxed_rejectsAbsolutePathOutsideRoot(@TempDir Path workspace, @TempDir Path other)
@@ -285,8 +314,99 @@ class LocalFilesystemModeTest {
                 new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
 
         // Path traversal with leading "/" should be rejected
-        org.junit.jupiter.api.Assertions.assertThrows(
-                SecurityException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> fs.read(RuntimeContext.empty(), "/../etc/passwd", 0, 0));
+    }
+
+    // ==================== Bug reproduction: ls silently swallows errors ====================
+
+    @Test
+    void ls_nonExistentPath_shouldReturnFail(@TempDir Path workspace) {
+        LocalFilesystem fs = new LocalFilesystem(workspace);
+        LsResult r = fs.ls(RuntimeContext.empty(), "/this/path/does/not/exist");
+        assertFalse(r.isSuccess(), "ls on non-existent path should fail");
+    }
+
+    @Test
+    void ls_filePath_shouldReturnFail(@TempDir Path workspace) throws IOException {
+        Path file = workspace.resolve("foo.txt");
+        Files.writeString(file, "content");
+        LocalFilesystem fs = new LocalFilesystem(workspace);
+        LsResult r = fs.ls(RuntimeContext.empty(), file.toAbsolutePath().toString());
+        assertFalse(r.isSuccess(), "ls on a file path should fail");
+    }
+
+    @Test
+    void rooted_relativePathTraversalRejected(@TempDir Path base) throws IOException {
+        Path workspace = base.resolve("workspace");
+        Files.createDirectories(workspace);
+        Path outsideFile = base.resolve("secret.txt");
+        Files.writeString(outsideFile, "secret", StandardCharsets.UTF_8);
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> fs.read(RuntimeContext.empty(), "../secret.txt", 0, 0));
+    }
+
+    @Test
+    void rooted_relativeUploadTraversalRejected(@TempDir Path base) throws IOException {
+        Path workspace = base.resolve("workspace");
+        Files.createDirectories(workspace);
+        Path escaped = base.resolve("escape.txt");
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        var responses =
+                fs.uploadFiles(
+                        RuntimeContext.empty(),
+                        List.of(
+                                Map.entry(
+                                        "../escape.txt",
+                                        "escape".getBytes(StandardCharsets.UTF_8))));
+
+        assertEquals(1, responses.size());
+        assertFalse(responses.get(0).isSuccess());
+        assertEquals("permission_denied", responses.get(0).error());
+        assertFalse(Files.exists(escaped));
+    }
+
+    @Test
+    void rooted_relativeTraversalCannotEscapeUserNamespace(@TempDir Path workspace)
+            throws IOException {
+        Files.createDirectories(workspace.resolve("user-1"));
+        Files.createDirectories(workspace.resolve("user-2"));
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        var responses =
+                fs.uploadFiles(
+                        rc,
+                        List.of(
+                                Map.entry(
+                                        "../user-2/escape.txt",
+                                        "escape".getBytes(StandardCharsets.UTF_8))));
+
+        assertEquals(1, responses.size());
+        assertFalse(responses.get(0).isSuccess());
+        assertFalse(Files.exists(workspace.resolve("user-2/escape.txt")));
+    }
+
+    @Test
+    void rooted_literalDoubleDotInRelativeSegmentAllowed(@TempDir Path workspace)
+            throws IOException {
+        Path file = workspace.resolve("some..dir/note.txt");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "literal name", StandardCharsets.UTF_8);
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        ReadResult result = fs.read(RuntimeContext.empty(), "some..dir/note.txt", 0, 0);
+
+        assertTrue(result.isSuccess());
+        assertEquals("literal name", result.fileData().content());
     }
 }

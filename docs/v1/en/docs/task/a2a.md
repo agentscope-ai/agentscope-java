@@ -1,4 +1,7 @@
-# A2A (Agent2Agent)
+---
+title: A2A Protocol
+zh_link: /v1/zh/docs/task/a2a
+---
 
 A2A is AgentScope's support for the [A2A protocol](https://a2a-protocol.org/latest/specification/), including client (calling remote Agents) and server (exposing local Agents) components.
 

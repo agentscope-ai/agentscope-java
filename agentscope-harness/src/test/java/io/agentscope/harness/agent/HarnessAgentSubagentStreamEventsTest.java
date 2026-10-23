@@ -35,8 +35,10 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -55,12 +57,14 @@ import reactor.core.publisher.Flux;
  * ({@code Flux<AgentEvent>}) path instead of the deprecated {@code stream()} ({@code Flux<Event>})
  * path.
  */
+@HarnessQuiescence
 class HarnessAgentSubagentStreamEventsTest {
 
     @TempDir Path workspace;
     @TempDir Path stateHome;
 
     private String previousStateHome;
+    private HarnessAgent parent;
 
     @BeforeEach
     void overrideStateHome() {
@@ -69,11 +73,17 @@ class HarnessAgentSubagentStreamEventsTest {
     }
 
     @AfterEach
-    void restoreStateHome() {
-        if (previousStateHome != null) {
-            System.setProperty("agentscope.state.home", previousStateHome);
-        } else {
-            System.clearProperty("agentscope.state.home");
+    void tearDown() {
+        try {
+            if (parent != null) {
+                parent.close();
+            }
+        } finally {
+            if (previousStateHome != null) {
+                System.setProperty("agentscope.state.home", previousStateHome);
+            } else {
+                System.clearProperty("agentscope.state.home");
+            }
         }
     }
 
@@ -141,7 +151,7 @@ class HarnessAgentSubagentStreamEventsTest {
                                 stopChunk("c1", "research complete")))
                 .thenReturn(Flux.just(stopChunk("p2", "summary done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -188,6 +198,113 @@ class HarnessAgentSubagentStreamEventsTest {
     }
 
     // -----------------------------------------------------------------
+    // 1b. streamEvents() under AsyncToolMiddleware — child events still
+    //     forwarded with source tag (regression for the bare-subscribe
+    //     context break in AsyncToolMiddleware.onActing).
+    //
+    // AsyncToolMiddleware wraps the acting phase with Flux.create +
+    // next.apply(input).subscribe(...). The bare subscribe detaches the
+    // Reactor Context, so runToolBatch's deferContextual captures an empty
+    // context — AgentEventEmitter.CONTEXT_KEY (set by buildAgentStream) is
+    // lost. Without the emitter-recovery in executeToolCalls' contextWrite,
+    // AgentSpawnTool#execLocalSync would fall through to the non-streaming
+    // path (Path 3) and child AgentEvents would never reach the parent's
+    // streamEvents() stream.
+    // -----------------------------------------------------------------
+
+    @Test
+    void streamEvents_childEventsForwardedWithSource_underAsyncToolMiddleware() throws Exception {
+        String childId = "researcher";
+        writeSubagentSpec(childId, "Research specialist", "You are a researcher.");
+
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "p1",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                childId,
+                                                "task",
+                                                "research X",
+                                                "timeout_seconds",
+                                                60))))
+                .thenReturn(
+                        Flux.just(
+                                new ChatResponse(
+                                        "c1",
+                                        List.of(TextBlock.builder().text("researching…").build()),
+                                        null,
+                                        Map.of(),
+                                        null),
+                                stopChunk("c1", "research complete")))
+                .thenReturn(Flux.just(stopChunk("p2", "summary done")));
+
+        // Registering AsyncToolMiddleware (messageBus + asyncToolTimeout) is
+        // what triggers the bug: its bare next.apply(input).subscribe(...)
+        // detaches the Reactor Context during the acting phase.
+        parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .asyncToolTimeout(Duration.ofSeconds(30))
+                        .build();
+
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-async-stream-events").build();
+
+        List<AgentEvent> events =
+                parent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("start")
+                                                .build()),
+                                ctx)
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertFalse(events.isEmpty());
+
+        // Child events: source != null, contains childId. Without the fix
+        // these would be empty — the emitter is lost in the acting context.
+        List<AgentEvent> childEvents =
+                events.stream().filter(e -> e.getSource() != null).collect(Collectors.toList());
+        assertFalse(
+                childEvents.isEmpty(),
+                "expected child events with source tag under AsyncToolMiddleware; got types: "
+                        + events.stream()
+                                .map(e -> e.getType() + "(src=" + e.getSource() + ")")
+                                .collect(Collectors.joining(", ")));
+
+        for (AgentEvent childEvent : childEvents) {
+            assertTrue(
+                    childEvent.getSource().contains(childId),
+                    "source should contain childId; got: " + childEvent.getSource());
+        }
+
+        // Child AGENT_START / AGENT_END bookends present with source
+        assertTrue(
+                childEvents.stream().anyMatch(e -> e.getType() == AgentEventType.AGENT_START),
+                "expected child AGENT_START with source under AsyncToolMiddleware");
+        assertTrue(
+                childEvents.stream().anyMatch(e -> e.getType() == AgentEventType.AGENT_END),
+                "expected child AGENT_END with source under AsyncToolMiddleware");
+
+        // Parent bookends: source == null
+        assertEquals(AgentEventType.AGENT_START, events.get(0).getType());
+        assertNull(events.get(0).getSource(), "first event should be parent AGENT_START");
+        assertEquals(AgentEventType.AGENT_END, events.get(events.size() - 1).getType());
+        assertNull(
+                events.get(events.size() - 1).getSource(), "last event should be parent AGENT_END");
+    }
+
+    // -----------------------------------------------------------------
     // 2. Child AGENT_START / AGENT_END bookends present with source
     // -----------------------------------------------------------------
 
@@ -214,7 +331,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 .thenReturn(Flux.just(stopChunk("c1", "formatted")))
                 .thenReturn(Flux.just(stopChunk("p2", "all done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -281,7 +398,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 .thenReturn(Flux.just(stopChunk("c1", "analysis complete")))
                 .thenReturn(Flux.just(stopChunk("p2", "result obtained")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -318,6 +435,20 @@ class HarnessAgentSubagentStreamEventsTest {
         assertTrue(
                 firstChildIdx < events.size() - 1,
                 "child events should appear before parent AGENT_END");
+
+        int childEndIdx =
+                events.stream()
+                        .filter(
+                                e ->
+                                        e.getType() == AgentEventType.AGENT_END
+                                                && e.getSource() != null)
+                        .mapToInt(events::indexOf)
+                        .findFirst()
+                        .orElse(-1);
+        assertTrue(childEndIdx > firstChildIdx, "child AGENT_END should follow child events");
+        assertTrue(
+                childEndIdx < events.size() - 1,
+                "child AGENT_END should appear before parent AGENT_END");
     }
 
     // -----------------------------------------------------------------
@@ -347,7 +478,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 .thenReturn(Flux.just(stopChunk("c1", "helped")))
                 .thenReturn(Flux.just(stopChunk("p2", "done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)

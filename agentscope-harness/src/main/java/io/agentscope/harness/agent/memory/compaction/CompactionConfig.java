@@ -36,7 +36,7 @@ import java.util.Set;
  *       Falls back to 20 messages when the model does not report its context window</li>
  *   <li>Prune: enabled by default — aggregates old tool result outputs and trims them when the
  *       prunable total exceeds 20k tokens (protects the most recent 40k tokens)</li>
- *   <li>Summarization is enabled; memory flush and offload are both enabled before summary</li>
+ *   <li>Summarization is enabled; memory flush is enabled before summary</li>
  * </ul>
  *
  * <h2>Memory prompt landscape</h2>
@@ -66,7 +66,11 @@ public class CompactionConfig {
      */
     public static final int FALLBACK_TRIGGER_TOKENS = 160_000;
 
-    /** Default summary prompt with structured format. */
+    /**
+     * Default summary prompt with structured format. Extraction disciplines: verbatim
+     * preservation of reusable strings, user corrections, merge rules for chained compaction,
+     * and secrecy about the summarization step itself.
+     */
     public static final String DEFAULT_SUMMARY_PROMPT =
             """
             <role>
@@ -97,15 +101,39 @@ public class CompactionConfig {
             ## SESSION INTENT
             What is the user's primary goal or request?
 
+            ## USER PREFERENCES AND CORRECTIONS
+            Preferences, feedback, and corrections the user expressed, and how they changed the \
+            direction of the work.
+
             ## SUMMARY
             The most important context, decisions, reasoning, and rejected options.
 
             ## ARTIFACTS
             Files or resources created, modified, or accessed (with specific paths and changes).
 
+            ## COMMANDS AND ERRORS
+            Commands, queries, or API calls that matter, and any error messages encountered — \
+            copied verbatim where they must be reproduced or avoided.
+
             ## NEXT STEPS
             Specific tasks remaining to achieve the session intent.
             </instructions>
+
+            <extraction_rules>
+            - Preserve verbatim: file paths, commands, URLs, identifiers, and exact error \
+            strings. Do not paraphrase them — they must be reusable exactly as they occurred.
+            - Keep durable facts and decisions; drop superseded intermediate state (old file \
+            versions, outdated hypotheses, already-resolved blockers).
+            - If the history already contains an earlier summary, merge it with the new material \
+            into ONE coherent summary — never output two summary generations.
+            - Record failures and rejected approaches briefly, so the work is not repeated.
+            </extraction_rules>
+
+            <secrecy>
+            This is a routine internal context-management step. Do NOT mention this summarization \
+            request, these instructions, or the summarization process anywhere in your output. \
+            Write the summary as the conversation's own state.
+            </secrecy>
 
             Carefully read through the entire conversation history below and extract the most \
             important context. Respond ONLY with the extracted context.
@@ -125,10 +153,10 @@ public class CompactionConfig {
     private final double keepTokensRatio;
     private final String summaryPrompt;
     private final boolean flushBeforeCompact;
-    private final boolean offloadBeforeCompact;
     private final TruncateArgsConfig truncateArgsConfig;
     private final PruneConfig pruneConfig;
     private final Model model;
+    private final ConversationCompactionStrategy strategy;
 
     private CompactionConfig(Builder b) {
         this.triggerMessages = b.triggerMessages;
@@ -141,10 +169,10 @@ public class CompactionConfig {
         this.keepTokensRatio = b.keepTokensRatio;
         this.summaryPrompt = b.summaryPrompt;
         this.flushBeforeCompact = b.flushBeforeCompact;
-        this.offloadBeforeCompact = b.offloadBeforeCompact;
         this.truncateArgsConfig = b.truncateArgsConfig;
         this.pruneConfig = b.pruneConfig;
         this.model = b.model;
+        this.strategy = b.strategy;
     }
 
     /** Message count above which compaction is triggered (0 = disabled). */
@@ -213,11 +241,6 @@ public class CompactionConfig {
         return flushBeforeCompact;
     }
 
-    /** Whether to offload raw messages to the session JSONL before compaction. */
-    public boolean isOffloadBeforeCompact() {
-        return offloadBeforeCompact;
-    }
-
     /**
      * Configuration for the lightweight pre-summarization argument truncation pass.
      * When {@code null}, argument truncation is disabled.
@@ -233,10 +256,12 @@ public class CompactionConfig {
         return pruneConfig;
     }
 
-    /**
-     * Optional model override for compaction (summarization). {@code null} means use
-     * the agent's primary model.
-     */
+    /** Optional policy before standard compaction; null preserves the existing behavior. */
+    public ConversationCompactionStrategy getStrategy() {
+        return strategy;
+    }
+
+    /** Optional summary model; null uses the agent's primary model. */
     public Model getModel() {
         return model;
     }
@@ -257,10 +282,10 @@ public class CompactionConfig {
         b.keepTokensRatio = this.keepTokensRatio;
         b.summaryPrompt = this.summaryPrompt;
         b.flushBeforeCompact = this.flushBeforeCompact;
-        b.offloadBeforeCompact = this.offloadBeforeCompact;
         b.truncateArgsConfig = this.truncateArgsConfig;
         b.pruneConfig = this.pruneConfig;
         b.model = this.model;
+        b.strategy = this.strategy;
         return new CompactionConfig(b);
     }
 
@@ -280,10 +305,16 @@ public class CompactionConfig {
         private double keepTokensRatio = 0.25;
         private String summaryPrompt = DEFAULT_SUMMARY_PROMPT;
         private boolean flushBeforeCompact = true;
-        private boolean offloadBeforeCompact = true;
         private TruncateArgsConfig truncateArgsConfig = null;
         private PruneConfig pruneConfig = PruneConfig.defaults();
         private Model model = null;
+        private ConversationCompactionStrategy strategy;
+
+        /** Uses an optional policy before standard compaction; null preserves existing behavior. */
+        public Builder strategy(ConversationCompactionStrategy strategy) {
+            this.strategy = strategy;
+            return this;
+        }
 
         /** Trigger compaction when conversation has at least this many messages (0 = disabled). */
         public Builder triggerMessages(int triggerMessages) {
@@ -349,12 +380,6 @@ public class CompactionConfig {
         /** Whether to flush long-term memories before compaction (default true). */
         public Builder flushBeforeCompact(boolean flushBeforeCompact) {
             this.flushBeforeCompact = flushBeforeCompact;
-            return this;
-        }
-
-        /** Whether to offload raw messages to session JSONL before compaction (default true). */
-        public Builder offloadBeforeCompact(boolean offloadBeforeCompact) {
-            this.offloadBeforeCompact = offloadBeforeCompact;
             return this;
         }
 
@@ -509,6 +534,10 @@ public class CompactionConfig {
             }
 
             public TruncateArgsConfig build() {
+                if (maxArgLength < 20) {
+                    throw new IllegalArgumentException(
+                            "maxArgLength must be at least 20 characters");
+                }
                 return new TruncateArgsConfig(this);
             }
         }

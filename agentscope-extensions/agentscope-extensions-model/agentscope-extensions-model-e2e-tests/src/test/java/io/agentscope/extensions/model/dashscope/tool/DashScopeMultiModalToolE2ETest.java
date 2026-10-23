@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.dashscope.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.e2e.E2ETestCondition;
 import io.agentscope.core.formatter.MediaUtils;
@@ -146,6 +147,50 @@ class DashScopeMultiModalToolE2ETest {
                                     (ImageBlock) toolResultBlock.getOutput().get(1);
                             assertInstanceOf(URLSource.class, image1Block.getSource());
                             assertNotNull(((URLSource) image1Block.getSource()).getUrl());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Image to image with web url")
+    void testImageToImageWithUrl() {
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToImage(
+                        TEST_IMAGE_URL,
+                        "Repaint the scene as a watercolour painting",
+                        null,
+                        null,
+                        false);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(ImageBlock.class, toolResultBlock.getOutput().get(0));
+                            ImageBlock imageBlock = (ImageBlock) toolResultBlock.getOutput().get(0);
+                            assertInstanceOf(URLSource.class, imageBlock.getSource());
+                            assertNotNull(((URLSource) imageBlock.getSource()).getUrl());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Image to image rejects a model that takes no image input")
+    void testImageToImageUnsupportedModel() {
+        // Guarded before the request is built, so this case costs nothing.
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToImage(
+                        TEST_IMAGE_URL, "Repaint the scene", "wanx-v1", null, false);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            String text =
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText();
+                            assertTrue(text.contains("wanx-v1"), text);
+                            assertTrue(text.contains("qwen-image-edit"), text);
                         })
                 .verifyComplete();
     }

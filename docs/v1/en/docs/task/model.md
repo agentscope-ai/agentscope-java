@@ -1,4 +1,7 @@
-# Model
+---
+title: Model Integration
+zh_link: /v1/zh/docs/task/model
+---
 
 This guide introduces the LLM models supported by AgentScope Java and how to configure them.
 
@@ -161,7 +164,7 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen3-max")
-        .enableThinking(true)  // Enables thinking mode and automatically enables streaming
+        .enableThinking(true)
         .defaultOptions(GenerateOptions.builder()
                 .thinkingBudget(5000)  // Token budget for thinking
                 .build())
@@ -229,7 +232,7 @@ Anthropic's Claude series models.
 ```java
 AnthropicChatModel model = AnthropicChatModel.builder()
         .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-        .modelName("claude-sonnet-4-5-20250929")  // Default
+        .modelName("claude-sonnet-5-5")  // Default
         .build();
 ```
 
@@ -238,7 +241,7 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 | Option | Description |
 |--------|-------------|
 | `apiKey` | Anthropic API key |
-| `modelName` | Model name, default `claude-sonnet-4-5-20250929` |
+| `modelName` | Model name, default `claude-sonnet-5-5` |
 | `baseUrl` | Custom API endpoint (optional) |
 | `stream` | Enable streaming, default `true` |
 

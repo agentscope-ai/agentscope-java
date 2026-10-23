@@ -1,7 +1,13 @@
-# 集成
+---
+title: 概览
+en_link: /v1/en/integration/overview
+---
 
 本节将介绍 AgentScope Java 的第三方集成、扩展与生态连接器。
 
-```{note}
+
+<Note>
+
 规划中，后续会在此补充具体页面与目录结构。
-```
+
+</Note>

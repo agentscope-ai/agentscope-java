@@ -237,8 +237,11 @@ public class LocalFilesystem implements AbstractFilesystem {
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         Path dirPath = resolvePath(runtimeContext, path);
-        if (!Files.exists(dirPath) || !Files.isDirectory(dirPath)) {
-            return LsResult.success(List.of());
+        if (!Files.exists(dirPath)) {
+            return LsResult.fail("Path does not exist: " + path);
+        }
+        if (!Files.isDirectory(dirPath)) {
+            return LsResult.fail("Not a directory: " + path);
         }
 
         List<FileInfo> results = new ArrayList<>();
@@ -348,6 +351,11 @@ public class LocalFilesystem implements AbstractFilesystem {
             String oldString,
             String newString,
             boolean replaceAll) {
+        EditResult invalid = FilesystemUtils.validateEditArguments(oldString, newString);
+        if (invalid != null) {
+            return invalid;
+        }
+
         Path resolved = resolvePath(runtimeContext, filePath);
 
         if (!Files.exists(resolved) || !Files.isRegularFile(resolved)) {
@@ -359,23 +367,19 @@ public class LocalFilesystem implements AbstractFilesystem {
         ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, k -> new ReentrantLock());
         lock.lock();
         try {
-            String content =
-                    Files.readString(resolved, StandardCharsets.UTF_8)
-                            .replace("\r\n", "\n")
-                            .replace("\r", "\n");
-            String normalizedOld = oldString.replace("\r\n", "\n").replace("\r", "\n");
-            String normalizedNew = newString.replace("\r\n", "\n").replace("\r", "\n");
+            // Line-ending normalization lives in FilesystemUtils.stringReplacement so every
+            // filesystem agrees on LF semantics; the content is written back accordingly.
+            String content = Files.readString(resolved, StandardCharsets.UTF_8);
 
-            Object[] result =
-                    FilesystemUtils.performStringReplacement(
-                            content, normalizedOld, normalizedNew, replaceAll);
+            FilesystemUtils.ReplacementResult result =
+                    FilesystemUtils.stringReplacement(content, oldString, newString, replaceAll);
 
-            if (result.length == 1) {
-                return EditResult.fail((String) result[0]);
+            if (!result.isSuccess()) {
+                return EditResult.fail(result.error());
             }
 
-            String newContent = (String) result[0];
-            int occurrences = (int) result[1];
+            String newContent = result.content();
+            int occurrences = result.occurrences();
 
             Files.writeString(resolved, newContent, StandardCharsets.UTF_8);
             return EditResult.ok(filePath, occurrences);
@@ -489,7 +493,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                 responses.add(FileUploadResponse.success(filePath));
             } catch (IOException e) {
                 responses.add(FileUploadResponse.fail(filePath, e.getMessage()));
-            } catch (SecurityException e) {
+            } catch (SecurityException | IllegalArgumentException e) {
                 responses.add(FileUploadResponse.fail(filePath, "permission_denied"));
             }
         }
@@ -590,7 +594,17 @@ public class LocalFilesystem implements AbstractFilesystem {
         return namespaceFactory;
     }
 
+    @Override
+    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
+        return new io.agentscope.harness.agent.session.LocalSessionStorage(
+                resolvePath(rc, ".").resolve(".agentscope-runtime"));
+    }
+
     protected Path resolvePath(RuntimeContext rc, String key) {
+        if (key != null
+                && java.util.Arrays.stream(key.replace('\\', '/').split("/"))
+                        .anyMatch(".agentscope-runtime"::equalsIgnoreCase))
+            throw new SecurityException("Session journal is reserved for the runtime");
         String effectiveKey = applyNamespacePrefix(rc, key);
         if (effectiveKey == null || effectiveKey.isBlank()) {
             return cwd;
@@ -628,6 +642,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     private Path resolveRooted(String effectiveKey) {
+        AbstractFilesystem.validatePath(effectiveKey);
         Path target = Path.of(effectiveKey);
         if (target.isAbsolute()) {
             Path normalized = target.normalize();
@@ -657,7 +672,11 @@ public class LocalFilesystem implements AbstractFilesystem {
             return full;
         }
 
-        return cwd.resolve(target).normalize();
+        Path full = cwd.resolve(target).normalize();
+        if (!full.startsWith(cwd)) {
+            throw new SecurityException("Path " + full + " outside root directory: " + cwd);
+        }
+        return full;
     }
 
     private SecurityException rootAccessDenied(Path normalized) {

@@ -53,7 +53,14 @@ import javax.sql.DataSource;
  *
  * <p>The target database must already exist; schema and tables are created automatically by
  * default.
+ *
+ * @deprecated Use {@code io.agentscope.extensions.jdbc.JdbcDistributedStore} from the
+ * {@code agentscope-extensions-jdbc} module instead. The new module provides a unified
+ * multi-database dialect abstraction that supports MySQL, PostgreSQL, H2, and SQLite
+ * with a single aggregated interface. This class is preserved unchanged for backward
+ * compatibility and will be removed in a future major release.
  */
+@Deprecated(since = "2.1", forRemoval = true)
 public class PostgresDistributedStore implements DistributedStore {
 
     private final DataSource dataSource;

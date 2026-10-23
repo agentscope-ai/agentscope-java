@@ -36,6 +36,21 @@ class DashScopeMediaConverterTest {
     private final DashScopeMediaConverter converter = new DashScopeMediaConverter();
 
     @Test
+    void testEmbedsLocalImageBytesForHttpTransport(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path file = dir.resolve("image with spaces.png");
+        byte[] bytes = new byte[] {1, 2, 3, 4};
+        java.nio.file.Files.write(file, bytes);
+        String expected =
+                "data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(bytes);
+        for (String location : java.util.List.of(file.toString(), file.toUri().toString())) {
+            ImageBlock image =
+                    ImageBlock.builder().source(URLSource.builder().url(location).build()).build();
+            assertEquals(expected, converter.convertImageBlockToUrl(image));
+        }
+    }
+
+    @Test
     void testConvertImageBlockToContentPartWithMinPixels() throws Exception {
         ImageBlock imageBlock =
                 ImageBlock.builder()

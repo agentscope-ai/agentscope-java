@@ -1,4 +1,7 @@
-# Higress AI Gateway
+---
+title: Higress
+zh_link: /v2/zh/integration/infrastructure/higress
+---
 
 `agentscope-extensions-higress` brings tools published as MCP (Model Context Protocol) on [Higress](https://higress.io/) into AgentScope. Higress handles tool search, auth, rate-limiting, and observability at the gateway layer; the Agent only invokes the resulting tools.
 

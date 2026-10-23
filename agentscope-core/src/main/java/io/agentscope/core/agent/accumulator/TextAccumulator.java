@@ -74,4 +74,16 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
     public String getAccumulated() {
         return accumulated.toString();
     }
+
+    /**
+     * Replace the accumulated text with content reconstructed from the model-call event stream.
+     *
+     * @hidden
+     */
+    public void replace(String text) {
+        accumulated.setLength(0);
+        if (text != null) {
+            accumulated.append(text);
+        }
+    }
 }

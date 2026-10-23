@@ -17,10 +17,16 @@ package io.agentscope.core.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class ToolResultBlockTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void errorFactoryCreatesStructuredErrorState() {
@@ -29,5 +35,53 @@ class ToolResultBlockTest {
         assertEquals(ToolResultState.ERROR, result.getState());
         TextBlock output = assertInstanceOf(TextBlock.class, result.getOutput().get(0));
         assertEquals("Error: probe failed", output.getText());
+    }
+
+    @Test
+    void serverToolMarkerSurvivesJsonRoundTrip() throws JsonProcessingException {
+        ToolResultBlock result =
+                ToolResultBlock.builder()
+                        .id("tool-call-3")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .output(TextBlock.builder().text("response").build())
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+
+        String json = objectMapper.writeValueAsString(result);
+        assertTrue(
+                json.contains("\"serverTool\":true"), "Expected server metadata in JSON: " + json);
+
+        ToolResultBlock deserialized = objectMapper.readValue(json, ToolResultBlock.class);
+        assertTrue(deserialized.isServerTool());
+    }
+
+    @Test
+    void copyMethodsPreserveServerToolMarker() {
+        ToolResultBlock result =
+                ToolResultBlock.builder()
+                        .id("tool-call-5")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .output(TextBlock.builder().text("response").build())
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+
+        ToolResultBlock updated = result.withState(ToolResultState.SUCCESS);
+        assertTrue(updated.isServerTool());
+        assertEquals(ToolResultState.SUCCESS, updated.getState());
+
+        ToolResultBlock renamed = updated.withIdAndName("tool-call-6", "GOOGLE_SEARCH_WEB");
+        assertTrue(renamed.isServerTool());
+        assertEquals("tool-call-6", renamed.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", renamed.getName());
+    }
+
+    @Test
+    void toolCallErrorFactoryPreservesToolIdAndRuntimeErrorMarker() {
+        ToolResultBlock result = ToolResultBlock.error("tool-1", "probe failed");
+
+        assertEquals("tool-1", result.getId());
+        assertEquals(ToolResultState.ERROR, result.getState());
+        TextBlock output = assertInstanceOf(TextBlock.class, result.getOutput().get(0));
+        assertEquals("[ERROR] probe failed", output.getText());
     }
 }

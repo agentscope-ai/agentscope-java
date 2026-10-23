@@ -86,14 +86,7 @@ class ReActAgentThinkingCumulativeTest {
                 };
 
         // Create agent with the hook
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("TestAgent")
-                        .sysPrompt("You are a test agent")
-                        .model(mockModel)
-                        .toolkit(new EmptyToolkit())
-                        .hook(cumulativeHook)
-                        .build();
+        ReActAgent agent = buildAgent(mockModel, cumulativeHook);
 
         // Execute agent call
         Msg userMsg = TestUtils.createUserMessage("User", "Hello");
@@ -141,14 +134,7 @@ class ReActAgentThinkingCumulativeTest {
                 };
 
         // Create agent with the hook
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("TestAgent")
-                        .sysPrompt("You are a test agent")
-                        .model(mockModel)
-                        .toolkit(new EmptyToolkit())
-                        .hook(incrementalHook)
-                        .build();
+        ReActAgent agent = buildAgent(mockModel, incrementalHook);
 
         // Execute agent call
         Msg userMsg = TestUtils.createUserMessage("User", "Hello");
@@ -163,6 +149,22 @@ class ReActAgentThinkingCumulativeTest {
         assertEquals(
                 "this is ", receivedThinkingChunks.get(1), "Second chunk should be 'this is '");
         assertEquals("correct.", receivedThinkingChunks.get(2), "Third chunk should be 'correct.'");
+    }
+
+    /**
+     * Build an agent around the given chunk-collecting hook. The model streams thinking-only
+     * chunks, so iterations are capped at 1: the empty-final-response loop-back goes straight to
+     * summarizing and the chunk-mechanics assertions stay deterministic.
+     */
+    private ReActAgent buildAgent(Model model, Hook hook) {
+        return ReActAgent.builder()
+                .name("TestAgent")
+                .sysPrompt("You are a test agent")
+                .model(model)
+                .toolkit(new EmptyToolkit())
+                .maxIters(1)
+                .hook(hook)
+                .build();
     }
 
     /**

@@ -1,6 +1,9 @@
 ---
-title: "Going to Production"
-description: "From single-node prototype to multi-replica deployment: component selection and configuration for the Agent State Store, Filesystem, Skill, Sandbox, Snapshot, and Observability"
+title: Going to Production
+description: 'From single-node prototype to multi-replica deployment: component selection
+  and configuration for the Agent State Store, Filesystem, Skill, Sandbox, Snapshot,
+  and Observability'
+zh_link: /v2/zh/docs/others/going-to-production
 ---
 
 > Running a `HarnessAgent` on your laptop is easy. Shipping it to production is another story — replicas must share sessions, users must stay isolated, untrusted code must be sandboxed, and pods must be able to resume mid-conversation after a restart. This page only covers what **changes between single-node and distributed production**: which components must be swapped, what to swap them with, and why the builder throws `IllegalStateException` when you miss something.
@@ -9,7 +12,7 @@ description: "From single-node prototype to multi-replica deployment: component 
 
 ```java
 DistributedStore store = RedisDistributedStore.fromJedis(jedis);
-// or MysqlDistributedStore.create(dataSource);
+// or JdbcDistributedStore.create(dataSource);
 // or OssDistributedStore.create(ossClient, bucket, prefix);
 
 HarnessAgent.builder()
@@ -18,16 +21,30 @@ HarnessAgent.builder()
     .build();
 ```
 
-Mixed stores (e.g. MySQL for state + Redis for sandbox locks) are also supported:
+Mixed stores (e.g. JDBC for state + Redis for sandbox locks) are also supported:
 
 ```java
 DistributedStore store = DistributedStore.builder()
-    .agentStateStore(MysqlDistributedStore.create(ds).agentStateStore())
-    .baseStore(MysqlDistributedStore.create(ds).baseStore())
+    .agentStateStore(JdbcDistributedStore.create(ds).agentStateStore())
+    .baseStore(JdbcDistributedStore.create(ds).baseStore())
     .sandboxSnapshotSpec(RedisDistributedStore.fromJedis(jedis).sandboxSnapshotSpec())
     .sandboxExecutionGuard(RedisDistributedStore.fromJedis(jedis).sandboxExecutionGuard())
     .build();
 ```
+
+### Alternative: Control Plane hosted store
+
+If you run an AgentScope Service Control Plane, it can host BaseStore / sandbox lock & snapshot / MessageBus / AsyncToolRegistry / **TaskRepository** / optional **SessionTurnGate**. You still supply **one** `AgentStateStore` (Redis/JDBC/OSS); core provides `getVersioned` / `saveIfVersion`, but storage stays off the control plane:
+
+```java
+ControlPlaneStores cp = ControlPlaneStores.fromEnv();
+HarnessAgent.builder()
+    .distributedStore(cp.withAgentStateStore(redis.agentStateStore()))
+    .filesystem(new RemoteFilesystemSpec().isolationScope(IsolationScope.USER))
+    .build();
+```
+
+Enable with `--enable-hosted-store` on the control plane (Postgres recommended). `withAgentStateStore` includes hosted TaskRepository; **subagent background tasks in SandboxFilesystem mode** need this path. Redis/JDBC (MySQL / PostgreSQL / H2 / SQLite)/InMemory AgentStateStore backends support versioning CAS; others remain LWW. Turn gate + `ConflictPolicy.FAIL` are optional for multi-replica duplicate-turn reduction; correctness comes from CAS. Auth is a shared internal token with tenant from the request body — not for mutually untrusted multi-tenant agents on one CP. `queueDrain` is destructive (ack-on-read). See [Distributed Storage — Control Plane Hosted Store](/v2/en/integration/distributed/index#control-plane-hosted-store).
 
 ## At a glance: single-node defaults vs. distributed production
 
@@ -43,9 +60,9 @@ DistributedStore store = DistributedStore.builder()
 
 ### DistributedStore capability matrix
 
-| Capability | Redis (`agentscope-extensions-redis`) | OSS (`agentscope-extensions-oss`) | MySQL (`agentscope-extensions-mysql`) |
+| Capability | Redis (`agentscope-extensions-redis`) | OSS (`agentscope-extensions-oss`) | JDBC (`agentscope-extensions-jdbc`) |
 |------------|:-----:|:---:|:-----:|
-| `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` |
+| `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `JdbcAgentStateStore` |
 | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` |
 | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` |
 | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — (object storage can't do locks) | `JdbcSandboxExecutionGuard` |
@@ -55,7 +72,7 @@ Each component solves a different production problem:
 - `AgentStateStore`: persists the agent's runtime session state, including conversation history, compaction summaries, permission rules, Plan Mode state, and tool state. This is what lets another replica, or a restarted process, continue the same `(userId, sessionId)`.
 - `BaseStore`: provides shared KV-backed workspace storage for `RemoteFilesystemSpec`, carrying paths such as `MEMORY.md`, `memory/`, `skills/`, and `sessions/`. In multi-replica deployments, it lets different pods see the same long-term memory and shared files.
 - `SandboxSnapshotSpec`: persists sandbox workspace snapshots. When a sandbox container is destroyed, a pod restarts, or the next request lands on a new node, it restores the previous workspace instead of losing `pip install` output, generated files, or temporary project state.
-- `SandboxExecutionGuard`: serializes command execution for the same sandbox slot across nodes. With shared scopes such as `AGENT` or `GLOBAL`, multiple replicas may try to execute against the same sandbox at once; the guard uses Redis/MySQL locking to avoid concurrent workspace writes and sandbox start/stop races.
+- `SandboxExecutionGuard`: serializes command execution for the same sandbox slot across nodes. With shared scopes such as `AGENT` or `GLOBAL`, multiple replicas may try to execute against the same sandbox at once; the guard uses Redis/JDBC locking to avoid concurrent workspace writes and sandbox start/stop races.
 
 > OSS does not provide a `SandboxExecutionGuard` — object storage is unsuitable for distributed locking. OSS users who need sandbox concurrency control can mix in a Redis guard via `DistributedStore.builder()`.
 
@@ -67,14 +84,14 @@ Each component solves a different production problem:
 
 > **Recommended**: use `distributedStore(...)` for one-line setup. The detailed table below is for advanced users who need individual control over `AgentStateStore`.
 
-`AgentState` (conversation context, compaction summary, permission rules, Plan Mode state, tool state) only survives across processes through an [`AgentStateStore`](../../integration/session/index.md).
+`AgentState` (conversation context, compaction summary, permission rules, Plan Mode state, tool state) only survives across processes through an [`AgentStateStore`](/v2/en/integration/session/index).
 
 | Implementation | Module | When to use |
 |----------------|--------|-------------|
 | `InMemoryAgentStateStore` | `agentscope-core` | unit tests; everything dies on process exit |
 | `JsonFileAgentStateStore` | `agentscope-core` | single-machine dev; one directory per `(userId, sessionId)`. **HarnessAgent default**, rooted at `~/.agentscope/state/<agentId>/`; **single-machine** |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | **multi-replica production default**; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
-| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | when state must live in a relational store (audit / reporting / joins) |
+| `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | when state must live in a relational store (audit / reporting / joins) |
 
 **Redis with any of the three client adapters** through `RedisAgentStateStore.builder()`:
 
@@ -96,7 +113,7 @@ AgentStateStore stateStore = RedisAgentStateStore.builder()
 // .redissonClient(redisson)
 ```
 
-**Per-tenant isolation.** A bare `sessionId` only covers single-tenant. In production, set both `userId` and `sessionId` on each call's `RuntimeContext` so multi-tenant calls can't cross-read — the store addresses each slot by the `(userId, sessionId)` pair (`RedisAgentStateStore` folds `userId` into the Redis key; `MysqlAgentStateStore` folds it into the primary key). Compose any other dimensions (tenant, agent) into the `sessionId` string yourself:
+**Per-tenant isolation.** A bare `sessionId` only covers single-tenant. In production, set both `userId` and `sessionId` on each call's `RuntimeContext` so multi-tenant calls can't cross-read — the store addresses each slot by the `(userId, sessionId)` pair (`RedisAgentStateStore` folds `userId` into the Redis key; `JdbcAgentStateStore` folds it into the slot id). Compose any other dimensions (tenant, agent) into the `sessionId` string yourself:
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -105,11 +122,11 @@ agent.call(msg, RuntimeContext.builder()
         .build()).block();
 ```
 
-Full mechanics in [Context & AgentState](../building-blocks/context.md).
+Full mechanics in [Context & AgentState](/v2/en/docs/building-blocks/context).
 
 ## 2. Filesystem mode & `IsolationScope`: deciding "who shares files with whom"
 
-Three modes recap (details in [Filesystem](../harness/filesystem.md)):
+Three modes recap (details in [Filesystem](/v2/en/docs/harness/filesystem)):
 
 | Mode | Config | Shell? | Use it when |
 |------|--------|--------|-------------|
@@ -147,7 +164,7 @@ HarnessAgent.builder()
 | Implementation | Dependency | Concurrency safety | Use it when |
 |----------------|------------|--------------------|-------------|
 | `RedisStore` | `agentscope-extensions-redis` | Lua-based CAS `putIfVersion`, `ZRANGEBYLEX` for prefix search | the default; multi-replica sharing |
-| `JdbcStore` | `agentscope-extensions-mysql`; auto-detects MySQL / PostgreSQL / SQLite / H2 dialect | single-statement CAS UPDATE | existing relational infra / need joins |
+| `JdbcStore` | `agentscope-extensions-jdbc`; auto-detects MySQL / PostgreSQL / SQLite / H2 dialect | single-statement CAS UPDATE | existing relational infra / need joins |
 | `InMemoryStore` | — | — | tests |
 
 ```java
@@ -165,8 +182,8 @@ HarnessAgent agent = HarnessAgent.builder()
                 .workspaceIndex(WorkspaceIndex.open(workspace)))  // speeds up ls/glob
         .build();
 
-// Or with MySQL:
-DistributedStore mysqlStore = MysqlDistributedStore.create(dataSource);
+// Or with JDBC:
+DistributedStore jdbcStore = JdbcDistributedStore.create(dataSource);
 ```
 
 ### What about OSS / NAS / S3?
@@ -200,7 +217,7 @@ Each segment is then bucketed by `IsolationScope` (`USER` → `agents/<agentId>/
 
 `RemoteFilesystemSpec.toFilesystem(...)` actually produces a `CompositeFilesystem`: a base `LocalFilesystem` without shell (fallback for local templates) plus one `OverlayFilesystem` per route (upper = `RemoteFilesystem`, lower = read-only `LocalFilesystem` template).
 
-Effect: **writes always go to Remote; reads check Remote first, fall back to the local template**. That is the "two-layer read architecture" described in [Workspace](../harness/workspace.md) instantiated for Remote mode — the local `<workspace>/AGENTS.md` is a seed (synced via team git), and Remote takes over as soon as it has been written to.
+Effect: **writes always go to Remote; reads check Remote first, fall back to the local template**. That is the "two-layer read architecture" described in [Workspace](/v2/en/docs/harness/workspace) instantiated for Remote mode — the local `<workspace>/AGENTS.md` is a seed (synced via team git), and Remote takes over as soon as it has been written to.
 
 ### `WorkspaceIndex`: optional SQLite index
 
@@ -212,7 +229,7 @@ Speeds up `ls` / `glob` / `exists` / `grep` under Remote mode — without it eve
 
 ## 4. Skill marketplaces: which `SkillRepository` to pick
 
-Skills compose from low to high priority (details in [Skill](../harness/skill.md)):
+Skills compose from low to high priority (details in [Skill](/v2/en/docs/harness/skill)):
 
 | Layer | Source | Configured by | Use it for |
 |-------|--------|---------------|------------|
@@ -286,7 +303,7 @@ Sandboxes are ephemeral by default — the next `call()` may land on a different
 | `LocalSnapshotSpec(Path)` | local directory `tar` files | `agentscope-harness` | single-node debugging |
 | `OssSnapshotSpec` | Alibaba Cloud OSS | `agentscope-extensions-oss` | **large objects first choice**; natural fit for object storage |
 | `RedisSnapshotSpec` | Redis | `agentscope-extensions-redis` | small workspaces + short TTL (watch Redis memory cost) |
-| `JdbcSnapshotSpec` | MySQL / JDBC BLOB | `agentscope-extensions-mysql` | existing relational DB, no extra middleware |
+| `JdbcSnapshotSpec` | JDBC BLOB | `agentscope-extensions-jdbc` | existing relational DB, no extra middleware |
 | Custom `RemoteSnapshotClient` → `RemoteSnapshotSpec` | S3 / GCS / MinIO | — | anything not in the built-in list |
 
 ```java
@@ -323,7 +340,7 @@ Under `SESSION` / `USER` scope, buckets are already partitioned by session/user 
 | Implementation | Module | Mechanism |
 |---------------|--------|-----------|
 | `RedisSandboxExecutionGuard` | `agentscope-extensions-redis` | Redis `SET NX PX` lease |
-| `JdbcSandboxExecutionGuard` | `agentscope-extensions-mysql` | MySQL `GET_LOCK()` / `RELEASE_LOCK()` |
+| `JdbcSandboxExecutionGuard` | `agentscope-extensions-jdbc` | dialect-based: MySQL `GET_LOCK()`, portable table lock otherwise |
 
 The recommended path is still to inject the guard through `DistributedStore`:
 
@@ -397,14 +414,15 @@ Pulling the single-component picks above into one table:
 | Exposed subagents (user talks to a subagent directly) | registry auto-wired by `distributedStore` — the `subagentId` resolves and the subagent recovers on any replica / after restart; route a `subagentId`'s messages back to the same node (sticky) so recovery is only the failover path. For `GatewayBootstrap`, pass `.distributedStore(...)` |
 | Graceful shutdown | `GracefulShutdownManager` (auto-registers JVM hook); handle SIGTERM; tune in-flight wait via `setConfig(...)` |
 | Observability | `OtelTracingMiddleware` + OpenTelemetry SDK + OTLP exporter |
-| Rate limiting | custom `MiddlewareBase` (onModelCall); see [Middleware — Rate-limit middleware](../building-blocks/middleware.md#rate-limit-middleware) |
+| Rate limiting | custom `MiddlewareBase` (onModelCall); see [Middleware — Rate-limit middleware](/v2/en/docs/building-blocks/middleware#rate-limit-middleware) |
 
 ## 7. A complete production builder template
 
-The agent is stateless between calls — a singleton handles concurrent requests. Each `call()` locates state via `RuntimeContext`'s `(userId, sessionId)`, fully isolated.
+Configure a shared Builder and external dependencies at startup. Build a new instance for each request and close it after execution. Keep request identity in `RuntimeContext`, not in the Builder. See [Agent lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle).
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.skill.repository.mysql.MysqlSkillRepository;
 import io.agentscope.extensions.redis.RedisDistributedStore;
 import io.agentscope.core.tracing.OtelTracingMiddleware;
 import io.agentscope.harness.agent.DistributedStore;
@@ -423,9 +441,10 @@ Path workspace = Paths.get("/var/agentscope/workspace");
 JedisPooled jedis = new JedisPooled(System.getenv("REDIS_URI"));
 DistributedStore store = RedisDistributedStore.fromJedis(jedis);
 
-// --- Singleton agent (created once at startup) ---
-HarnessAgent agent = HarnessAgent.builder()
+// --- Shared Builder (configure once at startup) ---
+HarnessAgent.Builder agentBuilder = HarnessAgent.builder()
         .name("coding-assistant")
+        .agentId("coding-assistant")
         .model("dashscope:qwen-plus")
         .workspace(workspace)
         .distributedStore(store)  // auto-wires stateStore + snapshotSpec + executionGuard
@@ -437,28 +456,29 @@ HarnessAgent agent = HarnessAgent.builder()
                 .keepMessages(20)
                 .build())
         .toolResultEviction(ToolResultEvictionConfig.defaults())
-        .skillRepository(io.agentscope.core.skill.repository.mysql.MysqlSkillRepository
+        .skillRepository(MysqlSkillRepository
                 .builder(skillsDataSource())
                 .createIfNotExist(false)
                 .writeable(false)
                 .build())
-        .middlewares(List.of(new OtelTracingMiddleware()))
-        .build();
+        .middlewares(List.of(new OtelTracingMiddleware()));
 ```
 
-At call time, pass `RuntimeContext` to identify the user/session. Different sessions run concurrently on the same agent instance:
+Each request builds its own Agent and passes its identity through `RuntimeContext`. Different sessions can run concurrently; sequence requests for the same session in your application:
 
 ```java
 // In your HTTP handler
-agent.call(msg, RuntimeContext.builder()
-        .userId(httpRequest.tenantUserId())
-        .sessionId(httpRequest.sessionId())
-        .build()).block();
+try (HarnessAgent agent = agentBuilder.build()) {
+    agent.call(msg, RuntimeContext.builder()
+            .userId(httpRequest.tenantUserId())
+            .sessionId(httpRequest.sessionId())
+            .build()).block();
+}
 ```
 
 ## 8. Common pitfalls
 
-- **Forgetting to pass `RuntimeContext`** — without a `sessionId`, all requests share the `defaultSessionId` state, causing cross-talk. In multi-user scenarios, **always pass `RuntimeContext.builder().userId(...).sessionId(...).build()` to every `call()`** to ensure state isolation. See [Agent — Multi-user Concurrency](../building-blocks/agent.md#multi-user--multi-session-concurrency).
+- **Forgetting to pass `RuntimeContext`** — without a `sessionId`, all requests share the `defaultSessionId` state, causing cross-talk. In multi-user scenarios, **always pass `RuntimeContext.builder().userId(...).sessionId(...).build()` to every `call()`** to ensure state isolation. See [Agent — Multi-user Concurrency](/v2/en/docs/building-blocks/agent#multi-user--multi-session-concurrency).
 - **`java.nio.Files` for workspace writes** — under sandbox / Remote mode this lands in the wrong place. Always go through `agent.getWorkspaceManager()`. **Exception**: builder-time seed files (`initWorkspaceIfAbsent`-style code) — no runtime context yet, `java.nio.Files` is correct because you're seeding the local template.
 - **`tools.json`'s `allow` filters built-in tools too** — when whitelisting, keep `read_file` / `memory_search` / `agent_spawn` and friends in the list, or every built-in gets stripped.
 - **`IsolationScope` changes do not migrate existing data** — pin it before launch. Changing it post-launch is equivalent to switching to a new namespace.
@@ -469,12 +489,12 @@ agent.call(msg, RuntimeContext.builder()
 
 ## Related pages
 
-- [Quickstart](../quickstart.md) — end-to-end first `HarnessAgent`
-- [Harness Architecture](../harness/architecture.md) — how capabilities cooperate
-- [Context & AgentState](../building-blocks/context.md) — `AgentState` / `AgentStateStore` / cross-node recovery
-- [Compaction](../harness/compaction.md) — conversation summarization, tool-result eviction, overflow recovery
-- [Workspace](../harness/workspace.md) — directory layout, two-layer reads, `tools.json`
-- [Filesystem](../harness/filesystem.md) — three deployment modes, `IsolationScope`
-- [Sandbox](../harness/sandbox.md) — sandbox details, five implementations, snapshot mechanics
-- [Skill](../harness/skill.md) — four-layer composition, marketplace stores, self-learning loop
-- [Middleware](../building-blocks/middleware.md) — custom observability / rate-limit / fallback middleware
+- [Quickstart](/v2/en/docs/quickstart) — end-to-end first `HarnessAgent`
+- [Harness Architecture](/v2/en/docs/harness/architecture) — how capabilities cooperate
+- [Context & AgentState](/v2/en/docs/building-blocks/context) — `AgentState` / `AgentStateStore` / cross-node recovery
+- [Context management](/v2/en/docs/harness/context) — conversation summarization, tool-result eviction, overflow recovery
+- [Workspace](/v2/en/docs/harness/workspace) — directory layout, two-layer reads, `tools.json`
+- [Filesystem](/v2/en/docs/harness/filesystem) — three deployment modes, `IsolationScope`
+- [Sandbox](/v2/en/docs/harness/sandbox) — sandbox details, five implementations, snapshot mechanics
+- [Skill](/v2/en/docs/harness/skill) — four-layer composition, marketplace stores, self-learning loop
+- [Middleware](/v2/en/docs/building-blocks/middleware) — custom observability / rate-limit / fallback middleware
