@@ -500,6 +500,9 @@ class ToolExecutor {
             return false;
         }
         ToolRequestConfig config = requestConfig != null ? requestConfig : ToolRequestConfig.NONE;
+        if (config.hidesBackend()) {
+            return false;
+        }
         if (config.overrides(toolName)) {
             return false;
         }

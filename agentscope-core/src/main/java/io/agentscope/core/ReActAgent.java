@@ -3606,6 +3606,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
 
             List<Map.Entry<ToolUseBlock, ToolResultBlock>> schemaErrors = new ArrayList<>();
+            AtomicBoolean schemaErrorsWritten = new AtomicBoolean();
             List<ToolUseBlock> gateCalls = new ArrayList<>();
             for (ToolUseBlock toolCall : toolCalls) {
                 // Unavailable tools and schema failures both skip the permission gate.
@@ -3655,17 +3656,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             schemaErrorEventFlux(schemaErrors, replyId);
                                     if (gateCalls.isEmpty()) {
                                         resultHolder.set(schemaErrors);
-                                        return schemaEvents.doFinally(
-                                                signal -> {
-                                                    if (signal != SignalType.ON_COMPLETE) {
-                                                        // Error or cancel never reaches
-                                                        // notifyPostActingHook. doFinally runs
-                                                        // after downstream onError, so this write
-                                                        // stays even if structured output rolled
-                                                        // the context back first.
-                                                        writeSchemaErrorResults(schemaErrors);
-                                                    }
-                                                });
+                                        return schemaEvents;
                                     }
                                     return schemaEvents.concatWith(
                                             runToolBatch(
@@ -3677,21 +3668,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             () ->
                                                                     prependSchemaErrors(
                                                                             resultHolder,
-                                                                            schemaErrors))
-                                                    .doFinally(
-                                                            signal -> {
-                                                                if (signal
-                                                                        != SignalType.ON_COMPLETE) {
-                                                                    // Error or cancel: acting()
-                                                                    // never reaches
-                                                                    // notifyPostActingHook.
-                                                                    // doFinally runs after
-                                                                    // downstream onError, so the
-                                                                    // write stays.
-                                                                    writeSchemaErrorResults(
-                                                                            schemaErrors);
-                                                                }
-                                                            }));
+                                                                            schemaErrors)));
                                 }
 
                                 // Permission HITL: surface the pending tool calls, persist any
@@ -3704,7 +3681,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // actually execute. Firing them during PERMISSION_ASKING would
                                 // observe a validation failure before resume.
                                 if (!schemaErrors.isEmpty()) {
-                                    writeSchemaErrorResults(schemaErrors);
+                                    writeSchemaErrorResults(schemaErrors, schemaErrorsWritten);
                                 }
                                 if (!autoDenied.isEmpty()) {
                                     // Write DENIED results in-place so they aren't re-evaluated on
@@ -3735,6 +3712,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         new RequestStopEvent(
                                                                 "permission asking",
                                                                 GenerateReason.PERMISSION_ASKING)));
+                            })
+                    .doFinally(
+                            signal -> {
+                                if (signal != SignalType.ON_COMPLETE) {
+                                    // Error or cancel can happen before the mixed stream subscribes
+                                    // to runToolBatch. Persist schema errors here so they cannot be
+                                    // lost when the downstream terminates during schema events.
+                                    writeSchemaErrorResults(schemaErrors, schemaErrorsWritten);
+                                }
                             })
                     .doOnNext(this::publishEvent);
         }
@@ -3783,7 +3769,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private void writeSchemaErrorResults(
-                List<Map.Entry<ToolUseBlock, ToolResultBlock>> schemaErrors) {
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> schemaErrors,
+                AtomicBoolean schemaErrorsWritten) {
+            if (!schemaErrorsWritten.compareAndSet(false, true)) {
+                return;
+            }
             for (Map.Entry<ToolUseBlock, ToolResultBlock> entry : schemaErrors) {
                 Msg errorMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(
@@ -4424,7 +4414,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Mono<ToolResultBlock> executeStructuredToolUnobserved(
                 ToolUseBlock use, ToolCallParam param) {
             String validationError =
-                    ToolValidator.validateInput(use.getContent(), soTool.getParameters());
+                    ToolValidator.validateInput(
+                            ToolValidator.resolveArgsForValidation(use), soTool.getParameters());
             if (validationError != null) {
                 return Mono.just(
                         ToolResultBlock.error(
