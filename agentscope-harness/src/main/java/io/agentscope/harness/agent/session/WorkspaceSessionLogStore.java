@@ -92,4 +92,11 @@ public final class WorkspaceSessionLogStore implements SessionLogStore {
                 filesystem.sessionStorage(context == null ? RuntimeContext.empty() : context),
                 key.storagePath());
     }
+
+    @Override
+    public void delete(SessionKey key, RuntimeContext context) {
+        filesystem
+                .sessionStorage(context == null ? RuntimeContext.empty() : context)
+                .deletePaths(key.storagePath());
+    }
 }
