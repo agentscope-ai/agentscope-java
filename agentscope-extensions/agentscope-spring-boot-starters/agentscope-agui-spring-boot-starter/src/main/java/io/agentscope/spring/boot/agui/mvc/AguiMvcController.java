@@ -22,6 +22,7 @@ import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
+import io.agentscope.core.agui.processor.AguiResumeStateStore;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
@@ -39,7 +40,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.Disposable;
 import reactor.core.publisher.BaseSubscriber;
 
 /**
@@ -94,6 +94,8 @@ public class AguiMvcController {
                                         : AguiAdapterConfig.defaultConfig())
                         .adapterFactory(builder.adapterFactory)
                         .runtimeContextResolver(builder.runtimeContextResolver)
+                        .resumeStateStore(builder.resumeStateStore)
+                        .interruptOnCancel(builder.interruptOnDisconnect)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
@@ -208,10 +210,10 @@ public class AguiMvcController {
                                 () -> {
                                     if (interruptOnDisconnect) {
                                         logger.info(
-                                                "SSE connection timed out for run {}, interrupting"
-                                                        + " agent",
+                                                "SSE connection timed out for run {}, cancelling"
+                                                        + " run",
                                                 runId);
-                                        interruptAndCancel(result, threadId, subscription);
+                                        subscription.dispose();
                                     } else {
                                         logger.info(
                                                 "SSE connection timed out for run {}, agent"
@@ -223,11 +225,11 @@ public class AguiMvcController {
                                 (ex) -> {
                                     if (interruptOnDisconnect) {
                                         logger.info(
-                                                "SSE connection error for run {}: {}, interrupting"
-                                                        + " agent",
+                                                "SSE connection error for run {}: {}, cancelling"
+                                                        + " run",
                                                 runId,
                                                 ex.getMessage());
-                                        interruptAndCancel(result, threadId, subscription);
+                                        subscription.dispose();
                                     } else {
                                         logger.info(
                                                 "SSE connection error for run {}: {}, agent"
@@ -252,15 +254,6 @@ public class AguiMvcController {
                 });
 
         return emitter;
-    }
-
-    private static void interruptAndCancel(
-            AguiRequestProcessor.ProcessResult result, String threadId, Disposable subscription) {
-        try {
-            result.interrupt(threadId);
-        } finally {
-            subscription.dispose();
-        }
     }
 
     private AguiRuntimeContextRequest<HttpServletRequest> runtimeContextRequest(
@@ -360,6 +353,7 @@ public class AguiMvcController {
         private boolean interruptOnDisconnect = true;
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
+        private AguiResumeStateStore resumeStateStore;
 
         /**
          * Set the agent registry.
@@ -457,6 +451,17 @@ public class AguiMvcController {
          */
         public Builder adapterFactory(AguiAgentAdapterFactory adapterFactory) {
             this.adapterFactory = adapterFactory;
+            return this;
+        }
+
+        /**
+         * Set the store used to coordinate active runs and pending interrupts.
+         *
+         * @param resumeStateStore The resume coordination state store
+         * @return This builder
+         */
+        public Builder resumeStateStore(AguiResumeStateStore resumeStateStore) {
+            this.resumeStateStore = resumeStateStore;
             return this;
         }
 
