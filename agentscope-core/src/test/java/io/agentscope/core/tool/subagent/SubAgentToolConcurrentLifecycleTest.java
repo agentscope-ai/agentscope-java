@@ -39,6 +39,7 @@ import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolCallParam;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -216,6 +217,124 @@ class SubAgentToolConcurrentLifecycleTest {
             assertTrue(closed.await(5, TimeUnit.SECONDS));
             subscription.dispose();
             terminalScheduler.dispose();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void queuedSaveAfterCloseDoesNotPersistClearedCache(boolean streaming) throws Exception {
+        ReActAgent agent = spy(ReActAgent.builder().name("queued_save").build());
+        agent.getAgentState(null, SESSION_ID)
+                .contextMutable()
+                .add(Msg.builder().textContent(MEMORY).build());
+        CountDownLatch closed = closeSignal(agent);
+        Sinks.One<Msg> response = Sinks.one();
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        Disposable subscription =
+                tool(agent, response, store, streaming).callAsync(param()).subscribe();
+        var tasks = new ConcurrentLinkedQueue<Runnable>();
+        Thread testThread = Thread.currentThread();
+        Schedulers.onScheduleHook(
+                "queued-save-after-close",
+                task -> {
+                    if (Thread.currentThread() != testThread) return task;
+                    tasks.add(task);
+                    return () -> {};
+                });
+        try {
+            response.tryEmitValue(reply());
+            assertEquals(1, tasks.size(), "The state save must be queued");
+            Runnable save = tasks.remove();
+            subscription.dispose();
+            assertEquals(1, tasks.size(), "Cancellation must queue cleanup separately");
+            tasks.remove().run();
+            assertTrue(closed.await(5, TimeUnit.SECONDS));
+            save.run();
+            assertTrue(
+                    store.get(null, SESSION_ID, "agent_state", AgentState.class).isEmpty(),
+                    "A queued save that starts after close must not persist an empty cache");
+        } finally {
+            Schedulers.resetOnScheduleHook("queued-save-after-close");
+            subscription.dispose();
+            Runnable task;
+            while ((task = tasks.poll()) != null) task.run();
+            agent.close();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void lateOldSnapshotCannotOverwriteNewerLegacyStoreCommit(boolean streaming) throws Exception {
+        ReActAgent oldAgent = spy(ReActAgent.builder().name("old").build());
+        ReActAgent newAgent = spy(ReActAgent.builder().name("new").build());
+        oldAgent.getAgentState(null, SESSION_ID)
+                .contextMutable()
+                .add(Msg.builder().textContent("old").build());
+        newAgent.getAgentState(null, SESSION_ID)
+                .contextMutable()
+                .add(Msg.builder().textContent("new").build());
+        CountDownLatch readingOldSnapshot = new CountDownLatch(1);
+        CountDownLatch releaseOldSnapshot = new CountDownLatch(1);
+        CountDownLatch oldClosed = closeSignal(oldAgent);
+        CountDownLatch newClosed = closeSignal(newAgent);
+        doAnswer(
+                        call -> {
+                            readingOldSnapshot.countDown();
+                            assertTrue(releaseOldSnapshot.await(5, TimeUnit.SECONDS));
+                            return call.callRealMethod();
+                        })
+                .when(oldAgent)
+                .getAgentState(any(RuntimeContext.class));
+        for (ReActAgent agent : List.of(oldAgent, newAgent)) {
+            doReturn(reactor.core.publisher.Mono.just(reply()))
+                    .when(agent)
+                    .call(anyList(), any(RuntimeContext.class));
+            doReturn(
+                    reactor.core.publisher.Flux.just(
+                            new Event(EventType.AGENT_RESULT, reply(), true)))
+                    .when(agent)
+                    .stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class));
+        }
+        InMemoryAgentStateStore store =
+                new InMemoryAgentStateStore() {
+                    @Override
+                    public boolean supportsVersioning() {
+                        return false;
+                    }
+                };
+        var agents = List.of(oldAgent, newAgent).iterator();
+        SubAgentTool tool =
+                new SubAgentTool(
+                        agents::next,
+                        SubAgentConfig.builder()
+                                .toolName("legacy")
+                                .description("legacy")
+                                .forwardEvents(streaming)
+                                .stateStore(store)
+                                .lifecyclePolicy(SubAgentConfig.LifecyclePolicy.PER_CALL)
+                                .build());
+        Disposable old = tool.callAsync(param()).subscribe();
+        try {
+            assertTrue(readingOldSnapshot.await(5, TimeUnit.SECONDS));
+            old.dispose();
+            tool.callAsync(param()).block(java.time.Duration.ofSeconds(5));
+            assertTrue(newClosed.await(5, TimeUnit.SECONDS));
+            releaseOldSnapshot.countDown();
+            assertTrue(oldClosed.await(5, TimeUnit.SECONDS));
+            assertEquals(
+                    List.of("new"),
+                    store
+                            .get(null, SESSION_ID, "agent_state", AgentState.class)
+                            .orElseThrow()
+                            .getContext()
+                            .stream()
+                            .map(Msg::getTextContent)
+                            .toList());
+        } finally {
+            releaseOldSnapshot.countDown();
+            old.dispose();
+            oldAgent.close();
+            newAgent.close();
         }
     }
 

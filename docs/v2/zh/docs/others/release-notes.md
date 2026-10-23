@@ -20,6 +20,20 @@ en_link: /v2/en/docs/others/release-notes
 
 Agent 自身的状态存储和原生会话日志继续自行持久化。工具管理的存储在支持版本时采用条件写入；不支持版本的旧存储在同一个工具实例内协调重试。跨进程写入保护需要支持版本的存储。
 
+#### 已有子会话的升级
+
+本次修改了持久化所用的用户和会话标识。旧数据仍保留在原键下；未迁移时，继续已有子会话可能从空历史开始。
+
+| 持久化管理方 | 旧键 | 新键 |
+| --- | --- | --- |
+| 工具管理的状态 | `(null, childSessionId, "agent_state")` | `(callerUserId, childSessionId, "agent_state")` |
+| Agent 自有状态存储：收到转发调用上下文的 `ReActAgent` | `(callerUserId, parentSessionId, ...)` | `(callerUserId, childSessionId, ...)` |
+| Agent 自有状态存储：旧版 `HarnessAgent` 调用 | `(null, configuredDefaultSessionId, ...)` | `(callerUserId, childSessionId, ...)` |
+
+调用方 userId 仍为 null 时，工具管理的键不变。旧工具仅向 `ReActAgent` 转发上下文，父会话缺失时它使用配置的默认会话。旧版 `HarnessAgent` 调用即使工具收到调用上下文，也使用空上下文及委托 Agent 的默认会话。需根据可信应用记录确认旧用户和会话组合，两者都可能与目标不同；其他实现的默认行为及原生会话日志标识也需同样核对。
+
+持有已有子会话数据的应用，请按[子会话迁移步骤](/v2/zh/docs/building-blocks/tool#已有子会话的迁移)升级：备份并暂停写入，根据应用记录确认归属，迁移到新键且不覆盖已有目标，再验证会话连续性。不自动回读匿名状态，因为匿名键无法证明历史属于哪个用户。
+
 ---
 
 ## 2.0.4

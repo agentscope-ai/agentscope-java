@@ -350,6 +350,56 @@ class SubAgentToolSessionIsolationTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void sharedLiveHistoryIsNotReplacedByStaleStoredSnapshot(boolean streaming) {
+        MockModel model = new MockModel("OK");
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        store.save(
+                "alice",
+                "same-session",
+                "agent_state",
+                AgentState.builder()
+                        .addMessage(
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .textContent("stale snapshot")
+                                        .build())
+                        .build());
+        RuntimeContext direct =
+                RuntimeContext.builder().userId("alice").sessionId("same-session").build();
+        try (ReActAgent agent = ReActAgent.builder().name("shared").model(model).build()) {
+            agent.call(
+                            List.of(
+                                    Msg.builder()
+                                            .role(MsgRole.USER)
+                                            .textContent("live direct history")
+                                            .build()),
+                            direct)
+                    .block();
+            SubAgentTool tool =
+                    new SubAgentTool(
+                            () -> agent,
+                            SubAgentConfig.builder()
+                                    .forwardEvents(streaming)
+                                    .stateStore(store)
+                                    .lifecyclePolicy(SubAgentConfig.LifecyclePolicy.SHARED)
+                                    .build());
+            tool.callAsync(param("delegated", "same-session", "alice", "parent")).block();
+            assertEquals(List.of("live direct history", "delegated"), users(model));
+            assertEquals(
+                    List.of("live direct history", "delegated"),
+                    store
+                            .get("alice", "same-session", "agent_state", AgentState.class)
+                            .orElseThrow()
+                            .getContext()
+                            .stream()
+                            .filter(m -> m.getRole() == MsgRole.USER)
+                            .map(Msg::getTextContent)
+                            .toList());
+        }
+    }
+
     private static List<String> users(MockModel model) {
         return model.getLastMessages().stream()
                 .filter(m -> m.getRole() == MsgRole.USER)

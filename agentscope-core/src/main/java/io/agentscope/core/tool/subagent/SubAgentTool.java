@@ -95,7 +95,7 @@ public class SubAgentTool implements AgentTool {
         private long committedVersion = AgentStateStore.UNVERSIONED;
     }
 
-    private SubAgentConfig.LifecyclePolicy resolvedLifecycle;
+    private volatile SubAgentConfig.LifecyclePolicy resolvedLifecycle;
     private Agent metadataSample;
 
     /**
@@ -133,27 +133,34 @@ public class SubAgentTool implements AgentTool {
 
     private record Provision(Agent agent, boolean owned, Agent unusedSample) {}
 
-    private synchronized Provision provideAgent() {
-        if (resolvedLifecycle != SubAgentConfig.LifecyclePolicy.AUTO) {
-            return new Provision(
-                    agentProvider.provide(),
-                    resolvedLifecycle == SubAgentConfig.LifecyclePolicy.PER_CALL,
-                    null);
+    private Provision provideAgent() {
+        SubAgentConfig.LifecyclePolicy policy = resolvedLifecycle;
+        if (policy == SubAgentConfig.LifecyclePolicy.AUTO) {
+            // Only discovery is exclusive. Once ownership is published, independent calls may
+            // provision concurrently (including providers that establish remote connections).
+            synchronized (this) {
+                policy = resolvedLifecycle;
+                if (policy == SubAgentConfig.LifecyclePolicy.AUTO) {
+                    Agent sample = metadataSample;
+                    if (sample == null) {
+                        sample = agentProvider.provide();
+                        metadataSample = sample;
+                    }
+                    Agent agent = agentProvider.provide();
+                    boolean shared = sample == agent;
+                    policy =
+                            shared
+                                    ? SubAgentConfig.LifecyclePolicy.SHARED
+                                    : SubAgentConfig.LifecyclePolicy.PER_CALL;
+                    metadataSample = null;
+                    resolvedLifecycle = policy;
+                    logger.debug("Sub-agent provider '{}' detected as {}", name, policy);
+                    return new Provision(agent, !shared, shared ? null : sample);
+                }
+            }
         }
-        Agent sample = metadataSample;
-        if (sample == null) {
-            sample = agentProvider.provide();
-            metadataSample = sample;
-        }
-        Agent agent = agentProvider.provide();
-        boolean shared = sample == agent;
-        resolvedLifecycle =
-                shared
-                        ? SubAgentConfig.LifecyclePolicy.SHARED
-                        : SubAgentConfig.LifecyclePolicy.PER_CALL;
-        metadataSample = null;
-        logger.debug("Sub-agent provider '{}' detected as {}", name, resolvedLifecycle);
-        return new Provision(agent, !shared, shared ? null : sample);
+        return new Provision(
+                agentProvider.provide(), policy == SubAgentConfig.LifecyclePolicy.PER_CALL, null);
     }
 
     @Override

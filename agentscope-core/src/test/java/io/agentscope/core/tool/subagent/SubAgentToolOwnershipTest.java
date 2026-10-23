@@ -29,10 +29,16 @@ import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mockito;
 
 class SubAgentToolOwnershipTest {
@@ -145,6 +151,145 @@ class SubAgentToolOwnershipTest {
         tool.callAsync(param("first")).block();
         assertTrue(closed.await(5, TimeUnit.SECONDS));
         assertEquals(2, provisions.get());
+    }
+
+    @ParameterizedTest
+    @EnumSource(SubAgentConfig.LifecyclePolicy.class)
+    void classifiedProvidersCanProvisionConcurrently(SubAgentConfig.LifecyclePolicy policy)
+            throws Exception {
+        int requests = 4;
+        CountDownLatch entered = new CountDownLatch(requests);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean gate = new AtomicBoolean();
+        try (ReActAgent shared =
+                ReActAgent.builder().name("shared").model(new MockModel("OK")).build()) {
+            SubAgentTool tool =
+                    new SubAgentTool(
+                            () -> {
+                                if (gate.get()) {
+                                    entered.countDown();
+                                    try {
+                                        assertTrue(release.await(5, TimeUnit.SECONDS));
+                                    } catch (InterruptedException e) {
+                                        throw new AssertionError(e);
+                                    }
+                                }
+                                return policy == SubAgentConfig.LifecyclePolicy.SHARED
+                                        ? shared
+                                        : ReActAgent.builder()
+                                                .name("factory")
+                                                .model(new MockModel("OK"))
+                                                .build();
+                            },
+                            SubAgentConfig.builder()
+                                    .toolName("provider")
+                                    .description("provider")
+                                    .forwardEvents(false)
+                                    .lifecyclePolicy(policy)
+                                    .build());
+            if (policy == SubAgentConfig.LifecyclePolicy.AUTO)
+                tool.callAsync(param("warm up")).block();
+            gate.set(true);
+            var executor = Executors.newFixedThreadPool(requests);
+            var calls = new CopyOnWriteArrayList<java.util.concurrent.Future<?>>();
+            try {
+                for (int i = 0; i < requests; i++) {
+                    calls.add(
+                            executor.submit(
+                                    () ->
+                                            tool.callAsync(param("hello"))
+                                                    .block(Duration.ofSeconds(10))));
+                }
+                assertTrue(
+                        entered.await(2, TimeUnit.SECONDS),
+                        "Known provider policy must not serialize independent provisioning");
+            } finally {
+                release.countDown();
+                try {
+                    for (var call : calls) call.get(10, TimeUnit.SECONDS);
+                } finally {
+                    executor.shutdownNow();
+                    assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+                }
+            }
+        }
+    }
+
+    @Test
+    void concurrentFirstCallsClassifyOnceAndCloseFactorySampleOnce() throws Exception {
+        AtomicInteger provisions = new AtomicInteger();
+        AtomicInteger sampleCloses = new AtomicInteger();
+        CountDownLatch firstProbeEntered = new CountDownLatch(1);
+        CountDownLatch releaseProbe = new CountDownLatch(1);
+        CountDownLatch otherProvisionEntered = new CountDownLatch(1);
+        CountDownLatch otherCallsStarted = new CountDownLatch(3);
+        var closes = new CopyOnWriteArrayList<CompletableFuture<Void>>();
+        SubAgentTool tool =
+                new SubAgentTool(
+                        () -> {
+                            int index = provisions.getAndIncrement();
+                            if (index == 1) {
+                                firstProbeEntered.countDown();
+                                try {
+                                    assertTrue(releaseProbe.await(5, TimeUnit.SECONDS));
+                                } catch (InterruptedException e) {
+                                    throw new AssertionError(e);
+                                }
+                            } else if (index > 1 && releaseProbe.getCount() != 0) {
+                                otherProvisionEntered.countDown();
+                            }
+                            ReActAgent agent =
+                                    Mockito.spy(
+                                            ReActAgent.builder()
+                                                    .name("factory")
+                                                    .model(new MockModel("OK"))
+                                                    .build());
+                            CompletableFuture<Void> closed = new CompletableFuture<>();
+                            closes.add(closed);
+                            Mockito.doAnswer(
+                                            call -> {
+                                                call.callRealMethod();
+                                                if (index == 0) sampleCloses.incrementAndGet();
+                                                closed.complete(null);
+                                                return null;
+                                            })
+                                    .when(agent)
+                                    .close();
+                            return agent;
+                        },
+                        SubAgentConfig.builder().forwardEvents(false).build());
+        var executor = Executors.newFixedThreadPool(4);
+        var calls = new CopyOnWriteArrayList<java.util.concurrent.Future<?>>();
+        try {
+            calls.add(
+                    executor.submit(
+                            () -> tool.callAsync(param("first")).block(Duration.ofSeconds(10))));
+            assertTrue(firstProbeEntered.await(5, TimeUnit.SECONDS));
+            for (int i = 0; i < 3; i++) {
+                calls.add(
+                        executor.submit(
+                                () -> {
+                                    otherCallsStarted.countDown();
+                                    return tool.callAsync(param("concurrent"))
+                                            .block(Duration.ofSeconds(10));
+                                }));
+            }
+            assertTrue(otherCallsStarted.await(5, TimeUnit.SECONDS));
+            assertFalse(
+                    otherProvisionEntered.await(200, TimeUnit.MILLISECONDS),
+                    "Only the first call may classify an unresolved AUTO provider");
+        } finally {
+            releaseProbe.countDown();
+            try {
+                for (var call : calls) call.get(10, TimeUnit.SECONDS);
+                for (var closed : closes) closed.get(5, TimeUnit.SECONDS);
+            } finally {
+                executor.shutdownNow();
+                assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+            }
+        }
+        assertEquals(5, provisions.get(), "One metadata sample and four invocation agents");
+        assertEquals(1, sampleCloses.get());
     }
 
     private static ToolCallParam param(String message) {
