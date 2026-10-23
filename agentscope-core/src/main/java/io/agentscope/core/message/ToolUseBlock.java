@@ -45,6 +45,13 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public static final String METADATA_SERVER_TOOL = "serverTool";
 
+    /**
+     * Metadata key marking a streamed tool call whose accumulated raw arguments never formed a
+     * valid JSON object (Boolean value) — typically truncated by the output token limit. Such a
+     * call must not be executed with empty arguments.
+     */
+    public static final String METADATA_MALFORMED_ARGUMENTS = "malformedArguments";
+
     private final String id;
     private final String name;
     private final Map<String, Object> input;
@@ -193,6 +200,17 @@ public final class ToolUseBlock extends ContentBlock {
     @JsonIgnore
     public boolean isServerTool() {
         return Boolean.TRUE.equals(metadata.get(METADATA_SERVER_TOOL));
+    }
+
+    /**
+     * Checks whether this tool call's streamed arguments never formed a valid JSON object
+     * (marked via {@link #METADATA_MALFORMED_ARGUMENTS}), e.g. truncated mid-arguments.
+     *
+     * @return true if the accumulated arguments were malformed
+     */
+    @JsonIgnore
+    public boolean hasMalformedArguments() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_MALFORMED_ARGUMENTS));
     }
 
     /**
