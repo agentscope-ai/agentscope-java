@@ -24,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.AllToolsDeniedEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
@@ -40,6 +42,8 @@ import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -47,13 +51,17 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.MessageUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -932,5 +940,191 @@ class ReActAgentHitlTest {
                 "Permission denied by user",
                 toolResultText(deniedResult),
                 "default denial text must be preserved for backward compatibility");
+    }
+
+    // ==== AllToolsDeniedEvent publication + ALL_TOOLS_DENIED persistence (#2141) ====
+
+    private static int lastIndexOf(List<AgentEvent> events, Class<?> type) {
+        for (int i = events.size() - 1; i >= 0; i--) {
+            if (type.isInstance(events.get(i))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    @Test
+    void deniedResumePublishesAllToolsDeniedEventToCallerStream() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("after-denial"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        List<AgentEvent> pauseEvents = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(pauseEvents);
+        RequireUserConfirmEvent req =
+                (RequireUserConfirmEvent)
+                        pauseEvents.get(indexOf(pauseEvents, RequireUserConfirmEvent.class));
+
+        List<AgentEvent> resumeEvents =
+                agent.streamEvents(List.of(confirmMsg(false, req.getToolCalls().get(0))))
+                        .collectList()
+                        .block();
+        assertNotNull(resumeEvents);
+
+        int iDenied = indexOf(resumeEvents, AllToolsDeniedEvent.class);
+        assertTrue(
+                iDenied >= 0,
+                "AllToolsDeniedEvent must be published to the caller's streamEvents()");
+        int iDeniedResultEnd = lastIndexOf(resumeEvents, ToolResultEndEvent.class);
+        assertTrue(
+                iDenied > iDeniedResultEnd,
+                "AllToolsDeniedEvent must follow the denied tool-result events");
+        int iResult = indexOf(resumeEvents, AgentResultEvent.class);
+        assertTrue(iResult > iDenied, "the terminal AgentResultEvent must follow the event");
+        AgentResultEvent result = (AgentResultEvent) resumeEvents.get(iResult);
+        assertEquals(
+                "after-denial",
+                result.getResult().getTextContent(),
+                "without a stop middleware the loop must keep running");
+    }
+
+    @Test
+    void deniedResumeWithStopMiddlewarePersistsAllToolsDeniedReason() {
+        MiddlewareBase stopOnAllDenied =
+                new MiddlewareBase() {
+                    private final AtomicBoolean deniedSeen = new AtomicBoolean(false);
+
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .doOnNext(
+                                        e -> {
+                                            if (e instanceof AllToolsDeniedEvent) {
+                                                deniedSeen.set(true);
+                                            }
+                                        })
+                                .concatWith(
+                                        Flux.defer(
+                                                () ->
+                                                        deniedSeen.get()
+                                                                ? Flux.just(
+                                                                        new RequestStopEvent(
+                                                                                "all tools denied",
+                                                                                GenerateReason
+                                                                                        .ALL_TOOLS_DENIED))
+                                                                : Flux.empty()));
+                    }
+                };
+        ChatModelBase model =
+                new ScriptedModel(List.of(() -> Flux.just(toolUseResponse("tc1", "ask", "x"))));
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new AskingTool("ask")))
+                        .stateStore(store)
+                        .middleware(stopOnAllDenied)
+                        .build();
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        ToolUseBlock pending =
+                first.getContentBlocks(ToolUseBlock.class).stream().findFirst().orElseThrow();
+
+        List<AgentEvent> resumeEvents =
+                agent.streamEvents(List.of(confirmMsg(false, pending))).collectList().block();
+        assertNotNull(resumeEvents);
+
+        int iDenied = indexOf(resumeEvents, AllToolsDeniedEvent.class);
+        int iStop = indexOf(resumeEvents, RequestStopEvent.class);
+        assertTrue(iDenied >= 0, "AllToolsDeniedEvent must be published");
+        assertTrue(
+                iStop > iDenied,
+                "the middleware's RequestStopEvent must be published after AllToolsDeniedEvent");
+        AgentResultEvent result =
+                (AgentResultEvent) resumeEvents.get(indexOf(resumeEvents, AgentResultEvent.class));
+        assertEquals(GenerateReason.ALL_TOOLS_DENIED, result.getResult().getGenerateReason());
+
+        // Fresh readback of the persisted session keeps the terminal reason (#2141)
+        AgentState persisted =
+                store.get(null, agent.getDefaultSessionId(), "agent_state", AgentState.class)
+                        .orElseThrow();
+        Msg lastAssistant = MessageUtils.lastAssistantMessage(persisted.getContext());
+        assertNotNull(lastAssistant);
+        assertEquals(
+                GenerateReason.ALL_TOOLS_DENIED,
+                lastAssistant.getGenerateReason(),
+                "the persisted last assistant message must carry the ALL_TOOLS_DENIED"
+                        + " terminal reason");
+    }
+
+    @Test
+    void partialDenialDoesNotEmitAllToolsDeniedEvent() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc-allow")
+                                                                        .name("ask1")
+                                                                        .input(Map.of("query", "x"))
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc-deny")
+                                                                        .name("ask2")
+                                                                        .input(Map.of("query", "y"))
+                                                                        .build()))),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                buildAgent(model, toolkitWith(new AskingTool("ask1"), new AskingTool("ask2")));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        List<ToolUseBlock> pending = first.getContentBlocks(ToolUseBlock.class);
+        assertEquals(2, pending.size());
+
+        List<AgentEvent> resumeEvents =
+                agent.streamEvents(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true, pending.get(0), null),
+                                                        new ConfirmResult(
+                                                                false, pending.get(1), null)))))
+                        .collectList()
+                        .block();
+        assertNotNull(resumeEvents);
+
+        assertEquals(
+                0,
+                countOf(resumeEvents, AllToolsDeniedEvent.class),
+                "partial denial must not fire the all-denied branch");
+        AgentResultEvent result =
+                (AgentResultEvent) resumeEvents.get(indexOf(resumeEvents, AgentResultEvent.class));
+        assertEquals(
+                "done",
+                result.getResult().getTextContent(),
+                "the confirmed tool's round must continue normally");
+        boolean confirmedExecuted =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc-allow".equals(tr.getId()))
+                        .flatMap(tr -> tr.getOutput().stream())
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .anyMatch(text -> text.getText().startsWith("executed:"));
+        assertTrue(confirmedExecuted, "the confirmed tool must still execute");
     }
 }
