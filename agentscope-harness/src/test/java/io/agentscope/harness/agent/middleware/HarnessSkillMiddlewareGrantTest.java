@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.CapabilitySurface;
@@ -30,6 +31,7 @@ import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -128,6 +130,20 @@ class HarnessSkillMiddlewareGrantTest {
         return new HarnessSkillMiddleware(List.of(new StubRepo(skills)), new Toolkit());
     }
 
+    /**
+     * The rendered skills block as registered by {@code onSystemPrompt}: a tail runtime material
+     * (keyed {@code harness:skills}), not part of the system prompt.
+     */
+    private static String skillsMaterial(RuntimeContext ctx) {
+        WorkspaceContextMaterials materials = ctx.get(WorkspaceContextMaterials.class);
+        assertNotNull(materials);
+        return materials.items().stream()
+                .filter(item -> "harness:skills".equals(item.sourceId()))
+                .findFirst()
+                .orElseThrow()
+                .content();
+    }
+
     /** Grants exactly the alpha skill. */
     private static final CapabilitySurface ALPHA_ONLY =
             new CapabilitySurface(java.util.Set.of("alpha"), null, null);
@@ -135,15 +151,17 @@ class HarnessSkillMiddlewareGrantTest {
     // ==================== prompt + catalog visibility ====================
 
     @Test
-    @DisplayName("granted skill only: prompt and per-call catalog keep the granted subset")
+    @DisplayName("granted skill only: skills material and per-call catalog keep the granted subset")
     void grantedSkillOnlyInPromptAndCatalog() {
         HarnessSkillMiddleware mw = middleware(List.of(skill("alpha"), skill("beta")));
         RuntimeContext ctx = rc(ALPHA_ONLY);
 
         String prompt = mw.onSystemPrompt(null, ctx, "base").block();
 
-        assertTrue(prompt.contains("alpha"), "granted skill kept in the prompt");
-        assertFalse(prompt.contains("beta"), "un-granted skill cut from the prompt");
+        assertEquals("base", prompt, "system prompt stays untouched");
+        String block = skillsMaterial(ctx);
+        assertTrue(block.contains("alpha"), "granted skill kept in the skills material");
+        assertFalse(block.contains("beta"), "un-granted skill cut from the skills material");
         List<String> ids = mw.runtime().currentCatalog(ctx).ids();
         assertTrue(ids.contains("alpha"));
         assertFalse(ids.contains("beta"));
@@ -167,10 +185,11 @@ class HarnessSkillMiddlewareGrantTest {
         HarnessSkillMiddleware mw = middleware(List.of(systemSkill("gamma"), skill("beta")));
         RuntimeContext ctx = rc(new CapabilitySurface(java.util.Set.of(), null, null));
 
-        String prompt = mw.onSystemPrompt(null, ctx, "base").block();
+        mw.onSystemPrompt(null, ctx, "base").block();
 
-        assertTrue(prompt.contains("gamma"), "system skill kept");
-        assertFalse(prompt.contains("beta"), "non-system skill cut");
+        String block = skillsMaterial(ctx);
+        assertTrue(block.contains("gamma"), "system skill kept");
+        assertFalse(block.contains("beta"), "non-system skill cut");
         assertTrue(mw.runtime().currentCatalog(ctx).ids().contains("gamma"));
     }
 
@@ -180,9 +199,10 @@ class HarnessSkillMiddlewareGrantTest {
         HarnessSkillMiddleware mw = middleware(List.of(skill("alpha"), skill("beta")));
         RuntimeContext ctx = rc(null);
 
-        String prompt = mw.onSystemPrompt(null, ctx, "base").block();
+        mw.onSystemPrompt(null, ctx, "base").block();
 
-        assertTrue(prompt.contains("alpha") && prompt.contains("beta"));
+        String block = skillsMaterial(ctx);
+        assertTrue(block.contains("alpha") && block.contains("beta"));
         assertEquals(2, mw.runtime().currentCatalog(ctx).ids().size());
     }
 

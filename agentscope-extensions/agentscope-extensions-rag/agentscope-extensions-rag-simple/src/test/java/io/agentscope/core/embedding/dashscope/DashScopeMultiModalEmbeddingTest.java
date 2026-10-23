@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingException;
+import io.agentscope.core.embedding.EmbeddingResponse;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
@@ -176,7 +177,7 @@ class DashScopeMultiModalEmbeddingTest {
         Scheduler subscriberScheduler = Schedulers.newSingle("embedding-subscriber");
         CountDownLatch markerRan = new CountDownLatch(1);
         CountDownLatch completed = new CountDownLatch(1);
-        AtomicReference<double[]> embedding = new AtomicReference<>();
+        AtomicReference<EmbeddingResponse> response = new AtomicReference<>();
         AtomicReference<Throwable> error = new AtomicReference<>();
         Disposable subscription = null;
         boolean requestObserved;
@@ -193,7 +194,7 @@ class DashScopeMultiModalEmbeddingTest {
                     model.embed(TextBlock.builder().text("hello").build())
                             .subscribeOn(subscriberScheduler)
                             .subscribe(
-                                    embedding::set,
+                                    response::set,
                                     throwable -> {
                                         error.set(throwable);
                                         completed.countDown();
@@ -218,7 +219,7 @@ class DashScopeMultiModalEmbeddingTest {
                 markerObserved,
                 "The synchronous DashScope SDK call must not block the subscriber scheduler");
         assertNull(error.get());
-        assertNotNull(embedding.get());
-        assertEquals(0.5, embedding.get()[0]);
+        assertNotNull(response.get());
+        assertEquals(0.5, response.get().getEmbedding()[0]);
     }
 }

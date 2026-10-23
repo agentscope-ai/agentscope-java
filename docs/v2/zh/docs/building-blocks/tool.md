@@ -632,6 +632,104 @@ Meta tool 的输入表示所有 group 的**最终状态**而非增量。任何�
 </Warning>
 
 
+## 工具调用拦截器
+
+`ToolCallInterceptor` 是 Toolkit 层、单次调用级的参数拦截扩展点。它运行在 JSON Schema 校验与预置参数合并**之后**、会话分发记录与真实执行**之前** —— 因此它能看到工具将收到的确切参数与调用者身份,并决定实际执行的内容。
+
+用它表达[权限系统](/v2/zh/docs/building-blocks/permission-system)无法覆盖的**参数级业务规则**:工具本身被允许调用,但*本次*调用的 `file_path` 是否在当前用户的沙箱内?这条 SQL 是否超出调用者的数据范围?工具级策略(ALLOW/ASK/DENY、人审)仍归权限引擎;批次级、事件流层面的关注点仍归[中间件](/v2/zh/docs/building-blocks/middleware)的 `onActing`。
+
+拦截器在 `ToolkitConfig` 构建期注册:
+
+```java
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptor(new AuditInterceptor())                    // 追加;可重复调用
+        .interceptor(new PathSandboxInterceptor(                // 追加
+                userId -> Path.of("/data/workspaces", userId)))
+        .build());
+
+// 也可整体设置 —— interceptors(list) 是覆盖语义,而非追加
+Toolkit toolkit2 = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptors(List.of(audit, sandbox))
+        .build());
+```
+
+`interceptor(...)` 为追加语义,可重复调用;`interceptors(List)` 为覆盖语义,替换此前注册的全部拦截器 —— 适合已在别处组装好拦截器列表的场景。拦截器按 `order()` **降序稳定排序**(数值越大越靠外层:先拦截、后收到结果;同序保持注册顺序),排序后运行期不可变。`Toolkit` 被并发会话共享,拦截器实现必须无状态或线程安全;运行期可变的*策略*(熔断开关、租户规则)以拦截器**内部的可变状态**表达。
+
+钩子形状与中间件同构(洋葱模式):
+
+```java
+public final class PathSandboxInterceptor implements ToolCallInterceptor {
+
+    private final Function<String, Path> workspaceRootResolver;
+
+    public PathSandboxInterceptor(Function<String, Path> workspaceRootResolver) {
+        this.workspaceRootResolver = workspaceRootResolver;
+    }
+
+    @Override
+    public Mono<ToolResultBlock> intercept(
+            ToolInvocation invocation,
+            Function<ToolInvocation, Mono<ToolResultBlock>> next) {
+        if (!invocation.toolName().equals("write_text_file")) {
+            return next.apply(invocation);        // 非目标工具 —— 直接放行
+        }
+        // 注入参数:调用方经 RuntimeContext.builder().put(FileAuditLog.class, log)
+        // 注册,模型不可见
+        FileAuditLog audit = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().get(FileAuditLog.class) : null;
+        String userId = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().getUserId() : null;
+        if (userId == null || userId.isBlank()) { // 身份缺失即拒绝(fail closed)
+            return deny("no authenticated user context; cannot scope file access");
+        }
+        Path root = workspaceRootResolver.apply(userId).toAbsolutePath().normalize();
+        // 工具参数:"file_path" 来自模型的 JSON 输入(含 preset)
+        Path resolved = root
+                .resolve(invocation.input().get("file_path").toString())
+                .normalize();                     // 绝对路径同样过不了下面的检查
+        // 前置处理:校验参数并改写为沙箱内路径
+        if (!resolved.startsWith(root)) {
+            return deny("path must stay inside your workspace; use relative paths");
+        }
+        Map<String, Object> rewritten = new HashMap<>(invocation.input());
+        rewritten.put("file_path", resolved.toString());
+        // 后置处理:审计执行结果而不影响执行
+        return next.apply(invocation.withInput(rewritten))
+                .doOnSuccess(result -> {
+                    if (audit != null) audit.record(userId, resolved, result);
+                });
+    }
+
+    private static Mono<ToolResultBlock> deny(String message) {
+        return Mono.just(ToolResultBlock.text("PathSandbox: " + message)
+                .withState(ToolResultState.DENIED));
+    }
+}
+```
+
+拦截器可执行的动作:
+
+| 动作 | 表达方式 | 效果 |
+|------|----------|------|
+| 放行 | `next.apply(invocation)` | 继续后续链 / 执行工具 |
+| 策略拒绝 | `ToolResultBlock.text(msg).withState(ToolResultState.DENIED)` | 工具不执行;结果回传模型自我纠正;自动记录 `denied` 决策 |
+| 调用非法 | `ToolResultBlock.error(msg)` | "本次调用失败"语义,与 Schema 校验失败一致;不产生 denied 记录 |
+| 改写参数 | `next.apply(invocation.withInput(newInput))` | 工具收到改写后的参数(可覆盖 preset;不做 Schema 重校验 —— 开发者产物,与 preset 同信任级别) |
+| 审计 | `next.apply(invocation).doOnSuccess(...)` | 观察结果而不影响执行 |
+| 挂起(HITL) | 抛出 `ToolSuspendException` | 由既有管线转为 `suspended` 结果 |
+
+需要注意的语义:
+
+- **按 agent 身份分发**。快照携带 `agentId`(审计关联)与 `agentName`(写规则的依据,如"planner 禁止写操作");直连无 agent 时两者为 `null`。刻意只透出标识而非 `Agent` 句柄 —— 其操作属于中间件层且带重入风险;结构性的按 agent 差异宜在构建期表达于各 agent 自己的 `ToolkitConfig`。
+- **改写发生在权限批准之后**。权限引擎判定的是模型原始输入;若安全敏感参数(路径、SQL、URL)改写后的*最终值*需要用户确认,应挂起人审而非静默改写。拦截器拒绝一个已获批准的调用属预期行为 —— 拒绝结果直接回馈模型。
+- **拒绝消息应面向模型可行动**("请使用工作区内的相对路径"),不泄露服务端信息,并带拦截器身份前缀(如 `PathSandbox:`)。在示例之外加固路径守卫:调用者可控的 id 先校验格式再用作路径组件;已存在路径(及新建文件的最近已存在祖先)用 `toRealPath()` 复检 —— `normalize()` 不消解符号链接、Windows 8.3 短名与 ADS,且 `Path#startsWith` 区分大小写;改写时避免把服务端绝对根路径回显给模型。
+- **会话记录保持真实**。`tool/dispatch` 记录位于链终点,记录的永远是实际执行的参数;被拒绝的调用不会留下 `allowed`/`dispatch` 记录。
+- **超时与重试**在批处理 `callTools` 路径包裹整条链:拦截器耗时计入工具超时,重试时每次尝试都会重新走链。直连 `Toolkit#callTool` 路径保持现状 —— 无超时包装 —— 因此拦截器绝不能阻塞;阻塞 IO 用 `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())` 卸载。
+- **外部工具不会被拦截**。`externalTool=true` / `SchemaOnlyTool` 在链之前短路返回 `suspended`,校验由外部执行方负责。挂起后回填的结果属数据注入而非执行,同样不经过链。框架内部合成工具 `generate_response` 亦不经过链。
+- **传播**。`Toolkit#copy()`(Harness 子代理即经此构建)会携带拦截器;以全新 `Toolkit` 构建的子代理则没有,除非显式注册。工具体内再委托其他工具(工具在 `callAsync` 内部调用别的工具)不会被二次拦截 —— 按外层工具名分发守卫。
+
 ## 延伸阅读
 
 
@@ -696,3 +794,11 @@ agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
 `Toolkit.callTool` 和 `callTools` 同样读取显式传入的 RuntimeContext。无配置的 `getTool(name)` 查看原始注册表；需要请求视图时使用 `getTool(name, config)`。工具组激活状态保存在会话的 `ToolContextState`，流式工具回调绑定本次调用。
 
 需要按用户或会话加载技能的仓库实现 Core 中的 `io.agentscope.core.skill.repository.RuntimeContextSkillRepository`。Core 和 Harness 都将当前上下文传给仓库。动态 Skill 视图按内容签名缓存，并发缓存未命中共享一次完整的资源物化；淘汰后重建视图使用新目录，保留运行中执行所引用的文件。缓存淘汰只限制保留的 SkillBox 数量，不限制磁盘占用：自动生成的目录保留到 JVM 退出时清理。调用方指定的工作目录由调用方负责清理；不要在仍有执行引用资源时删除它。
+
+## 工具执行生命周期回调
+
+`ToolExecutionCallback` 提供 `onStart(call)`、`onProgress(call, chunk)` 和 `onResult(call, result)`。执行器在工具真正开始执行时（串行批次中为轮到该工具时）发送 `onStart`；`onResult` 每次调用至多触发一次，先于有序汇总。`Toolkit.callToolsWithCallback(...)` 转发全部生命周期通知，原 `callTools(...)` 与 chunk callback 签名保持兼容。
+
+最终结果在有序汇总前通知，快工具无需等待慢工具。重试、超时和工具错误转换沿用原逻辑；progress callback 异常沿用原有日志隔离；最终结果 callback 异常通过返回的 Publisher 传播。实现必须线程安全且不能阻塞。取消或基础设施异常可能没有最终结果。
+
+Agent 默认渐进发布结果，无需配置开关。普通工具和合成 `generate_response` 使用该回调，服务端结果与权限拒绝保留直接事件转换。callback 只发布事件，不创建 Msg 或修改上下文；消息结算与中断恢复沿用原流程，提前收到事件不代表结果已保存。

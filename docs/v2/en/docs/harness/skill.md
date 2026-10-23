@@ -26,6 +26,8 @@ code-reviewer/
 
 Save `SKILL.md` as UTF-8. A byte order mark (BOM) before the opening `---` is supported.
 
+Close the YAML frontmatter with an unindented line containing only `---` and optional spaces or tabs. A `---` inside a description or an indented YAML block scalar remains part of the metadata.
+
 SKILL.md format:
 
 ```markdown
@@ -274,7 +276,7 @@ agent.promoteSkill("notes-taker", "alice")                   // manually promote
 
 ## How the agent reads and runs skills
 
-On each call, harness builds an `<available_skills>` block in the system prompt listing every skill currently in scope. The block is built once per call (during PreCall, seeded together with the system message) and then stays visible as-is across every reasoning step of that call — it is not rebuilt per step:
+On each call, harness builds an `<available_skills>` block listing every skill currently in scope. The block is built once per call (during PreCall, seeded together with the system message) as a per-call runtime material and rendered after the conversation, so it stays visible as-is across every reasoning step of that call without shifting the system-prompt prefix — it is not rebuilt per step:
 
 ```xml
 <available_skills>

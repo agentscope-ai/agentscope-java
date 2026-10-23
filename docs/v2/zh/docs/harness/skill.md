@@ -26,6 +26,8 @@ code-reviewer/
 
 `SKILL.md` 使用 UTF-8 编码，支持在开头的 `---` 前带有字节顺序标记（BOM）。
 
+使用不带缩进、仅包含 `---` 及可选空格或制表符的一行结束 YAML frontmatter。描述中的 `---` 或 YAML 缩进块标量中的 `---` 仍属于元数据。
+
 SKILL.md 写法：
 
 ```markdown
@@ -274,7 +276,7 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 ## Agent 是怎么读取和执行 skill 的
 
-agent 每次 call 时，harness 会在 system prompt 里构建一个 `<available_skills>` 块，列出当前可见的所有 skill。这个块每次 call 只构建一次（在 PreCall 阶段，随 system message 一起 seed），随后在该 call 的每一轮推理里都原样可见——不是每轮重新构建：
+agent 每次 call 时，harness 会构建一个 `<available_skills>` 块，列出当前可见的所有 skill。这个块每次 call 只构建一次（在 PreCall 阶段，随 system message 一起 seed），作为按 call 的 runtime material 渲染在对话之后，因此在该 call 的每一轮推理里都原样可见，也不会改变 system prompt 前缀——不是每轮重新构建：
 
 ```xml
 <available_skills>

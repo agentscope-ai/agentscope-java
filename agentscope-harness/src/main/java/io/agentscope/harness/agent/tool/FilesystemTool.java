@@ -112,8 +112,11 @@ public class FilesystemTool {
             name = "read_file",
             readOnly = true,
             description =
-                    "Read file content with line numbers. Supports pagination via offset and"
-                            + " limit.")
+                    "Read a file's content. Binary files come back base64-encoded. Paginate large"
+                            + " files with offset (0-indexed start line) and limit (max lines)"
+                            + " instead of reading everything at once; before editing, read the"
+                            + " target region with enough surrounding context so your edit"
+                            + " matches the current content.")
     public ToolResultBlock readFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File path to read") String path,
@@ -139,7 +142,11 @@ public class FilesystemTool {
 
     @Tool(
             name = "write_file",
-            description = "Write content to a new file, creating parent directories if needed.")
+            description =
+                    "Create a new file with the given full content (parent directories are"
+                            + " created). Fails if the path already exists — read_file the"
+                            + " existing file and use edit_file to change it instead of"
+                            + " overwriting.")
     public ToolResultBlock writeFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Target file path") String path,
@@ -154,12 +161,22 @@ public class FilesystemTool {
     @Tool(
             name = "edit_file",
             description =
-                    "Perform exact string replacement in a file. The old_string must be unique"
-                            + " unless replace_all is true.")
+                    "Replace an exact text string in an existing file after line-ending"
+                            + " normalization; whitespace and indentation within lines must match."
+                            + " There is no fuzzy matching. If the string is not"
+                            + " found, read_file the region again and copy the exact text (with"
+                            + " surrounding context) instead of guessing variants; if it appears"
+                            + " more than once, add surrounding context to make it unique or set"
+                            + " replace_all=true.")
     public ToolResultBlock editFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File to edit") String path,
-            @ToolParam(name = "old_string", description = "Text to find") String oldString,
+            @ToolParam(
+                            name = "old_string",
+                            description =
+                                    "Text to find. Must match exactly once unless replace_all is"
+                                            + " true; otherwise the edit fails.")
+                    String oldString,
             @ToolParam(name = "new_string", description = "Replacement text") String newString,
             @ToolParam(
                             name = "replace_all",
@@ -194,7 +211,11 @@ public class FilesystemTool {
                     String path,
             @ToolParam(
                             name = "glob",
-                            description = "Optional file glob filter (e.g., *.java)",
+                            description =
+                                    "Optional file glob filter matched against the file name only"
+                                            + " (e.g., *.java). Path-based patterns such as"
+                                            + " **/*.java are not supported here; the search"
+                                            + " already recurses into subdirectories.",
                             required = false)
                     String glob,
             @ToolParam(
@@ -235,8 +256,10 @@ public class FilesystemTool {
             name = "glob_files",
             readOnly = true,
             description =
-                    "Find files matching a glob pattern. Returns at most 200 files by default to"
-                            + " keep tool output bounded.")
+                    "Find files by name using a glob pattern (e.g., **/*.java). Use this to locate"
+                            + " files by path/name; use grep_files instead to search file"
+                            + " contents. Returns at most 200 files by default to keep tool"
+                            + " output bounded.")
     public ToolResultBlock globFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Glob pattern (e.g., **/*.java)")

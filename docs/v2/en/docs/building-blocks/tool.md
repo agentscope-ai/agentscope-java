@@ -632,6 +632,104 @@ The meta tool's input represents the **final state** of all groups, not a delta.
 </Warning>
 
 
+## Tool call interceptors
+
+`ToolCallInterceptor` is a Toolkit-layer, per-invocation hook over tool arguments. It runs after JSON-schema validation and preset-argument merging, and before the session dispatch record and real execution — so it sees the exact arguments the tool would receive, plus the caller identity, and decides what actually executes.
+
+Use it for **parameter-level business rules** the [permission system](/v2/en/docs/building-blocks/permission-system) cannot express: the tool is allowed, but is *this* call's `file_path` inside the current user's sandbox? Is this SQL statement within the caller's data scope? Tool-level policy (ALLOW/ASK/DENY, human review) stays in the permission engine; batch-level, event-stream concerns stay in [middleware](/v2/en/docs/building-blocks/middleware) `onActing`.
+
+Register interceptors at build time on `ToolkitConfig`:
+
+```java
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptor(new AuditInterceptor())                    // appends; repeatable
+        .interceptor(new PathSandboxInterceptor(                // appends
+                userId -> Path.of("/data/workspaces", userId)))
+        .build());
+
+// Or set the whole list at once — interceptors(list) replaces, not appends
+Toolkit toolkit2 = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptors(List.of(audit, sandbox))
+        .build());
+```
+
+`interceptor(...)` appends and may be called repeatedly; `interceptors(List)` replaces everything registered so far — handy when you already assembled the chain elsewhere. Interceptors are sorted once by `order()` descending (higher value = outer layer, runs first, sees the result last; equal orders keep registration order) and stay immutable afterwards. A `Toolkit` is shared across concurrent sessions, so interceptor implementations must be stateless or thread-safe; runtime-mutable *policy* (kill switches, tenant rules) lives as mutable state *inside* an interceptor.
+
+The hook follows the same onion shape as middleware:
+
+```java
+public final class PathSandboxInterceptor implements ToolCallInterceptor {
+
+    private final Function<String, Path> workspaceRootResolver;
+
+    public PathSandboxInterceptor(Function<String, Path> workspaceRootResolver) {
+        this.workspaceRootResolver = workspaceRootResolver;
+    }
+
+    @Override
+    public Mono<ToolResultBlock> intercept(
+            ToolInvocation invocation,
+            Function<ToolInvocation, Mono<ToolResultBlock>> next) {
+        if (!invocation.toolName().equals("write_text_file")) {
+            return next.apply(invocation);        // not our tool — pass through
+        }
+        // Injected dependency: registered by the caller via
+        // RuntimeContext.builder().put(FileAuditLog.class, log) — never model-visible
+        FileAuditLog audit = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().get(FileAuditLog.class) : null;
+        String userId = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().getUserId() : null;
+        if (userId == null || userId.isBlank()) { // fail closed on missing identity
+            return deny("no authenticated user context; cannot scope file access");
+        }
+        Path root = workspaceRootResolver.apply(userId).toAbsolutePath().normalize();
+        // Tool argument: "file_path" comes from the model's JSON input (presets included)
+        Path resolved = root
+                .resolve(invocation.input().get("file_path").toString())
+                .normalize();                     // absolute paths also fail the check below
+        // Pre-processing: validate the argument and rewrite it to the in-sandbox path
+        if (!resolved.startsWith(root)) {
+            return deny("path must stay inside your workspace; use relative paths");
+        }
+        Map<String, Object> rewritten = new HashMap<>(invocation.input());
+        rewritten.put("file_path", resolved.toString());
+        // Post-processing: audit the executed result without affecting it
+        return next.apply(invocation.withInput(rewritten))
+                .doOnSuccess(result -> {
+                    if (audit != null) audit.record(userId, resolved, result);
+                });
+    }
+
+    private static Mono<ToolResultBlock> deny(String message) {
+        return Mono.just(ToolResultBlock.text("PathSandbox: " + message)
+                .withState(ToolResultState.DENIED));
+    }
+}
+```
+
+Actions an interceptor can take:
+
+| Action | Expression | Effect |
+|--------|------------|--------|
+| Allow | `next.apply(invocation)` | Continue the chain / execute the tool |
+| Policy deny | `ToolResultBlock.text(msg).withState(ToolResultState.DENIED)` | Tool not executed; result feeds back to the model for self-correction; recorded as a `denied` decision |
+| Reject as invalid | `ToolResultBlock.error(msg)` | "This call failed" semantics, like a schema violation; no denied record |
+| Rewrite | `next.apply(invocation.withInput(newInput))` | Tool receives the rewritten arguments (presets may be overridden; no schema re-validation — developer-produced input, same trust level as presets) |
+| Audit | `next.apply(invocation).doOnSuccess(...)` | Observe without affecting execution |
+| Suspend (HITL) | throw `ToolSuspendException` | Mapped to a `suspended` result by the existing pipeline |
+
+Semantics to keep in mind:
+
+- **Per-agent dispatch.** The snapshot carries `agentId` (audit correlation) and `agentName` (write rules against it, e.g. deny writes for `planner`); both are `null` on agentless direct calls. Identity only, not the `Agent` handle — its operations belong to middleware and carry re-entrancy hazards; structurally different interceptor sets per agent belong in each agent's own `ToolkitConfig` at build time.
+- **Rewrites happen after permission approval.** The permission engine judges the raw model input; if the *final* value of a security-sensitive rewrite (path, SQL, URL) needs user confirmation, suspend for human review instead of rewriting silently. An interceptor denying an already-approved call is expected — the denial simply feeds back to the model.
+- **Denial messages should be model-actionable** ("use relative paths inside your workspace"), free of server internals, and prefixed with your interceptor's identity (e.g. `PathSandbox:`). To harden a path guard beyond the example above: validate caller-controlled ids before using them as path components, re-check existing paths (and the nearest existing ancestor of new files) with `toRealPath()` — `normalize()` misses symlinks, Windows 8.3 names and ADS, and `Path#startsWith` is case-sensitive — and prefer rewrites that do not echo the server-side absolute root back to the model.
+- **Session records stay honest.** The `tool/dispatch` record sits at the end of the chain and always contains the arguments that actually executed; denied calls leave no `allowed`/`dispatch` record.
+- **Timeouts and retries** on the batch `callTools` path wrap the whole chain: interceptor time counts toward the tool timeout, and retries re-run the chain on every attempt. The direct `Toolkit#callTool` path keeps today's behavior — no timeout wrapper — so interceptors must never block; offload blocking I/O with `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`.
+- **External tools are never intercepted.** `externalTool=true` / `SchemaOnlyTool` calls short-circuit to `suspended` before the chain runs; validation belongs to the external executor. Resumed results are data injection, not execution, and bypass the chain too. The framework-internal `generate_response` tool is likewise not intercepted.
+- **Propagation.** `Toolkit#copy()` (used by harness subagents) carries interceptors along; a subagent built with a brand-new `Toolkit` gets none unless you register them there. Tools a tool delegates to internally (one tool calling another inside `callAsync`) are not re-intercepted — guard by the outer tool name.
+
 ## Further reading
 
 
@@ -696,3 +794,11 @@ External tools contain schemas only. Execution suspends for the caller to execut
 `Toolkit.callTool` and `callTools` also read configuration from their explicit RuntimeContext. `getTool(name)` inspects the underlying registry; use `getTool(name, config)` for the request view. Activation groups live in the session's `ToolContextState`; streaming tool callbacks belong to each invocation.
 
 Repositories with user- or session-dependent visibility implement `io.agentscope.core.skill.repository.RuntimeContextSkillRepository` in Core. Both Core and Harness pass the current context to the repository. Dynamic Skill views are cached by content signature. Concurrent cache misses share one completed materialization; rebuilding an evicted view uses a fresh directory so active executions keep their files. Cache eviction bounds retained boxes, not disk usage: generated directories remain until JVM shutdown. Callers own cleanup of explicitly supplied working directories; do not remove resources while executions still reference them.
+
+## Tool execution lifecycle callbacks
+
+`ToolExecutionCallback` provides `onStart(call)`, `onProgress(call, chunk)`, and `onResult(call, result)`. The executor emits `onStart` when a tool actually begins executing (in sequential batches, when the tool's turn arrives) and `onResult` at most once per invocation, before ordered batch aggregation. `Toolkit.callToolsWithCallback(...)` forwards all lifecycle notifications; existing `callTools(...)` and chunk callback signatures remain supported.
+
+Final results are notified before ordered batch aggregation, so a fast tool does not wait for a slow tool. Retry, timeout, and tool error handling retain their existing behavior. Progress callback exceptions retain the existing logging and isolation; final-result callback exceptions propagate through the returned publisher. Implementations must be thread-safe and nonblocking. Cancellation or infrastructure failure can terminate without a final result.
+
+The Agent publishes results progressively by default, without a configuration flag. Ordinary tools and synthetic `generate_response` use this callback; provider results and permission denials retain direct event conversion. Callback only publishes events: it does not create messages or update conversation state. Message settlement and interruption recovery retain their existing flow, and an early event does not imply that the result has been stored.
