@@ -464,29 +464,45 @@ public class McpTool extends ToolBase {
     }
 
     /**
-     * Converts MCP JsonSchema to AgentScope parameters format.
+     * Converts an MCP tool inputSchema map to AgentScope parameters format.
+     * MCP SDK 2.0 represents inputSchema as a raw JSON Schema map, so this method
+     * preserves all schema keywords while normalizing the object keywords used for
+     * preset-parameter filtering.
      *
-     * @param inputSchema the MCP JsonSchema
+     * @param inputSchema the raw input schema map (JSON Schema)
      * @return parameters map in AgentScope format
      */
     public static Map<String, Object> convertMcpSchemaToParameters(
-            McpSchema.JsonSchema inputSchema, Set<String> excludeParams) {
+            Map<String, Object> inputSchema, Set<String> excludeParams) {
         Map<String, Object> parameters = new HashMap<>();
 
-        if (inputSchema == null) {
+        if (inputSchema == null || inputSchema.isEmpty()) {
             parameters.put("type", "object");
             parameters.put("properties", new HashMap<>());
             parameters.put("required", new ArrayList<>());
             return parameters;
         }
+
+        parameters.putAll(inputSchema);
+
+        Object typeNode = parameters.get("type");
+        Object propertiesNode = parameters.get("properties");
+        Object requiredNode = parameters.get("required");
+
+        @SuppressWarnings("unchecked")
         Map<String, Object> properties =
-                inputSchema.properties() != null
-                        ? new HashMap<>(inputSchema.properties())
+                propertiesNode instanceof Map
+                        ? new HashMap<>((Map<String, Object>) propertiesNode)
                         : new HashMap<>();
-        List<String> required =
-                inputSchema.required() != null
-                        ? new ArrayList<>(inputSchema.required())
-                        : new ArrayList<>();
+
+        List<String> required = new ArrayList<>();
+        if (requiredNode instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof String s) {
+                    required.add(s);
+                }
+            }
+        }
 
         // Exclude preset parameters from the schema
         if (excludeParams != null) {
@@ -494,22 +510,9 @@ public class McpTool extends ToolBase {
             properties.keySet().removeAll(excludeParams);
         }
 
-        parameters.put("type", inputSchema.type() != null ? inputSchema.type() : "object");
+        parameters.put("type", typeNode instanceof String s && !s.isBlank() ? s : "object");
         parameters.put("properties", properties);
         parameters.put("required", required);
-
-        if (inputSchema.additionalProperties() != null) {
-            parameters.put("additionalProperties", inputSchema.additionalProperties());
-        }
-
-        // Preserve $defs and definitions for $ref resolution
-        if (inputSchema.defs() != null && !inputSchema.defs().isEmpty()) {
-            parameters.put("$defs", new HashMap<>(inputSchema.defs()));
-        }
-
-        if (inputSchema.definitions() != null && !inputSchema.definitions().isEmpty()) {
-            parameters.put("definitions", new HashMap<>(inputSchema.definitions()));
-        }
 
         return parameters;
     }

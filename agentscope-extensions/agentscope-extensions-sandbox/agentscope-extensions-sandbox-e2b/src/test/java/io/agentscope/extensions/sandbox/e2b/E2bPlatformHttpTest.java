@@ -109,6 +109,50 @@ class E2bPlatformHttpTest {
     }
 
     @Test
+    void platformHttpExceptionExposesStatusCode() {
+        server.enqueue(new MockResponse().setResponseCode(404).setBody("snapshot missing"));
+
+        E2bPlatformHttp.PlatformHttpException ex =
+                assertThrows(
+                        E2bPlatformHttp.PlatformHttpException.class,
+                        () -> platform.createSandbox("missing-snapshot", 60));
+
+        assertEquals(404, ex.statusCode());
+        assertTrue(ex.getMessage().contains("snapshot missing"));
+    }
+
+    @Test
+    void createSandboxRetriesOnRetryableStatusCode() throws Exception {
+        E2bSandboxClientOptions retryOptions = new E2bSandboxClientOptions();
+        retryOptions.setApiKey("test-key");
+        retryOptions.setApiBaseUrl(server.url("/").toString());
+        retryOptions.setMaxRetries(2);
+        E2bPlatformHttp retryPlatform = new E2bPlatformHttp(retryOptions);
+        server.enqueue(new MockResponse().setResponseCode(503).setBody("temporarily unavailable"));
+        server.enqueue(new MockResponse().setBody("{\"sandboxID\":\"sbx-1\"}"));
+
+        retryPlatform.createSandbox("template", 60);
+
+        assertEquals(2, server.getRequestCount());
+    }
+
+    @Test
+    void createSandboxDoesNotRetryNotFound() {
+        E2bSandboxClientOptions retryOptions = new E2bSandboxClientOptions();
+        retryOptions.setApiKey("test-key");
+        retryOptions.setApiBaseUrl(server.url("/").toString());
+        retryOptions.setMaxRetries(3);
+        E2bPlatformHttp retryPlatform = new E2bPlatformHttp(retryOptions);
+        server.enqueue(new MockResponse().setResponseCode(404).setBody("missing"));
+
+        assertThrows(
+                E2bPlatformHttp.PlatformHttpException.class,
+                () -> retryPlatform.createSandbox("missing-snapshot", 60));
+
+        assertEquals(1, server.getRequestCount());
+    }
+
+    @Test
     void cleanupSnapshotsRetainsLastNByInsertionOrder() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(200));
         server.enqueue(new MockResponse().setResponseCode(200));

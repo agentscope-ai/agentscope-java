@@ -17,6 +17,7 @@ package io.agentscope.core.embedding.openai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -24,7 +25,9 @@ import static org.mockito.Mockito.when;
 
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
+import com.openai.core.JsonField;
 import com.openai.models.embeddings.CreateEmbeddingResponse;
+import com.openai.models.embeddings.CreateEmbeddingResponse.Usage;
 import com.openai.models.embeddings.Embedding;
 import com.openai.models.embeddings.EmbeddingCreateParams;
 import com.openai.services.blocking.EmbeddingService;
@@ -33,6 +36,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -97,13 +101,14 @@ class OpenAITextEmbeddingEmbedTest {
 
             StepVerifier.create(model.embed(textBlock))
                     .assertNext(
-                            embedding -> {
-                                assertNotNull(embedding);
+                            response -> {
+                                assertNotNull(response);
+                                assertNotNull(response.getEmbedding());
                                 // 返回的向量长度等于返回数据长度（3），覆盖维度不匹配分支
-                                assertEquals(3, embedding.length);
-                                assertEquals(0.1, embedding[0], 0.001);
-                                assertEquals(0.2, embedding[1], 0.001);
-                                assertEquals(0.3, embedding[2], 0.001);
+                                assertEquals(3, response.getEmbedding().length);
+                                assertEquals(0.1, response.getEmbedding()[0], 0.001);
+                                assertEquals(0.2, response.getEmbedding()[1], 0.001);
+                                assertEquals(0.3, response.getEmbedding()[2], 0.001);
                             })
                     .verifyComplete();
         }
@@ -312,6 +317,111 @@ class OpenAITextEmbeddingEmbedTest {
                                                 .contains("Empty embedding vector in response"));
                             })
                     .verify();
+        }
+    }
+
+    @Test
+    @DisplayName("Should return vectors with null usage when both token fields are absent")
+    void testUsagePresentButBothTokenFieldsMissing() {
+        // Simulate a response where the usage object exists but prompt_tokens and
+        // total_tokens are both absent. Using the SDK's optional-field accessors
+        // (_promptTokens / _totalTokens), asKnown() returns Optional.empty().
+        Embedding mockEmbedding = mock(Embedding.class);
+        when(mockEmbedding.embedding()).thenReturn(Arrays.asList(0.1f, 0.2f, 0.3f));
+
+        @SuppressWarnings("unchecked")
+        JsonField<Long> missing = mock(JsonField.class);
+        when(missing.asKnown()).thenReturn(Optional.empty());
+
+        Usage mockUsage = mock(Usage.class);
+        when(mockUsage._promptTokens()).thenReturn(missing);
+        when(mockUsage._totalTokens()).thenReturn(missing);
+
+        CreateEmbeddingResponse mockResponse = mock(CreateEmbeddingResponse.class);
+        when(mockResponse.data()).thenReturn(Arrays.asList(mockEmbedding));
+        when(mockResponse.usage()).thenReturn(mockUsage);
+
+        try (MockedStatic<OpenAIOkHttpClient> mockedClient =
+                Mockito.mockStatic(OpenAIOkHttpClient.class)) {
+
+            OpenAIOkHttpClient.Builder mockBuilder = mock(OpenAIOkHttpClient.Builder.class);
+            OpenAIClient mockOpenAIClient = mock(OpenAIClient.class);
+            EmbeddingService mockEmbeddings = mock(EmbeddingService.class);
+
+            when(mockBuilder.build()).thenReturn(mockOpenAIClient);
+            when(mockBuilder.apiKey(any(String.class))).thenReturn(mockBuilder);
+            when(mockBuilder.baseUrl(any(String.class))).thenReturn(mockBuilder);
+            when(mockBuilder.putHeader(any(), any())).thenReturn(mockBuilder);
+
+            mockedClient.when(OpenAIOkHttpClient::builder).thenReturn(mockBuilder);
+
+            when(mockOpenAIClient.embeddings()).thenReturn(mockEmbeddings);
+            when(mockEmbeddings.create(any(EmbeddingCreateParams.class))).thenReturn(mockResponse);
+
+            TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
+
+            StepVerifier.create(model.embed(textBlock))
+                    .assertNext(
+                            response -> {
+                                assertNotNull(response);
+                                assertNotNull(response.getEmbedding());
+                                assertEquals(3, response.getEmbedding().length);
+                                assertNull(response.getUsage());
+                            })
+                    .verifyComplete();
+        }
+    }
+
+    @Test
+    @DisplayName("Should return vectors with null usage when only one token field is present")
+    void testUsagePresentButOneTokenFieldMissing() {
+        // Only prompt_tokens is present; total_tokens is absent.
+        Embedding mockEmbedding = mock(Embedding.class);
+        when(mockEmbedding.embedding()).thenReturn(Arrays.asList(0.1f, 0.2f, 0.3f));
+
+        @SuppressWarnings("unchecked")
+        JsonField<Long> prompt = mock(JsonField.class);
+        when(prompt.asKnown()).thenReturn(Optional.of(12L));
+        @SuppressWarnings("unchecked")
+        JsonField<Long> missing = mock(JsonField.class);
+        when(missing.asKnown()).thenReturn(Optional.empty());
+
+        Usage mockUsage = mock(Usage.class);
+        when(mockUsage._promptTokens()).thenReturn(prompt);
+        when(mockUsage._totalTokens()).thenReturn(missing);
+
+        CreateEmbeddingResponse mockResponse = mock(CreateEmbeddingResponse.class);
+        when(mockResponse.data()).thenReturn(Arrays.asList(mockEmbedding));
+        when(mockResponse.usage()).thenReturn(mockUsage);
+
+        try (MockedStatic<OpenAIOkHttpClient> mockedClient =
+                Mockito.mockStatic(OpenAIOkHttpClient.class)) {
+
+            OpenAIOkHttpClient.Builder mockBuilder = mock(OpenAIOkHttpClient.Builder.class);
+            OpenAIClient mockOpenAIClient = mock(OpenAIClient.class);
+            EmbeddingService mockEmbeddings = mock(EmbeddingService.class);
+
+            when(mockBuilder.build()).thenReturn(mockOpenAIClient);
+            when(mockBuilder.apiKey(any(String.class))).thenReturn(mockBuilder);
+            when(mockBuilder.baseUrl(any(String.class))).thenReturn(mockBuilder);
+            when(mockBuilder.putHeader(any(), any())).thenReturn(mockBuilder);
+
+            mockedClient.when(OpenAIOkHttpClient::builder).thenReturn(mockBuilder);
+
+            when(mockOpenAIClient.embeddings()).thenReturn(mockEmbeddings);
+            when(mockEmbeddings.create(any(EmbeddingCreateParams.class))).thenReturn(mockResponse);
+
+            TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
+
+            StepVerifier.create(model.embed(textBlock))
+                    .assertNext(
+                            response -> {
+                                assertNotNull(response);
+                                assertNotNull(response.getEmbedding());
+                                assertEquals(3, response.getEmbedding().length);
+                                assertNull(response.getUsage());
+                            })
+                    .verifyComplete();
         }
     }
 }
