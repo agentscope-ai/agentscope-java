@@ -28,7 +28,6 @@ import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import jakarta.servlet.http.HttpServletRequest;
-import java.io.IOException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -305,7 +304,9 @@ public class AguiMvcController {
         try {
             String jsonData = encoder.encodeToJson(event);
             emitter.send(SseEmitter.event().data(jsonData, MediaType.APPLICATION_JSON));
-        } catch (IOException e) {
+        } catch (Exception e) {
+            // A completed emitter throws IllegalStateException. A transport failure must not
+            // cancel the run; disconnect callbacks apply interruptOnDisconnect separately.
             logger.debug("Failed to send SSE event: {}", e.getMessage());
         }
     }
@@ -315,12 +316,19 @@ public class AguiMvcController {
         try {
             String errorJson =
                     encoder.encodeToJson(
-                            new AguiEvent.Raw(threadId, runId, Map.of("error", errorMessage)));
+                            new AguiEvent.Raw(
+                                    threadId,
+                                    runId,
+                                    Map.of(
+                                            "error",
+                                            errorMessage != null
+                                                    ? errorMessage
+                                                    : "Unknown error")));
             String finishJson = encoder.encodeToJson(new AguiEvent.RunFinished(threadId, runId));
             emitter.send(SseEmitter.event().data(errorJson, MediaType.APPLICATION_JSON));
             emitter.send(SseEmitter.event().data(finishJson, MediaType.APPLICATION_JSON));
             emitter.complete();
-        } catch (IOException e) {
+        } catch (Exception e) {
             logger.debug("Failed to send error event: {}", e.getMessage());
             try {
                 emitter.completeWithError(e);

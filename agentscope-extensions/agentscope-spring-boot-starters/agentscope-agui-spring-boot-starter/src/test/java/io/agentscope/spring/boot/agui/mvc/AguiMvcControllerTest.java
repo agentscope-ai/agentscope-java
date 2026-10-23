@@ -15,10 +15,13 @@
  */
 package io.agentscope.spring.boot.agui.mvc;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.ReActAgent;
@@ -39,11 +42,14 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.SignalType;
+import reactor.core.publisher.Sinks;
 
 class AguiMvcControllerTest {
 
@@ -119,6 +125,80 @@ class AguiMvcControllerTest {
             assertEquals(
                     List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR),
                     events.stream().map(AguiEvent::getType).toList());
+        } finally {
+            fixture.executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void completedEmitterDoesNotCancelRunWhenInterruptOnDisconnectIsDisabled() throws Exception {
+        Sinks.Many<AguiEvent> events = Sinks.many().unicast().onBackpressureBuffer();
+        AtomicInteger consumedEvents = new AtomicInteger();
+        AtomicReference<SignalType> termination = new AtomicReference<>();
+        ControllerFixture fixture =
+                fixture(
+                        false,
+                        events.asFlux()
+                                .doOnNext(event -> consumedEvents.incrementAndGet())
+                                .doOnComplete(() -> termination.set(SignalType.ON_COMPLETE))
+                                .doOnCancel(() -> termination.set(SignalType.CANCEL)));
+        try {
+            SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
+            assertTrue(fixture.firstRunSubscribed.await(5, TimeUnit.SECONDS));
+
+            invokeError(emitter);
+            emitter.complete();
+            assertEquals(
+                    Sinks.EmitResult.OK,
+                    events.tryEmitNext(new AguiEvent.RunStarted("thread-1", "run-1")));
+            assertEquals(
+                    Sinks.EmitResult.OK,
+                    events.tryEmitNext(new AguiEvent.RunFinished("thread-1", "run-1")));
+            assertEquals(Sinks.EmitResult.OK, events.tryEmitComplete());
+
+            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertEquals(2, consumedEvents.get());
+            assertEquals(SignalType.ON_COMPLETE, termination.get());
+            verify(fixture.agent, never()).interrupt(any(RuntimeContext.class));
+            awaitSecondRunAccepted(fixture);
+            assertEquals(2, fixture.runCount.get());
+        } finally {
+            events.tryEmitComplete();
+            fixture.executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void eventStreamErrorWithoutMessageCompletesEmitter() throws Exception {
+        ControllerFixture fixture = fixture(false, Flux.error(new RuntimeException()));
+        try {
+            SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
+
+            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertTrue((Boolean) ReflectionTestUtils.getField(emitter, "complete"));
+            assertNull(ReflectionTestUtils.getField(emitter, "failure"));
+            assertEquals(1, fixture.runCount.get());
+        } finally {
+            fixture.executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void reportingErrorToCompletedEmitterDoesNotThrow() {
+        ControllerFixture fixture = fixture(false);
+        try {
+            SseEmitter emitter = new SseEmitter();
+            emitter.complete();
+
+            assertDoesNotThrow(
+                    () ->
+                            ReflectionTestUtils.invokeMethod(
+                                    fixture.controller,
+                                    "sendErrorAndComplete",
+                                    emitter,
+                                    "thread-1",
+                                    "run-1",
+                                    "run failed"));
         } finally {
             fixture.executor.shutdownNow();
         }
