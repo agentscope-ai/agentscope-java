@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -31,6 +32,7 @@ import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -107,6 +109,63 @@ class ProgressiveToolResultTest {
             assertEquals(2, events.stream().filter(ToolResultStartEvent.class::isInstance).count());
             assertEquals(1, model.getCallCount());
         }
+    }
+
+    @Test
+    void malformedCallEmitsErrorEventsWithoutDispatchingAndKeepsValidSibling() {
+        AtomicInteger malformedExecutions = new AtomicInteger();
+        AtomicInteger validExecutions = new AtomicInteger();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(
+                tool(
+                        "bad",
+                        p -> {
+                            malformedExecutions.incrementAndGet();
+                            return Mono.just(ToolResultBlock.success("must not run"));
+                        }));
+        toolkit.registerTool(
+                tool(
+                        "good",
+                        p -> {
+                            validExecutions.incrementAndGet();
+                            return Mono.just(ToolResultBlock.success("valid result"));
+                        }));
+
+        ToolUseBlock malformed =
+                ToolUseBlock.builder()
+                        .id("bad-call")
+                        .name("bad")
+                        .input(Map.of())
+                        .content("{")
+                        .metadata(Map.of(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED, true))
+                        .build();
+        AtomicInteger round = new AtomicInteger();
+        MockModel model =
+                new MockModel(
+                        messages ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        round.getAndIncrement() == 0
+                                                                ? List.of(
+                                                                        malformed,
+                                                                        call("good", "good-call"))
+                                                                : List.of(
+                                                                        TextBlock.builder()
+                                                                                .text("done")
+                                                                                .build()))
+                                                .build()));
+        List<AgentEvent> events;
+        try (ReActAgent agent =
+                ReActAgent.builder().name("test").model(model).toolkit(toolkit).build()) {
+            events = agent.streamEvents(List.of()).collectList().block(Duration.ofSeconds(5));
+        }
+
+        assertNotNull(events);
+        assertEquals(0, malformedExecutions.get());
+        assertEquals(1, validExecutions.get());
+        assertEquals(List.of(ToolResultState.ERROR), endStates(events, "bad-call"));
+        assertEquals(List.of(ToolResultState.SUCCESS), endStates(events, "good-call"));
     }
 
     @Test

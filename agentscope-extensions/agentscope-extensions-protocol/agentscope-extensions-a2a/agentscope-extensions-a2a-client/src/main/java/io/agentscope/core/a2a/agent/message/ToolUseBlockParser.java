@@ -16,6 +16,7 @@
 
 package io.agentscope.core.a2a.agent.message;
 
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Map;
 import org.a2aproject.sdk.spec.DataPart;
@@ -34,6 +35,7 @@ public class ToolUseBlockParser implements ContentBlockParser<ToolUseBlock> {
                         contentBlock.getName(),
                         contentBlock.getId(),
                         contentBlock.getMetadata());
+        metadata.remove(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED);
         return new DataPart(contentBlock.getInput(), metadata);
     }
 }

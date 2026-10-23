@@ -19,9 +19,15 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.MessageMetadataKeys;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JacksonJsonCodec;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -101,6 +107,117 @@ class ToolCallsAccumulatorTest {
         assertEquals("search", toolCall.getName());
         // Metadata should be empty (null metadata passed to builder)
         assertTrue(toolCall.getMetadata().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should fail closed and fallback content for malformed JSON")
+    void testMalformedJsonFailsClosedWithFallbackContent() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_malformed")
+                        .name("write_text_file")
+                        .input(Map.of("path", "output.txt"))
+                        .content("{\"projectName\": \"改造\"文化礼堂\"及配套设施\"}")
+                        .build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        // Partial arguments must not remain executable after final JSON parsing fails.
+        assertTrue(toolCall.getInput().isEmpty());
+        assertEquals("{}", toolCall.getContent());
+        assertEquals(ToolCallState.PENDING, toolCall.getState());
+        assertEquals(true, toolCall.getMetadata().get(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
+    }
+
+    @Test
+    @DisplayName("Should propagate non-JSON codec failures")
+    void testNonJsonCodecFailureIsPropagated() {
+        JsonCodec originalCodec = JsonUtils.getJsonCodec();
+        JsonUtils.setJsonCodec(
+                new JacksonJsonCodec() {
+                    @Override
+                    public <T> T fromJson(String json, Class<T> type) {
+                        throw new IllegalStateException("codec failure");
+                    }
+                });
+        try {
+            accumulator.add(
+                    ToolUseBlock.builder()
+                            .id("call_codec_failure")
+                            .name("search")
+                            .content("{}")
+                            .build());
+
+            assertThrows(IllegalStateException.class, () -> accumulator.buildAllToolCalls());
+        } finally {
+            JsonUtils.setJsonCodec(originalCodec);
+        }
+    }
+
+    @Test
+    @DisplayName("Should limit parser diagnostic messages")
+    void testDiagnosticMessageLimit() {
+        String maxLengthMessage = "x".repeat(512);
+
+        assertEquals(
+                maxLengthMessage, ToolCallsAccumulator.truncateDiagnosticMessage(maxLengthMessage));
+        assertEquals(
+                maxLengthMessage,
+                ToolCallsAccumulator.truncateDiagnosticMessage(maxLengthMessage + "x"));
+        assertNull(ToolCallsAccumulator.truncateDiagnosticMessage(null));
+    }
+
+    @Test
+    @DisplayName("Should not mark malformed intermediate snapshots as parse failures")
+    void testIntermediateSnapshotDoesNotFailBeforeStreamCompletes() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_streaming")
+                        .name("search")
+                        .input(Map.of("partial", "must-not-leak"))
+                        .content("{\"query\":")
+                        .build());
+
+        ToolUseBlock snapshot = accumulator.getAccumulatedToolCall("call_streaming");
+        assertEquals(ToolCallState.PENDING, snapshot.getState());
+        assertTrue(snapshot.getInput().isEmpty());
+        assertEquals("{}", snapshot.getContent());
+        assertTrue(
+                snapshot.getMetadata() == null
+                        || !snapshot.getMetadata()
+                                .containsKey(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
+
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_streaming")
+                        .name("__fragment__")
+                        .content("\"ready\"}")
+                        .build());
+
+        ToolUseBlock completed = accumulator.buildAllToolCalls().get(0);
+        assertEquals("ready", completed.getInput().get("query"));
+        assertTrue(
+                completed.getMetadata() == null
+                        || !completed
+                                .getMetadata()
+                                .containsKey(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
+    }
+
+    @Test
+    @DisplayName("Should allow an explicitly valid empty object")
+    void testValidEmptyObjectRemainsExecutable() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_empty")
+                        .name("noop")
+                        .input(Map.of())
+                        .content("{}")
+                        .build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertTrue(toolCall.getInput().isEmpty());
+        assertEquals(ToolCallState.PENDING, toolCall.getState());
     }
 
     @Test

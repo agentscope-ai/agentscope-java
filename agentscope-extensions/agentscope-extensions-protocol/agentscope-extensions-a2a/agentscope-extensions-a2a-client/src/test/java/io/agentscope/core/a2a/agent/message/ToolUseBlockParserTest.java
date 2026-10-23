@@ -16,9 +16,11 @@
 package io.agentscope.core.a2a.agent.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Map;
 import org.a2aproject.sdk.spec.DataPart;
@@ -92,7 +94,12 @@ class ToolUseBlockParserTest {
                         .name("calculator")
                         .id("123")
                         .input(Map.of("expression", "1+1"))
-                        .metadata(Map.of("custom_key", "custom_value"))
+                        .metadata(
+                                Map.of(
+                                        "custom_key",
+                                        "custom_value",
+                                        MessageMetadataKeys.TOOL_CALL_PARSE_FAILED,
+                                        true))
                         .build();
 
         Part<?> result = parser.parse(block);
@@ -101,6 +108,7 @@ class ToolUseBlockParserTest {
         Map<String, Object> metadata = dataPart.metadata();
         assertTrue(metadata.containsKey("custom_key"));
         assertEquals("custom_value", metadata.get("custom_key"));
+        assertFalse(metadata.containsKey(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
     }
 
     @Test
