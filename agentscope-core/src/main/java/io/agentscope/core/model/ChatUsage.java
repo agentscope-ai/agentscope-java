@@ -191,6 +191,27 @@ public class ChatUsage {
     }
 
     /**
+     * Returns the field-wise sum of this usage and {@code other}, e.g. to total several model
+     * calls. This instance is not modified.
+     *
+     * @param other the usage to add; {@code null} is treated as no usage
+     * @return a new ChatUsage holding the sum, or this instance when {@code other} is null
+     */
+    public ChatUsage plus(ChatUsage other) {
+        if (other == null) {
+            return this;
+        }
+        return new ChatUsage(
+                inputTokens + other.inputTokens,
+                outputTokens + other.outputTokens,
+                cachedTokens + other.cachedTokens,
+                cacheCreationTokens + other.cacheCreationTokens,
+                reasoningTokens + other.reasoningTokens,
+                toolUsePromptTokens + other.toolUsePromptTokens,
+                time + other.time);
+    }
+
+    /**
      * Creates a new builder for ChatUsage.
      *
      * @return a new Builder instance
