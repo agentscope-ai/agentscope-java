@@ -18,16 +18,17 @@ package io.agentscope.core.tool.subagent;
 import io.agentscope.core.agent.Agent;
 
 /**
- * Factory interface for creating agent instances.
+ * Supplies an agent instance for delegation, either shared or newly created.
  *
- * <p>Since ReActAgent is not thread-safe, this provider pattern ensures that each tool call gets a
- * fresh agent instance. This is similar to Spring's ObjectProvider pattern.
+ * <p>ReActAgent supports a long-lived singleton with per-session state: calls in one session
+ * are serialized and different sessions can run concurrently. Providers may return that same
+ * instance, new instances, or caller-managed cached instances.
  *
- * <p>Each instance returned to {@link SubAgentTool} is owned by the tool. The tool closes
- * instances that implement {@link AutoCloseable}: the temporary initialization instance after
- * reading its metadata, and each invocation instance after completion, error, or cancellation.
- * Implementations must return a fresh instance on every call, not a shared or cached agent that
- * other callers may still use.
+ * <p>{@link SubAgentConfig.LifecyclePolicy#AUTO} compares the first two provided instances by
+ * identity. A stable singleton is left open; a factory's distinct instances are tool-owned.
+ * Use {@link SubAgentConfig.LifecyclePolicy#SHARED} for pools or other externally managed
+ * providers, or {@link SubAgentConfig.LifecyclePolicy#PER_CALL} to explicitly transfer ownership.
+ * Automatic detection cannot infer ownership of arbitrary provider implementations.
  *
  * <p>Invocation cleanup is dispatched asynchronously so a blocking {@code close()} does not
  * block the thread delivering completion, error, or cancellation. Closing may therefore finish
@@ -53,13 +54,14 @@ import io.agentscope.core.agent.Agent;
 public interface SubAgentProvider<T extends Agent> {
 
     /**
-     * Provides a new agent instance.
+     * Provides an agent instance, which may be shared or newly created.
      *
-     * <p>This method is called during tool initialization to obtain metadata and for each tool
-     * invocation. Implementations must create a new instance each time and transfer its lifecycle
-     * ownership to the tool, which closes it when it implements {@link AutoCloseable}.
+     * <p>Registration only calls this method when name or description must be derived. AUTO
+     * retains an unresolved metadata sample until first use. When metadata is explicit, the first
+     * invocation makes two provider calls to distinguish a singleton from a factory; later
+     * invocations make one. PER_CALL releases even unused registration samples immediately.
      *
-     * @return A new agent instance
+     * @return an agent instance
      */
     T provide();
 }

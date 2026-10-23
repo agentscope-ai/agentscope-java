@@ -512,7 +512,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // Drain fire-and-forget memory flush/maintenance so async memory/*.md writes do not
             // race with resource cleanup (e.g., temp workspace deletion in tests).
             io.agentscope.harness.agent.memory.MemoryBackgroundTasks.awaitQuiescence(
-                    5, java.util.concurrent.TimeUnit.SECONDS);
+                    delegate, 5, java.util.concurrent.TimeUnit.SECONDS);
             shutdownTaskRepository();
         } finally {
             try {

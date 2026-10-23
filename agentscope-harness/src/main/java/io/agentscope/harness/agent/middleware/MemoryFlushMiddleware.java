@@ -170,7 +170,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         // The in-flight slot is acquired at dispatch rather than inside the task: a queued
         // flush must already be counted, or a quiescence check could observe an empty
         // in-flight set while work is still pending.
-        MemoryBackgroundTasks.begin();
+        MemoryBackgroundTasks.begin(agent);
         String key = compositeTimerKey(rc);
         // Coalescing key of the task: the conversation whose state the task reads when it
         // executes. The agent reference distinguishes agent instances serving the same user
@@ -200,7 +200,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         if (displaced[0] != null) {
             // The replaced task will never execute; release the in-flight slot it acquired at
             // dispatch. Done outside compute to avoid running under the map's bin lock.
-            MemoryBackgroundTasks.end();
+            MemoryBackgroundTasks.end(agent);
         }
         if (starter[0] != null) {
             starter[0].run();
@@ -212,7 +212,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 .subscribeOn(Schedulers.boundedElastic())
                 .doFinally(
                         signal -> {
-                            MemoryBackgroundTasks.end();
+                            MemoryBackgroundTasks.end(agent);
                             drainFlushQueue(key);
                         })
                 .subscribe(null, e -> log.warn("Memory flush failed: {}", e.getMessage()));

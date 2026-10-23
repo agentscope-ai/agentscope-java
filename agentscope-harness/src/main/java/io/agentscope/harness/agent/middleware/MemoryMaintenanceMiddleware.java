@@ -148,10 +148,10 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         return next.apply(input)
                 .doOnComplete(
                         () -> {
-                            MemoryBackgroundTasks.begin();
+                            MemoryBackgroundTasks.begin(agent);
                             Mono.defer(() -> doMaintenance(rc))
                                     .subscribeOn(Schedulers.boundedElastic())
-                                    .doFinally(signal -> MemoryBackgroundTasks.end())
+                                    .doFinally(signal -> MemoryBackgroundTasks.end(agent))
                                     .subscribe(
                                             null,
                                             e ->

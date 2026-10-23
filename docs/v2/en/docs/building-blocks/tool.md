@@ -802,3 +802,22 @@ Repositories with user- or session-dependent visibility implement `io.agentscope
 Final results are notified before ordered batch aggregation, so a fast tool does not wait for a slow tool. Retry, timeout, and tool error handling retain their existing behavior. Progress callback exceptions retain the existing logging and isolation; final-result callback exceptions propagate through the returned publisher. Implementations must be thread-safe and nonblocking. Cancellation or infrastructure failure can terminate without a final result.
 
 The Agent publishes results progressively by default, without a configuration flag. Ordinary tools and synthetic `generate_response` use this callback; provider results and permission denials retain direct event conversion. Callback only publishes events: it does not create messages or update conversation state. Message settlement and interruption recovery retain their existing flow, and an early event does not imply that the result has been stored.
+
+## Agent providers and resource ownership
+
+A `SubAgentProvider` can return a shared singleton or create a new agent per delegation. Shared ReActAgent instances preserve their normal per-session serialization, state caches, and shutdown registration when used as tools.
+
+```java
+SubAgentConfig config = SubAgentConfig.builder()
+    .toolName("ask_expert")
+    .description("Ask the expert a question")
+    .lifecyclePolicy(SubAgentConfig.LifecyclePolicy.SHARED)
+    .build();
+toolkit.registration().subAgent(() -> expertAgent, config).apply();
+```
+
+- `AUTO` (default): compare the first two provided instances by identity. Leave a stable singleton open; close distinct factory instances asynchronously after saving state. An unresolved registration sample remains pending until first invocation. When both metadata fields are configured, registration skips the provider and first invocation performs the probe.
+- `SHARED`: never close provided instances. Choose this for caller-managed pools/caches whose ownership cannot be inferred from identity.
+- `PER_CALL`: the tool owns every provided instance, including a metadata sample, and closes each `AutoCloseable` after use. Choose this for known factories, including tools that may be registered but never called.
+
+The tool preserves the caller's user identity and uses its `session_id` argument as the child session. Child execution, state access, and cancellation use that identity consistently. Agent-owned state stores and native session logs remain authoritative; otherwise the configured tool store persists detached state snapshots with conditional writes. Legacy non-versioning stores coordinate retry writes inside one tool instance; distributed writers need a versioning backend. Graceful shutdown also waits for pending invocation cleanup within the configured shutdown budget.

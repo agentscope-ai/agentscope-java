@@ -92,7 +92,8 @@ class SubAgentToolLifecycleTest {
 
     @Test
     void closesInitializationAgent() {
-        SubAgentTool tool = new SubAgentTool(() -> registeredAgent(new MockModel("OK")), null);
+        SubAgentTool tool =
+                new SubAgentTool(() -> registeredAgent(new MockModel("OK")), config(false));
 
         assertEquals("call_test_agent", tool.getName());
         assertEquals("Test sub-agent", tool.getDescription());
@@ -105,7 +106,8 @@ class SubAgentToolLifecycleTest {
         ReActAgent sample = registeredAgent(new MockModel("OK"));
         doThrow(new IllegalStateException("metadata failed")).when(sample).getDescription();
 
-        assertThrows(IllegalStateException.class, () -> new SubAgentTool(() -> sample, null));
+        assertThrows(
+                IllegalStateException.class, () -> new SubAgentTool(() -> sample, config(false)));
 
         verify(sample).close();
         assertNoLeakedRegistrations();
@@ -189,9 +191,9 @@ class SubAgentToolLifecycleTest {
                             ReActAgent agent = registeredAgent(new MockModel("unused"));
                             doThrow(new IllegalStateException("call failed"))
                                     .when(agent)
-                                    .call(anyList());
+                                    .call(anyList(), any(RuntimeContext.class));
                             doThrow(new IllegalStateException("call failed")).when(agent).stream(
-                                    anyList(), any(StreamOptions.class));
+                                    anyList(), any(StreamOptions.class), any(RuntimeContext.class));
                             return agent;
                         },
                         config(forwardEvents));
@@ -220,7 +222,7 @@ class SubAgentToolLifecycleTest {
         RuntimeContext context = RuntimeContext.builder().sessionId("runtime-session").build();
         ToolCallParam param =
                 ToolCallParam.builder()
-                        .input(Map.of("message", "hello"))
+                        .input(Map.of("message", "hello", "session_id", "tool-session"))
                         .runtimeContext(context)
                         .emitter(chunk -> {})
                         .build();
@@ -233,7 +235,11 @@ class SubAgentToolLifecycleTest {
             ReActAgent agent = lastAgent();
             awaitClosed(agent);
             InOrder order = inOrder(agent);
-            order.verify(agent).interrupt(context);
+            order.verify(agent)
+                    .interrupt(
+                            org.mockito.ArgumentMatchers.argThat(
+                                    (RuntimeContext ctx) ->
+                                            "tool-session".equals(ctx.getSessionId())));
             order.verify(agent).close();
             assertTrue(cancelled.await(5, TimeUnit.SECONDS));
             assertNoLeakedRegistrations();
@@ -285,7 +291,8 @@ class SubAgentToolLifecycleTest {
     void supportsAgentsWithoutAutoCloseable() {
         Agent agent = mock(Agent.class);
         when(agent.getName()).thenReturn("plain_agent");
-        when(agent.call(anyList())).thenReturn(Mono.just(Msg.builder().textContent("OK").build()));
+        when(agent.call(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Mono.just(Msg.builder().textContent("OK").build()));
         SubAgentTool tool = new SubAgentTool(() -> agent, config(false));
 
         StepVerifier.create(tool.callAsync(param("hello", null)))
@@ -301,7 +308,7 @@ class SubAgentToolLifecycleTest {
         for (int i = 0; i < 2; i++) {
             Agent agent = mock(Agent.class, withSettings().extraInterfaces(AutoCloseable.class));
             when(agent.getName()).thenReturn("custom_agent");
-            when(agent.call(anyList()))
+            when(agent.call(anyList(), any(RuntimeContext.class)))
                     .thenReturn(Mono.just(Msg.builder().textContent("OK").build()));
             doAnswer(
                             invocation -> {
@@ -365,7 +372,10 @@ class SubAgentToolLifecycleTest {
     }
 
     private static SubAgentConfig config(boolean forwardEvents) {
-        return SubAgentConfig.builder().forwardEvents(forwardEvents).build();
+        return SubAgentConfig.builder()
+                .forwardEvents(forwardEvents)
+                .lifecyclePolicy(SubAgentConfig.LifecyclePolicy.PER_CALL)
+                .build();
     }
 
     private static ToolCallParam param(String message, String sessionId) {

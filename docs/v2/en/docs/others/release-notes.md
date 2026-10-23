@@ -12,11 +12,13 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ### Fixed
 
-- Close `SubAgentTool` initialization and invocation instances to release shutdown registrations ([#3652](https://github.com/agentscope-ai/agentscope-java/pull/3652)). Invocation cleanup runs asynchronously so blocking `AutoCloseable` implementations do not block completion or cancellation threads. State saves and closing are coordinated to prevent cancelled calls from persisting a cleared cache.
+- Release tool-owned `SubAgentTool` instances without closing shared singleton providers ([#3652](https://github.com/agentscope-ai/agentscope-java/pull/3652)). Keep child conversations isolated by user/session, prevent stale retry state writes, coordinate saving with asynchronous cleanup, and wait for pending cleanup during graceful shutdown. Harness closes only wait for their own background memory work.
 
 ### Compatibility
 
-`SubAgentProvider` must return a fresh, independently owned instance for every `provide()` call. `SubAgentTool` closes `AutoCloseable` instances after reading initialization metadata and after each invocation. A provider returning a singleton or cached agent can therefore have that agent closed already during tool registration. For `ReActAgent`, closing removes its graceful-shutdown state saver and clears local state caches even though the object may still accept calls. Replace shared-instance providers with factories and use the configured state store to retain conversation history.
+Singleton and factory providers are both supported. The default `AUTO` lifecycle policy compares the first two instances by identity: a stable singleton remains caller-owned, while a factory's distinct instances are closed by the tool. Use `SHARED` for external caches/pools, or `PER_CALL` to explicitly transfer ownership. Name and description configured together skip provider calls during registration. AUTO defers an unresolved metadata sample until first invocation; use PER_CALL for immediate disposal of unused factory samples. With explicit metadata, AUTO performs its two-instance probe on first invocation.
+
+Agent-owned state stores and native session logs retain their own persistence. Tool-managed stores use conditional writes when supported; legacy non-versioning stores coordinate retries within the same tool instance. Cross-process write protection requires a versioning store.
 
 ---
 

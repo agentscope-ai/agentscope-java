@@ -31,6 +31,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentState;
@@ -63,7 +64,9 @@ class SubAgentToolConcurrentLifecycleTest {
     void cancellationWaitsForInFlightStateSaveWithoutBlockingCaller(boolean streaming)
             throws Exception {
         ReActAgent agent = spy(ReActAgent.builder().name("concurrent_agent").build());
-        agent.getAgentState().contextMutable().add(Msg.builder().textContent(MEMORY).build());
+        agent.getAgentState(null, SESSION_ID)
+                .contextMutable()
+                .add(Msg.builder().textContent(MEMORY).build());
         CountDownLatch readingState = new CountDownLatch(1);
         CountDownLatch releaseRead = new CountDownLatch(1);
         CountDownLatch closed = closeSignal(agent);
@@ -74,7 +77,7 @@ class SubAgentToolConcurrentLifecycleTest {
                             return invocation.callRealMethod();
                         })
                 .when(agent)
-                .getAgentState();
+                .getAgentState(any(RuntimeContext.class));
         Sinks.One<Msg> response = Sinks.one();
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
         SubAgentTool tool = tool(agent, response, store, streaming);
@@ -116,7 +119,9 @@ class SubAgentToolConcurrentLifecycleTest {
     @ValueSource(booleans = {false, true})
     void cancellationBeforeStateSaveDoesNotPersistClearedState(boolean streaming) throws Exception {
         ReActAgent agent = spy(ReActAgent.builder().name("cancelled_agent").build());
-        agent.getAgentState().contextMutable().add(Msg.builder().textContent(MEMORY).build());
+        agent.getAgentState(null, SESSION_ID)
+                .contextMutable()
+                .add(Msg.builder().textContent(MEMORY).build());
         CountDownLatch closed = closeSignal(agent);
         CountDownLatch mappingResponse = new CountDownLatch(1);
         CountDownLatch releaseResponse = new CountDownLatch(1);
@@ -240,16 +245,24 @@ class SubAgentToolConcurrentLifecycleTest {
             Sinks.One<Msg> response,
             InMemoryAgentStateStore store,
             boolean streaming) {
-        doReturn(response.asMono()).when(agent).call(anyList());
+        if (agent instanceof ReActAgent ra) {
+            doReturn(response.asMono()).when(ra).call(anyList(), any(RuntimeContext.class));
+        } else {
+            doReturn(response.asMono()).when(agent).call(anyList(), any(RuntimeContext.class));
+        }
         doReturn(response.asMono().map(msg -> new Event(EventType.AGENT_RESULT, msg, true)).flux())
                 .when(agent)
-                .stream(anyList(), any(StreamOptions.class));
+                .stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class));
         Agent sample = mock(Agent.class);
         when(sample.getName()).thenReturn("sample");
         var provided = List.of(sample, agent).iterator();
         return new SubAgentTool(
                 provided::next,
-                SubAgentConfig.builder().forwardEvents(streaming).stateStore(store).build());
+                SubAgentConfig.builder()
+                        .forwardEvents(streaming)
+                        .stateStore(store)
+                        .lifecyclePolicy(SubAgentConfig.LifecyclePolicy.PER_CALL)
+                        .build());
     }
 
     private static ToolCallParam param() {

@@ -802,3 +802,22 @@ agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
 最终结果在有序汇总前通知，快工具无需等待慢工具。重试、超时和工具错误转换沿用原逻辑；progress callback 异常沿用原有日志隔离；最终结果 callback 异常通过返回的 Publisher 传播。实现必须线程安全且不能阻塞。取消或基础设施异常可能没有最终结果。
 
 Agent 默认渐进发布结果，无需配置开关。普通工具和合成 `generate_response` 使用该回调，服务端结果与权限拒绝保留直接事件转换。callback 只发布事件，不创建 Msg 或修改上下文；消息结算与中断恢复沿用原流程，提前收到事件不代表结果已保存。
+
+## Agent Provider 与资源所有权
+
+`SubAgentProvider` 可以返回共享单例，也可以为每次委派创建实例。共享 ReActAgent 作为工具使用时，仍保留正常的会话内排队、状态缓存和停机保存登记。
+
+```java
+SubAgentConfig config = SubAgentConfig.builder()
+    .toolName("ask_expert")
+    .description("Ask the expert a question")
+    .lifecyclePolicy(SubAgentConfig.LifecyclePolicy.SHARED)
+    .build();
+toolkit.registration().subAgent(() -> expertAgent, config).apply();
+```
+
+- `AUTO`（默认）：按身份比较前两个实例。稳定单例保持打开；工厂返回的独立实例在保存状态后异步关闭。尚未判定所有权的注册样本保留至第一次调用。名称和描述均配置时，注册阶段跳过 provider，第一次调用时再识别。
+- `SHARED`：不关闭 provider 返回的实例。适用于由调用方管理、无法仅凭身份推断所有权的实例池或缓存。
+- `PER_CALL`：工具拥有所有返回的实例，包括元数据样本；使用完毕后关闭其中的 `AutoCloseable`。适用于明确的工厂，也适用于可能只注册而不调用的工具。
+
+工具保留调用方用户身份，以参数 `session_id` 作为子会话标识；执行、状态访问和取消使用一致的身份。Agent 自身的状态存储和原生会话日志继续作为持久化依据；否则由配置的工具存储保存独立状态快照并使用条件写入。不支持版本的旧存储在同一个工具实例内协调重试写入；分布式写入需使用支持版本的后端。优雅停机也会在配置的停机预算内等待待完成的调用清理。
