@@ -173,7 +173,7 @@ env:
 
 | 材料 | 模型中的位置 | 预算行为 |
 | --- | --- | --- |
-| AGENTS.md | System / `project_rules` | 不直接淘汰，计入最终预算 |
+| AGENTS.md | System / `project_rules` | 不直接淘汰；超过 100 KiB 按 UTF-8 安全方式从头部截断并带截断标记 |
 | 工作原则、环境信息 | System / `working_principles`、`environment` | 计入最终预算 |
 | MEMORY.md | USER 参考消息 / `HARNESS_CONTEXT`，kind=memory | 准备时可截断，最终预算不足时可省略 |
 | knowledge 入口及路径索引 | USER 参考消息 / `HARNESS_CONTEXT`，kind=knowledge | 可因最终预算省略 |
@@ -184,7 +184,9 @@ env:
 MEMORY.md 在记忆工具和 Hooks 都关闭时不加载。
 知识目录只加载入口和索引，其余文件由模型按需读取。
 
-AGENTS.md 不需要 XML 标签。同一次 call 内文件变化不自动刷新；
+AGENTS.md 不需要 XML 标签。注入时适用说明位于规则正文首行；超过 100 KiB 的文件
+按 UTF-8 码点边界从头部截断并标记 `[File truncated: AGENTS.md]`。
+同一次 call 内文件变化不自动刷新；
 下一次 call 重新加载。消息示例、动态业务来源及预算设置见
 [上下文管理](/v2/zh/docs/harness/context)。
 
