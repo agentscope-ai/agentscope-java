@@ -44,6 +44,7 @@ import com.anthropic.models.messages.WebSearchResultBlock;
 import com.anthropic.models.messages.WebSearchToolResultBlock;
 import com.anthropic.models.messages.WebSearchToolResultError;
 import com.anthropic.models.messages.WebSearchToolResultErrorCode;
+import io.agentscope.core.agent.accumulator.ThinkingAccumulator;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
@@ -72,6 +73,23 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
 
     private static com.anthropic.models.messages.ToolUseBlock mockToolUseBlock() {
         return mock(com.anthropic.models.messages.ToolUseBlock.class);
+    }
+
+    /**
+     * Stubs the common non-streaming Message scaffolding: id, one content block, and usage with
+     * no cache details. Tests then stub the per-type accessors of {@code block} themselves.
+     */
+    private static void mockSingleBlockMessage(
+            Message message, String messageId, ContentBlock block) {
+        Usage usage = mock(Usage.class);
+        when(message.id()).thenReturn(messageId);
+        when(message.content()).thenReturn(List.of(block));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
     }
 
     /**
@@ -203,23 +221,16 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     void testParseMessageWithThinkingBlock() {
         // Create mock Message with thinking content
         Message message = mock(Message.class);
-        Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
         var thinkingBlock = mockThinkingBlock();
 
-        when(message.id()).thenReturn("msg_789");
-        when(message.content()).thenReturn(List.of(contentBlock));
-        when(message.usage()).thenReturn(usage);
-        when(usage.inputTokens()).thenReturn(150L);
-        when(usage.outputTokens()).thenReturn(75L);
-        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
-        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
-        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+        mockSingleBlockMessage(message, "msg_789", contentBlock);
 
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
         when(contentBlock.thinking()).thenReturn(Optional.of(thinkingBlock));
         when(thinkingBlock.thinking()).thenReturn("Let me think about this...");
+        when(thinkingBlock.signature()).thenReturn("sig_789");
 
         Instant startTime = Instant.now();
         ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
@@ -230,6 +241,10 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         ThinkingBlock parsedThinking =
                 assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
         assertEquals("Let me think about this...", parsedThinking.getThinking());
+        // The signature must be preserved for native replay on later turns
+        assertEquals(
+                "sig_789",
+                parsedThinking.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE));
     }
 
     @Test
@@ -407,6 +422,80 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                 assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
         assertEquals("Let me reason through this.", parsedThinking.getThinking());
         assertNull(response.getUsage());
+    }
+
+    @Test
+    void testParseStreamEventSignatureDelta() throws Exception {
+        RawContentBlockDeltaEvent deltaEvent =
+                RawContentBlockDeltaEvent.builder().index(0).signatureDelta("sig_xyz").build();
+        RawMessageStreamEvent event = RawMessageStreamEvent.ofContentBlockDelta(deltaEvent);
+
+        Instant startTime = Instant.now();
+        ChatResponse response = invokeParseStreamEvent(event, startTime);
+
+        assertNotNull(response);
+        assertEquals(1, response.getContent().size());
+        ThinkingBlock parsedThinking =
+                assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
+        assertEquals("", parsedThinking.getThinking());
+        assertEquals(
+                "sig_xyz",
+                parsedThinking.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE));
+    }
+
+    @Test
+    void testStreamingAndNonStreamingThinkingSignatureAgree() throws Exception {
+        String thinkingText = "Let me reason through this.";
+        String signature = "sig_agree";
+
+        // Non-streaming: one thinking block carrying both text and signature
+        Message message = mock(Message.class);
+        ContentBlock contentBlock = mock(ContentBlock.class);
+        var sdkThinkingBlock = mockThinkingBlock();
+        mockSingleBlockMessage(message, "msg_agree", contentBlock);
+        when(contentBlock.text()).thenReturn(Optional.empty());
+        when(contentBlock.toolUse()).thenReturn(Optional.empty());
+        when(contentBlock.thinking()).thenReturn(Optional.of(sdkThinkingBlock));
+        when(sdkThinkingBlock.thinking()).thenReturn(thinkingText);
+        when(sdkThinkingBlock.signature()).thenReturn(signature);
+
+        ThinkingBlock nonStreaming =
+                assertInstanceOf(
+                        ThinkingBlock.class,
+                        AnthropicResponseParser.parseMessage(message, Instant.now())
+                                .getContent()
+                                .get(0));
+
+        // Streaming: thinking deltas followed by a signature delta, accumulated the way
+        // ReasoningContext accumulates them
+        ThinkingAccumulator accumulator = new ThinkingAccumulator();
+        for (String chunk : new String[] {"Let me reason ", "through this."}) {
+            ChatResponse response =
+                    invokeParseStreamEvent(
+                            RawMessageStreamEvent.ofContentBlockDelta(
+                                    RawContentBlockDeltaEvent.builder()
+                                            .index(0)
+                                            .thinkingDelta(chunk)
+                                            .build()),
+                            Instant.now());
+            accumulator.add(assertInstanceOf(ThinkingBlock.class, response.getContent().get(0)));
+        }
+        ChatResponse signatureResponse =
+                invokeParseStreamEvent(
+                        RawMessageStreamEvent.ofContentBlockDelta(
+                                RawContentBlockDeltaEvent.builder()
+                                        .index(0)
+                                        .signatureDelta(signature)
+                                        .build()),
+                        Instant.now());
+        accumulator.add(
+                assertInstanceOf(ThinkingBlock.class, signatureResponse.getContent().get(0)));
+
+        ThinkingBlock streaming = (ThinkingBlock) accumulator.buildAggregated();
+        assertEquals(nonStreaming.getThinking(), streaming.getThinking());
+        assertEquals(
+                nonStreaming.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE),
+                streaming.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE));
     }
 
     @Test
@@ -722,10 +811,13 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         RawMessageStreamEvent deltaEvent = mock(RawMessageStreamEvent.class);
         RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
         MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+        RawMessageDeltaEvent.Delta delta = mock(RawMessageDeltaEvent.Delta.class);
 
         when(deltaEvent.isMessageDelta()).thenReturn(true);
         when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
         when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(messageDelta.delta()).thenReturn(delta);
+        when(delta.stopReason()).thenReturn(Optional.empty());
         when(deltaUsage.outputTokens()).thenReturn(42L);
         when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
         when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
@@ -759,10 +851,13 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         RawMessageStreamEvent deltaEvent = mock(RawMessageStreamEvent.class);
         RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
         MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+        RawMessageDeltaEvent.Delta delta = mock(RawMessageDeltaEvent.Delta.class);
 
         when(deltaEvent.isMessageDelta()).thenReturn(true);
         when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
         when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(messageDelta.delta()).thenReturn(delta);
+        when(delta.stopReason()).thenReturn(Optional.empty());
         when(deltaUsage.outputTokens()).thenReturn(42L);
         when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
         when(deltaUsage.inputTokens()).thenReturn(Optional.of(100L));
