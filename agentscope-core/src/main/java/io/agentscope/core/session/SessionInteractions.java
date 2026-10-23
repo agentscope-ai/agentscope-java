@@ -44,19 +44,15 @@ public final class SessionInteractions {
     }
 
     public static Map<String, SessionEvent> pending(SessionLog log) {
-        long upper = log.head().seq(), cursor = 0;
+        long upper = log.head().seq();
         var result = new LinkedHashMap<String, SessionEvent>();
-        while (cursor < upper) {
-            var batch = log.readAfter(cursor, 256);
-            if (batch.isEmpty()) throw new SessionLogException("Missing interaction prefix");
-            for (var event : batch) {
-                if (event.seq() > upper) break;
-                if (event.type().equals("interaction/requested"))
-                    result.put(String.valueOf(event.data().get("requestId")), event);
-                if (event.type().equals("interaction/resolved"))
-                    result.remove(String.valueOf(event.data().get("requestId")));
-                cursor = event.seq();
-            }
+        // 单次 scan 读取已提交前缀，避免 256 条一批的循环 readAfter
+        // 在长会话日志上重复从 commit 链头部定位导致的读放大。
+        for (var event : log.scan(0, upper)) {
+            if (event.type().equals("interaction/requested"))
+                result.put(String.valueOf(event.data().get("requestId")), event);
+            if (event.type().equals("interaction/resolved"))
+                result.remove(String.valueOf(event.data().get("requestId")));
         }
         return Collections.unmodifiableMap(result);
     }
