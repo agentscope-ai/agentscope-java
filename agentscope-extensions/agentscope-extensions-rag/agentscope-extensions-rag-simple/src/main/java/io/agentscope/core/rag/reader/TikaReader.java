@@ -1,0 +1,252 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.core.rag.reader;
+
+import io.agentscope.core.formatter.MediaUtils;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.rag.exception.ReaderException;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.DocumentMetadata;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import org.apache.tika.exception.TikaException;
+import org.apache.tika.metadata.Metadata;
+import org.apache.tika.mime.MediaType;
+import org.apache.tika.mime.MimeType;
+import org.apache.tika.mime.MimeTypeException;
+import org.apache.tika.mime.MimeTypes;
+import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.ParseContext;
+import org.apache.tika.sax.BodyContentHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.xml.sax.ContentHandler;
+import org.xml.sax.SAXException;
+import reactor.core.publisher.Mono;
+
+/**
+ * TikaReader is a document reader that uses Apache Tika to extract text from various document formats.
+ *
+ * <p>It supports various document formats (e.g. DOC, XSL, PDF, PPT ...) and splitting strategies.
+ *
+ * <p>Example usage:
+ * <pre>{@code
+ * TikaReader reader = new TikaReader();
+ * ReaderInput input = ReaderInput.fromPath("/path/to/file");
+ * List<Document> documents = reader.read(input).block();
+ * }</pre>
+ */
+public class TikaReader extends AbstractChunkingReader {
+
+    private static final Logger log = LoggerFactory.getLogger(TikaReader.class);
+
+    /**
+     * Supplies the content handler for a single {@link #read(ReaderInput)} subscription.
+     *
+     * <p>Content handlers are stateful: {@link BodyContentHandler} keeps everything written to it,
+     * so a handler instance must not be shared between reads. Reusing one makes every later
+     * document start with the text of the earlier ones. The factory is consulted once per read
+     * subscription.
+     */
+    private final Supplier<ContentHandler> handlerFactory;
+
+    /**
+     * Creates a new TikaReader with the specified configuration.
+     *
+     * <p>The supplied handler is reused as-is across read subscriptions. Because content handlers
+     * accumulate the characters written to them, a single instance shared across reads carries text
+     * over from one document to the next; use {@link #perReadHandler(int, SplitStrategy, int,
+     * Supplier)} when a fresh handler per read subscription is required.
+     *
+     * @param chunkSize     the target size for each chunk (interpreted based on strategy)
+     * @param splitStrategy the strategy for splitting text
+     * @param overlapSize   the number of characters/tokens to overlap between chunks
+     * @param handler       the content handler to use for text extraction
+     * @throws IllegalArgumentException if parameters are invalid
+     * @deprecated Use {@link #perReadHandler(int, SplitStrategy, int, Supplier)} instead. This
+     *     constructor reuses the supplied handler across read subscriptions, which can carry
+     *     content over between documents when the handler is stateful.
+     */
+    @Deprecated(since = "2.0.5")
+    public TikaReader(
+            int chunkSize, SplitStrategy splitStrategy, int overlapSize, ContentHandler handler) {
+        super(chunkSize, splitStrategy, overlapSize);
+        this.handlerFactory = singletonHandler(handler);
+    }
+
+    /**
+     * Creates a new TikaReader that asks {@code handlerFactory} for a handler on every read
+     * subscription.
+     *
+     * <p>Unlike {@link #TikaReader(int, SplitStrategy, int, ContentHandler)}, this factory-based
+     * variant gives every read subscription its own content handler, so consecutive and concurrent
+     * reads never share accumulated handler state.
+     *
+     * <p>If the factory returns null during a read subscription, the returned publisher fails with
+     * {@link IllegalStateException}. If the factory throws, that exception propagates unchanged and
+     * is not wrapped in {@link ReaderException}.
+     *
+     * @param chunkSize      the target size for each chunk (interpreted based on strategy)
+     * @param splitStrategy  the strategy for splitting text
+     * @param overlapSize    the number of characters/tokens to overlap between chunks
+     * @param handlerFactory supplies the content handler for each read subscription; must not return
+     *                       null
+     * @return a new TikaReader
+     * @throws IllegalArgumentException if parameters are invalid or the factory is null
+     */
+    public static TikaReader perReadHandler(
+            int chunkSize,
+            SplitStrategy splitStrategy,
+            int overlapSize,
+            Supplier<ContentHandler> handlerFactory) {
+        return new TikaReader(chunkSize, splitStrategy, overlapSize, handlerFactory);
+    }
+
+    /** Shared by the default constructor and {@link #perReadHandler}. */
+    private TikaReader(
+            int chunkSize,
+            SplitStrategy splitStrategy,
+            int overlapSize,
+            Supplier<ContentHandler> handlerFactory) {
+        super(chunkSize, splitStrategy, overlapSize);
+        if (handlerFactory == null) {
+            throw new IllegalArgumentException("handler factory cannot be null");
+        }
+        this.handlerFactory = handlerFactory;
+    }
+
+    /**
+     * Creates a new TikaReader with default settings.
+     *
+     * <p>Defaults: chunkSize=512, strategy=PARAGRAPH, overlapSize=50, handler=BodyContentHandler(-1).
+     * The default handler is created per read subscription, so consecutive reads stay independent.
+     */
+    public TikaReader() {
+        this(512, SplitStrategy.PARAGRAPH, 50, () -> new BodyContentHandler(-1));
+    }
+
+    /** Wraps a single handler instance so it is returned for every read. */
+    private static Supplier<ContentHandler> singletonHandler(ContentHandler handler) {
+        if (handler == null) {
+            throw new IllegalArgumentException("content handler cannot be null");
+        }
+        AtomicInteger callCount = new AtomicInteger();
+        return () -> {
+            if (callCount.incrementAndGet() == 2) {
+                log.warn(
+                        "TikaReader is reusing one content handler across read subscriptions; "
+                                + "text from earlier reads may appear in later ones. Use "
+                                + "TikaReader.perReadHandler(...) instead.");
+            }
+            return handler;
+        };
+    }
+
+    @Override
+    public Mono<List<Document>> read(ReaderInput input) {
+        if (input == null) {
+            return Mono.error(new ReaderException("Input cannot be null"));
+        }
+
+        return Mono.fromCallable(
+                        () -> {
+                            String path = input.asString();
+                            // A handler accumulates everything written to it, so each read gets
+                            // its own instance.
+                            ContentHandler handler = handlerFactory.get();
+                            if (handler == null) {
+                                throw new IllegalStateException(
+                                        "content handler factory returned null");
+                            }
+                            try {
+                                String text = extractTextFromTika(path, handler);
+                                List<String> chunks =
+                                        TextChunker.chunkText(
+                                                text, chunkSize, splitStrategy, overlapSize);
+                                return createDocuments(chunks, path);
+                            } catch (Exception e) {
+                                throw new ReaderException(
+                                        "Failed to read document from: " + input, e);
+                            }
+                        })
+                .onErrorMap(ReaderException.class, e -> e);
+    }
+
+    @Override
+    public List<String> getSupportedFormats() {
+        Set<String> extensions = new HashSet<>();
+        MimeTypes mimeTypes = MimeTypes.getDefaultMimeTypes();
+
+        for (MediaType mediaType : mimeTypes.getMediaTypeRegistry().getTypes()) {
+            MimeType mimeType;
+            try {
+                mimeType = mimeTypes.forName(mediaType.toString());
+                extensions.addAll(mimeType.getExtensions());
+            } catch (MimeTypeException e) {
+                log.warn("Failed to parse mime type for " + mediaType.toString(), e);
+            }
+        }
+
+        // Remove dot char
+        Set<String> formats =
+                extensions.stream()
+                        .map(MediaUtils::getExtension)
+                        .filter(s -> !s.isBlank())
+                        .collect(Collectors.toSet());
+        return List.copyOf(formats);
+    }
+
+    private String extractTextFromTika(String path, ContentHandler handler)
+            throws IOException, SAXException, TikaException {
+        try (InputStream is = Files.newInputStream(Path.of(path))) {
+            AutoDetectParser parser = new AutoDetectParser();
+            Metadata metadata = new Metadata();
+            ParseContext context = new ParseContext();
+            parser.parse(is, handler, metadata, context);
+            return handler.toString();
+        }
+    }
+
+    /**
+     * Creates Document objects from text chunks with deterministic doc_id.
+     *
+     * @param chunks the list of text chunks
+     * @param path   the document path (used to generate doc_id)
+     * @return a list of Document objects
+     */
+    private List<Document> createDocuments(List<String> chunks, String path) {
+        // Generate deterministic doc_id using SHA256 of document path
+        String docId = ReaderUtils.generateDocIdSHA256(path);
+        List<Document> documents = new ArrayList<>();
+
+        for (int i = 0; i < chunks.size(); i++) {
+            TextBlock content = TextBlock.builder().text(chunks.get(i)).build();
+            DocumentMetadata metadata = new DocumentMetadata(content, docId, String.valueOf(i));
+            documents.add(new Document(metadata));
+        }
+
+        return documents;
+    }
+}

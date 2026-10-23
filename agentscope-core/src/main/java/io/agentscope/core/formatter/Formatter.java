@@ -35,6 +35,16 @@ import java.util.List;
  *
  * <p>Each formatter is type-safe and handles the exact types expected by the provider's SDK.
  *
+ * <p><b>Dependency:</b> This interface requires the provider-specific extension module.
+ * For DashScope, add the following Maven dependency:
+ * <pre>{@code
+ * <dependency>
+ *     <groupId>agentscope</groupId>
+ *     <artifactId>agentscope-extensions-model-dashscope</artifactId>
+ *     <version>${agentscope.version}</version>
+ * </dependency>
+ * }</pre>
+ *
  * @param <TReq> Provider-specific request message type (e.g., com.alibaba.dashscope.common.Message
  *               for DashScope, or ChatCompletionMessageParam for OpenAI)
  * @param <TResp> Provider-specific response type (e.g., GenerationResult for DashScope,
@@ -51,6 +61,21 @@ public interface Formatter<TReq, TResp, TParams> {
      * @return List of provider-specific request messages
      */
     List<TReq> format(List<Msg> msgs);
+
+    /**
+     * Format AgentScope messages using request-scoped generation options.
+     *
+     * <p>Providers that derive request fields from both message metadata and generation options
+     * should override this method. The default implementation preserves the legacy behavior and
+     * ignores the options during message conversion.
+     *
+     * @param msgs list of AgentScope messages
+     * @param options request-scoped generation options; may be {@code null}
+     * @return list of provider-specific request messages
+     */
+    default List<TReq> format(List<Msg> msgs, GenerateOptions options) {
+        return format(msgs);
+    }
 
     /**
      * Parse provider-specific response to AgentScope ChatResponse.

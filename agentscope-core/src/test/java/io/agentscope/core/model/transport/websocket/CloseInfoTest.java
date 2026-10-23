@@ -47,10 +47,10 @@ class CloseInfoTest {
     @Test
     @DisplayName("Should create normal closure via factory method")
     void shouldCreateNormalClosureViaFactoryMethod() {
-        CloseInfo closeInfo = CloseInfo.normal("Session ended");
+        CloseInfo closeInfo = CloseInfo.normal("AgentStateStore ended");
 
         assertEquals(CloseInfo.NORMAL_CLOSURE, closeInfo.code());
-        assertEquals("Session ended", closeInfo.reason());
+        assertEquals("AgentStateStore ended", closeInfo.reason());
         assertTrue(closeInfo.isNormal());
     }
 

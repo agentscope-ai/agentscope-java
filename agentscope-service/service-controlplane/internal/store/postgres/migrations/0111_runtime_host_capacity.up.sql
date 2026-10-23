@@ -1,0 +1,1 @@
+ALTER TABLE runtime_hosts ADD COLUMN capacity_managed BOOLEAN NOT NULL DEFAULT FALSE;

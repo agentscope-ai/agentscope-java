@@ -15,12 +15,13 @@
  */
 package io.agentscope.core.agent;
 
-import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ContextStore;
 import io.agentscope.core.tool.ToolExecutionContext;
+import io.agentscope.core.tool.ToolRequestConfig;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -37,8 +38,21 @@ public class RuntimeContext {
 
     private final String sessionId;
     private final String userId;
-    private final Session session;
-    private final SessionKey sessionKey;
+
+    /**
+     * Per-call correlation id: explicit via {@link Builder#runId(String)} (uniqueness is the
+     * caller's) or auto-generated; copied by {@link Builder#from} so derived contexts (subagent
+     * chains) stay correlated. Never {@code null}.
+     */
+    private final String runId;
+
+    /**
+     * Call-scoped {@link AgentState} for the active {@code (userId, sessionId)} slot. Set once at
+     * call entry by the agent and read by middlewares / tools that need the live conversational
+     * state during the call (instead of {@code agent.getAgentState()}, which is not call-scoped
+     * under concurrency). {@code null} outside of a call.
+     */
+    private volatile AgentState agentState;
 
     /** String-keyed extras (legacy and generic extension). */
     private final ConcurrentMap<String, Object> stringAttributes;
@@ -51,24 +65,41 @@ public class RuntimeContext {
 
     private final ToolExecutionContext toolExecutionContext;
 
+    /**
+     * Per-call tool request config (immutable). Carries the per-call tool difference — externally
+     * injected (schema-only) tools + merge mode — composed with the agent's shared toolkit to
+     * produce the tool surface for one call. {@code null} means use the shared toolkit as-is.
+     */
+    private ToolRequestConfig toolRequestConfig;
+
     private RuntimeContext(Builder builder) {
         this.sessionId = builder.sessionId;
         this.userId = builder.userId;
-        this.session = builder.session;
-        this.sessionKey = builder.sessionKey;
+        // Generated here (not cached on the builder) so reusing one Builder yields distinct ids.
+        this.runId =
+                builder.runId == null || builder.runId.isBlank() ? generateRunId() : builder.runId;
         this.stringAttributes = new ConcurrentHashMap<>();
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
+        this.agentState = builder.agentState;
+        this.toolRequestConfig = builder.toolRequestConfig;
         if (builder.stringExtras != null) {
             this.stringAttributes.putAll(builder.stringExtras);
         }
-        for (Map.Entry<Class<?>, Object> e : builder.typedSingletons.entrySet()) {
-            if (e.getValue() == null) {
+        for (Map.Entry<Class<?>, Map<String, Object>> e : builder.typedValues.entrySet()) {
+            Class<?> type = e.getKey();
+            Map<String, Object> values = e.getValue();
+            if (type == null || values == null || values.isEmpty()) {
                 continue;
             }
-            @SuppressWarnings("unchecked")
-            Class<Object> type = (Class<Object>) e.getKey();
-            putValue(TYPED_DEFAULT_KEY, type, e.getValue());
+            for (Map.Entry<String, Object> typedEntry : values.entrySet()) {
+                if (typedEntry.getKey() == null || typedEntry.getValue() == null) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                Class<Object> typedClass = (Class<Object>) type;
+                putValue(typedEntry.getKey(), typedClass, typedEntry.getValue());
+            }
         }
     }
 
@@ -87,12 +118,53 @@ public class RuntimeContext {
         return userId;
     }
 
-    public Session getSession() {
-        return session;
+    /**
+     * Returns the stable per-call correlation id for logs, events, and tracing — including
+     * subagent chains derived from this context — aligned with {@link AgentRun#runId()} for
+     * handles created via {@code prepareRun}/{@code prepareCall}. Never {@code null}.
+     */
+    public String getRunId() {
+        return runId;
     }
 
-    public SessionKey getSessionKey() {
-        return sessionKey;
+    /** Generates a fresh opaque runId (32-char hex); the single source for default ids. */
+    public static String generateRunId() {
+        return UUID.randomUUID().toString().replace("-", "");
+    }
+
+    /**
+     * Returns the call-scoped {@link AgentState} for this run, or {@code null} when accessed
+     * outside of an active {@code call()}. Prefer this over {@code agent.getAgentState()} from
+     * middlewares and tools so the correct session's state is used under concurrency.
+     */
+    public AgentState getAgentState() {
+        return agentState;
+    }
+
+    /**
+     * Installs the call-scoped {@link AgentState}. Called by the agent at call entry; not part of
+     * the public tool/middleware contract.
+     */
+    public void setAgentState(AgentState agentState) {
+        this.agentState = agentState;
+    }
+
+    /**
+     * Resolves the live {@link AgentState} for the current call, preferring the call-scoped state
+     * carried on {@code ctx} (concurrency-safe) and falling back to {@code fallbackAgent}'s state
+     * only when the context carries none. Middlewares and tools should use this instead of calling
+     * {@code agent.getAgentState()} directly, which is not call-scoped under concurrency.
+     *
+     * @param ctx the per-call runtime context (may be {@code null})
+     * @param fallbackAgent the agent to fall back to (may be {@code null})
+     * @return the resolved {@link AgentState}, or {@code null} if neither source provides one
+     */
+    public static AgentState resolveAgentState(RuntimeContext ctx, Agent fallbackAgent) {
+        AgentState s = ctx != null ? ctx.getAgentState() : null;
+        if (s != null) {
+            return s;
+        }
+        return fallbackAgent != null ? fallbackAgent.getAgentState() : null;
     }
 
     /**
@@ -102,6 +174,23 @@ public class RuntimeContext {
      */
     public ToolExecutionContext getToolExecutionContext() {
         return toolExecutionContext;
+    }
+
+    /**
+     * Returns the per-call tool request config, or {@code null} when none was provided (the
+     * execution engine then uses the agent's shared toolkit as-is).
+     */
+    public ToolRequestConfig getToolRequestConfig() {
+        return toolRequestConfig;
+    }
+
+    /**
+     * Installs the per-call tool request config. Intended for callers that need to vary the tool
+     * surface per call without mutating the agent's shared toolkit (concurrency-safe). Set to
+     * {@code null} to use the shared toolkit as-is.
+     */
+    public void setToolRequestConfig(ToolRequestConfig toolRequestConfig) {
+        this.toolRequestConfig = toolRequestConfig;
     }
 
     @SuppressWarnings("unchecked")
@@ -136,7 +225,7 @@ public class RuntimeContext {
         if (type == RuntimeContext.class) {
             return (T) this;
         }
-        return null;
+        return getAssignableValue(TYPED_DEFAULT_KEY, type);
     }
 
     public <T> void put(Class<T> type, T value) {
@@ -162,6 +251,14 @@ public class RuntimeContext {
         if (TYPED_DEFAULT_KEY.equals(key) && type == RuntimeContext.class) {
             return (T) this;
         }
+        T assignable = getAssignableValue(key, type);
+        if (assignable != null) {
+            return assignable;
+        }
+        Object fromString = stringAttributes.get(key);
+        if (type.isInstance(fromString)) {
+            return (T) fromString;
+        }
         return null;
     }
 
@@ -174,6 +271,10 @@ public class RuntimeContext {
         } else {
             putValue(key, type, value);
         }
+    }
+
+    public static Builder builder(RuntimeContext source) {
+        return new Builder().from(source);
     }
 
     /**
@@ -199,6 +300,42 @@ public class RuntimeContext {
             return null;
         }
         return type.isInstance(o) ? type.cast(o) : null;
+    }
+
+    private <T> T getAssignableValue(String key, Class<T> type) {
+        if (type == null) {
+            return null;
+        }
+        T candidate = null;
+        Class<?> candidateType = null;
+        for (Map.Entry<Class<?>, ConcurrentMap<String, Object>> entry :
+                typedAttributes.entrySet()) {
+            Class<?> storedType = entry.getKey();
+            if (storedType == null || !type.isAssignableFrom(storedType)) {
+                continue;
+            }
+            Map<String, Object> values = entry.getValue();
+            if (values == null) {
+                continue;
+            }
+            Object o = values.get(key);
+            if (o == null || !type.isInstance(o)) {
+                continue;
+            }
+            if (candidate == null) {
+                candidate = type.cast(o);
+                candidateType = storedType;
+                continue;
+            }
+            if (candidateType.equals(storedType)) {
+                continue;
+            }
+            if (candidateType.isAssignableFrom(storedType)) {
+                candidate = type.cast(o);
+                candidateType = storedType;
+            }
+        }
+        return candidate;
     }
 
     private <T> void removeTyped(Class<T> type, String key) {
@@ -239,11 +376,12 @@ public class RuntimeContext {
     public static class Builder {
         private String sessionId;
         private String userId;
-        private Session session;
-        private SessionKey sessionKey;
+        private String runId;
         private Map<String, Object> stringExtras;
-        private final Map<Class<?>, Object> typedSingletons = new HashMap<>();
+        private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
+        private AgentState agentState;
+        private ToolRequestConfig toolRequestConfig;
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
@@ -255,13 +393,18 @@ public class RuntimeContext {
             return this;
         }
 
-        public Builder session(Session session) {
-            this.session = session;
+        /**
+         * Sets an explicit per-call correlation id (e.g. an orchestration trace id); uniqueness
+         * is the caller's. Overrides a value copied by {@link #from(RuntimeContext)}. Unset or
+         * blank generates one at {@code build()} time.
+         */
+        public Builder runId(String runId) {
+            this.runId = runId;
             return this;
         }
 
-        public Builder sessionKey(SessionKey sessionKey) {
-            this.sessionKey = sessionKey;
+        public Builder agentState(AgentState agentState) {
+            this.agentState = agentState;
             return this;
         }
 
@@ -285,8 +428,38 @@ public class RuntimeContext {
         }
 
         public <T> Builder put(Class<T> type, T value) {
-            if (type != null) {
-                this.typedSingletons.put(type, value);
+            return put(TYPED_DEFAULT_KEY, type, value);
+        }
+
+        public <T> Builder put(String key, Class<T> type, T value) {
+            if (key == null || type == null || value == null) {
+                return this;
+            }
+            this.typedValues.computeIfAbsent(type, k -> new HashMap<>()).put(key, value);
+            return this;
+        }
+
+        public Builder from(RuntimeContext source) {
+            if (source == null) {
+                return this;
+            }
+            this.sessionId = source.sessionId;
+            this.userId = source.userId;
+            // Derived contexts intentionally share the source's runId (agent_spawn chains); a
+            // later runId(x) overrides it.
+            this.runId = source.runId;
+            this.agentState = source.agentState;
+            this.toolExecutionContext = source.toolExecutionContext;
+            this.toolRequestConfig = source.toolRequestConfig;
+            if (!source.stringAttributes.isEmpty()) {
+                this.stringExtras = new ConcurrentHashMap<>(source.stringAttributes);
+            }
+            for (Map.Entry<Class<?>, ConcurrentMap<String, Object>> entry :
+                    source.typedAttributes.entrySet()) {
+                if (entry.getValue() == null || entry.getValue().isEmpty()) {
+                    continue;
+                }
+                this.typedValues.put(entry.getKey(), new HashMap<>(entry.getValue()));
             }
             return this;
         }
@@ -297,6 +470,16 @@ public class RuntimeContext {
          */
         public Builder toolExecutionContext(ToolExecutionContext toolExecutionContext) {
             this.toolExecutionContext = toolExecutionContext;
+            return this;
+        }
+
+        /**
+         * Installs a per-call tool request config. When set, the agent's execution engine composes
+         * this immutable tool difference with the shared toolkit for the duration of the call
+         * (concurrency-safe). {@code null} (the default) means use the shared toolkit as-is.
+         */
+        public Builder toolRequestConfig(ToolRequestConfig toolRequestConfig) {
+            this.toolRequestConfig = toolRequestConfig;
             return this;
         }
 
@@ -320,31 +503,13 @@ public class RuntimeContext {
         @Override
         @SuppressWarnings("unchecked")
         public <T> T get(String key, Class<T> type) {
-            T t = runtimeContext.getValue(key, type);
-            if (t != null) {
-                return t;
-            }
-            if (TYPED_DEFAULT_KEY.equals(key) && type == RuntimeContext.class) {
-                return (T) runtimeContext;
-            }
-            Object fromString = runtimeContext.stringAttributes.get(key);
-            if (type.isInstance(fromString)) {
-                return (T) fromString;
-            }
-            return null;
+            return runtimeContext.get(key, type);
         }
 
         @Override
         @SuppressWarnings("unchecked")
         public <T> T get(Class<T> type) {
-            T t = get(TYPED_DEFAULT_KEY, type);
-            if (t != null) {
-                return t;
-            }
-            if (type == RuntimeContext.class) {
-                return (T) runtimeContext;
-            }
-            return null;
+            return runtimeContext.get(type);
         }
 
         @Override

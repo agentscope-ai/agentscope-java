@@ -53,8 +53,7 @@ class AgentSkillPromptProviderTest {
     void testSingleSkill() {
         AgentSkill skill =
                 new AgentSkill("test_skill", "Test Skill Description", "# Content", null);
-        skillRegistry.registerSkill(
-                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
+        skillRegistry.registerSkill("test_skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -76,7 +75,7 @@ class AgentSkillPromptProviderTest {
         metadata.put("description", "Manage Trello boards");
         metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("trello_custom", skill, new RegisteredSkill("trello_custom"));
+        skillRegistry.registerSkill("trello_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -111,7 +110,7 @@ class AgentSkillPromptProviderTest {
                                         "env", List.of("TRELLO_API_KEY", "TRELLO_TOKEN")))));
 
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("trello_custom", skill, new RegisteredSkill("trello_custom"));
+        skillRegistry.registerSkill("trello_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -135,7 +134,7 @@ class AgentSkillPromptProviderTest {
         metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
         metadata.put("metadata", Map.of("clawdbot", Map.of("emoji", "📋")));
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("trello_custom", skill, new RegisteredSkill("trello_custom"));
+        skillRegistry.registerSkill("trello_custom", skill);
 
         provider.setExposeAllMetadata(false);
 
@@ -156,7 +155,7 @@ class AgentSkillPromptProviderTest {
         metadata.put("description", "Manage Trello boards");
         metadata.put("homepage", null);
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("trello_custom", skill, new RegisteredSkill("trello_custom"));
+        skillRegistry.registerSkill("trello_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -172,8 +171,7 @@ class AgentSkillPromptProviderTest {
         metadata.put("name", "test_skill");
         metadata.put("description", "Description with <xml> & \"quotes\" and 'apostrophes'");
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill(
-                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
+        skillRegistry.registerSkill("test_skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -191,8 +189,7 @@ class AgentSkillPromptProviderTest {
         metadata.put("description", "desc");
         metadata.put("tool:config", "enabled");
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill(
-                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
+        skillRegistry.registerSkill("test_skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -203,8 +200,7 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should not include code execution section when not enabled")
     void testNoCodeExecutionSectionByDefault() {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill(
-                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
+        skillRegistry.registerSkill("test_skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -216,8 +212,7 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should not include code execution section when enabled but uploadDir not set")
     void testNoCodeExecutionSectionWhenEnabledButNoUploadDir() {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill(
-                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
+        skillRegistry.registerSkill("test_skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
 
@@ -231,8 +226,7 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should include code execution section with uploadDir when enabled")
     void testCodeExecutionSectionIncludedWhenEnabled(@TempDir Path tempDir) {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill(
-                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
+        skillRegistry.registerSkill("test_skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -249,8 +243,7 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Code execution section should appear after </available_skills>")
     void testCodeExecutionSectionAppearsAfterAvailableSkills(@TempDir Path tempDir) {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill(
-                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
+        skillRegistry.registerSkill("test_skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -266,8 +259,7 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should use custom code execution instruction when set")
     void testCustomCodeExecutionInstruction(@TempDir Path tempDir) {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill(
-                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
+        skillRegistry.registerSkill("test_skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -278,5 +270,130 @@ class AgentSkillPromptProviderTest {
         assertTrue(prompt.contains("## Custom Section"));
         assertTrue(prompt.contains("Skills dir: " + tempDir.toAbsolutePath()));
         assertFalse(prompt.contains("## Code Execution"));
+    }
+
+    // ===================== Path-B additions: per-skill <files-root> =====================
+
+    @Test
+    @DisplayName("Should emit per-skill <files-root> when codeExecution on and skill has originDir")
+    void testEmitsPerSkillFilesRoot(@TempDir Path tempDir) {
+        Path origin = tempDir.resolve("alpha").toAbsolutePath().normalize();
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("alpha skill")
+                        .skillContent("# Content")
+                        .originDir(origin)
+                        .build();
+        skillRegistry.registerSkill("alpha_custom", skill);
+
+        provider.setCodeExecutionEnable(true);
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertTrue(prompt.contains("<files-root>" + origin + "</files-root>"));
+        // No uploadDir set, all skills have originDir => uses per-skill template (no %s
+        // substitution needed; uses DEFAULT_PER_SKILL_CODE_EXECUTION_INSTRUCTION).
+        assertTrue(prompt.contains("Each skill in <available_skills>"));
+    }
+
+    @Test
+    @DisplayName("Should NOT emit <files-root> when codeExecution is off")
+    void testNoFilesRootWhenCodeExecutionOff(@TempDir Path tempDir) {
+        Path origin = tempDir.resolve("alpha").toAbsolutePath().normalize();
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("alpha skill")
+                        .skillContent("# Content")
+                        .originDir(origin)
+                        .build();
+        skillRegistry.registerSkill("alpha_custom", skill);
+
+        // codeExecutionEnabled defaults to false
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertFalse(prompt.contains("<files-root>"));
+        assertFalse(prompt.contains("## Code Execution"));
+    }
+
+    @Test
+    @DisplayName(
+            "Should pick uploadDir template when at least one visible skill is missing originDir")
+    void testFallbackToUploadDirTemplate(@TempDir Path tempDir) {
+        Path origin = tempDir.resolve("alpha").toAbsolutePath().normalize();
+        AgentSkill withOrigin =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("alpha skill")
+                        .skillContent("# A")
+                        .originDir(origin)
+                        .build();
+        AgentSkill noOrigin = new AgentSkill("beta", "beta skill", "# B", null); // no originDir
+        skillRegistry.registerSkill("alpha_custom", withOrigin);
+        skillRegistry.registerSkill("beta_custom", noOrigin);
+
+        provider.setCodeExecutionEnable(true);
+        provider.setUploadDir(tempDir);
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        // Mixed visibility => fall back to the legacy single-uploadDir template
+        assertTrue(prompt.contains("Skills root directory: " + tempDir.toAbsolutePath()));
+        // Only the skill with originDir still gets a per-skill <files-root>
+        assertTrue(prompt.contains("<files-root>" + origin + "</files-root>"));
+    }
+
+    @Test
+    @DisplayName("Should match SkillFilter against skill name instead of composite skill id")
+    void testBareNameFilterMatchesSkillWithCompositeId() {
+        AgentSkill visible =
+                new AgentSkill(
+                        "host-forensics-client",
+                        "visible",
+                        "# Content",
+                        null,
+                        "filesystem-agentscope_skills");
+        AgentSkill hidden =
+                new AgentSkill(
+                        "other-skill", "hidden", "# Content", null, "filesystem-agentscope_skills");
+        skillRegistry.registerSkill(visible.getSkillId(), visible);
+        skillRegistry.registerSkill(hidden.getSkillId(), hidden);
+
+        // User passes bare skill name (the natural API usage)
+        String prompt = provider.getSkillSystemPrompt(SkillFilter.only("host-forensics-client"));
+
+        assertTrue(
+                prompt.contains(
+                        "<skill-id>host-forensics-client_filesystem-agentscope_skills</skill-id>"));
+        assertFalse(
+                prompt.contains("<skill-id>other-skill_filesystem-agentscope_skills</skill-id>"));
+    }
+
+    @Test
+    @DisplayName("Should hide skill disabled by name")
+    void testFilterDisableByNameHidesSkill() {
+        AgentSkill visible = new AgentSkill("visible", "visible", "# Content", null);
+        AgentSkill hidden = new AgentSkill("hidden", "hidden", "# Content", null);
+        skillRegistry.registerSkill(visible.getSkillId(), visible);
+        skillRegistry.registerSkill(hidden.getSkillId(), hidden);
+
+        String prompt =
+                provider.getSkillSystemPrompt(
+                        SkillFilter.all().overlay(SkillFilter.disable("hidden")));
+
+        assertTrue(prompt.contains("<skill-id>visible_custom</skill-id>"));
+        assertFalse(prompt.contains("<skill-id>hidden_custom</skill-id>"));
+    }
+
+    @Test
+    @DisplayName("Should not match SkillFilter against composite skill id")
+    void testFilterDoesNotMatchCompositeId() {
+        AgentSkill visible = new AgentSkill("visible", "visible", "# Content", null);
+        skillRegistry.registerSkill(visible.getSkillId(), visible);
+
+        String prompt = provider.getSkillSystemPrompt(SkillFilter.only("visible_custom"));
+
+        assertFalse(prompt.contains("<skill-id>visible_custom</skill-id>"));
     }
 }

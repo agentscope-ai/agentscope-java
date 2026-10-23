@@ -15,6 +15,10 @@
  */
 package io.agentscope.harness.agent.sandbox.snapshot;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.InputStream;
 
@@ -28,10 +32,16 @@ import java.io.InputStream;
  * {@link RemoteSnapshotClient} cannot be serialized. When persisting session state,
  * only the {@code id} is needed — the client is re-injected from the builder at resume time.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class RemoteSandboxSnapshot implements SandboxSnapshot {
 
-    private final RemoteSnapshotClient client;
+    @JsonIgnore private final RemoteSnapshotClient client;
     private final String id;
+
+    @JsonCreator
+    public RemoteSandboxSnapshot(@JsonProperty("id") String id) {
+        this(null, id);
+    }
 
     /**
      * Creates a remote snapshot.
@@ -52,7 +62,7 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
     @Override
     public void persist(InputStream workspaceArchive) throws Exception {
         try {
-            client.upload(id, workspaceArchive);
+            requireClient().upload(id, workspaceArchive);
         } catch (Exception e) {
             throw new SandboxException.SnapshotException(id, "Remote upload failed", e);
         }
@@ -66,7 +76,7 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
     @Override
     public InputStream restore() throws Exception {
         try {
-            return client.download(id);
+            return requireClient().download(id);
         } catch (Exception e) {
             throw new SandboxException.SnapshotException(id, "Remote download failed", e);
         }
@@ -80,7 +90,7 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
     @Override
     public boolean isRestorable() throws Exception {
         try {
-            return client.exists(id);
+            return requireClient().exists(id);
         } catch (Exception e) {
             throw new SandboxException.SnapshotException(id, "Remote exists check failed", e);
         }
@@ -94,5 +104,13 @@ public class RemoteSandboxSnapshot implements SandboxSnapshot {
     @Override
     public String getType() {
         return "remote";
+    }
+
+    private RemoteSnapshotClient requireClient() {
+        if (client == null) {
+            throw new IllegalStateException(
+                    "RemoteSnapshotClient is not bound to snapshot id: " + id);
+        }
+        return client;
     }
 }

@@ -1,0 +1,500 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.extensions.model.gemini.formatter;
+
+import com.google.genai.types.CodeExecutionResult;
+import com.google.genai.types.Content;
+import com.google.genai.types.ExecutableCode;
+import com.google.genai.types.FunctionCall;
+import com.google.genai.types.FunctionResponse;
+import com.google.genai.types.Part;
+import com.google.genai.types.ToolCall;
+import com.google.genai.types.ToolResponse;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.HintBlock;
+import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
+import io.agentscope.core.util.JsonUtils;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Converter for transforming AgentScope Msg objects to Gemini API Content format.
+ *
+ * <p>This converter handles the core message transformation logic, including:
+ * <ul>
+ *   <li>Text blocks</li>
+ *   <li>Tool use blocks (function_call)</li>
+ *   <li>Tool result blocks (function_response as independent Content)</li>
+ *   <li>Multimodal content (image, audio, video)</li>
+ * </ul>
+ *
+ * <p><b>Important Conversion Behaviors:</b>
+ * <ul>
+ *   <li>Tool result blocks are converted to independent "user" role Content</li>
+ *   <li>Multiple tool outputs are formatted with "- " prefix per line</li>
+ *   <li>System messages are treated as "user" role (Gemini API requirement)</li>
+ * </ul>
+ */
+public class GeminiMessageConverter {
+
+    private static final Logger log = LoggerFactory.getLogger(GeminiMessageConverter.class);
+
+    private final GeminiMediaConverter mediaConverter;
+
+    /**
+     * Creates a new GeminiMessageConverter with default media converter.
+     */
+    public GeminiMessageConverter() {
+        this.mediaConverter = new GeminiMediaConverter();
+    }
+
+    /**
+     * Convert a list of Msg objects to Gemini API Content objects.
+     *
+     * @param msgs List of AgentScope messages
+     * @return List of Gemini Content objects
+     */
+    public List<Content> convertMessages(List<Msg> msgs) {
+        List<Content> result = new ArrayList<>();
+
+        for (Msg msg : msgs) {
+            List<Part> parts = new ArrayList<>();
+            List<Part> functionResponseParts = new ArrayList<>();
+
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof TextBlock tb) {
+                    parts.add(Part.builder().text(tb.getText()).build());
+
+                } else if (block instanceof ToolUseBlock tub) {
+                    // Prioritize using content field (raw arguments string), fallback to input map
+                    Map<String, Object> args;
+                    if (tub.getContent() != null && !tub.getContent().isEmpty()) {
+                        try {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> parsed =
+                                    JsonUtils.getJsonCodec().fromJson(tub.getContent(), Map.class);
+                            args = parsed != null ? parsed : tub.getInput();
+                        } catch (Exception e) {
+                            log.warn(
+                                    "Failed to parse content as JSON, falling back to input map:"
+                                            + " {}",
+                                    e.getMessage());
+                            args = tub.getInput();
+                        }
+                    } else {
+                        args = tub.getInput();
+                    }
+
+                    // Build Part with FunctionCall or ToolCall and optional thought signature
+                    Part.Builder partBuilder = null;
+                    if (isCodeExecutionToolUse(tub)) {
+                        partBuilder = buildExecutableCodePart(tub);
+                    } else if (tub.isServerTool()) {
+                        // Create ToolCall for server-side (built-in) tools
+                        ToolCall toolCall =
+                                ToolCall.builder()
+                                        .id(tub.getId())
+                                        .toolType(tub.getName())
+                                        .args(args)
+                                        .build();
+                        partBuilder = Part.builder().toolCall(toolCall);
+                    } else {
+                        // Create FunctionCall for local function calls
+                        FunctionCall functionCall =
+                                FunctionCall.builder()
+                                        .id(tub.getId())
+                                        .name(tub.getName())
+                                        .args(args)
+                                        .build();
+                        partBuilder = Part.builder().functionCall(functionCall);
+                    }
+
+                    // Check for thought signature in metadata
+                    Map<String, Object> metadata = tub.getMetadata();
+                    if (metadata != null
+                            && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
+                        applyThoughtSignature(
+                                partBuilder,
+                                metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE),
+                                tub.getName());
+                    }
+
+                    parts.add(partBuilder.build());
+
+                } else if (block instanceof ToolResultBlock trb) {
+                    // Server results stay inline in the model Content; local results are queued
+                    // for an independent user Content after the current message.
+                    if (isCodeExecutionResult(trb)) {
+                        buildCodeExecutionResultPart(trb)
+                                .ifPresent(partBuilder -> parts.add(partBuilder.build()));
+                    } else if (trb.isServerTool()) {
+                        restoreServerToolResponse(trb)
+                                .ifPresent(
+                                        toolResponse -> {
+                                            Part.Builder partBuilder =
+                                                    Part.builder().toolResponse(toolResponse);
+                                            Map<String, Object> metadata = trb.getMetadata();
+                                            if (metadata != null
+                                                    && metadata.containsKey(
+                                                            ToolUseBlock
+                                                                    .METADATA_THOUGHT_SIGNATURE)) {
+                                                applyThoughtSignature(
+                                                        partBuilder,
+                                                        metadata.get(
+                                                                ToolUseBlock
+                                                                        .METADATA_THOUGHT_SIGNATURE),
+                                                        trb.getName());
+                                            }
+                                            parts.add(partBuilder.build());
+                                        });
+                    } else {
+                        String textOutput = convertToolResultToString(trb.getOutput());
+                        // Create FunctionResponse for local function calls, the output is
+                        // placed under the "output" key
+                        Map<String, Object> responseMap = new HashMap<>();
+                        responseMap.put("output", textOutput);
+
+                        FunctionResponse functionResponse =
+                                FunctionResponse.builder()
+                                        .id(trb.getId())
+                                        .name(trb.getName())
+                                        .response(responseMap)
+                                        .build();
+
+                        functionResponseParts.add(
+                                Part.builder().functionResponse(functionResponse).build());
+                    }
+
+                } else if (block instanceof ImageBlock ib) {
+                    parts.add(mediaConverter.convertToInlineDataPart(ib));
+
+                } else if (block instanceof AudioBlock ab) {
+                    parts.add(mediaConverter.convertToInlineDataPart(ab));
+
+                } else if (block instanceof VideoBlock vb) {
+                    parts.add(mediaConverter.convertToInlineDataPart(vb));
+
+                } else if (block instanceof DataBlock db) {
+                    parts.add(mediaConverter.convertToInlineDataPart(db));
+
+                } else if (block instanceof HintBlock hb) {
+                    parts.add(Part.builder().text(hb.getHint()).build());
+
+                } else if (block instanceof ThinkingBlock) {
+                    log.debug("Skipping ThinkingBlock when formatting message for Gemini API");
+                    continue;
+
+                } else {
+                    log.warn(
+                            "Unsupported block type: {} in the message, skipped.",
+                            block.getClass().getSimpleName());
+                }
+            }
+
+            // Add message if there are parts
+            if (!parts.isEmpty()) {
+                String role = convertRole(msg.getRole());
+                Content content = Content.builder().role(role).parts(parts).build();
+                result.add(content);
+            }
+            if (!functionResponseParts.isEmpty()) {
+                appendFunctionResponses(result, functionResponseParts);
+            }
+        }
+
+        return result;
+    }
+
+    private boolean isCodeExecutionToolUse(ToolUseBlock toolUse) {
+        return toolUse.getMetadata().containsKey(GeminiResponseParser.METADATA_CODE_EXECUTION);
+    }
+
+    private boolean isCodeExecutionResult(ToolResultBlock toolResult) {
+        return toolResult.getMetadata().containsKey(GeminiResponseParser.METADATA_CODE_EXECUTION);
+    }
+
+    private Part.Builder buildExecutableCodePart(ToolUseBlock toolUse) {
+        ExecutableCode.Builder executableCodeBuilder = ExecutableCode.builder().id(toolUse.getId());
+
+        Object code = toolUse.getInput().get("code");
+        if (code instanceof String codeText) {
+            executableCodeBuilder.code(codeText);
+        }
+
+        Object language = toolUse.getInput().get("language");
+        if (language instanceof String languageText && !languageText.isBlank()) {
+            executableCodeBuilder.language(languageText);
+        }
+
+        return Part.builder().executableCode(executableCodeBuilder.build());
+    }
+
+    private Optional<Part.Builder> buildCodeExecutionResultPart(ToolResultBlock toolResult) {
+        return restoreCodeExecutionResult(toolResult)
+                .map(
+                        result -> {
+                            Part.Builder partBuilder = Part.builder().codeExecutionResult(result);
+                            Map<String, Object> metadata = toolResult.getMetadata();
+                            if (metadata != null
+                                    && metadata.containsKey(
+                                            ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
+                                applyThoughtSignature(
+                                        partBuilder,
+                                        metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE),
+                                        toolResult.getName());
+                            }
+                            return partBuilder;
+                        });
+    }
+
+    private Optional<CodeExecutionResult> restoreCodeExecutionResult(ToolResultBlock toolResult) {
+        Object raw =
+                toolResult.getMetadata().get(GeminiResponseParser.METADATA_CODE_EXECUTION_RESULT);
+        if (raw instanceof String json && !json.isBlank()) {
+            try {
+                return Optional.of(CodeExecutionResult.fromJson(json));
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to restore Gemini code execution result {}: {}",
+                        toolResult.getId(),
+                        e.getMessage());
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<ToolResponse> restoreServerToolResponse(ToolResultBlock toolResult) {
+        Object raw =
+                toolResult.getMetadata().get(GeminiResponseParser.METADATA_SERVER_TOOL_RESPONSE);
+        if (raw instanceof String json && !json.isBlank()) {
+            try {
+                return Optional.of(ToolResponse.fromJson(json));
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to restore Gemini server tool response {}: {}",
+                        toolResult.getId(),
+                        e.getMessage());
+            }
+        }
+        return Optional.empty();
+    }
+
+    private void applyThoughtSignature(
+            Part.Builder partBuilder, Object signature, String toolName) {
+        if (signature instanceof byte[] bytes) {
+            partBuilder.thoughtSignature(bytes);
+        } else if (signature instanceof String base64 && !base64.isEmpty()) {
+            try {
+                partBuilder.thoughtSignature(Base64.getDecoder().decode(base64));
+            } catch (IllegalArgumentException e) {
+                log.warn("Skipping invalid thought signature on tool call '{}'", toolName, e);
+            }
+        }
+    }
+
+    /**
+     * Append local function responses, merging consecutive result messages into one user turn.
+     *
+     * <p>Gemini requires all responses for parallel function calls to be returned as parts of
+     * the same user Content.
+     */
+    private void appendFunctionResponses(List<Content> result, List<Part> responseParts) {
+        if (!result.isEmpty()) {
+            int lastIndex = result.size() - 1;
+            Content lastContent = result.get(lastIndex);
+            List<Part> lastParts = lastContent.parts().orElse(List.of());
+            boolean lastIsFunctionResponseContent =
+                    "user".equals(lastContent.role().orElse(null))
+                            && !lastParts.isEmpty()
+                            && lastParts.stream()
+                                    .allMatch(part -> part.functionResponse().isPresent());
+            if (lastIsFunctionResponseContent) {
+                List<Part> mergedParts = new ArrayList<>(lastParts);
+                mergedParts.addAll(responseParts);
+                result.set(lastIndex, Content.builder().role("user").parts(mergedParts).build());
+                return;
+            }
+        }
+        result.add(Content.builder().role("user").parts(responseParts).build());
+    }
+
+    /**
+     * Convert MsgRole to Gemini API role string.
+     *
+     * @param role AgentScope message role
+     * @return Gemini API role ("user" or "model")
+     */
+    private String convertRole(MsgRole role) {
+        // In Gemini API: "model" for assistant, "user" for everything else
+        return role == MsgRole.ASSISTANT ? "model" : "user";
+    }
+
+    /**
+     * Convert tool result output to string representation.
+     * Single item returns directly; multiple items use "- " prefix per line.
+     *
+     * @param output List of content blocks from tool result
+     * @return String representation of the output
+     */
+    private String convertToolResultToString(List<ContentBlock> output) {
+        if (output == null || output.isEmpty()) {
+            return "";
+        }
+
+        List<String> textualOutput = new ArrayList<>();
+
+        for (ContentBlock block : output) {
+            if (block instanceof TextBlock tb) {
+                textualOutput.add(tb.getText());
+
+            } else if (block instanceof ImageBlock ib) {
+                String reference = convertMediaBlockToTextReference(ib, "image");
+                textualOutput.add(reference);
+
+            } else if (block instanceof AudioBlock ab) {
+                String reference = convertMediaBlockToTextReference(ab, "audio");
+                textualOutput.add(reference);
+
+            } else if (block instanceof VideoBlock vb) {
+                String reference = convertMediaBlockToTextReference(vb, "video");
+                textualOutput.add(reference);
+
+            } else if (block instanceof DataBlock db) {
+                String reference = convertMediaBlockToTextReference(db, "data");
+                textualOutput.add(reference);
+            }
+            // Other block types are ignored
+        }
+
+        // Single item: return directly
+        // Multiple items: prefix each with "- " and join with newlines
+        if (textualOutput.size() == 1) {
+            return textualOutput.get(0);
+        } else {
+            return textualOutput.stream()
+                    .map(s -> "- " + s)
+                    .reduce((a, b) -> a + "\n" + b)
+                    .orElse("");
+        }
+    }
+
+    /**
+     * Convert a media block to textual reference for tool results.
+     * Returns a formatted string: "The returned {mediaType} can be found at: {path}"
+     *
+     * <p>For URL sources, returns the URL directly.
+     * For Base64 sources, saves the data to a temporary file and returns the file path.
+     *
+     * @param block     The media block (ImageBlock, AudioBlock, or VideoBlock)
+     * @param mediaType Media type string ("image", "audio", or "video")
+     * @return Textual reference to the media
+     */
+    private String convertMediaBlockToTextReference(ContentBlock block, String mediaType) {
+        Source source = extractSourceFromBlock(block);
+
+        if (source instanceof URLSource urlSource) {
+            // URL type: return URL directly
+            return String.format(
+                    "The returned %s can be found at: %s", mediaType, urlSource.getUrl());
+
+        } else if (source instanceof Base64Source base64Source) {
+            // Base64 type: save to temp file and return path
+            try {
+                String filePath =
+                        saveBase64DataToTempFile(
+                                base64Source.getMediaType(), base64Source.getData());
+                return String.format("The returned %s can be found at: %s", mediaType, filePath);
+            } catch (IOException e) {
+                log.error("Failed to save base64 data to temp file for {}", mediaType, e);
+                return String.format("[%s - failed to save file: %s]", mediaType, e.getMessage());
+            }
+        }
+
+        log.warn("Unsupported source type for {}: {}", mediaType, source.getClass().getName());
+        return String.format("[%s - unsupported source type]", mediaType);
+    }
+
+    /**
+     * Extract source from a media block.
+     *
+     * @param block The media block
+     * @return The source object
+     */
+    private Source extractSourceFromBlock(ContentBlock block) {
+        if (block instanceof ImageBlock ib) {
+            return ib.getSource();
+        } else if (block instanceof AudioBlock ab) {
+            return ab.getSource();
+        } else if (block instanceof VideoBlock vb) {
+            return vb.getSource();
+        } else if (block instanceof DataBlock db) {
+            return db.getSource();
+        }
+        throw new IllegalArgumentException("Unsupported block type: " + block.getClass());
+    }
+
+    /**
+     * Save base64 data to a temporary file.
+     *
+     * <p>The file extension is extracted from the MIME type (e.g., "audio/wav" → ".wav").
+     * The file is created with prefix "agentscope_" and will not be automatically deleted.
+     *
+     * @param mediaType  The MIME type (e.g., "image/png", "audio/wav")
+     * @param base64Data The base64-encoded data (without prefix)
+     * @return Absolute path to the temporary file
+     * @throws IOException If file creation or writing fails
+     */
+    private String saveBase64DataToTempFile(String mediaType, String base64Data)
+            throws IOException {
+        // Extract extension from MIME type (e.g., "audio/wav" → ".wav")
+        String extension = "." + (mediaType.contains("/") ? mediaType.split("/")[1] : mediaType);
+
+        // Create temp file with extension
+        Path tempFile = Files.createTempFile("agentscope_", extension);
+
+        // Decode base64 data
+        byte[] decodedData = Base64.getDecoder().decode(base64Data);
+
+        // Write to file
+        Files.write(tempFile, decodedData);
+
+        log.debug("Saved base64 data to temp file: {}", tempFile);
+
+        // Return absolute path
+        return tempFile.toAbsolutePath().toString();
+    }
+}

@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 import java.util.Map;
@@ -197,6 +198,24 @@ class ExternalToolSupportTest {
     }
 
     @Test
+    @DisplayName("Should preserve deferLoading when registering external schema")
+    void testExternalSchemaDeferLoadingPreserved() {
+        ToolSchema deferredSchema =
+                ToolSchema.builder()
+                        .name("deferred_tool")
+                        .description("Deferred external tool")
+                        .parameters(Map.of("type", "object"))
+                        .deferLoading(true)
+                        .build();
+
+        toolkit.registerSchema(deferredSchema);
+
+        List<ToolSchema> schemas = toolkit.getToolSchemas();
+        assertEquals(1, schemas.size());
+        assertEquals(Boolean.TRUE, schemas.get(0).getDeferLoading());
+    }
+
+    @Test
     @DisplayName("Should handle null schemas list gracefully")
     void testRegisterSchemasNull() {
         // Should not throw
@@ -235,6 +254,76 @@ class ExternalToolSupportTest {
         assertEquals(2, schemas.size());
     }
 
+    @Test
+    @DisplayName("Should produce suspended result when executing SchemaOnlyTool via Toolkit")
+    void testSchemaOnlyToolExecutionReturnsSuspended() {
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("db_query")
+                        .description("Query database")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("sql", Map.of("type", "string")),
+                                        "required",
+                                        List.of("sql")))
+                        .build();
+        toolkit.registerSchema(schema);
+
+        Map<String, Object> input = Map.of("sql", "SELECT 1");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-ext-1")
+                        .name("db_query")
+                        .input(input)
+                        .content(io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        List<ToolResultBlock> results =
+                toolkit.callTools(List.of(toolCall), null, null, null)
+                        .block(java.time.Duration.ofSeconds(3));
+
+        assertNotNull(results);
+        assertEquals(1, results.size());
+        assertTrue(results.get(0).isSuspended(), "External tool result should be suspended");
+        assertEquals("call-ext-1", results.get(0).getId());
+        assertEquals("db_query", results.get(0).getName());
+    }
+
+    @Test
+    @DisplayName(
+            "Should produce suspended result when executing @Tool(externalTool=true) via Toolkit")
+    void testAnnotationExternalToolExecutionReturnsSuspended() {
+        toolkit.registerTool(new AnnotationExternalToolExample());
+
+        Map<String, Object> input = Map.of("endpoint", "/api/test");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-ext-2")
+                        .name("call_api")
+                        .input(input)
+                        .content(io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        List<ToolResultBlock> results =
+                toolkit.callTools(List.of(toolCall), null, null, null)
+                        .block(java.time.Duration.ofSeconds(3));
+
+        assertNotNull(results);
+        assertEquals(1, results.size());
+        assertTrue(results.get(0).isSuspended(), "External tool result should be suspended");
+        assertEquals("call-ext-2", results.get(0).getId());
+    }
+
+    static class AnnotationExternalToolExample {
+        @Tool(name = "call_api", description = "Call external API", externalTool = true)
+        public String callApi(@ToolParam(name = "endpoint") String endpoint) {
+            throw new AssertionError("External tool body should never be invoked");
+        }
+    }
+
     /** Sample internal tool for testing. */
     static class InternalToolExample {
         @Tool(name = "calculator", description = "Calculate expression")
@@ -250,6 +339,16 @@ class ExternalToolSupportTest {
         }
     }
 
+    static class DeferredInternalToolExample {
+        @Tool(
+                name = "deferred_calculator",
+                description = "Calculate expression",
+                deferLoading = true)
+        public String calculate(@ToolParam(name = "expression") String expression) {
+            return "result";
+        }
+    }
+
     @Test
     @DisplayName("Should propagate strict from @Tool annotation")
     void testAnnotationStrictPropagation() {
@@ -259,5 +358,16 @@ class ExternalToolSupportTest {
         assertEquals(1, schemas.size());
         assertEquals("strict_calculator", schemas.get(0).getName());
         assertEquals(Boolean.TRUE, schemas.get(0).getStrict());
+    }
+
+    @Test
+    @DisplayName("Should propagate deferLoading from @Tool annotation")
+    void testAnnotationDeferLoadingPropagation() {
+        toolkit.registerTool(new DeferredInternalToolExample());
+
+        List<ToolSchema> schemas = toolkit.getToolSchemas();
+        assertEquals(1, schemas.size());
+        assertEquals("deferred_calculator", schemas.get(0).getName());
+        assertEquals(Boolean.TRUE, schemas.get(0).getDeferLoading());
     }
 }

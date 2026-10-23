@@ -20,8 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.IsolationScope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,7 +34,7 @@ class SessionSandboxStateStoreTest {
 
     @BeforeEach
     void setUp() {
-        store = new SessionSandboxStateStore(new InMemorySession(), AGENT_ID);
+        store = new SessionSandboxStateStore(new InMemoryAgentStateStore(), AGENT_ID);
     }
 
     @Test
@@ -93,7 +92,7 @@ class SessionSandboxStateStoreTest {
     private static RuntimeContext runtimeContext(IsolationScope scope, String value) {
         RuntimeContext.Builder b = RuntimeContext.builder();
         if (scope == IsolationScope.SESSION) {
-            b.sessionKey(SimpleSessionKey.of(value));
+            b.sessionId(value);
         } else if (scope == IsolationScope.USER) {
             b.userId(value);
         }
@@ -101,9 +100,9 @@ class SessionSandboxStateStoreTest {
     }
 
     /** Simulates sessions whose per-key delete is not implemented (default no-op). */
-    private static final class NoDeleteSession extends InMemorySession {
+    private static final class NoDeleteSession extends InMemoryAgentStateStore {
         @Override
-        public void delete(io.agentscope.core.state.SessionKey sessionKey, String key) {
+        public void delete(String userId, String sessionId, String key) {
             // no-op
         }
     }

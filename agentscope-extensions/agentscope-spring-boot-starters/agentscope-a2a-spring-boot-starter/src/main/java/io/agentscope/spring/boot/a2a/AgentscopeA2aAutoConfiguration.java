@@ -25,19 +25,33 @@ import io.agentscope.core.a2a.server.executor.runner.ReActAgentWithBuilderRunner
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.CustomTransportProperties;
 import io.agentscope.core.a2a.server.transport.DeploymentProperties;
-import io.agentscope.extensions.rocketmq.a2a.config.RocketMQA2aConfig;
-import io.agentscope.extensions.rocketmq.a2a.server.RocketMQA2aServer;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
 import io.agentscope.spring.boot.a2a.controller.A2aJsonRpcController;
 import io.agentscope.spring.boot.a2a.controller.AgentCardController;
 import io.agentscope.spring.boot.a2a.listener.ServerReadyListener;
 import io.agentscope.spring.boot.a2a.properties.A2aAgentCardProperties;
 import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
-import io.agentscope.spring.boot.a2a.properties.A2aRocketMQProperties;
 import io.agentscope.spring.boot.a2a.properties.Constants;
 import io.agentscope.spring.boot.a2a.properties.JSONRPCProperties;
 import io.agentscope.spring.boot.a2a.runner.ReActAgentWithStarterRunner;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import org.a2aproject.sdk.spec.APIKeySecurityScheme;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentProvider;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.AuthorizationCodeOAuthFlow;
+import org.a2aproject.sdk.spec.ClientCredentialsOAuthFlow;
+import org.a2aproject.sdk.spec.DeviceCodeOAuthFlow;
+import org.a2aproject.sdk.spec.HTTPAuthSecurityScheme;
+import org.a2aproject.sdk.spec.MutualTLSSecurityScheme;
+import org.a2aproject.sdk.spec.OAuth2SecurityScheme;
+import org.a2aproject.sdk.spec.OAuthFlows;
+import org.a2aproject.sdk.spec.OpenIdConnectSecurityScheme;
+import org.a2aproject.sdk.spec.SecurityRequirement;
+import org.a2aproject.sdk.spec.SecurityScheme;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -59,10 +73,9 @@ import org.springframework.core.env.Environment;
 @EnableConfigurationProperties({
     A2aCommonProperties.class,
     A2aAgentCardProperties.class,
-    A2aRocketMQProperties.class,
     JSONRPCProperties.class
 })
-@ConditionalOnClass({AgentScopeA2aServer.class, RocketMQA2aServer.class})
+@ConditionalOnClass({AgentScopeA2aServer.class})
 @ConditionalOnWebApplication
 @ConditionalOnProperty(
         prefix = Constants.A2A_SERVER_PREFIX,
@@ -114,19 +127,6 @@ public class AgentscopeA2aAutoConfiguration {
 
     @Bean
     @ConditionalOnBean(AgentScopeA2aServer.class)
-    @ConditionalOnProperty(
-            prefix = Constants.A2A_ROCKETMQ_SERVER_PREFIX,
-            name = "enabled",
-            havingValue = "true",
-            matchIfMissing = false)
-    public RocketMQA2aServer rocketMQA2AServer(
-            AgentScopeA2aServer agentScopeA2aServer, A2aRocketMQProperties a2aRocketMQProperties) {
-        return new RocketMQA2aServer(
-                agentScopeA2aServer, buildRocketMQConfig(a2aRocketMQProperties));
-    }
-
-    @Bean
-    @ConditionalOnBean(AgentScopeA2aServer.class)
     public AgentCardController agentCardController(AgentScopeA2aServer agentScopeA2aServer) {
         return new AgentCardController(agentScopeA2aServer);
     }
@@ -151,37 +151,156 @@ public class AgentscopeA2aAutoConfiguration {
         return new ServerReadyListener(agentScopeA2aServer);
     }
 
-    private RocketMQA2aConfig buildRocketMQConfig(A2aRocketMQProperties a2aRocketMQProperties) {
-        return new RocketMQA2aConfig.Builder()
-                .rocketMQEndpoint(a2aRocketMQProperties.getRocketMQEndpoint())
-                .rocketMQNamespace(a2aRocketMQProperties.getRocketMQNamespace())
-                .bizTopic(a2aRocketMQProperties.getBizTopic())
-                .bizConsumerGroup(a2aRocketMQProperties.getBizConsumerGroup())
-                .accessKey(a2aRocketMQProperties.getAccessKey())
-                .secretKey(a2aRocketMQProperties.getSecretKey())
-                .workAgentResponseTopic(a2aRocketMQProperties.getWorkAgentResponseTopic())
-                .workAgentResponseGroupId(a2aRocketMQProperties.getWorkAgentResponseGroupId())
-                .build();
-    }
-
     private ConfigurableAgentCard buildConfigurableAgentCard(
             A2aAgentCardProperties agentCardProperties) {
         return new ConfigurableAgentCard.Builder()
                 .name(agentCardProperties.getName())
                 .description(agentCardProperties.getDescription())
                 .url(agentCardProperties.getUrl())
-                .provider(agentCardProperties.getProvider())
+                .provider(toAgentProvider(agentCardProperties.getProvider()))
                 .version(agentCardProperties.getVersion())
                 .documentationUrl(agentCardProperties.getDocumentationUrl())
                 .defaultInputModes(agentCardProperties.getDefaultInputModes())
                 .defaultOutputModes(agentCardProperties.getDefaultOutputModes())
-                .skills(agentCardProperties.getSkills())
-                .securitySchemes(agentCardProperties.getSecuritySchemes())
+                .skills(
+                        mapList(
+                                agentCardProperties.getSkills(),
+                                AgentscopeA2aAutoConfiguration::toAgentSkill))
+                .securitySchemes(toSecuritySchemes(agentCardProperties.getSecuritySchemes()))
                 .security(agentCardProperties.getSecurity())
                 .iconUrl(agentCardProperties.getIconUrl())
-                .additionalInterfaces(agentCardProperties.getAdditionalInterfaces())
+                .additionalInterfaces(
+                        mapList(
+                                agentCardProperties.getAdditionalInterfaces(),
+                                each -> new AgentInterface(each.transport(), each.url())))
                 .preferredTransport(agentCardProperties.getPreferredTransport())
                 .build();
+    }
+
+    private static AgentProvider toAgentProvider(A2aAgentCardProperties.Provider provider) {
+        return null == provider ? null : new AgentProvider(provider.organization(), provider.url());
+    }
+
+    private static AgentSkill toAgentSkill(A2aAgentCardProperties.Skill skill) {
+        return new AgentSkill(
+                skill.id(),
+                skill.name(),
+                skill.description(),
+                skill.tags(),
+                skill.examples(),
+                skill.inputModes(),
+                skill.outputModes(),
+                null == skill.security()
+                        ? null
+                        : skill.security().stream().map(SecurityRequirement::new).toList());
+    }
+
+    private static Map<String, SecurityScheme> toSecuritySchemes(
+            Map<String, A2aAgentCardProperties.SecurityScheme> schemes) {
+        if (null == schemes) {
+            return null;
+        }
+        Map<String, SecurityScheme> result = new LinkedHashMap<>();
+        schemes.forEach((name, scheme) -> result.put(name, toSecurityScheme(name, scheme)));
+        return result;
+    }
+
+    private static SecurityScheme toSecurityScheme(
+            String name, A2aAgentCardProperties.SecurityScheme scheme) {
+        // The type names of the configuration, which A2A 1.0 JSON no longer uses.
+        return switch (String.valueOf(scheme.type())) {
+            case "apiKey" ->
+                    new APIKeySecurityScheme(
+                            apiKeyLocation(name, scheme.in()), scheme.name(), scheme.description());
+            case "http" ->
+                    new HTTPAuthSecurityScheme(
+                            scheme.bearerFormat(), scheme.scheme(), scheme.description());
+            case "oauth2" ->
+                    new OAuth2SecurityScheme(
+                            toOAuthFlows(name, scheme.flows()),
+                            scheme.description(),
+                            scheme.oauth2MetadataUrl());
+            case "openIdConnect" ->
+                    new OpenIdConnectSecurityScheme(
+                            scheme.openIdConnectUrl(), scheme.description());
+            case "mutualTLS" -> new MutualTLSSecurityScheme(scheme.description());
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported type '"
+                                    + scheme.type()
+                                    + "' of security scheme '"
+                                    + name
+                                    + "', expected one of: apiKey, http, oauth2, openIdConnect,"
+                                    + " mutualTLS");
+        };
+    }
+
+    private static APIKeySecurityScheme.Location apiKeyLocation(String name, String in) {
+        for (APIKeySecurityScheme.Location location : APIKeySecurityScheme.Location.values()) {
+            if (location.asString().equals(in)) {
+                return location;
+            }
+        }
+        throw new IllegalArgumentException(
+                "Unsupported location '"
+                        + in
+                        + "' of API key security scheme '"
+                        + name
+                        + "', expected one of: header, query, cookie");
+    }
+
+    private static OAuthFlows toOAuthFlows(String name, A2aAgentCardProperties.OAuthFlows flows) {
+        if (null == flows) {
+            return null;
+        }
+        // A2A 1.0 removed them; without this check they would just be left out of the card.
+        rejectRemovedFlow(name, "implicit", flows.implicit());
+        rejectRemovedFlow(name, "password", flows.password());
+        A2aAgentCardProperties.OAuthFlow code = flows.authorizationCode();
+        A2aAgentCardProperties.OAuthFlow client = flows.clientCredentials();
+        A2aAgentCardProperties.OAuthFlow device = flows.deviceCode();
+        return new OAuthFlows(
+                null == code
+                        ? null
+                        : new AuthorizationCodeOAuthFlow(
+                                code.authorizationUrl(),
+                                code.refreshUrl(),
+                                scopes(code),
+                                code.tokenUrl(),
+                                Boolean.TRUE.equals(code.pkceRequired())),
+                null == client
+                        ? null
+                        : new ClientCredentialsOAuthFlow(
+                                client.refreshUrl(), scopes(client), client.tokenUrl()),
+                null == device
+                        ? null
+                        : new DeviceCodeOAuthFlow(
+                                device.deviceAuthorizationUrl(),
+                                device.tokenUrl(),
+                                device.refreshUrl(),
+                                scopes(device)));
+    }
+
+    private static void rejectRemovedFlow(
+            String name, String flow, A2aAgentCardProperties.OAuthFlow value) {
+        if (null != value) {
+            throw new IllegalArgumentException(
+                    "OAuth "
+                            + flow
+                            + " flow of security scheme '"
+                            + name
+                            + "' is not supported by A2A 1.0, use authorization-code,"
+                            + " client-credentials or device-code");
+        }
+    }
+
+    /** An empty YAML map, {@code scopes: {}}, binds as null; a flow may have no scopes. */
+    private static Map<String, String> scopes(A2aAgentCardProperties.OAuthFlow flow) {
+        return null == flow.scopes() ? Map.of() : flow.scopes();
+    }
+
+    private static <T, R> List<R> mapList(List<T> values, Function<T, R> mapper) {
+        return null == values ? null : values.stream().map(mapper).toList();
     }
 
     private DeploymentProperties buildDeploymentProperties(Environment environment) {

@@ -17,12 +17,15 @@ package io.agentscope.core.rag;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.util.List;
+import reactor.core.publisher.Mono;
 
 /**
  * Knowledge retrieval tools for Agentic RAG mode.
@@ -48,7 +51,11 @@ import java.util.List;
  *     .toolkit(toolkit)
  *     .build();
  * }</pre>
+ *
+ * @deprecated since 2.0.0. The rag package is removed; integrate retrieval at the application
+ *     layer.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class KnowledgeRetrievalTools {
 
     private final Knowledge knowledge;
@@ -117,7 +124,7 @@ public class KnowledgeRetrievalTools {
                     "Retrieve relevant documents from knowledge base. Use this tool when you need"
                         + " to find specific information or when user asks questions about stored"
                         + " knowledge.")
-    public String retrieveKnowledge(
+    public Mono<ToolResultBlock> retrieveKnowledge(
             @ToolParam(
                             name = "query",
                             description =
@@ -129,17 +136,21 @@ public class KnowledgeRetrievalTools {
                             description = "Maximum number of documents to retrieve (default: 5)",
                             required = false)
                     Integer limit,
-            Agent agent) {
+            Agent agent,
+            RuntimeContext ctx) {
 
         // Set default value
         if (limit == null) {
             limit = 5;
         }
 
-        // Extract conversation history from agent if available
+        // Extract conversation history from the call-scoped state if available
         List<Msg> conversationHistory = null;
-        if (agent instanceof ReActAgent reActAgent) {
-            conversationHistory = reActAgent.getMemory().getMessages();
+        if (agent instanceof ReActAgent) {
+            var state = RuntimeContext.resolveAgentState(ctx, agent);
+            if (state != null) {
+                conversationHistory = state.getContext();
+            }
         }
 
         // Build retrieval config with conversation history
@@ -152,9 +163,13 @@ public class KnowledgeRetrievalTools {
 
         return knowledge
                 .retrieve(query, config)
-                .map(this::formatDocumentsForTool)
-                .onErrorReturn("Failed to retrieve knowledge for query: " + query)
-                .block(); // Convert to synchronous call to match Tool interface
+                .map(result -> ToolResultBlock.success(formatDocumentsForTool(result)))
+                .onErrorResume(
+                        e ->
+                                Mono.just(
+                                        ToolResultBlock.error(
+                                                "Failed to retrieve knowledge for query: "
+                                                        + query)));
     }
 
     /**

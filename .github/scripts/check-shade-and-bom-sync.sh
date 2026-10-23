@@ -4,7 +4,7 @@
 #
 # Rules:
 # - agentscope-all: Contains non-framework-specific extensions (shaded into uber-jar)
-# - agentscope-bom: Contains ALL modules (for version management)
+# - agentscope-bom: Contains ALL published modules (for version management)
 
 set -e
 
@@ -24,10 +24,24 @@ echo ""
 #   - *micronaut* : Micronaut extensions
 EXCLUDED_KEYWORDS=("starter" "quarkus" "micronaut")
 
+# Test-only modules are part of the reactor but are not published runtime artifacts.
+EXCLUDED_FROM_DISTRIBUTION=("agentscope-extensions-model-e2e-tests")
+
 # Two separate lists
 MODULES_FOR_ALL=()   # Non-framework extensions -> shade into agentscope-all
 MODULES_FOR_BOM=()   # All modules -> version management in BOM
 EXCLUDED_MODULES=()  # Track which modules were excluded (for reporting)
+
+# Function to check if module should be skipped for both agentscope-all and agentscope-bom
+is_distribution_excluded() {
+    local module=$1
+    for excluded in "${EXCLUDED_FROM_DISTRIBUTION[@]}"; do
+        if [ "$module" = "$excluded" ]; then
+            return 0  # true, is excluded from distribution checks
+        fi
+    done
+    return 1  # false, should be checked
+}
 
 # Function to check if module should be excluded from agentscope-all
 # Returns 0 (true) if module contains any of the excluded keywords
@@ -80,6 +94,12 @@ for pom in $(find "agentscope-extensions" -name "pom.xml" -type f); do
         continue
     fi
 
+    # Test-only modules should not be added to the BOM or shaded uber-jar.
+    if is_distribution_excluded "$artifact_id"; then
+        EXCLUDED_MODULES+=("$artifact_id")
+        continue
+    fi
+
     # All jar modules go to BOM list
     MODULES_FOR_BOM+=("$artifact_id")
 
@@ -117,7 +137,7 @@ for m in "${MODULES_FOR_BOM[@]}"; do
 done
 
 echo ""
-echo "Excluded from agentscope-all (detected by keywords: ${EXCLUDED_KEYWORDS[*]}):"
+echo "Excluded from agentscope-all or distribution checks (keywords: ${EXCLUDED_KEYWORDS[*]}; explicit: ${EXCLUDED_FROM_DISTRIBUTION[*]}):"
 for m in "${EXCLUDED_MODULES[@]}"; do
     echo "  - $m"
 done

@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
 import java.util.List;
 import reactor.core.publisher.Mono;
 
@@ -93,6 +94,38 @@ public interface CallableAgent {
      */
     default Mono<Msg> call(Msg msg, JsonNode schema) {
         return call(msg == null ? List.of() : List.of(msg), schema);
+    }
+
+    /**
+     * Process a plain text input and generate a response.
+     *
+     * @param text Input text (wrapped into a {@link UserMessage})
+     * @return Response message
+     */
+    default Mono<Msg> call(String text) {
+        return call(new UserMessage(text));
+    }
+
+    /**
+     * Process a plain text input with structured model and generate a response.
+     *
+     * @param text Input text (wrapped into a {@link UserMessage})
+     * @param structuredModel Class defining the structure
+     * @return Response message with structured data in metadata
+     */
+    default Mono<Msg> call(String text, Class<?> structuredModel) {
+        return call(new UserMessage(text), structuredModel);
+    }
+
+    /**
+     * Process a plain text input with JSON schema and generate a response.
+     *
+     * @param text Input text (wrapped into a {@link UserMessage})
+     * @param schema JSON schema defining the structure
+     * @return Response message with structured data in metadata
+     */
+    default Mono<Msg> call(String text, JsonNode schema) {
+        return call(new UserMessage(text), schema);
     }
 
     /**

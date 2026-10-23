@@ -27,16 +27,14 @@ import reactor.core.publisher.Mono;
  * An external tool implementation that only contains schema definition without execution logic.
  *
  * <p>This class is used for registering external tools that will be executed outside the framework.
- * When a model returns a call to a SchemaOnlyTool, the framework will catch the
- * {@link ToolSuspendException} thrown by {@link #callAsync(ToolCallParam)} and convert it to a
- * pending {@link ToolResultBlock}, then return a suspended message to the user.
+ * When a model returns a call to a SchemaOnlyTool, Toolkit surfaces the call as a pending
+ * {@link ToolResultBlock}, then the agent returns a suspended message to the user.
  *
- * <p>The {@link #callAsync(ToolCallParam)} method throws a {@link ToolSuspendException}
- * to signal that this tool requires external execution.
+ * <p>The {@link #callAsync(ToolCallParam)} method still throws a {@link ToolSuspendException}
+ * for direct invocations outside the Toolkit execution path.
  *
  * <p>Example usage:
  * <pre>{@code
- * // Register an external tool using ToolSchema
  * ToolSchema schema = ToolSchema.builder()
  *     .name("query_database")
  *     .description("Query external database")
@@ -55,17 +53,16 @@ import reactor.core.publisher.Mono;
  * @see Toolkit#registerSchema(ToolSchema)
  * @see Toolkit#isExternalTool(String)
  */
-public class SchemaOnlyTool implements AgentTool {
+public class SchemaOnlyTool extends ToolBase {
 
-    private final String name;
-    private final String description;
-    private final Map<String, Object> parameters;
     private final Boolean strict;
+    private final Boolean deferLoading;
 
     /**
      * Creates a new SchemaOnlyTool from a ToolSchema.
      *
-     * @param schema The tool schema containing name, description, parameters, and strict mode
+     * @param schema The tool schema containing name, description, parameters, strict mode, and
+     *     deferred loading configuration
      * @throws NullPointerException if schema is null
      */
     public SchemaOnlyTool(ToolSchema schema) {
@@ -73,7 +70,8 @@ public class SchemaOnlyTool implements AgentTool {
                 Objects.requireNonNull(schema, "schema cannot be null").getName(),
                 schema.getDescription(),
                 schema.getParameters(),
-                schema.getStrict());
+                schema.getStrict(),
+                schema.getDeferLoading());
     }
 
     /**
@@ -101,33 +99,47 @@ public class SchemaOnlyTool implements AgentTool {
      * @param description The tool description
      * @param parameters The tool parameters schema
      * @param strict Whether the tool should use strict schema validation (null if unspecified)
+     * @param deferLoading Whether to defer loading this tool's schema until tool search (null if
+     *     unspecified)
+     * @throws NullPointerException if name or description is null
+     */
+    public SchemaOnlyTool(
+            String name,
+            String description,
+            Map<String, Object> parameters,
+            Boolean strict,
+            Boolean deferLoading) {
+        super(
+                ToolBase.builder()
+                        .name(Objects.requireNonNull(name, "name cannot be null"))
+                        .description(
+                                Objects.requireNonNull(description, "description cannot be null"))
+                        .inputSchema(
+                                parameters != null
+                                        ? Collections.unmodifiableMap(new HashMap<>(parameters))
+                                        : Collections.emptyMap())
+                        .externalTool(true)
+                        .readOnly(false)
+                        .concurrencySafe(true));
+        this.strict = strict;
+        this.deferLoading = deferLoading;
+    }
+
+    /**
+     * Creates a new SchemaOnlyTool with the specified name, description, parameters, and strict
+     * mode configuration.
+     *
+     * <p>Deferred loading is set to null (unspecified).
+     *
+     * @param name The tool name
+     * @param description The tool description
+     * @param parameters The tool parameters schema
+     * @param strict Whether the tool should use strict schema validation (null if unspecified)
      * @throws NullPointerException if name or description is null
      */
     public SchemaOnlyTool(
             String name, String description, Map<String, Object> parameters, Boolean strict) {
-        this.name = Objects.requireNonNull(name, "name cannot be null");
-        this.description = Objects.requireNonNull(description, "description cannot be null");
-        // Defensive copy: create a new HashMap from the provided parameters, then wrap it
-        this.parameters =
-                parameters != null
-                        ? Collections.unmodifiableMap(new HashMap<>(parameters))
-                        : Collections.emptyMap();
-        this.strict = strict;
-    }
-
-    @Override
-    public String getName() {
-        return name;
-    }
-
-    @Override
-    public String getDescription() {
-        return description;
-    }
-
-    @Override
-    public Map<String, Object> getParameters() {
-        return parameters;
+        this(name, description, parameters, strict, null);
     }
 
     @Override
@@ -135,12 +147,16 @@ public class SchemaOnlyTool implements AgentTool {
         return strict;
     }
 
+    @Override
+    public Boolean getDeferLoading() {
+        return deferLoading;
+    }
+
     /**
      * Throws a ToolSuspendException to signal that this tool requires external execution.
      *
-     * <p>The framework will catch this exception and convert it to a pending {@link ToolResultBlock}.
-     * The agent will then return a suspended message with {@code GenerateReason.TOOL_SUSPENDED}
-     * containing the tool use blocks that need external execution.
+     * <p>Toolkit execution short-circuits external tools before invoking this method. Direct
+     * invocations keep the same suspension signal.
      *
      * @param param The tool call parameters (ignored)
      * @return Never returns normally

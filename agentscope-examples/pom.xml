@@ -32,30 +32,12 @@
     <name>AgentScope Java - Examples</name>
 
     <modules>
-        <module>quickstart</module>
-        <module>advanced</module>
-        <module>micronaut</module>
-        <module>quarkus</module>
-        <module>plan-notebook</module>
-        <module>agui</module>
-        <module>werewolf</module>
-        <module>werewolf-hitl</module>
-        <module>model-request-compression</module>
-        <module>boba-tea-shop</module>
-        <module>chat-completions-web</module>
-        <module>hitl-chat</module>
-        <module>a2a</module>
-        <module>chat-tts</module>
-        <module>graceful-shutdown</module>
-        <module>multiagent-patterns/handoffs</module>
-        <module>multiagent-patterns/routing</module>
-        <module>multiagent-patterns/subagent</module>
-        <module>multiagent-patterns/supervisor</module>
-        <module>multiagent-patterns/workflow</module>
-        <module>multiagent-patterns/pipeline</module>
-        <module>multiagent-patterns/skills</module>
-        <module>a2a-rocketmq</module>
-        <module>harness-examples</module>
+        <module>documentation</module>
+        <module>jev</module>
+        <module>agents/agentscope-paw</module>
+        <module>agents/agentscope-chat</module>
+        <module>agents/agentscope-dataagent</module>
+        <module>agents/agentscope-codingagent</module>
     </modules>
 
     <properties>

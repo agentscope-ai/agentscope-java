@@ -211,6 +211,44 @@ class McpClientBuilderTest {
     }
 
     @Test
+    void testPropagateMeta_DefaultsToTrue() {
+        McpClientWrapper asyncWrapper =
+                McpClientBuilder.create("meta-default-async")
+                        .stdioTransport("echo", "hello")
+                        .buildAsync()
+                        .block();
+        assertNotNull(asyncWrapper);
+        assertTrue(asyncWrapper.isPropagateMeta());
+
+        McpClientWrapper syncWrapper =
+                McpClientBuilder.create("meta-default-sync")
+                        .stdioTransport("echo", "hello")
+                        .buildSync();
+        assertNotNull(syncWrapper);
+        assertTrue(syncWrapper.isPropagateMeta());
+    }
+
+    @Test
+    void testPropagateMeta_DisabledAppliedToBuiltWrappers() {
+        McpClientWrapper asyncWrapper =
+                McpClientBuilder.create("meta-off-async")
+                        .propagateMeta(false)
+                        .stdioTransport("echo", "hello")
+                        .buildAsync()
+                        .block();
+        assertNotNull(asyncWrapper);
+        assertFalse(asyncWrapper.isPropagateMeta());
+
+        McpClientWrapper syncWrapper =
+                McpClientBuilder.create("meta-off-sync")
+                        .propagateMeta(false)
+                        .stdioTransport("echo", "hello")
+                        .buildSync();
+        assertNotNull(syncWrapper);
+        assertFalse(syncWrapper.isPropagateMeta());
+    }
+
+    @Test
     void testBuildAsync_WithStdioTransport() {
         McpClientBuilder builder =
                 McpClientBuilder.create("stdio-client")
@@ -1295,6 +1333,136 @@ class McpClientBuilderTest {
         McpClientWrapper syncWrapper = builder.buildSync();
         assertNotNull(syncWrapper);
         assertTrue(syncWrapper instanceof McpSyncClientWrapper);
+    }
+
+    // ==================== HttpRequestCustomizer Tests ====================
+
+    @Test
+    void testHttpRequestCustomizer_OnSseTransport() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("http-customizer-sse")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .httpRequestCustomizer(
+                                (builder1, method, uri, body, ctx) -> {
+                                    builder1.header("Authorization", "Bearer dynamic-token");
+                                });
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+        assertEquals("http-customizer-sse", wrapper.getName());
+    }
+
+    @Test
+    void testHttpRequestCustomizer_OnStreamableHttpTransport() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("http-customizer-streamable")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .httpRequestCustomizer(
+                                (builder1, method, uri, body, ctx) -> {
+                                    builder1.header("X-Custom", "custom-value");
+                                    builder1.header("Authorization", "Bearer token");
+                                });
+
+        McpClientWrapper wrapper = builder.buildSync();
+        assertNotNull(wrapper);
+        assertEquals("http-customizer-streamable", wrapper.getName());
+    }
+
+    @Test
+    void testHttpRequestCustomizer_OnStdioTransport_ShouldBeIgnored() {
+        // httpRequestCustomizer on stdio transport should not cause errors (just ignored)
+        McpClientBuilder builder =
+                McpClientBuilder.create("customizer-stdio")
+                        .stdioTransport("python", "-m", "mcp_server_time")
+                        .httpRequestCustomizer(
+                                (builder1, method, uri, body, ctx) -> {
+                                    builder1.header("Authorization", "Bearer token");
+                                });
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testHttpRequestCustomizer_CombinedWithHeaders() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("customizer-combined")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .header("X-Static-Header", "static-value")
+                        .httpRequestCustomizer(
+                                (builder1, method, uri, body, ctx) -> {
+                                    builder1.header("X-Dynamic-Header", "dynamic-value");
+                                });
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+        assertEquals("customizer-combined", wrapper.getName());
+    }
+
+    @Test
+    void testHttpRequestCustomizer_CombinedWithAllFeatures() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("customizer-all-features")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .header("X-Static", "static-value")
+                        .queryParam("env", "prod")
+                        .httpRequestCustomizer(
+                                (builder1, method, uri, body, ctx) -> {
+                                    builder1.header("Authorization", "Bearer dynamic");
+                                    builder1.header("X-Trace-Id", "trace-123");
+                                })
+                        .timeout(Duration.ofSeconds(60));
+
+        McpClientWrapper wrapper = builder.buildSync();
+        assertNotNull(wrapper);
+        assertEquals("customizer-all-features", wrapper.getName());
+    }
+
+    @Test
+    void testHttpRequestCustomizer_FluentApiWithBothTransports() {
+        // Test that httpRequestCustomizer works with SSE and then buildAsync
+        McpClientBuilder builder =
+                McpClientBuilder.create("fluent-customizer")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .httpRequestCustomizer(
+                                (builder1, method, uri, body, ctx) -> {
+                                    // No-op customizer, just verify builder works
+                                });
+
+        assertNotNull(builder);
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testHttpRequestCustomizer_MultipleCalls_LastOneWins() {
+        // Multiple calls should overwrite the previous customizer
+        McpClientBuilder builder =
+                McpClientBuilder.create("multi-customizer")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .httpRequestCustomizer(
+                                (builder1, method, uri, body, ctx) -> {
+                                    builder1.header("First", "first-value");
+                                })
+                        .httpRequestCustomizer(
+                                (builder1, method, uri, body, ctx) -> {
+                                    builder1.header("Second", "second-value");
+                                });
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testHttpRequestCustomizer_WithNullCustomizer() {
+        // Setting null customizer should be allowed (just means no customizer)
+        McpClientBuilder builder =
+                McpClientBuilder.create("null-customizer")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .httpRequestCustomizer(null);
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
     }
 
     // ==================== Protocol Versions Tests ====================

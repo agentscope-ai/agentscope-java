@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/agentscope.json",
+  "main": "coding",
+  "agents": {
+    "coding": {
+      "name": "OpenSWE-Coding",
+      "workspace": ".agentscope/coding-workspace",
+      "maxIters": 50
+    },
+    "reviewer": {
+      "name": "OpenSWE-Reviewer",
+      "workspace": ".agentscope/reviewer-workspace",
+      "maxIters": 30
+    }
+  },
+  "channels": {
+    "chatui": {
+      "defaultAgentId": "coding"
+    }
+  }
+}

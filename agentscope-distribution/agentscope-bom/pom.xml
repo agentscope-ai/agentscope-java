@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>1.1.0-SNAPSHOT</revision>
+        <revision>2.1.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -71,7 +71,7 @@
 
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
-        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
+        <maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
         <central.publishing.maven.version>0.10.0</central.publishing.maven.version>
 
         <maven.deploy.skip>false</maven.deploy.skip>
@@ -131,13 +131,6 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-agent-protocol</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- AgentScope Extensions AutoContext Memory -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-autocontext-memory</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -218,17 +211,74 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope Extensions Session MySQL -->
+            <!-- AgentScope Extensions Redis (AgentStateStore + BaseStore + Sandbox) -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-session-mysql</artifactId>
+                <artifactId>agentscope-extensions-redis</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope Extensions Session Redis -->
+            <!-- AgentScope Extensions MySQL (AgentStateStore + JdbcStore) -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-session-redis</artifactId>
+                <artifactId>agentscope-extensions-mysql</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions OSS (AgentStateStore + BaseStore) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-oss</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions COS (AgentStateStore + BaseStore) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-cos</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions PostgreSql (AgentStateStore + BaseStore) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-postgresql</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions MongoDB (AgentStateStore) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-mongodb</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions JDBC (shared dialect layer for MySQL/PostgreSQL stores) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-jdbc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions Sandbox -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-kubernetes</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-agentrun</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-daytona</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-sandbox-e2b</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -236,13 +286,6 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-studio</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- AgentScope Extensions Kotlin -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-kotlin</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -260,10 +303,100 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope controlplane BYO data-plane SDK -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-controlplane</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Channel Extensions -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-dingtalk</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-feishu</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-wecom</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-github</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-gitlab</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-weixin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Training Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-training</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Jev Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-jev</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope OpenAI Decisions Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-openai-decisions</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope OpenAI Model Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-model-openai</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-model-openai-official</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-model-gemini</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-model-anthropic</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-model-dashscope</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-model-ollama</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -285,13 +418,6 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-quarkus-extension-deployment</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- AgentScope RocketMQ Extension -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rocketmq</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -328,6 +454,12 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-admin-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope AGUI Spring Boot Starter -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -342,6 +474,62 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Jev Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-jev-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope OpenAI Decisions Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-openai-decisions-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope OpenAI Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-openai-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope OpenAI Official Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-openai-official-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope DashScope Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-dashscope-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Gemini Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-gemini-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Anthropic Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-anthropic-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Ollama Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-ollama-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Chat Completions Web Spring Boot Starter -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -353,6 +541,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-skill-mysql-repository</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Skill PostgreSQL Storage -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-skill-postgresql-repository</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

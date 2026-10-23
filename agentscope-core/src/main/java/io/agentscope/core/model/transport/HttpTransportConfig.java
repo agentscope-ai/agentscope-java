@@ -28,13 +28,24 @@ public class HttpTransportConfig {
     /** Default connect timeout: 30 seconds. */
     public static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(30);
 
-    /** Default read timeout: 5 minutes (for long-running model calls). */
+    /** Default read timeout: 5 minutes. */
     public static final Duration DEFAULT_READ_TIMEOUT = Duration.ofMinutes(5);
+
+    /**
+     * Default streaming response timeout: 5 minutes (request start to first emitted streaming
+     * chunk).
+     */
+    public static final Duration DEFAULT_RESPONSE_TIMEOUT = Duration.ofMinutes(5);
+
+    /** Default streaming idle timeout: 5 minutes (maximum wait between data chunks). */
+    public static final Duration DEFAULT_STREAM_IDLE_TIMEOUT = DEFAULT_READ_TIMEOUT;
 
     /** Default write timeout: 30 seconds. */
     public static final Duration DEFAULT_WRITE_TIMEOUT = Duration.ofSeconds(30);
 
     private final Duration connectTimeout;
+    private final Duration responseTimeout;
+    private final Duration streamIdleTimeout;
     private final Duration readTimeout;
     private final Duration writeTimeout;
     private final int maxIdleConnections;
@@ -45,6 +56,8 @@ public class HttpTransportConfig {
 
     private HttpTransportConfig(Builder builder) {
         this.connectTimeout = builder.connectTimeout;
+        this.responseTimeout = builder.responseTimeout;
+        this.streamIdleTimeout = builder.streamIdleTimeout;
         this.readTimeout = builder.readTimeout;
         this.writeTimeout = builder.writeTimeout;
         this.maxIdleConnections = builder.maxIdleConnections;
@@ -64,7 +77,38 @@ public class HttpTransportConfig {
     }
 
     /**
+     * Get the response timeout for streaming requests.
+     *
+     * <p>For {@link JdkHttpTransport} streaming requests, this bounds the time from request start
+     * until the first emitted SSE/NDJSON chunk. {@link OkHttpTransport} does not consume this
+     * option; it relies on OkHttp's {@link #getReadTimeout()} for stream reads.
+     *
+     * @return the response timeout duration
+     */
+    public Duration getResponseTimeout() {
+        return responseTimeout;
+    }
+
+    /**
+     * Get the stream idle timeout.
+     *
+     * <p>For {@link JdkHttpTransport} streaming requests, this bounds the maximum wait between two
+     * consecutive emitted SSE/NDJSON chunks. {@link OkHttpTransport} does not consume this option;
+     * it relies on OkHttp's {@link #getReadTimeout()} for stream reads.
+     *
+     * @return the stream idle timeout duration
+     */
+    public Duration getStreamIdleTimeout() {
+        return streamIdleTimeout;
+    }
+
+    /**
      * Get the read timeout.
+     *
+     * <p>{@link OkHttpTransport} applies this as OkHttp's read timeout for both standard and
+     * streaming requests. {@link JdkHttpTransport} applies this to non-streaming requests only; JDK
+     * streaming requests use {@link #getResponseTimeout()} and {@link #getStreamIdleTimeout()}
+     * instead.
      *
      * @return the read timeout duration
      */
@@ -124,7 +168,8 @@ public class HttpTransportConfig {
     /**
      * Get the HTTP version.
      *
-     * @return the HTTP version
+     * @return the HTTP version, or null if not configured (auto: HTTP/1.1 for cleartext,
+     *     HTTP/2 for https)
      */
     public HttpVersion getHttpVersion() {
         return httpVersion;
@@ -153,13 +198,15 @@ public class HttpTransportConfig {
      */
     public static class Builder {
         private Duration connectTimeout = DEFAULT_CONNECT_TIMEOUT;
+        private Duration responseTimeout = DEFAULT_RESPONSE_TIMEOUT;
+        private Duration streamIdleTimeout = DEFAULT_STREAM_IDLE_TIMEOUT;
         private Duration readTimeout = DEFAULT_READ_TIMEOUT;
         private Duration writeTimeout = DEFAULT_WRITE_TIMEOUT;
         private int maxIdleConnections = 5;
         private Duration keepAliveDuration = Duration.ofMinutes(5);
         private boolean ignoreSsl = false;
         private ProxyConfig proxyConfig = null;
-        private HttpVersion httpVersion = HttpVersion.HTTP_2;
+        private HttpVersion httpVersion = null;
 
         /**
          * Set the connect timeout.
@@ -173,7 +220,42 @@ public class HttpTransportConfig {
         }
 
         /**
+         * Set the response timeout for streaming requests.
+         *
+         * <p>For {@link JdkHttpTransport} streaming requests, this bounds the time from request
+         * start until the first emitted SSE/NDJSON chunk. {@link OkHttpTransport} does not consume
+         * this option; it relies on OkHttp's {@link #getReadTimeout()} for stream reads.
+         *
+         * @param responseTimeout the response timeout duration
+         * @return this builder
+         */
+        public Builder responseTimeout(Duration responseTimeout) {
+            this.responseTimeout = responseTimeout;
+            return this;
+        }
+
+        /**
+         * Set the stream idle timeout.
+         *
+         * <p>For {@link JdkHttpTransport} streaming requests, this bounds the maximum wait between
+         * two consecutive emitted SSE/NDJSON chunks. {@link OkHttpTransport} does not consume this
+         * option; it relies on OkHttp's {@link #getReadTimeout()} for stream reads.
+         *
+         * @param streamIdleTimeout the stream idle timeout duration
+         * @return this builder
+         */
+        public Builder streamIdleTimeout(Duration streamIdleTimeout) {
+            this.streamIdleTimeout = streamIdleTimeout;
+            return this;
+        }
+
+        /**
          * Set the read timeout.
+         *
+         * <p>{@link OkHttpTransport} applies this as OkHttp's read timeout for both standard and
+         * streaming requests. {@link JdkHttpTransport} applies this to non-streaming requests only;
+         * JDK streaming requests use {@link #getResponseTimeout()} and
+         * {@link #getStreamIdleTimeout()} instead.
          *
          * @param readTimeout the read timeout duration
          * @return this builder
@@ -245,9 +327,13 @@ public class HttpTransportConfig {
         }
 
         /**
-         * Set the HTTP version to use.
+         * Set the HTTP version, or null for automatic resolution (the default): cleartext
+         * requests use HTTP/1.1, https requests use HTTP/2 via ALPN. Explicit {@link
+         * HttpVersion#HTTP_2} on cleartext URLs opts in to an h2c upgrade, which some servers
+         * (e.g. vLLM/uvicorn) do not handle. Any non-https scheme counts as cleartext. Only
+         * {@link JdkHttpTransport} honors this option.
          *
-         * @param httpVersion the HTTP version
+         * @param httpVersion the HTTP version, or null for auto
          * @return this builder
          */
         public Builder httpVersion(HttpVersion httpVersion) {

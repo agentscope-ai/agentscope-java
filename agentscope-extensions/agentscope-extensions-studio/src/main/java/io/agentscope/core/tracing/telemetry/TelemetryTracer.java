@@ -67,9 +67,16 @@ import reactor.util.context.ContextView;
 public class TelemetryTracer implements Tracer {
 
     private final io.opentelemetry.api.trace.Tracer tracer;
+    private final SdkTracerProvider sdkTracerProvider;
 
     public TelemetryTracer(io.opentelemetry.api.trace.Tracer tracer) {
+        this(tracer, null);
+    }
+
+    private TelemetryTracer(
+            io.opentelemetry.api.trace.Tracer tracer, SdkTracerProvider sdkTracerProvider) {
         this.tracer = tracer;
+        this.sdkTracerProvider = sdkTracerProvider;
     }
 
     @Override
@@ -90,7 +97,7 @@ public class TelemetryTracer implements Tracer {
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callAgent"));
 
                     Span span = spanBuilder.startSpan();
-                    Context otelContext = span.storeInContext(Context.current());
+                    Context otelContext = span.storeInContext(parentContext);
 
                     return otelContext
                             .wrapSupplier(agentCall)
@@ -128,7 +135,7 @@ public class TelemetryTracer implements Tracer {
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callModel"));
 
                     Span span = spanBuilder.startSpan();
-                    Context otelContext = span.storeInContext(Context.current());
+                    Context otelContext = span.storeInContext(parentContext);
 
                     StreamChatResponseAggregator aggregator = StreamChatResponseAggregator.create();
 
@@ -172,7 +179,7 @@ public class TelemetryTracer implements Tracer {
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callTool"));
 
                     Span span = spanBuilder.startSpan();
-                    Context otelContext = span.storeInContext(Context.current());
+                    Context otelContext = span.storeInContext(parentContext);
 
                     return otelContext
                             .wrapSupplier(toolKitCall)
@@ -224,6 +231,13 @@ public class TelemetryTracer implements Tracer {
                 ContextPropagationOperator.getOpenTelemetryContextFromContextView(
                         reactorCtx, Context.current());
         return otelContext.wrapSupplier(inner).get();
+    }
+
+    @Override
+    public void shutdown() {
+        if (sdkTracerProvider != null) {
+            sdkTracerProvider.close();
+        }
     }
 
     public static Builder builder() {
@@ -294,14 +308,15 @@ public class TelemetryTracer implements Tracer {
                 exporterBuilder.addHeader(entry.getKey(), entry.getValue());
             }
 
-            TracerProvider tracerProvider =
+            SdkTracerProvider tracerProvider =
                     SdkTracerProvider.builder()
                             .addSpanProcessor(
                                     BatchSpanProcessor.builder(exporterBuilder.build()).build())
                             .setSampler(Sampler.alwaysOn())
                             .build();
 
-            return new TelemetryTracer(tracerProvider.get(INSTRUMENTATION_NAME, Version.VERSION));
+            return new TelemetryTracer(
+                    tracerProvider.get(INSTRUMENTATION_NAME, Version.VERSION), tracerProvider);
         }
     }
 }

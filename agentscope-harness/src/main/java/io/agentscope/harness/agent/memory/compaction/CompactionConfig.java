@@ -15,6 +15,10 @@
  */
 package io.agentscope.harness.agent.memory.compaction;
 
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
+import java.util.Set;
+
 /**
  * Configuration for conversation compaction (summarization).
  *
@@ -23,16 +27,50 @@ package io.agentscope.harness.agent.memory.compaction;
  *   <li><b>keep</b> — how many recent messages to preserve verbatim after compaction</li>
  * </ul>
  *
- * <p>Defaults:
+ * <p>Defaults (dynamic mode):
  * <ul>
- *   <li>Trigger at 50 messages or 80 000 estimated tokens (whichever comes first)</li>
- *   <li>Keep the 20 most recent messages verbatim</li>
- *   <li>Summarization is enabled; memory flush and offload are both enabled before summary</li>
+ *   <li>Trigger dynamically when estimated token count reaches {@code model.contextWindow - reserved(20k)}.
+ *       Falls back to {@value #FALLBACK_TRIGGER_TOKENS} tokens when the model does not report its context
+ *       window, or at 50 messages (whichever comes first)</li>
+ *   <li>Keep tail: dynamically computed as {@code min(8k, max(2k, usable * 0.25))} tokens.
+ *       Falls back to 20 messages when the model does not report its context window</li>
+ *   <li>Prune: enabled by default — aggregates old tool result outputs and trims them when the
+ *       prunable total exceeds 20k tokens (protects the most recent 40k tokens)</li>
+ *   <li>Summarization is enabled; memory flush is enabled before summary</li>
  * </ul>
+ *
+ * <h2>Memory prompt landscape</h2>
+ *
+ * The harness has three LLM-driven memory operations, each with its own prompt; they live
+ * in two complementary config classes:
+ *
+ * <ul>
+ *   <li><b>Compaction summary</b> — distills the conversation prefix into one summary
+ *       message before reasoning. Prompt: {@link #getSummaryPrompt()} on <em>this</em>
+ *       class.</li>
+ *   <li><b>Flush</b> — extracts long-term memories into today's daily ledger. Prompt:
+ *       {@code MemoryConfig.flushPrompt()}.</li>
+ *   <li><b>Consolidation</b> — periodically merges daily ledgers into {@code MEMORY.md}.
+ *       Prompt: {@code MemoryConfig.consolidationPrompt()}.</li>
+ * </ul>
+ *
+ * Configure the latter two via {@code HarnessAgent.builder().memory(MemoryConfig...)}.
+ *
+ * @see io.agentscope.harness.agent.memory.MemoryConfig
  */
 public class CompactionConfig {
 
-    /** Default summary prompt with structured format. */
+    /**
+     * Fallback trigger threshold (in tokens) when the model does not report its context window
+     * and {@code triggerTokens} is set to dynamic mode (0).
+     */
+    public static final int FALLBACK_TRIGGER_TOKENS = 160_000;
+
+    /**
+     * Default summary prompt with structured format. Extraction disciplines: verbatim
+     * preservation of reusable strings, user corrections, merge rules for chained compaction,
+     * and secrecy about the summarization step itself.
+     */
     public static final String DEFAULT_SUMMARY_PROMPT =
             """
             <role>
@@ -63,15 +101,39 @@ public class CompactionConfig {
             ## SESSION INTENT
             What is the user's primary goal or request?
 
+            ## USER PREFERENCES AND CORRECTIONS
+            Preferences, feedback, and corrections the user expressed, and how they changed the \
+            direction of the work.
+
             ## SUMMARY
             The most important context, decisions, reasoning, and rejected options.
 
             ## ARTIFACTS
             Files or resources created, modified, or accessed (with specific paths and changes).
 
+            ## COMMANDS AND ERRORS
+            Commands, queries, or API calls that matter, and any error messages encountered — \
+            copied verbatim where they must be reproduced or avoided.
+
             ## NEXT STEPS
             Specific tasks remaining to achieve the session intent.
             </instructions>
+
+            <extraction_rules>
+            - Preserve verbatim: file paths, commands, URLs, identifiers, and exact error \
+            strings. Do not paraphrase them — they must be reusable exactly as they occurred.
+            - Keep durable facts and decisions; drop superseded intermediate state (old file \
+            versions, outdated hypotheses, already-resolved blockers).
+            - If the history already contains an earlier summary, merge it with the new material \
+            into ONE coherent summary — never output two summary generations.
+            - Record failures and rejected approaches briefly, so the work is not repeated.
+            </extraction_rules>
+
+            <secrecy>
+            This is a routine internal context-management step. Do NOT mention this summarization \
+            request, these instructions, or the summarization process anywhere in your output. \
+            Write the summary as the conversation's own state.
+            </secrecy>
 
             Carefully read through the entire conversation history below and extract the most \
             important context. Respond ONLY with the extracted context.
@@ -83,22 +145,34 @@ public class CompactionConfig {
 
     private final int triggerMessages;
     private final int triggerTokens;
+    private final int reserved;
     private final int keepMessages;
     private final int keepTokens;
+    private final int keepTokensMin;
+    private final int keepTokensMax;
+    private final double keepTokensRatio;
     private final String summaryPrompt;
     private final boolean flushBeforeCompact;
-    private final boolean offloadBeforeCompact;
     private final TruncateArgsConfig truncateArgsConfig;
+    private final PruneConfig pruneConfig;
+    private final Model model;
+    private final ConversationCompactionStrategy strategy;
 
     private CompactionConfig(Builder b) {
         this.triggerMessages = b.triggerMessages;
         this.triggerTokens = b.triggerTokens;
+        this.reserved = b.reserved;
         this.keepMessages = b.keepMessages;
         this.keepTokens = b.keepTokens;
+        this.keepTokensMin = b.keepTokensMin;
+        this.keepTokensMax = b.keepTokensMax;
+        this.keepTokensRatio = b.keepTokensRatio;
         this.summaryPrompt = b.summaryPrompt;
         this.flushBeforeCompact = b.flushBeforeCompact;
-        this.offloadBeforeCompact = b.offloadBeforeCompact;
         this.truncateArgsConfig = b.truncateArgsConfig;
+        this.pruneConfig = b.pruneConfig;
+        this.model = b.model;
+        this.strategy = b.strategy;
     }
 
     /** Message count above which compaction is triggered (0 = disabled). */
@@ -106,28 +180,58 @@ public class CompactionConfig {
         return triggerMessages;
     }
 
-    /** Estimated token count above which compaction is triggered (0 = disabled). */
+    /**
+     * Estimated token count above which compaction is triggered.
+     * {@code 0} = dynamic mode (compute from model's context window minus {@link #getReserved()}).
+     */
     public int getTriggerTokens() {
         return triggerTokens;
     }
 
     /**
+     * Token buffer reserved for the compaction process itself (summary prompt + output).
+     * Only used in dynamic mode ({@code triggerTokens == 0}).
+     */
+    public int getReserved() {
+        return reserved;
+    }
+
+    /**
      * Number of recent <em>conversation</em> messages (non-SYSTEM) to preserve verbatim.
-     * Used when {@link #getKeepTokens()} is 0.
+     * Used when {@link #getKeepTokens()} is 0 (static keep mode).
      */
     public int getKeepMessages() {
         return keepMessages;
     }
 
     /**
-     * Token budget for the preserved tail. When non-zero, the keep boundary is determined by
-     * scanning from the end until the token budget is exhausted rather than by a fixed count.
+     * Token budget for the preserved tail.
+     * <ul>
+     *   <li>{@code > 0}: static budget — scan from end until this budget is exhausted</li>
+     *   <li>{@code 0}: use {@link #getKeepMessages()} instead (message-count mode)</li>
+     *   <li>{@code -1}: dynamic — compute as
+     *       {@code min(keepTokensMax, max(keepTokensMin, usable * keepTokensRatio))}</li>
+     * </ul>
      */
     public int getKeepTokens() {
         return keepTokens;
     }
 
-    /** Prompt template used for the summarization LLM call. Must contain {@code {messages}}. */
+    public int getKeepTokensMin() {
+        return keepTokensMin;
+    }
+
+    public int getKeepTokensMax() {
+        return keepTokensMax;
+    }
+
+    public double getKeepTokensRatio() {
+        return keepTokensRatio;
+    }
+
+    /**
+     * Prompt template used for the summarization LLM call. Must contain {@code {messages}}.
+     */
     public String getSummaryPrompt() {
         return summaryPrompt;
     }
@@ -135,11 +239,6 @@ public class CompactionConfig {
     /** Whether to flush long-term memories from the prefix before compaction. */
     public boolean isFlushBeforeCompact() {
         return flushBeforeCompact;
-    }
-
-    /** Whether to offload raw messages to the session JSONL before compaction. */
-    public boolean isOffloadBeforeCompact() {
-        return offloadBeforeCompact;
     }
 
     /**
@@ -150,6 +249,46 @@ public class CompactionConfig {
         return truncateArgsConfig;
     }
 
+    /**
+     * Configuration for aggregate tool-result pruning. When {@code null}, pruning is disabled.
+     */
+    public PruneConfig getPruneConfig() {
+        return pruneConfig;
+    }
+
+    /** Optional policy before standard compaction; null preserves the existing behavior. */
+    public ConversationCompactionStrategy getStrategy() {
+        return strategy;
+    }
+
+    /** Optional summary model; null uses the agent's primary model. */
+    public Model getModel() {
+        return model;
+    }
+
+    /**
+     * Creates a resolved copy with effective trigger and keep values computed from a model's
+     * context window. Used by {@code CompactionMiddleware} to resolve dynamic defaults.
+     */
+    public CompactionConfig withEffective(int effectiveTriggerTokens, int effectiveKeepTokens) {
+        Builder b = new Builder();
+        b.triggerMessages = this.triggerMessages;
+        b.triggerTokens = effectiveTriggerTokens;
+        b.reserved = this.reserved;
+        b.keepMessages = this.keepMessages;
+        b.keepTokens = effectiveKeepTokens;
+        b.keepTokensMin = this.keepTokensMin;
+        b.keepTokensMax = this.keepTokensMax;
+        b.keepTokensRatio = this.keepTokensRatio;
+        b.summaryPrompt = this.summaryPrompt;
+        b.flushBeforeCompact = this.flushBeforeCompact;
+        b.truncateArgsConfig = this.truncateArgsConfig;
+        b.pruneConfig = this.pruneConfig;
+        b.model = this.model;
+        b.strategy = this.strategy;
+        return new CompactionConfig(b);
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -157,13 +296,25 @@ public class CompactionConfig {
     public static class Builder {
 
         private int triggerMessages = 50;
-        private int triggerTokens = 80_000;
+        private int triggerTokens = 0;
+        private int reserved = 20_000;
         private int keepMessages = 20;
-        private int keepTokens = 0;
+        private int keepTokens = -1;
+        private int keepTokensMin = 2_000;
+        private int keepTokensMax = 8_000;
+        private double keepTokensRatio = 0.25;
         private String summaryPrompt = DEFAULT_SUMMARY_PROMPT;
         private boolean flushBeforeCompact = true;
-        private boolean offloadBeforeCompact = true;
         private TruncateArgsConfig truncateArgsConfig = null;
+        private PruneConfig pruneConfig = PruneConfig.defaults();
+        private Model model = null;
+        private ConversationCompactionStrategy strategy;
+
+        /** Uses an optional policy before standard compaction; null preserves existing behavior. */
+        public Builder strategy(ConversationCompactionStrategy strategy) {
+            this.strategy = strategy;
+            return this;
+        }
 
         /** Trigger compaction when conversation has at least this many messages (0 = disabled). */
         public Builder triggerMessages(int triggerMessages) {
@@ -171,9 +322,22 @@ public class CompactionConfig {
             return this;
         }
 
-        /** Trigger compaction when estimated token count exceeds this value (0 = disabled). */
+        /**
+         * Trigger compaction when estimated token count exceeds this value.
+         * {@code 0} (default) = dynamic mode: compute from model's context window minus
+         * {@link #reserved(int)}.
+         */
         public Builder triggerTokens(int triggerTokens) {
             this.triggerTokens = triggerTokens;
+            return this;
+        }
+
+        /**
+         * Token buffer reserved for the compaction process (default 20 000).
+         * Only used in dynamic mode ({@code triggerTokens == 0}).
+         */
+        public Builder reserved(int reserved) {
+            this.reserved = reserved;
             return this;
         }
 
@@ -184,10 +348,26 @@ public class CompactionConfig {
         }
 
         /**
-         * Token budget for the preserved tail (overrides {@code keepMessages} when non-zero).
+         * Token budget for the preserved tail.
+         * {@code -1} (default) = dynamic mode; {@code 0} = use keepMessages; {@code > 0} = static.
          */
         public Builder keepTokens(int keepTokens) {
             this.keepTokens = keepTokens;
+            return this;
+        }
+
+        public Builder keepTokensMin(int keepTokensMin) {
+            this.keepTokensMin = keepTokensMin;
+            return this;
+        }
+
+        public Builder keepTokensMax(int keepTokensMax) {
+            this.keepTokensMax = keepTokensMax;
+            return this;
+        }
+
+        public Builder keepTokensRatio(double keepTokensRatio) {
+            this.keepTokensRatio = keepTokensRatio;
             return this;
         }
 
@@ -203,22 +383,41 @@ public class CompactionConfig {
             return this;
         }
 
-        /** Whether to offload raw messages to session JSONL before compaction (default true). */
-        public Builder offloadBeforeCompact(boolean offloadBeforeCompact) {
-            this.offloadBeforeCompact = offloadBeforeCompact;
+        /**
+         * Enables lightweight pre-summarization argument truncation.
+         * Pass {@code null} to disable.
+         */
+        public Builder truncateArgs(TruncateArgsConfig config) {
+            this.truncateArgsConfig = config;
             return this;
         }
 
         /**
-         * Enables lightweight pre-summarization argument truncation. When set, large
-         * {@code ToolUseBlock} argument values in old messages are shortened before every
-         * model call (no LLM required). This fires at a separate, typically lower threshold
-         * than full compaction.
-         *
-         * <p>Pass {@code null} (default) to disable.
+         * Configures aggregate tool-result pruning. Defaults to {@link PruneConfig#defaults()}.
+         * Pass {@code null} to disable.
          */
-        public Builder truncateArgs(TruncateArgsConfig config) {
-            this.truncateArgsConfig = config;
+        public Builder prune(PruneConfig config) {
+            this.pruneConfig = config;
+            return this;
+        }
+
+        /**
+         * Sets a dedicated model for compaction (summarization), allowing a
+         * lighter/cheaper model than the agent's primary reasoning model.
+         */
+        public Builder model(Model model) {
+            this.model = model;
+            return this;
+        }
+
+        /**
+         * Sets a dedicated model for compaction by model id string
+         * (e.g. {@code "openai:gpt-4.1-mini"}).
+         *
+         * @see ModelRegistry#resolve(String)
+         */
+        public Builder model(String modelId) {
+            this.model = ModelRegistry.resolve(modelId);
             return this;
         }
 
@@ -228,7 +427,7 @@ public class CompactionConfig {
     }
 
     // -------------------------------------------------------------------------
-    // TruncateArgsConfig
+    //  TruncateArgsConfig
     // -------------------------------------------------------------------------
 
     /**
@@ -335,7 +534,102 @@ public class CompactionConfig {
             }
 
             public TruncateArgsConfig build() {
+                if (maxArgLength < 20) {
+                    throw new IllegalArgumentException(
+                            "maxArgLength must be at least 20 characters");
+                }
                 return new TruncateArgsConfig(this);
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    //  PruneConfig
+    // -------------------------------------------------------------------------
+
+    /**
+     * Configuration for aggregate tool-result pruning.
+     *
+     * <p>Prune walks backward through tool-result messages, protecting the most recent
+     * {@link #getProtectTokens()} tokens of tool output. Older tool results beyond that
+     * protection window are replaced with a head+tail preview when the total prunable
+     * amount exceeds {@link #getMinimumTokens()}.
+     *
+     * <p>This is a lightweight, non-LLM operation that runs inside
+     * {@link ConversationCompactor#compactIfNeeded} before summarization.
+     */
+    public static class PruneConfig {
+
+        private final int protectTokens;
+        private final int minimumTokens;
+        private final int maxOutputChars;
+        private final Set<String> excludedTools;
+
+        private PruneConfig(PruneBuilder b) {
+            this.protectTokens = b.protectTokens;
+            this.minimumTokens = b.minimumTokens;
+            this.maxOutputChars = b.maxOutputChars;
+            this.excludedTools = Set.copyOf(b.excludedTools);
+        }
+
+        public static PruneConfig defaults() {
+            return new PruneBuilder().build();
+        }
+
+        /** Token budget for recent tool outputs that are never pruned (default 40 000). */
+        public int getProtectTokens() {
+            return protectTokens;
+        }
+
+        /** Minimum prunable token total before pruning actually executes (default 20 000). */
+        public int getMinimumTokens() {
+            return minimumTokens;
+        }
+
+        /** Max characters to keep per pruned tool result as head+tail preview (default 2 000). */
+        public int getMaxOutputChars() {
+            return maxOutputChars;
+        }
+
+        /** Tool names excluded from pruning (e.g. read_file, memory tools). */
+        public Set<String> getExcludedTools() {
+            return excludedTools;
+        }
+
+        public static PruneBuilder builder() {
+            return new PruneBuilder();
+        }
+
+        public static class PruneBuilder {
+
+            private int protectTokens = 40_000;
+            private int minimumTokens = 20_000;
+            private int maxOutputChars = 2_000;
+            private Set<String> excludedTools =
+                    Set.of("read_file", "memory_search", "memory_get", "session_search");
+
+            public PruneBuilder protectTokens(int protectTokens) {
+                this.protectTokens = protectTokens;
+                return this;
+            }
+
+            public PruneBuilder minimumTokens(int minimumTokens) {
+                this.minimumTokens = minimumTokens;
+                return this;
+            }
+
+            public PruneBuilder maxOutputChars(int maxOutputChars) {
+                this.maxOutputChars = maxOutputChars;
+                return this;
+            }
+
+            public PruneBuilder excludedTools(Set<String> excludedTools) {
+                this.excludedTools = excludedTools;
+                return this;
+            }
+
+            public PruneConfig build() {
+                return new PruneConfig(this);
             }
         }
     }

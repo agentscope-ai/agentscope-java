@@ -1,0 +1,241 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.harness.agent.tools;
+
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.mcp.McpClientBuilder;
+import io.agentscope.core.tool.mcp.McpClientWrapper;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Registers MCP servers declared under {@code mcpServers} in {@code workspace/tools.json} into a
+ * {@link Toolkit}.
+ *
+ * <p>Each entry is built into an {@link McpClientWrapper} via {@link McpClientBuilder} according
+ * to its {@code transport} ({@code stdio} / {@code sse} / {@code http}) and then registered through
+ * {@link Toolkit#registration()} so that per-server {@code enableTools} allowlists are honoured.
+ *
+ * <p>Required connections abort bootstrap. Optional failures are reported through the configured
+ * callback and do not prevent other connections from registering.
+ */
+public final class McpServerRegistrar {
+
+    private static final Logger log = LoggerFactory.getLogger(McpServerRegistrar.class);
+
+    private McpServerRegistrar() {}
+
+    /**
+     * Registers every entry in {@code servers} into {@code toolkit}. Synchronous: each server is
+     * built and registered before the next is attempted. {@code servers} may be {@code null} or
+     * empty (no-op).
+     */
+    public static void register(Toolkit toolkit, Map<String, McpServerConfig> servers) {
+        register(toolkit, servers, null);
+    }
+
+    /**
+     * Registers every entry in {@code servers} into {@code toolkit} and reports each terminal
+     * result to {@code listener}. Synchronous: each server is built and registered before the next
+     * is attempted. {@code servers} or {@code listener} may be {@code null}.
+     *
+     * <p>Listener failures are logged and do not affect registration or later entries.
+     */
+    public static void register(
+            Toolkit toolkit,
+            Map<String, McpServerConfig> servers,
+            McpServerRegistrationListener listener) {
+        if (toolkit == null || servers == null || servers.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, McpServerConfig> entry : servers.entrySet()) {
+            String name = entry.getKey();
+            McpServerConfig cfg = entry.getValue();
+            if (name == null || name.isBlank() || cfg == null) {
+                log.warn("Skipping MCP server with blank name or null config.");
+                notifyListener(
+                        listener,
+                        McpServerRegistrationResult.skipped(
+                                name,
+                                cfg != null ? cfg.getTransport() : null,
+                                new IllegalArgumentException(
+                                        "MCP server name must not be blank and config must not be"
+                                                + " null.")));
+                continue;
+            }
+            try {
+                registerOne(toolkit, name, cfg);
+            } catch (Exception e) {
+                notifyListener(
+                        listener, McpServerRegistrationResult.failed(name, cfg.getTransport(), e));
+                McpConnectionException failure = new McpConnectionException(name);
+                if (cfg.isRequired()) {
+                    toolkit.closeMcpClients();
+                    throw failure;
+                }
+                if (cfg.getConnectionFailureHandler() != null)
+                    cfg.getConnectionFailureHandler().accept(failure);
+                log.warn(
+                        "Failed to register MCP server '{}' ({}): {}",
+                        name,
+                        cfg.getTransport(),
+                        e.getClass().getSimpleName());
+                continue;
+            }
+            notifyListener(listener, McpServerRegistrationResult.success(name, cfg.getTransport()));
+        }
+    }
+
+    private static void notifyListener(
+            McpServerRegistrationListener listener, McpServerRegistrationResult result) {
+        if (listener == null) {
+            return;
+        }
+        try {
+            listener.onCompleted(result);
+        } catch (Exception e) {
+            log.warn(
+                    "MCP registration listener failed for server '{}' with status {}.",
+                    result.serverName(),
+                    result.status(),
+                    e);
+        }
+    }
+
+    private static void registerOne(Toolkit toolkit, String name, McpServerConfig cfg) {
+        registerClient(toolkit, name, cfg, buildClient(name, cfg));
+    }
+
+    static void registerClient(
+            Toolkit toolkit, String name, McpServerConfig cfg, McpClientWrapper wrapper) {
+        try {
+            wrapper.initialize().block();
+            List<String> selected =
+                    wrapper.listTools().block().stream()
+                            .map(tool -> tool.name())
+                            .filter(tool -> isToolEnabled(tool, cfg))
+                            .toList();
+            if (selected.isEmpty()) {
+                wrapper.close();
+                return;
+            }
+            Toolkit.ToolRegistration reg =
+                    toolkit.registration().mcpClient(wrapper).enableTools(selected);
+            if (cfg.isPrefixToolNames()) reg.mcpToolNamePrefix(name + "__");
+            reg.apply();
+        } catch (RuntimeException | Error failure) {
+            closeAfterFailedRegistration(wrapper, failure);
+            throw failure;
+        }
+        List<String> enableTools = cfg.getEnableTools();
+        log.info(
+                "Registered MCP server '{}' (transport={}, enableTools={}).",
+                name,
+                cfg.getTransport(),
+                enableTools);
+    }
+
+    static boolean isToolEnabled(String tool, McpServerConfig cfg) {
+        if (cfg.getDisableTools() != null && cfg.getDisableTools().contains(tool)) return false;
+        List<String> allow = cfg.getEnableTools();
+        return allow != null && !allow.isEmpty()
+                ? allow.contains(tool)
+                : cfg.isDefaultToolsEnabled();
+    }
+
+    private static void closeAfterFailedRegistration(
+            McpClientWrapper wrapper, Throwable registrationFailure) {
+        if (wrapper == null) {
+            return;
+        }
+        try {
+            wrapper.close();
+        } catch (Throwable closeFailure) {
+            if (closeFailure != registrationFailure) {
+                registrationFailure.addSuppressed(closeFailure);
+            }
+        }
+    }
+
+    private static McpClientWrapper buildClient(String name, McpServerConfig cfg) {
+        String transport = cfg.getTransport();
+        if (transport == null || transport.isBlank()) {
+            throw new IllegalArgumentException(
+                    "MCP server '" + name + "' is missing required 'transport' field.");
+        }
+        McpClientBuilder builder = McpClientBuilder.create(name);
+        switch (transport.toLowerCase(Locale.ROOT)) {
+            case "stdio" -> configureStdio(builder, name, cfg);
+            case "sse" -> configureSse(builder, name, cfg);
+            case "http", "streamable-http", "streamablehttp" ->
+                    configureStreamableHttp(builder, name, cfg);
+            default ->
+                    throw new IllegalArgumentException(
+                            "MCP server '"
+                                    + name
+                                    + "' has unsupported transport '"
+                                    + transport
+                                    + "' (expected: stdio, sse, http).");
+        }
+        if (cfg.getTimeout() != null) {
+            builder.timeout(cfg.getTimeout());
+        }
+        if (cfg.getInitializationTimeout() != null) {
+            builder.initializationTimeout(cfg.getInitializationTimeout());
+        }
+        return builder.buildAsync().block();
+    }
+
+    private static void configureStdio(McpClientBuilder builder, String name, McpServerConfig cfg) {
+        if (cfg.getCommand() == null || cfg.getCommand().isBlank()) {
+            throw new IllegalArgumentException(
+                    "stdio MCP server '" + name + "' requires a 'command'.");
+        }
+        List<String> args = cfg.getArgs() != null ? cfg.getArgs() : List.of();
+        Map<String, String> env = cfg.getEnv() != null ? cfg.getEnv() : Map.of();
+        builder.stdioTransport(cfg.getCommand(), args, env);
+    }
+
+    private static void configureSse(McpClientBuilder builder, String name, McpServerConfig cfg) {
+        if (cfg.getUrl() == null || cfg.getUrl().isBlank()) {
+            throw new IllegalArgumentException("sse MCP server '" + name + "' requires a 'url'.");
+        }
+        builder.sseTransport(cfg.getUrl());
+        if (cfg.getHeaders() != null && !cfg.getHeaders().isEmpty()) {
+            builder.headers(cfg.getHeaders());
+        }
+        if (cfg.getQueryParams() != null && !cfg.getQueryParams().isEmpty()) {
+            builder.queryParams(cfg.getQueryParams());
+        }
+    }
+
+    private static void configureStreamableHttp(
+            McpClientBuilder builder, String name, McpServerConfig cfg) {
+        if (cfg.getUrl() == null || cfg.getUrl().isBlank()) {
+            throw new IllegalArgumentException("http MCP server '" + name + "' requires a 'url'.");
+        }
+        builder.streamableHttpTransport(cfg.getUrl());
+        if (cfg.getHeaders() != null && !cfg.getHeaders().isEmpty()) {
+            builder.headers(cfg.getHeaders());
+        }
+        if (cfg.getQueryParams() != null && !cfg.getQueryParams().isEmpty()) {
+            builder.queryParams(cfg.getQueryParams());
+        }
+    }
+}

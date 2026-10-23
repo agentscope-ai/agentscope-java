@@ -31,6 +31,8 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class MarkdownSkillParserTest {
 
@@ -59,6 +61,43 @@ class MarkdownSkillParserTest {
             assertEquals("A test skill", metadata.get("description"));
             assertEquals("1.0.0", metadata.get("version"));
             assertTrue(parsed.getContent().contains("# Test Content"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"\n", "\r\n", "\r"})
+        @DisplayName("Should parse frontmatter after a leading BOM and preserve interior BOMs")
+        void testParseWithLeadingBom(String lineEnding) {
+            String content = "# Instructions" + lineEnding + "Preserve this \uFEFF character.";
+            String markdown =
+                    String.join(
+                            lineEnding,
+                            "\uFEFF---",
+                            "name: test_skill",
+                            "description: A test\uFEFF skill",
+                            "---",
+                            content);
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals(
+                    Map.of("name", "test_skill", "description", "A test\uFEFF skill"),
+                    parsed.getMetadata());
+            assertEquals(content, parsed.getContent());
+        }
+
+        @ParameterizedTest
+        @ValueSource(
+                strings = {
+                    "\uFEFF",
+                    "\uFEFF# Content",
+                    "Text\n\uFEFF---\nname: test\n---\nContent"
+                })
+        @DisplayName("Should preserve BOM characters when no frontmatter is found")
+        void testParseBomWithoutFrontmatter(String markdown) {
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.getMetadata().isEmpty());
+            assertEquals(markdown, parsed.getContent());
         }
 
         @Test
@@ -285,26 +324,87 @@ class MarkdownSkillParserTest {
     class ErrorHandlingTests {
 
         @Test
-        @DisplayName("Should return empty metadata for invalid YAML frontmatter")
+        @DisplayName("Should fallback and extract valid key-value pairs from invalid YAML")
         void testInvalidYaml() {
             String markdown = "---\nname: test\nthis is not a valid line\n---\nContent";
 
             MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
             Map<String, Object> metadata = parsed.getMetadata();
 
-            assertTrue(metadata.isEmpty());
+            assertEquals("test", metadata.get("name"));
             assertEquals("Content", parsed.getContent());
         }
 
         @Test
-        @DisplayName("Should return empty metadata for invalid list-style frontmatter")
+        @DisplayName("Should fallback and extract scalars when mixed with list items")
         void testListFormat() {
             String markdown = "---\nname: test_skill\n- item1\n- item2\n---\nContent";
 
             MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
             Map<String, Object> metadata = parsed.getMetadata();
 
-            assertTrue(metadata.isEmpty());
+            assertEquals("test_skill", metadata.get("name"));
+        }
+
+        @Test
+        @DisplayName("Fallback parser should extract name and description from complex SKILL.md")
+        void testFallbackExtractsFromComplexSkillMd() {
+            // Simulates the user scenario from Issue #1999: SKILL.md with mixed valid/invalid YAML
+            String markdown =
+                    """
+                    ---
+                    name: minimax-docx
+                    description: Document processing with minimax API
+                    version: 1.0
+                    deps:
+                      - requests>=2.0
+                      - minimax-sdk
+                    config: |
+                      api_key: ${MINIMAX_KEY}
+                    invalid: [unclosed bracket
+                    ---
+                    # Usage
+                    Process documents with minimax.\
+                    """;
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertEquals("minimax-docx", metadata.get("name"));
+            assertEquals("Document processing with minimax API", metadata.get("description"));
+            assertEquals("1.0", metadata.get("version"));
+            assertTrue(parsed.getContent().contains("# Usage"));
+        }
+
+        @Test
+        @DisplayName("Fallback parser should handle quoted values")
+        void testFallbackWithQuotedValues() {
+            // Trigger SnakeYAML failure with truly broken YAML + quoted values
+            String markdown =
+                    "---\nname: \"my skill\"\ndescription: 'A cool skill'\n"
+                            + "broken: [}\n---\nContent";
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertEquals("my skill", metadata.get("name"));
+            assertEquals("A cool skill", metadata.get("description"));
+        }
+
+        @Test
+        @DisplayName("Fallback parser should skip block scalar keys")
+        void testFallbackSkipsBlockScalars() {
+            // SnakeYAML fails due to tab character in YAML (not allowed per spec)
+            String markdown =
+                    "---\nname: test_skill\ndescription: |\n"
+                            + "  multi-line\n\tbroken-tab-char\nversion: 2.0\n---\nContent";
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertEquals("test_skill", metadata.get("name"));
+            assertNull(metadata.get("description"));
+            assertEquals("2.0", metadata.get("version"));
         }
 
         @Test

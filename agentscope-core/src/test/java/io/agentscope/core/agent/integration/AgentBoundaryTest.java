@@ -67,7 +67,6 @@ class AgentBoundaryTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
     }
 
@@ -168,7 +167,6 @@ class AgentBoundaryTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         Msg input = TestUtils.createUserMessage("User", "Test invalid tool");
@@ -198,7 +196,7 @@ class AgentBoundaryTest {
 
         assertNotNull(responses);
         assertTrue(
-                agent.getMemory().getMessages().size() >= 1,
+                agent.getAgentState().getContext().size() >= 1,
                 "Special characters should be handled");
     }
 
@@ -213,7 +211,7 @@ class AgentBoundaryTest {
                         .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         assertNotNull(response);
-        assertTrue(agent.getMemory().getMessages().size() >= 1, "Unicode should be handled");
+        assertTrue(agent.getAgentState().getContext().size() >= 1, "Unicode should be handled");
     }
 
     @Test
@@ -233,7 +231,7 @@ class AgentBoundaryTest {
         }
 
         // Verify all messages were processed
-        List<Msg> allMessages = agent.getMemory().getMessages();
+        List<Msg> allMessages = agent.getAgentState().getContext();
         assertTrue(allMessages.size() >= messageCount, "All rapid messages should be in memory");
     }
 

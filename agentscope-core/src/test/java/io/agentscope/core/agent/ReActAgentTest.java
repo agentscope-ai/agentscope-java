@@ -15,14 +15,19 @@
  */
 package io.agentscope.core.agent;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.config.FailoverListener;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
@@ -40,13 +45,16 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.BeforeEach;
@@ -87,7 +95,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
     }
 
@@ -98,14 +105,64 @@ class ReActAgentTest {
         assertNotNull(agent.getAgentId(), "Agent ID should not be null");
         assertEquals(
                 TestConstants.TEST_REACT_AGENT_NAME, agent.getName(), "Agent name should match");
-        assertEquals(memory, agent.getMemory(), "Memory should be the same instance");
+        assertNotNull(agent.getAgentState(), "AgentState should not be null");
         assertEquals(
                 TestConstants.DEFAULT_MAX_ITERS,
                 agent.getMaxIters(),
                 "Default max iterations should be 10");
 
         // Verify memory is initially empty
-        assertTrue(agent.getMemory().getMessages().isEmpty(), "Memory should be empty initially");
+        assertTrue(
+                agent.getAgentState().getContext().isEmpty(), "Memory should be empty initially");
+    }
+
+    @Test
+    @DisplayName(
+            "Explicit agent id is trimmed and used, blank falls back to UUID, invalid rejected")
+    void testAgentIdOverride() {
+        ReActAgent explicit =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .agentId("custom-agent-id")
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .build();
+        assertEquals("custom-agent-id", explicit.getAgentId(), "Explicit agent id should be used");
+
+        ReActAgent padded =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .agentId("  padded-agent-id  ")
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .build();
+        assertEquals(
+                "padded-agent-id",
+                padded.getAgentId(),
+                "Whitespace-padded agent id should be trimmed");
+
+        ReActAgent blank =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .agentId("   ")
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .build();
+        assertNotEquals("   ", blank.getAgentId(), "Blank agent id should not be used as-is");
+        assertDoesNotThrow(
+                () -> UUID.fromString(blank.getAgentId()),
+                "Blank agent id should fall back to a generated UUID");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        ReActAgent.builder()
+                                .name(TestConstants.TEST_REACT_AGENT_NAME)
+                                .agentId("../other-agent")
+                                .model(mockModel)
+                                .toolkit(mockToolkit)
+                                .build(),
+                "Agent id with path traversal characters should be rejected");
     }
 
     @Test
@@ -131,7 +188,7 @@ class ReActAgentTest {
         assertFalse(text.isEmpty(), "Response text should not be empty");
 
         // Verify memory was updated
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         assertTrue(messages.size() >= 1, "Memory should contain at least the user message");
 
         // Verify model was called
@@ -153,7 +210,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -211,7 +267,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -230,7 +285,7 @@ class ReActAgentTest {
         assertEquals(1, mockToolkit.getCallCount(), "Tool should be called once");
 
         // Verify memory contains tool result
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         boolean hasToolResult =
                 messages.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
         assertTrue(hasToolResult, "Memory should contain tool result");
@@ -285,7 +340,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Execute tools");
@@ -351,7 +405,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Call failing tool");
@@ -364,7 +417,7 @@ class ReActAgentTest {
         assertTrue(mockToolkit.wasToolCalled("failing_tool"), "Failing tool should be called");
 
         // Verify memory contains tool result with error content
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         boolean hasErrorToolResult =
                 messages.stream()
                         .anyMatch(
@@ -419,15 +472,14 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
-        int initialMemorySize = memory.getMessages().size();
+        int initialMemorySize = agent.getAgentState().getContext().size();
 
         Msg userMsg = TestUtils.createUserMessage("User", "Calculate 4 * 7");
         agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        List<Msg> messages = memory.getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
 
         // Memory should contain: user message, assistant tool call, tool result, final response
         assertTrue(
@@ -473,7 +525,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(loopModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .maxIters(TestConstants.TEST_MAX_ITERS)
                         .build();
         mockModel = loopModel;
@@ -504,18 +555,18 @@ class ReActAgentTest {
         Msg msg1 = TestUtils.createUserMessage("User", "First message");
         agent.call(msg1).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        int sizeAfterFirst = agent.getMemory().getMessages().size();
+        int sizeAfterFirst = agent.getAgentState().getContext().size();
         assertTrue(sizeAfterFirst >= 1, "Memory should contain at least the first message");
 
         // Send second message
         Msg msg2 = TestUtils.createUserMessage("User", "Second message");
         agent.call(msg2).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        int sizeAfterSecond = agent.getMemory().getMessages().size();
+        int sizeAfterSecond = agent.getAgentState().getContext().size();
         assertTrue(sizeAfterSecond > sizeAfterFirst, "Memory should grow with more messages");
 
         // Verify both messages are in history
-        List<Msg> allMessages = agent.getMemory().getMessages();
+        List<Msg> allMessages = agent.getAgentState().getContext();
         assertTrue(
                 allMessages.stream()
                         .anyMatch(m -> TestUtils.extractTextContent(m).contains("First message")),
@@ -539,7 +590,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -560,6 +610,169 @@ class ReActAgentTest {
     }
 
     @Test
+    @DisplayName("Should switch to fallback model when primary fails")
+    void testFallbackModel() {
+        String errorMessage = "Primary model unavailable";
+        MockModel primaryModel = new MockModel("").withError(errorMessage);
+        MockModel fallbackModel = new MockModel("Fallback response");
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .fallbackModel(fallbackModel)
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals("Fallback response", TestUtils.extractTextContent(response));
+        assertEquals(1, primaryModel.getCallCount(), "Primary model should be tried once");
+        assertEquals(1, fallbackModel.getCallCount(), "Fallback model should be called once");
+    }
+
+    @Test
+    @DisplayName("Should notify failover listener with primary model and original error on switch")
+    void testFailoverListenerNotifiedOnSwitch() {
+        String errorMessage = "Primary model unavailable";
+        MockModel primaryModel = new MockModel("").withError(errorMessage);
+        MockModel fallbackModel = new MockModel("Fallback response");
+
+        List<Model> capturedPrimaries = new ArrayList<>();
+        List<Throwable> capturedErrors = new ArrayList<>();
+        FailoverListener listener =
+                (primary, error) -> {
+                    capturedPrimaries.add(primary);
+                    capturedErrors.add(error);
+                };
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .fallbackModel(fallbackModel)
+                        .failoverListener(listener)
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals("Fallback response", TestUtils.extractTextContent(response));
+        assertEquals(1, capturedErrors.size(), "Listener should be notified exactly once");
+        assertSame(
+                primaryModel,
+                capturedPrimaries.get(0),
+                "Listener should receive the primary model instance");
+        assertEquals(
+                errorMessage,
+                capturedErrors.get(0).getMessage(),
+                "Listener should receive the original error");
+    }
+
+    @Test
+    @DisplayName("Should keep fallback switching working when failover listener throws")
+    void testFailoverListenerThrowingDoesNotAffectSwitch() {
+        MockModel primaryModel = new MockModel("").withError("Primary model unavailable");
+        MockModel fallbackModel = new MockModel("Fallback response");
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .fallbackModel(fallbackModel)
+                        .failoverListener(
+                                (primary, error) -> {
+                                    throw new IllegalStateException("listener failure");
+                                })
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals(
+                "Fallback response",
+                TestUtils.extractTextContent(response),
+                "Fallback should still serve the call despite the listener throwing");
+    }
+
+    @Test
+    @DisplayName("Should not notify failover listener when primary model succeeds")
+    void testFailoverListenerNotCalledWhenPrimarySucceeds() {
+        MockModel primaryModel = new MockModel("Primary response");
+
+        List<Throwable> capturedErrors = new ArrayList<>();
+        FailoverListener listener = (primary, error) -> capturedErrors.add(error);
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .fallbackModel(new MockModel("Fallback response"))
+                        .failoverListener(listener)
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals("Primary response", TestUtils.extractTextContent(response));
+        assertTrue(
+                capturedErrors.isEmpty(), "Listener should not be notified when primary succeeds");
+    }
+
+    @Test
+    @DisplayName("Should not notify failover listener when no fallback is configured")
+    void testFailoverListenerNotCalledWithoutFallback() {
+        MockModel primaryModel = new MockModel("").withError("Primary model unavailable");
+
+        List<Throwable> capturedErrors = new ArrayList<>();
+        FailoverListener listener = (primary, error) -> capturedErrors.add(error);
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .failoverListener(listener)
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+
+        try {
+            agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+            fail("Should have thrown an exception");
+        } catch (Exception e) {
+            assertTrue(
+                    e.getMessage().contains("Primary model unavailable")
+                            || (e.getCause() != null
+                                    && e.getCause()
+                                            .getMessage()
+                                            .contains("Primary model unavailable")),
+                    "Error should propagate when no fallback is configured");
+        }
+        assertTrue(capturedErrors.isEmpty(), "No switch happens, so no notification");
+    }
+
+    @Test
     @DisplayName("Should support streaming responses")
     void testStreaming() {
         // Setup model with multiple response chunks
@@ -571,7 +784,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(mockModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Create user message
@@ -592,7 +804,7 @@ class ReActAgentTest {
         agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         int initialCallCount = mockModel.getCallCount();
-        int initialMemorySize = agent.getMemory().getMessages().size();
+        int initialMemorySize = agent.getAgentState().getContext().size();
 
         // Call without parameters to continue generation
         Msg continueResponse =
@@ -612,11 +824,11 @@ class ReActAgentTest {
 
         // Verify memory was updated with the new response (but no new user message was added)
         assertTrue(
-                agent.getMemory().getMessages().size() > initialMemorySize,
+                agent.getAgentState().getContext().size() > initialMemorySize,
                 "Memory should contain the continuation response");
 
         // Verify no new user message was added (only agent responses)
-        List<Msg> messages = agent.getMemory().getMessages();
+        List<Msg> messages = agent.getAgentState().getContext();
         long userMessageCount = messages.stream().filter(m -> m.getRole() == MsgRole.USER).count();
         assertEquals(
                 1,
@@ -644,13 +856,12 @@ class ReActAgentTest {
     @Test
     @DisplayName("Should have interrupt API methods")
     void testInterruptAfterToolCompletion() {
-        // Verify ReActAgent inherits interrupt API from AgentBase
-        assertNotNull(agent.getInterruptFlag(), "Should have interrupt flag");
-        assertFalse(agent.getInterruptFlag().get(), "Interrupt flag should be false initially");
-
-        // Test interrupt() method
+        // An idle-session interrupt must not poison the next execution.
         agent.interrupt();
-        assertTrue(agent.getInterruptFlag().get(), "Interrupt flag should be set");
+        Msg reply = agent.call(TestUtils.createUserMessage("User", "hello")).block();
+        assertNotNull(reply);
+        assertNotEquals(
+                io.agentscope.core.message.GenerateReason.INTERRUPTED, reply.getGenerateReason());
     }
 
     @Test
@@ -658,12 +869,11 @@ class ReActAgentTest {
     void testInterruptRecoveryMessage() {
         Msg interruptMsg = TestUtils.createUserMessage("User", "Stop processing");
 
-        // Test interrupt(Msg) method
         agent.interrupt(interruptMsg);
-        assertTrue(agent.getInterruptFlag().get(), "Interrupt flag should be set");
-
-        // Note: The interrupt message is stored but only added to memory during handleInterrupt
-        // This test just verifies the API accepts the message and sets the flag
+        Msg reply = agent.call(TestUtils.createUserMessage("User", "hello")).block();
+        assertNotNull(reply);
+        assertNotEquals(
+                io.agentscope.core.message.GenerateReason.INTERRUPTED, reply.getGenerateReason());
     }
 
     @Test
@@ -778,7 +988,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .hook(captureHook)
                         .build();
 
@@ -902,7 +1111,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(toolModel)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .hook(captureHook)
                         .build();
 
@@ -941,13 +1149,11 @@ class ReActAgentTest {
                 new java.util.concurrent.CopyOnWriteArrayList<>();
 
         // Create a hook to capture ReasoningChunkEvent and check metadata
-        io.agentscope.core.hook.Hook captureHook =
-                new io.agentscope.core.hook.Hook() {
+        Hook captureHook =
+                new Hook() {
                     @Override
-                    public <T extends io.agentscope.core.hook.HookEvent>
-                            reactor.core.publisher.Mono<T> onEvent(T event) {
-                        if (event
-                                instanceof io.agentscope.core.hook.ReasoningChunkEvent chunkEvent) {
+                    public <T extends HookEvent> reactor.core.publisher.Mono<T> onEvent(T event) {
+                        if (event instanceof ReasoningChunkEvent chunkEvent) {
                             // Capture accumulated message and check its metadata
                             Msg accumulated = chunkEvent.getAccumulated();
                             if (accumulated != null) {
@@ -990,7 +1196,6 @@ class ReActAgentTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(modelWithUsage)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .hook(captureHook)
                         .build();
 

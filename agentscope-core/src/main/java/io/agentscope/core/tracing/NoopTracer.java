@@ -16,4 +16,9 @@
 
 package io.agentscope.core.tracing;
 
+/**
+ * @deprecated since 2.0.0. Use {@link OtelTracingMiddleware} instead.
+ */
+@Deprecated(forRemoval = true, since = "2.0.0")
+@SuppressWarnings("deprecation")
 public class NoopTracer implements Tracer {}

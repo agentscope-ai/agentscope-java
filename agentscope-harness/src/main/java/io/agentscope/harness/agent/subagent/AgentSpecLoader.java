@@ -17,6 +17,11 @@ package io.agentscope.harness.agent.subagent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -117,6 +122,73 @@ public final class AgentSpecLoader {
     }
 
     /**
+     * Loads subagent declarations via the {@link AbstractFilesystem} using an empty runtime
+     * context. Scans {@code subagents/} for {@code *.md} files using filesystem glob.
+     *
+     * <p>Use {@link #loadFromFilesystem(AbstractFilesystem, RuntimeContext, Path)} when
+     * declarations are scoped to a calling user's namespace.
+     *
+     * @param filesystem the filesystem layer (applies namespace transparently)
+     * @param mainWorkspace the parent workspace for resolving relative workspace paths; may be
+     *     {@code null}
+     * @return list of parsed declarations; never {@code null}
+     */
+    public static List<SubagentDeclaration> loadFromFilesystem(
+            AbstractFilesystem filesystem, Path mainWorkspace) {
+        return loadFromFilesystem(filesystem, RuntimeContext.empty(), mainWorkspace);
+    }
+
+    /**
+     * Loads subagent declarations via the {@link AbstractFilesystem}, respecting the supplied
+     * runtime context's namespace isolation.
+     *
+     * @param filesystem the filesystem layer (applies namespace transparently)
+     * @param runtimeContext the call context used to resolve namespace-scoped declarations
+     * @param mainWorkspace the parent workspace for resolving relative workspace paths; may be
+     *     {@code null}
+     * @return list of parsed declarations; never {@code null}
+     */
+    public static List<SubagentDeclaration> loadFromFilesystem(
+            AbstractFilesystem filesystem, RuntimeContext runtimeContext, Path mainWorkspace) {
+        if (filesystem == null) {
+            return Collections.emptyList();
+        }
+        RuntimeContext ctx = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+        GlobResult glob = filesystem.glob(ctx, "*.md", "subagents");
+        if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<SubagentDeclaration> decls = new ArrayList<>();
+        List<FileInfo> sorted = new ArrayList<>(glob.matches());
+        sorted.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.path(), b.path()));
+
+        for (FileInfo fi : sorted) {
+            String path = fi.path();
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            try {
+                ReadResult rr = filesystem.read(ctx, path, 0, 0);
+                if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
+                    continue;
+                }
+                String filename =
+                        path.contains("/") ? path.substring(path.lastIndexOf('/') + 1) : path;
+                String name = stripMdExtension(filename);
+                SubagentDeclaration decl = parse(rr.fileData().content(), name, mainWorkspace);
+                if (decl != null) {
+                    decls.add(decl);
+                    log.debug("Loaded subagent declaration '{}' from filesystem: {}", name, path);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to load subagent declaration from {}: {}", path, e.getMessage());
+            }
+        }
+        return decls;
+    }
+
+    /**
      * Parses a single Markdown declaration file.
      *
      * @param filePath the {@code .md} file to parse
@@ -143,17 +215,21 @@ public final class AgentSpecLoader {
      */
     @SuppressWarnings("unchecked")
     public static SubagentDeclaration parse(String markdown, String name, Path mainWorkspace) {
-        if (markdown == null || markdown.isBlank() || !markdown.startsWith("---")) {
+        String content =
+                markdown != null && markdown.startsWith("\uFEFF")
+                        ? markdown.substring(1)
+                        : markdown;
+        if (content == null || content.isBlank() || !content.startsWith("---")) {
             return null;
         }
-        int endIdx = markdown.indexOf("---", 3);
+        int endIdx = content.indexOf("---", 3);
         if (endIdx == -1) {
             log.warn("Agent declaration front matter not closed with --- in '{}'", name);
             return null;
         }
 
-        String frontMatterStr = markdown.substring(3, endIdx).trim();
-        String body = markdown.substring(endIdx + 3).trim();
+        String frontMatterStr = content.substring(3, endIdx).trim();
+        String body = content.substring(endIdx + 3).trim();
 
         Map<String, Object> fm;
         try {
@@ -214,13 +290,39 @@ public final class AgentSpecLoader {
         // ---- optional fields ----
         String model = asString(fm.get("model"));
 
-        int maxIters = 10;
-        Object maxItersObj = fm.get("maxIters");
-        if (maxItersObj instanceof Number n) {
-            maxIters = n.intValue();
+        // steps (preferred) > maxIters (deprecated alias). Both default to 10 via the builder.
+        int steps = 10;
+        Object stepsObj = fm.get("steps");
+        if (stepsObj instanceof Number sn) {
+            steps = sn.intValue();
+        } else {
+            Object maxItersObj = fm.get("maxIters");
+            if (maxItersObj instanceof Number n) {
+                steps = n.intValue();
+            }
+        }
+
+        Double temperature = asDouble(fm.get("temperature"));
+        Double topP = asDouble(fm.get("top_p"));
+        if (topP == null) {
+            topP = asDouble(fm.get("topP"));
+        }
+        String variant = asString(fm.get("variant"));
+
+        SubagentDeclaration.Mode declMode = parseDeclarationMode(asString(fm.get("mode")), name);
+        boolean hidden = asBoolean(fm.get("hidden"), false);
+        Boolean exposeToUser = asNullableBoolean(fm.get("expose_to_user"));
+        if (exposeToUser == null) {
+            exposeToUser = asNullableBoolean(fm.get("exposeToUser"));
+        }
+        Boolean enablePendingToolRecovery =
+                asNullableBoolean(fm.get("enable_pending_tool_recovery"));
+        if (enablePendingToolRecovery == null) {
+            enablePendingToolRecovery = asNullableBoolean(fm.get("enablePendingToolRecovery"));
         }
 
         List<String> tools = parseToolNames(asString(fm.get("tools")));
+        List<String> skills = parseToolNames(asString(fm.get("skills")));
 
         SubagentDeclaration.Builder builder =
                 SubagentDeclaration.builder()
@@ -228,8 +330,16 @@ public final class AgentSpecLoader {
                         .description(description)
                         .workspaceMode(mode)
                         .model(model)
-                        .maxIters(maxIters)
-                        .tools(tools.isEmpty() ? null : tools);
+                        .steps(steps)
+                        .temperature(temperature)
+                        .topP(topP)
+                        .variant(variant)
+                        .mode(declMode)
+                        .hidden(hidden)
+                        .exposeToUser(exposeToUser)
+                        .enablePendingToolRecovery(enablePendingToolRecovery)
+                        .tools(tools.isEmpty() ? null : tools)
+                        .skills(skills.isEmpty() ? null : skills);
 
         if (workspacePath != null) {
             builder.workspace(workspacePath);
@@ -265,6 +375,58 @@ public final class AgentSpecLoader {
 
     private static String asString(Object v) {
         return v != null ? v.toString().trim() : null;
+    }
+
+    private static boolean asBoolean(Object v, boolean def) {
+        if (v == null) return def;
+        if (v instanceof Boolean b) return b;
+        String s = v.toString().trim();
+        if (s.isEmpty()) return def;
+        return Boolean.parseBoolean(s);
+    }
+
+    /**
+     * Parses a tri-state boolean: {@code null} when the key is absent or blank (no opinion),
+     * otherwise the parsed boolean. Used for front-matter flags that distinguish "unset" from
+     * an explicit {@code false}.
+     */
+    private static Boolean asNullableBoolean(Object v) {
+        if (v == null) return null;
+        if (v instanceof Boolean b) return b;
+        String s = v.toString().trim();
+        if (s.isEmpty()) return null;
+        return Boolean.parseBoolean(s);
+    }
+
+    private static SubagentDeclaration.Mode parseDeclarationMode(String s, String name) {
+        if (s == null || s.isBlank()) return SubagentDeclaration.Mode.ALL;
+        switch (s.toLowerCase()) {
+            case "primary":
+                return SubagentDeclaration.Mode.PRIMARY;
+            case "subagent":
+                return SubagentDeclaration.Mode.SUBAGENT;
+            case "all":
+                return SubagentDeclaration.Mode.ALL;
+            default:
+                log.warn(
+                        "Unknown mode '{}' in subagent declaration '{}', defaulting to all",
+                        s,
+                        name);
+                return SubagentDeclaration.Mode.ALL;
+        }
+    }
+
+    private static Double asDouble(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.doubleValue();
+        String s = v.toString().trim();
+        if (s.isEmpty()) return null;
+        try {
+            return Double.parseDouble(s);
+        } catch (NumberFormatException e) {
+            log.warn("Failed to parse numeric value '{}' — treating as unset", s);
+            return null;
+        }
     }
 
     private static List<String> parseToolNames(String toolsStr) {

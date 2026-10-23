@@ -1,0 +1,6 @@
+{
+  "id": "customer-support",
+  "name": "Customer support agent",
+  "description": "Triages inbound questions with empathy and escalates when out-of-policy.",
+  "tags": ["support", "triage"]
+}

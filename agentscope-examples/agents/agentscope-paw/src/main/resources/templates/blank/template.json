@@ -1,0 +1,6 @@
+{
+  "id": "blank",
+  "name": "Blank agent",
+  "description": "Minimal scaffold — AGENTS.md, tools.json, an example skill, an empty memory dir.",
+  "tags": ["starter"]
+}

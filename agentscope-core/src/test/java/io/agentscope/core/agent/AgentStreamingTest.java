@@ -20,10 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -247,5 +250,39 @@ class AgentStreamingTest {
 
         // Should have at least one event (the agent result)
         assertTrue(eventCount.get() >= 1);
+    }
+
+    @Test
+    void testReActAgentStreamCompletesWhenModelReturnsEmptyText() {
+        MockModel model =
+                new MockModel(
+                        messages ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("empty-msg")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("")
+                                                                        .build()))
+                                                .build()));
+        ReActAgent agent = ReActAgent.builder().name("test-agent").model(model).build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("hello").build()))
+                        .build();
+
+        StepVerifier.create(agent.stream(List.of(inputMsg)))
+                .expectNextMatches(
+                        event ->
+                                event.getType() == EventType.REASONING
+                                        && !event.isLast()
+                                        && event.getMessage() != null)
+                .thenConsumeWhile(event -> true)
+                .expectComplete()
+                .verify(Duration.ofSeconds(2));
     }
 }

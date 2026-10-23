@@ -30,7 +30,11 @@ import reactor.core.publisher.Mono;
  *
  * <p>The skill prompt is appended to the transient system message and is never stored in
  * the agent's persistent {@code Memory}.
+ *
+ * @deprecated since 2.0.0. The skill package and the hook system are removed; manage markdown
+ *     skill catalogs in application code or via {@code MiddlewareBase}.
  */
+@Deprecated(since = "2.0.0")
 public class SkillHook implements Hook {
 
     /**

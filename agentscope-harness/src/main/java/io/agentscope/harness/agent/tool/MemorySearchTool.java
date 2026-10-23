@@ -15,11 +15,14 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.List;
 import java.util.StringJoiner;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +32,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Uses keyword-based search through all memory files visible via the configured
  * {@link io.agentscope.harness.agent.filesystem.AbstractFilesystem} (works across Local,
- * Sandbox, and Store backends).
+ * Sandbox, and Store stores).
  */
 public class MemorySearchTool {
 
@@ -41,37 +44,68 @@ public class MemorySearchTool {
         this.workspaceManager = workspaceManager;
     }
 
+    public ToolResultBlock memorySearch(RuntimeContext runtimeContext, String query) {
+        return memorySearch(runtimeContext, query, null);
+    }
+
     @Tool(
             name = "memory_search",
+            readOnly = true,
             description =
                     "Search through long-term memory files (MEMORY.md and memory/*.md) for"
                             + " relevant information. Use before answering questions about prior"
                             + " work, decisions, dates, people, preferences, or todos.")
-    public String memorySearch(
-            @ToolParam(name = "query", description = "Keywords to search for in memory files")
-                    String query) {
+    public ToolResultBlock memorySearch(
+            RuntimeContext runtimeContext,
+            @ToolParam(
+                            name = "query",
+                            description =
+                                    "Literal phrase, or whitespace-separated keywords when"
+                                            + " matchMode is all/any; no automatic Chinese word"
+                                            + " segmentation")
+                    String query,
+            @ToolParam(
+                            name = "matchMode",
+                            description =
+                                    "phrase (default): exact substring; all: every keyword in the"
+                                            + " same memory line; any: at least one keyword in that"
+                                            + " line. Case-insensitive literal matching.",
+                            required = false)
+                    String matchMode) {
         if (query == null || query.isBlank()) {
-            return "No query provided";
+            return ToolResultBlock.error("No query provided");
         }
 
-        return keywordSearch(query);
+        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+        Predicate<String> matcher;
+        try {
+            matcher =
+                    KeywordMatcher.compile(
+                            query,
+                            matchMode,
+                            term ->
+                                    Pattern.compile(Pattern.quote(term), Pattern.CASE_INSENSITIVE)
+                                            .asPredicate());
+        } catch (IllegalArgumentException e) {
+            return ToolResultBlock.error(e.getMessage());
+        }
+        return ToolResultBlock.success(keywordSearch(rc, query, matcher));
     }
 
-    private String keywordSearch(String query) {
+    private String keywordSearch(RuntimeContext rc, String query, Predicate<String> matcher) {
         StringJoiner results = new StringJoiner("\n");
         int matchCount = 0;
 
-        List<String> memoryPaths = workspaceManager.listMemoryFilePaths();
-        Pattern pattern = Pattern.compile(Pattern.quote(query), Pattern.CASE_INSENSITIVE);
+        List<String> memoryPaths = workspaceManager.listMemoryFilePaths(rc);
 
         for (String relativePath : memoryPaths) {
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(relativePath);
+            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
             if (content == null || content.isEmpty()) {
                 continue;
             }
             String[] lines = content.split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
-                if (pattern.matcher(lines[i]).find()) {
+                if (matcher.test(lines[i])) {
                     results.add(String.format("Source: %s#%d: %s", relativePath, i + 1, lines[i]));
                     matchCount++;
                 }

@@ -20,7 +20,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 
 /**
- * Serializable state of a sandbox, persisted by {@link SandboxStateStore} so a sandbox can
+ * Serializable state of a sandbox, persisted by {@link SessionSandboxStateStore} so a sandbox can
  * be resumed across calls.
  *
  * <p>The {@link #workspaceRootReady} flag drives the 4-branch start logic: it records whether

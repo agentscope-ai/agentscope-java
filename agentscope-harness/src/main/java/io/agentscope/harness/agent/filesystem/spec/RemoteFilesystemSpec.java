@@ -18,18 +18,20 @@ package io.agentscope.harness.agent.filesystem.spec;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
-import io.agentscope.harness.agent.store.BaseStore;
-import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
 
 /**
  * Specification for the non-sandbox "composite" filesystem mode.
@@ -37,22 +39,27 @@ import java.util.function.Supplier;
  * <p>This spec produces a {@link CompositeFilesystem} that blends:
  *
  * <ul>
- *   <li>a plain {@link LocalFilesystem} (no shell) for workspace-local, ephemeral files such as
- *       skills/, knowledge/, additional context files, etc.;
- *   <li>a shared {@link RemoteFilesystem} for cross-node paths that must be identical across all
- *       replicas (long-term memory, offloaded session logs).
+ *   <li>a plain {@link LocalFilesystem} (no shell) for workspace-local, unmanaged files;
+ *   <li>per-route {@link RemoteFilesystem} instances for cross-node paths (memory, skills,
+ *       subagents, knowledge, sessions, tasks). Each route gets its own store namespace
+ *       segment to prevent key collisions across routes.
  * </ul>
  *
  * <p>Because the default backend is {@link LocalFilesystem} (not {@link LocalFilesystemWithShell}),
  * shell execution is intentionally not available in this mode — use a sandbox filesystem spec or
  * {@link LocalFilesystemWithShell} if shell is required.
  *
- * <p>Default shared routes:
+ * <p>Default shared routes (each gets an isolated store namespace segment):
  *
  * <ul>
- *   <li>{@code MEMORY.md}
- *   <li>{@code memory/}
- *   <li>{@code agents/<agentId>/sessions/}
+ *   <li>{@code AGENTS.md}, {@code MEMORY.md} → segment {@code root}
+ *   <li>{@code memory/} → segment {@code memory}
+ *   <li>{@code skills/} → segment {@code skills}
+ *   <li>{@code subagents/} → segment {@code subagents}
+ *   <li>{@code knowledge/} → segment {@code knowledge}
+ *   <li>{@code plans/} → segment {@code plans}
+ *   <li>{@code agents/<agentId>/sessions/} → segment {@code sessions}
+ *   <li>{@code agents/<agentId>/tasks/} → segment {@code tasks}
  * </ul>
  *
  * <p>The store namespace for shared files is controlled by {@link #isolationScope(IsolationScope)},
@@ -67,16 +74,56 @@ import java.util.function.Supplier;
  */
 public class RemoteFilesystemSpec {
 
-    private final BaseStore store;
+    private BaseStore store;
     private final Set<String> extraSharedPrefixes = new LinkedHashSet<>();
     private String anonymousUserId = "_default";
     private IsolationScope isolationScope = IsolationScope.USER;
+    private WorkspaceIndex workspaceIndex = null;
+    private boolean sharedLocalWorkspace = false;
+
+    /**
+     * Creates a remote filesystem spec that defers store resolution to
+     * {@link io.agentscope.harness.agent.DistributedStore#baseStore()}.
+     *
+     * <p>When used with {@code HarnessAgent.builder().distributedStore(store)},
+     * the store is injected automatically during build. Without a distributed store,
+     * an {@link IllegalStateException} is thrown at build time.
+     */
+    public RemoteFilesystemSpec() {
+        this.store = null;
+    }
 
     public RemoteFilesystemSpec(BaseStore store) {
         if (store == null) {
             throw new IllegalArgumentException("store must not be null");
         }
         this.store = store;
+    }
+
+    /**
+     * Returns whether the store has been set (either via constructor or injection).
+     */
+    public boolean hasStore() {
+        return store != null;
+    }
+
+    /**
+     * Returns the configured {@link BaseStore}, or {@code null} if not yet set.
+     *
+     * <p>Used by coordination wiring (e.g. {@code PeriodicGate}) when a remote filesystem is
+     * present without a full {@code DistributedStore}.
+     */
+    public BaseStore store() {
+        return store;
+    }
+
+    /**
+     * Injects the store if not already set. Called by the builder during auto-wiring.
+     */
+    public void injectStoreIfAbsent(BaseStore store) {
+        if (this.store == null) {
+            this.store = store;
+        }
     }
 
     /**
@@ -119,57 +166,174 @@ public class RemoteFilesystemSpec {
         return this;
     }
 
+    public IsolationScope getIsolationScope() {
+        return isolationScope;
+    }
+
     /**
-     * Builds the effective filesystem:
+     * Sets the workspace index for accelerating remote filesystem reads (ls/glob/exists/grep).
+     * If not set, the remote filesystem falls back to full store scans.
+     */
+    public RemoteFilesystemSpec workspaceIndex(WorkspaceIndex index) {
+        this.workspaceIndex = index;
+        return this;
+    }
+
+    /**
+     * When {@code true}, the default backend (everything not routed to a shared prefix) serves
+     * the workspace root directly: no per-user namespace prefix and sandboxed path resolution.
+     * Files the host application writes to the workspace root with plain {@code java.nio}
+     * (e.g. {@code uploads/<sessionId>/result.md}) become visible to {@code read_file} /
+     * {@code list_files} / {@code grep_files}, and absolute paths outside the workspace are
+     * rejected instead of traversing up to the filesystem root — with the default namespaced
+     * backend such reads resolve to {@code {workspace}/{userId}/...}, which the host never
+     * writes, and UNRESTRICTED resolution lets {@code list_files} walk up to the drive root.
+     *
+     * <p>Shared prefix routes ({@code memory/}, {@code skills/}, ...) keep their per-user store
+     * namespaces; only the default backend changes.
+     *
+     * <p><b>Not safe for multi-tenant workspaces:</b> shared mode disables per-user namespace
+     * isolation at the workspace root — users/sessions configured on the same workspace
+     * directory will read and overwrite each other's files there. Intended for single-tenant
+     * host-app integrations where the host writes uploads directly to the workspace.
+     *
+     * <p>Defaults to {@code false}, preserving the namespaced default backend (#3245).
+     *
+     * @param shared whether the default backend serves the shared workspace root
+     * @return this spec
+     */
+    public RemoteFilesystemSpec sharedLocalWorkspace(boolean shared) {
+        this.sharedLocalWorkspace = shared;
+        return this;
+    }
+
+    /**
+     * Builds the composite filesystem described by this spec.
      *
      * <ul>
-     *   <li>default backend: {@link LocalFilesystem} (no shell)
-     *   <li>shared routes: {@link RemoteFilesystem} with scope-driven namespace
+     *   <li>default backend: {@link LocalFilesystem} (no shell), per-user namespaced
+     *   <li>shared <b>prefix</b> routes ({@code memory/}, {@code skills/}, {@code subagents/},
+     *       {@code knowledge/}, {@code plans/}, {@code agents/<id>/sessions/},
+     *       {@code agents/<id>/tasks/}, plus
+     *       any {@code addSharedPrefix} extras): wrapped in an {@link OverlayFilesystem} where
+     *       the <em>upper</em> layer is the {@link RemoteFilesystem} (per-user, persisted in the
+     *       {@link BaseStore}) and the <em>lower</em> layer is a read-only {@link LocalFilesystem}
+     *       rooted at {@code workspace.resolve(<routeDir>)}. So scaffolded template content under
+     *       {@code <workspace>/skills/}, {@code <workspace>/subagents/}, etc. is visible as a
+     *       baseline; per-user edits land in the remote store via copy-on-write and override the
+     *       template on subsequent reads.
+     *   <li>{@code AGENTS.md}, {@code MEMORY.md}, {@code tools.json} exact-file routes: wrapped
+     *       in an {@link OverlayFilesystem} where the <em>upper</em> is the {@code root}-segment
+     *       {@link RemoteFilesystem} and the <em>lower</em> is a read-only {@link LocalFilesystem}
+     *       rooted at the workspace, so the scaffolded template files at the workspace root are
+     *       visible as the baseline. {@link CompositeFilesystem} does not recurse into exact-file
+     *       routes when listing/globbing the tree; it performs a single {@code exists} check
+     *       against the overlay, which is satisfied by either layer.
      * </ul>
      */
     public AbstractFilesystem toFilesystem(
-            Path workspace,
-            String agentId,
-            NamespaceFactory localNamespaceFactory,
-            Supplier<String> userIdSupplier,
-            Supplier<String> sessionIdSupplier) {
+            Path workspace, String agentId, NamespaceFactory localNamespaceFactory) {
+        if (store == null) {
+            throw new IllegalStateException(
+                    "RemoteFilesystemSpec has no BaseStore. Either pass one via the constructor"
+                            + " or configure a DistributedStore on the HarnessAgent builder.");
+        }
         String effectiveAgentId = agentId == null || agentId.isBlank() ? "HarnessAgent" : agentId;
-        AbstractFilesystem local = new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
-        RemoteFilesystem shared =
-                new RemoteFilesystem(
-                        store, storeNamespace(effectiveAgentId, userIdSupplier, sessionIdSupplier));
+        // sharedLocalWorkspace: same construction as the workspace-template layer below — shared
+        // root, no namespace prefix, traversal blocked (#3245).
+        AbstractFilesystem local =
+                sharedLocalWorkspace
+                        ? new LocalFilesystem(workspace, true, 10, null)
+                        : new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
+
+        // Read-only workspace-root template view for the exact-file overlays below. The lower
+        // technically exposes the entire workspace, but CompositeFilesystem does not recurse into
+        // exact-file routes (it does single-key exists/read), so the over-exposure is unreachable.
+        LocalFilesystem workspaceTemplate = new LocalFilesystem(workspace, true, 10, null);
 
         Map<String, AbstractFilesystem> routes = new LinkedHashMap<>();
-        routes.put("MEMORY.md", shared);
-        routes.put("memory/", shared);
-        routes.put("agents/" + effectiveAgentId + "/sessions/", shared);
-        routes.put("agents/" + effectiveAgentId + "/tasks/", shared);
+        routes.put("AGENTS.md", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
+        routes.put("MEMORY.md", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
+        routes.put("tools.json", exactFileOverlay("root", effectiveAgentId, workspaceTemplate));
+        routes.put(
+                "memory/", overlayRoute(workspace.resolve("memory"), "memory", effectiveAgentId));
+        routes.put(
+                "skills/", overlayRoute(workspace.resolve("skills"), "skills", effectiveAgentId));
+        routes.put(
+                "subagents/",
+                overlayRoute(workspace.resolve("subagents"), "subagents", effectiveAgentId));
+        routes.put(
+                "knowledge/",
+                overlayRoute(workspace.resolve("knowledge"), "knowledge", effectiveAgentId));
+        routes.put("plans/", overlayRoute(workspace.resolve("plans"), "plans", effectiveAgentId));
+        routes.put(
+                "agents/" + effectiveAgentId + "/sessions/",
+                overlayRoute(
+                        workspace.resolve("agents").resolve(effectiveAgentId).resolve("sessions"),
+                        "sessions",
+                        effectiveAgentId));
+        routes.put(
+                "agents/" + effectiveAgentId + "/tasks/",
+                overlayRoute(
+                        workspace.resolve("agents").resolve(effectiveAgentId).resolve("tasks"),
+                        "tasks",
+                        effectiveAgentId));
         for (String extra : extraSharedPrefixes) {
-            routes.put(extra, shared);
+            String segment = routeSegmentFromPrefix(extra);
+            routes.put(extra, overlayRoute(workspace.resolve(segment), segment, effectiveAgentId));
         }
         return new CompositeFilesystem(local, routes);
     }
 
     /**
-     * Builds the effective filesystem without session-level isolation.
-     *
-     * <p>Convenience overload for callers that don't provide a session-id supplier.
-     * Equivalent to calling {@link #toFilesystem(Path, String, NamespaceFactory, Supplier, Supplier)}
-     * with {@code () -> null} as the sessionIdSupplier.
+     * Builds an {@link OverlayFilesystem} for a workspace-prefix route. The upper layer is the
+     * per-user {@link RemoteFilesystem} backed by {@link BaseStore}; the lower layer is a read-only
+     * {@link LocalFilesystem} rooted at {@code localTemplateDir} so scaffolded template content is
+     * visible as the baseline. {@code virtualMode=true} on the lower so it reports paths anchored
+     * to its own root, which is what {@link CompositeFilesystem}'s route remapping expects.
      */
-    public AbstractFilesystem toFilesystem(
-            Path workspace,
-            String agentId,
-            NamespaceFactory localNamespaceFactory,
-            Supplier<String> userIdSupplier) {
-        return toFilesystem(workspace, agentId, localNamespaceFactory, userIdSupplier, () -> null);
+    private OverlayFilesystem overlayRoute(
+            Path localTemplateDir, String routeSegment, String agentId) {
+        RemoteFilesystem upper = remoteForRoute(routeSegment, agentId);
+        LocalFilesystem lower = new LocalFilesystem(localTemplateDir, true, 10, null);
+        return new OverlayFilesystem(upper, lower);
     }
 
-    private NamespaceFactory storeNamespace(
-            String agentId, Supplier<String> userIdSupplier, Supplier<String> sessionIdSupplier) {
-        return () -> {
-            String uid = userIdSupplier != null ? userIdSupplier.get() : null;
-            String sid = sessionIdSupplier != null ? sessionIdSupplier.get() : null;
+    /**
+     * Builds an {@link OverlayFilesystem} for an exact-file route (e.g. {@code AGENTS.md}).
+     * The upper layer is the per-user {@link RemoteFilesystem} on the {@code root} namespace
+     * segment; the lower layer is the shared workspace-root {@link LocalFilesystem} so the
+     * scaffolded template file ({@code workspace/<filename>}) is visible as the baseline.
+     */
+    private OverlayFilesystem exactFileOverlay(
+            String routeSegment, String agentId, LocalFilesystem workspaceTemplate) {
+        RemoteFilesystem upper = remoteForRoute(routeSegment, agentId);
+        return new OverlayFilesystem(upper, workspaceTemplate);
+    }
+
+    private RemoteFilesystem remoteForRoute(String routeSegment, String agentId) {
+        NamespaceFactory base = storeNamespace(agentId);
+        NamespaceFactory extended =
+                rc -> {
+                    List<String> ns = new ArrayList<>(base.getNamespace(rc));
+                    ns.add(routeSegment);
+                    return ns;
+                };
+        return new RemoteFilesystem(store, extended).withIndex(workspaceIndex);
+    }
+
+    private static String routeSegmentFromPrefix(String normalizedPrefix) {
+        String segment = normalizedPrefix;
+        while (segment.endsWith("/")) {
+            segment = segment.substring(0, segment.length() - 1);
+        }
+        return segment.isEmpty() ? "extra" : segment;
+    }
+
+    private NamespaceFactory storeNamespace(String agentId) {
+        return rc -> {
+            String uid = rc != null ? rc.getUserId() : null;
+            String sid = rc != null ? rc.getSessionId() : null;
 
             return switch (isolationScope) {
                 case SESSION -> {

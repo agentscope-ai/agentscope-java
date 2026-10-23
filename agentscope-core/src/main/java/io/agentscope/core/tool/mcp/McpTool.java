@@ -16,99 +16,204 @@
 package io.agentscope.core.tool.mcp;
 
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
- * AgentTool implementation that wraps an MCP (Model Context Protocol) tool.
- * This class bridges MCP tools to the AgentScope tool system, allowing
- * agents to invoke remote MCP tools seamlessly.
+ * {@link ToolBase} subclass that wraps an MCP (Model Context Protocol) tool.
+ *
+ * <p>Bridges remote MCP tools to the AgentScope tool system so they participate in permission
+ * evaluation and the agent's pending-confirmation flow alongside built-in and {@code @Tool} tools.
  *
  * <p>Features:
  * <ul>
- *   <li>Converts AgentScope tool calls to MCP protocol calls</li>
- *   <li>Handles parameter merging with preset arguments</li>
- *   <li>Converts MCP results to AgentScope ToolResultBlocks</li>
- *   <li>Supports reactive execution with Mono</li>
+ *   <li>Translates AgentScope tool calls into MCP protocol calls.
+ *   <li>Merges caller arguments with preset arguments configured at registration time.
+ *   <li>Converts MCP results into AgentScope {@link ToolResultBlock}s.
+ *   <li>Surfaces permission policy via {@link #checkPermissions(Map, PermissionContextState)}: read-only
+ *       MCP tools auto-allow; everything else requires explicit user authorization (matches the
+ *       Python {@code MCPTool} default).
  * </ul>
- *
- * <p>Example usage:
- * <pre>{@code
- * McpTool tool = new McpTool(
- *     "get_weather",
- *     "Get current weather for a location",
- *     parametersSchema,
- *     mcpClientWrapper,
- *     Map.of("units", "celsius")  // preset args
- * );
- *
- * ToolResultBlock result = tool.callAsync(Map.of("location", "Beijing")).block();
- * }</pre>
  */
-public class McpTool implements AgentTool {
+public class McpTool extends ToolBase {
 
     private static final Logger logger = LoggerFactory.getLogger(McpTool.class);
 
-    private final String name;
-    private final String description;
-    private final Map<String, Object> parameters;
+    /**
+     * Upper bound for a server-supplied display title, matching the one-line label width already used
+     * for tool names in {@code AgentTraceMiddleware}. A truncated title spends the last three on
+     * {@link #ELLIPSIS}, so a sanitised title never exceeds this many code points.
+     */
+    private static final int MAX_DISPLAY_TITLE_LENGTH = 120;
+
+    private static final String ELLIPSIS = "...";
+
+    private static final int CONTENT_LENGTH_BEFORE_ELLIPSIS =
+            MAX_DISPLAY_TITLE_LENGTH - ELLIPSIS.length();
+
     private final Map<String, Object> outputSchema;
+    private final String remoteToolName;
     private final McpClientWrapper clientWrapper;
     private final Map<String, Object> presetArguments;
 
     /**
-     * Constructs a new McpTool without preset arguments.
+     * Per-tool restriction for request metadata propagation. Effective propagation requires both
+     * this flag and the connection-level {@link McpClientWrapper#isPropagateMeta()} to be {@code
+     * true} (logical AND): the wrapper flag is read live on every tool call, while this flag is
+     * fixed at registration time (from {@code McpClientManager}) and can only further restrict
+     * propagation for this specific tool.
      *
-     * @param name the tool name
-     * @param description the tool description
-     * @param parameters the JSON schema for tool parameters
-     * @param clientWrapper the MCP client wrapper
+     * <p>Note the two switches have different memory: an explicit {@code true} recorded here at
+     * registration time is remembered, so a tool can start propagating again once the operator
+     * re-enables a connection that was built with {@code propagateMeta(false)} — whereas the
+     * connection-level switch is always the live ceiling and cannot be overruled while it is
+     * {@code false}.
      */
+    private volatile boolean propagateMeta = true;
+
+    /** Preferred constructor used by {@link io.agentscope.core.tool.McpClientManager}. */
+    public McpTool(
+            String name,
+            String description,
+            Map<String, Object> parameters,
+            Map<String, Object> outputSchema,
+            McpClientWrapper clientWrapper,
+            Map<String, Object> presetArguments,
+            String mcpName,
+            boolean readOnly) {
+        this(
+                name,
+                name,
+                description,
+                parameters,
+                outputSchema,
+                clientWrapper,
+                presetArguments,
+                mcpName,
+                readOnly);
+    }
+
+    /** Registers a namespaced model-facing name while calling the original MCP tool name. */
+    public McpTool(
+            String name,
+            String remoteToolName,
+            String description,
+            Map<String, Object> parameters,
+            Map<String, Object> outputSchema,
+            McpClientWrapper clientWrapper,
+            Map<String, Object> presetArguments,
+            String mcpName,
+            boolean readOnly) {
+        this(
+                name,
+                remoteToolName,
+                description,
+                parameters,
+                outputSchema,
+                clientWrapper,
+                presetArguments,
+                mcpName,
+                readOnly,
+                null);
+    }
+
+    /**
+     * As {@link #McpTool(String, String, String, Map, Map, McpClientWrapper, Map, String, boolean)}
+     * additionally carrying the MCP server's human-readable display title, surfaced through
+     * {@link #getTitle()}.
+     *
+     * @param title display name for end users, or {@code null} when the server provides none; the
+     *     value is sanitised for display, so a server cannot inject line breaks or bidi overrides
+     *     into a permission prompt
+     */
+    public McpTool(
+            String name,
+            String remoteToolName,
+            String description,
+            Map<String, Object> parameters,
+            Map<String, Object> outputSchema,
+            McpClientWrapper clientWrapper,
+            Map<String, Object> presetArguments,
+            String mcpName,
+            boolean readOnly,
+            String title) {
+        super(
+                ToolBase.builder()
+                        .name(Objects.requireNonNull(name, "name cannot be null"))
+                        .description(description != null ? description : "")
+                        .title(sanitizeDisplayTitle(title))
+                        .inputSchema(parameters != null ? parameters : new HashMap<>())
+                        .readOnly(readOnly)
+                        .concurrencySafe(false)
+                        .mcp(Objects.requireNonNull(mcpName, "mcpName cannot be null")));
+        this.remoteToolName = Objects.requireNonNull(remoteToolName);
+        this.outputSchema = outputSchema != null ? new HashMap<>(outputSchema) : null;
+        this.clientWrapper = Objects.requireNonNull(clientWrapper, "clientWrapper cannot be null");
+        this.presetArguments = presetArguments != null ? new HashMap<>(presetArguments) : null;
+    }
+
+    /**
+     * @deprecated Use {@link #McpTool(String, String, Map, Map, McpClientWrapper, Map, String,
+     *     boolean)} so the MCP server name and read-only hint are propagated. Kept for source
+     *     compatibility with callers that pre-date the {@link ToolBase} integration.
+     */
+    @Deprecated(since = "2.0.0")
     public McpTool(
             String name,
             String description,
             Map<String, Object> parameters,
             McpClientWrapper clientWrapper) {
-        this(name, description, parameters, null, clientWrapper, null);
+        this(
+                name,
+                description,
+                parameters,
+                null,
+                clientWrapper,
+                null,
+                clientWrapper.getName(),
+                false);
     }
 
     /**
-     * Constructs a new McpTool with preset arguments.
-     *
-     * @param name the tool name
-     * @param description the tool description
-     * @param parameters the JSON schema for tool parameters
-     * @param clientWrapper the MCP client wrapper
-     * @param presetArguments preset arguments to merge with each call (can be null)
+     * @deprecated Use {@link #McpTool(String, String, Map, Map, McpClientWrapper, Map, String,
+     *     boolean)} so the MCP server name and read-only hint are propagated.
      */
+    @Deprecated(since = "2.0.0")
     public McpTool(
             String name,
             String description,
             Map<String, Object> parameters,
             McpClientWrapper clientWrapper,
             Map<String, Object> presetArguments) {
-        this(name, description, parameters, null, clientWrapper, presetArguments);
+        this(
+                name,
+                description,
+                parameters,
+                null,
+                clientWrapper,
+                presetArguments,
+                clientWrapper.getName(),
+                false);
     }
 
     /**
-     * Constructs a new McpTool with an optional output schema and preset arguments.
-     *
-     * @param name the tool name
-     * @param description the tool description
-     * @param parameters the JSON schema for tool parameters
-     * @param outputSchema the JSON schema for tool outputs (can be null)
-     * @param clientWrapper the MCP client wrapper
-     * @param presetArguments preset arguments to merge with each call (can be null)
+     * @deprecated Use {@link #McpTool(String, String, Map, Map, McpClientWrapper, Map, String,
+     *     boolean)} so the MCP server name and read-only hint are propagated.
      */
+    @Deprecated(since = "2.0.0")
     public McpTool(
             String name,
             String description,
@@ -116,47 +221,35 @@ public class McpTool implements AgentTool {
             Map<String, Object> outputSchema,
             McpClientWrapper clientWrapper,
             Map<String, Object> presetArguments) {
-        this.name = name;
-        this.description = description;
-        this.parameters = parameters;
-        this.outputSchema = outputSchema != null ? new HashMap<>(outputSchema) : null;
-        this.clientWrapper = clientWrapper;
-        this.presetArguments = presetArguments != null ? new HashMap<>(presetArguments) : null;
-    }
-
-    /**
-     * Returns the name of this MCP tool.
-     *
-     * @return the tool name
-     */
-    @Override
-    public String getName() {
-        return name;
-    }
-
-    /**
-     * Returns the description of this MCP tool.
-     *
-     * @return the tool description
-     */
-    @Override
-    public String getDescription() {
-        return description;
-    }
-
-    /**
-     * Returns the JSON schema parameters for this MCP tool.
-     *
-     * @return the parameters schema map
-     */
-    @Override
-    public Map<String, Object> getParameters() {
-        return parameters;
+        this(
+                name,
+                description,
+                parameters,
+                outputSchema,
+                clientWrapper,
+                presetArguments,
+                clientWrapper.getName(),
+                false);
     }
 
     @Override
     public Map<String, Object> getOutputSchema() {
         return outputSchema != null ? new HashMap<>(outputSchema) : null;
+    }
+
+    @Override
+    public Mono<PermissionDecision> checkPermissions(
+            Map<String, Object> toolInput, PermissionContextState context) {
+        if (isReadOnly()) {
+            return Mono.just(
+                    PermissionDecision.allow(
+                            "Read-only MCP tool '" + getName() + "' allowed without prompt"));
+        }
+        return Mono.just(
+                PermissionDecision.ask(
+                        "MCP tool '"
+                                + getName()
+                                + "' requires explicit authorization before each call"));
     }
 
     /**
@@ -166,29 +259,71 @@ public class McpTool implements AgentTool {
      * calls the remote MCP tool via the client wrapper, and converts the result to a
      * {@link ToolResultBlock}. If an error occurs, it returns an error result instead of failing.
      *
+     * <p>Request metadata (user {@link McpMeta} entries plus the framework tool-call id) is
+     * propagated to the MCP server only when both {@link #isPropagateMeta()} and the
+     * connection-level {@link McpClientWrapper#isPropagateMeta()} are {@code true} (logical AND);
+     * otherwise the {@code meta} field is omitted from the request entirely.
+     *
      * @param param The tool call parameters containing toolUseBlock, input, and agent
      * @return a Mono that emits the tool result when the MCP call completes
      */
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-        logger.debug("Calling MCP tool '{}' with input: {}", name, param.getInput());
+        logger.debug("Calling MCP tool '{}' with input: {}", getName(), param.getInput());
 
         // Merge preset arguments with input arguments
         Map<String, Object> mergedArgs = mergeArguments(param.getInput());
 
+        // Propagate request metadata only when both switches allow it; null omits the MCP
+        // `_meta` field entirely so no metadata (user McpMeta entries nor the tool-call id)
+        // leaves the process. The wrapper switch is read live so disabling a connection takes
+        // effect immediately, even for tools registered earlier.
+        boolean propagate = propagateMeta && clientWrapper.isPropagateMeta();
+        Map<String, Object> metaMap = propagate ? buildMetaMap(param) : null;
+
         return clientWrapper
-                .callTool(name, mergedArgs)
+                .callTool(remoteToolName, mergedArgs, metaMap)
                 .map(McpContentConverter::convertCallToolResult)
-                .doOnSuccess(result -> logger.debug("MCP tool '{}' completed successfully", name))
+                .doOnSuccess(
+                        result -> logger.debug("MCP tool '{}' completed successfully", getName()))
                 .onErrorResume(
                         e -> {
-                            logger.error("Error calling MCP tool '{}': {}", name, e.getMessage());
+                            logger.error(
+                                    "Error calling MCP tool '{}': {}", getName(), e.getMessage());
                             String errorMsg =
                                     e.getMessage() != null
                                             ? e.getMessage()
                                             : e.getClass().getSimpleName();
                             return Mono.just(ToolResultBlock.error("MCP tool error: " + errorMsg));
                         });
+    }
+
+    /**
+     * Checks whether this tool allows request metadata propagation.
+     *
+     * <p>This is a per-tool restriction only: the actual decision also ANDs the connection-level
+     * {@link McpClientWrapper#isPropagateMeta()}, which is read live on every tool call.
+     *
+     * @return true if this tool permits user {@link McpMeta} entries and the tool-call id to be
+     *     included in tool call requests, false otherwise
+     */
+    public boolean isPropagateMeta() {
+        return propagateMeta;
+    }
+
+    /**
+     * Configures whether this tool allows request metadata propagation.
+     *
+     * <p>The initial value is fixed at registration time (registration-level override, or {@code
+     * true} by default). Setting this to {@code false} permanently restricts this tool; setting it
+     * back to {@code true} only re-enables propagation if the connection-level switch on
+     * {@link McpClientWrapper} also allows it.
+     *
+     * @param propagateMeta true to allow metadata propagation for this tool (default), false to
+     *     omit the {@code meta} field entirely from this tool's requests
+     */
+    public void setPropagateMeta(boolean propagateMeta) {
+        this.propagateMeta = propagateMeta;
     }
 
     /**
@@ -213,10 +348,14 @@ public class McpTool implements AgentTool {
      * Merges input arguments with preset arguments.
      * Input arguments take precedence over preset arguments.
      *
+     * <p>Package-private for direct unit testing of the defensive {@code null} branches that
+     * {@link ToolCallParam#getInput()} cannot reach in production.
+     *
      * @param input the input arguments
      * @return merged arguments
      */
-    private Map<String, Object> mergeArguments(Map<String, Object> input) {
+    // Visible for testing; not an extension point for subclasses (see javadoc above).
+    Map<String, Object> mergeArguments(Map<String, Object> input) {
         if (presetArguments == null || presetArguments.isEmpty()) {
             return input != null ? input : new HashMap<>();
         }
@@ -229,29 +368,141 @@ public class McpTool implements AgentTool {
     }
 
     /**
-     * Converts MCP JsonSchema to AgentScope parameters format.
+     * Builds the request metadata for a tool call.
      *
-     * @param inputSchema the MCP JsonSchema
+     * <p>Extracts MCP meta from the runtime context by the {@link McpMeta} type namespace and
+     * attaches the framework tool-call id. Transport metadata is not model input and must not
+     * alter the tool schema.
+     *
+     * @param param the tool call parameters
+     * @return the request metadata map, possibly empty but never null
+     */
+    private Map<String, Object> buildMetaMap(ToolCallParam param) {
+        Map<String, Object> meta = new HashMap<>(extractMcpMeta(param));
+        if (param.getToolUseBlock() != null && param.getToolUseBlock().getId() != null) {
+            meta.put("io.agentscope/toolCallId", param.getToolUseBlock().getId());
+        }
+        return meta;
+    }
+
+    /**
+     * Extracts MCP meta from the given tool call parameters.
+     *
+     * @param param the tool call parameters
+     * @return the extracted MCP meta
+     */
+    private Map<String, Object> extractMcpMeta(ToolCallParam param) {
+        if (param == null || param.getRuntimeContext() == null) {
+            return Collections.emptyMap();
+        }
+        McpMeta mcpMeta = param.getRuntimeContext().get(McpMeta.class);
+        if (mcpMeta == null || mcpMeta.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return mcpMeta.entries();
+    }
+
+    /**
+     * Resolve the human-readable display title an MCP server provides for a tool.
+     *
+     * <p>The MCP spec keeps {@code Tool.title} for display purposes and allows the same value under
+     * {@code ToolAnnotations.title}; both are optional and neither is the model-facing
+     * {@code description}. Registration uses this so a caller rendering a permission confirmation
+     * can label the operation for an end user instead of showing the programmatic name.
+     *
+     * <p>Both candidates pass through {@link #sanitizeDisplayTitle(String)}: the winner is whatever
+     * the MCP server typed, and it is shown to a human who is about to approve an action.
+     *
+     * @param tool the MCP tool definition, may be {@code null}
+     * @return the first non-blank sanitised title, or {@code null} when the server provides none
+     */
+    public static String resolveDisplayTitle(McpSchema.Tool tool) {
+        if (tool == null) {
+            return null;
+        }
+        String title = sanitizeDisplayTitle(tool.title());
+        if (title != null) {
+            return title;
+        }
+        return sanitizeDisplayTitle(tool.annotations() != null ? tool.annotations().title() : null);
+    }
+
+    /**
+     * Normalise a server-supplied label before it reaches a human.
+     *
+     * <p>Two classes of character are removed rather than escaped, because a prompt cannot escape
+     * its way out of them: zero-width and directional-format characters ({@code Cf}, e.g. U+202E
+     * RIGHT-TO-LEFT OVERRIDE) reorder the rest of the line the reader sees, and C0/C1 controls and
+     * whitespace let the label inject extra lines into a confirmation dialog. Whitespace runs
+     * collapse to one space so the label stays on a single line, and the result is capped at {@link
+     * #MAX_DISPLAY_TITLE_LENGTH} code points (an emoji counts as one), which makes cutting a
+     * surrogate pair in half impossible.
+     *
+     * @param title the raw server value, may be {@code null}
+     * @return the displayable form, or {@code null} when nothing printable survives (so callers fall
+     *     back to {@link #getName()} instead of showing an empty label)
+     */
+    private static String sanitizeDisplayTitle(String title) {
+        if (title == null) {
+            return null;
+        }
+        String cleaned =
+                title.replaceAll("\\p{Cf}", "")
+                        .replaceAll("[\\p{Cc}\\p{Zs}\\p{Zl}\\p{Zp}]+", " ")
+                        .strip();
+        if (cleaned.isEmpty()) {
+            return null;
+        }
+        if (cleaned.codePointCount(0, cleaned.length()) <= MAX_DISPLAY_TITLE_LENGTH) {
+            return cleaned;
+        }
+        logger.debug(
+                "MCP display title exceeds {} code points and was truncated for display",
+                MAX_DISPLAY_TITLE_LENGTH);
+        return cleaned.substring(0, cleaned.offsetByCodePoints(0, CONTENT_LENGTH_BEFORE_ELLIPSIS))
+                + ELLIPSIS;
+    }
+
+    /**
+     * Converts an MCP tool inputSchema map to AgentScope parameters format.
+     * MCP SDK 2.0 represents inputSchema as a raw JSON Schema map, so this method
+     * preserves all schema keywords while normalizing the object keywords used for
+     * preset-parameter filtering.
+     *
+     * @param inputSchema the raw input schema map (JSON Schema)
      * @return parameters map in AgentScope format
      */
     public static Map<String, Object> convertMcpSchemaToParameters(
-            McpSchema.JsonSchema inputSchema, Set<String> excludeParams) {
+            Map<String, Object> inputSchema, Set<String> excludeParams) {
         Map<String, Object> parameters = new HashMap<>();
 
-        if (inputSchema == null) {
+        if (inputSchema == null || inputSchema.isEmpty()) {
             parameters.put("type", "object");
             parameters.put("properties", new HashMap<>());
             parameters.put("required", new ArrayList<>());
             return parameters;
         }
+
+        parameters.putAll(inputSchema);
+
+        Object typeNode = parameters.get("type");
+        Object propertiesNode = parameters.get("properties");
+        Object requiredNode = parameters.get("required");
+
+        @SuppressWarnings("unchecked")
         Map<String, Object> properties =
-                inputSchema.properties() != null
-                        ? new HashMap<>(inputSchema.properties())
+                propertiesNode instanceof Map
+                        ? new HashMap<>((Map<String, Object>) propertiesNode)
                         : new HashMap<>();
-        List<String> required =
-                inputSchema.required() != null
-                        ? new ArrayList<>(inputSchema.required())
-                        : new ArrayList<>();
+
+        List<String> required = new ArrayList<>();
+        if (requiredNode instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof String s) {
+                    required.add(s);
+                }
+            }
+        }
 
         // Exclude preset parameters from the schema
         if (excludeParams != null) {
@@ -259,22 +510,9 @@ public class McpTool implements AgentTool {
             properties.keySet().removeAll(excludeParams);
         }
 
-        parameters.put("type", inputSchema.type() != null ? inputSchema.type() : "object");
+        parameters.put("type", typeNode instanceof String s && !s.isBlank() ? s : "object");
         parameters.put("properties", properties);
         parameters.put("required", required);
-
-        if (inputSchema.additionalProperties() != null) {
-            parameters.put("additionalProperties", inputSchema.additionalProperties());
-        }
-
-        // Preserve $defs and definitions for $ref resolution
-        if (inputSchema.defs() != null && !inputSchema.defs().isEmpty()) {
-            parameters.put("$defs", new HashMap<>(inputSchema.defs()));
-        }
-
-        if (inputSchema.definitions() != null && !inputSchema.definitions().isEmpty()) {
-            parameters.put("definitions", new HashMap<>(inputSchema.definitions()));
-        }
 
         return parameters;
     }

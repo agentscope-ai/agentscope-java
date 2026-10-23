@@ -16,8 +16,10 @@
 
 package io.agentscope.core.nacos.skill;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,10 +31,14 @@ import static org.mockito.Mockito.when;
 import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.exception.NacosException;
 import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.tool.Toolkit;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
 import java.util.zip.ZipEntry;
@@ -41,6 +47,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -147,7 +154,7 @@ class NacosSkillRepositoryTest {
         assertEquals("test-skill", result.getName());
         assertEquals("A test skill", result.getDescription());
         assertEquals("Do something", result.getSkillContent());
-        assertEquals("nacos:public", result.getSource());
+        assertEquals("nacos@public", result.getSource());
     }
 
     @Test
@@ -374,16 +381,52 @@ class NacosSkillRepositoryTest {
     @Test
     @DisplayName("Should return correct source")
     void testGetSource() {
-        assertEquals("nacos:public", repository.getSource());
+        assertEquals("nacos@public", repository.getSource());
+    }
+
+    @Test
+    @DisplayName("Should encode namespace characters without delimiter ambiguity")
+    void testSourceEncodesNamespaceCharacters() {
+        NacosSkillRepository hyphenRepo = new NacosSkillRepository(aiService, "team-a");
+        NacosSkillRepository underscoreRepo = new NacosSkillRepository(aiService, "team_a");
+
+        assertEquals("nacos@team-a", hyphenRepo.getSource());
+        assertEquals("nacos@team_a", underscoreRepo.getSource());
+        assertNotEquals(hyphenRepo.getSource(), underscoreRepo.getSource());
     }
 
     @Test
     @DisplayName("Should use default namespace when namespaceId is blank")
     void testDefaultNamespace() {
         try (NacosSkillRepository repo = new NacosSkillRepository(aiService, null)) {
-            assertEquals("nacos:public", repo.getSource());
+            assertEquals("nacos@public", repo.getSource());
             assertEquals("namespace:public", repo.getRepositoryInfo().getLocation());
         }
+    }
+
+    @Test
+    @DisplayName("Should upload skill resources using a Windows-safe skill ID")
+    void testUploadSkillResourcesWithWindowsSafeSkillId(@TempDir Path tempDir)
+            throws NacosException, IOException {
+        when(aiService.downloadSkillZip("resource-skill"))
+                .thenReturn(
+                        createSkillZip(
+                                "resource-skill",
+                                "Resource skill",
+                                "Use the script",
+                                "scripts/run.sh",
+                                "echo hello"));
+        AgentSkill skill = repository.getSkill("resource-skill");
+        SkillBox skillBox = new SkillBox(new Toolkit());
+        skillBox.setWorkDir(tempDir);
+        skillBox.registerSkill(skill);
+
+        assertDoesNotThrow(skillBox::uploadSkillFiles);
+
+        Path uploadedResource =
+                tempDir.resolve("skills").resolve(skill.getSkillId()).resolve("scripts/run.sh");
+        assertTrue(Files.isRegularFile(uploadedResource));
+        assertEquals("echo hello", Files.readString(uploadedResource));
     }
 
     @Test
@@ -416,6 +459,59 @@ class NacosSkillRepositoryTest {
     @DisplayName("Should return false for delete")
     void testDelete() {
         assertFalse(repository.delete("any-skill"));
+    }
+
+    @Test
+    @DisplayName("null knownSkillNames is treated the same as empty list")
+    void testNullKnownSkillNamesTreatedAsEmpty() {
+        NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", null, null);
+
+        assertTrue(repo.getAllSkillNames().isEmpty());
+        assertTrue(repo.getAllSkills().isEmpty());
+    }
+
+    @Test
+    @DisplayName("getAllSkillNames returns knownSkillNames when configured")
+    void testGetAllSkillNamesWithKnownNames() {
+        NacosSkillRepository repo =
+                new NacosSkillRepository(aiService, "public", null, List.of("skill-a", "skill-b"));
+
+        List<String> names = repo.getAllSkillNames();
+
+        assertEquals(List.of("skill-a", "skill-b"), names);
+    }
+
+    @Test
+    @DisplayName("getAllSkills fetches each knownSkillName and returns loaded skills")
+    void testGetAllSkillsWithKnownNames() throws Exception {
+        NacosSkillRepository repo =
+                new NacosSkillRepository(aiService, "public", null, List.of("skill-a", "skill-b"));
+        when(aiService.downloadSkillZip("skill-a"))
+                .thenReturn(createSkillZip("skill-a", "Desc A", "Content A", null, (String) null));
+        when(aiService.downloadSkillZip("skill-b"))
+                .thenReturn(createSkillZip("skill-b", "Desc B", "Content B", null, (String) null));
+
+        List<AgentSkill> skills = repo.getAllSkills();
+
+        assertEquals(2, skills.size());
+        assertEquals("skill-a", skills.get(0).getName());
+        assertEquals("skill-b", skills.get(1).getName());
+    }
+
+    @Test
+    @DisplayName("getAllSkills skips skills that fail to load and returns the rest")
+    void testGetAllSkillsSkipsFailedSkill() throws Exception {
+        NacosSkillRepository repo =
+                new NacosSkillRepository(aiService, "public", null, List.of("good", "bad"));
+        when(aiService.downloadSkillZip("good"))
+                .thenReturn(createSkillZip("good", "Desc", "Content", null, (String) null));
+        when(aiService.downloadSkillZip("bad"))
+                .thenThrow(new NacosException(NacosException.NOT_FOUND, "not found"));
+
+        List<AgentSkill> skills = repo.getAllSkills();
+
+        assertEquals(1, skills.size());
+        assertEquals("good", skills.get(0).getName());
     }
 
     private static byte[] createSkillZip(

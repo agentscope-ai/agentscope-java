@@ -20,7 +20,12 @@ package io.agentscope.core.agent;
  *
  * <p>Each event type represents a specific stage in the agent's reasoning-acting loop.
  * Events provide a clear separation of concerns for monitoring agent behavior.
+ *
+ * @deprecated since 2.0.0. The v1 coarse-grained event discriminator. New code should use
+ *     {@code io.agentscope.core.event.AgentEventType} (and the typed {@code AgentEvent}
+ *     subclasses) exposed by {@code ReActAgent#streamEvents(...)}.
  */
+@Deprecated(since = "2.0.0")
 public enum EventType {
     /**
      * Reasoning event - Agent thinking and planning.

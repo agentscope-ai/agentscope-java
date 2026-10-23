@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.memory;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -23,11 +24,10 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.util.JsonUtils;
-import io.agentscope.harness.agent.memory.session.SessionEntry;
-import io.agentscope.harness.agent.memory.session.SessionTree;
+import io.agentscope.harness.agent.context.ContextModelCalls;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -54,7 +54,12 @@ public class MemoryFlushManager {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFlushManager.class);
 
-    private static final String FLUSH_SYSTEM_PROMPT =
+    /**
+     * Default prompt for the memory extraction step. Exposed publicly so callers can extend
+     * (e.g. append project-specific guidelines) when constructing
+     * {@link io.agentscope.harness.agent.memory.MemoryConfig}.
+     */
+    public static final String DEFAULT_FLUSH_PROMPT =
             """
             You are a memory extraction assistant. Analyze the conversation below and extract \
             important facts, decisions, preferences, and contextual information that should be \
@@ -85,10 +90,20 @@ public class MemoryFlushManager {
 
     private final WorkspaceManager workspaceManager;
     private final Model model;
+    private final String flushPrompt;
 
     public MemoryFlushManager(WorkspaceManager workspaceManager, Model model) {
+        this(workspaceManager, model, DEFAULT_FLUSH_PROMPT);
+    }
+
+    /**
+     * @param flushPrompt SYSTEM prompt for the extraction LLM call. {@code null} falls back to
+     *     {@link #DEFAULT_FLUSH_PROMPT}.
+     */
+    public MemoryFlushManager(WorkspaceManager workspaceManager, Model model, String flushPrompt) {
         this.workspaceManager = workspaceManager;
         this.model = model;
+        this.flushPrompt = flushPrompt != null ? flushPrompt : DEFAULT_FLUSH_PROMPT;
     }
 
     /**
@@ -97,16 +112,16 @@ public class MemoryFlushManager {
      * <p>Provides existing MEMORY.md and today's daily file content to the extraction LLM
      * so it can effectively deduplicate and avoid re-extracting known facts.
      */
-    public Mono<Void> flushMemories(List<Msg> messages) {
+    public Mono<Void> flushMemories(RuntimeContext rc, List<Msg> messages) {
         String conversationText = serializeMessages(messages);
         if (conversationText.isBlank()) {
             return Mono.empty();
         }
 
-        String existingMemory = readExistingContent(WorkspaceConstants.MEMORY_MD);
+        String existingMemory = readExistingContent(rc, WorkspaceConstants.MEMORY_MD);
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
-        String existingDaily = readExistingContent(dailyRelPath);
+        String existingDaily = readExistingContent(rc, dailyRelPath);
 
         StringBuilder userPrompt = new StringBuilder();
         if (!existingMemory.isBlank()) {
@@ -131,7 +146,7 @@ public class MemoryFlushManager {
         flushInput.add(
                 Msg.builder()
                         .role(MsgRole.SYSTEM)
-                        .content(TextBlock.builder().text(FLUSH_SYSTEM_PROMPT).build())
+                        .content(TextBlock.builder().text(flushPrompt).build())
                         .build());
         flushInput.add(
                 Msg.builder()
@@ -139,7 +154,7 @@ public class MemoryFlushManager {
                         .content(TextBlock.builder().text(userPrompt.toString()).build())
                         .build());
 
-        return model.stream(flushInput, null, null)
+        return ContextModelCalls.auxiliary(model, flushInput)
                 .reduce(
                         new StringBuilder(),
                         (sb, chatResponse) -> {
@@ -163,95 +178,9 @@ public class MemoryFlushManager {
                                 log.debug("No memories to flush");
                                 return Mono.empty();
                             }
-                            writeMemoryFiles(extracted);
+                            writeMemoryFiles(rc, extracted);
                             return Mono.empty();
                         });
-    }
-
-    /**
-     * Returns the string path of the session JSONL file where messages for the given agent and
-     * session are offloaded. Used by the compaction layer to embed the archive location in the
-     * summary message so the agent can retrieve full history if needed.
-     */
-    public String resolveOffloadPath(String agentId, String sessionId) {
-        try {
-            Path p = workspaceManager.resolveSessionContextFile(agentId, sessionId);
-            return p != null ? p.toString() : "";
-        } catch (Exception e) {
-            log.debug(
-                    "Could not resolve offload path for agent={}, session={}: {}",
-                    agentId,
-                    sessionId,
-                    e.getMessage());
-            return "";
-        }
-    }
-
-    /**
-     * Offloads raw messages to the JSONL session tree.
-     */
-    public void offloadMessages(List<Msg> messages, String agentId, String sessionId) {
-        offloadToSessionTree(messages, agentId, sessionId);
-
-        log.debug(
-                "Offloaded {} messages for agent={}, session={}",
-                messages.size(),
-                agentId,
-                sessionId);
-        workspaceManager.updateSessionIndex(agentId, sessionId, "conversation offloaded");
-    }
-
-    private void offloadToSessionTree(List<Msg> messages, String agentId, String sessionId) {
-        try {
-            Path contextFile = workspaceManager.resolveSessionContextFile(agentId, sessionId);
-            SessionTree tree =
-                    new SessionTree(
-                            contextFile,
-                            workspaceManager.getWorkspace(),
-                            workspaceManager.getFilesystem());
-            tree.load();
-            // Sync from remote before appending so that entries written by a previous replica
-            // (cross-machine handoff) are included in the merged file pushed to remote.
-            tree.syncFromRemote();
-
-            String lastId = null;
-            for (Msg msg : messages) {
-                if (msg.getRole() == null || isSessionContextMessage(msg)) {
-                    continue;
-                }
-                String rendered = renderContentBlocks(msg);
-                if (rendered == null || rendered.isBlank()) {
-                    continue;
-                }
-                String toolCallId = extractToolCallId(msg);
-                SessionEntry.MessageEntry entry =
-                        new SessionEntry.MessageEntry(
-                                null, lastId, null, msg.getRole().name(), rendered, toolCallId);
-                tree.append(entry);
-                lastId = entry.getId();
-            }
-
-            tree.flush();
-        } catch (Exception e) {
-            log.warn("Failed to offload to JSONL session tree: {}", e.getMessage());
-        }
-    }
-
-    /**
-     * Extracts a representative tool call ID from a message, if present.
-     * For TOOL messages, returns the first ToolResultBlock's id.
-     * For ASSISTANT messages with tool calls, returns the first ToolUseBlock's id.
-     */
-    private static String extractToolCallId(Msg msg) {
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof ToolResultBlock tr && tr.getId() != null) {
-                return tr.getId();
-            }
-            if (block instanceof ToolUseBlock tu && tu.getId() != null) {
-                return tu.getId();
-            }
-        }
-        return null;
     }
 
     /**
@@ -261,7 +190,7 @@ public class MemoryFlushManager {
      * {@link MemoryConsolidator}, which periodically merges the daily ledgers into a
      * curated, size-bounded MEMORY.md.
      */
-    private void writeMemoryFiles(String content) {
+    private void writeMemoryFiles(RuntimeContext rc, String content) {
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
 
         String dailyEntry =
@@ -270,12 +199,12 @@ public class MemoryFlushManager {
                         java.time.Instant.now().toString(), content);
 
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
-        workspaceManager.appendUtf8WorkspaceRelative(dailyRelPath, dailyEntry);
+        workspaceManager.appendUtf8WorkspaceRelative(rc, dailyRelPath, dailyEntry);
     }
 
-    private String readExistingContent(String relativePath) {
+    private String readExistingContent(RuntimeContext rc, String relativePath) {
         try {
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(relativePath);
+            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
             return content != null ? content : "";
         } catch (Exception e) {
             log.debug("Could not read {}: {}", relativePath, e.getMessage());
@@ -289,16 +218,24 @@ public class MemoryFlushManager {
      * Serializes all messages into a textual representation for the memory extraction model.
      * Includes USER, ASSISTANT, and TOOL messages. Assistant tool-call blocks and tool-result
      * blocks are rendered as concise text so the model can extract memories from tool interactions.
-     * The injected {@code <session_context>} user message is skipped as it contains only
-     * environment metadata, not real conversation content.
+     * Internal context messages are skipped because they are generated from existing context,
+     * not new user/assistant/tool facts.
      */
     private String serializeMessages(List<Msg> messages) {
         return messages.stream()
                 .filter(m -> m.getRole() != null && m.getRole() != MsgRole.SYSTEM)
-                .filter(m -> !isSessionContextMessage(m))
+                .filter(m -> !isInternalContextMessage(m))
                 .map(this::renderMessage)
                 .filter(s -> s != null && !s.isBlank())
                 .collect(Collectors.joining("\n"));
+    }
+
+    private static boolean isInternalContextMessage(Msg msg) {
+        return isSessionContextMessage(msg) || isCompactionSummaryMessage(msg);
+    }
+
+    private static boolean isCompactionSummaryMessage(Msg msg) {
+        return msg != null && ConversationCompactor.SUMMARY_MSG_NAME.equals(msg.getName());
     }
 
     private static boolean isSessionContextMessage(Msg msg) {

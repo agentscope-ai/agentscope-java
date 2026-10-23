@@ -28,12 +28,15 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
-import io.agentscope.harness.agent.store.BaseStore;
-import io.agentscope.harness.agent.store.NamespaceFactory;
-import io.agentscope.harness.agent.store.StoreItem;
+import io.agentscope.harness.agent.workspace.WorkspaceIndex;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
+import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -62,6 +65,13 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     private final BaseStore store;
     private final NamespaceFactory namespaceFactory;
+
+    /**
+     * Optional best-effort local index. When non-null, {@code ls}, {@code glob}, {@code exists}
+     * and {@code grep} consult the index first and fall back to the remote store only when the
+     * index has no matching entries.
+     */
+    private WorkspaceIndex index;
 
     /**
      * Creates a RemoteFilesystem with a {@link NamespaceFactory} that is called on every operation,
@@ -100,16 +110,117 @@ public class RemoteFilesystem implements AbstractFilesystem {
         this(store, List.of("filesystem"));
     }
 
+    /**
+     * Attaches a best-effort {@link WorkspaceIndex} to accelerate list/glob/exists/grep
+     * operations. The index may be {@code null} (disabled) or become stale.
+     *
+     * <p>Fallback semantics differ per operation:
+     *
+     * <ul>
+     *   <li>{@code ls}, {@code glob}, {@code exists} — when the index has no matching prefix
+     *       the operation falls back to a full remote-store scan, so results remain correct
+     *       even if this node's index is stale.
+     *   <li>{@code grep} — when the index is non-{@code null} the operation first enumerates
+     *       candidates from the index. If the index path yields zero matches, the operation
+     *       falls back to a full remote-store scan so that sibling-node writes not yet seen by
+     *       this node's index are not silently missed. Content for each candidate is always
+     *       fetched authoritatively from the remote store.
+     * </ul>
+     *
+     * @param index workspace index; {@code null} disables index-backed fast paths
+     * @return this instance (fluent)
+     */
+    public RemoteFilesystem withIndex(WorkspaceIndex index) {
+        this.index = index;
+        return this;
+    }
+
     private static NamespaceFactory toFactory(List<String> namespace) {
         if (namespace == null || namespace.isEmpty()) {
             throw new IllegalArgumentException("namespace must not be empty");
         }
         List<String> frozen = List.copyOf(namespace);
-        return () -> frozen;
+        return rc -> frozen;
     }
 
-    private List<String> getNamespace() {
-        List<String> ns = namespaceFactory.getNamespace();
+    @Override
+    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
+        return new io.agentscope.harness.agent.session.StoreSessionStorage(store, getNamespace(rc));
+    }
+
+    /** Whether this backend supports compare-and-swap file updates across nodes. */
+    public boolean supportsAtomicUpdates() {
+        return store.supportsAtomicSessionStorage();
+    }
+
+    /**
+     * Registers routing metadata for host-side task maintenance. The registry is a separate
+     * store namespace, never a file visible to agent filesystem tools. Each resolved scope has
+     * its own key so concurrent registrations do not overwrite a shared list.
+     */
+    public void registerTaskScope(RuntimeContext rc, String agentId) {
+        List<String> namespace = getNamespace(rc);
+        if (namespace.equals(getNamespace(RuntimeContext.empty()))) {
+            return;
+        }
+        String key = scopeKey(namespace);
+        store.put(
+                taskScopeNamespace(agentId),
+                key,
+                Map.of(
+                        "namespace",
+                        List.copyOf(namespace),
+                        "userId",
+                        rc.getUserId() == null ? "" : rc.getUserId(),
+                        "sessionId",
+                        rc.getSessionId() == null ? "" : rc.getSessionId()));
+    }
+
+    /**
+     * Returns registered contexts for trusted task maintenance, including the default context.
+     * This does not change the namespace used by ordinary filesystem operations.
+     */
+    public List<RuntimeContext> taskMaintenanceContexts(String agentId) {
+        List<RuntimeContext> contexts = new ArrayList<>();
+        contexts.add(RuntimeContext.empty());
+        final int pageSize = 64;
+        for (int offset = 0; ; offset += pageSize) {
+            List<StoreItem> page = store.search(taskScopeNamespace(agentId), pageSize, offset);
+            for (StoreItem item : page) {
+                Map<String, Object> value = item.value();
+                RuntimeContext rc =
+                        RuntimeContext.builder()
+                                .userId((String) value.get("userId"))
+                                .sessionId((String) value.get("sessionId"))
+                                .build();
+                // Ignore entries from incompatible namespace factories/configurations.
+                if (getNamespace(rc).equals(value.get("namespace"))) {
+                    contexts.add(rc);
+                }
+            }
+            if (page.size() < pageSize) {
+                return contexts;
+            }
+        }
+    }
+
+    private List<String> taskScopeNamespace(String agentId) {
+        return List.of(
+                "harness", "task-scopes", scopeKey(getNamespace(RuntimeContext.empty())), agentId);
+    }
+
+    private static String scopeKey(List<String> namespace) {
+        return namespace.stream()
+                .map(
+                        segment ->
+                                Base64.getUrlEncoder()
+                                        .withoutPadding()
+                                        .encodeToString(segment.getBytes(StandardCharsets.UTF_8)))
+                .collect(java.util.stream.Collectors.joining("."));
+    }
+
+    private List<String> getNamespace(RuntimeContext rc) {
+        List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
             throw new IllegalStateException("NamespaceFactory returned null or empty namespace");
         }
@@ -118,11 +229,33 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        List<StoreItem> items = searchAllItems();
+        String normalizedPath = path.endsWith("/") ? path : path + "/";
+
+        // Fast path: index has entries for this prefix
+        if (index != null && index.hasPrefix(normalizedPath)) {
+            List<String> indexPaths = index.listByPrefix(normalizedPath);
+            List<FileInfo> infos = new ArrayList<>();
+            Set<String> subdirs = new LinkedHashSet<>();
+            for (String p : indexPaths) {
+                String relative = p.substring(normalizedPath.length());
+                if (relative.contains("/")) {
+                    String subdirName = relative.substring(0, relative.indexOf('/'));
+                    subdirs.add(normalizedPath + subdirName + "/");
+                } else {
+                    infos.add(FileInfo.ofFile(p, 0, ""));
+                }
+            }
+            for (String subdir : subdirs) {
+                infos.add(FileInfo.ofDir(subdir, ""));
+            }
+            infos.sort(Comparator.comparing(FileInfo::path));
+            return LsResult.success(infos);
+        }
+
+        // Fallback: full remote scan
+        List<StoreItem> items = searchAllItems(runtimeContext);
         List<FileInfo> infos = new ArrayList<>();
         Set<String> subdirs = new LinkedHashSet<>();
-
-        String normalizedPath = path.endsWith("/") ? path : path + "/";
 
         for (StoreItem item : items) {
             if (!item.key().startsWith(normalizedPath)) {
@@ -157,7 +290,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit) {
-        StoreItem item = store.get(getNamespace(), filePath);
+        StoreItem item = store.get(getNamespace(runtimeContext), filePath);
         if (item == null) {
             return ReadResult.fail("File '" + filePath + "' not found");
         }
@@ -203,20 +336,22 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
-        List<String> ns = getNamespace();
-        StoreItem existing = store.get(ns, filePath);
-        if (existing != null) {
+        List<String> ns = getNamespace(runtimeContext);
+        FileData fileData = FileData.create(content);
+        // CAS create-if-absent: atomic under concurrent writers across nodes.
+        boolean written = store.putIfVersion(ns, filePath, fileDataToStoreValue(fileData), 0L);
+        if (!written) {
             return WriteResult.fail(
                     "Cannot write to "
                             + filePath
                             + " because it already exists. Read and then make an edit,"
                             + " or write to a new path.");
         }
-
-        FileData fileData = FileData.create(content);
-        store.put(ns, filePath, fileDataToStoreValue(fileData));
         return WriteResult.ok(filePath);
     }
+
+    /** Maximum CAS retry attempts for {@link #edit} under concurrent writers. */
+    static final int EDIT_MAX_RETRIES = 5;
 
     @Override
     public EditResult edit(
@@ -225,37 +360,56 @@ public class RemoteFilesystem implements AbstractFilesystem {
             String oldString,
             String newString,
             boolean replaceAll) {
-        List<String> ns = getNamespace();
-        StoreItem item = store.get(ns, filePath);
-        if (item == null) {
-            return EditResult.fail("Error: File '" + filePath + "' not found");
+        EditResult invalid = FilesystemUtils.validateEditArguments(oldString, newString);
+        if (invalid != null) {
+            return invalid;
         }
 
-        FileData fileData = convertItemToFileData(item);
-        if (fileData == null) {
-            return EditResult.fail("Error: Invalid file data");
+        List<String> ns = getNamespace(runtimeContext);
+        // Bounded CAS retry loop: re-read the current version on each attempt and retry on
+        // version mismatch. After EDIT_MAX_RETRIES failed CAS attempts we surface a conflict
+        // error rather than spinning indefinitely.
+        for (int attempt = 0; attempt < EDIT_MAX_RETRIES; attempt++) {
+            StoreItem item = store.get(ns, filePath);
+            if (item == null) {
+                return EditResult.fail("Error: File '" + filePath + "' not found");
+            }
+
+            FileData fileData = convertItemToFileData(item);
+            if (fileData == null) {
+                return EditResult.fail("Error: Invalid file data");
+            }
+
+            String content = fileData.content() != null ? fileData.content() : "";
+            FilesystemUtils.ReplacementResult result =
+                    FilesystemUtils.stringReplacement(content, oldString, newString, replaceAll);
+
+            if (!result.isSuccess()) {
+                return EditResult.fail(result.error());
+            }
+
+            String newContent = result.content();
+            int occurrences = result.occurrences();
+
+            FileData updated = fileData.withContent(newContent);
+            boolean ok =
+                    store.putIfVersion(ns, filePath, fileDataToStoreValue(updated), item.version());
+            if (ok) {
+                return EditResult.ok(filePath, occurrences);
+            }
+            // Version mismatch — another writer raced us. Re-read and retry.
         }
-
-        String content = fileData.content() != null ? fileData.content() : "";
-        Object[] result =
-                FilesystemUtils.performStringReplacement(content, oldString, newString, replaceAll);
-
-        if (result.length == 1) {
-            return EditResult.fail((String) result[0]);
-        }
-
-        String newContent = (String) result[0];
-        int occurrences = (int) result[1];
-
-        FileData updated = fileData.withContent(newContent);
-        store.put(ns, filePath, fileDataToStoreValue(updated));
-        return EditResult.ok(filePath, occurrences);
+        return EditResult.fail(
+                "Edit conflict on '"
+                        + filePath
+                        + "' after "
+                        + EDIT_MAX_RETRIES
+                        + " retries. Another writer is concurrently modifying this file.");
     }
 
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
-        List<StoreItem> items = searchAllItems();
         String normalizedPath = normalizePath(path);
 
         PathMatcher globMatcher = null;
@@ -263,6 +417,52 @@ public class RemoteFilesystem implements AbstractFilesystem {
             globMatcher = FileSystems.getDefault().getPathMatcher("glob:" + glob);
         }
 
+        // Fast path: use the index to enumerate candidate paths under {@code normalizedPath},
+        // then fetch each file's content from the remote store and scan it line-by-line. The
+        // index only narrows the candidate set; content is always read authoritatively from
+        // the store (never from local disk), so stale/missing local copies cannot mask matches.
+        if (index != null) {
+            List<String> candidates =
+                    "/".equals(normalizedPath)
+                            ? index.listByPrefix("")
+                            : index.listByPrefix(normalizedPath);
+            List<GrepMatch> matches = new ArrayList<>();
+            for (String key : candidates) {
+                if (!matchesPathPrefix(key, normalizedPath)) {
+                    continue;
+                }
+                if (globMatcher != null) {
+                    String fileName =
+                            key.contains("/") ? key.substring(key.lastIndexOf('/') + 1) : key;
+                    if (!globMatcher.matches(java.nio.file.Path.of(fileName))) {
+                        continue;
+                    }
+                }
+                StoreItem item = store.get(getNamespace(runtimeContext), key);
+                if (item == null) {
+                    continue;
+                }
+                FileData fd = convertItemToFileData(item);
+                if (fd == null || fd.content() == null) {
+                    continue;
+                }
+                String[] lines = fd.content().split("\n", -1);
+                for (int i = 0; i < lines.length; i++) {
+                    if (lines[i].contains(pattern)) {
+                        matches.add(new GrepMatch(key, i + 1, lines[i]));
+                    }
+                }
+            }
+            // Index returned matches — return them. Otherwise fall through to the authoritative
+            // store scan: on a multi-node deployment, this node's index may not yet know about
+            // files written via another node, and we must not silently miss them.
+            if (!matches.isEmpty()) {
+                return GrepResult.success(matches);
+            }
+        }
+
+        // Fallback: full remote scan
+        List<StoreItem> items = searchAllItems(runtimeContext);
         List<GrepMatch> matches = new ArrayList<>();
         for (StoreItem item : items) {
             String key = item.key();
@@ -296,7 +496,6 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
-        List<StoreItem> items = searchAllItems();
         String normalizedPath = normalizePath(path);
         String effectivePattern = pattern.startsWith("/") ? pattern.substring(1) : pattern;
 
@@ -307,9 +506,45 @@ public class RemoteFilesystem implements AbstractFilesystem {
                                         + (effectivePattern.startsWith("**")
                                                 ? effectivePattern
                                                 : "**/" + effectivePattern));
+        // Java NIO requires a path separator for patterns that start with "**/", so the
+        // recursive matcher does not match files located directly in the search root. Strip the
+        // recursive prefix for a second matcher that covers those root-level files.
+        String directPattern;
+        if (effectivePattern.startsWith("**/")) {
+            directPattern = effectivePattern.substring(3);
+        } else if (effectivePattern.equals("**")) {
+            directPattern = "*";
+        } else {
+            directPattern = effectivePattern;
+        }
         PathMatcher directMatcher =
-                FileSystems.getDefault().getPathMatcher("glob:" + effectivePattern);
+                FileSystems.getDefault().getPathMatcher("glob:" + directPattern);
 
+        // Fast path: index has entries for this prefix
+        if (index != null && index.hasPrefix(normalizedPath)) {
+            List<String> candidates = index.listByPrefix(normalizedPath);
+            List<FileInfo> results = new ArrayList<>();
+            for (String key : candidates) {
+                if (!matchesPathPrefix(key, normalizedPath)) {
+                    continue;
+                }
+                String relativePath;
+                if ("/".equals(normalizedPath)) {
+                    relativePath = key.startsWith("/") ? key.substring(1) : key;
+                } else {
+                    relativePath = key.substring(normalizedPath.length() + 1);
+                }
+                if (matcher.matches(Path.of(relativePath))
+                        || directMatcher.matches(Path.of(relativePath))) {
+                    results.add(FileInfo.ofFile(key, 0, ""));
+                }
+            }
+            results.sort(Comparator.comparing(FileInfo::path));
+            return GlobResult.success(results);
+        }
+
+        // Fallback: full remote scan
+        List<StoreItem> items = searchAllItems(runtimeContext);
         List<FileInfo> results = new ArrayList<>();
         for (StoreItem item : items) {
             String key = item.key();
@@ -340,7 +575,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     @Override
     public List<FileUploadResponse> uploadFiles(
             RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
-        List<String> ns = getNamespace();
+        List<String> ns = getNamespace(runtimeContext);
         List<FileUploadResponse> responses = new ArrayList<>();
         for (Map.Entry<String, byte[]> entry : files) {
             String filePath = entry.getKey();
@@ -349,14 +584,18 @@ public class RemoteFilesystem implements AbstractFilesystem {
             String contentStr;
             String encoding;
             try {
-                contentStr = new String(content, StandardCharsets.UTF_8);
+                contentStr = FilesystemUtils.decodeUtf8Strict(content);
                 encoding = "utf-8";
-            } catch (Exception e) {
+            } catch (CharacterCodingException e) {
                 contentStr = Base64.getEncoder().encodeToString(content);
                 encoding = "base64";
             }
 
             FileData fileData = FileData.create(contentStr, encoding);
+            // Last-write-wins: uploadFiles is the snapshot-push API (session mirror, audit-log
+            // rotation, WorkspaceManager.writeUtf8WorkspaceRelative). Callers needing
+            // create-if-absent semantics should use {@link #write} instead, which preserves
+            // CAS-create-if-absent for the tool-surface write path.
             store.put(ns, filePath, fileDataToStoreValue(fileData));
             responses.add(FileUploadResponse.success(filePath));
         }
@@ -366,7 +605,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     @Override
     public List<FileDownloadResponse> downloadFiles(
             RuntimeContext runtimeContext, List<String> paths) {
-        List<String> ns = getNamespace();
+        List<String> ns = getNamespace(runtimeContext);
         List<FileDownloadResponse> responses = new ArrayList<>();
         for (String filePath : paths) {
             StoreItem item = store.get(ns, filePath);
@@ -383,7 +622,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
             byte[] contentBytes;
             if ("base64".equals(fd.encoding())) {
-                contentBytes = Base64.getDecoder().decode(fd.content());
+                contentBytes = Base64.getMimeDecoder().decode(fd.content());
             } else {
                 contentBytes = fd.content().getBytes(StandardCharsets.UTF_8);
             }
@@ -393,16 +632,50 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
+    public boolean exists(RuntimeContext runtimeContext, String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        String normalized = normalizePath(path);
+
+        // Fast path: consult index first
+        if (index != null) {
+            if (index.exists(normalized)) {
+                return true;
+            }
+            if (index.hasPrefix(normalized + "/")) {
+                return true;
+            }
+            // Index miss — fall through to remote (may not be indexed yet)
+        }
+
+        List<String> ns = getNamespace(runtimeContext);
+        if (store.get(ns, normalized) != null) {
+            return true;
+        }
+        // Also check if any child exists (directory-like)
+        List<StoreItem> items = searchAllItems(runtimeContext);
+        for (StoreItem item : items) {
+            if (item.key().startsWith(normalized + "/")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Also update index on delete/move so entries don't linger
+    @Override
     public WriteResult delete(RuntimeContext runtimeContext, String path) {
         AbstractFilesystem.validatePath(path);
-        List<String> ns = getNamespace();
-        List<StoreItem> items = searchAllItems();
+        List<String> ns = getNamespace(runtimeContext);
+        List<StoreItem> items = searchAllItems(runtimeContext);
         String normalizedPath = normalizePath(path);
-        boolean deleted = false;
         for (StoreItem item : items) {
             if (item.key().equals(normalizedPath) || item.key().startsWith(normalizedPath + "/")) {
                 store.delete(ns, item.key());
-                deleted = true;
+                if (index != null) {
+                    index.remove(item.key());
+                }
             }
         }
         // idempotent — not found is still success
@@ -413,8 +686,8 @@ public class RemoteFilesystem implements AbstractFilesystem {
     public WriteResult move(RuntimeContext runtimeContext, String fromPath, String toPath) {
         AbstractFilesystem.validatePath(fromPath);
         AbstractFilesystem.validatePath(toPath);
-        List<String> ns = getNamespace();
-        List<StoreItem> items = searchAllItems();
+        List<String> ns = getNamespace(runtimeContext);
+        List<StoreItem> items = searchAllItems(runtimeContext);
         String normFrom = normalizePath(fromPath);
         String normTo = normalizePath(toPath);
         boolean found = false;
@@ -424,6 +697,9 @@ public class RemoteFilesystem implements AbstractFilesystem {
                 String newKey = normTo + key.substring(normFrom.length());
                 store.put(ns, newKey, item.value());
                 store.delete(ns, key);
+                if (index != null) {
+                    index.rename(key, newKey);
+                }
                 found = true;
             }
         }
@@ -433,30 +709,10 @@ public class RemoteFilesystem implements AbstractFilesystem {
         return WriteResult.ok(toPath);
     }
 
-    @Override
-    public boolean exists(RuntimeContext runtimeContext, String path) {
-        if (path == null || path.isBlank()) {
-            return false;
-        }
-        List<String> ns = getNamespace();
-        String normalized = normalizePath(path);
-        if (store.get(ns, normalized) != null) {
-            return true;
-        }
-        // Also check if any child exists (directory-like)
-        List<StoreItem> items = searchAllItems();
-        for (StoreItem item : items) {
-            if (item.key().startsWith(normalized + "/")) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     // ==================== Internal helpers ====================
 
-    private List<StoreItem> searchAllItems() {
-        List<String> ns = getNamespace();
+    private List<StoreItem> searchAllItems(RuntimeContext runtimeContext) {
+        List<String> ns = getNamespace(runtimeContext);
         List<StoreItem> all = new ArrayList<>();
         int offset = 0;
         int pageSize = 100;
@@ -465,13 +721,23 @@ public class RemoteFilesystem implements AbstractFilesystem {
             if (page.isEmpty()) {
                 break;
             }
-            all.addAll(page);
+            for (StoreItem item : page) {
+                all.add(normalizeItemKey(item));
+            }
             if (page.size() < pageSize) {
                 break;
             }
             offset += pageSize;
         }
         return all;
+    }
+
+    private static StoreItem normalizeItemKey(StoreItem item) {
+        String key = item.key();
+        if (key != null && !key.startsWith("/")) {
+            return new StoreItem("/" + key, item.value(), item.version());
+        }
+        return item;
     }
 
     private static FileData convertItemToFileData(StoreItem item) {

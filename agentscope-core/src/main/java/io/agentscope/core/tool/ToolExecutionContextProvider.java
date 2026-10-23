@@ -111,6 +111,11 @@ package io.agentscope.core.tool;
  * }
  * }</pre>
  */
+/**
+ * @deprecated Part of the {@link ToolExecutionContext} layer which is superseded by
+ *     {@link io.agentscope.core.agent.RuntimeContext}.
+ */
+@Deprecated
 @FunctionalInterface
 public interface ToolExecutionContextProvider {
 

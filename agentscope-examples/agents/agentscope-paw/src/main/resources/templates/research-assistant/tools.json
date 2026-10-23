@@ -1,0 +1,18 @@
+{
+  "// description": "Read-only research toolkit. The agent may search and read source materials and its own memory, but cannot write or execute.",
+  "// available":   ["read_file", "write_file", "edit_file", "list_files", "grep_files", "glob_files", "execute", "memory_search", "memory_get", "session_search", "session_list", "session_history"],
+  "allow": [
+    "read_file",
+    "list_files",
+    "grep_files",
+    "glob_files",
+    "memory_search",
+    "memory_get"
+  ],
+  "deny": [
+    "execute",
+    "write_file",
+    "edit_file"
+  ],
+  "mcpServers": {}
+}

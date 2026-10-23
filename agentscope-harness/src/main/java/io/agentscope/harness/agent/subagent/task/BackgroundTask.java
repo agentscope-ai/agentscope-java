@@ -49,6 +49,12 @@ public class BackgroundTask {
         this.lastCheckedAt = this.createdAt;
     }
 
+    /** Observe the backing future; workspace local tasks persist their result before resolving it. */
+    public BackgroundTask whenComplete(java.util.function.BiConsumer<String, Throwable> action) {
+        future.whenComplete(action);
+        return this;
+    }
+
     public String getTaskId() {
         return taskId;
     }

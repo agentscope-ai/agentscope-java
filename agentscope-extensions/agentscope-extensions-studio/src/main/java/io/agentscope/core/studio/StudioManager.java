@@ -119,6 +119,7 @@ public class StudioManager {
         config = null;
         client = null;
         wsClient = null;
+        TracerRegistry.resetToNoop();
     }
 
     /**

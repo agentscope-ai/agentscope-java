@@ -64,7 +64,6 @@ public class StructuredOutputDynamicDefineTest {
                         .sysPrompt("You are a weather assistant")
                         .model(mockModel)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         // Execute structured output call
@@ -126,7 +125,6 @@ public class StructuredOutputDynamicDefineTest {
                         .sysPrompt("You are a weather assistant")
                         .model(mockModel)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         // Execute structured output call
@@ -270,7 +268,6 @@ public class StructuredOutputDynamicDefineTest {
                         .sysPrompt("You are a material assistant")
                         .model(mockModel)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         Msg inputMsg =

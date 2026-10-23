@@ -18,381 +18,601 @@ package io.agentscope.harness.agent;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agent.config.FailoverListener;
+import io.agentscope.core.agent.config.ModelConfig;
+import io.agentscope.core.agent.config.ReactConfig;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.hook.Hook;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.memory.LongTermMemory;
-import io.agentscope.core.memory.LongTermMemoryMode;
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.TaskReminderMiddleware;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.ModelRegistry;
-import io.agentscope.core.model.StructuredOutputReminder;
-import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.plan.PlanNotebook;
-import io.agentscope.core.rag.Knowledge;
-import io.agentscope.core.rag.RAGMode;
-import io.agentscope.core.rag.model.RetrieveConfig;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.Session;
-import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.SkillBox;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.session.SessionHistoryMode;
+import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.session.SessionLog;
+import io.agentscope.core.session.SessionLogStore;
+import io.agentscope.core.session.SessionProjection;
+import io.agentscope.core.session.SessionRecovery;
+import io.agentscope.core.session.SessionViews;
+import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
-import io.agentscope.core.skill.repository.FileSystemSkillRepository;
-import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.SimpleSessionKey;
-import io.agentscope.core.state.StateModule;
-import io.agentscope.core.state.StatePersistence;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.ConflictPolicy;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
+import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
+import io.agentscope.harness.agent.context.ContextPolicy;
+import io.agentscope.harness.agent.context.ContextSelectionPolicy;
+import io.agentscope.harness.agent.context.ContextSource;
+import io.agentscope.harness.agent.context.ContextSourceOptions;
+import io.agentscope.harness.agent.context.ContextSources;
+import io.agentscope.harness.agent.context.HarnessContextBuilder;
+import io.agentscope.harness.agent.context.TaskContextOptions;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
+import io.agentscope.harness.agent.coordination.PeriodicGate;
+import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
-import io.agentscope.harness.agent.hook.AgentTraceHook;
-import io.agentscope.harness.agent.hook.CompactionHook;
-import io.agentscope.harness.agent.hook.MemoryFlushHook;
-import io.agentscope.harness.agent.hook.MemoryMaintenanceHook;
-import io.agentscope.harness.agent.hook.SandboxLifecycleHook;
-import io.agentscope.harness.agent.hook.SessionPersistenceHook;
-import io.agentscope.harness.agent.hook.SubagentsHook;
-import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
-import io.agentscope.harness.agent.hook.ToolResultEvictionHook;
-import io.agentscope.harness.agent.hook.WorkspaceContextHook;
+import io.agentscope.harness.agent.gateway.HarnessGateway;
+import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
+import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
+import io.agentscope.harness.agent.middleware.AsyncToolMiddleware;
+import io.agentscope.harness.agent.middleware.AtPathExpansionMiddleware;
+import io.agentscope.harness.agent.middleware.CompactionMiddleware;
+import io.agentscope.harness.agent.middleware.ContextConventionsMiddleware;
+import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.HarnessRuntimeMiddleware;
+import io.agentscope.harness.agent.middleware.HarnessSkillMiddleware;
+import io.agentscope.harness.agent.middleware.InboxMiddleware;
+import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
+import io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware;
+import io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware;
+import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
+import io.agentscope.harness.agent.middleware.TeamsMiddleware;
+import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
+import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
+import io.agentscope.harness.agent.observation.StateStoreActionObserver;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
-import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
-import io.agentscope.harness.agent.sandbox.SandboxStateStore;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
-import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
-import io.agentscope.harness.agent.session.WorkspaceSession;
-import io.agentscope.harness.agent.store.NamespaceFactory;
-import io.agentscope.harness.agent.subagent.AgentSpecLoader;
-import io.agentscope.harness.agent.subagent.RemoteSubagentStub;
+import io.agentscope.harness.agent.session.AgentSession;
+import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
+import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
+import io.agentscope.harness.agent.skill.curator.RejectAllGate;
+import io.agentscope.harness.agent.skill.curator.SkillAuditLog;
+import io.agentscope.harness.agent.skill.curator.SkillCurator;
+import io.agentscope.harness.agent.skill.curator.SkillCuratorConfig;
+import io.agentscope.harness.agent.skill.curator.SkillPromoter;
+import io.agentscope.harness.agent.skill.curator.SkillPromotionGate;
+import io.agentscope.harness.agent.skill.curator.SkillUsageStore;
+import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
+import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
-import io.agentscope.harness.agent.subagent.WorkspaceMode;
-import io.agentscope.harness.agent.subagent.task.DefaultTaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
-import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
+import io.agentscope.harness.agent.tool.ArtifactDeliveryTool;
 import io.agentscope.harness.agent.tool.FilesystemTool;
 import io.agentscope.harness.agent.tool.MemoryGetTool;
+import io.agentscope.harness.agent.tool.MemorySaveTool;
 import io.agentscope.harness.agent.tool.MemorySearchTool;
+import io.agentscope.harness.agent.tool.PlanModeTools;
+import io.agentscope.harness.agent.tool.ProposeSkillTool;
 import io.agentscope.harness.agent.tool.SessionSearchTool;
 import io.agentscope.harness.agent.tool.ShellExecuteTool;
+import io.agentscope.harness.agent.tool.SkillManageConfig;
+import io.agentscope.harness.agent.tool.SkillManageTool;
+import io.agentscope.harness.agent.tool.WebTools;
+import io.agentscope.harness.agent.tools.McpServerRegistrar;
+import io.agentscope.harness.agent.tools.McpServerRegistrationListener;
+import io.agentscope.harness.agent.tools.ToolFilter;
+import io.agentscope.harness.agent.tools.ToolsConfig;
+import io.agentscope.harness.agent.tools.ToolsConfigLoader;
+import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.nio.file.Files;
+import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
+import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
+import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
- * HarnessAgent is the user-facing API that wraps {@link ReActAgent} with enhanced harness practices:
+ * HarnessAgent is the user-facing harness API that wraps a {@link ReActAgent} with workspace /
+ * filesystem / sandbox / subagent / skill / plan-mode / MCP orchestration.
+ *
+ * <p>Use {@link #builder()} to configure. For plain ReAct usage without any of the above, use
+ * {@link ReActAgent#builder()} directly.
+ *
+ * <p>Capabilities added on top of the inner {@link ReActAgent}:
  *
  * <ul>
- *   <li>Workspace-based context loading (AGENTS.md, KNOWLEDGE.md)
- *   <li>Skill loading via optional {@link AgentSkillRepository}, else {@link FileSystemSkillRepository} on
- *       workspace/skills/
- *   <li>Subagent orchestration via task/task_output tools (sync + background)
- *   <li>Memory flush and message offload before context compression
- *   <li>Session environment initialization (OS, date, workspace info)
- *   <li>Pluggable file-system backend (local, sandbox, composite)
- *   <li>Memory search/get tools
+ *   <li>Workspace-based context loading (AGENTS.md, MEMORY.md, KNOWLEDGE.md)</li>
+ *   <li>Pluggable file-system backend (local, sandbox, remote/composite)</li>
+ *   <li>Subagent orchestration via {@code task} / {@code task_output} tools (sync + background)</li>
+ *   <li>Skill loading via {@link AgentSkillRepository}, including the self-learning loop</li>
+ *   <li>Memory flush + message offload before context compression</li>
+ *   <li>Workspace-managed {@code tools.json} (MCP servers + allow/deny filter)</li>
+ *   <li>Plan mode (read-only design phase) with {@code plan_enter}/{@code plan_write}/{@code plan_exit} tools</li>
+ *   <li>Context-overflow emergency compaction via {@link CompactionMiddleware}</li>
  * </ul>
  *
- * <p>Advanced users can skip individual built-in tools or hooks via {@link HarnessAgent.Builder#disableFilesystemTools()},
- * {@link HarnessAgent.Builder#disableShellTool()}, {@link HarnessAgent.Builder#disableMemoryTools()},
- * {@link HarnessAgent.Builder#disableMemoryHooks()}, {@link HarnessAgent.Builder#disableSessionPersistence()},
- * {@link HarnessAgent.Builder#disableWorkspaceContext()}, and {@link HarnessAgent.Builder#disableSubagents()},
- * then register replacements on the {@link Toolkit} or {@link Hook} list.
- *
- * <p>Usage:
- *
- * <pre>{@code
- * HarnessAgent agent = HarnessAgent.builder()
- *     .name("MyAgent")
- *     .model(model) // or .model("openai:gpt-5.5") via {@link ModelRegistry}
- *     .sysPrompt("You are a helpful assistant.")
- *     .workspace("/path/to/workspace")
- *     .build();
- *
- * Msg response = agent.call(
- *     Msg.userMsg("Hello!"),
- *     RuntimeContext.builder().sessionId("sess-1").build()
- * ).block();
- * }</pre>
+ * <p><b>Thread Safety:</b> {@code HarnessAgent} is stateless between calls and safe to use as a
+ * singleton serving multiple users/sessions concurrently. Each {@code call()} uses the
+ * {@link io.agentscope.core.agent.RuntimeContext}'s {@code (userId, sessionId)} to isolate state.
+ * Calls targeting the same session are serialized automatically; different sessions run in parallel.
  */
-public class HarnessAgent implements Agent, StateModule {
+public class HarnessAgent implements Agent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
     private final ReActAgent delegate;
     private final WorkspaceManager workspaceManager;
-    private final CompactionHook compactionHook;
-    private final AtomicReference<String> userIdRef;
-    private final AtomicReference<String> sessionIdRef;
-    private final Session defaultSession;
+    private final BiFunction<String, String, WorkspaceManager> workspaceFactory;
+    private final WorkspaceIndex ownedWorkspaceIndex;
     private final SandboxContext defaultSandboxContext;
-    private RuntimeContext runtimeContext;
+    private final CompactionMiddleware compactionHook;
+    private final SandboxLifecycleMiddleware sandboxLifecycleMw;
+    private final List<AgentSkillRepository> skillRepositories;
+    private final PlanModeManager planModeManager;
+    // Skill self-learning — null unless enableSkillManageTool / enableSkillCurator.
+    private final SkillPromoter skillPromoter;
+    private final SkillUsageStore skillUsageStore;
+    private final SkillCurator skillCurator;
+    private final SkillAuditLog skillAuditLog;
+    private final MemoryConfig memoryConfig;
+    private final Toolkit ownedMcpToolkit;
+
+    /** The subagent middleware (either SubagentsMiddleware or DynamicSubagentsMiddleware). */
+    private final Object subagentMiddleware;
+
+    /**
+     * Distributed storage store, retained so the lazily-created gateway can build a durable
+     * {@link io.agentscope.harness.agent.gateway.SubagentRegistry} for cross-node exposed-subagent
+     * recovery. {@code null} for purely local deployments.
+     */
+    private final DistributedStore distributedStore;
+
+    private final WorkspacePathNormalizer pathNormalizer;
+
+    /** Lazily created internal gateway for {@link #channel}. */
+    private volatile HarnessGateway internalGateway;
 
     private HarnessAgent(
             ReActAgent delegate,
             WorkspaceManager workspaceManager,
-            CompactionHook compactionHook,
-            AtomicReference<String> userIdRef,
-            AtomicReference<String> sessionIdRef,
-            Session defaultSession,
-            SandboxContext defaultSandboxContext) {
+            BiFunction<String, String, WorkspaceManager> workspaceFactory,
+            WorkspaceIndex ownedWorkspaceIndex,
+            SandboxContext defaultSandboxContext,
+            CompactionMiddleware compactionHook,
+            SandboxLifecycleMiddleware sandboxLifecycleMw,
+            List<AgentSkillRepository> skillRepositories,
+            PlanModeManager planModeManager,
+            SkillPromoter skillPromoter,
+            SkillUsageStore skillUsageStore,
+            SkillCurator skillCurator,
+            SkillAuditLog skillAuditLog,
+            MemoryConfig memoryConfig,
+            Object subagentMiddleware,
+            DistributedStore distributedStore,
+            WorkspacePathNormalizer pathNormalizer,
+            Toolkit ownedMcpToolkit) {
         this.delegate = delegate;
+        this.ownedMcpToolkit = ownedMcpToolkit;
         this.workspaceManager = workspaceManager;
-        this.compactionHook = compactionHook;
-        this.userIdRef = userIdRef;
-        this.sessionIdRef = sessionIdRef;
-        this.defaultSession = defaultSession;
+        this.workspaceFactory = workspaceFactory;
+        this.ownedWorkspaceIndex = ownedWorkspaceIndex;
         this.defaultSandboxContext = defaultSandboxContext;
+        this.compactionHook = compactionHook;
+        this.sandboxLifecycleMw = sandboxLifecycleMw;
+        this.skillRepositories =
+                skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
+        this.planModeManager = planModeManager;
+        this.skillPromoter = skillPromoter;
+        this.skillUsageStore = skillUsageStore;
+        this.skillCurator = skillCurator;
+        this.skillAuditLog = skillAuditLog;
+        this.memoryConfig = memoryConfig != null ? memoryConfig : MemoryConfig.defaults();
+        this.subagentMiddleware = subagentMiddleware;
+        this.distributedStore = distributedStore;
+        this.pathNormalizer = pathNormalizer;
     }
 
-    /** Calls the agent with a runtime context, which provides sessionId and other metadata. */
-    public Mono<Msg> call(Msg msg, RuntimeContext ctx) {
-        return call(List.of(msg), ctx);
+    private final Map<SessionKey, AgentSession> sessions = new ConcurrentHashMap<>();
+
+    /** Bind a conversation's commands and read views. Obtaining this handle never starts inference. */
+    public AgentSession session(RuntimeContext context) {
+        RuntimeContext effective =
+                ensureSessionDefaults(context == null ? RuntimeContext.empty() : context);
+        return sessions.computeIfAbsent(
+                sessionKey(effective), ignored -> new AgentSession(this, effective));
     }
 
-    /** Calls the agent with multiple messages and a runtime context. */
-    public Mono<Msg> call(List<Msg> msgs, RuntimeContext ctx) {
-        bindRuntimeContext(ctx);
-        return delegate.call(msgs, coreForDelegate())
-                .onErrorResume(
-                        e -> {
-                            if (isContextOverflowError(e)) {
-                                return recoverFromOverflow(msgs);
-                            }
-                            return Mono.error(e);
-                        });
+    public SessionKey sessionKey(RuntimeContext context) {
+        return delegate.sessionKey(ensureSessionDefaults(context));
     }
 
-    /** Streams the agent response with a runtime context. */
-    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext ctx) {
-        bindRuntimeContext(ctx);
-        return delegate.stream(msgs, options, coreForDelegate());
+    public SessionLog sessionLog(RuntimeContext context) {
+        return delegate.sessionLog(ensureSessionDefaults(context));
     }
 
-    /** Streams with default {@link StreamOptions} and a runtime context. */
-    public Flux<Event> stream(List<Msg> msgs, RuntimeContext ctx) {
-        return stream(msgs, StreamOptions.defaults(), ctx);
+    public SessionProjection inspectSession(RuntimeContext context) {
+        return SessionProjection.read(sessionLog(context));
     }
 
-    /** Streams a single message with default {@link StreamOptions} and a runtime context. */
-    public Flux<Event> stream(Msg msg, RuntimeContext ctx) {
-        return stream(List.of(msg), ctx);
+    public SessionViews.Transcript sessionTranscript(RuntimeContext context) {
+        return SessionViews.transcript(sessionLog(context));
     }
 
-    private RuntimeContext coreForDelegate() {
-        return runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+    public void reconcileToolOutcomes(
+            RuntimeContext context, Map<String, ToolResultBlock> outcomes, String reason) {
+        SessionRecovery.reconcile(sessionLog(context), outcomes, reason);
     }
 
-    private Mono<Msg> recoverFromOverflow(List<Msg> msgs) {
-        if (compactionHook != null) {
-            // Force a compaction of the current memory contents by lowering the trigger threshold
-            // to 1 so that compactIfNeeded always fires.
-            log.warn(
-                    "Context overflow detected, triggering emergency compaction via"
-                            + " CompactionHook");
-            return forceCompactAndRetry(delegate.getMemory(), msgs);
-        }
-        return Mono.error(
-                new RuntimeException(
-                        "Context overflow: no compaction configured, unable to recover"));
-    }
-
-    private Mono<Msg> forceCompactAndRetry(Memory memory, List<Msg> msgs) {
-        List<Msg> allMsgs = memory.getMessages();
-        if (allMsgs.isEmpty()) {
-            return Mono.error(
-                    new RuntimeException("Context overflow: memory is empty, cannot compact"));
-        }
-        RuntimeContext ctx = this.runtimeContext;
-        String agentId = delegate.getName();
-        String sessionId =
-                ctx != null && ctx.getSessionId() != null ? ctx.getSessionId() : "default";
-
-        // Force trigger by using a config with threshold=1 (always compact)
-        CompactionConfig forceConfig = CompactionConfig.builder().triggerMessages(1).build();
-        MemoryFlushManager fm = new MemoryFlushManager(workspaceManager, delegate.getModel());
-        ConversationCompactor compactor = new ConversationCompactor(delegate.getModel(), fm);
-
-        return compactor
-                .compactIfNeeded(allMsgs, forceConfig, agentId, sessionId)
-                .flatMap(
-                        opt -> {
-                            if (opt.isPresent()) {
-                                memory.clear();
-                                for (Msg m : opt.get()) {
-                                    memory.addMessage(m);
-                                }
-                                return delegate.call(msgs, coreRuntimeForRecovery());
-                            }
-                            return Mono.error(
-                                    new RuntimeException(
-                                            "Context overflow: emergency compaction yielded no"
-                                                    + " result"));
-                        });
-    }
-
-    private io.agentscope.core.agent.RuntimeContext coreRuntimeForRecovery() {
-        return runtimeContext != null
-                ? runtimeContext
-                : io.agentscope.core.agent.RuntimeContext.empty();
-    }
-
-    private static boolean isContextOverflowError(Throwable e) {
-        String message = e.getMessage();
-        if (message == null) {
-            return false;
-        }
-        String lower = message.toLowerCase();
-        return lower.contains("context_length_exceeded")
-                || lower.contains("context length")
-                || lower.contains("maximum context")
-                || lower.contains("token limit")
-                || lower.contains("too many tokens")
-                || lower.contains("exceeds the model's maximum")
-                || lower.contains("reduce the length");
-    }
-
-    private void bindRuntimeContext(RuntimeContext ctx) {
-        if (ctx == null) {
-            this.runtimeContext = null;
-            return;
-        }
-        RuntimeContext effective = ensureSessionDefaults(ctx);
-        this.runtimeContext = effective;
-        if (userIdRef != null) {
-            userIdRef.set(effective.getUserId());
-        }
-        if (sessionIdRef != null) {
-            String sid =
-                    effective.getSessionKey() != null
-                            ? effective.getSessionKey().toIdentifier()
-                            : effective.getSessionId();
-            sessionIdRef.set(sid);
-        }
-        if (effective.getSession() != null && effective.getSessionKey() != null) {
-            try {
-                delegate.loadIfExists(effective.getSession(), effective.getSessionKey());
-            } catch (Exception e) {
-                log.warn("Failed to load session state: {}", e.getMessage());
-            }
-        }
+    /** Returns the workspace manager bound to this agent, or {@code null} if not configured. */
+    public WorkspaceManager getWorkspaceManager() {
+        return workspaceManager;
     }
 
     /**
-     * Fills in default Session and SessionKey when the caller didn't provide them.
-     * Session defaults to the agent-level {@link #defaultSession} (JsonSession).
-     * SessionKey defaults to {@code SimpleSessionKey.of(sessionId)} when sessionId is
-     * available, or {@code SimpleSessionKey.of(agentName)} as a last resort.
+     * Returns a {@link WorkspaceManager} view whose filesystem and namespace are bound to the
+     * given {@code (userId, sessionId)} for the duration of the returned view's IO. Unlike
+     * {@link #getWorkspaceManager()}, this does not mutate any shared state on this agent — so it
+     * is safe to call concurrently from per-request controllers without racing with active chats.
      */
-    private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
-        Session session = ctx.getSession() != null ? ctx.getSession() : defaultSession;
-        SessionKey sessionKey = ctx.getSessionKey();
-        if (sessionKey == null) {
-            String id = ctx.getSessionId();
-            if (id != null && !id.isBlank()) {
-                sessionKey = SimpleSessionKey.of(id);
-            } else {
-                sessionKey = SimpleSessionKey.of(delegate.getName());
+    public WorkspaceManager workspaceFor(String userId, String sessionId) {
+        if (workspaceFactory == null) {
+            return workspaceManager;
+        }
+        return workspaceFactory.apply(userId, sessionId);
+    }
+
+    /** Returns the {@link CompactionMiddleware} instance if compaction was configured, or {@code null}. */
+    public CompactionMiddleware getCompactionHook() {
+        return compactionHook;
+    }
+
+    /**
+     * Returns the ordered list of {@link AgentSkillRepository} instances bound to this agent (low
+     * to high priority).
+     */
+    public List<AgentSkillRepository> getSkillRepositories() {
+        return skillRepositories;
+    }
+
+    /** Access to the sidecar telemetry store. Null when {@code enableSkillManageTool}
+     * was not configured. */
+    public SkillUsageStore getSkillUsageStore() {
+        return skillUsageStore;
+    }
+
+    /**
+     * Query the audit log for a given UTC day. Pass {@code null} for "today". Returns an empty
+     * list when the audit log is not configured (no {@code enableSkillManageTool} call).
+     */
+    public List<SkillAuditLog.Entry> queryAudit(
+            String dayUtc, java.util.function.Predicate<SkillAuditLog.Entry> filter) {
+        if (skillAuditLog == null) {
+            return List.of();
+        }
+        return skillAuditLog.query(dayUtc, filter);
+    }
+
+    /**
+     * Force-run the skill curator immediately, bypassing the idle-and-interval gate. Returns
+     * a {@code Mono} that emits {@code null} when the curator is not configured.
+     */
+    public Mono<SkillCurator.CuratorRunReport> runCuratorOnce() {
+        if (skillCurator == null) {
+            return Mono.empty();
+        }
+        return Mono.fromCallable(() -> skillCurator.runOnce(null));
+    }
+
+    /**
+     * Promote a draft skill for the explicitly supplied request context.
+     *
+     * <p>Callers promoting skills outside an active {@code call(...)} must use this overload when
+     * the workspace is user- or session-scoped so the draft is resolved and moved within the
+     * correct namespace.
+     */
+    public Mono<SkillPromoter.PromotionResult> promoteSkill(
+            String name, String reviewerId, RuntimeContext ctx) {
+        if (skillPromoter == null) {
+            return Mono.just(
+                    SkillPromoter.PromotionResult.invalid(
+                            "skill promoter not configured; call"
+                                    + " enableSkillManageTool(...) on the builder"));
+        }
+        return skillPromoter.promote(name, reviewerId, ctx);
+    }
+
+    /**
+     * Enters plan mode for the session identified by the given {@link RuntimeContext}.
+     * The change is persisted so the next {@code call} on that session sees it.
+     */
+    public void enterPlanMode(RuntimeContext ctx) {
+        enterPlanMode(ctx.getUserId(), ctx.getSessionId());
+    }
+
+    /** Exits plan mode for the session identified by the given {@link RuntimeContext}. */
+    public void exitPlanMode(RuntimeContext ctx) {
+        exitPlanMode(ctx.getUserId(), ctx.getSessionId());
+    }
+
+    /** @return whether plan mode is active for the session identified by the given {@link RuntimeContext}. */
+    public boolean isPlanModeActive(RuntimeContext ctx) {
+        return isPlanModeActive(ctx.getUserId(), ctx.getSessionId());
+    }
+
+    /**
+     * Clears the model-visible conversation context for the session identified by {@code ctx}.
+     *
+     * <p>The session identity and non-conversation state are preserved. The next call starts with
+     * an empty conversation context. This method does not cancel an in-flight call.
+     *
+     * @param ctx runtime context identifying the session
+     */
+    public void clearContext(RuntimeContext ctx) {
+        delegate.clearContext(ctx);
+    }
+
+    /**
+     * Clears the model-visible conversation context for one {@code (userId, sessionId)} session.
+     *
+     * <p>The session identity and non-conversation state are preserved. The next call starts with
+     * an empty conversation context. This method does not cancel an in-flight call.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void clearContext(String userId, String sessionId) {
+        delegate.clearContext(userId, sessionId);
+    }
+
+    /**
+     * Clears all locally cached per-session state and permission engines held by the wrapped
+     * {@link ReActAgent}. Persisted state in the configured {@link AgentStateStore} is preserved.
+     */
+    public void clearStateCache() {
+        delegate.clearStateCache();
+    }
+
+    /**
+     * Clears the locally cached state and permission engine for the session identified by
+     * {@code ctx}. Persisted state in the configured {@link AgentStateStore} is preserved.
+     *
+     * @param ctx runtime context identifying the session
+     */
+    public void clearStateCache(RuntimeContext ctx) {
+        delegate.clearStateCache(ctx);
+    }
+
+    /**
+     * Clears the locally cached state and permission engine for one {@code (userId, sessionId)}
+     * slot. Persisted state in the configured {@link AgentStateStore} is preserved.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void clearStateCache(String userId, String sessionId) {
+        delegate.clearStateCache(userId, sessionId);
+    }
+
+    /**
+     * Enters plan mode for the given {@code (userId, sessionId)} session, independent of which slot
+     * is currently active. The change is persisted so the next {@code call} on that session sees
+     * it.
+     */
+    public void enterPlanMode(String userId, String sessionId) {
+        AgentState s = delegate.getAgentState(userId, sessionId);
+        if (planModeManager != null) {
+            planModeManager.enter(s);
+        } else {
+            s.getPlanModeContext().setPlanActive(true);
+        }
+        delegate.saveAgentState(userId, sessionId);
+    }
+
+    /** Exits plan mode for the given {@code (userId, sessionId)} session and persists the change. */
+    public void exitPlanMode(String userId, String sessionId) {
+        AgentState s = delegate.getAgentState(userId, sessionId);
+        if (planModeManager != null) {
+            planModeManager.exit(s);
+        } else {
+            s.getPlanModeContext().setPlanActive(false);
+        }
+        delegate.saveAgentState(userId, sessionId);
+    }
+
+    /** @return whether plan mode is active for the given {@code (userId, sessionId)} session. */
+    public boolean isPlanModeActive(String userId, String sessionId) {
+        AgentState s = delegate.getAgentState(userId, sessionId);
+        return s.getPlanModeContext().isPlanActive();
+    }
+
+    /**
+     * Switches the {@link io.agentscope.core.permission.PermissionMode} for the session identified
+     * by the given {@link RuntimeContext} at runtime. See
+     * {@link ReActAgent#setPermissionMode(String, String, io.agentscope.core.permission.PermissionMode)}.
+     */
+    public void setPermissionMode(
+            RuntimeContext ctx, io.agentscope.core.permission.PermissionMode mode) {
+        delegate.setPermissionMode(ctx, mode);
+    }
+
+    /**
+     * Switches the {@link io.agentscope.core.permission.PermissionMode} for the given
+     * {@code (userId, sessionId)} session at runtime, preserving configured rules and rebuilding
+     * the cached permission engine.
+     */
+    public void setPermissionMode(
+            String userId, String sessionId, io.agentscope.core.permission.PermissionMode mode) {
+        delegate.setPermissionMode(userId, sessionId, mode);
+    }
+
+    /** @return the current permission mode for the given {@code (userId, sessionId)} session. */
+    public io.agentscope.core.permission.PermissionMode getPermissionMode(
+            String userId, String sessionId) {
+        return delegate.getPermissionMode(userId, sessionId);
+    }
+
+    @Override
+    public void close() {
+        try {
+            sessions.values().forEach(AgentSession::close);
+            // Drain fire-and-forget memory flush/maintenance so async memory/*.md writes do not
+            // race with resource cleanup (e.g., temp workspace deletion in tests).
+            io.agentscope.harness.agent.memory.MemoryBackgroundTasks.awaitQuiescence(
+                    5, java.util.concurrent.TimeUnit.SECONDS);
+            shutdownTaskRepository();
+        } finally {
+            try {
+                if (ownedWorkspaceIndex != null) {
+                    ownedWorkspaceIndex.close();
+                }
+            } finally {
+                ownedMcpToolkit.closeMcpClients();
+                delegate.close();
             }
         }
-        // Inject default sandbox context if the call doesn't provide one
-        SandboxContext sandboxCtx =
-                ctx.get(SandboxContext.class) != null
-                        ? ctx.get(SandboxContext.class)
-                        : defaultSandboxContext;
+    }
 
-        if (session == ctx.getSession()
-                && sessionKey == ctx.getSessionKey()
-                && sandboxCtx == ctx.get(SandboxContext.class)) {
-            return ctx;
+    private void shutdownTaskRepository() {
+        TaskRepository taskRepo = null;
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            taskRepo = sm.getTaskRepository();
+        } else if (subagentMiddleware instanceof DynamicSubagentsMiddleware dsm) {
+            taskRepo = dsm.getTaskRepository();
         }
-        return RuntimeContext.builder()
-                .sessionId(ctx.getSessionId())
-                .userId(ctx.getUserId())
-                .session(session)
-                .sessionKey(sessionKey)
-                .putAll(ctx.getExtra())
-                .put(SandboxContext.class, sandboxCtx)
-                .build();
+        if (taskRepo != null) {
+            taskRepo.shutdown();
+        }
     }
 
     // ==================== Agent interface delegation ====================
 
-    @Override
-    public Mono<Msg> call(List<Msg> msgs) {
-        return delegate.call(msgs);
+    /** Returns the wrapped {@link ReActAgent}. */
+    public ReActAgent getDelegate() {
+        return delegate;
     }
 
-    @Override
-    public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
-        return delegate.call(msgs, structuredModel);
+    public Model getModel() {
+        return delegate.getModel();
     }
 
-    @Override
-    public Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
-        return delegate.call(msgs, schema);
+    public int getMaxIters() {
+        return delegate.getMaxIters();
     }
 
-    @Override
-    public Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
-        return delegate.stream(msgs, options);
+    public AgentStateStore getStateStore() {
+        return delegate.getStateStore();
     }
 
-    @Override
-    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
-        return delegate.stream(msgs, options, structuredModel);
+    public ConflictPolicy getConflictPolicy() {
+        return delegate.getConflictPolicy();
     }
 
-    @Override
-    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
-        return delegate.stream(msgs, options, schema);
+    /**
+     * The distributed store configured on this agent, or {@code null} for local
+     * deployments. Exposed so {@link io.agentscope.harness.agent.gateway.GatewayBootstrap} can build
+     * a durable {@link io.agentscope.harness.agent.gateway.SubagentRegistry} for exposed-subagent
+     * recovery.
+     */
+    public DistributedStore getDistributedStore() {
+        return distributedStore;
     }
 
-    @Override
-    public Mono<Void> observe(Msg msg) {
-        return delegate.observe(msg);
+    /**
+     * The internal {@link io.agentscope.harness.agent.subagent.DefaultAgentManager} able to
+     * re-materialize this agent's subagents, or {@code null} when none is owned (e.g. session-mode
+     * external subagent tool). Used to wire a gateway materializer for cross-node recovery.
+     */
+    public io.agentscope.harness.agent.subagent.DefaultAgentManager getSubagentAgentManager() {
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            return sm.getAgentManager();
+        }
+        if (subagentMiddleware instanceof DynamicSubagentsMiddleware dm) {
+            return dm.getAgentManager();
+        }
+        return null;
     }
 
-    @Override
-    public Mono<Void> observe(List<Msg> msgs) {
-        return delegate.observe(msgs);
+    /**
+     * Background subagent {@link TaskRepository} owned by the subagent middleware, or {@code null}
+     * when subagents are not configured.
+     */
+    public TaskRepository getTaskRepository() {
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            return sm.getTaskRepository();
+        }
+        if (subagentMiddleware instanceof DynamicSubagentsMiddleware dsm) {
+            return dsm.getTaskRepository();
+        }
+        return null;
     }
 
-    @Override
-    public void interrupt() {
-        delegate.interrupt();
+    /** @see ReActAgent#getDefaultSessionId() */
+    public String getDefaultSessionId() {
+        return delegate.getDefaultSessionId();
     }
 
+    /**
+     * @deprecated Use {@link #getDelegate()}{@code .getAgentState(RuntimeContext)} or
+     *     {@code .getAgentState(String, String)} with explicit session identity.
+     */
+    @Deprecated
     @Override
-    public void interrupt(Msg msg) {
-        delegate.interrupt(msg);
+    public AgentState getAgentState() {
+        return delegate.getAgentState();
     }
 
     @Override
@@ -410,488 +630,1377 @@ public class HarnessAgent implements Agent, StateModule {
         return delegate.getDescription();
     }
 
-    public ReActAgent getDelegate() {
-        return delegate;
+    @Override
+    public void interrupt() {
+        delegate.interrupt();
     }
 
-    public WorkspaceManager getWorkspaceManager() {
-        return workspaceManager;
+    @Override
+    public void interrupt(Msg msg) {
+        delegate.interrupt(msg);
     }
 
     /**
-     * Returns the {@link CompactionHook} instance if compaction was configured, or {@code null}.
-     * Exposed for testing to verify compaction mirroring in child agents.
+     * Interrupts the in-flight call for the session identified by {@code ctx}.
+     *
+     * @param ctx runtime context identifying the session to interrupt
      */
-    public CompactionHook getCompactionHook() {
-        return compactionHook;
+    public void interrupt(RuntimeContext ctx) {
+        delegate.interrupt(ctx);
     }
 
-    public RuntimeContext getRuntimeContext() {
-        return runtimeContext;
+    /**
+     * Interrupts the in-flight call for the session identified by {@code ctx} with an associated
+     * user message.
+     *
+     * @param ctx runtime context identifying the session to interrupt
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    public void interrupt(RuntimeContext ctx, Msg msg) {
+        delegate.interrupt(ctx, msg);
     }
 
-    // ==================== StateModule delegation ====================
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void interrupt(String userId, String sessionId) {
+        delegate.interrupt(userId, sessionId);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session with an
+     * associated user message.
+     */
+    public void interrupt(String userId, String sessionId, Msg msg) {
+        delegate.interrupt(userId, sessionId, msg);
+    }
+
+    // -----------------------------------------------------------------
+    //  Channel / Gateway
+    // -----------------------------------------------------------------
+
+    /**
+     * Returns a channel bound to this agent's internal gateway. The gateway is created lazily on
+     * the first call and this agent is registered as the sole (main) agent.
+     *
+     * <p>Typical usage in a Spring controller:
+     * <pre>{@code
+     * HarnessAgent agent = HarnessAgent.builder()...build();
+     * ChatUiChannel chat = agent.channel(ChatUiChannel.perPeer());
+     *
+     * // in controller
+     * chat.send("user-123", "hello");
+     * }</pre>
+     *
+     * @param channel the channel instance to bind (e.g. {@code ChatUiChannel.perPeer()})
+     * @param <T> the channel type
+     * @return the same channel instance, now wired to this agent's gateway
+     */
+    public <T extends Channel> T channel(T channel) {
+        ensureGateway();
+        channel.init(internalGateway);
+        return channel;
+    }
+
+    /**
+     * Returns the internal gateway backing {@link #channel}. Creates it lazily if not yet
+     * initialized. Exposed for advanced usage (e.g. direct {@code runSubagent} calls).
+     */
+    public HarnessGateway gateway() {
+        ensureGateway();
+        return internalGateway;
+    }
+
+    private synchronized void ensureGateway() {
+        if (internalGateway != null) {
+            return;
+        }
+        HarnessGateway gw = HarnessGateway.create();
+        gw.bindMainAgent(this);
+
+        SubagentGatewayBridge bridge =
+                (agentId, sessionId, agent, replyTo) -> {
+                    String subagentId = gw.exposeSubagent(agentId, sessionId, agent, replyTo);
+                    return new SubagentGatewayBridge.ExposeResult(subagentId);
+                };
+        io.agentscope.harness.agent.subagent.DefaultAgentManager agentManager = null;
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            sm.setGatewayBridge(bridge);
+            agentManager = sm.getAgentManager();
+        } else if (subagentMiddleware instanceof DynamicSubagentsMiddleware dm) {
+            dm.setGatewayBridge(bridge);
+            agentManager = dm.getAgentManager();
+        }
+
+        // Wire exposed-subagent recovery: a materializer rebuilds the agent on any node, and a
+        // durable registry (when a distributed store is present) makes the subagentId resolvable
+        // beyond this process. Without these, exposure stays in-process (legacy behaviour).
+        if (agentManager != null) {
+            final io.agentscope.harness.agent.subagent.DefaultAgentManager am = agentManager;
+            gw.setSubagentMaterializer(am::createAgentIfPresent);
+        }
+        if (distributedStore != null) {
+            gw.setSubagentRegistry(
+                    new io.agentscope.harness.agent.gateway.StoreBackedSubagentRegistry(
+                            distributedStore.baseStore()));
+            gw.setBaseStore(distributedStore.baseStore());
+            io.agentscope.harness.agent.gateway.SessionTurnGate turnGate =
+                    distributedStore.sessionTurnGate();
+            if (turnGate != null) {
+                gw.setSessionTurnGate(turnGate);
+            }
+        }
+
+        this.internalGateway = gw;
+    }
+
+    /**
+     * @deprecated Use {@link #call(List, RuntimeContext)} with explicit runtime context.
+     */
+    @Deprecated(since = "2.2.0")
+    @Override
+    public Mono<Msg> call(List<Msg> msgs) {
+        return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs));
+    }
+
+    /**
+     * @deprecated Use {@link #call(List, Class, RuntimeContext)} with explicit runtime context.
+     */
+    @Deprecated(since = "2.2.0")
+    @Override
+    public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
+        return wrappedCall(
+                msgs, RuntimeContext.empty(), () -> delegate.call(msgs, structuredModel));
+    }
+
+    /**
+     * @deprecated Use {@link #call(List, JsonNode, RuntimeContext)} with explicit runtime context.
+     */
+    @Deprecated(since = "2.2.0")
+    @Override
+    public Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
+        return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs, schema));
+    }
+
+    public Mono<Msg> call(Msg msg, RuntimeContext ctx) {
+        return call(List.of(msg), ctx);
+    }
+
+    /**
+     * Calls the agent with a plain text input and per-call {@link RuntimeContext}.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param ctx  per-call runtime context
+     * @return response message
+     */
+    public Mono<Msg> call(String text, RuntimeContext ctx) {
+        return call(new UserMessage(text), ctx);
+    }
+
+    public Mono<Msg> call(List<Msg> msgs, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedCall(msgs, effective, () -> delegate.call(msgs, effective));
+    }
+
+    public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedCall(msgs, effective, () -> delegate.call(msgs, structuredModel, effective));
+    }
+
+    public Mono<Msg> call(List<Msg> msgs, JsonNode schema, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedCall(msgs, effective, () -> delegate.call(msgs, schema, effective));
+    }
+
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the fine-grained
+     *     {@code AgentEvent} stream that aligns with Python 2.0's {@code agent.reply_stream()}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    @Override
+    public Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
+        return wrappedStream(RuntimeContext.empty(), () -> delegate.stream(msgs, options));
+    }
+
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the fine-grained
+     *     {@code AgentEvent} stream.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    @Override
+    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
+        return wrappedStream(
+                RuntimeContext.empty(), () -> delegate.stream(msgs, options, structuredModel));
+    }
+
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List)} for the fine-grained
+     *     {@code AgentEvent} stream.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    @Override
+    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
+        return wrappedStream(RuntimeContext.empty(), () -> delegate.stream(msgs, options, schema));
+    }
+
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(Msg, RuntimeContext)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    public Flux<Event> stream(Msg msg, RuntimeContext ctx) {
+        return stream(List.of(msg), StreamOptions.defaults(), ctx);
+    }
+
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List, RuntimeContext)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    public Flux<Event> stream(List<Msg> msgs, RuntimeContext ctx) {
+        return stream(msgs, StreamOptions.defaults(), ctx);
+    }
+
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List, RuntimeContext)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedStream(effective, () -> delegate.stream(msgs, options, effective));
+    }
+
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List, RuntimeContext)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    public Flux<Event> stream(
+            List<Msg> msgs, StreamOptions options, Class<?> structuredModel, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedStream(
+                effective, () -> delegate.stream(msgs, options, structuredModel, effective));
+    }
+
+    /**
+     * @deprecated since 2.0.0, for removal. Use {@link #streamEvents(List, RuntimeContext)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    public Flux<Event> stream(
+            List<Msg> msgs, StreamOptions options, JsonNode schema, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedStream(effective, () -> delegate.stream(msgs, options, schema, effective));
+    }
+
+    /**
+     * Prepare a cancellable execution covering the complete harness/sandbox lifecycle. Adopts the
+     * context's runId ({@code run.runId() == ctx.getRunId()}); {@code ensureSessionDefaults}
+     * still runs at subscribe time and never alters it. A null context uses a fresh {@link
+     * RuntimeContext#empty()} so derived defaults inherit this runId.
+     */
+    public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext ctx) {
+        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        return AgentRun.create(getAgentId(), source.getRunId(), () -> streamEvents(msgs, source));
+    }
+
+    /**
+     * Prepare a cancellable reply execution covering the complete harness/sandbox lifecycle.
+     * Adopts the context's runId ({@code run.runId() == ctx.getRunId()});
+     * {@code ensureSessionDefaults} still runs at subscribe time and never alters it. A null
+     * context uses a fresh {@link RuntimeContext#empty()} so derived defaults inherit this
+     * runId.
+     */
+    public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext ctx) {
+        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        return AgentRun.create(getAgentId(), source.getRunId(), () -> call(msgs, source));
+    }
+
+    // ==================== streamEvents (AgentEvent — v2 aligned) ====================
+
+    /**
+     * @deprecated Use {@link #streamEvents(Msg, RuntimeContext)} with explicit runtime context.
+     */
+    @Deprecated(since = "2.2.0")
+    public Flux<AgentEvent> streamEvents(Msg msg) {
+        return streamEvents(List.of(msg), RuntimeContext.empty());
+    }
+
+    /**
+     * @deprecated Use {@link #streamEvents(List, RuntimeContext)} with explicit runtime context.
+     */
+    @Deprecated(since = "2.2.0")
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
+        return streamEvents(msgs, RuntimeContext.empty());
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single message with a caller-supplied
+     * {@link RuntimeContext}.
+     *
+     * @param msg input message
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext ctx) {
+        return streamEvents(List.of(msg), ctx);
+    }
+
+    /**
+     * @deprecated Use {@link #streamEvents(String, RuntimeContext)} with explicit runtime context.
+     */
+    @Deprecated(since = "2.2.0")
+    public Flux<AgentEvent> streamEvents(String text) {
+        return streamEvents(new UserMessage(text), RuntimeContext.empty());
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input with a caller-supplied
+     * {@link RuntimeContext}.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param ctx  runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(String text, RuntimeContext ctx) {
+        return streamEvents(new UserMessage(text), ctx);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a list of messages with a caller-supplied
+     * {@link RuntimeContext}. The harness wraps the delegate's
+     * {@code ReActAgent#streamEvents(List, RuntimeContext)} with the same sandbox-lifecycle
+     * acquire/release semantics that the {@code call(...)} family uses, so streaming and
+     * blocking callers behave consistently with respect to sandbox warm-up.
+     *
+     * <p>Synchronous subagent events spawned via {@code agent_spawn} / {@code agent_send} are
+     * forwarded into this stream in real time with a {@link AgentEvent#getSource() source} tag
+     * identifying the originating child agent.
+     *
+     * @param msgs input messages
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedStreamEvents(effective, () -> delegate.streamEvents(msgs, effective));
+    }
 
     @Override
-    public void saveTo(Session session, SessionKey sessionKey) {
-        delegate.saveTo(session, sessionKey);
+    public Mono<Void> observe(Msg msg) {
+        return delegate.observe(msg);
     }
 
     @Override
-    public void loadFrom(Session session, SessionKey sessionKey) {
-        delegate.loadFrom(session, sessionKey);
+    public Mono<Void> observe(List<Msg> msgs) {
+        return delegate.observe(msgs);
     }
 
-    @Override
-    public boolean loadIfExists(Session session, SessionKey sessionKey) {
-        return delegate.loadIfExists(session, sessionKey);
+    public Toolkit getToolkit() {
+        return delegate.getToolkit();
     }
 
-    // ==================== Builder ====================
+    // ==================== Call/stream wrappers ====================
+
+    private Mono<Msg> wrappedCall(
+            List<Msg> msgs, RuntimeContext effective, Supplier<Mono<Msg>> inner) {
+        Mono<Msg> base =
+                Mono.using(
+                        () -> {
+                            if (sandboxLifecycleMw != null) {
+                                sandboxLifecycleMw.acquireForCall(effective);
+                            }
+                            return effective;
+                        },
+                        eff -> inner.get(),
+                        eff -> {
+                            if (sandboxLifecycleMw != null) {
+                                sandboxLifecycleMw.releaseForCall(eff);
+                            }
+                        });
+        if (compactionHook != null && !delegate.sessionLogEnabled()) {
+            return base.onErrorResume(
+                    e -> {
+                        if (CompactionMiddleware.isContextOverflowError(e)) {
+                            return recoverFromOverflow(msgs, effective);
+                        }
+                        return Mono.error(e);
+                    });
+        }
+        return base;
+    }
+
+    /**
+     * @deprecated since 2.0.0, for removal alongside the {@link #stream(List, StreamOptions)}
+     *     family. Replaced by {@link #wrappedStreamEvents(RuntimeContext, Supplier)}.
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    private Flux<Event> wrappedStream(RuntimeContext effective, Supplier<Flux<Event>> inner) {
+        return Flux.using(
+                () -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.acquireForCall(effective);
+                    }
+                    return effective;
+                },
+                eff -> inner.get(),
+                eff -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.releaseForCall(eff);
+                    }
+                });
+    }
+
+    private Flux<AgentEvent> wrappedStreamEvents(
+            RuntimeContext effective, Supplier<Flux<AgentEvent>> inner) {
+        return Flux.using(
+                () -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.acquireForCall(effective);
+                    }
+                    return effective;
+                },
+                eff -> inner.get(),
+                eff -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.releaseForCall(eff);
+                    }
+                });
+    }
+
+    /**
+     * Fills in a default {@code sessionId} when the caller didn't provide one, and injects the
+     * default sandbox context. The agent's persistence backend is bound at builder time via
+     * {@code .stateStore(...)}; the per-call routing is via {@code (userId, sessionId)} on the
+     * RuntimeContext (consumed by {@code ReActAgent.activateSlotForContext}).
+     */
+    private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
+        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        String ctxSessionId = source.getSessionId();
+        if (ctxSessionId == null || ctxSessionId.isBlank()) {
+            ctxSessionId = getName();
+        }
+        AbstractFilesystem sourceFs = source.get(AbstractFilesystem.class);
+        SandboxContext sandboxCtx =
+                source.get(SandboxContext.class) != null
+                        ? source.get(SandboxContext.class)
+                        : defaultSandboxContext;
+        AbstractFilesystem fs = workspaceManager != null ? workspaceManager.getFilesystem() : null;
+
+        if (ctxSessionId.equals(source.getSessionId())
+                && sandboxCtx == source.get(SandboxContext.class)
+                && (fs == null || sourceFs != null)) {
+            return source;
+        }
+        RuntimeContext.Builder b = RuntimeContext.builder(source).sessionId(ctxSessionId);
+        b.put(SandboxContext.class, sandboxCtx);
+        if (sourceFs == null && fs != null) {
+            b.put(AbstractFilesystem.class, fs);
+        }
+        if (workspaceManager != null) {
+            b.put(WorkspaceManager.class, workspaceManager);
+        }
+        if (pathNormalizer != null) {
+            b.put(WorkspacePathNormalizer.class, pathNormalizer);
+        }
+        return b.build();
+    }
+
+    private Mono<Msg> recoverFromOverflow(List<Msg> msgs, RuntimeContext effective) {
+        if (compactionHook != null) {
+            log.warn(
+                    "Context overflow detected, triggering emergency compaction via"
+                            + " CompactionMiddleware");
+            return forceCompactAndRetry(msgs, effective);
+        }
+        return Mono.error(
+                new RuntimeException(
+                        "Context overflow: no compaction configured, unable to recover"));
+    }
+
+    /**
+     * Compacts the failed call's context, persists the result and retries once.
+     *
+     * <p>A failed call persists the state it accumulated, including this turn's input, and the
+     * retry reloads the session from the state store. The compacted context is therefore persisted
+     * before retrying (otherwise the reload restores the original, oversized context), and when
+     * the input is already in the context the retry continues from it with an empty input instead
+     * of appending the input a second time.
+     */
+    private Mono<Msg> forceCompactAndRetry(List<Msg> msgs, RuntimeContext effective) {
+        RuntimeContext ctx = effective != null ? effective : RuntimeContext.empty();
+        AgentState state = RuntimeContext.resolveAgentState(effective, delegate);
+        List<Msg> allMsgs = state.contextMutable();
+        if (allMsgs.isEmpty()) {
+            return Mono.error(
+                    new RuntimeException("Context overflow: context is empty, cannot compact"));
+        }
+        // Decide before compaction, which may fold the input into the summary.
+        List<Msg> retryInput = isInContext(msgs, allMsgs) ? List.of() : msgs;
+        String agentId = getName();
+        String sessionId =
+                effective != null && effective.getSessionId() != null
+                        ? effective.getSessionId()
+                        : "default";
+
+        CompactionConfig forceConfig = CompactionConfig.builder().triggerMessages(1).build();
+        String effectiveFlushPrompt =
+                memoryConfig.flushPrompt() != null
+                        ? memoryConfig.flushPrompt()
+                        : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
+        MemoryFlushManager fm =
+                new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
+        ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
+
+        return compactor
+                .compactIfNeeded(ctx, allMsgs, forceConfig, agentId, sessionId)
+                .flatMap(
+                        opt -> {
+                            if (opt.isEmpty()) {
+                                return Mono.error(
+                                        new RuntimeException(
+                                                "Context overflow: emergency compaction yielded no"
+                                                        + " result"));
+                            }
+                            List<Msg> compacted = opt.get();
+                            return Mono.fromRunnable(
+                                            () ->
+                                                    delegate.updateAgentState(
+                                                            ctx,
+                                                            "overflow_compaction",
+                                                            s -> {
+                                                                s.contextMutable().clear();
+                                                                s.contextMutable()
+                                                                        .addAll(compacted);
+                                                            }))
+                                    .subscribeOn(Schedulers.boundedElastic())
+                                    .then(Mono.defer(() -> delegate.call(retryInput, ctx)));
+                        });
+    }
+
+    /** Whether every message of {@code input} is already present in {@code context}, by id. */
+    private static boolean isInContext(List<Msg> input, List<Msg> context) {
+        if (input == null || input.isEmpty()) {
+            return false;
+        }
+        Set<String> contextIds = new HashSet<>();
+        for (Msg msg : context) {
+            if (msg.getId() != null) {
+                contextIds.add(msg.getId());
+            }
+        }
+        return input.stream().allMatch(m -> m.getId() != null && contextIds.contains(m.getId()));
+    }
 
     public static Builder builder() {
         return new Builder();
     }
 
     /**
-     * Creates a {@link Builder} pre-populated with the observable properties of an existing
-     * {@link ReActAgent}, making it easy to migrate to {@link HarnessAgent} with minimal changes.
+     * Default state directory for the built-in {@link JsonFileAgentStateStore} backend:
+     * {@code ~/.agentscope/state/<agentId>/}. Lives outside any workspace so agent state
+     * (a prerequisite for restoring the workspace via {@link
+     * io.agentscope.harness.agent.sandbox.SandboxState#getWorkspaceSpec()}) is not entangled
+     * with workspace data.
      *
-     * <p>The following properties are copied from {@code agent}:
-     * <ul>
-     *   <li>{@code name}, {@code description}, {@code sysPrompt}
-     *   <li>{@code model}, {@code maxIters}, {@code generateOptions}
-     *   <li>{@code planNotebook}
-     *   <li>{@code toolkit} — a defensive copy; all custom tools are preserved, and
-     *       HarnessAgent's built-in tools (filesystem, memory-search, etc.) are added on top unless
-     *       disabled via {@link HarnessAgent.Builder#disableFilesystemTools()} and related {@code disable*}
-     *       methods
-     * </ul>
-     *
-     * <p>Properties that are intentionally <b>not</b> copied:
-     * <ul>
-     *   <li>{@code memory} — HarnessAgent always manages its own fresh in-memory conversation
-     *       store backed by workspace persistence
-     *   <li>hooks — already compiled into the existing agent and not accessible via public API;
-     *       add new harness hooks via {@link Builder#hook(Hook)} if needed
-     *   <li>long-term memory, RAG, statePersistence, structuredOutputReminder — not
-     *       accessible via public API on a built agent; re-configure via the returned builder
-     * </ul>
-     *
-     * <p>Example migration:
-     * <pre>{@code
-     * // Before
-     * ReActAgent agent = ReActAgent.builder()
-     *     .name("my-agent")
-     *     .model(model)
-     *     .toolkit(myToolkit)
-     *     .build();
-     *
-     * // After — minimal change
-     * HarnessAgent agent = HarnessAgent.from(existingReActAgent)
-     *     .workspace("/my/workspace")
-     *     .build();
-     * }</pre>
-     *
-     * @param agent the existing {@link ReActAgent} to migrate; must not be null
-     * @return a new {@link Builder} pre-populated with the agent's observable configuration
+     * <p>The base directory ({@code ~/.agentscope/state}) can be overridden via the
+     * {@code agentscope.state.home} system property. This is primarily for tests / CI to
+     * redirect state into a build-scoped temporary directory rather than polluting the
+     * developer's real home directory; production deployments generally don't need it.
      */
-    public static Builder from(ReActAgent agent) {
-        Builder b = new Builder();
-        b.name = agent.getName();
-        b.description = agent.getDescription();
-        b.sysPrompt = agent.getSysPrompt();
-        b.model = agent.getModel();
-        b.maxIters = agent.getMaxIters();
-        b.generateOptions = agent.getGenerateOptions();
-        b.planNotebook = agent.getPlanNotebook();
-        // Defensive copy so HarnessAgent's build() does not mutate the original agent's toolkit
-        b.toolkit = agent.getToolkit().copy();
-        return b;
+    static Path defaultStateDir(String agentId) {
+        String override = System.getProperty("agentscope.state.home");
+        Path root =
+                override != null && !override.isBlank()
+                        ? Paths.get(override)
+                        : Paths.get(System.getProperty("user.home"), ".agentscope", "state");
+        return root.resolve(agentId);
     }
 
+    /** System property that overrides the default workspace directory. */
+    static final String WORKSPACE_PROPERTY = "agentscope.workspace";
+
+    /** Environment variable that overrides the default workspace directory. */
+    static final String WORKSPACE_ENV = "AGENTSCOPE_WORKSPACE";
+
+    /**
+     * Resolves the workspace directory to use when {@link Builder#workspace(Path)} /
+     * {@link Builder#workspace(String)} was not set explicitly.
+     *
+     * <p>Resolution order (highest priority first):
+     * <ol>
+     *   <li>{@code agentscope.workspace} system property</li>
+     *   <li>{@code AGENTSCOPE_WORKSPACE} environment variable</li>
+     *   <li>{@code ${user.dir}/.agentscope/workspace} (built-in default)</li>
+     * </ol>
+     *
+     * <p>The system property / environment variable are primarily useful for container image
+     * deployments, where the workspace location is injected at run time rather than hard-coded
+     * in application code.
+     *
+     * @return the resolved default workspace directory; never {@code null}
+     */
+    static Path resolveDefaultWorkspace() {
+        String property = System.getProperty(WORKSPACE_PROPERTY);
+        if (property != null && !property.isBlank()) {
+            return Paths.get(property.strip());
+        }
+        String env = System.getenv(WORKSPACE_ENV);
+        if (env != null && !env.isBlank()) {
+            return Paths.get(env.strip());
+        }
+        return Paths.get(System.getProperty("user.dir")).resolve(".agentscope/workspace");
+    }
+
+    /**
+     * Returns true when the given session is a local in-process implementation that cannot share
+     * state across nodes. Used by sandbox / remote-filesystem fail-fast checks to reject
+     * configurations that would silently leak per-node state in distributed deployments.
+     */
+    static boolean isLocalSession(AgentStateStore stateStore) {
+        return stateStore instanceof JsonFileAgentStateStore
+                || stateStore instanceof InMemoryAgentStateStore;
+    }
+
+    // ==================== Builder ====================
+
+    /**
+     * Builder for {@link HarnessAgent}. Owns the harness orchestration: workspace + filesystem +
+     * sandbox + hooks/middlewares + tools + skills + subagents + tools.json + plan-mode.
+     */
     public static class Builder {
+        private SessionLogStore sessionLogStore;
+        private boolean legacySessionHistory;
+        private SessionHistoryMode historyMode = SessionHistoryMode.EVENT_LOG;
 
-        // Core ReActAgent params
-        private String name;
-        private String description;
-        private String sysPrompt;
-        private Model model;
-        private Toolkit toolkit = new Toolkit();
-        private int maxIters = 15;
-        private ExecutionConfig modelExecutionConfig;
-        private ExecutionConfig toolExecutionConfig;
-        private GenerateOptions generateOptions;
-        private final List<Hook> hooks = new ArrayList<>();
+        java.util.function.Consumer<Builder> sessionHistoryConfigurer() {
+            var mode = historyMode;
+            var store = sessionLogStore;
+            return child -> {
+                child.sessionHistoryMode(mode);
+                if (store != null) child.sessionLogStore(store);
+            };
+        }
 
-        /** When {@code null}, skills load from {@code workspace/skills/} via {@link FileSystemSkillRepository}. */
-        private AgentSkillRepository skillRepository;
+        public Builder sessionHistoryMode(SessionHistoryMode mode) {
+            this.legacySessionHistory = mode == SessionHistoryMode.LEGACY;
+            this.historyMode = mode;
+            inner.sessionHistoryMode(mode);
+            return this;
+        }
 
-        private ToolExecutionContext toolExecutionContext;
+        /** Override native history storage while preserving runtime commit semantics. */
+        public Builder sessionLogStore(SessionLogStore store) {
+            this.sessionLogStore = Objects.requireNonNull(store);
+            return this;
+        }
 
-        // Long-term memory configuration
-        private LongTermMemory longTermMemory;
-        private LongTermMemoryMode longTermMemoryMode = LongTermMemoryMode.BOTH;
-        private boolean longTermMemoryAsyncRecord = false;
+        /** Explicit compatibility mode for existing applications/backends without atomic storage. */
+        public Builder legacySessionHistory(boolean legacy) {
+            this.legacySessionHistory = legacy;
+            this.historyMode = legacy ? SessionHistoryMode.LEGACY : SessionHistoryMode.EVENT_LOG;
+            inner.sessionHistoryMode(
+                    legacy ? SessionHistoryMode.LEGACY : SessionHistoryMode.EVENT_LOG);
+            return this;
+        }
 
-        // Plan configuration
-        private PlanNotebook planNotebook;
+        private final ReActAgent.Builder inner = ReActAgent.builder();
 
-        // RAG configuration
-        private final List<Knowledge> knowledgeBases = new ArrayList<>();
-        private RAGMode ragMode = RAGMode.GENERIC;
-        private RetrieveConfig retrieveConfig =
-                RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
+        // ---- Mirrored fields readable by HarnessAgentBuilderSupport ----
+        // These mirror the values forwarded to `inner` so the helpers + subagent factories
+        // can read them without crossing package-private boundaries on ReActAgent.Builder.
 
-        // Additional delegate params
-        private StatePersistence statePersistence;
-        private StructuredOutputReminder structuredOutputReminder;
-        private boolean enableMetaTool = false;
-        private boolean enablePendingToolRecovery = false;
-        private boolean checkRunning = true;
+        String name;
+        String description;
+        String sysPrompt;
+        boolean checkRunning = true;
+        boolean enablePendingToolRecovery = false;
+        Model model;
+        Toolkit toolkit = newDefaultToolkit();
+        int maxIters = 10;
+        ExecutionConfig modelExecutionConfig;
+        ExecutionConfig toolExecutionConfig;
+        GenerateOptions generateOptions;
+        final Set<Hook> hooks = new LinkedHashSet<>();
+        final List<MiddlewareBase> middlewares = new ArrayList<>();
 
-        // Harness-specific params
-        private Path workspace;
-        private String environmentMemory;
-        private AbstractFilesystem abstractFilesystem;
-        private Session session;
-        private SandboxDistributedOptions sandboxDistributedOptions;
+        // ---- Harness orchestration fields ----
+
+        String agentId;
+        final List<AgentSkillRepository> skillRepositories = new ArrayList<>();
+        Path projectGlobalSkillsDir;
+
+        Path workspace;
+        String environmentMemory;
+        AbstractFilesystem abstractFilesystem;
+        boolean leafSubagent = false;
+        boolean agentTracingLogEnabled = true;
+        CompactionConfig compactionConfig = CompactionConfig.builder().build();
+        MemoryConfig memoryConfig = MemoryConfig.defaults();
+        ToolResultEvictionConfig toolResultEvictionConfig = ToolResultEvictionConfig.defaults();
+        boolean disableCompaction = false;
+        ContextPolicy contextPolicy = ContextPolicy.defaults();
+        ContextSources contextSources = ContextSources.empty();
+        ContextSelectionPolicy contextSelectionPolicy = ContextSelectionPolicy.defaults();
+
+        /** Loads read-only business data before each reasoning request, not during registration. */
+        public Builder contextSource(String id, ContextSource source) {
+            contextSources = contextSources.withSource(id, source, ContextSourceOptions.defaults());
+            return this;
+        }
+
+        /** Source failures and budget eviction are independent policies. */
+        public Builder contextSource(
+                String id, ContextSource source, Consumer<ContextSourceOptions.Builder> configure) {
+            var options = ContextSourceOptions.builder();
+            Objects.requireNonNull(configure).accept(options);
+            contextSources = contextSources.withSource(id, source, options.build());
+            return this;
+        }
+
+        /** Adds a named stable instruction from trusted application configuration. */
+        public Builder instruction(String id, String content) {
+            contextSources = contextSources.withInstruction(id, content);
+            return this;
+        }
+
+        /** Selects task projections and the optional candidate tool; does not run verification. */
+        public Builder taskContext(TaskContextOptions options) {
+            contextSources = contextSources.withTaskContext(options);
+            return this;
+        }
+
+        public Builder contextSelectionPolicy(ContextSelectionPolicy policy) {
+            contextSelectionPolicy = Objects.requireNonNull(policy);
+            return this;
+        }
+
+        /** Configures final model input budgeting and metadata-only context observations. */
+        public Builder contextPolicy(ContextPolicy policy) {
+            this.contextPolicy = Objects.requireNonNull(policy);
+            return this;
+        }
+
+        boolean disableToolResultEviction = false;
+
+        final List<SubagentDeclaration> subagentDeclarations = new ArrayList<>();
+        final List<HarnessAgentBuilderSupport.SubagentFactoryEntry> customSubagentFactories =
+                new ArrayList<>();
+        TaskRepository taskRepository;
+        Object externalSubagentTool;
+        Function<String, Model> modelResolver;
+        final List<String> additionalContextFiles = new ArrayList<>();
+        int maxContextTokens = 8000;
+        boolean useLegacyXmlWorkspaceContext = false;
+
+        ArtifactDeliveryTarget artifactDeliveryTarget;
+        boolean disableFilesystemTools = false;
+        boolean disableShellTool = false;
+        boolean disableWebTools = false;
+
+        /** Optional caller-supplied client used by the built-in web tools; {@code null} = default. */
+        HttpClient webHttpClient;
+
+        boolean disableMemoryTools = false;
+        boolean disableMemoryHooks = false;
+        boolean disableSessionPersistence = false;
+        boolean disableWorkspaceContext = false;
+        boolean disableAtPathExpansion = false;
+        boolean disableSubagents = false;
+        boolean disableDynamicSkills = false;
+        boolean disableDefaultWorkspaceSkills = false;
+        boolean disableDynamicSubagents = false;
+        boolean disableToolsConfig = false;
+
+        boolean skillManageToolEnabled = false;
+        SkillManageConfig skillManageConfig;
+        SkillPromotionGate promotionGate;
+        SkillVisibilityFilter visibilityFilter;
+        String environment = "prod";
+        boolean skillCuratorEnabled = false;
+        SkillCuratorConfig skillCuratorConfig;
+        io.agentscope.core.skill.SkillFilter skillFilter;
+        PermissionContextState permissionContextOverride;
+
+        boolean planModeEnabled = false;
+        boolean planModeAllowShell = false;
+        String planFileDir = PlanModeManager.DEFAULT_PLAN_DIR;
+
+        ToolsConfig toolsConfigOverride;
+        McpServerRegistrationListener mcpServerRegistrationListener;
+
+        SandboxFilesystemSpec sandboxFilesystemSpec;
+        RemoteFilesystemSpec remoteFilesystemSpec;
+        LocalFilesystemSpec localFilesystemSpec;
+        final Map<String, AbstractFilesystem> filesystemRoutes = new LinkedHashMap<>();
+
+        // Legacy state persistence and sandbox infrastructure slots. Native conversation
+        // recovery always uses SessionLogStore, independently of this optional backend.
+        AgentStateStore stateStoreOverride;
+
+        DistributedStore distributedStore;
+
+        io.agentscope.harness.agent.bus.MessageBus messageBus;
+        java.time.Duration asyncToolTimeout;
+        io.agentscope.harness.agent.bus.AsyncToolRegistry asyncToolRegistry;
+
+        io.agentscope.harness.agent.team.TeamClient teamsModeClient;
+        io.agentscope.harness.agent.team.TeamContext teamsModeContext;
+        String teamsModeSessionId;
+
+        private Builder() {}
 
         /**
-         * When {@code true}, this agent is a leaf worker (spawned subagent): it does not register
-         * {@link SubagentsHook}, preventing recursive delegation. Main agents keep this {@code
-         * false}.
+         * Enables AgentTeams mode: attaches {@link
+         * io.agentscope.harness.agent.middleware.TeamsMiddleware} and registers the role-clipped
+         * {@code team} tool. Used for both Managed resolve({@code teamContext}) and Entry-B lead
+         * sessions that declare a roster template.
          */
-        private boolean leafSubagent = false;
+        public Builder teamsMode(
+                io.agentscope.harness.agent.team.TeamClient teamClient,
+                io.agentscope.harness.agent.team.TeamContext teamContext) {
+            return teamsMode(teamClient, teamContext, null);
+        }
 
         /**
-         * When {@code true} (default), registers {@link AgentTraceHook} to log reasoning and tool
-         * execution at INFO; set logger {@code io.agentscope.harness.agent.hook.AgentTraceHook} to
-         * DEBUG for full args and results. When {@code false}, no trace hook is added.
+         * Same as {@link #teamsMode(io.agentscope.harness.agent.team.TeamClient,
+         * io.agentscope.harness.agent.team.TeamContext)} but also binds the middleware to {@code
+         * sessionId} so control-plane TeamEvents addressed at that session reach this agent.
          */
-        private boolean agentTracingLogEnabled = true;
+        public Builder teamsMode(
+                io.agentscope.harness.agent.team.TeamClient teamClient,
+                io.agentscope.harness.agent.team.TeamContext teamContext,
+                String sessionId) {
+            this.teamsModeClient = teamClient;
+            this.teamsModeContext = teamContext;
+            this.teamsModeSessionId = sessionId;
+            return this;
+        }
 
         /**
-         * When non-null, enables {@link CompactionHook} with this configuration.
-         * Set via {@link #compaction(CompactionConfig)}.
+         * Returns a new {@link Builder} pre-populated with as much of the given {@link ReActAgent}'s
+         * observable configuration as can be read back from public getters.
+         *
+         * <p>This is a <b>partial</b> migration helper. The caller still needs to set every
+         * harness-specific concern explicitly (workspace, filesystem, sandbox, subagents, skills,
+         * plan mode, etc.) — those have no analog on a vanilla {@link ReActAgent}, so they cannot
+         * be derived from {@code agent}.
+         *
+         * <h4>What this method copies</h4>
+         *
+         * <table border="1">
+         *   <caption>Fields copied from the source ReActAgent</caption>
+         *   <tr><th>Group</th><th>Field</th><th>Source</th></tr>
+         *   <tr><td rowspan="7">Observable configuration</td>
+         *       <td>{@code name}</td><td>{@code agent.getName()}</td></tr>
+         *   <tr><td>{@code description}</td><td>{@code agent.getDescription()}</td></tr>
+         *   <tr><td>{@code sysPrompt}</td><td>{@code agent.getSysPrompt()}</td></tr>
+         *   <tr><td>{@code model}</td><td>{@code agent.getModel()}</td></tr>
+         *   <tr><td>{@code maxIters}</td><td>{@code agent.getMaxIters()}</td></tr>
+         *   <tr><td>{@code generateOptions}</td><td>{@code agent.getGenerateOptions()}</td></tr>
+         *   <tr><td>{@code toolkit}</td><td>defensive copy via {@code agent.getToolkit().copy()}</td></tr>
+         *   <tr><td rowspan="3">Persistence</td>
+         *       <td>{@code session}</td><td>{@code agent.getStateStore()} if non-null</td></tr>
+         *   <tr><td>{@code conflictPolicy}</td><td>{@code agent.getConflictPolicy()}</td></tr>
+         *   <tr><td>{@code defaultSessionId}</td><td>{@code agent.getDefaultSessionId()} if non-null</td></tr>
+         *   <tr><td rowspan="3">Model resilience (from {@code agent.getModelConfig()})</td>
+         *       <td>{@code maxRetries}</td><td>{@link ModelConfig#maxRetries()}</td></tr>
+         *   <tr><td>{@code fallbackModel}</td><td>{@link ModelConfig#fallbackModel()} if non-null</td></tr>
+         *   <tr><td>{@code failoverListener}</td><td>{@link ModelConfig#failoverListener()} if non-null</td></tr>
+         *   <tr><td>Reasoning loop (from {@code agent.getReactConfig()})</td>
+         *       <td>{@code stopOnReject}</td><td>{@link ReactConfig#stopOnReject()}</td></tr>
+         *   <tr><td rowspan="2">Execution</td>
+         *       <td>{@code modelExecutionConfig}</td><td>{@code agent.getModelExecutionConfig()} if non-null</td></tr>
+         *   <tr><td>{@code toolExecutionConfig}</td><td>{@code agent.getToolExecutionConfig()} if non-null</td></tr>
+         *   <tr><td rowspan="3">Behavior</td>
+         *       <td>{@code toolExecutionContext}</td><td>{@code agent.getToolExecutionContext()} if non-null</td></tr>
+         *   <tr><td>{@code enablePendingToolRecovery}</td><td>{@code agent.isPendingToolRecoveryEnabled()}</td></tr>
+         *   <tr><td>{@code checkRunning}</td><td>{@code agent.isCheckRunning()}</td></tr>
+         *   <tr><td>Permissions</td>
+         *       <td>{@code permissionContext}</td><td>{@code agent.getPermissionContext()} if non-null
+         *           (the same {@link PermissionContextState} is reused; it carries the rules registered
+         *           on the source engine)</td></tr>
+         *   <tr><td>Extension surface</td>
+         *       <td>{@code middlewares}</td><td>{@code agent.getMiddlewares()} copied, excluding
+         *           harness runtime middlewares</td></tr>
+         *   <tr><td>Legacy extension</td>
+         *       <td>{@code hooks}</td><td>{@code agent.getHooks()} appended as-is ({@link Hook}
+         *           itself is {@code @Deprecated(forRemoval=true)}; prefer middlewares for new
+         *           code)</td></tr>
+         * </table>
+         *
+         * <p>Note: {@code enableMetaTool} and {@code enableTaskList} are builder-time flags that
+         * mutate the toolkit at build. They do not round-trip as flags, but the toolkit copy
+         * <i>already</i> carries the tools they registered, so the resulting agent has the same
+         * tool surface.
+         *
+         * <h4>What this method does <b>not</b> copy</h4>
+         *
+         * <p><b>Skipped — harness-only, has no source on a {@code ReActAgent}.</b> These
+         * <i>must</i> be configured on the returned builder if you want HarnessAgent semantics:
+         * <ul>
+         *   <li>Workspace &amp; filesystem: {@link #workspace(Path)}, {@link #filesystem(SandboxFilesystemSpec)},
+         *       {@link #filesystem(LocalFilesystemSpec)}, {@link #filesystem(RemoteFilesystemSpec)},
+         *       {@link #abstractFilesystem(AbstractFilesystem)},
+         *       {@link #environmentMemory(String)}</li>
+         *   <li>Subagents: {@link #subagent(SubagentDeclaration)}, {@link #subagents(List)},
+         *       {@link #subagentFactory(String, Function)},
+         *       {@link #subagentFactory(SubagentDeclaration, SubagentFactory)},
+         *       {@link #externalSubagentTool(Object)},
+         *       {@link #taskRepository(TaskRepository)}, {@link #modelResolver(Function)}</li>
+         *   <li>Skill governance: {@link #skillRepository(AgentSkillRepository)},
+         *       {@link #projectGlobalSkillsDir(Path)},
+         *       {@link #enableSkillManageTool(SkillManageConfig)},
+         *       {@link #enableSkillCurator(SkillCuratorConfig)},
+         *       {@link #enableSkillPromotionGate(SkillPromotionGate, SkillVisibilityFilter)},
+         *       {@link #skillFilter(io.agentscope.core.skill.SkillFilter)},
+         *       {@link #environment(String)}</li>
+         *   <li>Plan mode: {@link #enablePlanMode()}, {@link #planFileDirectory(String)}</li>
+         *   <li>Context engineering: {@link #additionalContextFile(String)},
+         *       {@link #maxContextTokens(int)}, {@link #compaction(CompactionConfig)},
+         *       {@link #toolResultEviction(ToolResultEvictionConfig)},
+         *       {@link #toolsConfig(ToolsConfig)},
+         *       {@link #mcpServerRegistrationListener(McpServerRegistrationListener)}</li>
+         *   <li>All {@code disableXxx()} toggles and {@link #enableAgentTracingLog(boolean)}</li>
+         * </ul>
+         *
+         * <h4>Behavior caveats</h4>
+         *
+         * <p>Even after this method, the built {@code HarnessAgent} is <b>not</b> behaviorally
+         * equivalent to the source {@code ReActAgent}: HarnessAgent installs additional
+         * orchestration (workspace projection, agent-tracing middleware, default skill /
+         * subagent middlewares) that the source did not have. Native session history defaults
+         * to the workspace backend; explicit legacy mode uses a JsonFileAgentStateStore under
+         * {@code ~/.agentscope/state/<agentId>/}. Existing snapshots require explicit migration.
+         *
+         * @param agent source {@link ReActAgent} to inherit observable configuration from
+         * @return a new {@link Builder} pre-populated with the inheritable subset
          */
-        private CompactionConfig compactionConfig = null;
+        public static Builder fromAgent(ReActAgent agent) {
+            Builder b = new Builder();
+            if (agent.getModelRequestPreparer() instanceof HarnessContextBuilder contextBuilder) {
+                b.contextPolicy(contextBuilder.policy());
+                b.contextSources = contextBuilder.sources();
+                b.contextSelectionPolicy(contextBuilder.selectionPolicy());
+            }
 
-        /**
-         * When non-null, enables {@link ToolResultEvictionHook} with this configuration.
-         * Set via {@link #toolResultEviction(ToolResultEvictionConfig)}.
-         */
-        private ToolResultEvictionConfig toolResultEvictionConfig = null;
+            // Observable configuration.
+            b.name(agent.getName());
+            b.description(agent.getDescription());
+            b.sysPrompt(agent.getSysPrompt());
+            b.model(agent.getModel());
+            b.maxIters(agent.getMaxIters());
+            b.generateOptions(agent.getGenerateOptions());
+            b.toolkit(agent.getToolkit().copy());
+            if (b.contextSources.taskContext().requirementProposals()) {
+                // Re-register from the copied task options at build time. This also lets the
+                // caller disable proposals on the copy without retaining the original tool.
+                b.toolkit.removeTool("task_requirement_propose");
+            }
 
-        private final List<SubagentDeclaration> subagentDeclarations = new ArrayList<>();
-        private final List<SubagentFactoryEntry> customSubagentFactories = new ArrayList<>();
-        private TaskRepository taskRepository;
-        private Object externalSubagentTool;
-        private Function<String, Model> modelResolver;
-        private final List<String> additionalContextFiles = new ArrayList<>();
-        private int maxContextTokens = 8000;
-        private boolean useLegacyXmlWorkspaceContext = false;
+            // Persistence.
+            AgentStateStore srcSession = agent.getStateStore();
+            if (srcSession != null) {
+                b.stateStore(srcSession);
+            }
+            b.conflictPolicy(agent.getConflictPolicy());
+            String srcDefaultSessionId = agent.getDefaultSessionId();
+            if (srcDefaultSessionId != null) {
+                b.defaultSessionId(srcDefaultSessionId);
+            }
 
-        /** When {@code true}, {@link FilesystemTool} is not registered. */
-        private boolean disableFilesystemTools = false;
+            // Model resilience.
+            ModelConfig mc = agent.getModelConfig();
+            if (mc != null) {
+                b.maxRetries(mc.maxRetries());
+                if (mc.fallbackModel() != null) {
+                    b.fallbackModel(mc.fallbackModel());
+                }
+                if (mc.failoverListener() != null) {
+                    b.failoverListener(mc.failoverListener());
+                }
+            }
 
-        /** When {@code true}, {@link ShellExecuteTool} is not registered (sandbox / local-shell modes only). */
-        private boolean disableShellTool = false;
+            // Reasoning loop. maxIters already covered above; only stopOnReject left.
+            ReactConfig rc = agent.getReactConfig();
+            if (rc != null) {
+                b.stopOnReject(rc.stopOnReject());
+            }
 
-        /**
-         * When {@code true}, {@link MemorySearchTool}, {@link MemoryGetTool}, and {@link SessionSearchTool}
-         * are not registered.
-         */
-        private boolean disableMemoryTools = false;
+            // Execution configs.
+            ExecutionConfig srcModelExec = agent.getModelExecutionConfig();
+            if (srcModelExec != null) {
+                b.modelExecutionConfig(srcModelExec);
+            }
+            ExecutionConfig srcToolExec = agent.getToolExecutionConfig();
+            if (srcToolExec != null) {
+                b.toolExecutionConfig(srcToolExec);
+            }
 
-        /**
-         * When {@code true}, {@link MemoryFlushHook} and {@link MemoryMaintenanceHook} are not registered.
-         */
-        private boolean disableMemoryHooks = false;
+            // Behavior flags + tool execution context.
+            ToolExecutionContext srcToolCtx = agent.getToolExecutionContext();
+            if (srcToolCtx != null) {
+                b.toolExecutionContext(srcToolCtx);
+            }
+            b.enablePendingToolRecovery(agent.isPendingToolRecoveryEnabled());
+            b.checkRunning(agent.isCheckRunning());
 
-        /** When {@code true}, {@link SessionPersistenceHook} is not registered. */
-        private boolean disableSessionPersistence = false;
+            // Permission context (same instance — carries rules registered on the source).
+            PermissionContextState srcPerm = agent.getPermissionContext();
+            if (srcPerm != null) {
+                b.permissionContext(srcPerm);
+            }
 
-        /** When {@code true}, {@link WorkspaceContextHook} is not registered. */
-        private boolean disableWorkspaceContext = false;
+            // Extension chains. Middlewares are the v2 surface; hooks remain for v1 carry-over.
+            List<MiddlewareBase> srcMiddlewares = agent.getMiddlewares();
+            if (srcMiddlewares != null && !srcMiddlewares.isEmpty()) {
+                List<MiddlewareBase> copyable = filterCopyableMiddlewares(srcMiddlewares);
+                if (b.contextSources.taskContext().requirementProposals()) {
+                    // Task configuration rebuilds its reminder. Preserve a copied todo capability
+                    // without adding a second requirement grounding block.
+                    for (MiddlewareBase middleware : copyable) {
+                        if (middleware.getClass() == TaskReminderMiddleware.class
+                                && ((TaskReminderMiddleware) middleware).todoEnabled()) {
+                            b.enableTaskList();
+                        }
+                    }
+                    copyable =
+                            copyable.stream()
+                                    .filter(
+                                            middleware ->
+                                                    middleware.getClass()
+                                                            != TaskReminderMiddleware.class)
+                                    .toList();
+                }
+                b.middlewares(copyable);
+            }
+            List<Hook> srcHooks = agent.getHooks();
+            if (srcHooks != null && !srcHooks.isEmpty()) {
+                b.hooks(srcHooks);
+            }
 
-        /**
-         * When {@code true}, {@link SubagentsHook} is not registered on this agent. Spawned leaf
-         * subagents omit this hook regardless.
-         */
-        private boolean disableSubagents = false;
+            return b;
+        }
 
-        // Filesystem mode configuration (at most one of these three is set)
-        private SandboxFilesystemSpec sandboxFilesystemSpec;
-        private RemoteFilesystemSpec remoteFilesystemSpec;
-        private LocalFilesystemSpec localFilesystemSpec;
+        // ---- Forwarder setters (proxy to inner + mirror) ----
 
         public Builder name(String name) {
             this.name = name;
+            inner.name(name);
             return this;
         }
 
         public Builder description(String description) {
             this.description = description;
+            inner.description(description);
             return this;
         }
 
         public Builder sysPrompt(String sysPrompt) {
             this.sysPrompt = sysPrompt;
+            inner.sysPrompt(sysPrompt);
+            return this;
+        }
+
+        public Builder checkRunning(boolean checkRunning) {
+            this.checkRunning = checkRunning;
+            inner.checkRunning(checkRunning);
             return this;
         }
 
         public Builder model(Model model) {
             this.model = model;
+            inner.model(model);
             return this;
         }
 
-        /**
-         * Configures the model from a string id resolved via {@link ModelRegistry}: a named
-         * registration ({@link ModelRegistry#register(String, Model)}) or a built-in pattern such
-         * as {@code openai:gpt-5.5}, {@code dashscope:qwen-max}, {@code anthropic:claude-sonnet-4-5},
-         * {@code gemini:gemini-2.0-flash}, or {@code ollama:llama3}. API keys for auto-created models
-         * come from standard environment variables ({@code OPENAI_API_KEY}, {@code DASHSCOPE_API_KEY},
-         * etc.).
-         *
-         * @param modelId registry id or {@code provider:model} string
-         * @return this builder
-         * @throws IllegalArgumentException if the id cannot be resolved
-         */
         public Builder model(String modelId) {
-            this.model = ModelRegistry.resolve(modelId);
+            Model resolved = io.agentscope.core.model.ModelRegistry.resolve(modelId);
+            this.model = resolved;
+            inner.model(resolved);
             return this;
         }
 
         public Builder toolkit(Toolkit toolkit) {
-            this.toolkit = toolkit;
+            this.toolkit = toolkit != null ? toolkit : newDefaultToolkit();
+            // Don't push to inner yet — orchestration will register harness tools on this toolkit
+            // and then push the final result via inner.toolkit(...) at build() time.
             return this;
+        }
+
+        /**
+         * Default toolkit for Harness agents. Uses {@link Toolkit}'s default config (parallel
+         * tool execution enabled). Pass a custom {@link Toolkit} with
+         * {@code ToolkitConfig.parallel(false)} to opt out.
+         */
+        static Toolkit newDefaultToolkit() {
+            return new Toolkit();
         }
 
         public Builder maxIters(int maxIters) {
             this.maxIters = maxIters;
+            inner.maxIters(maxIters);
             return this;
         }
 
         public Builder modelExecutionConfig(ExecutionConfig config) {
             this.modelExecutionConfig = config;
+            inner.modelExecutionConfig(config);
             return this;
         }
 
         public Builder toolExecutionConfig(ExecutionConfig config) {
             this.toolExecutionConfig = config;
+            inner.toolExecutionConfig(config);
             return this;
         }
 
         public Builder generateOptions(GenerateOptions options) {
             this.generateOptions = options;
+            inner.generateOptions(options);
             return this;
         }
 
         public Builder hook(Hook hook) {
-            this.hooks.add(hook);
+            if (hook != null) {
+                hooks.add(hook);
+                inner.hook(hook);
+            }
             return this;
         }
 
         public Builder hooks(List<Hook> hooks) {
-            this.hooks.addAll(hooks);
+            if (hooks != null) {
+                for (Hook h : hooks) {
+                    hook(h);
+                }
+            }
+            return this;
+        }
+
+        public Builder middleware(MiddlewareBase middleware) {
+            if (middleware != null) {
+                middlewares.add(middleware);
+                inner.middleware(middleware);
+            }
+            return this;
+        }
+
+        public Builder middlewares(List<? extends MiddlewareBase> middlewareList) {
+            if (middlewareList != null) {
+                for (MiddlewareBase middleware : middlewareList) {
+                    middleware(middleware);
+                }
+            }
+            return this;
+        }
+
+        private static List<MiddlewareBase> filterCopyableMiddlewares(
+                List<MiddlewareBase> middlewares) {
+            // Keep only observable registrations from the source agent.
+            List<MiddlewareBase> copyable = new ArrayList<>(middlewares.size());
+            for (MiddlewareBase middleware : middlewares) {
+                if (middleware != null
+                        && !(middleware instanceof HarnessRuntimeMiddleware)
+                        && !(middleware instanceof GracefulShutdownMiddleware)) {
+                    copyable.add(middleware);
+                }
+            }
+            return copyable;
+        }
+
+        /** Legacy snapshot backend and sandbox metadata storage. Native conversation recovery
+         * uses {@link #sessionLogStore(SessionLogStore)} and never imports this backend implicitly.
+         */
+        public Builder stateStore(AgentStateStore stateStore) {
+            this.stateStoreOverride = stateStore;
+            inner.stateStore(stateStore);
             return this;
         }
 
         /**
-         * Supplies skills from a custom repository (e.g. {@code GitSkillRepository}). A {@link SkillBox} is
-         * assembled automatically from this repository and the agent toolkit. When {@code null} (default),
-         * skills are loaded from {@code &lt;workspace&gt;/skills/} using {@link FileSystemSkillRepository} when
-         * that directory exists.
+         * Policy applied when an {@code agent_state} save conflicts with another writer's update.
+         * Defaults to {@link ConflictPolicy#OVERWRITE}, i.e. last-writer-wins with no error.
+         *
+         * @param conflictPolicy the policy to apply on conflict
+         * @return this builder
          */
-        public Builder skillRepository(AgentSkillRepository skillRepository) {
-            this.skillRepository = skillRepository;
+        public Builder conflictPolicy(ConflictPolicy conflictPolicy) {
+            inner.conflictPolicy(conflictPolicy);
+            return this;
+        }
+
+        /**
+         * Configures a distributed store that provides all storage components at once:
+         * {@link AgentStateStore}, {@link io.agentscope.harness.agent.filesystem.remote.store.BaseStore},
+         * {@link io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec}, and
+         * {@link io.agentscope.harness.agent.sandbox.SandboxExecutionGuard}.
+         *
+         * <p>Explicit builder methods ({@code stateStore()}, {@code filesystem()}) take
+         * precedence over the distributed store for the components they configure.
+         *
+         * @param store the distributed store to use
+         * @return this builder
+         */
+        public Builder distributedStore(DistributedStore store) {
+            this.distributedStore = store;
+            return this;
+        }
+
+        public Builder defaultSessionId(String defaultSessionId) {
+            inner.defaultSessionId(defaultSessionId);
             return this;
         }
 
         public Builder toolExecutionContext(ToolExecutionContext ctx) {
-            this.toolExecutionContext = ctx;
+            inner.toolExecutionContext(ctx);
             return this;
         }
 
-        /**
-         * Adds a knowledge base for RAG (Retrieval-Augmented Generation) on the delegate
-         * {@link ReActAgent}.
-         *
-         * @param knowledge the knowledge base to add
-         * @return this builder instance
-         */
-        public Builder knowledge(Knowledge knowledge) {
-            if (knowledge != null) {
-                this.knowledgeBases.add(knowledge);
-            }
-            return this;
-        }
-
-        /**
-         * Adds multiple knowledge bases for RAG (Retrieval-Augmented Generation) on the delegate
-         * {@link ReActAgent}.
-         *
-         * @param knowledges the list of knowledge bases to add
-         * @return this builder instance
-         */
-        public Builder knowledges(List<Knowledge> knowledges) {
-            if (knowledges != null) {
-                this.knowledgeBases.addAll(knowledges);
-            }
-            return this;
-        }
-
-        /**
-         * Sets the RAG mode on the delegate {@link ReActAgent}.
-         *
-         * @param mode the RAG mode (GENERIC, AGENTIC, or NONE)
-         * @return this builder instance
-         */
-        public Builder ragMode(RAGMode mode) {
-            if (mode != null) {
-                this.ragMode = mode;
-            }
-            return this;
-        }
-
-        /**
-         * Sets the retrieve configuration for RAG on the delegate {@link ReActAgent}.
-         *
-         * @param config the retrieve configuration
-         * @return this builder instance
-         */
-        public Builder retrieveConfig(RetrieveConfig config) {
-            if (config != null) {
-                this.retrieveConfig = config;
-            }
-            return this;
-        }
-
-        /**
-         * Sets the {@link PlanNotebook} for plan-based task execution on the delegate
-         * {@link ReActAgent}.
-         *
-         * <p>Plan management tools will be automatically registered to the toolkit and a hook
-         * will be added to inject plan hints before each reasoning step.
-         *
-         * @param planNotebook the configured PlanNotebook instance
-         * @return this builder instance
-         */
-        public Builder planNotebook(PlanNotebook planNotebook) {
-            this.planNotebook = planNotebook;
-            return this;
-        }
-
-        /**
-         * Enables plan functionality with default configuration on the delegate
-         * {@link ReActAgent}. Equivalent to {@code planNotebook(PlanNotebook.builder().build())}.
-         *
-         * @return this builder instance
-         */
-        public Builder enablePlan() {
-            this.planNotebook = PlanNotebook.builder().build();
-            return this;
-        }
-
-        /**
-         * Sets the long-term memory for the delegate {@link ReActAgent}.
-         *
-         * @param longTermMemory the long-term memory implementation
-         * @return this builder instance
-         */
-        public Builder longTermMemory(LongTermMemory longTermMemory) {
-            this.longTermMemory = longTermMemory;
-            return this;
-        }
-
-        /**
-         * Sets the long-term memory mode for the delegate {@link ReActAgent}.
-         *
-         * @param mode the long-term memory mode
-         * @return this builder instance
-         */
-        public Builder longTermMemoryMode(LongTermMemoryMode mode) {
-            if (mode != null) {
-                this.longTermMemoryMode = mode;
-            }
-            return this;
-        }
-
-        /**
-         * Sets whether long-term memory recording should be performed asynchronously on the
-         * delegate {@link ReActAgent}.
-         *
-         * @param asyncRecord whether to record memories asynchronously
-         * @return this builder instance
-         */
-        public Builder longTermMemoryAsyncRecord(boolean asyncRecord) {
-            this.longTermMemoryAsyncRecord = asyncRecord;
-            return this;
-        }
-
-        /**
-         * Sets the state persistence configuration for the delegate {@link ReActAgent}.
-         *
-         * @param statePersistence the state persistence configuration
-         * @return this builder instance
-         */
-        public Builder statePersistence(StatePersistence statePersistence) {
-            this.statePersistence = statePersistence;
-            return this;
-        }
-
-        /**
-         * Sets the structured output enforcement mode for the delegate {@link ReActAgent}.
-         *
-         * @param reminder the structured output reminder mode
-         * @return this builder instance
-         */
-        public Builder structuredOutputReminder(StructuredOutputReminder reminder) {
-            this.structuredOutputReminder = reminder;
-            return this;
-        }
-
-        /**
-         * Enables or disables the meta-tool functionality for the delegate {@link ReActAgent}.
-         *
-         * @param enableMetaTool true to enable the meta-tool
-         * @return this builder instance
-         */
         public Builder enableMetaTool(boolean enableMetaTool) {
-            this.enableMetaTool = enableMetaTool;
+            inner.enableMetaTool(enableMetaTool);
             return this;
         }
 
         /**
-         * Enables or disables automatic recovery from orphaned pending tool calls on the delegate
-         * {@link ReActAgent}.
+         * Enables recovery of orphaned tool calls when a new message arrives. Automatically
+         * constructed local subagents inherit this setting unless their declaration overrides it.
+         * Pending permission confirmations still require an explicit confirmation result.
          *
-         * @param enable true to enable auto-recovery
-         * @return this builder instance
+         * @param enable whether to synthesize error results for orphaned tool calls
+         * @return this builder
          */
         public Builder enablePendingToolRecovery(boolean enable) {
             this.enablePendingToolRecovery = enable;
+            inner.enablePendingToolRecovery(enable);
+            return this;
+        }
+
+        public Builder enableTaskList() {
+            inner.enableTaskList();
+            return this;
+        }
+
+        public Builder enableTaskList(boolean enabled) {
+            inner.enableTaskList(enabled);
+            return this;
+        }
+
+        public Builder maxRetries(int maxRetries) {
+            inner.maxRetries(maxRetries);
+            return this;
+        }
+
+        public Builder fallbackModel(Model fallbackModel) {
+            inner.fallbackModel(fallbackModel);
+            return this;
+        }
+
+        public Builder fallbackModel(String modelId) {
+            inner.fallbackModel(modelId);
             return this;
         }
 
         /**
-         * Enables or disables the concurrent-execution guard on the delegate
-         * {@link ReActAgent}. Defaults to {@code true}.
+         * Sets the listener notified when the fallback model takes over from a failed primary
+         * model. Delegates to the inner {@link io.agentscope.core.ReActAgent.Builder}.
          *
-         * @param checkRunning true to enable the guard
-         * @return this builder instance
+         * @see FailoverListener for the threading and failure contract
          */
-        public Builder checkRunning(boolean checkRunning) {
-            this.checkRunning = checkRunning;
+        public Builder failoverListener(FailoverListener failoverListener) {
+            inner.failoverListener(failoverListener);
+            return this;
+        }
+
+        public Builder stopOnReject(boolean stopOnReject) {
+            inner.stopOnReject(stopOnReject);
+            return this;
+        }
+
+        public Builder permissionContext(PermissionContextState permissionContext) {
+            this.permissionContextOverride = permissionContext;
+            inner.permissionContext(permissionContext);
+            return this;
+        }
+
+        // ---- Harness-only setters ----
+
+        /**
+         * Sets the stable identifier used as the agent's namespace key in the composite filesystem
+         * (e.g. {@code [agents, <agentId>, users, <userId>, ...]}) and as {@link #getAgentId()}
+         * via the inner agent. When unset, {@link #build()} falls back to {@link #name(String)}
+         * for the namespace key and the inner agent keeps its generated UUID. Format contract:
+         * {@link AgentBase#normalizeAgentId(String)}, validated at {@code build()} time.
+         *
+         * <p>You normally do not need to set this — the generated UUID is unique by default. Only
+         * set it when ids are managed externally (e.g. stable namespace paths across restarts),
+         * and then uniqueness is your responsibility: it is not enforced by the framework, so
+         * keep the id unique among live agents at all times; duplicates can collide in filesystem
+         * namespaces, state storage, and message routing.
+         */
+        public Builder agentId(String agentId) {
+            this.agentId = agentId;
+            inner.agentId(agentId);
+            return this;
+        }
+
+        /**
+         * Adds a marketplace / external skill repository (e.g. {@code GitSkillRepository}).
+         * Repositories compose additively with workspace skills.
+         */
+        public Builder skillRepository(AgentSkillRepository skillRepository) {
+            if (skillRepository != null) {
+                this.skillRepositories.add(skillRepository);
+            }
+            return this;
+        }
+
+        /**
+         * Replaces the current marketplace repository list with the given collection.
+         */
+        public Builder skillRepositories(List<AgentSkillRepository> repositories) {
+            this.skillRepositories.clear();
+            if (repositories != null) {
+                for (AgentSkillRepository repo : repositories) {
+                    if (repo != null) {
+                        this.skillRepositories.add(repo);
+                    }
+                }
+            }
+            return this;
+        }
+
+        /**
+         * Configures a project-global skills directory layered below marketplace and workspace
+         * skills (lowest precedence).
+         */
+        public Builder projectGlobalSkillsDir(Path projectGlobalSkillsDir) {
+            this.projectGlobalSkillsDir = projectGlobalSkillsDir;
             return this;
         }
 
         /**
          * Sets the workspace directory. Pass {@code null} to use the default
          * {@code ${cwd}/.agentscope/workspace}.
+         */
+        /**
+         * Sets the workspace directory.
          *
-         * @see #workspace(String)
+         * <p>When left unset, the workspace is resolved at {@link #build()} time via
+         * {@link HarnessAgent#resolveDefaultWorkspace()}: the {@code agentscope.workspace} system
+         * property, then the {@code AGENTSCOPE_WORKSPACE} environment variable, then
+         * {@code ${user.dir}/.agentscope/workspace}. Setting a value here takes precedence over
+         * both the system property and the environment variable.
+         *
+         * @param workspace the workspace directory, or {@code null} to fall back to the resolved
+         *     default
+         * @return this builder
          */
         public Builder workspace(Path workspace) {
             this.workspace = workspace;
@@ -899,25 +2008,24 @@ public class HarnessAgent implements Agent, StateModule {
         }
 
         /**
-         * Sets the workspace directory from a filesystem path string (resolved with
-         * {@link Path#of(String, String...)}). Equivalent to {@link #workspace(Path)} with
-         * {@code Path.of(path.strip())}.
+         * Sets the workspace directory from a filesystem path string.
          *
-         * <p>Pass {@code null} for the same default as {@link #workspace(Path)} with a {@code null}
-         * argument. Blank or whitespace-only strings are rejected.
+         * <p>See {@link #workspace(Path)} for the fallback behaviour when unset.
          *
-         * @param path absolute or relative path string, or {@code null} for the default workspace
+         * @param path the workspace directory path, or {@code null} to fall back to the resolved
+         *     default
+         * @return this builder
          */
         public Builder workspace(String path) {
             if (path == null) {
                 this.workspace = null;
-                return this;
+            } else {
+                String trimmed = path.strip();
+                if (trimmed.isEmpty()) {
+                    throw new IllegalArgumentException("workspace path must not be blank");
+                }
+                this.workspace = Path.of(trimmed);
             }
-            String trimmed = path.strip();
-            if (trimmed.isEmpty()) {
-                throw new IllegalArgumentException("workspace path must not be blank");
-            }
-            this.workspace = Path.of(trimmed);
             return this;
         }
 
@@ -926,190 +2034,114 @@ public class HarnessAgent implements Agent, StateModule {
             return this;
         }
 
-        /**
-         * Escape hatch: sets a custom {@link AbstractFilesystem} implementation directly.
-         *
-         * <p>Prefer {@link #filesystem(LocalFilesystemSpec)}, {@link #filesystem(RemoteFilesystemSpec)}
-         * or {@link #filesystem(SandboxFilesystemSpec)} unless you have a bespoke backend that is
-         * not expressible via any of the declarative specs.
-         */
-        public Builder abstractFilesystem(AbstractFilesystem backend) {
-            this.abstractFilesystem = backend;
+        /** Escape hatch: sets a custom {@link AbstractFilesystem} implementation directly. */
+        public Builder abstractFilesystem(AbstractFilesystem store) {
+            this.abstractFilesystem = store;
             return this;
         }
 
-        /**
-         * Configures <b>Mode 2 — sandbox filesystem</b> mode: fully isolated workspace running in a
-         * sandbox (for example Docker). Long-term memory extraction/read and shell execution are
-         * all routed through the sandbox session. State can be persisted via snapshots and resumed
-         * by the configured isolation scope.
-         *
-         * @param spec sandbox filesystem spec (for example Docker sandbox spec)
-         * @return this builder
-         */
+        /** Configures Mode 2 — sandbox filesystem. */
         public Builder filesystem(SandboxFilesystemSpec spec) {
             this.sandboxFilesystemSpec = spec;
             return this;
         }
 
-        /**
-         * Configures <b>Mode 1 — composite (non-sandbox) filesystem</b> mode: a unified workspace
-         * view that blends a local {@code LocalFilesystem} backend with a shared
-         * {@code RemoteFilesystem} for distributed long-term memory. Shell execution is not
-         * available in this mode — selected prefixes ({@code MEMORY.md}, {@code memory/},
-         * {@code agents/.../sessions/}) are routed to the store to keep memory consistent across
-         * replicas.
-         */
+        /** Configures Mode 1 — composite (non-sandbox) filesystem. */
         public Builder filesystem(RemoteFilesystemSpec spec) {
             this.remoteFilesystemSpec = spec;
             return this;
         }
 
-        /**
-         * Configures <b>Mode 3 — local filesystem with shell</b> mode: the agent workspace is a
-         * plain local directory and shell commands execute on the host. Long-term memory is kept
-         * on the same local disk. Use for single-process / single-replica deployments.
-         */
+        /** Configures Mode 3 — local filesystem with shell. */
         public Builder filesystem(LocalFilesystemSpec spec) {
             this.localFilesystemSpec = spec;
             return this;
         }
 
         /**
-         * Enables or disables agent execution trace logging via {@link AgentTraceHook}.
-         * Default is {@code true}.
-         */
-        public Builder enableAgentTracingLog(boolean enabled) {
-            this.agentTracingLogEnabled = enabled;
-            return this;
-        }
-
-        /**
-         * Skips registration of {@link FilesystemTool} ({@code read_file}, {@code write_file}, etc.).
-         * Use when supplying a custom filesystem tool or a stricter wrapper on the {@link Toolkit}.
-         */
-        public Builder disableFilesystemTools() {
-            this.disableFilesystemTools = true;
-            return this;
-        }
-
-        /**
-         * Skips registration of {@link ShellExecuteTool}. Only applies when the resolved filesystem is an
-         * {@link AbstractSandboxFilesystem} (sandbox mode or default local workspace with shell).
-         */
-        public Builder disableShellTool() {
-            this.disableShellTool = true;
-            return this;
-        }
-
-        /**
-         * Skips registration of {@link MemorySearchTool}, {@link MemoryGetTool}, and {@link SessionSearchTool}.
-         */
-        public Builder disableMemoryTools() {
-            this.disableMemoryTools = true;
-            return this;
-        }
-
-        /**
-         * Skips registration of {@link MemoryFlushHook} and {@link MemoryMaintenanceHook} (workspace-backed
-         * memory maintenance around model calls).
-         */
-        public Builder disableMemoryHooks() {
-            this.disableMemoryHooks = true;
-            return this;
-        }
-
-        /**
-         * Skips registration of {@link SessionPersistenceHook}. Only use when you persist agent state
-         * through another mechanism.
-         */
-        public Builder disableSessionPersistence() {
-            this.disableSessionPersistence = true;
-            return this;
-        }
-
-        /**
-         * Skips registration of {@link WorkspaceContextHook}, so AGENTS.md / workspace context is not
-         * injected into the system message.
-         */
-        public Builder disableWorkspaceContext() {
-            this.disableWorkspaceContext = true;
-            return this;
-        }
-
-        /**
-         * Skips registration of {@link SubagentsHook} on this agent (no {@code agent_spawn} / task tools
-         * from harness subagent orchestration).
-         */
-        public Builder disableSubagents() {
-            this.disableSubagents = true;
-            return this;
-        }
-
-        /**
-         * Enables the {@link CompactionHook} with the given configuration as the conversation
-         * compaction strategy.
+         * Mounts an additional {@link AbstractFilesystem} under a path prefix, alongside the
+         * primary filesystem configured via {@link #filesystem(SandboxFilesystemSpec)}, {@link
+         * #filesystem(RemoteFilesystemSpec)}, or {@link #filesystem(LocalFilesystemSpec)}.
          *
-         * <p>Use {@link CompactionConfig#builder()} to configure trigger thresholds, the keep
-         * policy, and whether to flush/offload before summarisation.
+         * <p>When the primary filesystem is sandbox-backed, the route is applied via {@link
+         * RoutedSandboxFilesystem} so {@code shell_execute} still targets the sandbox. Otherwise
+         * the route is applied via {@link CompositeFilesystem}.
+         *
+         * @param prefix path prefix for the route (e.g. {@code "memory-stores/notes/"})
+         * @param filesystem backend serving paths under {@code prefix}
+         */
+        public Builder filesystemRoute(String prefix, AbstractFilesystem filesystem) {
+            this.filesystemRoutes.put(prefix, filesystem);
+            return this;
+        }
+
+        /**
+         * Overrides the default {@link CompactionMiddleware} configuration.
+         * Compaction is enabled by default with {@link CompactionConfig#builder()}.build()
+         * defaults (dynamic trigger based on model context window, dynamic tail preservation).
+         * Use {@link #disableCompaction()} to turn it off entirely.
          */
         public Builder compaction(CompactionConfig config) {
             this.compactionConfig = config;
+            this.disableCompaction = (config == null);
+            return this;
+        }
+
+        /** Disables the {@link CompactionMiddleware} entirely. */
+        public Builder disableCompaction() {
+            this.disableCompaction = true;
             return this;
         }
 
         /**
-         * Enables {@link ToolResultEvictionHook} with the given configuration.
+         * Overrides the long-term memory pipeline configuration (flush + consolidation +
+         * maintenance). When not called, {@link MemoryConfig#defaults()} is used and behaviour
+         * matches the harness's historical defaults.
          *
-         * <p>When active, any tool result whose text content exceeds
-         * {@link ToolResultEvictionConfig#getMaxResultChars()} is written to the
-         * {@link AbstractFilesystem} and replaced with a compact placeholder in-context.
-         * Use {@link ToolResultEvictionConfig#defaults()} for sensible out-of-the-box settings.
-         *
-         * <p>This mechanism is independent of conversation compaction: eviction addresses
-         * individual oversized results (context width), while compaction addresses accumulated
-         * conversation length (context depth).
+         * <p>For the compaction (in-context summarization) pipeline, see
+         * {@link #compaction(CompactionConfig)}.
+         */
+        public Builder memory(MemoryConfig config) {
+            this.memoryConfig = config != null ? config : MemoryConfig.defaults();
+            return this;
+        }
+
+        /**
+         * Overrides the default {@link ToolResultEvictionMiddleware} configuration.
+         * Tool result eviction is enabled by default with
+         * {@link ToolResultEvictionConfig#defaults()} (trigger at 80k chars).
+         * Use {@link #disableToolResultEviction()} to turn it off entirely.
          */
         public Builder toolResultEviction(ToolResultEvictionConfig config) {
             this.toolResultEvictionConfig = config;
+            this.disableToolResultEviction = (config == null);
+            return this;
+        }
+
+        /** Disables the {@link ToolResultEvictionMiddleware} entirely. */
+        public Builder disableToolResultEviction() {
+            this.disableToolResultEviction = true;
+            return this;
+        }
+
+        /** Programmatic override for {@code workspace/tools.json}. */
+        public Builder toolsConfig(ToolsConfig toolsConfig) {
+            this.toolsConfigOverride = toolsConfig;
             return this;
         }
 
         /**
-         * Sets the default {@link Session} used for state persistence when
-         * {@link RuntimeContext} does not provide one. When not set, defaults to a
-         * {@link JsonSession} stored under {@code <workspace>/../sessions/}.
+         * Sets the listener for terminal MCP server registration results produced while building
+         * this agent. The listener is not propagated to dynamically created subagents. Passing
+         * {@code null} disables result delivery.
          */
-        public Builder session(Session session) {
-            this.session = session;
+        public Builder mcpServerRegistrationListener(
+                McpServerRegistrationListener mcpServerRegistrationListener) {
+            this.mcpServerRegistrationListener = mcpServerRegistrationListener;
             return this;
         }
 
-        /**
-         * Enables high-level distributed sandbox configuration.
-         *
-         * <p>Bundles distributed concerns that pair with {@link #filesystem(SandboxFilesystemSpec)}:
-         *
-         * <ul>
-         *   <li>distributed {@link Session} for sandbox state slots
-         *   <li>optional {@link io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec}
-         *       override for workspace archive persistence
-         *   <li>{@code requireDistributed} gate for fail-fast validation
-         * </ul>
-         *
-         * <p>Configure {@link IsolationScope} on the {@code SandboxFilesystemSpec} only.
-         *
-         * <p>Requires sandbox mode (i.e. {@link #filesystem(SandboxFilesystemSpec)}).
-         */
-        public Builder sandboxDistributed(SandboxDistributedOptions options) {
-            this.sandboxDistributedOptions = options;
-            return this;
-        }
-
-        /**
-         * Adds a subagent declaration (programmatic; workspace declarations come from
-         * {@code subagents/*.md}).
-         */
+        /** Adds a subagent declaration. */
         public Builder subagent(SubagentDeclaration declaration) {
             this.subagentDeclarations.add(declaration);
             return this;
@@ -1122,23 +2154,112 @@ public class HarnessAgent implements Agent, StateModule {
 
         /** Adds a fully custom subagent factory for a given agent id. */
         public Builder subagentFactory(String name, Function<String, Agent> factory) {
-            this.customSubagentFactories.add(new SubagentFactoryEntry(name, factory));
+            return subagentFactory(name, null, factory);
+        }
+
+        /**
+         * Adds a fully custom subagent factory for a given agent id, with a description shown to
+         * the orchestrator. When {@code description} is null or blank, the name is used.
+         *
+         * <p>Use {@link #subagentFactory(SubagentDeclaration, SubagentFactory)} when the factory
+         * needs the parent's {@link RuntimeContext} or declaration options such as
+         * {@code persistSession}.
+         */
+        public Builder subagentFactory(
+                String name, String description, Function<String, Agent> factory) {
+            this.customSubagentFactories.add(
+                    new HarnessAgentBuilderSupport.SubagentFactoryEntry(
+                            name, description, rc -> factory.apply(name), null));
             return this;
         }
 
-        /** Sets a custom TaskRepository for background subagent execution. */
+        /**
+         * Adds a subagent whose instances are built by {@code factory} and whose spawn-time
+         * behavior comes from {@code declaration}. Use this when a subagent needs a fully custom
+         * instance (for example a {@link HarnessAgent} with its own middleware, tools, or model)
+         * together with declaration options such as {@code persistSession}.
+         *
+         * <p>The subagent is registered under the declaration's name and description. Only the
+         * spawn-time options are honored: {@code persistSession}, {@code mode}, {@code hidden},
+         * {@code exposeToUser}, and {@code inheritParentPermissions}. Options that describe how to
+         * build the instance ({@code model}, {@code tools}, {@code skills}, {@code workspace},
+         * {@code steps}, ...) are ignored; configure those inside the factory, which receives the
+         * parent's {@link RuntimeContext} when a new instance is needed. Persistent reuse does not
+         * invoke the factory again.
+         *
+         * @throws IllegalArgumentException if {@code declaration} is a remote subagent ({@code
+         *     url} set), which is invoked over HTTP and cannot use a local factory
+         */
+        public Builder subagentFactory(SubagentDeclaration declaration, SubagentFactory factory) {
+            java.util.Objects.requireNonNull(declaration, "declaration");
+            java.util.Objects.requireNonNull(factory, "factory");
+            if (declaration.isRemote()) {
+                throw new IllegalArgumentException(
+                        "Remote subagent '"
+                                + declaration.getName()
+                                + "' cannot be combined with a custom factory");
+            }
+            this.customSubagentFactories.add(
+                    new HarnessAgentBuilderSupport.SubagentFactoryEntry(
+                            declaration.getName(),
+                            declaration.getDescription(),
+                            factory,
+                            declaration));
+            return this;
+        }
+
+        /** Sets a custom {@link TaskRepository} for background subagent execution. */
         public Builder taskRepository(TaskRepository taskRepository) {
             this.taskRepository = taskRepository;
             return this;
         }
 
         /**
-         * Adds a custom context file (relative to workspace) that will be loaded into
-         * the system prompt alongside AGENTS.md, MEMORY.md, and KNOWLEDGE.md.
-         * Useful for files like SOUL.md, PREFERENCE.md, etc.
-         *
-         * @param relativePath workspace-relative path (e.g., "SOUL.md")
-         * @return this builder instance
+         * Sets the {@link io.agentscope.harness.agent.bus.MessageBus} for inbox-based message delivery.
+         * When set, an {@link InboxMiddleware} is automatically registered to drain the session's
+         * inbox before each reasoning step.
+         */
+        public Builder messageBus(io.agentscope.harness.agent.bus.MessageBus messageBus) {
+            this.messageBus = messageBus;
+            return this;
+        }
+
+        /**
+         * Enables {@link AsyncToolMiddleware} with the given timeout. Requires
+         * {@link #messageBus(io.agentscope.harness.agent.bus.MessageBus)} to be set. Tool executions that
+         * exceed the timeout are offloaded to the background; results are delivered via the inbox.
+         */
+        public Builder asyncToolTimeout(java.time.Duration timeout) {
+            this.asyncToolTimeout = timeout;
+            return this;
+        }
+
+        /**
+         * Sets the {@link io.agentscope.harness.agent.bus.AsyncToolRegistry} for tracking async tool
+         * executions. Enables stale async tool detection and cleanup in
+         * {@link InboxMiddleware}. When not set, async tool lifecycle tracking is skipped.
+         */
+        public Builder asyncToolRegistry(
+                io.agentscope.harness.agent.bus.AsyncToolRegistry registry) {
+            this.asyncToolRegistry = registry;
+            return this;
+        }
+
+        /** Injects an external subagent tool (typically {@code SessionsTool}). */
+        public Builder externalSubagentTool(Object tool) {
+            this.externalSubagentTool = tool;
+            return this;
+        }
+
+        /** Sets a resolver for model name strings to {@link Model} instances for subagents. */
+        public Builder modelResolver(Function<String, Model> resolver) {
+            this.modelResolver = resolver;
+            return this;
+        }
+
+        /**
+         * Adds a custom context file (relative to workspace) loaded into the system prompt
+         * alongside AGENTS.md, MEMORY.md, and KNOWLEDGE.md.
          */
         public Builder additionalContextFile(String relativePath) {
             if (relativePath != null && !relativePath.isBlank()) {
@@ -1147,98 +2268,351 @@ public class HarnessAgent implements Agent, StateModule {
             return this;
         }
 
-        /**
-         * Sets the maximum token budget for workspace context injected into the system prompt.
-         *
-         * @param maxTokens maximum tokens (default: 8000)
-         * @return this builder instance
-         */
+        /** Sets the maximum token budget for workspace context. */
         public Builder maxContextTokens(int maxTokens) {
             this.maxContextTokens = maxTokens;
             return this;
         }
 
-        /**
-         * Injects an external subagent tool (typically {@code SessionsTool}) to replace the
-         * default {@code AgentTool}. Used by {@code AgentBootstrap} for session-mode orchestration.
-         */
-        public Builder externalSubagentTool(Object tool) {
-            this.externalSubagentTool = tool;
-            return this;
-        }
-
-        /**
-         * Sets a resolver for model name strings to {@link Model} instances. Used when spec-based
-         * subagents specify a {@code model} override (e.g. {@code "openai:gpt-4o-mini"}). When unset,
-         * {@link ModelRegistry#resolve(String)} is used so subagent specs can use the same string ids
-         * as {@link #model(String)}.
-         */
-        public Builder modelResolver(Function<String, Model> resolver) {
-            this.modelResolver = resolver;
-            return this;
-        }
-
-        /**
-         * Switches workspace context rendering between markdown (default) and legacy XML
-         * {@code <loaded_context>} style.
-         */
+        /** Switches workspace context rendering between markdown (default) and legacy XML style. */
         public Builder useLegacyXmlWorkspaceContext(boolean enabled) {
             this.useLegacyXmlWorkspaceContext = enabled;
             return this;
         }
 
-        public List<SubagentEntry> buildSubagentEntries(Path resolvedWorkspace) {
-            return buildSubagentEntries(resolvedWorkspace, null);
+        /**
+         * Enables or disables agent execution trace logging via {@link AgentTraceMiddleware}.
+         * Default is {@code true}.
+         */
+        public Builder enableAgentTracingLog(boolean enabled) {
+            this.agentTracingLogEnabled = enabled;
+            return this;
         }
 
         /**
-         * Builds the subagent entries from programmatic declarations,
-         * {@code workspace/subagents/*.md}, and custom factories. Useful for callers (e.g.
-         * {@code AgentBootstrap}) that need to extract agent factories before building the full
-         * agent.
+         * Configures the {@link ArtifactDeliveryTarget} used by the {@code deliver_artifact} tool.
+         *
+         * <p>When set, the generic {@link ArtifactDeliveryTool} is registered on the main agent and
+         * the sandbox workspace prompt tells the model to use it to hand artifacts it produced to a
+         * destination outside the sandbox. When unset (default), no delivery tool is exposed.
+         *
+         * <p>The tool is exposed only to the main agent — it is not propagated to automatically
+         * constructed subagents, which return plain text results for the main agent to deliver.
+         *
+         * <p>Note: the tool reads files from the agent filesystem, so it is also suppressed when
+         * {@link #disableFilesystemTools()} is used. Combining both leaves the tool
+         * unregistered.
          */
-        public List<SubagentEntry> buildSubagentEntries(
-                Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
-            List<SubagentDeclaration> allDeclarations = new ArrayList<>(subagentDeclarations);
-
-            Path subagentsDir = resolvedWorkspace.resolve("subagents");
-            if (Files.isDirectory(subagentsDir)) {
-                allDeclarations.addAll(
-                        AgentSpecLoader.loadFromDirectory(subagentsDir, resolvedWorkspace));
-            }
-
-            List<SubagentEntry> entries = new ArrayList<>();
-
-            entries.add(
-                    new SubagentEntry(
-                            "general-purpose",
-                            "General-purpose subagent with same capabilities as the main agent."
-                                    + " Use for any isolated task that can be fully delegated.",
-                            buildGeneralPurposeFactory(resolvedWorkspace, sandboxFs),
-                            null));
-
-            for (SubagentDeclaration decl : allDeclarations) {
-                entries.add(
-                        new SubagentEntry(
-                                decl.getName(),
-                                decl.getDescription(),
-                                buildDeclaredFactory(decl, resolvedWorkspace, sandboxFs),
-                                decl));
-            }
-
-            for (SubagentFactoryEntry custom : customSubagentFactories) {
-                entries.add(
-                        new SubagentEntry(
-                                custom.name(),
-                                custom.name(),
-                                () -> custom.factory().apply(custom.name()),
-                                null));
-            }
-
-            return entries;
+        public Builder artifactDeliveryTarget(ArtifactDeliveryTarget target) {
+            this.artifactDeliveryTarget = target;
+            return this;
         }
 
-        public HarnessAgent build() {
+        /** Skips registration of {@link FilesystemTool}. */
+        public Builder disableFilesystemTools() {
+            this.disableFilesystemTools = true;
+            return this;
+        }
+
+        /** Skips registration of {@link ShellExecuteTool}. */
+        public Builder disableShellTool() {
+            this.disableShellTool = true;
+            return this;
+        }
+
+        /** Skips registration of the optional Tavily-backed {@code web_search} and {@code web_fetch} tools. */
+        public Builder disableWebTools() {
+            this.disableWebTools = true;
+            return this;
+        }
+
+        /**
+         * Supplies a custom {@link java.net.http.HttpClient} used by the built-in {@code web_fetch}
+         * and {@code web_search} tools (e.g. custom proxy, TLS or HTTP version settings). When
+         * unset, the tools use a default client with JDK version negotiation (HTTP/2 preferred,
+         * automatic HTTP/1.1 fallback); inject an HTTP/1.1-only client here if a target server
+         * fails under HTTP/2 negotiation (see issue #3101).
+         */
+        public Builder webHttpClient(HttpClient client) {
+            this.webHttpClient = client;
+            return this;
+        }
+
+        /**
+         * Registers schema-only external tools on the builder toolkit (merged into the final
+         * agent toolkit at {@link #build()}). Used by {@code self_hosted} environments to expose
+         * hands tools that suspend for worker execution.
+         */
+        public Builder registerExternalSchemas(
+                java.util.List<io.agentscope.core.model.ToolSchema> schemas) {
+            if (schemas != null) {
+                this.toolkit.registerSchemas(schemas);
+            }
+            return this;
+        }
+
+        /** Disables dynamic per-call skill loading from the workspace filesystem. */
+        public Builder disableDynamicSkills() {
+            this.disableDynamicSkills = true;
+            return this;
+        }
+
+        /**
+         * Skips registration of the default Layer-4 {@link
+         * io.agentscope.harness.agent.skill.WorkspaceSkillRepository}. User-supplied repositories
+         * and the workspace skills directory (Layer 3) are still composed; only the namespaced
+         * AbstractFilesystem-backed source is omitted.
+         */
+        public Builder disableDefaultWorkspaceSkills() {
+            this.disableDefaultWorkspaceSkills = true;
+            return this;
+        }
+
+        /**
+         * Enables the agent-callable {@code skill_manage} tool so the agent can create / edit /
+         * patch / archive its own skills in the workspace, and upgrades the workspace skill
+         * repository to a writable variant.
+         */
+        public Builder enableSkillManageTool(SkillManageConfig config) {
+            this.skillManageToolEnabled = true;
+            this.skillManageConfig = config != null ? config : SkillManageConfig.defaults();
+            return this;
+        }
+
+        /** Shorthand for {@link #enableSkillManageTool(SkillManageConfig)} with default config. */
+        public Builder enableSkillManageTool(boolean autoPromote) {
+            return enableSkillManageTool(
+                    SkillManageConfig.builder().autoPromote(autoPromote).build());
+        }
+
+        /**
+         * Configures the runtime promotion gate + visibility filter chain.
+         */
+        public Builder enableSkillPromotionGate(
+                SkillPromotionGate gate, SkillVisibilityFilter visibilityFilter) {
+            this.promotionGate = gate;
+            this.visibilityFilter = visibilityFilter;
+            return this;
+        }
+
+        /** Sets the deployment environment label used by {@code EnvironmentFilter}. */
+        public Builder environment(String env) {
+            this.environment = env != null ? env : "prod";
+            return this;
+        }
+
+        /** Enables the background skill curator. Requires {@link #enableSkillManageTool}. */
+        public Builder enableSkillCurator(SkillCuratorConfig config) {
+            this.skillCuratorEnabled = true;
+            this.skillCuratorConfig = config != null ? config : SkillCuratorConfig.defaults();
+            return this;
+        }
+
+        /**
+         * Enables plan mode (read-only design phase) with {@code plan_enter}/{@code plan_write}/
+         * {@code plan_exit} tools and a {@code PlanModeMiddleware} that enforces read-only tools
+         * while plan mode is active.
+         */
+        public Builder enablePlanMode() {
+            return enablePlanMode(true);
+        }
+
+        public Builder enablePlanMode(boolean enabled) {
+            this.planModeEnabled = enabled;
+            return this;
+        }
+
+        public Builder planFileDirectory(String dir) {
+            if (dir != null && !dir.isBlank()) {
+                this.planFileDir = dir;
+            }
+            return this;
+        }
+
+        /**
+         * Allows the shell tool ({@code execute}) to run while plan mode is active. By default plan
+         * mode is strictly read-only and the shell is denied (it is dual-use and cannot be
+         * classified as read-only by name). Opt in when shell-based investigation (e.g.
+         * {@code cat}/{@code grep}/{@code git log}) is needed to produce a realistic plan; the plan
+         * banner instructs the model to keep shell usage read-only. Writes still flow through the
+         * (denied) file-editing tools. Prefer pairing this with a sandboxed filesystem.
+         */
+        public Builder allowShellInPlanMode() {
+            return allowShellInPlanMode(true);
+        }
+
+        public Builder allowShellInPlanMode(boolean allowed) {
+            this.planModeAllowShell = allowed;
+            return this;
+        }
+
+        public Builder skillFilter(io.agentscope.core.skill.SkillFilter filter) {
+            this.skillFilter = filter;
+            return this;
+        }
+
+        public Builder skillsEnabled(boolean enabled) {
+            this.skillFilter =
+                    enabled
+                            ? io.agentscope.core.skill.SkillFilter.all()
+                            : io.agentscope.core.skill.SkillFilter.none();
+            return this;
+        }
+
+        public Builder enableSkills(String... skillNames) {
+            this.skillFilter = io.agentscope.core.skill.SkillFilter.only(skillNames);
+            return this;
+        }
+
+        public Builder disableSkills(String... skillNames) {
+            this.skillFilter = io.agentscope.core.skill.SkillFilter.except(skillNames);
+            return this;
+        }
+
+        public Builder disableDynamicSubagents() {
+            this.disableDynamicSubagents = true;
+            return this;
+        }
+
+        /**
+         * Skips registration of {@code memory_search} / {@code memory_get} / {@code memory_save} /
+         * {@code session_search}, and omits matching Memory Recall / tool-based Persistence
+         * guidance from the workspace system prompt.
+         */
+        public Builder disableMemoryTools() {
+            this.disableMemoryTools = true;
+            return this;
+        }
+
+        /**
+         * Disables memory flush + background consolidation, and removes the "automatically
+         * extracted" Persistence line from the workspace system prompt. Combined with {@link
+         * #disableMemoryTools()}, also skips {@code MEMORY.md} injection into
+         * the reference materials in {@code HARNESS_CONTEXT}.
+         */
+        public Builder disableMemoryHooks() {
+            this.disableMemoryHooks = true;
+            return this;
+        }
+
+        /** The duplicate transcript writer has been removed; native session logging stays enabled.
+         * @deprecated No configuration is required to disable duplicate transcript files.
+         */
+        @Deprecated
+        public Builder disableTranscript() {
+            return this;
+        }
+
+        /** No-op since 2.0; session persistence is owned by ReActAgent itself. */
+        public Builder disableSessionPersistence() {
+            this.disableSessionPersistence = true;
+            return this;
+        }
+
+        public Builder disableWorkspaceContext() {
+            this.disableWorkspaceContext = true;
+            return this;
+        }
+
+        public Builder disableAtPathExpansion() {
+            this.disableAtPathExpansion = true;
+            return this;
+        }
+
+        public Builder disableSubagents() {
+            this.disableSubagents = true;
+            return this;
+        }
+
+        public Builder disableToolsConfig() {
+            this.disableToolsConfig = true;
+            return this;
+        }
+
+        /**
+         * Marks this build as a leaf subagent (no nested subagent orchestration). Package-private
+         * because only {@link HarnessAgentBuilderSupport} subagent factories should mark agents
+         * as leaves.
+         */
+        Builder asLeafSubagent() {
+            this.leafSubagent = true;
+            return this;
+        }
+
+        /**
+         * Builds the subagent entries (general-purpose + declared + custom factories) without
+         * constructing the full agent. Useful for callers that need to extract subagent factories
+         * up front (for example to mount them on a session router).
+         */
+        public List<SubagentEntry> buildSubagentEntries(Path resolvedWorkspace) {
+            return HarnessAgentBuilderSupport.buildSubagentEntries(this, resolvedWorkspace, null);
+        }
+
+        public List<SubagentEntry> buildSubagentEntries(
+                Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
+            return HarnessAgentBuilderSupport.buildSubagentEntries(
+                    this, resolvedWorkspace, sandboxFs);
+        }
+
+        private static void wireTaskRepositoryMessageBus(
+                io.agentscope.harness.agent.subagent.task.TaskRepository repo,
+                io.agentscope.harness.agent.bus.MessageBus bus,
+                String agentId) {
+            repo.setCompletionCallback(
+                    (rc, taskId, subAgentId, sessionId, result) -> {
+                        String userId = rc != null ? rc.getUserId() : null;
+                        String hintContent =
+                                String.format(
+                                        "<system-reminder>Background subagent task '%s'"
+                                                + " (agent=%s) has completed.\n\nResult:\n\n%s"
+                                                + "</system-reminder>",
+                                        taskId,
+                                        subAgentId,
+                                        result != null ? result : "(no output)");
+                        String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
+                        bus.inboxPush(
+                                        sessionId,
+                                        java.util.Map.of(
+                                                "type",
+                                                "hint",
+                                                "id",
+                                                hintId,
+                                                "hint",
+                                                hintContent,
+                                                "source",
+                                                "subagent_task"))
+                                .subscribe();
+                        bus.enqueueWakeup(
+                                        userId != null ? userId : "",
+                                        sessionId,
+                                        agentId != null ? agentId : "")
+                                .subscribe();
+                    });
+        }
+
+        /**
+         * Builds a fresh runtime from this reusable configuration. Configure the builder before
+         * sharing it; builds are serialized, while the resulting agents can execute concurrently.
+         */
+        public synchronized HarnessAgent build() {
+            var configuredMessageBus = messageBus;
+            var configuredAsyncToolRegistry = asyncToolRegistry;
+            try {
+                return buildInstance(inner.copy());
+            } finally {
+                // Workspace-derived collaborators belong to this build's filesystem, especially
+                // when sandbox bindings or workspace indexes have per-agent lifetimes.
+                messageBus = configuredMessageBus;
+                asyncToolRegistry = configuredAsyncToolRegistry;
+            }
+        }
+
+        private HarnessAgent buildInstance(ReActAgent.Builder inner) {
+            // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
+            // user-registered tools never bleed across builds.
+            Toolkit agentToolkit = this.toolkit.copy();
+
+            // ---- Validation ----
             int specCount = 0;
             if (sandboxFilesystemSpec != null) specCount++;
             if (remoteFilesystemSpec != null) specCount++;
@@ -1253,68 +2627,111 @@ public class HarnessAgent implements Agent, StateModule {
                         "abstractFilesystem() is an escape hatch and is mutually exclusive with"
                                 + " filesystem(...) specs");
             }
-            if (sandboxDistributedOptions != null && sandboxFilesystemSpec == null) {
-                throw new IllegalStateException(
-                        "sandboxDistributed(...) requires sandbox mode."
-                                + " Configure filesystem(SandboxFilesystemSpec) first.");
-            }
-            Path resolvedWorkspace =
-                    workspace != null
-                            ? workspace
-                            : Paths.get(System.getProperty("user.dir"))
-                                    .resolve(".agentscope/workspace");
-            String resolvedAgentId = name != null ? name : "HarnessAgent";
-            Session effectiveSession =
-                    sandboxDistributedOptions != null
-                                    && sandboxDistributedOptions.getSession() != null
-                            ? sandboxDistributedOptions.getSession()
-                            : session;
-            if (effectiveSession == null) {
-                effectiveSession = new WorkspaceSession(resolvedWorkspace, resolvedAgentId);
+            Path resolvedWorkspace = workspace != null ? workspace : resolveDefaultWorkspace();
+            // Validate before any component consumes the id (state dirs, filesystem namespaces,
+            // message-bus wake-up keys). Note: the name fallback is not validated — name has
+            // never been constrained, and validating it here would break existing users.
+            String normalizedAgentId = AgentBase.normalizeAgentId(agentId);
+            String resolvedAgentId =
+                    normalizedAgentId != null
+                            ? normalizedAgentId
+                            : (name != null && !name.isBlank() ? name : "ReActAgent");
+            // ---- DistributedStore auto-wiring ----
+            // distributedStore provides storage components; filesystem mode is user's choice.
+            // Priority: explicit builder methods > distributedStore > workspace defaults
+            if (distributedStore != null) {
+                if (stateStoreOverride == null
+                        && (legacySessionHistory || sandboxFilesystemSpec != null)) {
+                    stateStoreOverride = distributedStore.agentStateStore();
+                }
+                if (remoteFilesystemSpec != null) {
+                    remoteFilesystemSpec.injectStoreIfAbsent(distributedStore.baseStore());
+                }
+                if (sandboxFilesystemSpec != null) {
+                    if (sandboxFilesystemSpec.getSnapshotSpecOverride() == null) {
+                        sandboxFilesystemSpec.snapshotSpec(distributedStore.sandboxSnapshotSpec());
+                    }
+                    if (sandboxFilesystemSpec.getExecutionGuard() == null) {
+                        sandboxFilesystemSpec.executionGuard(
+                                distributedStore.sandboxExecutionGuard());
+                    }
+                }
+                if (messageBus == null) {
+                    messageBus = distributedStore.messageBus();
+                }
+                if (asyncToolRegistry == null) {
+                    asyncToolRegistry = distributedStore.asyncToolRegistry();
+                }
             }
 
-            // Mode 1 (RemoteFilesystemSpec) is inherently distributed: automatically require a
-            // distributed Session so that conversation state is also shared across replicas.
-            if (remoteFilesystemSpec != null && effectiveSession instanceof WorkspaceSession) {
+            PeriodicGate periodicGate =
+                    distributedStore != null
+                            ? new StoreBackedPeriodicGate(distributedStore.baseStore())
+                            : new LocalPeriodicGate();
+
+            AgentStateStore effectiveSession = stateStoreOverride;
+            IsolationScope fsIsolationScope = IsolationScope.USER;
+            if (remoteFilesystemSpec != null && remoteFilesystemSpec.getIsolationScope() != null) {
+                fsIsolationScope = remoteFilesystemSpec.getIsolationScope();
+            } else if (sandboxFilesystemSpec != null
+                    && sandboxFilesystemSpec.getIsolationScope() != null) {
+                fsIsolationScope = sandboxFilesystemSpec.getIsolationScope();
+            } else if (localFilesystemSpec != null
+                    && localFilesystemSpec.getIsolationScope() != null) {
+                fsIsolationScope = localFilesystemSpec.getIsolationScope();
+            }
+            NamespaceFactory nsFactory = fsIsolationScope.toNamespaceFactory();
+            // Native sessions restore only from their journal. A separate state store is needed
+            // only for explicit legacy mode or sandbox infrastructure metadata.
+            if (effectiveSession == null
+                    && (legacySessionHistory || sandboxFilesystemSpec != null)) {
+                effectiveSession = new JsonFileAgentStateStore(defaultStateDir(resolvedAgentId));
+            }
+            if (legacySessionHistory) inner.stateStore(effectiveSession);
+
+            if (legacySessionHistory
+                    && remoteFilesystemSpec != null
+                    && isLocalSession(effectiveSession)) {
                 throw new IllegalStateException(
                         "filesystem(RemoteFilesystemSpec) is designed for distributed /"
-                                + " multi-replica deployments, but the effective Session is a local"
-                                + " WorkspaceSession. Configure a distributed Session backend (for"
-                                + " example RedisSession) via .session(...).");
+                            + " multi-replica deployments, but the effective AgentStateStore is a"
+                            + " local in-process implementation (JsonFileAgentStateStore /"
+                            + " InMemoryAgentStateStore). Configure a distributed AgentStateStore"
+                            + " (for example RedisAgentStateStore) via .stateStore(...) or use"
+                            + " .distributedStore(...).");
             }
-
-            AtomicReference<String> userIdRef = new AtomicReference<>();
-            AtomicReference<String> sessionIdRef = new AtomicReference<>();
+            WorkspaceIndex workspaceIndex =
+                    remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;
+            if (legacySessionHistory)
+                inner.actionObserver(new StateStoreActionObserver(effectiveSession));
             AbstractFilesystem filesystem =
-                    resolveFilesystem(resolvedWorkspace, resolvedAgentId, userIdRef, sessionIdRef);
+                    HarnessAgentBuilderSupport.resolveFilesystem(
+                            this, resolvedWorkspace, resolvedAgentId, workspaceIndex, nsFactory);
 
             // ---- Sandbox integration ----
-            SandboxLifecycleHook sandboxLifecycleHook = null;
+            SandboxLifecycleMiddleware sandboxLifecycleMw = null;
             SandboxContext defaultSandboxContext = null;
             SandboxBackedFilesystem capturedSandboxFs = null;
             if (sandboxFilesystemSpec != null) {
-                if (sandboxDistributedOptions != null
-                        && sandboxDistributedOptions.getSnapshotSpec() != null) {
-                    sandboxFilesystemSpec.snapshotSpec(sandboxDistributedOptions.getSnapshotSpec());
-                }
                 capturedSandboxFs = new SandboxBackedFilesystem();
-                capturedSandboxFs.configureNamespace(buildDynamicNamespaceFactory(userIdRef));
-                filesystem = capturedSandboxFs;
+                filesystem =
+                        filesystemRoutes.isEmpty()
+                                ? capturedSandboxFs
+                                : new RoutedSandboxFilesystem(capturedSandboxFs, filesystemRoutes);
 
                 defaultSandboxContext = sandboxFilesystemSpec.toSandboxContext(resolvedWorkspace);
-                // Mode 2 (SandboxFilesystemSpec) always validates distributed prerequisites unless
-                // the caller explicitly opts out via sandboxDistributed(requireDistributed=false).
-                boolean skipDistributedValidation =
-                        sandboxDistributedOptions != null
-                                && !sandboxDistributedOptions.isRequireDistributed();
-                if (!skipDistributedValidation) {
-                    validateDistributedSandboxConfig(effectiveSession, defaultSandboxContext);
+
+                if (isLocalSession(effectiveSession)) {
+                    log.warn(
+                            "[harness] Sandbox mode is using a local AgentStateStore ({})."
+                                    + " Sandbox state will not survive JVM restarts and cannot be"
+                                    + " shared across instances. For production, configure a"
+                                    + " distributed AgentStateStore via .stateStore(...).",
+                            effectiveSession.getClass().getSimpleName());
                 }
 
-                SandboxStateStore stateStore =
-                        sandboxFilesystemSpec.getSandboxStateStore() != null
-                                ? sandboxFilesystemSpec.getSandboxStateStore()
-                                : new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
+                SessionSandboxStateStore stateStore =
+                        new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
                 SandboxExecutionGuard executionGuard =
                         sandboxFilesystemSpec.getExecutionGuard() != null
                                 ? sandboxFilesystemSpec.getExecutionGuard()
@@ -1325,628 +2742,497 @@ public class HarnessAgent implements Agent, StateModule {
                                 stateStore,
                                 resolvedAgentId,
                                 executionGuard);
-                sandboxLifecycleHook = new SandboxLifecycleHook(sandboxManager, capturedSandboxFs);
+                sandboxLifecycleMw =
+                        new SandboxLifecycleMiddleware(sandboxManager, capturedSandboxFs);
+            } else if (!filesystemRoutes.isEmpty()) {
+                filesystem = new CompositeFilesystem(filesystem, filesystemRoutes);
             }
-            WorkspaceManager wsManager = new WorkspaceManager(resolvedWorkspace, filesystem);
+            WorkspaceManager wsManager =
+                    new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
             wsManager.validate();
 
-            Memory memory = new InMemoryMemory();
+            final AbstractFilesystem sharedFilesystemRef = filesystem;
+            final Path capturedWorkspace = resolvedWorkspace;
+            final WorkspaceIndex capturedIndex = workspaceIndex;
+            BiFunction<String, String, WorkspaceManager> workspaceFactoryFn =
+                    (uid, sid) -> {
+                        RuntimeContext bakedRc =
+                                HarnessAgentBuilderSupport.buildBakedRuntimeContext(uid, sid);
+                        NamespaceFactory ctxNs =
+                                rc -> (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
+                        AbstractFilesystem ctxFs =
+                                new io.agentscope.harness.agent.filesystem.BakedContextFilesystem(
+                                        sharedFilesystemRef, bakedRc);
+                        return new WorkspaceManager(capturedWorkspace, ctxFs, capturedIndex, ctxNs);
+                    };
 
-            // ---- Hooks ----
-            List<Hook> allHooks = new ArrayList<>(hooks);
-
-            // Sandbox lifecycle hook runs first (priority=50) — acquire/release sandbox session
-            if (sandboxLifecycleHook != null) {
-                allHooks.add(sandboxLifecycleHook);
+            // ---- MessageBus / AsyncToolRegistry: workspace defaults ----
+            // If not set explicitly or via DistributedStore, fall back to workspace-backed
+            // implementations that use the same AbstractFilesystem as the rest of the agent.
+            if (messageBus == null && filesystem != null) {
+                messageBus =
+                        new io.agentscope.harness.agent.bus.WorkspaceMessageBus(
+                                filesystem, ".agentscope/bus");
+            }
+            if (asyncToolRegistry == null && filesystem != null) {
+                asyncToolRegistry =
+                        new io.agentscope.harness.agent.bus.WorkspaceAsyncToolRegistry(
+                                filesystem, ".agentscope/bus/async-tools");
             }
 
+            // ---- Middlewares ----
+            inner.middleware(new ContextConventionsMiddleware());
+            if (sandboxLifecycleMw != null) {
+                inner.middleware(sandboxLifecycleMw);
+            }
             if (agentTracingLogEnabled) {
-                allHooks.add(new AgentTraceHook());
+                inner.middleware(new AgentTraceMiddleware());
             }
-
+            boolean artifactDeliveryEnabled =
+                    artifactDeliveryTarget != null && !disableFilesystemTools;
             if (!disableWorkspaceContext) {
-                WorkspaceContextHook markdownHook =
-                        new WorkspaceContextHook(
+                WorkspaceContextMiddleware markdownMw =
+                        new WorkspaceContextMiddleware(
                                 wsManager,
-                                name != null ? name : "HarnessAgent",
+                                name != null ? name : "ReActAgent",
                                 environmentMemory,
-                                maxContextTokens);
-                markdownHook.setAdditionalContextFiles(additionalContextFiles);
-                allHooks.add(markdownHook);
+                                maxContextTokens,
+                                disableMemoryTools,
+                                disableMemoryHooks);
+                markdownMw.setAdditionalContextFiles(additionalContextFiles);
+                markdownMw.setArtifactDeliveryEnabled(artifactDeliveryEnabled);
+                inner.middleware(markdownMw);
+            }
+            if (!disableAtPathExpansion) {
+                inner.middleware(new AtPathExpansionMiddleware(wsManager));
+            }
+            if (!legacySessionHistory) {
+                inner.sessionLogAgentId(resolvedAgentId);
+                inner.sessionLogStore(
+                        sessionLogStore != null
+                                ? sessionLogStore
+                                : new WorkspaceSessionLogStore(wsManager));
+            }
+            Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
+            if (memoryModel != null && !disableMemoryHooks) {
+                IsolationScope effectiveIsolationScope = fsIsolationScope;
+
+                String effectiveFlushPrompt =
+                        memoryConfig.flushPrompt() != null
+                                ? memoryConfig.flushPrompt()
+                                : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
+                inner.middleware(
+                        new MemoryFlushMiddleware(
+                                wsManager,
+                                memoryModel,
+                                effectiveFlushPrompt,
+                                memoryConfig.flushTrigger(),
+                                effectiveIsolationScope,
+                                periodicGate));
+
+                String effectiveConsolidationPrompt =
+                        memoryConfig.consolidationPrompt() != null
+                                ? memoryConfig.consolidationPrompt()
+                                : MemoryConsolidator.DEFAULT_CONSOLIDATION_PROMPT;
+                MemoryConsolidator consolidator =
+                        new MemoryConsolidator(
+                                wsManager,
+                                memoryModel,
+                                effectiveConsolidationPrompt,
+                                memoryConfig.consolidationMaxTokens(),
+                                distributedStore != null ? distributedStore.baseStore() : null);
+                inner.middleware(
+                        new MemoryMaintenanceMiddleware(
+                                wsManager,
+                                consolidator,
+                                memoryConfig.dailyFileRetentionDays(),
+                                memoryConfig.consolidationMinGap(),
+                                effectiveIsolationScope,
+                                periodicGate));
+            }
+            CompactionMiddleware compactionHook = null;
+            if (!disableCompaction && compactionConfig != null) {
+                Model compactionModel =
+                        compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
+                if (compactionModel != null) {
+                    compactionHook =
+                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
+                    inner.middleware(compactionHook.overflowRecovery());
+                }
+            }
+            ToolResultEvictionMiddleware contextEviction =
+                    !disableToolResultEviction && toolResultEvictionConfig != null
+                            ? new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig)
+                            : null;
+            inner.enableTaskRequirements(contextSources.taskContext().requirementProposals());
+            inner.modelRequestPreparer(
+                    new HarnessContextBuilder(
+                            contextPolicy,
+                            compactionHook,
+                            contextEviction,
+                            contextSources,
+                            contextSelectionPolicy));
+            if (messageBus != null) {
+                inner.middleware(new InboxMiddleware(messageBus, 100, asyncToolRegistry, null));
             }
 
-            MemoryFlushHook memoryFlushHook = null;
-            if (model != null && !disableMemoryHooks) {
-                memoryFlushHook = new MemoryFlushHook(wsManager, model);
-                allHooks.add(memoryFlushHook);
+            TeamsMiddleware capturedTeamsMw = null;
+            if (teamsModeClient != null && teamsModeContext != null) {
+                TeamsMiddleware teamsMw = new TeamsMiddleware(teamsModeClient, teamsModeContext);
+                if (messageBus != null) {
+                    teamsMw.wireMessageBus(messageBus, resolvedAgentId);
+                }
+                teamsMw.bindSession(teamsModeSessionId);
+                inner.middleware(teamsMw);
+                for (Object t : teamsMw.getTools()) {
+                    agentToolkit.registerTool(t);
+                }
+                capturedTeamsMw = teamsMw;
             }
 
-            if (model != null && !disableMemoryHooks) {
-                MemoryConsolidator consolidator = new MemoryConsolidator(wsManager, model);
-                allHooks.add(new MemoryMaintenanceHook(wsManager, consolidator));
-            }
-
-            CompactionHook compactionHook = null;
-            if (compactionConfig != null && model != null) {
-                compactionHook = new CompactionHook(wsManager, model, compactionConfig);
-                allHooks.add(compactionHook);
-            }
-
-            if (toolResultEvictionConfig != null) {
-                allHooks.add(new ToolResultEvictionHook(filesystem, toolResultEvictionConfig));
-            }
-
-            if (!disableSessionPersistence) {
-                allHooks.add(new SessionPersistenceHook());
-            }
-
+            Object capturedSubagentMw = null;
             if (!leafSubagent && !disableSubagents && model != null) {
-                SubagentsHook subagentsHook =
-                        buildSubagentsHook(
-                                wsManager, resolvedWorkspace, capturedSandboxFs, userIdRef);
-                if (subagentsHook != null) {
-                    allHooks.add(subagentsHook);
+                if (filesystem != null && !disableDynamicSubagents) {
+                    DynamicSubagentsMiddleware dynMw =
+                            HarnessAgentBuilderSupport.buildDynamicSubagentsMiddleware(
+                                    this, wsManager, resolvedWorkspace, capturedSandboxFs);
+                    if (dynMw != null) {
+                        if (messageBus != null) {
+                            wireTaskRepositoryMessageBus(
+                                    dynMw.getTaskRepository(), messageBus, resolvedAgentId);
+                        }
+                        inner.middleware(dynMw);
+                        for (Object t : dynMw.getTools()) {
+                            agentToolkit.registerTool(t);
+                        }
+                        capturedSubagentMw = dynMw;
+                    }
+                } else {
+                    SubagentsMiddleware subagentsMw =
+                            HarnessAgentBuilderSupport.buildSubagentsMiddleware(
+                                    this, wsManager, resolvedWorkspace, capturedSandboxFs);
+                    if (subagentsMw != null) {
+                        if (messageBus != null) {
+                            subagentsMw.wireMessageBus(messageBus, resolvedAgentId);
+                        }
+                        inner.middleware(subagentsMw);
+                        for (Object t : subagentsMw.getTools()) {
+                            agentToolkit.registerTool(t);
+                        }
+                        capturedSubagentMw = subagentsMw;
+                    }
                 }
             }
 
-            // ---- Toolkit ----
-            Toolkit agentToolkit = toolkit;
+            if (messageBus != null && asyncToolTimeout != null) {
+                inner.middleware(
+                        new AsyncToolMiddleware(messageBus, asyncToolTimeout, asyncToolRegistry));
+            }
+            if (messageBus != null) {
+                TaskRepository waitTaskRepo = null;
+                if (capturedSubagentMw instanceof SubagentsMiddleware sm) {
+                    waitTaskRepo = sm.getTaskRepository();
+                } else if (capturedSubagentMw instanceof DynamicSubagentsMiddleware dsm) {
+                    waitTaskRepo = dsm.getTaskRepository();
+                }
+                io.agentscope.harness.agent.tool.WaitAsyncResultsTool waitTool =
+                        new io.agentscope.harness.agent.tool.WaitAsyncResultsTool(
+                                messageBus, waitTaskRepo);
+                if (capturedTeamsMw != null) {
+                    TeamsMiddleware teamsForWait = capturedTeamsMw;
+                    waitTool.setExternalWorkProbe(teamsForWait::hasOutstandingTeamWork);
+                }
+                agentToolkit.registerTool(waitTool);
+            }
 
+            // ---- Toolkit (memory / filesystem / shell tools) ----
             if (!disableMemoryTools) {
                 agentToolkit.registerTool(new MemorySearchTool(wsManager));
                 agentToolkit.registerTool(new MemoryGetTool(wsManager));
-                agentToolkit.registerTool(new SessionSearchTool(wsManager));
+                agentToolkit.registerTool(new MemorySaveTool(wsManager));
+                if (!legacySessionHistory) {
+                    agentToolkit.registerTool(
+                            new SessionSearchTool(
+                                    sessionLogStore != null
+                                            ? sessionLogStore
+                                            : new WorkspaceSessionLogStore(wsManager)));
+                }
             }
-
+            WorkspacePathNormalizer pathNormalizer;
+            if (filesystem instanceof OverlayFilesystem ov
+                    && ov.getUpper() instanceof LocalFilesystemWithShell) {
+                // Local overlay mode. ShellAwareOverlay is instanceof AbstractSandboxFilesystem,
+                // so this branch must come before the sandbox check below to avoid using the
+                // sandbox "/workspace" prefix for real host paths.
+                // Only strip the workspace prefix — NOT the project prefix. Project absolute
+                // paths are handled correctly by the ROOTED pathPolicy, and stripping them
+                // would produce relative paths whose lower-layer virtual entries (/src/...)
+                // then fail in the upper layer's ROOTED check.
+                pathNormalizer =
+                        WorkspacePathNormalizer.of(
+                                resolvedWorkspace.toAbsolutePath().toString(), nsFactory);
+            } else if (filesystem instanceof AbstractSandboxFilesystem) {
+                pathNormalizer =
+                        WorkspacePathNormalizer.of(ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
+            } else {
+                pathNormalizer =
+                        WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());
+            }
             if (!disableFilesystemTools) {
-                agentToolkit.registerTool(new FilesystemTool(filesystem));
+                agentToolkit.registerTool(new FilesystemTool(filesystem, pathNormalizer));
             }
-
+            if (artifactDeliveryEnabled) {
+                agentToolkit.registerTool(
+                        new ArtifactDeliveryTool(
+                                filesystem, pathNormalizer, artifactDeliveryTarget));
+            }
             if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
+            if (!disableWebTools) {
+                if (webHttpClient != null) {
+                    agentToolkit.registerTool(new WebTools.WebFetchTool(webHttpClient));
+                    agentToolkit.registerTool(new WebTools.WebSearchTool(webHttpClient));
+                } else {
+                    agentToolkit.registerTool(new WebTools.WebFetchTool());
+                    agentToolkit.registerTool(new WebTools.WebSearchTool());
+                }
+            }
 
-            // ---- Skills (SkillBox assembled from optional AgentSkillRepository or default FS
-            // repo) ----
-            SkillBox effectiveSkillBox = resolveSkillBox(wsManager, agentToolkit);
+            // ---- Plan mode (read-only design phase) ----
+            PlanModeManager planModeManager = null;
+            if (planModeEnabled) {
+                planModeManager = new PlanModeManager(wsManager, planFileDir);
+                agentToolkit.registerTool(new PlanModeTools.PlanEnterTool(planModeManager));
+                agentToolkit.registerTool(new PlanModeTools.PlanWriteTool(planModeManager));
+                agentToolkit.registerTool(new PlanModeTools.PlanExitTool(planModeManager));
+                final Toolkit roToolkit = agentToolkit;
+                java.util.Set<String> planExtraAllowed =
+                        planModeAllowShell
+                                ? java.util.Set.of(ShellExecuteTool.NAME)
+                                : java.util.Set.of();
+                inner.middleware(
+                        new io.agentscope.harness.agent.middleware.PlanModeMiddleware(
+                                planModeManager,
+                                toolName -> {
+                                    AgentTool t = roToolkit.getTool(toolName);
+                                    return t != null && t.isReadOnly();
+                                },
+                                planExtraAllowed));
+            }
 
-            // ---- Build ReActAgent ----
-            ReActAgent.Builder reactBuilder =
-                    ReActAgent.builder()
-                            .name(name)
-                            .description(description)
-                            .sysPrompt(sysPrompt)
-                            .model(model)
-                            .toolkit(agentToolkit)
-                            .memory(memory)
-                            .maxIters(maxIters)
-                            .hooks(allHooks);
+            // ---- workspace/tools.json: MCP servers + allow/deny filter ----
+            ToolsConfig resolvedToolsConfig = null;
+            if (!disableToolsConfig) {
+                if (toolsConfigOverride != null) {
+                    resolvedToolsConfig = toolsConfigOverride;
+                } else if (wsManager != null) {
+                    resolvedToolsConfig = ToolsConfigLoader.load(wsManager).orElse(null);
+                }
+            }
+            if (resolvedToolsConfig != null) {
+                McpServerRegistrar.register(
+                        agentToolkit,
+                        resolvedToolsConfig.getMcpServers(),
+                        mcpServerRegistrationListener);
+            }
 
-            if (modelExecutionConfig != null) {
-                reactBuilder.modelExecutionConfig(modelExecutionConfig);
-            }
-            if (toolExecutionConfig != null) {
-                reactBuilder.toolExecutionConfig(toolExecutionConfig);
-            }
-            if (generateOptions != null) {
-                reactBuilder.generateOptions(generateOptions);
-            }
-            if (effectiveSkillBox != null) {
-                reactBuilder.skillBox(effectiveSkillBox);
-            }
-            if (toolExecutionContext != null) {
-                reactBuilder.toolExecutionContext(toolExecutionContext);
-            }
-            if (!knowledgeBases.isEmpty()) {
-                reactBuilder
-                        .knowledges(knowledgeBases)
-                        .ragMode(ragMode)
-                        .retrieveConfig(retrieveConfig);
-            }
-            if (planNotebook != null) {
-                reactBuilder.planNotebook(planNotebook);
-            }
-            if (longTermMemory != null) {
-                reactBuilder
-                        .longTermMemory(longTermMemory)
-                        .longTermMemoryMode(longTermMemoryMode)
-                        .longTermMemoryAsyncRecord(longTermMemoryAsyncRecord);
-            }
-            if (statePersistence != null) {
-                reactBuilder.statePersistence(statePersistence);
-            }
-            if (structuredOutputReminder != null) {
-                reactBuilder.structuredOutputReminder(structuredOutputReminder);
-            }
-            reactBuilder
-                    .enableMetaTool(enableMetaTool)
-                    .enablePendingToolRecovery(enablePendingToolRecovery)
-                    .checkRunning(checkRunning);
+            // ---- Skills ----
+            List<AgentSkillRepository> orderedSkillRepos =
+                    HarnessAgentBuilderSupport.composeSkillRepositories(
+                            this, wsManager, filesystem);
 
-            ReActAgent delegate = reactBuilder.build();
+            // ---- Skill self-learning: writable workspace skills + skill_manage tool ----
+            SkillPromoter pendingSkillPromoter = null;
+            SkillUsageStore pendingSkillUsageStore = null;
+            SkillCurator pendingSkillCurator = null;
+            SkillAuditLog pendingSkillAuditLog = null;
+            if (skillManageToolEnabled && filesystem != null) {
+                SkillManageConfig smConfig =
+                        skillManageConfig != null
+                                ? skillManageConfig
+                                : SkillManageConfig.defaults();
+                WorkspaceSkillRepository mainWritableRepo = null;
+                for (int i = orderedSkillRepos.size() - 1; i >= 0; i--) {
+                    AgentSkillRepository r = orderedSkillRepos.get(i);
+                    // The default Layer-4 repo (composeSkillRepositories) is a read-only
+                    // WorkspaceSkillRepository pointed at "skills". Replace it with a
+                    // writable one pointed at the configured main dir so skill_manage can
+                    // persist.
+                    if (r instanceof WorkspaceSkillRepository wsr && !wsr.isWriteable()) {
+                        mainWritableRepo =
+                                new WorkspaceSkillRepository(
+                                        filesystem, smConfig.mainDir(), "workspace-writable");
+                        orderedSkillRepos.set(i, mainWritableRepo);
+                        break;
+                    }
+                }
+                if (mainWritableRepo == null) {
+                    mainWritableRepo =
+                            new WorkspaceSkillRepository(
+                                    filesystem, smConfig.mainDir(), "workspace-writable");
+                    orderedSkillRepos.add(mainWritableRepo);
+                }
+                WorkspaceSkillRepository draftsWritableRepo =
+                        new WorkspaceSkillRepository(
+                                filesystem, smConfig.draftsDir(), "workspace-drafts");
+                SkillUsageStore usageStore =
+                        distributedStore != null
+                                ? SkillUsageStore.baseStore(distributedStore.baseStore())
+                                : new SkillUsageStore(filesystem);
+                SkillAuditLog auditLog = new SkillAuditLog(filesystem, wsManager);
+                SkillManageTool skillManageTool =
+                        new SkillManageTool(
+                                mainWritableRepo,
+                                draftsWritableRepo,
+                                smConfig,
+                                usageStore,
+                                auditLog);
+                pendingSkillAuditLog = auditLog;
+                agentToolkit.registerAgentTool(skillManageTool);
+                agentToolkit.registerAgentTool(new ProposeSkillTool(skillManageTool));
+                inner.middleware(
+                        new io.agentscope.harness.agent.middleware.SkillUsageMiddleware(
+                                usageStore));
+
+                pendingSkillPromoter =
+                        new SkillPromoter(
+                                draftsWritableRepo,
+                                mainWritableRepo,
+                                wsManager,
+                                usageStore,
+                                promotionGate != null ? promotionGate : new RejectAllGate(),
+                                smConfig.draftsDir(),
+                                smConfig.mainDir(),
+                                auditLog);
+                pendingSkillUsageStore = usageStore;
+
+                if (skillCuratorEnabled) {
+                    SkillCurator curator =
+                            new SkillCurator(
+                                    filesystem,
+                                    usageStore,
+                                    mainWritableRepo,
+                                    skillCuratorConfig != null
+                                            ? skillCuratorConfig
+                                            : SkillCuratorConfig.defaults(),
+                                    periodicGate);
+                    pendingSkillCurator = curator;
+                    inner.middleware(
+                            new io.agentscope.harness.agent.middleware.SkillCuratorMiddleware(
+                                    curator));
+                }
+            }
+
+            if (!orderedSkillRepos.isEmpty()) {
+                io.agentscope.harness.agent.skill.runtime.MarketplaceStager stager =
+                        resolvedWorkspace != null
+                                ? new io.agentscope.harness.agent.skill.runtime.MarketplaceStager(
+                                        resolvedWorkspace)
+                                : null;
+
+                io.agentscope.harness.agent.skill.runtime.ShellPathPolicy shellPolicy;
+                boolean shellToolAvailable =
+                        !disableShellTool
+                                && ToolFilter.isAllowed(ShellExecuteTool.NAME, resolvedToolsConfig);
+                if (!shellToolAvailable) {
+                    shellPolicy =
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
+                } else if (filesystem instanceof LocalFilesystemWithShell) {
+                    shellPolicy =
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
+                                    .localWithShell(resolvedWorkspace);
+                } else if (filesystem instanceof OverlayFilesystem ov
+                        && ov.getUpper() instanceof LocalFilesystemWithShell) {
+                    shellPolicy =
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
+                                    .localWithShell(resolvedWorkspace);
+                } else if (filesystem instanceof SandboxBackedFilesystem
+                        || (filesystem instanceof RoutedSandboxFilesystem routed
+                                && routed.primary() instanceof SandboxBackedFilesystem)) {
+                    String wsPrefix =
+                            defaultSandboxContext != null
+                                            && defaultSandboxContext.getClientOptions() != null
+                                    ? defaultSandboxContext.getClientOptions().getWorkspaceRoot()
+                                    : io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
+                                            .SANDBOX_WORKSPACE_PREFIX;
+                    shellPolicy =
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.sandbox(
+                                    wsPrefix);
+                } else {
+                    shellPolicy =
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
+                }
+
+                HarnessSkillMiddleware skillMiddleware =
+                        disableDynamicSkills
+                                ? HarnessSkillMiddleware.frozen(
+                                        orderedSkillRepos,
+                                        agentToolkit,
+                                        skillFilter,
+                                        visibilityFilter,
+                                        stager,
+                                        shellPolicy)
+                                : new HarnessSkillMiddleware(
+                                        orderedSkillRepos,
+                                        agentToolkit,
+                                        skillFilter,
+                                        visibilityFilter,
+                                        stager,
+                                        shellPolicy);
+                skillMiddleware.isolationScope(fsIsolationScope);
+                inner.middleware(skillMiddleware);
+
+                // Harness owns both the live and frozen repository paths.
+                inner.dynamicSkillsEnabled(false);
+
+                // Wire pre-start staging so sandbox projection picks up .skills-cache content
+                // that MarketplaceStager materialises from database-backed repositories.
+                if (sandboxLifecycleMw != null && stager != null) {
+                    sandboxLifecycleMw.setBeforeStartCallback(
+                            skillMiddleware::prestageMarketplaceSkills);
+                }
+            } else if (disableDynamicSkills) {
+                // No composed repositories exist, but preserve the explicit core opt-out.
+                inner.dynamicSkillsEnabled(false);
+            }
+
+            // ---- Apply tools.json allow/deny filter ----
+            // Platform tools (subagents/teams/tasks/…) survive allow; see ToolFilter.
+            if (resolvedToolsConfig != null) {
+                ToolFilter.apply(agentToolkit, resolvedToolsConfig);
+            }
 
             log.info(
-                    "HarnessAgent '{}' built [workspace={}, backend={}, subagents={}]",
+                    "HarnessAgent '{}' built [workspace={}, filesystem={}, subagents={}]",
                     name,
                     resolvedWorkspace,
                     filesystem.getClass().getSimpleName(),
                     !leafSubagent && !disableSubagents && model != null);
 
+            // ---- Build inner ReActAgent ----
+            inner.toolkit(agentToolkit);
+            ReActAgent delegate = inner.build();
+
             return new HarnessAgent(
                     delegate,
                     wsManager,
+                    workspaceFactoryFn,
+                    workspaceIndex,
+                    defaultSandboxContext,
                     compactionHook,
-                    userIdRef,
-                    sessionIdRef,
-                    effectiveSession,
-                    defaultSandboxContext);
-        }
-
-        // @formatter:off
-        /**
-         * Subagent context section injected into every subagent's system prompt.
-         * Establishes identity, rules, output format, and prohibited behaviours for a leaf worker.
-         * The task itself is delivered as the first user message, not duplicated here.
-         */
-        private static final String SUBAGENT_CONTEXT_SECTION =
-                """
-                # Subagent Context
-
-                You are a **subagent** spawned by the main agent for a specific task.
-
-                ## Your Role
-                - Complete the assigned task. That's your entire purpose.
-                - You are NOT the main agent. Don't try to be.
-
-                ## Rules
-                1. **Stay focused** — Do your assigned task, nothing else
-                2. **Complete the task** — Your final message will be automatically reported to the main agent
-                3. **Don't initiate** — No heartbeats, no proactive actions, no side quests
-                4. **Be ephemeral** — You may be terminated after task completion. That's fine.
-                5. **Recover from truncated tool output** — If you see `[truncated: output exceeded context limit]`, re-read only what you need using smaller chunks (read with offset/limit, or targeted grep/head/tail) instead of full re-reads
-
-                ## Output Format
-                When complete, your final response should include:
-                - What you accomplished or found
-                - Any relevant details the main agent should know
-                - Keep it concise but informative
-
-                ## What You DON'T Do
-                - NO user conversations (that's the main agent's job)
-                - NO spawning further subagents — you are a leaf worker
-                - NO pretending to be the main agent
-                - Return plain text results; let the main agent deliver them to the user
-                """;
-
-        // @formatter:on
-
-        private static final String GENERAL_PURPOSE_BASE_PROMPT =
-                "You are a highly capable general-purpose subagent.";
-
-        /**
-         * Builds a system prompt for a subagent by appending {@link #SUBAGENT_CONTEXT_SECTION} to
-         * the given base prompt. If the base is blank, only the context section is used.
-         */
-        private static String buildSubagentSysPrompt(String basePrompt) {
-            String base =
-                    (basePrompt != null && !basePrompt.isBlank()) ? basePrompt.stripTrailing() : "";
-            return base.isEmpty()
-                    ? SUBAGENT_CONTEXT_SECTION
-                    : base + "\n\n" + SUBAGENT_CONTEXT_SECTION;
-        }
-
-        // -----------------------------------------------------------------
-        //  Backend
-        // -----------------------------------------------------------------
-
-        private AbstractFilesystem resolveFilesystem(
-                Path workspace,
-                String agentId,
-                AtomicReference<String> userIdRef,
-                AtomicReference<String> sessionIdRef) {
-            if (abstractFilesystem != null) {
-                return abstractFilesystem;
-            }
-            NamespaceFactory nsFactory = buildDynamicNamespaceFactory(userIdRef);
-            if (remoteFilesystemSpec != null) {
-                return remoteFilesystemSpec.toFilesystem(
-                        workspace, agentId, nsFactory, userIdRef::get, sessionIdRef::get);
-            }
-            if (localFilesystemSpec != null) {
-                return localFilesystemSpec.toFilesystem(workspace, nsFactory);
-            }
-            // Default to Mode 3 with out-of-the-box LocalFilesystemWithShell settings.
-            return new LocalFilesystemWithShell(workspace, nsFactory);
-        }
-
-        private void validateDistributedSandboxConfig(
-                Session effectiveSession, SandboxContext sandboxContext) {
-            if (sandboxFilesystemSpec.getSandboxStateStore() == null
-                    && effectiveSession instanceof WorkspaceSession) {
-                throw new IllegalStateException(
-                        "filesystem(SandboxFilesystemSpec) requires a distributed Session backend"
-                                + " (for example RedisSession) to persist and restore sandbox"
-                                + " state across distributed instances."
-                                + " Configure one via .session(...)."
-                                + " For single-node use, opt out via"
-                                + " .sandboxDistributed(SandboxDistributedOptions.builder()"
-                                + ".requireDistributed(false).build()).");
-            }
-            if (sandboxContext == null
-                    || sandboxContext.getSnapshotSpec() == null
-                    || sandboxContext.getSnapshotSpec() instanceof NoopSnapshotSpec) {
-                throw new IllegalStateException(
-                        "filesystem(SandboxFilesystemSpec) requires a non-noop snapshotSpec to"
-                                + " restore workspace archives across distributed instances."
-                                + " Configure one via SandboxFilesystemSpec.snapshotSpec(...)."
-                                + " For single-node use, opt out via"
-                                + " .sandboxDistributed(SandboxDistributedOptions.builder()"
-                                + ".requireDistributed(false).build()).");
-            }
-        }
-
-        private static NamespaceFactory buildDynamicNamespaceFactory(
-                AtomicReference<String> userIdRef) {
-            return () -> {
-                String userId = userIdRef.get();
-                if (userId == null || userId.isBlank()) {
-                    return List.of();
-                }
-                return List.of(userId);
-            };
-        }
-
-        // -----------------------------------------------------------------
-        //  Subagents
-        // -----------------------------------------------------------------
-
-        private SubagentsHook buildSubagentsHook(
-                WorkspaceManager wsManager,
-                Path workspace,
-                SandboxBackedFilesystem sandboxFs,
-                AtomicReference<String> userIdRef) {
-            List<SubagentEntry> entries = buildSubagentEntries(workspace, sandboxFs);
-            TaskRepository repo;
-            if (taskRepository != null) {
-                repo = taskRepository;
-            } else if (wsManager != null) {
-                String resolvedName = name != null ? name : "HarnessAgent";
-                repo = new WorkspaceTaskRepository(wsManager, resolvedName);
-            } else {
-                repo = new DefaultTaskRepository();
-            }
-
-            if (externalSubagentTool != null) {
-                return new SubagentsHook(entries, externalSubagentTool, repo);
-            }
-            return new SubagentsHook(entries, repo, wsManager, userIdRef::get);
-        }
-
-        /**
-         * Builds a factory for the built-in general-purpose subagent.
-         *
-         * <p>The general-purpose subagent always runs in {@link WorkspaceMode#SHARED} mode: it
-         * uses the same workspace root and filesystem backend as the main agent, and inherits all
-         * capability settings (hooks, tool disable flags, skills, execution config, additional
-         * context files, compaction, etc.) so that its effective capability profile is identical to
-         * the main agent. The only intentional differences are:
-         * <ol>
-         *   <li>{@link Builder#asLeafSubagent()} — prevents recursive subagent spawning.
-         *   <li>An independent child session-id, assigned at invoke time.
-         *   <li>The system prompt is the Subagent Context section only (no base prompt); the
-         *       workspace {@code AGENTS.md} is injected automatically by {@link WorkspaceContextHook}.
-         * </ol>
-         */
-        private SubagentFactory buildGeneralPurposeFactory(
-                Path workspace, SandboxBackedFilesystem sandboxFs) {
-            final Model capturedModel = this.model;
-            final Toolkit capturedParentToolkit =
-                    this.toolkit != null ? this.toolkit.copy() : new Toolkit();
-            final AbstractFilesystem capturedBackend =
-                    sandboxFs != null ? sandboxFs : this.abstractFilesystem;
-            final int capturedMaxIters = this.maxIters;
-            final ExecutionConfig capturedModelExec = this.modelExecutionConfig;
-            final ExecutionConfig capturedToolExec = this.toolExecutionConfig;
-            final GenerateOptions capturedGenOpts = this.generateOptions;
-            final String capturedEnvMemory = this.environmentMemory;
-            final List<Hook> capturedHooks = List.copyOf(this.hooks);
-            final AgentSkillRepository capturedSkillRepo = this.skillRepository;
-            final boolean capturedUseLegacyXmlWorkspaceContext = this.useLegacyXmlWorkspaceContext;
-            final boolean capturedDisableFilesystemTools = this.disableFilesystemTools;
-            final boolean capturedDisableShellTool = this.disableShellTool;
-            final boolean capturedDisableMemoryTools = this.disableMemoryTools;
-            final boolean capturedDisableMemoryHooks = this.disableMemoryHooks;
-            final boolean capturedDisableSessionPersistence = this.disableSessionPersistence;
-            final boolean capturedDisableWorkspaceContext = this.disableWorkspaceContext;
-            final CompactionConfig capturedCompactionConfig = this.compactionConfig;
-            final ToolResultEvictionConfig capturedToolResultEvictionConfig =
-                    this.toolResultEvictionConfig;
-            final boolean capturedAgentTracingLogEnabled = this.agentTracingLogEnabled;
-            final List<String> capturedAdditionalContextFiles =
-                    List.copyOf(this.additionalContextFiles);
-            final int capturedMaxContextTokens = this.maxContextTokens;
-
-            return () -> {
-                Builder sub =
-                        HarnessAgent.builder()
-                                .name("general-purpose-subagent")
-                                .description("General-purpose subagent for isolated task execution")
-                                .sysPrompt(buildSubagentSysPrompt(null))
-                                .model(capturedModel)
-                                .toolkit(capturedParentToolkit.copy())
-                                .workspace(workspace)
-                                .asLeafSubagent()
-                                .maxIters(capturedMaxIters)
-                                .environmentMemory(capturedEnvMemory)
-                                .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
-                                .enableAgentTracingLog(capturedAgentTracingLogEnabled)
-                                .maxContextTokens(capturedMaxContextTokens);
-
-                capturedAdditionalContextFiles.forEach(sub::additionalContextFile);
-
-                if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
-                if (capturedDisableShellTool) sub.disableShellTool();
-                if (capturedDisableMemoryTools) sub.disableMemoryTools();
-                if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
-                if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
-                if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
-
-                if (capturedSkillRepo != null) sub.skillRepository(capturedSkillRepo);
-                if (capturedBackend != null) sub.abstractFilesystem(capturedBackend);
-                if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
-                if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
-                if (capturedGenOpts != null) sub.generateOptions(capturedGenOpts);
-                if (capturedCompactionConfig != null) sub.compaction(capturedCompactionConfig);
-                if (capturedToolResultEvictionConfig != null)
-                    sub.toolResultEviction(capturedToolResultEvictionConfig);
-
-                sub.hooks(capturedHooks);
-
-                return sub.build();
-            };
-        }
-
-        /**
-         * Builds a factory for a user-declared subagent from a {@link SubagentDeclaration}.
-         *
-         * <p>Workspace and system-prompt resolution follows the five-row decision table in
-         * {@link WorkspaceMode}. When the mode is {@link WorkspaceMode#SHARED}, the parent's
-         * filesystem backend is reused; when {@link WorkspaceMode#ISOLATED}, a fresh
-         * {@link io.agentscope.harness.agent.filesystem.local.LocalFilesystem} is created on the
-         * resolved workspace path. The tools allowlist (if non-empty) filters inherited parent
-         * tools before child-local tools are registered.
-         */
-        private SubagentFactory buildDeclaredFactory(
-                SubagentDeclaration decl, Path mainWorkspace, SandboxBackedFilesystem sandboxFs) {
-            final Model capturedModel = this.model;
-            final Toolkit capturedParentToolkit =
-                    this.toolkit != null ? this.toolkit.copy() : new Toolkit();
-            final Function<String, Model> capturedResolver = this.modelResolver;
-            final AbstractFilesystem capturedSharedBackend =
-                    sandboxFs != null ? sandboxFs : this.abstractFilesystem;
-            final boolean capturedUseLegacyXmlWorkspaceContext = this.useLegacyXmlWorkspaceContext;
-            final boolean capturedDisableFilesystemTools = this.disableFilesystemTools;
-            final boolean capturedDisableShellTool = this.disableShellTool;
-            final boolean capturedDisableMemoryTools = this.disableMemoryTools;
-            final boolean capturedDisableMemoryHooks = this.disableMemoryHooks;
-            final boolean capturedDisableSessionPersistence = this.disableSessionPersistence;
-
-            return () -> {
-                if (decl.isRemote()) {
-                    return new RemoteSubagentStub(decl.getName(), decl.getDescription());
-                }
-                // ---- Resolve workspace root ----
-                Path runtimeWorkspace = resolveDeclaredWorkspace(decl, mainWorkspace);
-
-                // ---- Resolve system prompt ----
-                String sysPromptBase = resolveDeclaredSysPromptBase(decl);
-
-                // ---- Resolve model ----
-                Model effectiveModel =
-                        resolveModel(
-                                decl.getModel(), capturedModel, capturedResolver, decl.getName());
-
-                // ---- Build child agent ----
-                Builder sub =
-                        HarnessAgent.builder()
-                                .name(decl.getName())
-                                .description(decl.getDescription())
-                                .model(effectiveModel)
-                                .toolkit(
-                                        allowlistedInheritedToolkit(
-                                                capturedParentToolkit, decl.getTools()))
-                                .workspace(runtimeWorkspace)
-                                .maxIters(decl.getMaxIters())
-                                .asLeafSubagent()
-                                .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
-                                .sysPrompt(buildSubagentSysPrompt(sysPromptBase));
-
-                // Shared mode reuses the parent's filesystem backend so MEMORY/sessions are
-                // namespaced identically; isolated mode gets a plain LocalFilesystem on its own
-                // workspace root.
-                if (decl.getWorkspaceMode() == WorkspaceMode.SHARED
-                        && capturedSharedBackend != null) {
-                    sub.abstractFilesystem(capturedSharedBackend);
-                }
-
-                // Propagate disable flags so the declared subagent respects the same capability
-                // restrictions as the main agent.
-                if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
-                if (capturedDisableShellTool) sub.disableShellTool();
-                if (capturedDisableMemoryTools) sub.disableMemoryTools();
-                if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
-                if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
-
-                return sub.build();
-            };
-        }
-
-        /**
-         * Returns a defensive copy of inherited parent tools filtered by the optional allowlist.
-         */
-        private static Toolkit allowlistedInheritedToolkit(
-                Toolkit parentToolkit, List<String> allowlist) {
-            Toolkit toolkit = parentToolkit != null ? parentToolkit.copy() : new Toolkit();
-            if (allowlist == null || allowlist.isEmpty()) {
-                return toolkit;
-            }
-            List<String> toRemove =
-                    toolkit.getToolSchemas().stream()
-                            .map(ToolSchema::getName)
-                            .filter(name -> !allowlist.contains(name))
-                            .toList();
-            toRemove.forEach(toolkit::removeTool);
-            return toolkit;
-        }
-
-        /**
-         * Resolves the runtime workspace root for a declared subagent according to the five-row
-         * decision table. Creates the auto-generated isolated directory when needed.
-         */
-        private static Path resolveDeclaredWorkspace(SubagentDeclaration decl, Path mainWorkspace) {
-            if (decl.getWorkspacePath() != null) {
-                if (decl.getWorkspaceMode() == WorkspaceMode.SHARED) {
-                    return mainWorkspace;
-                }
-                return decl.getWorkspacePath();
-            }
-            if (decl.getWorkspaceMode() == WorkspaceMode.SHARED) {
-                return mainWorkspace;
-            }
-            // ISOLATED + no path → auto-create agents/<name>/workspace/
-            Path isolated =
-                    mainWorkspace.resolve("agents").resolve(decl.getName()).resolve("workspace");
-            try {
-                Files.createDirectories(isolated);
-            } catch (Exception e) {
-                log.warn(
-                        "Failed to create isolated workspace for subagent '{}' at {}: {}",
-                        decl.getName(),
-                        isolated,
-                        e.getMessage());
-            }
-            return isolated;
-        }
-
-        /**
-         * Resolves the system-prompt <em>base</em> for a declared subagent.
-         *
-         * <ul>
-         *   <li>Definition workspace present: reads {@code AGENTS.md} from the definition
-         *       directory. Falls back to an empty string if the file is absent.
-         *   <li>Inline: returns {@link SubagentDeclaration#getInlineAgentsBody()}.
-         * </ul>
-         *
-         * <p>The returned string is later combined with {@link #SUBAGENT_CONTEXT_SECTION} via
-         * {@link #buildSubagentSysPrompt(String)}.
-         */
-        private static String resolveDeclaredSysPromptBase(SubagentDeclaration decl) {
-            if (decl.getWorkspacePath() != null) {
-                Path agentsMd = decl.getWorkspacePath().resolve("AGENTS.md");
-                if (Files.isRegularFile(agentsMd)) {
-                    try {
-                        return Files.readString(agentsMd, java.nio.charset.StandardCharsets.UTF_8);
-                    } catch (Exception e) {
-                        log.warn(
-                                "Failed to read AGENTS.md for subagent '{}' from {}: {}",
-                                decl.getName(),
-                                agentsMd,
-                                e.getMessage());
-                    }
-                }
-                return "";
-            }
-            String inline = decl.getInlineAgentsBody();
-            return (inline != null) ? inline : "";
-        }
-
-        /**
-         * Resolves the effective {@link Model} for a subagent, applying the optional per-subagent
-         * model override.
-         */
-        private static Model resolveModel(
-                String modelOverride,
-                Model parentModel,
-                Function<String, Model> resolver,
-                String subagentName) {
-            if (modelOverride == null || modelOverride.isBlank()) {
-                return parentModel;
-            }
-            Function<String, Model> effectiveResolver =
-                    resolver != null ? resolver : ModelRegistry::resolve;
-            if (ModelRegistry.canResolve(modelOverride) || resolver != null) {
-                try {
-                    Model resolved = effectiveResolver.apply(modelOverride);
-                    if (resolved != null) {
-                        log.debug(
-                                "Subagent '{}' using overridden model: {}",
-                                subagentName,
-                                modelOverride);
-                        return resolved;
-                    }
-                } catch (Exception e) {
-                    log.warn(
-                            "Failed to resolve model '{}' for subagent '{}', falling back to"
-                                    + " parent model: {}",
-                            modelOverride,
-                            subagentName,
-                            e.getMessage());
-                }
-            }
-            return parentModel;
-        }
-
-        // -----------------------------------------------------------------
-        //  Skills
-        // -----------------------------------------------------------------
-
-        private SkillBox resolveSkillBox(WorkspaceManager wsManager, Toolkit agentToolkit) {
-            if (skillRepository != null) {
-                return skillBoxFromRepository(skillRepository, agentToolkit);
-            }
-            Path skillsDir = wsManager.getSkillsDir();
-            if (!Files.isDirectory(skillsDir)) {
-                return null;
-            }
-            try {
-                return skillBoxFromRepository(
-                        new FileSystemSkillRepository(skillsDir), agentToolkit);
-            } catch (Exception e) {
-                log.warn("Failed to auto-load skills from {}: {}", skillsDir, e.getMessage());
-                return null;
-            }
-        }
-
-        private static SkillBox skillBoxFromRepository(
-                AgentSkillRepository repo, Toolkit agentToolkit) {
-            try {
-                List<AgentSkill> skills = repo.getAllSkills();
-                if (skills == null || skills.isEmpty()) {
-                    return null;
-                }
-                SkillBox box = new SkillBox(agentToolkit);
-                for (AgentSkill skill : skills) {
-                    box.registerSkill(skill);
-                }
-                log.info(
-                        "Loaded {} skills from {}",
-                        skills.size(),
-                        repo.getRepositoryInfo() != null
-                                ? repo.getRepositoryInfo()
-                                : repo.getClass().getSimpleName());
-                return box;
-            } catch (Exception e) {
-                log.warn("Failed to load skills from repository: {}", e.getMessage());
-                return null;
-            }
-        }
-
-        private record SubagentFactoryEntry(String name, Function<String, Agent> factory) {}
-
-        /** Marks this build as a leaf subagent (no nested subagent orchestration). */
-        private Builder asLeafSubagent() {
-            this.leafSubagent = true;
-            return this;
+                    sandboxLifecycleMw,
+                    orderedSkillRepos,
+                    planModeManager,
+                    pendingSkillPromoter,
+                    pendingSkillUsageStore,
+                    pendingSkillCurator,
+                    pendingSkillAuditLog,
+                    memoryConfig,
+                    capturedSubagentMw,
+                    distributedStore,
+                    pathNormalizer,
+                    agentToolkit);
         }
     }
 }

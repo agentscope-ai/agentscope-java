@@ -49,6 +49,18 @@ public abstract class McpClientWrapper implements AutoCloseable {
     protected volatile boolean initialized = false;
 
     /**
+     * Whether request metadata (user {@link McpMeta} entries and the framework tool-call id) is
+     * propagated to the MCP server behind this connection.
+     *
+     * <p>Defaults to {@code true} for backward compatibility. This is a live switch: it is read
+     * on every tool call, so changing it takes effect immediately for all tools of this
+     * connection, including ones registered earlier. Set it to {@code false} for MCP servers that
+     * are not fully trusted, so that internal metadata such as trace ids or callback URLs is
+     * never sent over the wire.
+     */
+    protected volatile boolean propagateMeta = true;
+
+    /**
      * Constructs a new MCP client wrapper.
      *
      * @param name unique identifier for this client
@@ -77,6 +89,34 @@ public abstract class McpClientWrapper implements AutoCloseable {
     }
 
     /**
+     * Checks whether request metadata is propagated to this MCP server.
+     *
+     * <p>This is the connection-level half of the decision: every tool call ANDs this value with
+     * the per-tool {@code McpTool.isPropagateMeta()} restriction, so {@code false} here always
+     * wins and stops metadata for the whole connection.
+     *
+     * @return true if metadata ({@link McpMeta} entries and the tool-call id) may be included in
+     *     tool call requests over this connection, false otherwise
+     */
+    public boolean isPropagateMeta() {
+        return propagateMeta;
+    }
+
+    /**
+     * Configures whether request metadata is propagated to this MCP server.
+     *
+     * <p>This is a live switch: it takes effect immediately for every tool registered from this
+     * client, including tools registered before the call. Disable it for MCP servers that are
+     * not fully trusted to avoid leaking internal metadata over the wire.
+     *
+     * @param propagateMeta true to propagate metadata (default), false to omit the {@code meta}
+     *     field entirely from tool call requests
+     */
+    public void setPropagateMeta(boolean propagateMeta) {
+        this.propagateMeta = propagateMeta;
+    }
+
+    /**
      * Initializes the MCP client connection and caches available tools.
      * This method must be called before any tool operations.
      *
@@ -100,6 +140,17 @@ public abstract class McpClientWrapper implements AutoCloseable {
      */
     public abstract Mono<McpSchema.CallToolResult> callTool(
             String toolName, Map<String, Object> arguments);
+
+    /**
+     * Invokes a tool on the MCP server.
+     *
+     * @param toolName the name of the tool to call
+     * @param arguments the arguments to pass to the tool
+     * @param meta the metadata to pass to the tool
+     * @return a Mono emitting the tool call result
+     */
+    public abstract Mono<McpSchema.CallToolResult> callTool(
+            String toolName, Map<String, Object> arguments, Map<String, Object> meta);
 
     /**
      * Gets a cached tool definition by name.

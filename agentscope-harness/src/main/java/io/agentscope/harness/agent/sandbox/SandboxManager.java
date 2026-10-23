@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.sandbox;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -26,12 +27,14 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Acquire priority: {@link SandboxContext#getExternalSandbox()} &gt; {@link
  * SandboxContext#getExternalSandboxState()} &gt; persisted {@link SandboxState} &gt; {@link
- * SandboxClient#create}.
+ * SandboxClient#create}. When a persisted state exists but the resume fails, the fresh-create
+ * fallback keeps the persisted snapshot id so the workspace restores from the previous archive
+ * instead of silently resetting.
  *
  * <p>When a {@link SandboxExecutionGuard} is configured, the manager acquires an execution
  * {@link SandboxLease} before sandbox resume/create for isolation keys that are present. The
  * lease is carried by the {@link SandboxAcquireResult} and closed by the caller
- * ({@link io.agentscope.harness.agent.hook.SandboxLifecycleHook}) after {@link #release},
+ * ({@link io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware}) after {@link #release},
  * ensuring the full call window is covered.
  *
  * <p>Priority 1 (external sandbox) and Priority 2 (external sandbox state) bypass the guard,
@@ -42,17 +45,18 @@ public class SandboxManager {
     private static final Logger log = LoggerFactory.getLogger(SandboxManager.class);
 
     private final SandboxClient<?> client;
-    private final SandboxStateStore stateStore;
+    private final SessionSandboxStateStore stateStore;
     private final String agentId;
     private final SandboxExecutionGuard executionGuard;
 
-    public SandboxManager(SandboxClient<?> client, SandboxStateStore stateStore, String agentId) {
+    public SandboxManager(
+            SandboxClient<?> client, SessionSandboxStateStore stateStore, String agentId) {
         this(client, stateStore, agentId, SandboxExecutionGuard.noop());
     }
 
     public SandboxManager(
             SandboxClient<?> client,
-            SandboxStateStore stateStore,
+            SessionSandboxStateStore stateStore,
             String agentId,
             SandboxExecutionGuard executionGuard) {
         this.client = Objects.requireNonNull(client, "client must not be null");
@@ -94,6 +98,7 @@ public class SandboxManager {
         }
 
         try {
+            String persistedSnapshotId = null;
             if (scopeKey.isPresent()) {
                 try {
                     Optional<String> stateJson = stateStore.load(scopeKey.get());
@@ -101,7 +106,16 @@ public class SandboxManager {
                         log.debug(
                                 "[sandbox] Priority 3: resuming from persisted state (scope={})",
                                 scopeKey.get());
-                        SandboxState state = client.deserializeState(stateJson.get());
+                        SandboxState state =
+                                client.deserializeState(
+                                        stateJson.get(), sandboxContext.getSnapshotSpec());
+                        // Overwrite stale WorkspaceSpec with current application config
+                        if (sandboxContext.getWorkspaceSpec() != null) {
+                            state.setWorkspaceSpec(sandboxContext.getWorkspaceSpec().copy());
+                        }
+                        if (state.getSnapshot() != null) {
+                            persistedSnapshotId = state.getSnapshot().getId();
+                        }
                         Sandbox sandbox = client.resume(state);
                         return SandboxAcquireResult.selfManaged(sandbox, lease);
                     }
@@ -129,6 +143,8 @@ public class SandboxManager {
                             spec,
                             sandboxContext.getSnapshotSpec(),
                             sandboxContext.getClientOptions());
+            carryOverPersistedSnapshotId(
+                    sandbox, persistedSnapshotId, sandboxContext.getSnapshotSpec());
             return SandboxAcquireResult.selfManaged(sandbox, lease);
 
         } catch (Exception e) {
@@ -136,6 +152,33 @@ public class SandboxManager {
             lease.close();
             throw e;
         }
+    }
+
+    /**
+     * Keeps workspace continuity when a failed resume falls through to a fresh create: points
+     * the new sandbox at the snapshot id persisted for this scope, so {@link Sandbox#start()}
+     * restores the workspace from the previous archive instead of silently resetting it, and
+     * {@link Sandbox#stop()} overwrites that same archive instead of orphaning it. The snapshot
+     * is rebuilt from the current spec, so it carries a bound client regardless of how the
+     * persisted state deserialized.
+     */
+    private static void carryOverPersistedSnapshotId(
+            Sandbox sandbox, String persistedSnapshotId, SandboxSnapshotSpec snapshotSpec) {
+        SandboxState state = sandbox.getState();
+        if (persistedSnapshotId == null
+                || persistedSnapshotId.isBlank()
+                || snapshotSpec == null
+                || state == null
+                || state.getSnapshot() == null
+                || persistedSnapshotId.equals(state.getSnapshot().getId())) {
+            return;
+        }
+        log.info(
+                "[sandbox] Resume fell back to fresh create; carrying over snapshot id {} (fresh"
+                        + " id was {})",
+                persistedSnapshotId,
+                state.getSnapshot().getId());
+        state.setSnapshot(snapshotSpec.build(persistedSnapshotId));
     }
 
     public void release(SandboxAcquireResult result) {
@@ -147,18 +190,24 @@ public class SandboxManager {
             return;
         }
 
+        // User-managed sandboxes (Priority 1) are owned by the caller — the harness must not
+        // stop/snapshot or shutdown them, since the caller relies on the sandbox staying alive
+        // across multiple acquire/release cycles (e.g. a registry that reuses one container per
+        // user across the browser path and successive agent turns).
+        if (!result.isSelfManaged()) {
+            return;
+        }
+
         try {
             sandbox.stop();
         } catch (Exception e) {
             log.warn("[sandbox] Sandbox stop failed: {}", e.getMessage(), e);
         }
 
-        if (result.isSelfManaged()) {
-            try {
-                sandbox.shutdown();
-            } catch (Exception e) {
-                log.warn("[sandbox] Sandbox shutdown failed: {}", e.getMessage(), e);
-            }
+        try {
+            sandbox.shutdown();
+        } catch (Exception e) {
+            log.warn("[sandbox] Sandbox shutdown failed: {}", e.getMessage(), e);
         }
     }
 
@@ -167,6 +216,12 @@ public class SandboxManager {
             SandboxContext sandboxContext,
             RuntimeContext runtimeContext) {
         if (result == null || result.getSandbox() == null) {
+            return;
+        }
+        // User-managed sandboxes carry their own persistence story (the registry owns the
+        // lifecycle). Writing through the harness state store would double-track state and
+        // could conflict with the caller's snapshot policy.
+        if (!result.isSelfManaged()) {
             return;
         }
         SandboxState state = result.getSandbox().getState();

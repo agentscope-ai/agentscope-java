@@ -16,7 +16,6 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -53,6 +52,9 @@ import reactor.core.scheduler.Schedulers;
  */
 @DisplayName("AgentBase Tests")
 class AgentBaseTest {
+
+    /** Mirrors AgentBase's private MAX_AGENT_ID_LENGTH, documented on normalizeAgentId. */
+    private static final int MAX_AGENT_ID_LENGTH = 255;
 
     private TestAgent agent;
 
@@ -130,6 +132,43 @@ class AgentBaseTest {
                 agent.getAgentId(),
                 agent2.getAgentId(),
                 "Different agents should have different IDs");
+    }
+
+    @Test
+    @DisplayName("Should reject agent id consisting only of dots")
+    void testNormalizeAgentIdAllDotsRejected() {
+        for (String allDots : new String[] {".", "..", "..."}) {
+            IllegalArgumentException exception =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> AgentBase.normalizeAgentId(allDots),
+                            "All-dots agent id '" + allDots + "' should be rejected");
+            assertTrue(
+                    exception.getMessage().contains("all dots"),
+                    "Error message should explain the all-dots rule");
+        }
+    }
+
+    @Test
+    @DisplayName("Should reject agent id longer than 255 characters, accepting exactly 255")
+    void testNormalizeAgentIdLengthLimit() {
+        // Exactly at the limit is still valid
+        String atLimit = "a".repeat(MAX_AGENT_ID_LENGTH);
+        assertEquals(
+                atLimit,
+                AgentBase.normalizeAgentId(atLimit),
+                "Agent id at the max length should be accepted");
+
+        // One over the limit is rejected
+        String overLimit = "a".repeat(MAX_AGENT_ID_LENGTH + 1);
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> AgentBase.normalizeAgentId(overLimit),
+                        "Agent id exceeding the max length should be rejected");
+        assertTrue(
+                exception.getMessage().contains(String.valueOf(MAX_AGENT_ID_LENGTH)),
+                "Error message should state the max length");
     }
 
     @Test
@@ -270,42 +309,39 @@ class AgentBaseTest {
     }
 
     @Test
-    @DisplayName("Should throw exception when checkRunning is enabled and concurrent call occurs")
-    void testCheckRunningEnabled_ThrowsExceptionOnConcurrentCall() throws InterruptedException {
-        // Create agent with checkRunning=true (default) and delay to simulate long-running call
-        TestAgent slowAgent = new TestAgent("SlowAgent", true);
-        slowAgent.setDelay(Duration.ofMillis(500));
+    @DisplayName("Should allow concurrent calls (checkRunning no longer enforced)")
+    void testConcurrentCallsAllowed() throws InterruptedException {
+        TestAgent slowAgent = new TestAgent("SlowAgent", false);
+        slowAgent.setDelay(Duration.ofMillis(200));
 
-        CountDownLatch firstCallStarted = new CountDownLatch(1);
-        AtomicReference<Throwable> secondCallError = new AtomicReference<>();
+        CountDownLatch bothStarted = new CountDownLatch(2);
+        AtomicReference<Msg> result1 = new AtomicReference<>();
+        AtomicReference<Msg> result2 = new AtomicReference<>();
 
-        // Start first call in background
-        Thread firstCallThread =
+        Thread t1 =
                 new Thread(
                         () -> {
-                            firstCallStarted.countDown();
-                            Msg msg = TestUtils.createUserMessage("User", "First call");
-                            slowAgent.call(msg).block(Duration.ofSeconds(5));
+                            bothStarted.countDown();
+                            result1.set(
+                                    slowAgent
+                                            .call(TestUtils.createUserMessage("User", "call1"))
+                                            .block(Duration.ofSeconds(5)));
                         });
-        firstCallThread.start();
-
-        // Wait for first call to start
-        assertTrue(firstCallStarted.await(1, TimeUnit.SECONDS), "First call should start");
-        Thread.sleep(50); // Give time for running flag to be set
-
-        // Try second call while first is still running
-        Msg msg = TestUtils.createUserMessage("User", "Second call");
-        RuntimeException exception =
-                assertThrows(RuntimeException.class, () -> slowAgent.call(msg).block());
-
-        // Verify the exception is IllegalStateException
-        assertInstanceOf(IllegalStateException.class, exception);
-        assertTrue(
-                exception.getMessage().contains("Agent is still running"),
-                "Exception message should indicate agent is running");
-
-        // Wait for first call to complete
-        firstCallThread.join(2000);
+        Thread t2 =
+                new Thread(
+                        () -> {
+                            bothStarted.countDown();
+                            result2.set(
+                                    slowAgent
+                                            .call(TestUtils.createUserMessage("User", "call2"))
+                                            .block(Duration.ofSeconds(5)));
+                        });
+        t1.start();
+        t2.start();
+        t1.join(3000);
+        t2.join(3000);
+        assertNotNull(result1.get());
+        assertNotNull(result2.get());
     }
 
     @Test

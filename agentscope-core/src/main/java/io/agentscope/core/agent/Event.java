@@ -45,7 +45,16 @@ import io.agentscope.core.message.Msg;
  *         }
  *     });
  * }</pre>
+ *
+ * @deprecated since 2.0.0. This is the v1 coarse-grained event type, kept as the return type
+ *     of the deprecated {@code stream(...)} API and as the wire format consumed by the
+ *     harness, AGUI, A2A, chat-completions-web, and Kotlin extension modules. New code should
+ *     use {@code io.agentscope.core.event.AgentEvent} via {@code ReActAgent#streamEvents(...)},
+ *     which exposes the fine-grained event hierarchy (28 typed events covering the full agent
+ *     lifecycle and HITL flow). The class will be marked {@code forRemoval = true} once the
+ *     dependent internal modules migrate to {@code AgentEvent}.
  */
+@Deprecated(since = "2.0.0")
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class Event {

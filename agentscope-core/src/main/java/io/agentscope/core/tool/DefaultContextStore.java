@@ -25,7 +25,11 @@ import java.util.Objects;
  *
  * <p>Supports singleton (one per type) and multi-instance (keyed) patterns. Immutable and
  * thread-safe.
+ *
+ * @deprecated Part of the {@link ToolExecutionContext} layer which is superseded by
+ *     {@link io.agentscope.core.agent.RuntimeContext}.
  */
+@Deprecated
 class DefaultContextStore implements ContextStore {
 
     private static final String DEFAULT_KEY = "";

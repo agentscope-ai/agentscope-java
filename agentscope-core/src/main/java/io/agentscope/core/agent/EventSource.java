@@ -47,7 +47,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *       <td>Unique session ID for this specific subagent invocation. Stable across
  *       {@code agent_send} follow-ups to the same spawned instance.</td></tr>
  *   <tr><td>{@code parentSessionId}</td>
- *       <td>Session ID of the parent agent that issued the {@code agent_spawn} call.</td></tr>
+ *       <td>AgentStateStore ID of the parent agent that issued the {@code agent_spawn} call.</td></tr>
  *   <tr><td>{@code taskId}</td>
  *       <td>Reserved; non-null only when the subagent runs as a background task (async
  *       streaming, not yet implemented — see extension points below).</td></tr>
@@ -101,6 +101,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * // grandchild.getDepth() == 2, grandchild.getPath() == "main/researcher/sub-executor"
  * }</pre>
  */
+/**
+ * @deprecated since 2.0.0. Used only by the v1 {@link Event} stream to attribute events to a
+ *     spawned subagent. A subagent-source channel for the new
+ *     {@code io.agentscope.core.event.AgentEvent} stream is on the v2 roadmap; once it lands,
+ *     {@code EventSource} will be marked {@code forRemoval = true}.
+ */
+@Deprecated(since = "2.0.0")
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public final class EventSource {
@@ -114,10 +121,10 @@ public final class EventSource {
     /** Human-readable agent name. */
     private final String agentName;
 
-    /** Session ID used for this subagent invocation. */
+    /** AgentStateStore ID used for this subagent invocation. */
     private final String sessionId;
 
-    /** Session ID of the parent agent that spawned this subagent. */
+    /** AgentStateStore ID of the parent agent that spawned this subagent. */
     private final String parentSessionId;
 
     /**

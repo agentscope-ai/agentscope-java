@@ -34,9 +34,6 @@ public class Constants {
     public static final String A2A_JSON_RPC_SERVER_PREFIX =
             A2A_SERVER_TRANSPORT_PREFIX + ".jsonrpc";
 
-    public static final String A2A_ROCKETMQ_SERVER_PREFIX =
-            A2A_SERVER_TRANSPORT_PREFIX + ".rocketmq";
-
     public static final String DEFAULT_SERVER_EXPORT_PORT = "server.port";
 
     public static final String DEFAULT_SERVER_EXPORT_ADDRESS = "server.address";

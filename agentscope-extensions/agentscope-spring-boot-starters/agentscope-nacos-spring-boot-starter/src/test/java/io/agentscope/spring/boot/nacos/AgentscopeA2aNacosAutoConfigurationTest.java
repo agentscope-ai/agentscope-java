@@ -63,6 +63,7 @@ class AgentscopeA2aNacosAutoConfigurationTest {
                     .withConfiguration(
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
                     .withPropertyValues(
+                            "agentscope.a2a.nacos.enabled=true",
                             "agentscope.a2a.nacos.server-addr=127.0.0.1:8848",
                             "agentscope.a2a.nacos.namespace=public")
                     .run(
@@ -119,6 +120,7 @@ class AgentscopeA2aNacosAutoConfigurationTest {
                     .withConfiguration(
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
                     .withPropertyValues(
+                            "agentscope.a2a.nacos.enabled=true",
                             "agentscope.a2a.nacos.server-addr=127.0.0.1:8848",
                             "agentscope.a2a.nacos.namespace=public")
                     .run(
@@ -139,6 +141,7 @@ class AgentscopeA2aNacosAutoConfigurationTest {
                     .withConfiguration(
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
                     .withPropertyValues(
+                            "agentscope.a2a.nacos.enabled=true",
                             "agentscope.a2a.nacos.server-addr=127.0.0.1:8848",
                             "agentscope.a2a.nacos.namespace=public")
                     .run(
@@ -158,7 +161,9 @@ class AgentscopeA2aNacosAutoConfigurationTest {
             new ApplicationContextRunner()
                     .withConfiguration(
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
-                    .withPropertyValues("agentscope.a2a.nacos.discovery.enabled=false")
+                    .withPropertyValues(
+                            "agentscope.a2a.nacos.enabled=true",
+                            "agentscope.a2a.nacos.discovery.enabled=false")
                     .run(
                             context -> {
                                 assertThat(context).doesNotHaveBean(AgentCardResolver.class);
@@ -175,7 +180,9 @@ class AgentscopeA2aNacosAutoConfigurationTest {
             new ApplicationContextRunner()
                     .withConfiguration(
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
-                    .withPropertyValues("agentscope.a2a.nacos.registry.enabled=false")
+                    .withPropertyValues(
+                            "agentscope.a2a.nacos.enabled=true",
+                            "agentscope.a2a.nacos.registry.enabled=false")
                     .run(
                             context -> {
                                 assertThat(context).hasSingleBean(AgentCardResolver.class);
@@ -193,6 +200,7 @@ class AgentscopeA2aNacosAutoConfigurationTest {
                     .withConfiguration(
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
                     .withPropertyValues(
+                            "agentscope.a2a.nacos.enabled=true",
                             "agentscope.a2a.nacos.server-addr=127.0.0.1:8848",
                             "agentscope.a2a.nacos.namespace=test-namespace",
                             "agentscope.a2a.nacos.username=test-user",
@@ -237,6 +245,7 @@ class AgentscopeA2aNacosAutoConfigurationTest {
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
                     .withBean(AgentCardResolver.class, () -> mockResolver)
                     .withPropertyValues(
+                            "agentscope.a2a.nacos.enabled=true",
                             "agentscope.a2a.nacos.server-addr=127.0.0.1:8848",
                             "agentscope.a2a.nacos.namespace=public")
                     .run(
@@ -259,6 +268,7 @@ class AgentscopeA2aNacosAutoConfigurationTest {
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
                     .withBean(AgentRegistry.class, () -> mockRegistry)
                     .withPropertyValues(
+                            "agentscope.a2a.nacos.enabled=true",
                             "agentscope.a2a.nacos.server-addr=127.0.0.1:8848",
                             "agentscope.a2a.nacos.namespace=public")
                     .run(
@@ -278,6 +288,7 @@ class AgentscopeA2aNacosAutoConfigurationTest {
             new ApplicationContextRunner()
                     .withConfiguration(
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
+                    .withPropertyValues("agentscope.a2a.nacos.enabled=true")
                     .run(context -> assertThat(context).hasNotFailed());
         }
     }
@@ -291,6 +302,7 @@ class AgentscopeA2aNacosAutoConfigurationTest {
                     .withConfiguration(
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
                     .withPropertyValues(
+                            "agentscope.a2a.nacos.enabled=true",
                             "agentscope.a2a.nacos.registry.enabled=true",
                             "agentscope.a2a.nacos.registry.register-as-latest=true",
                             "agentscope.a2a.nacos.registry.enabled-register-endpoint=true",
@@ -321,7 +333,9 @@ class AgentscopeA2aNacosAutoConfigurationTest {
             new ApplicationContextRunner()
                     .withConfiguration(
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
-                    .withPropertyValues("agentscope.a2a.nacos.discovery.enabled=true")
+                    .withPropertyValues(
+                            "agentscope.a2a.nacos.enabled=true",
+                            "agentscope.a2a.nacos.discovery.enabled=true")
                     .run(
                             context -> {
                                 assertThat(context).hasSingleBean(AgentCardResolver.class);
@@ -346,6 +360,7 @@ class AgentscopeA2aNacosAutoConfigurationTest {
                     .withConfiguration(
                             AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
                     .withPropertyValues(
+                            "agentscope.a2a.nacos.enabled=true",
                             "agentscope.a2a.nacos.server-addr=127.0.0.1:8848",
                             "agentscope.a2a.nacos.namespace=public")
                     .run(

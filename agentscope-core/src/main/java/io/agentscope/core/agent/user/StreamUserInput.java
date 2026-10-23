@@ -52,6 +52,7 @@ import reactor.core.scheduler.Schedulers;
  *     .build();
  * }</pre>
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class StreamUserInput implements UserInputBase {
 
     private final String inputHint;

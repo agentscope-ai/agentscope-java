@@ -70,7 +70,6 @@ class ToolIntegrationTest {
                         .sysPrompt("Test agent with tools")
                         .model(mockModel)
                         .toolkit(toolkit)
-                        .memory(memory)
                         .build();
 
         assertNotNull(agent, "Agent should be created with toolkit");

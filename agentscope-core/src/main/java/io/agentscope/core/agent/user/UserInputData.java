@@ -25,6 +25,7 @@ import java.util.Map;
  * (for typed input validation). This dual nature allows flexible handling of simple text
  * input and complex structured forms within the same unified input system.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public class UserInputData {
 
     private final List<ContentBlock> blocksInput;

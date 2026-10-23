@@ -1,0 +1,163 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.core.a2a.agent.message;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import java.util.List;
+import java.util.Map;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.Part;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Unit tests for ToolResultBlockParser.
+ *
+ * <p>Tests cover:
+ * <ul>
+ *   <li>Parsing ToolResultBlock to DataPart</li>
+ *   <li>Metadata correctness</li>
+ * </ul>
+ */
+@DisplayName("ToolResultBlockParser Tests")
+class ToolResultBlockParserTest {
+
+    private ToolResultBlockParser parser;
+
+    @BeforeEach
+    void setUp() {
+        parser = new ToolResultBlockParser();
+    }
+
+    @Test
+    @DisplayName("Should parse ToolResultBlock to DataPart")
+    void testParseToolResultBlock() {
+        ToolResultBlock block =
+                ToolResultBlock.builder()
+                        .name("calculator")
+                        .id("123")
+                        .output(TextBlock.builder().text("2").build())
+                        .build();
+
+        Part<?> result = parser.parse(block);
+
+        assertNotNull(result);
+        assertEquals(DataPart.class, result.getClass());
+        DataPart dataPart = (DataPart) result;
+        Map<?, ?> data = (Map<?, ?>) dataPart.data();
+        assertNotNull(data);
+        assertTrue(data.containsKey("_agentscope_tool_output"));
+    }
+
+    @Test
+    @DisplayName("Should send the output blocks as JSON objects named by their type")
+    void testOutputBlocksKeepTheirType() {
+        ToolResultBlock block =
+                ToolResultBlock.builder()
+                        .name("weather")
+                        .id("call-1")
+                        .output(TextBlock.builder().text("sunny").build())
+                        .build();
+
+        DataPart dataPart = (DataPart) parser.parse(block);
+
+        Map<?, ?> data = (Map<?, ?>) dataPart.data();
+        assertEquals(
+                List.of(Map.of("type", "text", "text", "sunny")),
+                data.get("_agentscope_tool_output"));
+        // The receiving side rebuilds the same blocks.
+        ToolResultBlock received = (ToolResultBlock) new DataPartParser().parse(dataPart);
+        assertEquals(1, received.getOutput().size());
+        assertEquals("sunny", ((TextBlock) received.getOutput().get(0)).getText());
+    }
+
+    @Test
+    @DisplayName("Should have correct metadata")
+    void testMetadata() {
+        ToolResultBlock block =
+                ToolResultBlock.builder()
+                        .name("calculator")
+                        .id("123")
+                        .output(TextBlock.builder().text("2").build())
+                        .build();
+
+        Part<?> result = parser.parse(block);
+
+        DataPart dataPart = (DataPart) result;
+        Map<String, Object> metadata = dataPart.metadata();
+        assertNotNull(metadata);
+        assertEquals("tool_result", metadata.get("_agentscope_block_type"));
+        assertEquals("calculator", metadata.get("_agentscope_tool_name"));
+        assertEquals("123", metadata.get("_agentscope_tool_call_id"));
+    }
+
+    @Test
+    @DisplayName("Should include additional metadata")
+    void testAdditionalMetadata() {
+        ToolResultBlock block =
+                ToolResultBlock.builder()
+                        .name("calculator")
+                        .id("123")
+                        .output(TextBlock.builder().text("2").build())
+                        .metadata(Map.of("custom_key", "custom_value"))
+                        .build();
+
+        Part<?> result = parser.parse(block);
+
+        DataPart dataPart = (DataPart) result;
+        Map<String, Object> metadata = dataPart.metadata();
+        assertTrue(metadata.containsKey("custom_key"));
+        assertEquals("custom_value", metadata.get("custom_key"));
+    }
+
+    @Test
+    @DisplayName("Should keep reserved metadata over user metadata")
+    void testReservedMetadataWins() {
+        ToolResultBlock block =
+                ToolResultBlock.builder()
+                        .name("calculator")
+                        .id("123")
+                        .output(TextBlock.builder().text("2").build())
+                        .metadata(
+                                Map.of(
+                                        "_agentscope_block_type",
+                                        "text",
+                                        "_agentscope_tool_name",
+                                        "spoofed-name",
+                                        "_agentscope_tool_call_id",
+                                        "spoofed-call",
+                                        "custom_key",
+                                        "custom_value"))
+                        .build();
+
+        DataPart dataPart = (DataPart) parser.parse(block);
+
+        assertEquals("tool_result", dataPart.metadata().get("_agentscope_block_type"));
+        assertEquals("calculator", dataPart.metadata().get("_agentscope_tool_name"));
+        assertEquals("123", dataPart.metadata().get("_agentscope_tool_call_id"));
+        assertEquals("custom_value", dataPart.metadata().get("custom_key"));
+
+        ToolResultBlock received = (ToolResultBlock) new DataPartParser().parse(dataPart);
+        assertEquals("calculator", received.getName());
+        assertEquals("123", received.getId());
+    }
+}

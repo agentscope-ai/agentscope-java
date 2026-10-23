@@ -26,8 +26,8 @@ import java.time.ZonedDateTime;
  *
  * <p>Inspired by agentscope-claw's SessionFreshnessEvaluator. Supports two reset policies:
  * <ul>
- *   <li><b>Daily reset:</b> Session resets after a configured hour each day</li>
- *   <li><b>Idle timeout:</b> Session resets after inactivity exceeding a threshold</li>
+ *   <li><b>Daily reset:</b> AgentStateStore resets after a configured hour each day</li>
+ *   <li><b>Idle timeout:</b> AgentStateStore resets after inactivity exceeding a threshold</li>
  * </ul>
  */
 public class SessionFreshnessEvaluator {

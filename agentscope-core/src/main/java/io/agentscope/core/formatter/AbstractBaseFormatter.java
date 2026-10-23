@@ -18,6 +18,8 @@ package io.agentscope.core.formatter;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -73,7 +75,33 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
         return TracerRegistry.get().callFormat(this, msgs, () -> doFormat(msgs));
     }
 
+    /**
+     * Format AgentScope messages using request-scoped generation options.
+     *
+     * @param msgs list of AgentScope messages
+     * @param options request-scoped generation options; may be {@code null}
+     * @return list of provider-specific request messages
+     */
+    @Override
+    public List<TReq> format(List<Msg> msgs, GenerateOptions options) {
+        return TracerRegistry.get().callFormat(this, msgs, () -> doFormat(msgs, options));
+    }
+
     protected abstract List<TReq> doFormat(List<Msg> msgs);
+
+    /**
+     * Format AgentScope messages using request-scoped generation options.
+     *
+     * <p>The default implementation delegates to {@link #doFormat(List)} for providers that do not
+     * need options during message conversion.
+     *
+     * @param msgs list of AgentScope messages
+     * @param options request-scoped generation options; may be {@code null}
+     * @return list of provider-specific request messages
+     */
+    protected List<TReq> doFormat(List<Msg> msgs, GenerateOptions options) {
+        return doFormat(msgs);
+    }
 
     /**
      * Extract text content from a message, filtering out ThinkingBlock.
@@ -87,6 +115,8 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
                         block -> {
                             if (block instanceof TextBlock tb) {
                                 return Stream.of(tb.getText());
+                            } else if (block instanceof HintBlock hb) {
+                                return Stream.of(hb.getHint());
                             } else if (block instanceof ThinkingBlock) {
                                 // IMPORTANT: ThinkingBlock is NOT sent back to LLM APIs
                                 // ThinkingBlock is stored in memory but skipped when formatting
@@ -115,6 +145,8 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
     protected String extractTextContent(ContentBlock block) {
         if (block instanceof TextBlock tb) {
             return tb.getText();
+        } else if (block instanceof HintBlock hb) {
+            return hb.getHint();
         }
         return "";
     }
@@ -129,7 +161,8 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof ImageBlock
                     || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
+                    || block instanceof VideoBlock
+                    || block instanceof DataBlock) {
                 return true;
             }
         }
@@ -213,6 +246,9 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
             } else if (block instanceof VideoBlock vb) {
                 String reference = convertMediaBlockToTextReference(vb, "video");
                 textualOutput.add(reference);
+            } else if (block instanceof DataBlock db) {
+                String reference = convertMediaBlockToTextReference(db, "data");
+                textualOutput.add(reference);
             }
             // Other block types (e.g., ThinkingBlock) are ignored
         }
@@ -267,6 +303,8 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
             return ab.getSource();
         } else if (block instanceof VideoBlock vb) {
             return vb.getSource();
+        } else if (block instanceof DataBlock db) {
+            return db.getSource();
         }
         throw new IllegalArgumentException("Unsupported block type: " + block.getClass());
     }

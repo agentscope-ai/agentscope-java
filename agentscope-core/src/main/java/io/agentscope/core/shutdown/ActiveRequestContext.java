@@ -15,53 +15,72 @@
  */
 package io.agentscope.core.shutdown;
 
-import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RunControl;
 import io.agentscope.core.interruption.InterruptSource;
-import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.AgentState;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Runtime context for a single active request.
+ *
+ * <p>When the owning {@code call()} resolves its per-(userId, sessionId) {@link AgentState} slot,
+ * it is bound here via {@link #bindState(AgentState)} so shutdown interruption and state-saving
+ * target that exact session — concurrency-safe even when an agent instance serves multiple
+ * sessions. Queued executions have no bound state and are cancelled without reading or saving
+ * another execution's state.
  */
 final class ActiveRequestContext {
 
     private static final Logger log = LoggerFactory.getLogger(ActiveRequestContext.class);
 
     private final String requestId;
-    private final AgentBase agent;
+    private final RunControl control;
     private final AtomicBoolean shutdownInterruptIssued = new AtomicBoolean(false);
 
-    private final Session session;
-    private final SessionKey sessionKey;
+    private final ShutdownStateSaver saver;
 
-    ActiveRequestContext(
-            String requestId, AgentBase agent, Session session, SessionKey sessionKey) {
+    /**
+     * The per-call session state this request is running against, bound once {@code call()} has
+     * resolved its slot. Null while queued: no conversation state is saved for that request.
+     */
+    private volatile AgentState boundState;
+
+    ActiveRequestContext(String requestId, ShutdownStateSaver saver, RunControl control) {
         this.requestId = requestId;
-        this.agent = agent;
-        this.session = session;
-        this.sessionKey = sessionKey;
+        this.control = control;
+        this.saver = saver;
     }
 
     String getRequestId() {
         return requestId;
     }
 
-    boolean hasSessionBinding() {
-        return session != null && sessionKey != null;
+    /**
+     * Bind the per-call session state resolved for this request so interrupt and save target the
+     * exact {@code (userId, sessionId)} session. Called by {@code AgentBase} once the call's slot
+     * has been activated.
+     */
+    void bindState(AgentState state) {
+        if (state != null) {
+            this.boundState = state;
+        }
     }
 
-    static final String SHUTDOWN_INTERRUPTED_KEY = "shutdown_interrupted";
+    private AgentState resolveState() {
+        return boundState;
+    }
 
-    void saveToSession() {
-        if (!hasSessionBinding()) {
-            return;
-        }
+    void saveState() {
+        AgentState state = resolveState();
+        if (state == null) return;
+        // Native sessions persist this flag through their owning recorder's final checkpoint.
+        // A missing standalone saver must not suppress the runtime interruption marker.
+        state.setShutdownInterrupted(true);
+        if (saver == null) return;
         try {
-            agent.saveTo(session, sessionKey);
-            session.save(sessionKey, SHUTDOWN_INTERRUPTED_KEY, new ShutdownInterruptedState(true));
+            saver.save(state);
         } catch (Exception e) {
             log.warn("Failed to save agent state for request {}", requestId, e);
         }
@@ -71,7 +90,7 @@ final class ActiveRequestContext {
         if (!shutdownInterruptIssued.compareAndSet(false, true)) {
             return false;
         }
-        agent.interrupt(InterruptSource.SYSTEM);
+        control.interrupt(InterruptSource.SYSTEM, null);
         return true;
     }
 }

@@ -17,13 +17,19 @@ package io.agentscope.harness.agent.filesystem.local;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
-import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.workspace.LocalFsMode;
+import io.agentscope.harness.agent.workspace.PathPolicy;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -48,10 +54,28 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     /** Default timeout in seconds for shell command execution. */
     public static final int DEFAULT_EXECUTE_TIMEOUT = 120;
 
+    /** Read buffer size (bytes) for the stream drainer threads. */
+    private static final int DRAIN_CHUNK_BYTES = 8192;
+
+    /**
+     * Safety net (millis) for joining drainer threads after the process exits or is destroyed.
+     * Never reached in practice: process exit closes the streams and ends the drainers at once.
+     */
+    private static final long DRAIN_JOIN_TIMEOUT_MILLIS = 5000;
+
     private final String sandboxId;
     private final int defaultTimeout;
     private final int maxOutputBytes;
     private final Map<String, String> env;
+
+    /**
+     * Working directory passed to {@link ProcessBuilder#directory(java.io.File)} for shell
+     * commands. When {@code null}, falls back to {@link #getCwd()} (with per-call namespace
+     * prefix). Decouples shell {@code pwd} from the filesystem root so overlay-mode callers can
+     * keep filesystem operations rooted at the agent workspace while shell sees the user's
+     * project directory.
+     */
+    private final Path shellCwd;
 
     /**
      * Creates an abstract filesystem with default settings.
@@ -162,7 +186,79 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             Map<String, String> env,
             boolean inheritEnv,
             NamespaceFactory namespaceFactory) {
-        super(rootDir, virtualMode, 10, namespaceFactory);
+        this(
+                rootDir,
+                virtualMode,
+                timeout,
+                maxOutputBytes,
+                env,
+                inheritEnv,
+                namespaceFactory,
+                null);
+    }
+
+    /**
+     * Creates a abstract filesystem with full configuration, namespace support, and a custom
+     * shell working directory.
+     *
+     * @param rootDir working directory for filesystem operations (read/write/edit/glob/...)
+     * @param virtualMode enable virtual path mode for filesystem operations
+     * @param timeout default maximum time in seconds for shell command execution
+     * @param maxOutputBytes maximum number of bytes to capture from command output
+     * @param env environment variables for shell commands ({@code null} for empty)
+     * @param inheritEnv whether to inherit the parent process's environment variables
+     * @param namespaceFactory optional namespace factory for path scoping ({@code null} for none)
+     * @param shellCwd working directory for shell command execution; when {@code null}, falls
+     *     back to {@code rootDir} (with namespace prefix when configured)
+     */
+    public LocalFilesystemWithShell(
+            Path rootDir,
+            boolean virtualMode,
+            int timeout,
+            int maxOutputBytes,
+            Map<String, String> env,
+            boolean inheritEnv,
+            NamespaceFactory namespaceFactory,
+            Path shellCwd) {
+        this(
+                rootDir,
+                virtualMode ? LocalFsMode.SANDBOXED : LocalFsMode.UNRESTRICTED,
+                null,
+                timeout,
+                maxOutputBytes,
+                env,
+                inheritEnv,
+                namespaceFactory,
+                shellCwd);
+    }
+
+    /**
+     * Most-complete constructor: filesystem operations follow {@code mode} and {@code pathPolicy}
+     * (see {@link LocalFilesystem#LocalFilesystem(Path, LocalFsMode, PathPolicy, int, NamespaceFactory)});
+     * shell commands run with {@code pwd = shellCwd} when set, otherwise the filesystem root.
+     *
+     * @param rootDir filesystem root for relative-path operations
+     * @param mode path-resolution policy ({@code null} treated as {@link LocalFsMode#UNRESTRICTED})
+     * @param pathPolicy allow-list for {@link LocalFsMode#ROOTED}; ignored otherwise
+     * @param timeout default shell timeout (seconds, must be positive)
+     * @param maxOutputBytes byte cap for captured shell output
+     * @param env environment variables for shell commands ({@code null} for empty)
+     * @param inheritEnv whether to inherit the parent process environment
+     * @param namespaceFactory optional per-user/session namespace factory
+     * @param shellCwd shell {@code pwd}; {@code null} falls back to {@code rootDir} (with
+     *     namespace prefix when configured)
+     */
+    public LocalFilesystemWithShell(
+            Path rootDir,
+            LocalFsMode mode,
+            PathPolicy pathPolicy,
+            int timeout,
+            int maxOutputBytes,
+            Map<String, String> env,
+            boolean inheritEnv,
+            NamespaceFactory namespaceFactory,
+            Path shellCwd) {
+        super(rootDir, mode, pathPolicy, 10, namespaceFactory);
 
         if (timeout <= 0) {
             throw new IllegalArgumentException("timeout must be positive, got " + timeout);
@@ -171,6 +267,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         this.defaultTimeout = timeout;
         this.maxOutputBytes = maxOutputBytes;
         this.sandboxId = "local-" + UUID.randomUUID().toString().substring(0, 8);
+        this.shellCwd = shellCwd != null ? shellCwd.toAbsolutePath().normalize() : null;
 
         if (inheritEnv) {
             Map<String, String> merged = new java.util.HashMap<>(System.getenv());
@@ -211,6 +308,15 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         return sandboxId;
     }
 
+    /**
+     * Returns the working directory configured for shell {@code execute()} calls, or {@code null}
+     * when shell falls back to the filesystem root (with namespace prefix). Used by upstream
+     * code that needs to expose the user-visible project directory in prompts or diagnostics.
+     */
+    public Path getShellCwd() {
+        return shellCwd;
+    }
+
     @Override
     public ExecuteResponse execute(
             RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
@@ -224,9 +330,12 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         }
 
         try {
-            Path workDir = resolveExecuteCwd();
+            Path workDir = resolveExecuteCwd(runtimeContext);
+            String osName = System.getProperty("os.name").toLowerCase();
             ProcessBuilder pb =
-                    new ProcessBuilder("sh", "-c", command)
+                    (osName.contains("win")
+                                    ? new ProcessBuilder("cmd.exe", "/c", command)
+                                    : new ProcessBuilder("sh", "-c", command))
                             .directory(workDir.toFile())
                             .redirectErrorStream(false);
 
@@ -237,15 +346,27 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
             Process proc = pb.start();
 
+            // stdout/stderr must be drained concurrently with waitFor: if the child writes
+            // more than the OS pipe buffer (~4 KB on Windows, 64 KB default on Linux) while
+            // the parent blocks in waitFor, both sides deadlock and every such command is
+            // misreported as a timeout (exit 124).
+            ByteArrayOutputStream stdoutBuf = new ByteArrayOutputStream();
+            ByteArrayOutputStream stderrBuf = new ByteArrayOutputStream();
+            Thread stdoutDrainer = drainAsync(proc.getInputStream(), stdoutBuf);
+            Thread stderrDrainer = drainAsync(proc.getErrorStream(), stderrBuf);
+
             boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
-
-            String stdout =
-                    new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            String stderr =
-                    new String(proc.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-
             if (!finished) {
                 proc.destroyForcibly();
+            }
+            joinQuietly(stdoutDrainer);
+            joinQuietly(stderrDrainer);
+
+            Charset outputCharset = outputCharset(osName);
+            String stdout = stdoutBuf.toString(outputCharset);
+            String stderr = stderrBuf.toString(outputCharset);
+
+            if (!finished) {
                 String msg;
                 if (timeoutSeconds != null) {
                     msg =
@@ -311,12 +432,15 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         }
     }
 
-    private Path resolveExecuteCwd() {
+    private Path resolveExecuteCwd(RuntimeContext rc) {
+        if (shellCwd != null) {
+            return shellCwd;
+        }
         NamespaceFactory nsf = getNamespaceFactory();
         if (nsf == null) {
             return getCwd();
         }
-        List<String> ns = nsf.getNamespace();
+        List<String> ns = nsf.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
             return getCwd();
         }
@@ -330,5 +454,52 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             log.warn("Failed to create namespace directory {}: {}", namespaced, e.getMessage());
         }
         return namespaced;
+    }
+
+    /**
+     * Continuously copies a subprocess stream into {@code buf} on a daemon thread so the child
+     * never blocks on a full OS pipe buffer. Read errors (e.g. the stream closing when the
+     * process is destroyed on timeout) end the drainer quietly.
+     */
+    private static Thread drainAsync(InputStream in, ByteArrayOutputStream buf) {
+        Thread t =
+                new Thread(
+                        () -> {
+                            byte[] chunk = new byte[DRAIN_CHUNK_BYTES];
+                            int n;
+                            try {
+                                while ((n = in.read(chunk)) != -1) {
+                                    buf.write(chunk, 0, n);
+                                }
+                            } catch (IOException ignored) {
+                                // Stream closed because the process was destroyed; nothing to do.
+                            }
+                        });
+        t.setDaemon(true);
+        t.start();
+        return t;
+    }
+
+    private static void joinQuietly(Thread t) {
+        try {
+            t.join(DRAIN_JOIN_TIMEOUT_MILLIS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    static Charset outputCharset(String osName) {
+        return outputCharset(osName, System.getProperty("native.encoding"));
+    }
+
+    static Charset outputCharset(String osName, String nativeEncoding) {
+        if (!osName.toLowerCase(Locale.ROOT).contains("win")) {
+            return StandardCharsets.UTF_8;
+        }
+
+        if (nativeEncoding != null && Charset.isSupported(nativeEncoding)) {
+            return Charset.forName(nativeEncoding);
+        }
+        return Charset.defaultCharset();
     }
 }

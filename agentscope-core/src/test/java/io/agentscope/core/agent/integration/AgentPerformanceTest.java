@@ -91,7 +91,6 @@ class AgentPerformanceTest {
                                                 .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                                                 .model(model)
                                                 .toolkit(mockToolkit)
-                                                .memory(memory)
                                                 .build();
 
                                 Msg input =
@@ -129,7 +128,6 @@ class AgentPerformanceTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(model)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Add many messages to memory
@@ -145,7 +143,7 @@ class AgentPerformanceTest {
         long totalTime = endTime - startTime;
 
         // Verify memory contains all messages
-        List<Msg> allMessages = agent.getMemory().getMessages();
+        List<Msg> allMessages = agent.getAgentState().getContext();
         assertTrue(
                 allMessages.size() >= messageCount,
                 "Memory should contain at least " + messageCount + " messages");
@@ -177,7 +175,6 @@ class AgentPerformanceTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(model)
                         .toolkit(mockToolkit)
-                        .memory(memory)
                         .build();
 
         // Measure response time for single interaction

@@ -28,6 +28,52 @@ import reactor.core.publisher.Flux;
  */
 public abstract class ChatModelBase implements Model {
 
+    private int contextWindowSize;
+
+    private Boolean nativeStructuredOutput;
+
+    private Boolean nativeStructuredOutputWithTools;
+
+    private Boolean supportsToolChoiceSpecific;
+
+    @Override
+    public int getContextWindowSize() {
+        return contextWindowSize;
+    }
+
+    protected void setContextWindowSize(int contextWindowSize) {
+        this.contextWindowSize = contextWindowSize;
+    }
+
+    @Override
+    public boolean supportsNativeStructuredOutput() {
+        return nativeStructuredOutput != null ? nativeStructuredOutput : false;
+    }
+
+    protected void setNativeStructuredOutput(boolean nativeStructuredOutput) {
+        this.nativeStructuredOutput = nativeStructuredOutput;
+    }
+
+    @Override
+    public boolean supportsNativeStructuredOutputWithTools() {
+        return nativeStructuredOutputWithTools != null
+                ? nativeStructuredOutputWithTools
+                : supportsNativeStructuredOutput();
+    }
+
+    protected void setNativeStructuredOutputWithTools(boolean nativeStructuredOutputWithTools) {
+        this.nativeStructuredOutputWithTools = nativeStructuredOutputWithTools;
+    }
+
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return Boolean.TRUE.equals(supportsToolChoiceSpecific);
+    }
+
+    protected void setSupportsToolChoiceSpecific(boolean supportsToolChoiceSpecific) {
+        this.supportsToolChoiceSpecific = supportsToolChoiceSpecific;
+    }
+
     /**
      * Stream chat completion responses.
      * The model internally handles message formatting using its configured formatter.

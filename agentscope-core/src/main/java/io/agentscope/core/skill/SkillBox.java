@@ -16,14 +16,10 @@
 package io.agentscope.core.skill;
 
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
-import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tool.coding.CommandValidator;
-import io.agentscope.core.tool.coding.ShellCommandTool;
-import io.agentscope.core.tool.file.ReadFileTool;
-import io.agentscope.core.tool.file.WriteFileTool;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
@@ -31,25 +27,28 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class SkillBox implements StateModule {
+/**
+ * Manages a collection of {@link AgentSkill} instances and exposes them as tools.
+ *
+ * Since 2.0.0, SkillBox is intended for internal use only; prefer skill repositories
+ * ({@code AgentSkillRepository}) for defining and loading skills.
+ */
+public class SkillBox {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
     private static final String BASE64_PREFIX = "base64:";
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private final AgentSkillPromptProvider skillPromptProvider;
     private final SkillToolFactory skillToolFactory;
-    private Toolkit toolkit;
+    private volatile Toolkit toolkit;
     private Path workDir;
     private Path uploadDir;
     private SkillFileFilter fileFilter;
@@ -73,6 +72,30 @@ public class SkillBox implements StateModule {
         this.toolkit = toolkit;
     }
 
+    private SkillBox(SkillBox source, Toolkit toolkit) {
+        for (String id : source.getAllSkillIds()) {
+            skillRegistry.registerSkill(id, source.getSkill(id));
+        }
+        skillPromptProvider = source.skillPromptProvider.copyFor(skillRegistry);
+        skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
+        this.toolkit = toolkit;
+        workDir = source.workDir;
+        uploadDir = source.uploadDir;
+        fileFilter = source.fileFilter;
+        autoUploadSkill = source.autoUploadSkill;
+    }
+
+    /**
+     * Creates an agent-owned registry, prompt provider and loader bound to the given toolkit.
+     * Registered skill values and caller-owned resource directories are shared.
+     *
+     * @param toolkit the agent's toolkit
+     * @return an independent skill box
+     */
+    public SkillBox copyForToolkit(Toolkit toolkit) {
+        return new SkillBox(this, java.util.Objects.requireNonNull(toolkit, "toolkit"));
+    }
+
     /**
      * Gets the skill system prompt for registered skills.
      *
@@ -83,6 +106,16 @@ public class SkillBox implements StateModule {
      */
     public String getSkillPrompt() {
         return skillPromptProvider.getSkillSystemPrompt();
+    }
+
+    /**
+     * Gets the skill system prompt filtered by the given {@link SkillFilter}.
+     *
+     * @param filter the filter deciding which skills to include (null treated as all)
+     * @return The skill system prompt, or empty string if no skills pass the filter
+     */
+    public String getSkillPrompt(SkillFilter filter) {
+        return skillPromptProvider.getSkillSystemPrompt(filter);
     }
 
     /**
@@ -122,14 +155,7 @@ public class SkillBox implements StateModule {
     }
 
     /**
-     * Binds a toolkit to the skill box.
-     *
-     * <p>
-     * This method binds the toolkit to both the skill box and its internal skill
-     * tool factory.
-     * Since ReActAgent uses a deep copy of the Toolkit, rebinding is necessary to
-     * ensure the
-     * skill tool factory references the correct toolkit instance.
+     * Binds the shared toolkit to this skill box and its internal skill tool factory.
      *
      * @param toolkit The toolkit to bind to the skill box
      * @throws IllegalArgumentException if the toolkit is null
@@ -139,55 +165,7 @@ public class SkillBox implements StateModule {
             throw new IllegalArgumentException("Toolkit cannot be null");
         }
         this.toolkit = toolkit;
-        // ReActAgent uses a deep copy of Toolkit, so we need to rebind it here
         this.skillToolFactory.bindToolkit(toolkit);
-    }
-
-    /**
-     * Synchronize tool group states based on skill activation status with a specific toolkit.
-     *
-     * <p>Updates the toolkit's tool groups to reflect the current activation state of skills.
-     * Active skills will have their tool groups enabled, inactive skills will have their
-     * tool groups disabled.
-     */
-    public void syncToolGroupStates() {
-        if (toolkit == null) {
-            return;
-        }
-        List<String> inactiveSkillToolGroups = new ArrayList<>();
-        List<String> activeSkillToolGroups = new ArrayList<>();
-
-        // Dynamically update active/inactive tool groups based on skills' states
-        for (RegisteredSkill registeredSkill : skillRegistry.getAllRegisteredSkills().values()) {
-            if (toolkit.getToolGroup(registeredSkill.getToolsGroupName()) == null) {
-                continue; // Skip uncreated skill tools
-            }
-            if (!registeredSkill.isActive()) {
-                inactiveSkillToolGroups.add(registeredSkill.getToolsGroupName());
-                continue; // Skip inactive skill's tools, its tools won't be included
-            }
-            activeSkillToolGroups.add(registeredSkill.getToolsGroupName());
-        }
-        toolkit.updateToolGroups(inactiveSkillToolGroups, false);
-        toolkit.updateToolGroups(activeSkillToolGroups, true);
-        logger.debug(
-                "Active Skill Tool Groups updated {}, inactive Skill Tool Groups updated {}",
-                activeSkillToolGroups,
-                inactiveSkillToolGroups);
-    }
-
-    /**
-     * Where the skill is active. If a skill is active, this means skill is being using by LLM.
-     * LLM use load tool activate the skill.
-     * @param skillId
-     * @return true if the skill is active
-     */
-    public boolean isSkillActive(String skillId) {
-        RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
-        if (registeredSkill == null) {
-            return false;
-        }
-        return registeredSkill.isActive();
     }
 
     // ==================== Skill Management ====================
@@ -196,7 +174,8 @@ public class SkillBox implements StateModule {
      * Registers an agent skill.
      *
      * <p>Skills can be dynamically loaded by agents using skill access tools.
-     * When a skill is loaded, its associated tools become available to the agent.
+     * Loading a skill returns its content; activation of its tool groups is reflected in the
+     * per-session activated-groups state, not on this box.
      *
      * <p><b>Version Management:</b>
      * <ul>
@@ -222,13 +201,7 @@ public class SkillBox implements StateModule {
         }
 
         String skillId = skill.getSkillId();
-
-        // Create registered wrapper
-        RegisteredSkill registered = new RegisteredSkill(skillId);
-
-        // Register in skillRegistry
-        skillRegistry.registerSkill(skillId, skill, registered);
-
+        skillRegistry.registerSkill(skillId, skill);
         logger.info("Registered skill '{}'", skillId);
     }
 
@@ -238,6 +211,28 @@ public class SkillBox implements StateModule {
      */
     public Set<String> getAllSkillIds() {
         return skillRegistry.getSkillIds();
+    }
+
+    /**
+     * Loads the skill resource identified by the given tool-call parameters. Package-private entry
+     * point used by the shared {@code load_skill_through_path} tool: skill activation is written to
+     * the per-session tool context, never to the shared group manager.
+     *
+     * @param param the tool call parameters carrying {@code skillId} and {@code path}
+     * @return the formatted resource content, or a message describing the failure
+     */
+    String loadSkillResource(ToolCallParam param) {
+        Map<String, Object> input = param.getInput();
+        String skillId = (String) input.get("skillId");
+        if (skillId == null || skillId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Missing or empty required parameter: skillId");
+        }
+        String path = (String) input.get("path");
+        if (path == null || path.trim().isEmpty()) {
+            throw new IllegalArgumentException("Missing or empty required parameter: path");
+        }
+        return skillToolFactory.loadSkillResourceImpl(
+                skillId, path, skillToolFactory.resolveToolContext(param));
     }
 
     /**
@@ -280,63 +275,6 @@ public class SkillBox implements StateModule {
             throw new IllegalArgumentException("Skill ID cannot be null");
         }
         return skillRegistry.exists(skillId);
-    }
-
-    /**
-     * Sets the activation state of a specific skill.
-     *
-     * <p>When a skill is set to inactive, its associated tool group will be disabled
-     * in the underlying toolkit, preventing the agent from accessing its tools until
-     * it is activated again.
-     *
-     * <p>This method automatically synchronizes the state change with the bound toolkit.
-     *
-     * <p><b>Warning on Deactivation:</b> Setting a skill to inactive only unbinds its associated
-     * tool group. It does not automatically remove the skill's context or prompt instructions
-     * from the agent's memory. This is a risky operation, as the agent might still attempt to
-     * invoke the inactive tool based on its retained memory context, leading to execution failures.
-     * For a complete and ideal deactivation, it is recommended to implement custom hooks to unbind
-     * both the tool group and its associated context from memory.
-     *
-     * @param skillId The ID of the skill to modify
-     * @param active  true to activate the skill, false to deactivate
-     * @throws IllegalArgumentException if skillId is null or the skill does not exist
-     */
-    public void setSkillActive(String skillId, boolean active) {
-        if (skillId == null) {
-            throw new IllegalArgumentException("Skill ID cannot be null");
-        }
-
-        if (!exists(skillId)) {
-            throw new IllegalArgumentException("Skill ID does not exist: " + skillId);
-        }
-
-        skillRegistry.setSkillActive(skillId, active);
-
-        // sync ToolGroup state
-        RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
-        if (registeredSkill != null) {
-            String toolGroupName = registeredSkill.getToolsGroupName();
-            if (this.toolkit.getToolGroup(toolGroupName) != null) {
-                this.toolkit.updateToolGroups(List.of(toolGroupName), active);
-            }
-        }
-
-        logger.debug("Skill '{}' active state set to {}", skillId, active);
-    }
-
-    /**
-     * Deactivates all skills.
-     *
-     * <p>This method sets all registered skills to inactive state, which means their associated
-     * tool groups will not be available to the agent until the skills are accessed again
-     * via skill access tools.
-     *
-     * <p>This is typically called at the start of each agent call to ensure a clean state.
-     */
-    public void deactivateAllSkills() {
-        skillRegistry.setAllSkillsActive(false);
-        logger.debug("Deactivated all skills");
     }
 
     /**
@@ -463,7 +401,7 @@ public class SkillBox implements StateModule {
          *     .subAgent(
          *         () -> ReActAgent.builder().name("Assistant").model(model).build(),
          *         SubAgentConfig.builder()
-         *             .session(new JsonSession(Path.of("sessions")))
+         *             .stateStore(new JsonFileAgentStateStore(Path.of("sessions")))
          *             .forwardEvents(true)
          *             .build())
          *     .apply();
@@ -471,7 +409,7 @@ public class SkillBox implements StateModule {
          *
          * @param provider Factory for creating agent instances (called for each session)
          * @param config Configuration for the sub-agent tool, or null to use defaults (tool name
-         *     derived from agent name, InMemorySession for state, events forwarded)
+         *     derived from agent name, InMemoryAgentStateStore for state, events forwarded)
          * @return This builder for chaining
          * @see SubAgentConfig
          * @see SubAgentConfig#defaults()
@@ -605,62 +543,21 @@ public class SkillBox implements StateModule {
             throw new IllegalArgumentException("Toolkit cannot be null");
         }
 
-        if (toolkit.getToolGroup("skill-build-in-tools") == null) {
-            toolkit.createToolGroup(
-                    "skill-build-in-tools",
-                    "skill build-in tools, could contain(load_skill_through_path)");
+        if (toolkit.getTool(SkillToolFactory.LOAD_TOOL_NAME) != null) {
+            // Already registered by another path (e.g. the dynamic-skill middleware); avoid
+            // silently overwriting it. Mixing static skillBox() with dynamic skillRepositories()
+            // is not supported, so surface it for diagnosis.
+            logger.warn(
+                    "load_skill_through_path already registered; skipping (a same-named tool is"
+                            + " already present on this toolkit)");
+            return;
         }
 
-        toolkit.registration()
-                .agentTool(skillToolFactory.createSkillAccessToolAgentTool())
-                .group("skill-build-in-tools")
-                .apply();
+        // Registered ungrouped so it is always visible/callable and is never dropped by the
+        // META-scoped reset_equipped_tools replacement.
+        toolkit.registration().agentTool(skillToolFactory.createSkillAccessToolAgentTool()).apply();
 
         logger.info("Registered skill load tools to toolkit");
-    }
-
-    // ==================== Code Execution ====================
-
-    /**
-     * Create a fluent builder for configuring code execution with custom options.
-     *
-     * <p>This is the recommended way to enable code execution capabilities for skills.
-     * The builder allows selective enabling of tools and customization of ShellCommandTool.
-     *
-     * <p>Example usage:
-     * <pre>{@code
-     * // Simple - enable all tools with default configuration
-     * skillBox.codeExecution()
-     *     .withShell()
-     *     .withRead()
-     *     .withWrite()
-     *     .enable();
-     *
-     * // Custom shell tool with approval callback
-     * ShellCommandTool customShell = new ShellCommandTool(
-     *     null,  // baseDir will be overridden
-     *     Set.of("python3", "node", "npm"),
-     *     command -> askUserApproval(command)
-     * );
-     *
-     * skillBox.codeExecution()
-     *     .workDir("/path/to/workdir")
-     *     .withShell(customShell)  // Clone with workDir
-     *     .withRead()
-     *     .withWrite()
-     *     .enable();
-     *
-     * // Only enable read and write tools
-     * skillBox.codeExecution()
-     *     .withRead()
-     *     .withWrite()
-     *     .enable();
-     * }</pre>
-     *
-     * @return A new CodeExecutionBuilder for configuration
-     */
-    public CodeExecutionBuilder codeExecution() {
-        return new CodeExecutionBuilder(this);
     }
 
     /**
@@ -688,6 +585,32 @@ public class SkillBox implements StateModule {
      */
     public Path getCodeExecutionWorkDir() {
         return workDir;
+    }
+
+    /**
+     * Sets a stable working directory for resource uploads and code execution. Callers can use
+     * this to share one workDir across multiple SkillBox instances (e.g. {@code
+     * DynamicSkillMiddleware} rebuilds the box every call, but the workDir lives for the agent's
+     * lifetime so {@code uploadSkillFiles} no longer mints a fresh {@code agentscope-code-execution-*}
+     * tempdir each round).
+     *
+     * @param workDir the directory under which {@code skills/<skillId>/} subtrees are written;
+     *                {@code null} (the default) preserves the legacy per-instance tempdir behavior
+     */
+    public void setWorkDir(Path workDir) {
+        this.workDir = workDir;
+        // The uploadDir derives from workDir lazily in ensureUploadDirExists(); clear the
+        // cached subdir so the next ensureUploadDirExists() recomputes against the new workDir.
+        this.uploadDir = null;
+    }
+
+    /**
+     * Exposes the skill prompt provider so callers (e.g. {@code DynamicSkillMiddleware}) can
+     * toggle {@code codeExecutionEnable}, swap the instruction template, or query the resolved
+     * uploadDir without re-walking the SkillBox internals.
+     */
+    public AgentSkillPromptProvider getSkillPromptProvider() {
+        return skillPromptProvider;
     }
 
     /**
@@ -775,6 +698,14 @@ public class SkillBox implements StateModule {
 
         for (String skillId : getAllSkillIds()) {
             AgentSkill skill = getSkill(skillId);
+
+            // Skills with a populated originDir already live on disk at a known absolute path,
+            // which the prompt provider exposes as <files-root>. Re-materialising them under
+            // workDir would just be a redundant copy that the LLM never sees referenced.
+            if (skill.getOriginDir().isPresent()) {
+                continue;
+            }
+
             Set<String> resourcePaths = skill.getResourcePaths();
 
             if (resourcePaths.isEmpty()) {
@@ -864,333 +795,6 @@ public class SkillBox implements StateModule {
             }
 
             return false;
-        }
-    }
-
-    // ==================== Code Execution Builder ====================
-
-    /**
-     * Fluent builder for configuring code execution with custom options.
-     *
-     * <p>This builder provides a flexible way to enable code execution capabilities
-     * with selective tool enabling and custom ShellCommandTool configuration.
-     *
-     * <p>Key features:
-     * <ul>
-     *   <li>Selective tool enabling: choose which tools (shell/read/write) to enable</li>
-     *   <li>Custom ShellCommandTool: provide your own tool with custom security policies</li>
-     *   <li>WorkDir enforcement: all tools use the same working directory</li>
-     *   <li>Tool cloning: custom ShellCommandTool is cloned with workDir override</li>
-     * </ul>
-     */
-    public static class CodeExecutionBuilder {
-        private static final Set<String> DEFAULT_INCLUDE_FOLDERS = Set.of("scripts/", "assets/");
-        private static final Set<String> DEFAULT_INCLUDE_EXTENSIONS = Set.of(".py", ".js", ".sh");
-
-        private final SkillBox skillBox;
-        private String workDir;
-        private String uploadDir;
-        private SkillFileFilter customFilter;
-        private Set<String> includeFolders;
-        private Set<String> includeExtensions;
-        private ShellCommandTool customShellTool;
-        private boolean withShellCalled = false;
-        private boolean enableRead = false;
-        private boolean enableWrite = false;
-        private String codeExecutionInstruction;
-
-        CodeExecutionBuilder(SkillBox skillBox) {
-            this.skillBox = skillBox;
-        }
-
-        /**
-         * Set the working directory for code execution.
-         *
-         * <p>All code execution tools (shell, read, write) will use this directory.
-         * If not set, a temporary directory will be created when files are uploaded.
-         *
-         * @param workDir The working directory path (null or empty for temporary directory)
-         * @return This builder for chaining
-         */
-        public CodeExecutionBuilder workDir(String workDir) {
-            this.workDir = workDir;
-            return this;
-        }
-
-        /**
-         * Set the upload directory for skill files.
-         *
-         * <p>If not set, the upload directory defaults to workDir/skills.
-         *
-         * @param uploadDir The upload directory path
-         * @return This builder for chaining
-         */
-        public CodeExecutionBuilder uploadDir(String uploadDir) {
-            this.uploadDir = uploadDir;
-            return this;
-        }
-
-        /**
-         * Set a custom file filter for skill file uploads.
-         *
-         * @param filter The custom filter to use
-         * @return This builder for chaining
-         * @throws IllegalArgumentException if filter is null
-         */
-        public CodeExecutionBuilder fileFilter(SkillFileFilter filter) {
-            if (filter == null) {
-                throw new IllegalArgumentException("SkillFileFilter cannot be null");
-            }
-            this.customFilter = filter;
-            return this;
-        }
-
-        /**
-         * Set the folders to include for uploads.
-         *
-         * @param folders Folder paths to include
-         * @return This builder for chaining
-         */
-        public CodeExecutionBuilder includeFolders(Set<String> folders) {
-            this.includeFolders = folders;
-            return this;
-        }
-
-        /**
-         * Set the file extensions to include for uploads.
-         *
-         * @param extensions File extensions to include
-         * @return This builder for chaining
-         */
-        public CodeExecutionBuilder includeExtensions(Set<String> extensions) {
-            this.includeExtensions = extensions;
-            return this;
-        }
-
-        /**
-         * Enable shell command execution with default configuration.
-         *
-         * <p>Default configuration:
-         * <ul>
-         *   <li>Allowed commands: python, python3, node, nodejs</li>
-         *   <li>No approval callback</li>
-         *   <li>Platform-specific validator (Unix or Windows)</li>
-         * </ul>
-         *
-         * @return This builder for chaining
-         */
-        public CodeExecutionBuilder withShell() {
-            this.withShellCalled = true;
-            this.customShellTool = null;
-            return this;
-        }
-
-        /**
-         * Enable shell command execution with a custom ShellCommandTool.
-         *
-         * <p>The provided tool will be cloned with the following behavior:
-         * <ul>
-         *   <li>allowedCommands: copied from the source tool</li>
-         *   <li>approvalCallback: copied from the source tool</li>
-         *   <li>commandValidator: copied from the source tool</li>
-         *   <li>baseDir: OVERRIDDEN with the builder's workDir</li>
-         * </ul>
-         *
-         * <p>This ensures all code execution tools use the same working directory
-         * while preserving your custom security policies.
-         *
-         * @param shellTool The custom ShellCommandTool to clone (must not be null)
-         * @return This builder for chaining
-         * @throws IllegalArgumentException if shellTool is null
-         */
-        public CodeExecutionBuilder withShell(ShellCommandTool shellTool) {
-            if (shellTool == null) {
-                throw new IllegalArgumentException("ShellCommandTool cannot be null");
-            }
-            this.withShellCalled = true;
-            this.customShellTool = shellTool;
-            return this;
-        }
-
-        /**
-         * Enable file reading capabilities.
-         *
-         * <p>Registers ReadFileTool with the builder's workDir as base directory.
-         *
-         * @return This builder for chaining
-         */
-        public CodeExecutionBuilder withRead() {
-            this.enableRead = true;
-            return this;
-        }
-
-        /**
-         * Enable file writing capabilities.
-         *
-         * <p>Registers WriteFileTool with the builder's workDir as base directory.
-         *
-         * @return This builder for chaining
-         */
-        public CodeExecutionBuilder withWrite() {
-            this.enableWrite = true;
-            return this;
-        }
-
-        /**
-         * Set a custom code execution instruction for the system prompt.
-         *
-         * <p>The instruction is appended to the skill system prompt when code execution is enabled.
-         * Use {@code %s} as a placeholder for the upload directory absolute path — every
-         * occurrence will be replaced with the actual path.
-         *
-         * <p>Pass {@code null} or blank to use the default instruction.
-         *
-         * @param instruction Custom code execution instruction template
-         * @return This builder for chaining
-         */
-        public CodeExecutionBuilder codeExecutionInstruction(String instruction) {
-            this.codeExecutionInstruction = instruction;
-            return this;
-        }
-
-        /**
-         * Apply the configuration and enable code execution.
-         *
-         * <p>This method:
-         * <ul>
-         *   <li>Validates toolkit is bound</li>
-         *   <li>Removes existing code execution configuration if present</li>
-         *   <li>Creates the code execution tool group</li>
-         *   <li>Registers selected tools (shell, read, write)</li>
-         * </ul>
-         *
-         * @throws IllegalStateException if toolkit is not bound
-         */
-        public void enable() {
-            if (skillBox.toolkit == null) {
-                throw new IllegalStateException("Must bind toolkit before enabling code execution");
-            }
-
-            if (customFilter != null && (includeFolders != null || includeExtensions != null)) {
-                throw new IllegalStateException(
-                        "Cannot use fileFilter() with includeFolders() or includeExtensions()");
-            }
-
-            // Handle replacement: remove existing tool group if present
-            if (skillBox.toolkit.getToolGroup("skill_code_execution_tool_group") != null) {
-                skillBox.toolkit.removeToolGroups(List.of("skill_code_execution_tool_group"));
-                logger.info("Replacing existing code execution configuration");
-            }
-
-            // Set workDir
-            if (workDir == null || workDir.isEmpty()) {
-                skillBox.workDir = null;
-            } else {
-                skillBox.workDir = Paths.get(workDir).toAbsolutePath().normalize();
-            }
-
-            // Set uploadDir
-            if (uploadDir == null || uploadDir.isBlank()) {
-                skillBox.uploadDir =
-                        skillBox.workDir != null ? skillBox.workDir.resolve("skills") : null;
-            } else {
-                skillBox.uploadDir = Paths.get(uploadDir).toAbsolutePath().normalize();
-            }
-
-            // Set file filter
-            if (customFilter != null) {
-                skillBox.fileFilter = customFilter;
-            } else {
-                Set<String> folders =
-                        includeFolders != null ? includeFolders : DEFAULT_INCLUDE_FOLDERS;
-                Set<String> extensions =
-                        includeExtensions != null ? includeExtensions : DEFAULT_INCLUDE_EXTENSIONS;
-                skillBox.fileFilter = new DefaultSkillFileFilter(folders, extensions);
-            }
-
-            // Create tool group
-            skillBox.toolkit.createToolGroup(
-                    "skill_code_execution_tool_group", "Code execution tools for skills", true);
-
-            String workDirStr = skillBox.workDir != null ? skillBox.workDir.toString() : null;
-
-            boolean shellEnabled = false;
-
-            // Shell Tool - check if withShell() was called
-            if (withShellCalled) {
-                ShellCommandTool shellTool;
-                if (customShellTool != null) {
-                    // Clone custom tool with workDir override
-                    shellTool = cloneShellToolWithWorkDir(customShellTool, workDirStr);
-                } else {
-                    // Create default shell tool
-                    shellTool =
-                            new ShellCommandTool(
-                                    workDirStr,
-                                    Set.of("python", "python3", "node", "nodejs"),
-                                    null);
-                }
-                skillBox.toolkit
-                        .registration()
-                        .agentTool(shellTool)
-                        .group("skill_code_execution_tool_group")
-                        .apply();
-                shellEnabled = true;
-            }
-
-            // Read Tool
-            if (enableRead) {
-                ReadFileTool readTool = new ReadFileTool(workDirStr);
-                skillBox.toolkit
-                        .registration()
-                        .tool(readTool)
-                        .group("skill_code_execution_tool_group")
-                        .apply();
-            }
-
-            // Write Tool
-            if (enableWrite) {
-                WriteFileTool writeTool = new WriteFileTool(workDirStr);
-                skillBox.toolkit
-                        .registration()
-                        .tool(writeTool)
-                        .group("skill_code_execution_tool_group")
-                        .apply();
-            }
-
-            logger.info(
-                    "Code execution enabled with workDir: {}, uploadDir: {}, tools: [shell={},"
-                            + " read={}, write={}]",
-                    skillBox.workDir != null ? skillBox.workDir : "temporary",
-                    skillBox.uploadDir != null ? skillBox.uploadDir : "workDir/skills",
-                    shellEnabled,
-                    enableRead,
-                    enableWrite);
-
-            boolean injectCodeExecutionPrompt = shellEnabled || codeExecutionInstruction != null;
-            skillBox.skillPromptProvider.setCodeExecutionEnable(injectCodeExecutionPrompt);
-            skillBox.skillPromptProvider.setCodeExecutionInstruction(codeExecutionInstruction);
-        }
-
-        /**
-         * Clone a ShellCommandTool with a new base directory.
-         *
-         * <p>This ensures all code execution tools use the same working directory
-         * while preserving the custom security policies from the source tool.
-         *
-         * @param source The source ShellCommandTool to clone
-         * @param workDir The new working directory (can be null for temporary)
-         * @return A new ShellCommandTool with the same configuration but different baseDir
-         */
-        private ShellCommandTool cloneShellToolWithWorkDir(
-                ShellCommandTool source, String workDir) {
-            // Get configuration from source tool
-            Set<String> allowedCommands = source.getAllowedCommands();
-            Function<String, Boolean> approvalCallback = source.getApprovalCallback();
-            CommandValidator validator = source.getCommandValidator();
-
-            // Create new instance with workDir override
-            return new ShellCommandTool(workDir, allowedCommands, approvalCallback, validator);
         }
     }
 }

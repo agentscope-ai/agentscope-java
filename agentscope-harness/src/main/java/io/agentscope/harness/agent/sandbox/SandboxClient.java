@@ -41,4 +41,8 @@ public interface SandboxClient<O extends SandboxClientOptions> {
     String serializeState(SandboxState state);
 
     SandboxState deserializeState(String json);
+
+    default SandboxState deserializeState(String json, SandboxSnapshotSpec snapshotSpec) {
+        return deserializeState(json);
+    }
 }

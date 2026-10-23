@@ -1,0 +1,224 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.extensions.model.openai.formatter;
+
+import io.agentscope.core.message.MessageMetadataKeys;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Multi-agent formatter for OpenAI Chat Completion HTTP API.
+ * Converts AgentScope Msg objects to OpenAI DTO types with multi-agent support.
+ *
+ * <p>This formatter extends {@link OpenAIChatFormatter} and handles conversations
+ * between multiple agents by:
+ * <ul>
+ *   <li>Grouping multi-agent messages into conversation history</li>
+ *   <li>Using special markup (e.g., history tags) to structure conversations</li>
+ *   <li>Consolidating multi-agent conversations into single user messages</li>
+ * </ul>
+ *
+ * <p>Inherits all option, tool, and tool_choice handling from {@link OpenAIChatFormatter}.
+ */
+public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
+
+    private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
+            "# Conversation History\n"
+                    + "The content between <history></history> tags contains your conversation"
+                    + " history\n";
+
+    private final OpenAIConversationMerger conversationMerger;
+
+    /**
+     * Create an OpenAIMultiAgentFormatter with default conversation history prompt.
+     */
+    public OpenAIMultiAgentFormatter() {
+        this(DEFAULT_CONVERSATION_HISTORY_PROMPT);
+    }
+
+    /**
+     * Create an OpenAIMultiAgentFormatter with custom conversation history prompt.
+     *
+     * @param conversationHistoryPrompt The prompt to prepend before conversation history
+     */
+    public OpenAIMultiAgentFormatter(String conversationHistoryPrompt) {
+        super();
+        this.conversationMerger = new OpenAIConversationMerger(conversationHistoryPrompt);
+    }
+
+    @Override
+    protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
+        return doFormat(msgs, null);
+    }
+
+    @Override
+    protected List<OpenAIMessage> doFormat(List<Msg> msgs, GenerateOptions options) {
+        List<OpenAIMessage> result = new ArrayList<>();
+        List<Boolean> cacheDirectives = new ArrayList<>();
+
+        for (MessageGroup group : groupMessages(msgs)) {
+            switch (group.type) {
+                case SYSTEM -> {
+                    Msg systemMsg = group.messages.get(0);
+                    result.add(convertMessage(systemMsg, false));
+                    cacheDirectives.add(cacheControlDirective(systemMsg));
+                }
+                case TOOL_SEQUENCE -> {
+                    for (Msg msg : group.messages) {
+                        if (msg.getRole() == MsgRole.ASSISTANT || msg.getRole() == MsgRole.TOOL) {
+                            result.add(convertMessage(msg, hasMediaContent(msg)));
+                            cacheDirectives.add(cacheControlDirective(msg));
+                        }
+                    }
+                }
+                case AGENT_CONVERSATION -> {
+                    OpenAIMessage mergedMessage =
+                            conversationMerger.mergeToUserMessage(
+                                    group.messages,
+                                    msg -> formatRoleLabel(msg.getRole()),
+                                    this::convertToolResultToString);
+                    cacheDirectives.add(
+                            applyMergedCacheControlMetadata(group.messages, mergedMessage));
+                    result.add(mergedMessage);
+                }
+                case BYPASS -> {
+                    Msg bypassMsg = group.messages.get(0);
+                    result.add(convertMessage(bypassMsg, hasMediaContent(bypassMsg)));
+                    cacheDirectives.add(cacheControlDirective(bypassMsg));
+                }
+            }
+        }
+
+        applyAutomaticCacheControl(result, cacheDirectives, options);
+        return result;
+    }
+
+    private Boolean applyMergedCacheControlMetadata(
+            List<Msg> messages, OpenAIMessage mergedMessage) {
+        // A merged output has one content boundary, so the last explicit directive wins.
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Msg message = messages.get(i);
+            if (message.getMetadata() != null
+                    && message.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL)
+                            instanceof Boolean) {
+                messageConverter.applyCacheControlFromMetadata(message, mergedMessage);
+                return (Boolean) message.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
+            }
+        }
+        return null;
+    }
+
+    // ========== Private Helper Methods ==========
+
+    /**
+     * Group messages into different types (system, tool sequences, agent conversations, bypass).
+     */
+    private List<MessageGroup> groupMessages(List<Msg> msgs) {
+        List<MessageGroup> groups = new ArrayList<>();
+        List<Msg> currentGroup = new ArrayList<>();
+        MessageGroupType currentType = null;
+
+        for (Msg msg : msgs) {
+            MessageGroupType msgType = determineGroupType(msg);
+
+            if (currentType == null
+                    || currentType != msgType
+                    || (msgType == MessageGroupType.SYSTEM)
+                    || (msgType == MessageGroupType.BYPASS)) {
+                // Start new group
+                if (!currentGroup.isEmpty()) {
+                    groups.add(new MessageGroup(currentType, new ArrayList<>(currentGroup)));
+                }
+                currentGroup = new ArrayList<>();
+                currentType = msgType;
+            }
+
+            currentGroup.add(msg);
+        }
+
+        // Add final group
+        if (!currentGroup.isEmpty()) {
+            groups.add(new MessageGroup(currentType, currentGroup));
+        }
+
+        return groups;
+    }
+
+    /**
+     * Determine the group type for a message.
+     */
+    private MessageGroupType determineGroupType(Msg msg) {
+        // Check for bypass flag first
+        if (shouldBypassHistory(msg)) {
+            return MessageGroupType.BYPASS;
+        }
+
+        return switch (msg.getRole()) {
+            case SYSTEM -> MessageGroupType.SYSTEM;
+            case TOOL -> MessageGroupType.TOOL_SEQUENCE;
+            case USER, ASSISTANT -> {
+                if (msg.hasContentBlocks(ToolUseBlock.class)) {
+                    yield MessageGroupType.TOOL_SEQUENCE;
+                }
+                if (msg.getRole() == MsgRole.ASSISTANT && hasReasoningDetails(msg)) {
+                    yield MessageGroupType.TOOL_SEQUENCE;
+                }
+                yield MessageGroupType.AGENT_CONVERSATION;
+            }
+        };
+    }
+
+    /**
+     * Check whether a message carries encrypted reasoning details that must be preserved
+     * on an individual assistant message (cannot be merged into a user history message).
+     */
+    private boolean hasReasoningDetails(Msg msg) {
+        ThinkingBlock tb = msg.getFirstContentBlock(ThinkingBlock.class);
+        if (tb == null || tb.getMetadata() == null) {
+            return false;
+        }
+        return tb.getMetadata().containsKey(ThinkingBlock.METADATA_REASONING_DETAILS);
+    }
+
+    /**
+     * Represents a group of related messages.
+     */
+    private static class MessageGroup {
+        private final MessageGroupType type;
+        private final List<Msg> messages;
+
+        public MessageGroup(MessageGroupType type, List<Msg> messages) {
+            this.type = type;
+            this.messages = messages;
+        }
+    }
+
+    /**
+     * Types of message groups in multi-agent conversations.
+     */
+    private enum MessageGroupType {
+        SYSTEM, // System messages
+        TOOL_SEQUENCE, // Tool use and tool result messages
+        AGENT_CONVERSATION, // Regular agent conversation messages
+        BYPASS // Messages that bypass history merging
+    }
+}

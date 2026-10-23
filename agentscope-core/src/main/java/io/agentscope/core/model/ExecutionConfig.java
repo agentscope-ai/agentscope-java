@@ -16,8 +16,6 @@
 
 package io.agentscope.core.model;
 
-import io.agentscope.core.model.exception.BadRequestException;
-import io.agentscope.core.model.exception.RateLimitException;
 import io.agentscope.core.model.transport.HttpTransportException;
 import java.io.IOException;
 import java.time.Duration;
@@ -99,18 +97,17 @@ public class ExecutionConfig {
      * @return true if the error should be retried
      */
     private static boolean isRetryableError(Throwable error) {
-        // BadRequestException (400) should not be retried - it's a permanent failure
-        if (error instanceof BadRequestException) {
-            return false;
-        }
-
         // For HttpTransportException, use the built-in isRetryable() method
         // which returns true for 429 (rate limiting) and 5xx (server errors)
         if (error instanceof HttpTransportException hte) {
             return hte.isRetryable();
         }
-        if (error instanceof RateLimitException) {
-            return true;
+
+        // Implementations without a status code (e.g. OpenAIException wrapping a
+        // streaming transport failure) must fall through to the transport/IO and cause-chain
+        // checks below instead of being classified as a permanent client error (issue #3057).
+        if (error instanceof ModelHttpException mhe && mhe.getStatusCode() != null) {
+            return mhe.isRetryableHttpStatus();
         }
 
         // Timeout errors are retryable

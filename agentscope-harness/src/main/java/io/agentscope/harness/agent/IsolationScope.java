@@ -16,7 +16,9 @@
 package io.agentscope.harness.agent;
 
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import java.util.List;
 
 /**
  * Controls how agent state is isolated and shared across calls.
@@ -37,8 +39,9 @@ import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
  *
  * <p>Scope selection:
  * <ul>
- *   <li>{@link #SESSION} – isolated per session; the default.</li>
- *   <li>{@link #USER} – shared across all sessions of the same user.</li>
+ *   <li>{@link #USER} – shared across all sessions of the same user; the default. When
+ *       {@code userId} is absent, falls back to {@link #SESSION}.</li>
+ *   <li>{@link #SESSION} – isolated per session.</li>
  *   <li>{@link #AGENT} – shared across all users and sessions of the same agent.</li>
  *   <li>{@link #GLOBAL} – globally shared within the same workspace/store instance.</li>
  * </ul>
@@ -52,10 +55,9 @@ public enum IsolationScope {
     /**
      * Isolate by session identifier.
      *
-     * <p>This is the default behavior. Each distinct session gets its own sandbox state /
-     * store namespace.  If no session key is present in the
-     * {@link io.agentscope.core.agent.RuntimeContext}, state lookup is skipped and a fresh
-     * sandbox is created (or a default store namespace is used).
+     * <p>Each distinct session gets its own sandbox state / store namespace. If no session key
+     * is present in the {@link io.agentscope.core.agent.RuntimeContext}, state lookup is
+     * skipped and a fresh sandbox is created (or a default store namespace is used).
      */
     SESSION,
 
@@ -63,8 +65,8 @@ public enum IsolationScope {
      * Share across all sessions belonging to the same
      * {@link io.agentscope.core.agent.RuntimeContext#getUserId() userId}.
      *
-     * <p>If {@code userId} is blank, a warning is logged and state lookup / namespace resolution
-     * degrades to the default (fresh sandbox create, or an anonymous-user namespace).
+     * <p>This is the default scope. If {@code userId} is absent, resolution falls back to
+     * {@link #SESSION} using the session identifier instead.
      */
     USER,
 
@@ -82,5 +84,44 @@ public enum IsolationScope {
      * <p>Use with care: all agents and users that share the same store will compete to write
      * the global slot.
      */
-    GLOBAL
+    GLOBAL;
+
+    /**
+     * Creates a {@link NamespaceFactory} that derives the filesystem namespace prefix from the
+     * {@link io.agentscope.core.agent.RuntimeContext} according to this scope.
+     *
+     * <ul>
+     *   <li>{@link #USER} — prefix with {@code userId}; falls back to {@code sessionId} when
+     *       {@code userId} is absent.
+     *   <li>{@link #SESSION} — prefix with {@code sessionId}.
+     *   <li>{@link #AGENT} / {@link #GLOBAL} — no prefix (workspace is already per-agent).
+     * </ul>
+     *
+     * @return a namespace factory consistent with this scope
+     */
+    public NamespaceFactory toNamespaceFactory() {
+        return switch (this) {
+            case USER ->
+                    rc -> {
+                        if (rc == null) {
+                            return List.of();
+                        }
+                        String uid = rc.getUserId();
+                        if (uid != null && !uid.isBlank()) {
+                            return List.of(uid);
+                        }
+                        String sid = rc.getSessionId();
+                        return (sid != null && !sid.isBlank()) ? List.of(sid) : List.of();
+                    };
+            case SESSION ->
+                    rc -> {
+                        if (rc == null) {
+                            return List.of();
+                        }
+                        String sid = rc.getSessionId();
+                        return (sid != null && !sid.isBlank()) ? List.of(sid) : List.of();
+                    };
+            case AGENT, GLOBAL -> rc -> List.of();
+        };
+    }
 }

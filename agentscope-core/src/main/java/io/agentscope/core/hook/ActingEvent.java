@@ -38,7 +38,9 @@ import io.agentscope.core.tool.Toolkit;
  * @see PreActingEvent
  * @see PostActingEvent
  * @see ActingChunkEvent
+ * @deprecated since 2.0.0. Use {@link io.agentscope.core.middleware.MiddlewareBase} instead.
  */
+@Deprecated(forRemoval = true, since = "2.0.0")
 public abstract sealed class ActingEvent extends HookEvent
         permits PreActingEvent, PostActingEvent, ActingChunkEvent {
 

@@ -1,0 +1,6 @@
+{
+  "id": "research-assistant",
+  "name": "Research assistant",
+  "description": "Reads docs and synthesizes structured summaries with citations.",
+  "tags": ["research", "summarization"]
+}

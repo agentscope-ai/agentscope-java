@@ -16,6 +16,7 @@
 package io.agentscope.spring.boot.agui.common;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.processor.AgentResolver;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
@@ -27,7 +28,7 @@ import java.util.Objects;
  * <p>This resolver supports two modes:
  * <ul>
  *   <li><b>Simple mode</b>: Directly looks up agents from the registry</li>
- *   <li><b>Session mode</b>: Uses {@link ThreadSessionManager} for server-side memory</li>
+ *   <li><b>AgentStateStore mode</b>: Uses {@link ThreadSessionManager} for server-side memory</li>
  * </ul>
  */
 public class DefaultAgentResolver implements AgentResolver {
@@ -63,9 +64,14 @@ public class DefaultAgentResolver implements AgentResolver {
 
     @Override
     public Agent resolveAgent(String agentId, String threadId) {
+        return resolveAgent(agentId, threadId, null);
+    }
+
+    @Override
+    public Agent resolveAgent(String agentId, String threadId, String userId) {
         if (serverSideMemory && sessionManager != null) {
-            // Server-side memory mode: use session manager
             return sessionManager.getOrCreateAgent(
+                    userId,
                     threadId,
                     agentId,
                     () ->
@@ -74,17 +80,15 @@ public class DefaultAgentResolver implements AgentResolver {
                                             () ->
                                                     new AguiException.AgentNotFoundException(
                                                             agentId)));
-        } else {
-            // Standard mode: create new agent for each request
-            return registry.getAgent(agentId)
-                    .orElseThrow(() -> new AguiException.AgentNotFoundException(agentId));
         }
+        return registry.getAgent(agentId)
+                .orElseThrow(() -> new AguiException.AgentNotFoundException(agentId));
     }
 
     @Override
-    public boolean hasMemory(String threadId) {
+    public boolean hasMemory(RuntimeContext runtimeContext) {
         if (serverSideMemory && sessionManager != null) {
-            return sessionManager.hasMemory(threadId);
+            return sessionManager.hasMemory(runtimeContext);
         }
         return false;
     }

@@ -37,11 +37,15 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -59,9 +63,39 @@ import reactor.core.publisher.Flux;
  * child → parent turn 2) yields the appropriate {@link ChatResponse}. This mirrors how
  * {@code buildDeclaredFactory} captures {@code this.model} for child agents.
  */
+@HarnessQuiescence
 class HarnessAgentSubagentStreamTest {
 
     @TempDir Path workspace;
+
+    // Each @Test gets a fresh JsonFileAgentStateStore root, preventing the
+    // "parent" agent's persisted AgentState from leaking between cases.
+    @TempDir Path stateHome;
+
+    private HarnessAgent parent;
+    private HarnessAgent agent;
+    private String previousStateHome;
+
+    @BeforeEach
+    void overrideStateHome() {
+        previousStateHome = System.getProperty("agentscope.state.home");
+        System.setProperty("agentscope.state.home", stateHome.toString());
+    }
+
+    @AfterEach
+    void restoreStateHome() {
+        if (parent != null) {
+            parent.close();
+        }
+        if (agent != null) {
+            agent.close();
+        }
+        if (previousStateHome != null) {
+            System.setProperty("agentscope.state.home", previousStateHome);
+        } else {
+            System.clearProperty("agentscope.state.home");
+        }
+    }
 
     // -----------------------------------------------------------------
     // Helpers
@@ -153,7 +187,7 @@ class HarnessAgentSubagentStreamTest {
                 // Turn 3 (parent): final summary
                 .thenReturn(Flux.just(stopChunk("p2", "summary done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -250,7 +284,7 @@ class HarnessAgentSubagentStreamTest {
                 // parent final
                 .thenReturn(Flux.just(stopChunk("p2", "all done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -334,7 +368,7 @@ class HarnessAgentSubagentStreamTest {
                 .thenReturn(Flux.just(stopChunk("c1", "analysis complete")))
                 .thenReturn(Flux.just(stopChunk("p2", "result obtained")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -351,6 +385,66 @@ class HarnessAgentSubagentStreamTest {
         assertNotNull(reply, "reply must not be null");
         assertTrue(
                 reply.getTextContent().contains("result obtained"),
+                "final reply text mismatch; got: " + reply.getTextContent());
+    }
+
+    /**
+     * A custom {@link java.net.http.HttpClient} configured on the parent builder must be inherited
+     * by spawned subagents: {@code buildDeclaredFactory} captures {@code b.webHttpClient} and
+     * forwards it onto the child builder.
+     */
+    @Test
+    void call_localSubagent_inheritsCustomWebHttpClient() throws Exception {
+        String childId = "webclient-child";
+        Files.createDirectories(workspace.resolve("subagents"));
+        Files.writeString(
+                workspace.resolve("subagents/" + childId + ".md"),
+                """
+                ---
+                description: Web client child
+                ---
+                You are a helper.
+                """);
+
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "p1",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                childId,
+                                                "task",
+                                                "check",
+                                                "timeout_seconds",
+                                                60))))
+                .thenReturn(Flux.just(stopChunk("c1", "child done")))
+                .thenReturn(Flux.just(stopChunk("p2", "parent done")));
+
+        parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .webHttpClient(
+                                HttpClient.newBuilder()
+                                        .version(HttpClient.Version.HTTP_1_1)
+                                        .build())
+                        .build();
+
+        Msg reply =
+                parent.call(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("go").build()),
+                                RuntimeContext.builder().sessionId("sess-webclient").build())
+                        .block();
+
+        assertNotNull(reply, "reply must not be null");
+        assertTrue(
+                reply.getTextContent().contains("parent done"),
                 "final reply text mismatch; got: " + reply.getTextContent());
     }
 
@@ -427,7 +521,7 @@ class HarnessAgentSubagentStreamTest {
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("stub");
 
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("diag-parent")
                         .model(model)
@@ -435,18 +529,9 @@ class HarnessAgentSubagentStreamTest {
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
 
-        // Access toolkit via reflection: HarnessAgent.delegate (ReActAgent) -> toolkit
-        java.lang.reflect.Field delegateField = HarnessAgent.class.getDeclaredField("delegate");
-        delegateField.setAccessible(true);
-        io.agentscope.core.ReActAgent delegate =
-                (io.agentscope.core.ReActAgent) delegateField.get(agent);
-
-        java.lang.reflect.Field toolkitField =
-                io.agentscope.core.agent.StructuredOutputCapableAgent.class.getDeclaredField(
-                        "toolkit");
-        toolkitField.setAccessible(true);
-        io.agentscope.core.tool.Toolkit toolkit =
-                (io.agentscope.core.tool.Toolkit) toolkitField.get(delegate);
+        // After the HarnessAgent → ReActAgent unification the inner agent is exposed via
+        // getDelegate(); toolkit is reachable through the public getToolkit() accessor.
+        io.agentscope.core.tool.Toolkit toolkit = agent.getDelegate().getToolkit();
 
         List<String> toolNames =
                 toolkit.getToolSchemas().stream()

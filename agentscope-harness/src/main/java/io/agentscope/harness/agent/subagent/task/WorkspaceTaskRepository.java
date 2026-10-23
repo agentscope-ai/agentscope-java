@@ -15,14 +15,20 @@
  */
 package io.agentscope.harness.agent.subagent.task;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
+import io.agentscope.harness.agent.coordination.PeriodicGate;
+import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,7 +49,9 @@ import org.slf4j.LoggerFactory;
  * <p>Storage layout: {@code agents/<parentAgentId>/tasks/<sessionId>.json} — a JSON map of
  * {@code taskId → TaskRecord}, consistent with how sessions are stored. In distributed deployments
  * using {@code RemoteFilesystemSpec}, this path is automatically routed to shared storage, making
- * task state visible to any node.
+ * task state visible to any node. In sandbox mode the injected filesystem is a per-call proxy with
+ * no live sandbox between calls, so task records are persisted on the host workspace instead of
+ * inside the sandbox — see the task-record routing in {@code WorkspaceManager}.
  *
  * <p>The in-memory {@code localTasks} map is keyed by {@code "<sessionId>:<taskId>"} to preserve
  * session isolation when multiple sessions coexist in the same process.
@@ -58,15 +66,26 @@ import org.slf4j.LoggerFactory;
  *       persisted terminal state without hanging.
  *   <li>Cancellation sets a {@link TaskRecord#isCancelRequested()} flag in workspace storage;
  *       the originating node checks this flag before invoking the subagent for best-effort cancel.
- *   <li>Remote {@link TaskRunSpec.RemoteTaskRunSpec} tasks use {@link AgentProtocolTaskClient} and
- *       persist {@link TaskRecord#getRemoteBaseUrl()} for cross-node resume.
+ *   <li>Remote {@link TaskRunSpec.RemoteTaskRunSpec} tasks use a {@link RemoteSubagentTransport}
+ *       (Agent Protocol by default) and persist {@link TaskRecord#getRemoteBaseUrl()} for
+ *       cross-node resume.
+ *   <li>Orphan sweeping is throttled via {@link PeriodicGate}: use {@link
+ *       io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate} for cross-replica
+ *       deduplication, or {@link LocalPeriodicGate} (the default) for single-process deployments.
+ *       Prefer a control-plane hosted {@link TaskRepository} when available — that path runs a
+ *       leader-only sweep and does not use this workspace repository at all.
  * </ul>
  */
 public class WorkspaceTaskRepository implements TaskRepository {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceTaskRepository.class);
 
-    private static final String TRANSPORT_AGENT_PROTOCOL = "agent-protocol";
+    private static final String TRANSPORT_AGENT_PROTOCOL = AgentProtocolTransport.TYPE;
+
+    /** Short, fixed poll interval used while a remote task is awaiting user confirmation. */
+    private static final long AWAITING_CONFIRM_POLL_MS = 750L;
+
+    private volatile long awaitingConfirmPollMs = AWAITING_CONFIRM_POLL_MS;
 
     /**
      * How often (in seconds) the heartbeat refreshes {@code lastUpdatedAt} for live local tasks.
@@ -86,7 +105,8 @@ public class WorkspaceTaskRepository implements TaskRepository {
 
     private final WorkspaceManager workspaceManager;
     private final String parentAgentId;
-    private final AgentProtocolTaskClient protocolClient;
+    private final PeriodicGate periodicGate;
+    private volatile RemoteSubagentTransport transport;
 
     /**
      * In-memory local task handles. Keyed by {@code "<sessionId>:<taskId>"} to provide session
@@ -100,11 +120,31 @@ public class WorkspaceTaskRepository implements TaskRepository {
      */
     private final Map<String, String> localTaskSessionIds = new ConcurrentHashMap<>();
 
+    /**
+     * Maps {@code localKey} → {@link RuntimeContext} captured at {@code putTask} time so the
+     * background future and the heartbeat thread can persist task state under the originating
+     * user's namespace.
+     */
+    private final Map<String, RuntimeContext> localTaskContexts = new ConcurrentHashMap<>();
+
     private final ExecutorService executor;
     private final boolean ownsExecutor;
     private final ScheduledExecutorService maintenanceScheduler;
 
+    private volatile TaskCompletionCallback completionCallback;
+
     public WorkspaceTaskRepository(WorkspaceManager workspaceManager, String parentAgentId) {
+        this(workspaceManager, parentAgentId, new LocalPeriodicGate());
+    }
+
+    /**
+     * Creates a repository with an explicit {@link PeriodicGate} for orphan-sweep throttling.
+     *
+     * <p>Pass a {@link io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate} when a
+     * shared {@code BaseStore} is available so only one replica sweeps per interval.
+     */
+    public WorkspaceTaskRepository(
+            WorkspaceManager workspaceManager, String parentAgentId, PeriodicGate periodicGate) {
         this(
                 workspaceManager,
                 parentAgentId,
@@ -116,12 +156,13 @@ public class WorkspaceTaskRepository implements TaskRepository {
                             return t;
                         }),
                 true,
-                true);
+                true,
+                periodicGate);
     }
 
     public WorkspaceTaskRepository(
             WorkspaceManager workspaceManager, String parentAgentId, ExecutorService executor) {
-        this(workspaceManager, parentAgentId, executor, false, true);
+        this(workspaceManager, parentAgentId, executor, false, true, new LocalPeriodicGate());
     }
 
     /**
@@ -130,7 +171,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
      * <p>Unit tests invoke {@link #heartbeat()} and {@link #sweepOrphanedTasks} directly; leaving
      * the maintenance scheduler enabled causes flaky races on slow CI hosts (notably Windows).
      */
-    static WorkspaceTaskRepository forTests(
+    public static WorkspaceTaskRepository forTests(
             WorkspaceManager workspaceManager, String parentAgentId) {
         ExecutorService testExecutor =
                 Executors.newCachedThreadPool(
@@ -141,12 +182,35 @@ public class WorkspaceTaskRepository implements TaskRepository {
                         });
         // Test helper creates its own executor, so repository must own and shut it down.
         return new WorkspaceTaskRepository(
-                workspaceManager, parentAgentId, testExecutor, true, false);
+                workspaceManager,
+                parentAgentId,
+                testExecutor,
+                true,
+                false,
+                new LocalPeriodicGate());
     }
 
-    static WorkspaceTaskRepository forTests(
+    /**
+     * Test-only factory with a caller-supplied {@link PeriodicGate} and no maintenance threads.
+     */
+    public static WorkspaceTaskRepository forTests(
+            WorkspaceManager workspaceManager, String parentAgentId, PeriodicGate periodicGate) {
+        ExecutorService testExecutor =
+                Executors.newCachedThreadPool(
+                        r -> {
+                            Thread t = new Thread(r, "ws-task-test");
+                            t.setDaemon(true);
+                            return t;
+                        });
+        return new WorkspaceTaskRepository(
+                workspaceManager, parentAgentId, testExecutor, true, false, periodicGate);
+    }
+
+    /** Test-only factory with a caller-supplied executor and no maintenance threads. */
+    public static WorkspaceTaskRepository forTests(
             WorkspaceManager workspaceManager, String parentAgentId, ExecutorService executor) {
-        return new WorkspaceTaskRepository(workspaceManager, parentAgentId, executor, false, false);
+        return new WorkspaceTaskRepository(
+                workspaceManager, parentAgentId, executor, false, false, new LocalPeriodicGate());
     }
 
     private WorkspaceTaskRepository(
@@ -154,12 +218,14 @@ public class WorkspaceTaskRepository implements TaskRepository {
             String parentAgentId,
             ExecutorService executor,
             boolean ownsExecutor,
-            boolean enableMaintenance) {
+            boolean enableMaintenance,
+            PeriodicGate periodicGate) {
         this.workspaceManager = workspaceManager;
         this.parentAgentId = parentAgentId != null ? parentAgentId : "HarnessAgent";
         this.executor = executor;
         this.ownsExecutor = ownsExecutor;
-        this.protocolClient = new AgentProtocolTaskClient();
+        this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
+        this.transport = new AgentProtocolTransport();
         if (enableMaintenance) {
             ScheduledExecutorService scheduler =
                     Executors.newSingleThreadScheduledExecutor(
@@ -190,8 +256,35 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     @Override
+    public void setCompletionCallback(TaskCompletionCallback callback) {
+        this.completionCallback = callback;
+    }
+
+    /**
+     * Test-only hook to inject a fake {@link RemoteSubagentTransport}, bypassing real HTTP calls
+     * for remote task tests.
+     */
+    void setTransport(RemoteSubagentTransport transport) {
+        this.transport = Objects.requireNonNull(transport, "transport");
+    }
+
+    /**
+     * Test-only hook to shrink the awaiting-confirm poll interval so tests exercising several
+     * confirming polls do not pay the production 750ms granularity. Call before {@link #putTask}
+     * starts the polling loop.
+     */
+    void setAwaitingConfirmPollMs(long pollMs) {
+        this.awaitingConfirmPollMs = Math.max(1L, pollMs);
+    }
+
+    @Override
     public BackgroundTask putTask(
-            String taskId, String subAgentId, String sessionId, TaskRunSpec spec) {
+            RuntimeContext rc,
+            String taskId,
+            String subAgentId,
+            String sessionId,
+            TaskRunSpec spec) {
+        RuntimeContext capturedRc = rc != null ? rc : RuntimeContext.empty();
         TaskRecord record = new TaskRecord(taskId, subAgentId, parentAgentId, sessionId, null);
         record.setStatus(TaskStatus.PENDING);
         if (spec instanceof TaskRunSpec.RemoteTaskRunSpec remote) {
@@ -202,19 +295,60 @@ public class WorkspaceTaskRepository implements TaskRepository {
                             ? null
                             : Collections.unmodifiableMap(remote.headers()));
         }
-        persistRecord(sessionId, record);
+        persistRecord(capturedRc, sessionId, record);
 
         String localKey = localKey(sessionId, taskId);
         CompletableFuture<String> future;
 
-        if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
+        if (spec instanceof TaskRunSpec.AdoptedTaskRunSpec adopted) {
+            // The future is already running (promoted from a timed-out sync execution).
+            // Skip executor submission; just wire up status-tracking callbacks.
+            future = adopted.future();
+            updateStatus(capturedRc, sessionId, taskId, TaskStatus.RUNNING, null, null);
+            final String sid = sessionId;
+            future.whenComplete(
+                    (result, err) -> {
+                        if (err != null) {
+                            Throwable cause =
+                                    err instanceof java.util.concurrent.CompletionException
+                                            ? err.getCause()
+                                            : err;
+                            String errMsg =
+                                    cause != null && cause.getMessage() != null
+                                            ? cause.getMessage()
+                                            : (cause != null
+                                                    ? cause.getClass().getSimpleName()
+                                                    : err.getClass().getSimpleName());
+                            updateStatus(capturedRc, sid, taskId, TaskStatus.FAILED, null, errMsg);
+                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, null);
+                        } else {
+                            updateStatus(
+                                    capturedRc, sid, taskId, TaskStatus.COMPLETED, result, null);
+                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, result);
+                        }
+                    });
+        } else if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
             future =
                     CompletableFuture.supplyAsync(
-                            () -> runLocalSupplier(sessionId, taskId, local.execution()), executor);
+                            () ->
+                                    runLocalSupplier(
+                                            capturedRc,
+                                            sessionId,
+                                            taskId,
+                                            subAgentId,
+                                            local.execution()),
+                            executor);
         } else if (spec instanceof TaskRunSpec.RemoteTaskRunSpec remote) {
             future =
                     CompletableFuture.supplyAsync(
-                            () -> runRemoteTask(sessionId, taskId, subAgentId, remote, true),
+                            () ->
+                                    runRemoteTask(
+                                            capturedRc,
+                                            sessionId,
+                                            taskId,
+                                            subAgentId,
+                                            remote,
+                                            true),
                             executor);
         } else {
             throw new IllegalArgumentException("Unsupported TaskRunSpec: " + spec.getClass());
@@ -223,122 +357,191 @@ public class WorkspaceTaskRepository implements TaskRepository {
         BackgroundTask bgTask = new BackgroundTask(taskId, subAgentId, future);
         localTasks.put(localKey, bgTask);
         localTaskSessionIds.put(localKey, sessionId != null ? sessionId : "");
+        localTaskContexts.put(localKey, capturedRc);
         return bgTask;
     }
 
     private String runLocalSupplier(
-            String sessionId, String taskId, Supplier<String> taskExecution) {
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            String subAgentId,
+            Supplier<String> taskExecution) {
         Optional<TaskRecord> latest =
-                workspaceManager.readTaskRecord(parentAgentId, sessionId, taskId);
+                workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
         if (latest.isPresent() && latest.get().isCancelRequested()) {
-            markCancelled(sessionId, taskId);
+            markCancelled(rc, sessionId, taskId);
             return null;
         }
 
-        updateStatus(sessionId, taskId, TaskStatus.RUNNING, null, null);
+        updateStatus(rc, sessionId, taskId, TaskStatus.RUNNING, null, null);
         try {
             String result = taskExecution.get();
             Optional<TaskRecord> afterRun =
-                    workspaceManager.readTaskRecord(parentAgentId, sessionId, taskId);
+                    workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
             if (afterRun.isPresent() && afterRun.get().isCancelRequested()) {
-                markCancelled(sessionId, taskId);
+                markCancelled(rc, sessionId, taskId);
                 return null;
             }
-            updateStatus(sessionId, taskId, TaskStatus.COMPLETED, result, null);
+            updateStatus(rc, sessionId, taskId, TaskStatus.COMPLETED, result, null);
+            fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
             return result;
         } catch (Exception e) {
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            updateStatus(sessionId, taskId, TaskStatus.FAILED, null, errMsg);
+            updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
+            fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
             throw e instanceof RuntimeException re ? re : new RuntimeException(e);
         }
     }
 
     private String runRemoteTask(
+            RuntimeContext rc,
             String sessionId,
             String taskId,
             String subAgentId,
             TaskRunSpec.RemoteTaskRunSpec remote,
             boolean submitRemote) {
+        RemoteTarget target = new RemoteTarget(remote.baseUrl(), remote.headers());
         try {
             Optional<TaskRecord> latest =
-                    workspaceManager.readTaskRecord(parentAgentId, sessionId, taskId);
+                    workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
             if (latest.isPresent() && latest.get().isCancelRequested()) {
-                markCancelled(sessionId, taskId);
+                markCancelled(rc, sessionId, taskId);
                 return null;
             }
             if (submitRemote) {
-                protocolClient.submitTask(
-                        remote.baseUrl(), remote.headers(), taskId, subAgentId, remote.input());
-                updateStatus(sessionId, taskId, TaskStatus.RUNNING, null, null);
+                RemoteSubmitContext context =
+                        remote.context() != null ? remote.context() : RemoteSubmitContext.empty();
+                transport.submit(target, taskId, subAgentId, remote.input(), context);
+                updateStatus(rc, sessionId, taskId, TaskStatus.RUNNING, null, null);
             }
-            return pollRemoteUntilDone(sessionId, taskId, remote.baseUrl(), remote.headers());
+            String result = pollRemoteUntilDone(rc, sessionId, taskId, target);
+            if (result != null) {
+                fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
+            }
+            return result;
         } catch (Exception e) {
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            updateStatus(sessionId, taskId, TaskStatus.FAILED, null, errMsg);
+            updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
+            fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
             throw e instanceof RuntimeException re ? re : new RuntimeException(e);
         }
     }
 
     private String pollRemoteUntilDone(
-            String sessionId, String taskId, String baseUrl, Map<String, String> headers)
+            RuntimeContext rc, String sessionId, String taskId, RemoteTarget target)
             throws Exception {
         int attempt = 0;
+        boolean wasAwaitingConfirm = false;
         while (!Thread.currentThread().isInterrupted()) {
             Optional<TaskRecord> wr =
-                    workspaceManager.readTaskRecord(parentAgentId, sessionId, taskId);
+                    workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
             if (wr.isPresent() && wr.get().isCancelRequested()) {
                 try {
-                    protocolClient.cancelTask(baseUrl, headers, taskId);
+                    transport.cancel(target, taskId);
                 } catch (Exception ex) {
                     log.debug("Remote cancel after local cancel flag: {}", ex.getMessage());
                 }
-                markCancelled(sessionId, taskId);
+                markCancelled(rc, sessionId, taskId);
                 return null;
             }
-            RemoteTaskStatus st = protocolClient.getStatus(baseUrl, headers, taskId);
-            String s = st.status() == null ? "" : st.status().toLowerCase();
-            switch (s) {
-                case "success" -> {
-                    String result = protocolClient.waitForResult(baseUrl, headers, taskId, 120);
-                    updateStatus(sessionId, taskId, TaskStatus.COMPLETED, result, null);
-                    return result;
-                }
-                case "error", "failed" -> {
-                    String err = st.error() != null ? st.error() : "remote task error";
-                    updateStatus(sessionId, taskId, TaskStatus.FAILED, null, err);
-                    throw new RuntimeException(err);
-                }
-                case "cancelled", "canceled" -> {
-                    markCancelled(sessionId, taskId);
-                    return null;
-                }
-                default -> {
-                    // pending, running, empty: keep polling
-                }
+            RemoteTaskStatus st = transport.getStatus(target, taskId);
+            if (st.isAwaitingConfirm()) {
+                wasAwaitingConfirm = true;
+                updateAwaitingConfirm(rc, sessionId, taskId, true, st.pendingConfirms());
+                Thread.sleep(awaitingConfirmPollMs);
+                continue;
             }
+            if (wasAwaitingConfirm) {
+                updateAwaitingConfirm(rc, sessionId, taskId, false, null);
+                wasAwaitingConfirm = false;
+            }
+            if (st.isTerminalSuccess()) {
+                String result = transport.waitForResult(target, taskId, 120);
+                updateStatus(rc, sessionId, taskId, TaskStatus.COMPLETED, result, null);
+                return result;
+            }
+            if (st.isTerminalFailure()) {
+                String err = st.error() != null ? st.error() : "remote task error";
+                updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, err);
+                throw new RuntimeException(err);
+            }
+            if (st.isCancelled()) {
+                markCancelled(rc, sessionId, taskId);
+                return null;
+            }
+            // pending, running, empty: keep polling with exponential backoff
             long sleepMs = Math.min(5_000L, 200L * (1L << Math.min(attempt++, 4)));
             Thread.sleep(sleepMs);
         }
         Thread.currentThread().interrupt();
-        markCancelled(sessionId, taskId);
+        markCancelled(rc, sessionId, taskId);
         return null;
     }
 
+    /**
+     * Persists {@link TaskRecord#isAwaitingConfirm()} and {@link TaskRecord#getPendingConfirms()}
+     * without touching {@link TaskRecord#getStatus()} — the task remains {@code RUNNING} while
+     * paused for user confirmation. No-op once the record has reached a terminal state, and no-op
+     * when the awaiting flag and pending list are unchanged (avoids rewriting workspace JSON on
+     * every poll while blocked on confirmation).
+     */
+    private void updateAwaitingConfirm(
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            boolean awaiting,
+            List<RemotePendingConfirm> pendingConfirms) {
+        Optional<TaskRecord> existing =
+                workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
+        if (existing.isEmpty()) {
+            return;
+        }
+        TaskRecord record = existing.get();
+        if (record.getStatus() != null && record.getStatus().isTerminal()) {
+            return;
+        }
+        List<RemotePendingConfirm> nextPending = awaiting ? pendingConfirms : null;
+        if (record.isAwaitingConfirm() == awaiting
+                && pendingConfirmsUnchanged(record.getPendingConfirms(), nextPending)) {
+            return;
+        }
+        record.setAwaitingConfirm(awaiting);
+        record.setPendingConfirms(nextPending);
+        persistRecord(rc, sessionId, record);
+    }
+
+    private static boolean pendingConfirmsUnchanged(
+            List<RemotePendingConfirm> current, List<RemotePendingConfirm> next) {
+        if (current == null || current.isEmpty()) {
+            return next == null || next.isEmpty();
+        }
+        if (next == null || next.isEmpty()) {
+            return false;
+        }
+        return current.equals(next);
+    }
+
     @Override
-    public BackgroundTask getTask(String sessionId, String taskId) {
+    public BackgroundTask getTask(RuntimeContext rc, String sessionId, String taskId) {
         BackgroundTask local = localTasks.get(localKey(sessionId, taskId));
         if (local != null) {
             return local;
         }
         // Fall back to workspace record — construct a synthetic completed/failed BackgroundTask
         Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord(parentAgentId, sessionId, taskId);
-        return record.map(this::syntheticTask).orElse(null);
+                workspaceManager.readTaskRecord(
+                        rc != null ? rc : RuntimeContext.empty(), parentAgentId, sessionId, taskId);
+        return record.map(r -> syntheticTask(rc != null ? rc : RuntimeContext.empty(), r))
+                .orElse(null);
     }
 
     @Override
-    public Collection<BackgroundTask> listTasks(String sessionId, TaskStatus filter) {
-        Collection<TaskRecord> records = workspaceManager.listTaskRecords(parentAgentId, sessionId);
+    public Collection<BackgroundTask> listTasks(
+            RuntimeContext rc, String sessionId, TaskStatus filter) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
+        Collection<TaskRecord> records =
+                workspaceManager.listTaskRecords(effRc, parentAgentId, sessionId);
 
         List<BackgroundTask> result = new ArrayList<>();
         for (TaskRecord wsRecord : records) {
@@ -351,7 +554,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
             if (local != null && !wsRecord.getStatus().isTerminal()) {
                 effective = local;
             } else {
-                effective = syntheticTask(wsRecord);
+                effective = syntheticTask(effRc, wsRecord);
             }
             if (filter == null || effective.getTaskStatus() == filter) {
                 result.add(effective);
@@ -361,34 +564,31 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     @Override
-    public boolean cancelTask(String sessionId, String taskId) {
+    public boolean cancelTask(RuntimeContext rc, String sessionId, String taskId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
         boolean found = false;
 
         BackgroundTask local = localTasks.get(localKey(sessionId, taskId));
         if (local != null) {
-            local.cancel(true);
             found = true;
         }
 
         // Always write cancelRequested flag to workspace for cross-node coordination
-        Optional<TaskRecord> existing =
-                workspaceManager.readTaskRecord(parentAgentId, sessionId, taskId);
+        Optional<TaskRecord> existing = persistCancellation(effRc, sessionId, taskId);
         if (existing.isPresent()) {
             TaskRecord snapshot = existing.get();
             boolean agentProtocol =
                     snapshot.isAgentProtocolTransport() && snapshot.getRemoteBaseUrl() != null;
 
-            TaskRecord record = snapshot;
-            record.setCancelRequested(true);
-            if (!record.getStatus().isTerminal()) {
-                record.setStatus(TaskStatus.CANCELLED);
-            }
-            persistRecord(sessionId, record);
+            // Completion listeners must observe durable cancellation, never a still-running record.
+            if (local != null) local.cancel(true);
 
             if (agentProtocol) {
                 try {
-                    protocolClient.cancelTask(
-                            snapshot.getRemoteBaseUrl(), snapshot.getRemoteHeaders(), taskId);
+                    transport.cancel(
+                            new RemoteTarget(
+                                    snapshot.getRemoteBaseUrl(), snapshot.getRemoteHeaders()),
+                            taskId);
                 } catch (Exception e) {
                     log.warn("Remote cancel failed for task {}: {}", taskId, e.getMessage());
                 }
@@ -396,23 +596,70 @@ public class WorkspaceTaskRepository implements TaskRepository {
             return true;
         }
 
+        if (local != null) local.cancel(true);
         return found;
     }
 
+    // ---- Phase B-3 push delivery -----------------------------------------------------------
+
     @Override
-    public void removeTask(String sessionId, String taskId) {
-        String key = localKey(sessionId, taskId);
-        localTasks.remove(key);
-        localTaskSessionIds.remove(key);
+    public List<TaskDelivery> findPendingDeliveries(RuntimeContext rc, String sessionId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
+        Collection<TaskRecord> records =
+                workspaceManager.listTaskRecords(effRc, parentAgentId, sessionId);
+        if (records == null || records.isEmpty()) {
+            return List.of();
+        }
+        List<TaskRecord> ordered = new ArrayList<>(records);
+        ordered.sort(
+                Comparator.comparing(
+                        TaskRecord::getLastUpdatedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())));
+        List<TaskDelivery> out = new ArrayList<>();
+        for (TaskRecord r : ordered) {
+            if (r.getStatus() == null || !r.getStatus().isTerminal()) continue;
+            if (r.isDelivered()) continue;
+            out.add(
+                    new TaskDelivery(
+                            r.getTaskId(),
+                            r.getSubAgentId(),
+                            r.getStatus(),
+                            r.getResult(),
+                            r.getErrorMessage(),
+                            r.getLastUpdatedAt()));
+        }
+        return out;
+    }
+
+    /**
+     * Stamps {@code deliveredAt} on the persisted record. Idempotent — the first non-null write
+     * wins; subsequent calls bail out without touching workspace storage. Uses an independent
+     * read-modify-write path rather than going through {@link #updateStatus} so the heartbeat /
+     * orphan-sweeper cannot accidentally clobber the field via their RUNNING/FAILED writes
+     * (those paths reconstruct the record around status-only fields).
+     */
+    @Override
+    public void markDelivered(RuntimeContext rc, String sessionId, String taskId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
+        Optional<TaskRecord> existing =
+                workspaceManager.readTaskRecord(effRc, parentAgentId, sessionId, taskId);
+        if (existing.isEmpty()) return;
+        TaskRecord r = existing.get();
+        if (r.getDeliveredAt() != null) return; // already delivered
+        r.setDeliveredAt(Instant.now());
+        persistRecord(effRc, sessionId, r);
     }
 
     @Override
-    public void clear() {
-        localTasks.clear();
-        localTaskSessionIds.clear();
+    public boolean isDelivered(RuntimeContext rc, String sessionId, String taskId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
+        return workspaceManager
+                .readTaskRecord(effRc, parentAgentId, sessionId, taskId)
+                .map(TaskRecord::isDelivered)
+                .orElse(false);
     }
 
-    /** Shuts down the maintenance scheduler and (if owned) the task executor. */
+    @Override
     public void shutdown() {
         if (maintenanceScheduler != null) {
             maintenanceScheduler.shutdown();
@@ -453,8 +700,12 @@ public class WorkspaceTaskRepository implements TaskRepository {
                         if (sid == null) {
                             return;
                         }
+                        RuntimeContext rc = localTaskContexts.get(key);
+                        if (rc == null) {
+                            rc = RuntimeContext.empty();
+                        }
                         try {
-                            updateStatus(sid, task.getTaskId(), TaskStatus.RUNNING, null, null);
+                            updateStatus(rc, sid, task.getTaskId(), TaskStatus.RUNNING, null, null);
                         } catch (Exception e) {
                             log.debug(
                                     "Heartbeat update failed for task {}: {}",
@@ -471,16 +722,11 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     private void sweepOrphanedTasksDefault() {
-        // Best-effort distributed throttle: if another node already completed a sweep
-        // within the last SWEEP_INTERVAL_MINUTES, skip this cycle entirely.
-        // No locking — two nodes may occasionally both sweep, which is safe (idempotent).
         Duration sweepInterval = Duration.ofSeconds(SWEEP_INTERVAL_MINUTES * 60L);
-        Optional<Instant> lastSweep = workspaceManager.readSweepMarker(parentAgentId);
-        if (lastSweep.isPresent() && lastSweep.get().isAfter(Instant.now().minus(sweepInterval))) {
-            log.debug(
-                    "Skipping orphan sweep for {} — another node swept at {}",
-                    parentAgentId,
-                    lastSweep.get());
+        // Throttle via PeriodicGate: LocalPeriodicGate for single-process, StoreBacked for
+        // cross-replica deduplication. Sweep itself is idempotent, so a lost claim is harmless.
+        if (!periodicGate.tryClaim("task-sweep:" + parentAgentId, sweepInterval)) {
+            log.debug("Skipping orphan sweep for {} — periodic gate denied claim", parentAgentId);
             return;
         }
 
@@ -491,9 +737,6 @@ public class WorkspaceTaskRepository implements TaskRepository {
         Duration orphanTimeout = Duration.ofMinutes(ORPHAN_TIMEOUT_MINUTES);
         Duration recentWindow = orphanTimeout.multipliedBy(2).plus(sweepInterval);
         sweepOrphanedTasks(orphanTimeout, recentWindow);
-
-        // Record completion so other nodes can skip their next scheduled cycle.
-        workspaceManager.writeSweepMarker(parentAgentId);
     }
 
     /**
@@ -506,24 +749,33 @@ public class WorkspaceTaskRepository implements TaskRepository {
      * ({@code agent-protocol}) tasks are excluded because their liveness is governed by the remote
      * endpoint, not by this node's heartbeat.
      *
-     * <p>Safe to run concurrently on multiple nodes: the workspace write is idempotent and
-     * last-writer-wins is acceptable here (the task is already orphaned regardless of which node
-     * notices first).
+     * <p>Remote stores with CAS support recheck persisted liveness on conflicts, so a heartbeat
+     * racing the scan is not overwritten by an outdated orphan decision.
      *
      * <p>Package-private for direct invocation in unit tests.
      *
      * @param orphanTimeout how long a non-terminal local task may remain un-heartbeated before it
      *     is considered orphaned
-     * @param recentWindow only session files modified within this window are scanned; files older
-     *     than this are assumed to contain only terminal tasks (see
-     *     {@link WorkspaceManager#listAllTaskRecords})
+     * @param recentWindow retained for compatibility; maintenance includes old files because
+     *     downtime may exceed the recent-file window
      */
     void sweepOrphanedTasks(Duration orphanTimeout, Duration recentWindow) {
+        sweepOrphanedTasks(orphanTimeout, recentWindow, Instant.now());
+    }
+
+    /**
+     * Sweeps orphaned tasks using the supplied sweep time.
+     *
+     * <p>Package-private so tests can verify the timeout boundary without depending on the
+     * platform clock resolution.
+     */
+    void sweepOrphanedTasks(Duration orphanTimeout, Duration recentWindow, Instant sweepTime) {
         try {
-            Collection<TaskRecord> all =
-                    workspaceManager.listAllTaskRecords(parentAgentId, recentWindow);
-            Instant threshold = Instant.now().minus(orphanTimeout);
-            for (TaskRecord record : all) {
+            Collection<WorkspaceManager.ScopedTaskRecord> all =
+                    workspaceManager.listTaskRecordsForMaintenance(parentAgentId);
+            Instant threshold = sweepTime.minus(orphanTimeout);
+            for (WorkspaceManager.ScopedTaskRecord scoped : all) {
+                TaskRecord record = scoped.record();
                 if (record.getStatus() == null || record.getStatus().isTerminal()) {
                     continue;
                 }
@@ -532,27 +784,34 @@ public class WorkspaceTaskRepository implements TaskRepository {
                     continue;
                 }
                 Instant lastUpdated = record.getLastUpdatedAt();
-                if (lastUpdated == null || !lastUpdated.isBefore(threshold)) {
+                // A task is stale as soon as it reaches the timeout boundary. Besides matching
+                // the timeout contract, this avoids leaving a zero-timeout task RUNNING when the
+                // system clock returns the same instant for its last update and this sweep.
+                if (lastUpdated == null || lastUpdated.isAfter(threshold)) {
                     continue;
                 }
                 String sid = record.getParentSessionId();
                 String tid = record.getTaskId();
                 // Skip if this node still has an active local future — heartbeat is live.
-                BackgroundTask local = localTasks.get(localKey(sid, tid));
+                String key = localKey(sid, tid);
+                BackgroundTask local = localTasks.get(key);
                 if (local != null && !local.isCompleted()) {
                     continue;
                 }
-                long staleSecs = Duration.between(lastUpdated, Instant.now()).getSeconds();
+                RuntimeContext updateRc = scoped.context();
+                long staleSecs = Duration.between(lastUpdated, sweepTime).getSeconds();
                 String orphanMsg =
                         String.format(
                                 "executor lost: no heartbeat for %d seconds (last updated: %s)",
                                 staleSecs, lastUpdated);
-                log.warn(
-                        "Orphaned task {} (session {}) last updated {}s ago, marking FAILED",
-                        tid,
-                        sid,
-                        staleSecs);
-                updateStatus(sid, tid, TaskStatus.FAILED, null, orphanMsg);
+                if (workspaceManager.failOrphanedTask(
+                        updateRc, parentAgentId, sid, tid, threshold, orphanMsg)) {
+                    log.warn(
+                            "Orphaned task {} (session {}) last updated {}s ago, marked FAILED",
+                            tid,
+                            sid,
+                            staleSecs);
+                }
             }
         } catch (Exception e) {
             log.warn("Orphan sweeper encountered an error: {}", e.getMessage());
@@ -566,9 +825,9 @@ public class WorkspaceTaskRepository implements TaskRepository {
         return s + ":" + taskId;
     }
 
-    private void persistRecord(String sessionId, TaskRecord record) {
+    private void persistRecord(RuntimeContext rc, String sessionId, TaskRecord record) {
         try {
-            workspaceManager.writeTaskRecord(parentAgentId, sessionId, record);
+            workspaceManager.writeTaskRecord(rc, parentAgentId, sessionId, record);
         } catch (Exception e) {
             log.warn(
                     "Failed to persist task record {} for session {}: {}",
@@ -578,10 +837,30 @@ public class WorkspaceTaskRepository implements TaskRepository {
         }
     }
 
-    private void updateStatus(
-            String sessionId, String taskId, TaskStatus status, String result, String error) {
+    // Serialize local status changes with cancellation. Otherwise a worker starting between
+    // cancellation's read and write can restore RUNNING before completion listeners run.
+    private synchronized Optional<TaskRecord> persistCancellation(
+            RuntimeContext rc, String sessionId, String taskId) {
         Optional<TaskRecord> existing =
-                workspaceManager.readTaskRecord(parentAgentId, sessionId, taskId);
+                workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
+        existing.ifPresent(
+                record -> {
+                    record.setCancelRequested(true);
+                    if (!record.getStatus().isTerminal()) record.setStatus(TaskStatus.CANCELLED);
+                    persistRecord(rc, sessionId, record);
+                });
+        return existing;
+    }
+
+    private synchronized void updateStatus(
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            TaskStatus status,
+            String result,
+            String error) {
+        Optional<TaskRecord> existing =
+                workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
         // Guard 1: terminal states are immutable — never overwrite COMPLETED, FAILED, or CANCELLED
         // with any other status. This prevents a late COMPLETED/FAILED write from a still-running
         // thread from clobbering a CANCELLED status set concurrently by cancelTask().
@@ -613,18 +892,18 @@ public class WorkspaceTaskRepository implements TaskRepository {
         if (error != null) {
             record.setErrorMessage(error);
         }
-        persistRecord(sessionId, record);
+        persistRecord(rc, sessionId, record);
     }
 
-    private void markCancelled(String sessionId, String taskId) {
-        updateStatus(sessionId, taskId, TaskStatus.CANCELLED, null, null);
+    private void markCancelled(RuntimeContext rc, String sessionId, String taskId) {
+        updateStatus(rc, sessionId, taskId, TaskStatus.CANCELLED, null, null);
     }
 
     /**
      * Creates a synthetic {@link BackgroundTask} from a persisted {@link TaskRecord}. The future
      * is already-completed (or failed/cancelled) to reflect the stored terminal status.
      */
-    private BackgroundTask syntheticTask(TaskRecord record) {
+    private BackgroundTask syntheticTask(RuntimeContext rc, TaskRecord record) {
         CompletableFuture<String> future;
         switch (record.getStatus()) {
             case COMPLETED -> future = CompletableFuture.completedFuture(record.getResult());
@@ -649,30 +928,40 @@ public class WorkspaceTaskRepository implements TaskRepository {
                     String sid =
                             record.getParentSessionId() != null ? record.getParentSessionId() : "";
                     String lk = localKey(sid, record.getTaskId());
-                    return localTasks.computeIfAbsent(
-                            lk,
-                            k -> {
-                                CompletableFuture<String> f =
-                                        CompletableFuture.supplyAsync(
-                                                () ->
-                                                        runRemoteTask(
-                                                                sid,
-                                                                record.getTaskId(),
-                                                                record.getSubAgentId(),
-                                                                new TaskRunSpec.RemoteTaskRunSpec(
-                                                                        record.getRemoteBaseUrl(),
-                                                                        record.getRemoteHeaders()
-                                                                                        != null
-                                                                                ? record
-                                                                                        .getRemoteHeaders()
-                                                                                : Map.of(),
+                    RuntimeContext capturedRc = rc != null ? rc : RuntimeContext.empty();
+                    BackgroundTask cached =
+                            localTasks.computeIfAbsent(
+                                    lk,
+                                    k -> {
+                                        CompletableFuture<String> f =
+                                                CompletableFuture.supplyAsync(
+                                                        () ->
+                                                                runRemoteTask(
+                                                                        capturedRc,
+                                                                        sid,
+                                                                        record.getTaskId(),
                                                                         record.getSubAgentId(),
-                                                                        ""),
-                                                                false),
-                                                executor);
-                                return new BackgroundTask(
-                                        record.getTaskId(), record.getSubAgentId(), f);
-                            });
+                                                                        new TaskRunSpec
+                                                                                .RemoteTaskRunSpec(
+                                                                                record
+                                                                                        .getRemoteBaseUrl(),
+                                                                                record
+                                                                                                        .getRemoteHeaders()
+                                                                                                != null
+                                                                                        ? record
+                                                                                                .getRemoteHeaders()
+                                                                                        : Map.of(),
+                                                                                record
+                                                                                        .getSubAgentId(),
+                                                                                ""),
+                                                                        false),
+                                                        executor);
+                                        return new BackgroundTask(
+                                                record.getTaskId(), record.getSubAgentId(), f);
+                                    });
+                    localTaskSessionIds.putIfAbsent(lk, sid);
+                    localTaskContexts.putIfAbsent(lk, capturedRc);
+                    return cached;
                 } else {
                     // PENDING or RUNNING but no local future — cross-node local task.
                     future = new CompletableFuture<>();
@@ -680,5 +969,19 @@ public class WorkspaceTaskRepository implements TaskRepository {
             }
         }
         return new BackgroundTask(record.getTaskId(), record.getSubAgentId(), future);
+    }
+
+    private void fireCompletionCallback(
+            RuntimeContext rc, String taskId, String subAgentId, String sessionId, String result) {
+        TaskCompletionCallback cb = this.completionCallback;
+        if (cb == null
+                || (rc != null && Boolean.TRUE.equals(rc.get(SUPPRESS_COMPLETION_CALLBACK)))) {
+            return;
+        }
+        try {
+            cb.onCompleted(rc, taskId, subAgentId, sessionId, result);
+        } catch (Exception e) {
+            log.warn("TaskCompletionCallback failed for task {}: {}", taskId, e.getMessage(), e);
+        }
     }
 }

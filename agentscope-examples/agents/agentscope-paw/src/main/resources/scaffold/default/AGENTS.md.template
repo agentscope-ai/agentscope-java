@@ -1,0 +1,26 @@
+# {{NAME}}
+
+{{SYSPROMPT}}
+
+## How this folder works
+
+This folder *is* the agent. Anything you put here is picked up at runtime — there is
+no separate config to keep in sync.
+
+- **`AGENTS.md`** — this file. Edit the system prompt and behavioral rules in
+  place; they are loaded on the next session.
+- **`tools.json`** — declare which built-in tools the agent may call. See the
+  generated file for the available tool ids and an `allow` / `deny` example.
+- **`skills/`** — each subfolder is a skill: a Markdown playbook the agent can
+  invoke by name. A starter `example-skill/SKILL.md` is included.
+- **`subagents/`** — sub-agent definitions for delegated work. See
+  `subagents/README.md`.
+- **`memory/`** — long-term memory store managed by the runtime; you usually do
+  not edit it by hand.
+
+## Authoring tips
+
+- Keep this prompt focused on *what the agent does* and *how it should behave*.
+  Push examples, schemas, and one-shot instructions into skills.
+- When you change tools or skills, current sessions keep their old wiring until
+  reset; new sessions pick up the change immediately.
