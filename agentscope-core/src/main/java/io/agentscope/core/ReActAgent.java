@@ -160,7 +160,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -290,8 +289,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * Per-extension-point participants, grouped once at construction from {@link #middlewares}
-     * (stable filter, onion order preserved). Immutable and shared across concurrent calls;
-     * later {@link MiddlewareBase#activePoints()} changes have no effect.
+     * by their explicit {@link MiddlewareBase#activePoints()} declarations (stable filter,
+     * onion order preserved). Immutable and shared across concurrent calls; later
+     * {@link MiddlewareBase#activePoints()} changes have no effect.
      */
     private final Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> groupedMiddlewares;
 
@@ -1017,15 +1017,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return callScope instanceof CallExecution ce ? ce.state : getAgentState();
     }
 
-    /** Groups middlewares per extension point; {@code null} declarations count as full set. */
+    /**
+     * Groups middlewares per extension point from their explicit {@link
+     * MiddlewareBase#activePoints()} declarations; a {@code null} declaration is a programming
+     * error and fails fast here.
+     */
     private static Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> groupMiddlewares(
             List<MiddlewareBase> middlewares) {
         Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> grouped =
                 new EnumMap<>(MiddlewareBase.ExtensionPoint.class);
         for (MiddlewareBase mw : middlewares) {
             Set<MiddlewareBase.ExtensionPoint> active =
-                    Objects.requireNonNullElse(
-                            mw.activePoints(), EnumSet.allOf(MiddlewareBase.ExtensionPoint.class));
+                    Objects.requireNonNull(
+                            mw.activePoints(),
+                            () -> mw.getClass().getName() + ".activePoints() must not return null");
             for (MiddlewareBase.ExtensionPoint point : MiddlewareBase.ExtensionPoint.values()) {
                 if (active.contains(point)) {
                     grouped.computeIfAbsent(point, p -> new ArrayList<>()).add(mw);

@@ -28,7 +28,9 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.middleware.InboxMiddleware;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -45,6 +47,11 @@ class HarnessMiddlewareOrderTest {
                     @Override
                     public int order() {
                         return 0;
+                    }
+
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.noneOf(ExtensionPoint.class);
                     }
                 };
 

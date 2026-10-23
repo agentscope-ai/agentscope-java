@@ -20,6 +20,8 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
@@ -45,6 +47,12 @@ public class ThreadBudgetMiddleware implements MiddlewareBase {
 
     public ThreadBudgetMiddleware(int maxModelCallsPerThread) {
         this.maxModelCallsPerThread = maxModelCallsPerThread;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_REASONING);
     }
 
     @Override

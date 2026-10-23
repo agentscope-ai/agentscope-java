@@ -32,7 +32,9 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Toolkit;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
@@ -137,7 +139,12 @@ class ReActAgentNewLoopBuilderTest {
         assertSame(lowerPriority, middlewares.get(4));
     }
 
-    private record OrderedMiddleware(int order) implements MiddlewareBase {}
+    private record OrderedMiddleware(int order) implements MiddlewareBase {
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.noneOf(ExtensionPoint.class);
+        }
+    }
 
     @Test
     void fromAgentCopiesModelResilienceConfig() {

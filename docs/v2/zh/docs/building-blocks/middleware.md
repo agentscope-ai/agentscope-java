@@ -362,11 +362,18 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 /** 把 user / request id 打到日志，并把 trace id 写回 context 供 tool 读取。 */
 public class RequestContextMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
+    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -405,6 +412,11 @@ MiddlewareBase lowerPriority = new MiddlewareBase() {
     @Override
     public int order() {
         return 0;
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.noneOf(ExtensionPoint.class);  // no hooks, zero participation
     }
 };
 ```
@@ -447,19 +459,15 @@ onAgent
 
 ### 扩展点参与声明（`activePoints()`）
 
-`MiddlewareBase.activePoints()` 声明 middleware 在哪些扩展点处于激活状态。它是**参与开关**，不是对"覆写了哪些方法"的复述：
+`MiddlewareBase.activePoints()` 声明 middleware 在哪些扩展点处于激活状态。它是**抽象方法**——每个 middleware 必须实现——返回的集合是其参与集的**唯一来源**。它是**参与开关**，不是对"覆写了哪些方法"的复述：
 
-| 声明       | 方法实现 | 行为                                     |
-| ---------- | -------- | ---------------------------------------- |
-| 包含该点   | 已覆写   | 正常参与                                 |
-| 包含该点   | 未覆写   | 调用默认实现（直通）——合法冗余           |
-| 不包含该点 | 已覆写   | 方法不会被调用——有意关闭，非错误         |
-| 不包含该点 | 未覆写   | 该 middleware 在此点不存在，链中不占位   |
+- 未实现或返回 `null` 是编程错误——前者无法编译，后者在 agent 构建期立即失败。
+- 声明包含某点即参与该点；未覆写对应方法时走默认直通实现，属合法冗余。
+- 声明不包含某点即在此点不存在——链中不占位，即使覆写了方法也不会被调用（有意关闭，非错误）。
 
 关键语义：
 
-- **默认全量激活。** 未覆写 `activePoints()` 的 middleware 保持与现状完全一致的行为，包括未来版本新增的扩展点。
-- **覆写即接管。** 一旦覆写，激活集合就是返回的集合本身；忘记声明的扩展点即使覆写了方法也不会生效。
+- **声明是强制的。** `activePoints()` 没有默认实现：参与必须显式表达意图，绝不能是"没说"的缺省结果。middleware 绝不会在未声明的情况下被卷入任何扩展点——包括未来版本新增的点。
 - **空集合合法。** `EnumSet.noneOf(ExtensionPoint.class)` 让 middleware 在所有扩展点失活，同时保留注册——可用作运行开关。
 - **构造期固化。** agent 构建时读取一次声明；之后修改返回的集合对已构建的 agent 无效。
 - **与 `order()` 正交。** 声明只回答"是否参与"，不回答"什么顺序"——各点参与者保持既有 `order()` 语义。
@@ -479,9 +487,11 @@ MiddlewareBase timingOnly =
         };
 ```
 
-**推荐实践：** 为你实现的每个 middleware 准确定义 `activePoints()`。精确声明让框架能整体跳过未参与者——某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），链更短，构建期的有效执行计划也更清晰。不声明则保持完全兼容的默认行为（全量激活），因此任何时候补充声明都不会破坏行为，只会收窄参与范围。
+**声明且仅声明你挂接的点。** 精确声明让框架能整体跳过未参与者——某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），链更短，构建期的有效执行计划也更清晰。`middlewaresAt(point)` 因此只包含显式声明了该点的 middleware，任何依赖"此点是否有参与者"做决策的框架能力（激活标志、观测短路、按点统计）拿到的都是真实集合。
 
-继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 会被静默跳过。
+继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 永远不会被调用。
+
+新增扩展点遵循同一条评审规则：凡是激活会在参与 middleware 之外产生副作用的点（例如改变全局事件路由），绝不能被隐式激活——每个 middleware 都必须通过声明显式加入。
 
 ## 实用示例
 
@@ -494,10 +504,18 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 public class TimingMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+    }
+
     @Override
     public Flux<AgentEvent> onModelCall(
             Agent agent, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
@@ -522,7 +540,11 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import java.time.Duration;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -534,6 +556,11 @@ public class RateLimitMiddleware implements MiddlewareBase {
 
     public RateLimitMiddleware(Duration minInterval) {
         this.minIntervalMs = minInterval.toMillis();
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override
@@ -556,6 +583,8 @@ public class RateLimitMiddleware implements MiddlewareBase {
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import java.time.Instant;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Supplier;
 import reactor.core.publisher.Mono;
 
@@ -565,6 +594,11 @@ public class DynamicContextMiddleware implements MiddlewareBase {
 
     public DynamicContextMiddleware(Supplier<String> contextFn) {
         this.contextFn = contextFn;
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
     @Override
@@ -587,6 +621,8 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.Model;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -596,6 +632,11 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 
     public ModelFallbackMiddleware(Model fallback) {
         this.fallback = fallback;
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override
@@ -637,10 +678,17 @@ import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 public class StopOnAllDeniedMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_ACTING);
+    }
 
     @Override
     public Flux<AgentEvent> onActing(
