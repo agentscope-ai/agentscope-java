@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -46,7 +47,8 @@ class AgentSkillTest {
         assertEquals("test_skill", skill.getName());
         assertEquals("A test skill", skill.getDescription());
         assertEquals("Skill content here", skill.getSkillContent());
-        assertEquals("custom", skill.getSource());
+        assertNull(skill.getSource());
+        assertEquals("test_skill", skill.getSkillId());
         assertEquals("test_skill", skill.getMetadata().get("name"));
         assertEquals("A test skill", skill.getMetadata().get("description"));
         assertEquals(2, skill.getResources().size());
@@ -98,7 +100,29 @@ class AgentSkillTest {
                         "github_skill", "From GitHub", "GitHub content", resources, "github");
 
         assertEquals("github", skill.getSource());
-        assertEquals("github_skill_github", skill.getSkillId());
+        assertEquals("github_skill", skill.getName());
+        assertEquals("github_skill__s__github", skill.getSkillId());
+    }
+
+    @Test
+    @DisplayName("Should reject names or sources containing the skillId separator")
+    void testRejectsSeparatorInNameOrSource() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new AgentSkill("bad__s__name", "d", "c", null),
+                "name containing the separator is rejected");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new AgentSkill("ok", "d", "c", null, "bad__s__source"),
+                "source containing the separator is rejected");
+    }
+
+    @Test
+    @DisplayName("Should parse the name part out of a skill identifier")
+    void testParseSkillName() {
+        assertEquals("alpha", AgentSkill.parseSkillName("alpha__s__market"));
+        assertEquals("alpha", AgentSkill.parseSkillName("alpha"));
+        assertEquals("a_b", AgentSkill.parseSkillName("a_b__s__src"));
     }
 
     @Test
@@ -109,9 +133,15 @@ class AgentSkillTest {
         assertNotNull(skill1.getResources());
         assertTrue(skill1.getResources().isEmpty());
 
-        // Null source defaults to "custom"
+        // Null source: no provenance; the skillId is simply the name.
         AgentSkill skill2 = new AgentSkill("skill", "description", "content", null, null);
-        assertEquals("custom", skill2.getSource());
+        assertNull(skill2.getSource());
+        assertEquals("skill", skill2.getSkillId());
+
+        // Blank sources are treated as absent too.
+        AgentSkill skill3 = new AgentSkill("skill", "description", "content", null, "  ");
+        assertNull(skill3.getSource());
+        assertEquals("skill", skill3.getSkillId());
     }
 
     @Test
@@ -169,13 +199,14 @@ class AgentSkillTest {
     }
 
     @Test
-    @DisplayName("Should skill id uniqueness")
-    void testSkillIdUniqueness() {
+    @DisplayName("Should skill identity be the name; source is provenance only")
+    void testSkillIdentityIsTheName() {
         AgentSkill skill1 = new AgentSkill("same_name", "desc", "content", null, "source1");
         AgentSkill skill2 = new AgentSkill("same_name", "desc", "content", null, "source2");
 
-        assertEquals("same_name_source1", skill1.getSkillId());
-        assertEquals("same_name_source2", skill2.getSkillId());
+        assertEquals(skill1.getName(), skill2.getName());
+        assertEquals("source1", skill1.getSource());
+        assertEquals("source2", skill2.getSource());
     }
 
     @Test
@@ -345,7 +376,7 @@ class AgentSkillTest {
         // Unicode
         AgentSkill skill3 = new AgentSkill("技能名称", "技能描述：测试", "技能内容\n包含中文", null, "来源");
         assertEquals("技能名称", skill3.getName());
-        assertEquals("技能名称_来源", skill3.getSkillId());
+        assertEquals("来源", skill3.getSource());
 
         // Many resources
         Map<String, String> manyResources = new HashMap<>();

@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
@@ -263,7 +264,8 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
             return;
         }
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
-        List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
+        List<RepoBound> enabled =
+                applyCapabilityFilter(applySkillFilter(visible, effectiveFilter(ctx)), ctx);
         if (!enabled.isEmpty()) {
             stager.stage(enabled, sourceNamespaces, scopeKeyFor(ctx));
         }
@@ -285,7 +287,8 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         }
 
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
-        List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
+        List<RepoBound> enabled =
+                applyCapabilityFilter(applySkillFilter(visible, effectiveFilter(ctx)), ctx);
         if (enabled.isEmpty()) {
             runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
             registerSkillsMaterial(ctx, "");
@@ -346,6 +349,27 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         return builderFilter.overlay(ctx != null ? ctx.get(SkillFilter.class) : null);
     }
 
+    /**
+     * Grant-layer skill visibility. Runs after the subclass hooks so an override cannot drop
+     * authorization filtering; the returned list feeds the prompt, the per-call catalog (the
+     * load tool's authorization boundary) and marketplace staging.
+     *
+     * <p>A missing surface means this pass never entered an agent {@code call()} (whose funnel
+     * always writes one): treat it as unrestricted — direct middleware use is trusted assembler
+     * code, the same stance as the core execution gates.
+     *
+     * @param input the skills remaining after the visibility and skill filters
+     * @param ctx the per-call runtime context carrying the grant set
+     * @return the granted subset; the input unchanged when no surface is present
+     */
+    private List<RepoBound> applyCapabilityFilter(List<RepoBound> input, RuntimeContext ctx) {
+        CapabilitySurface surface = ctx != null ? ctx.get(CapabilitySurface.class) : null;
+        if (surface == null || input.isEmpty()) {
+            return input;
+        }
+        return input.stream().filter(bound -> surface.allowsSkill(bound.skill())).toList();
+    }
+
     private List<RepoBound> applySkillFilter(
             java.util.Collection<RepoBound> input, SkillFilter filter) {
         if (input.isEmpty()) {
@@ -367,7 +391,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
      * subsequent steps (lazy resources, marketplace stage) can act on it.
      */
     private LinkedHashMap<String, RepoBound> mergeRepositories(RuntimeContext ctx) {
-        LinkedHashMap<String, RepoBound> merged = new LinkedHashMap<>();
+        LinkedHashMap<String, RepoBound> merged = new LinkedHashMap<>(); // keyed by skillId
         for (AgentSkillRepository repo : repositories) {
             List<AgentSkill> skills;
             try {
@@ -389,7 +413,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
                 if (skill == null || skill.getName() == null) {
                     continue;
                 }
-                merged.put(skill.getName(), new RepoBound(skill, repo));
+                merged.put(skill.getSkillId(), new RepoBound(skill, repo));
             }
         }
         return merged;

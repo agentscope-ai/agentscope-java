@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
+import io.agentscope.core.tool.SkillToolGroup;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
@@ -73,8 +74,8 @@ public class SkillBox {
     }
 
     private SkillBox(SkillBox source, Toolkit toolkit) {
-        for (String id : source.getAllSkillIds()) {
-            skillRegistry.registerSkill(id, source.getSkill(id));
+        for (String skillId : source.getAllSkillIds()) {
+            skillRegistry.registerSkill(skillId, source.getSkill(skillId));
         }
         skillPromptProvider = source.skillPromptProvider.copyFor(skillRegistry);
         skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
@@ -206,8 +207,9 @@ public class SkillBox {
     }
 
     /**
-     * Gets all skill IDs.
-     * @return All skill IDs
+     * Gets all registered skillIds — the skill name when no source is set, or the combined
+     * {@code name__s__source} form when one is. Unique in this box.
+     * @return All skillIds
      */
     public Set<String> getAllSkillIds() {
         return skillRegistry.getSkillIds();
@@ -232,49 +234,53 @@ public class SkillBox {
             throw new IllegalArgumentException("Missing or empty required parameter: path");
         }
         return skillToolFactory.loadSkillResourceImpl(
-                skillId, path, skillToolFactory.resolveToolContext(param));
+                skillId,
+                path,
+                skillToolFactory.resolveToolContext(param),
+                // Not gated here: the single decision lives in loadSkillResourceImpl.
+                param.getRuntimeContext());
     }
 
     /**
-     * Gets a skill by ID (latest version).
+     * Gets a skill by its exact skillId (a bare name is the source-less form).
      *
-     * @param skillId The skill ID
+     * @param skillName The skillId
      * @return The skill instance, or null if not found
-     * @throws IllegalArgumentException if skillId is null
+     * @throws IllegalArgumentException if skillName is null
      */
-    public AgentSkill getSkill(String skillId) {
-        if (skillId == null) {
-            throw new IllegalArgumentException("Skill ID cannot be null");
+    public AgentSkill getSkill(String skillName) {
+        if (skillName == null) {
+            throw new IllegalArgumentException("Skill name cannot be null");
         }
-        return skillRegistry.getSkill(skillId);
+        return skillRegistry.getSkill(skillName);
     }
 
     /**
      * Removes a skill completely.
      *
-     * @param skillId The skill ID
-     * @throws IllegalArgumentException if skillId is null
+     * @param skillName The skill name
+     * @throws IllegalArgumentException if skillName is null
      */
-    public void removeSkill(String skillId) {
-        if (skillId == null) {
-            throw new IllegalArgumentException("Skill ID cannot be null");
+    public void removeSkill(String skillName) {
+        if (skillName == null) {
+            throw new IllegalArgumentException("Skill name cannot be null");
         }
-        skillRegistry.removeSkill(skillId);
-        logger.info("Removed skill '{}'", skillId);
+        skillRegistry.removeSkill(skillName);
+        logger.info("Removed skill '{}'", skillName);
     }
 
     /**
      * Checks if a skill exists.
      *
-     * @param skillId The skill ID
+     * @param skillName The skill name
      * @return true if the skill exists, false otherwise
-     * @throws IllegalArgumentException if skillId is null
+     * @throws IllegalArgumentException if skillName is null
      */
-    public boolean exists(String skillId) {
-        if (skillId == null) {
-            throw new IllegalArgumentException("Skill ID cannot be null");
+    public boolean exists(String skillName) {
+        if (skillName == null) {
+            throw new IllegalArgumentException("Skill name cannot be null");
         }
-        return skillRegistry.exists(skillId);
+        return skillRegistry.exists(skillName);
     }
 
     /**
@@ -505,7 +511,7 @@ public class SkillBox {
                     throw new IllegalStateException(
                             "Must bind toolkit or call toolkit() before apply()");
                 }
-                String skillToolGroup = skill.getSkillId() + "_skill_tools";
+                String skillToolGroup = SkillToolGroup.skillToolsGroupName(skill.getName());
                 if (toolkit.getToolGroup(skillToolGroup) == null) {
                     toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
                 }
@@ -594,7 +600,7 @@ public class SkillBox {
      * lifetime so {@code uploadSkillFiles} no longer mints a fresh {@code agentscope-code-execution-*}
      * tempdir each round).
      *
-     * @param workDir the directory under which {@code skills/<skillId>/} subtrees are written;
+     * @param workDir the directory under which {@code skills/<skillName>/} subtrees are written;
      *                {@code null} (the default) preserves the legacy per-instance tempdir behavior
      */
     public void setWorkDir(Path workDir) {
@@ -712,7 +718,7 @@ public class SkillBox {
                 continue;
             }
 
-            Path skillDir = targetDir.resolve(skillId);
+            Path skillDir = targetDir.resolve(skill.getSkillId());
 
             for (String resourcePath : resourcePaths) {
                 if (!filter.accept(resourcePath)) {

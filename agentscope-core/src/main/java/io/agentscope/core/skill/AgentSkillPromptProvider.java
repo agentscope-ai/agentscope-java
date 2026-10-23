@@ -59,15 +59,15 @@ public class AgentSkillPromptProvider {
             - Additional resources (scripts, assets, references) can be loaded using the same tool with different paths
 
             Example:
-            1. User asks to analyze data → find a matching skill below (e.g. <skill-id>data-analysis_builtin</skill-id>)
-            2. Load it: load_skill_through_path(skillId="data-analysis_builtin", path="SKILL.md")
+            1. User asks to analyze data → find a matching skill below (e.g. <skill-id>data-analysis</skill-id>)
+            2. Load it: load_skill_through_path(skillId="data-analysis", path="SKILL.md")
             3. Follow the instructions returned by the skill
 
             Metadata is rendered as XML under each <skill> element:
             - scalar metadata becomes a simple child element
             - nested maps become nested XML elements
             - lists become repeated <item> elements
-            - <skill-id> is always appended for tool loading
+            - <skill-id> is always appended for tool loading (normally just the skill name)
             </usage>
 
             <available_skills>
@@ -102,10 +102,10 @@ public class AgentSkillPromptProvider {
 
             Example:
               # Explore what scripts are available for a skill
-              execute_shell_command(command="ls %s/data-analysis_builtin/scripts/")
+              execute_shell_command(command="ls %s/data-analysis/scripts/")
 
               # Run an existing script with absolute path
-              execute_shell_command(command="python3 %s/data-analysis_builtin/scripts/analyze.py")
+              execute_shell_command(command="python3 %s/data-analysis/scripts/analyze.py")
             </code_execution>
             """;
 

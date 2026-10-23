@@ -23,6 +23,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.tool.test.GrantTestUtils;
 import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
@@ -81,7 +82,12 @@ class ToolkitToolBaseIntegrationTest {
                         .input(input)
                         .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
-        ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(toolCall)
+                        .input(input)
+                        .runtimeContext(GrantTestUtils.grantRc())
+                        .build();
 
         StepVerifier.create(toolkit.callTool(param))
                 .assertNext(
