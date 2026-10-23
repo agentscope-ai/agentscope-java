@@ -19,6 +19,7 @@ package io.agentscope.core.a2a.server.executor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -46,9 +47,11 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatUsage;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
@@ -56,6 +59,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 import org.a2aproject.sdk.server.ServerCallContext;
 import org.a2aproject.sdk.server.agentexecution.RequestContext;
 import org.a2aproject.sdk.server.events.EventQueue;
@@ -65,6 +69,7 @@ import org.a2aproject.sdk.spec.Artifact;
 import org.a2aproject.sdk.spec.DataPart;
 import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.MessageSendConfiguration;
+import org.a2aproject.sdk.spec.MessageSendParams;
 import org.a2aproject.sdk.spec.StreamingEventKind;
 import org.a2aproject.sdk.spec.Task;
 import org.a2aproject.sdk.spec.TaskArtifactUpdateEvent;
@@ -75,6 +80,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -132,6 +141,106 @@ class AgentScopeAgentExecutorTest {
      */
     private AgentEmitter emitter() {
         return new AgentEmitter(mockContext, mockEventQueue);
+    }
+
+    static Stream<Arguments> sessionIdCases() {
+        return Stream.of(false, true)
+                .flatMap(
+                        streaming ->
+                                Stream.of(
+                                        Arguments.of(streaming, "context-1", null, "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("userId", "alice"),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", ""),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", " \t"),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Collections.singletonMap("sessionId", null),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", "legacy-session"),
+                                                "legacy-session"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", "context-1"),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                null,
+                                                Map.of("sessionId", "legacy-session"),
+                                                "legacy-session"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", 42),
+                                                "42"),
+                                        Arguments.of(streaming, null, null, null)));
+    }
+
+    @ParameterizedTest(name = "streaming={0}, contextId={1}, metadata={2}, sessionId={3}")
+    @MethodSource("sessionIdCases")
+    void testResolveRunnerSessionId(
+            boolean streaming,
+            String contextId,
+            Map<String, Object> metadata,
+            String expectedSessionId)
+            throws A2AError {
+        Message message =
+                Message.builder()
+                        .role(Message.Role.ROLE_USER)
+                        .parts(new TextPart("hello"))
+                        .contextId(contextId)
+                        .metadata(metadata)
+                        .build();
+        ServerCallContext callContext =
+                new ServerCallContext(
+                        null,
+                        Map.of(A2aServerConstants.ContextKeys.IS_STREAM_KEY, streaming),
+                        Set.of());
+        RequestContext context =
+                new RequestContext.Builder()
+                        .setParams(MessageSendParams.builder().message(message).build())
+                        .setServerCallContext(callContext)
+                        .build();
+        when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                .thenReturn(Flux.empty());
+
+        executor.execute(context, new AgentEmitter(context, mockEventQueue));
+
+        ArgumentCaptor<AgentRequestOptions> options =
+                ArgumentCaptor.forClass(AgentRequestOptions.class);
+        verify(mockAgentRunner).streamEvents(anyList(), options.capture());
+        assertEquals(
+                expectedSessionId == null ? context.getContextId() : expectedSessionId,
+                options.getValue().getSessionId());
+        assertEquals(context.getTaskId(), options.getValue().getTaskId());
+        assertEquals(
+                metadata != null && metadata.containsKey("userId") ? "alice" : "",
+                options.getValue().getUserId());
+        assertEquals(context.getContextId(), context.getMessage().contextId());
+        if (contextId == null) {
+            assertFalse(context.getContextId().isBlank());
+            if (metadata != null) {
+                assertNotEquals(expectedSessionId, context.getContextId());
+            }
+        } else {
+            assertEquals(contextId, context.getContextId());
+        }
     }
 
     @Nested
