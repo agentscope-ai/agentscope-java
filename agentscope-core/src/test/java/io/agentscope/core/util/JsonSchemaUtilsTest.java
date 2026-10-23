@@ -255,4 +255,38 @@ class JsonSchemaUtilsTest {
             executor.shutdownNow();
         }
     }
+
+    enum RenamedLevel {
+        @JsonProperty("低")
+        LOW,
+        @JsonProperty("中")
+        MEDIUM,
+        @JsonProperty("高")
+        HIGH
+    }
+
+    static class RenamedEnumModel {
+        RenamedLevel level;
+    }
+
+    @Test
+    void testEnumSchemaListsJsonPropertyRenamedValues() {
+        // Regression for #3301: the schema must list the @JsonProperty-renamed values the
+        // Jackson conversion path accepts, not the enum constant names — otherwise no listed
+        // value can ever be converted.
+        Map<String, Object> schema =
+                JsonSchemaUtils.generateSchemaFromClass(RenamedEnumModel.class);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+        assertNotNull(properties);
+        assertTrue(properties.containsKey("level"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> levelProperty = (Map<String, Object>) properties.get("level");
+
+        @SuppressWarnings("unchecked")
+        List<String> values = (List<String>) levelProperty.get("enum");
+        assertEquals(List.of("低", "中", "高"), values);
+    }
 }
