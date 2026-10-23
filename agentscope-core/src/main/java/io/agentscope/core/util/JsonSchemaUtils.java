@@ -73,9 +73,16 @@ public class JsonSchemaUtils {
     private static final Object SCHEMA_LOCK = new Object();
 
     static {
-        // JacksonModule to support @JsonProperty, @JsonPropertyDescription annotations
+        // JacksonModule to support @JsonProperty, @JsonPropertyDescription annotations, and
+        // enum schemas flattened to their @JsonProperty/@JsonValue-renamed values — the same
+        // values Jackson's codec accepts on conversion. Without the flattened-enums options
+        // the schema lists constant names while conversion expects renamed values, so the
+        // tool could never be called with any listed value (#3301).
         JacksonModule jacksonModule =
-                new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
+                new JacksonModule(
+                        JacksonOption.RESPECT_JSONPROPERTY_REQUIRED,
+                        JacksonOption.FLATTENED_ENUMS_FROM_JSONPROPERTY,
+                        JacksonOption.FLATTENED_ENUMS_FROM_JSONVALUE);
 
         ToolSchemaModule toolSchemaModule =
                 PROPERTY_REQUIRED_BY_DEFAULT
