@@ -17,10 +17,19 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
@@ -29,15 +38,23 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.harness.agent.bus.AsyncToolRegistry;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
+import reactor.test.StepVerifier;
+import reactor.util.context.Context;
 
 class AsyncToolMiddlewareTest {
 
@@ -54,6 +71,201 @@ class AsyncToolMiddlewareTest {
         agentState = AgentState.builder().build();
         agentState.setReplyId("reply-1");
         ctx = RuntimeContext.builder().sessionId("session-1").agentState(agentState).build();
+    }
+
+    @Test
+    void downstreamReceivesSubscriberContextForEachSubscription() {
+        AsyncToolMiddleware middleware = new AsyncToolMiddleware(bus, Duration.ofSeconds(5));
+        ToolUseBlock tool = ToolUseBlock.builder().id("t1").name("context_tool").build();
+        ActingInput input = new ActingInput(List.of(tool));
+        List<AgentEvent> firstForwarded = new CopyOnWriteArrayList<>();
+        List<AgentEvent> secondForwarded = new CopyOnWriteArrayList<>();
+        AgentEventEmitter firstEmitter = firstForwarded::add;
+        AgentEventEmitter secondEmitter = secondForwarded::add;
+
+        Flux<AgentEvent> acting =
+                middleware.onActing(
+                        stubAgent(),
+                        ctx,
+                        input,
+                        next ->
+                                Flux.deferContextual(
+                                        context -> {
+                                            AgentEventEmitter emitter =
+                                                    AgentEventEmitter.fromContext(context)
+                                                            .orElseThrow();
+                                            assertSame(
+                                                    emitter,
+                                                    AgentEventEmitter.fromForwardingContext(context)
+                                                            .orElseThrow());
+                                            AgentEvent event =
+                                                    new ToolResultTextDeltaEvent(
+                                                            "r1",
+                                                            "t1",
+                                                            "context_tool",
+                                                            context.get("request-id"));
+                                            emitter.emit(event);
+                                            return Flux.just(event);
+                                        }));
+
+        List<AgentEvent> firstEvents =
+                acting.contextWrite(
+                                Context.of(
+                                        AgentEventEmitter.CONTEXT_KEY,
+                                        firstEmitter,
+                                        AgentEventEmitter.FORWARDING_CONTEXT_KEY,
+                                        firstEmitter,
+                                        "request-id",
+                                        "request-1"))
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+        List<AgentEvent> secondEvents =
+                acting.contextWrite(
+                                Context.of(
+                                        AgentEventEmitter.CONTEXT_KEY,
+                                        secondEmitter,
+                                        AgentEventEmitter.FORWARDING_CONTEXT_KEY,
+                                        secondEmitter,
+                                        "request-id",
+                                        "request-2"))
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertEquals(1, firstForwarded.size());
+        assertEquals(1, secondForwarded.size());
+        assertEquals(firstEvents, firstForwarded);
+        assertEquals(secondEvents, secondForwarded);
+        assertEquals("request-1", ((ToolResultTextDeltaEvent) firstForwarded.get(0)).getDelta());
+        assertEquals("request-2", ((ToolResultTextDeltaEvent) secondForwarded.get(0)).getDelta());
+    }
+
+    @Test
+    void backgroundExecutionRetainsContextAfterOffload() {
+        Duration offloadTimeout = Duration.ofSeconds(1);
+        MessageBus contextBus = mock(MessageBus.class);
+        AsyncToolRegistry registry = mock(AsyncToolRegistry.class);
+        List<String> operations = new CopyOnWriteArrayList<>();
+        when(registry.register(any())).thenReturn(observeContext(operations, "register"));
+        when(registry.complete("t1", "background result"))
+                .thenReturn(observeContext(operations, "complete"));
+        when(contextBus.inboxPush(eq("session-1"), anyMap()))
+                .thenReturn(observeContext(operations, "inbox"));
+        when(contextBus.enqueueWakeup("", "session-1", ""))
+                .thenReturn(observeContext(operations, "wakeup"));
+        AsyncToolMiddleware middleware =
+                new AsyncToolMiddleware(contextBus, offloadTimeout, registry);
+        ToolUseBlock tool = ToolUseBlock.builder().id("t1").name("context_tool").build();
+        ActingInput input = new ActingInput(List.of(tool));
+        Sinks.One<String> release = Sinks.one();
+        Sinks.One<String> observed = Sinks.one();
+        List<AgentEvent> forwarded = new CopyOnWriteArrayList<>();
+        AgentEventEmitter emitter = forwarded::add;
+        Flux<AgentEvent> downstream =
+                release.asMono()
+                        .thenMany(
+                                Flux.deferContextual(
+                                        context -> {
+                                            AgentEventEmitter current =
+                                                    AgentEventEmitter.fromContext(context)
+                                                            .orElseThrow();
+                                            assertSame(emitter, current);
+                                            AgentEvent event =
+                                                    new ToolResultTextDeltaEvent(
+                                                            "r1",
+                                                            "t1",
+                                                            "context_tool",
+                                                            "background result");
+                                            current.emit(event);
+                                            observed.tryEmitValue(context.get("request-id"));
+                                            return Flux.just(event);
+                                        }));
+
+        StepVerifier.withVirtualTime(
+                        () ->
+                                middleware
+                                        .onActing(stubAgent(), ctx, input, next -> downstream)
+                                        .contextWrite(
+                                                Context.of(
+                                                        AgentEventEmitter.CONTEXT_KEY,
+                                                        emitter,
+                                                        "request-id",
+                                                        "background-request"))
+                                        .collectList())
+                .thenAwait(offloadTimeout)
+                .assertNext(
+                        events ->
+                                assertTrue(
+                                        events.stream()
+                                                .anyMatch(
+                                                        event ->
+                                                                event
+                                                                                instanceof
+                                                                                ToolResultTextDeltaEvent
+                                                                                        delta
+                                                                        && delta.getDelta()
+                                                                                .contains(
+                                                                                        "running in"
+                                                                                            + " background"))))
+                .expectComplete()
+                .verify(Duration.ofSeconds(10));
+        assertEquals(Sinks.EmitResult.OK, release.tryEmitValue("continue"));
+        assertEquals("background-request", observed.asMono().block(Duration.ofSeconds(5)));
+        assertEquals(1, forwarded.size());
+        assertEquals(
+                List.of(
+                        "register:background-request",
+                        "complete:background-request",
+                        "inbox:background-request",
+                        "wakeup:background-request"),
+                operations);
+        verify(registry).complete("t1", "background result");
+        verify(contextBus).inboxPush(eq("session-1"), anyMap());
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = "original tool failure")
+    void backgroundFailureRetainsContextAndOriginalError(String message) {
+        Duration offloadTimeout = Duration.ofSeconds(1);
+        AsyncToolRegistry registry = mock(AsyncToolRegistry.class);
+        MessageBus contextBus = mock(MessageBus.class);
+        List<String> operations = new CopyOnWriteArrayList<>();
+        String expectedError = message != null ? message : "IllegalStateException";
+        when(registry.register(any())).thenReturn(observeContext(operations, "register"));
+        when(registry.fail("t1", expectedError)).thenReturn(observeContext(operations, "fail"));
+        AsyncToolMiddleware middleware =
+                new AsyncToolMiddleware(contextBus, offloadTimeout, registry);
+        ToolUseBlock tool = ToolUseBlock.builder().id("t1").name("context_tool").build();
+        ActingInput input = new ActingInput(List.of(tool));
+        Sinks.One<AgentEvent> result = Sinks.one();
+
+        StepVerifier.withVirtualTime(
+                        () ->
+                                middleware
+                                        .onActing(
+                                                stubAgent(),
+                                                ctx,
+                                                input,
+                                                next -> result.asMono().flux())
+                                        .contextWrite(Context.of("request-id", "failed-request")))
+                .thenAwait(offloadTimeout)
+                .expectNextCount(3)
+                .expectComplete()
+                .verify(Duration.ofSeconds(10));
+
+        assertEquals(Sinks.EmitResult.OK, result.tryEmitError(new IllegalStateException(message)));
+        verify(registry).fail("t1", expectedError);
+        verify(registry, never()).complete(any(), any());
+        verify(contextBus, never()).inboxPush(any(), any());
+        assertEquals(List.of("register:failed-request", "fail:failed-request"), operations);
+    }
+
+    private static Mono<Void> observeContext(List<String> operations, String operation) {
+        return Mono.deferContextual(
+                context -> {
+                    operations.add(operation + ":" + context.<String>get("request-id"));
+                    return Mono.empty();
+                });
     }
 
     @Test
