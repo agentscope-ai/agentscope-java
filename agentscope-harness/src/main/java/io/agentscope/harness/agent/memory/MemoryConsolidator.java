@@ -309,7 +309,7 @@ public class MemoryConsolidator {
         BaseStore store = this.baseStore;
         if (store != null) {
             try {
-                StoreItem item = store.get(WATERMARK_NAMESPACE, WATERMARK_KEY);
+                StoreItem item = store.get(watermarkNamespace(rc), WATERMARK_KEY);
                 if (item != null && item.value() != null) {
                     Object ts = item.value().get("ts");
                     if (ts instanceof Number n) {
@@ -344,7 +344,7 @@ public class MemoryConsolidator {
 
     private void writeWatermark(RuntimeContext rc, Instant ts) {
         if (baseStore != null) {
-            writeWatermarkToStore(ts);
+            writeWatermarkToStore(rc, ts);
         }
         try {
             workspaceManager.writeUtf8WorkspaceRelative(rc, STATE_REL_PATH, ts.toString());
@@ -356,21 +356,38 @@ public class MemoryConsolidator {
         }
     }
 
-    private void writeWatermarkToStore(Instant ts) {
+    private List<String> watermarkNamespace(RuntimeContext rc) {
+        var factory = workspaceManager.getNamespaceFactory();
+        List<String> scope =
+                factory == null
+                        ? List.of()
+                        : factory.getNamespace(rc != null ? rc : RuntimeContext.empty());
+        if (scope.isEmpty()) {
+            return WATERMARK_NAMESPACE;
+        }
+        // Keep intentionally unscoped cursors compatible, but never import the old global
+        // cursor into an isolated scope: it may describe another user's processed ledgers.
+        List<String> namespace = new ArrayList<>(WATERMARK_NAMESPACE);
+        namespace.add("scopes");
+        namespace.addAll(scope);
+        return List.copyOf(namespace);
+    }
+
+    private void writeWatermarkToStore(RuntimeContext rc, Instant ts) {
+        List<String> namespace = watermarkNamespace(rc);
         Map<String, Object> value = new HashMap<>();
         value.put("ts", ts.toEpochMilli());
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
             StoreItem item;
             try {
-                item = baseStore.get(WATERMARK_NAMESPACE, WATERMARK_KEY);
+                item = baseStore.get(namespace, WATERMARK_KEY);
             } catch (RuntimeException e) {
                 log.warn("Failed to read consolidation watermark for CAS: {}", e.getMessage());
                 return;
             }
             long expectedVersion = item != null ? item.version() : 0L;
             try {
-                if (baseStore.putIfVersion(
-                        WATERMARK_NAMESPACE, WATERMARK_KEY, value, expectedVersion)) {
+                if (baseStore.putIfVersion(namespace, WATERMARK_KEY, value, expectedVersion)) {
                     return;
                 }
             } catch (RuntimeException e) {
