@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -333,6 +334,11 @@ func (s *Server) getSessionEvents(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// Mirror managed-agent chat turns into this session's event log; task-driven
+	// turns arrive via the data-plane outbox, plain chat turns do not.
+	if err := s.projectManagedChatEvents(c.Request.Context(), sess); err != nil {
+		log.Printf("chat session projection failed session=%s: %v", sess.ID, err)
+	}
 
 	var opts []store.EventOption
 	if eventType := c.Query("eventType"); eventType != "" {
@@ -405,6 +411,11 @@ func (s *Server) streamSessionEvents(c *gin.Context) {
 	if headerAfter, err := strconv.Atoi(c.GetHeader("Last-Event-ID")); err == nil && headerAfter > after {
 		after = headerAfter
 	}
+	// Mirror managed-agent chat turns into this session's event log (see
+	// projectManagedChatEvents); also refreshed on every loop tick below.
+	if err := s.projectManagedChatEvents(c.Request.Context(), sess); err != nil {
+		log.Printf("chat session projection stream failed session=%s: %v", sess.ID, err)
+	}
 	// http.Server.WriteTimeout is an absolute deadline for the whole response,
 	// not an idle timeout. Clear it for this long-lived stream; heartbeat frames
 	// keep intermediaries alive and the request context still handles clients
@@ -424,6 +435,9 @@ func (s *Server) streamSessionEvents(c *gin.Context) {
 			if !s.canAccessSession(c.Request.Context(), &fresh, sess, false) {
 				return
 			}
+		}
+		if err := s.projectManagedChatEvents(c.Request.Context(), sess); err != nil {
+			log.Printf("chat session projection stream tick failed session=%s: %v", sess.ID, err)
 		}
 		events, err := s.store.Events().List(c.Request.Context(), sess.ID,
 			store.WithEventAfterSeq(after), store.WithEventLimit(1000))
