@@ -267,7 +267,7 @@ class JsonSchemaUtilsTest {
     }
 
     static class RenamedEnumModel {
-        RenamedLevel level;
+        public RenamedLevel level;
     }
 
     @Test
