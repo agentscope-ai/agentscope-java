@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.embedding.openai;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -42,11 +44,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
+import reactor.test.StepVerifier;
 
 @Tag("unit")
 class OpenAITextEmbeddingLifecycleTest {
@@ -66,6 +72,10 @@ class OpenAITextEmbeddingLifecycleTest {
     }
 
     private void createModel(int maxAttempts) {
+        createModel(ExecutionConfig.builder().maxAttempts(maxAttempts).build());
+    }
+
+    private void createModel(ExecutionConfig executionConfig) {
         Embedding embedding = mock(Embedding.class);
         when(embedding.embedding()).thenReturn(List.of(0.1f, 0.2f, 0.3f));
         response = mock(CreateEmbeddingResponse.class);
@@ -79,7 +89,7 @@ class OpenAITextEmbeddingLifecycleTest {
                         .baseUrl("http://127.0.0.1:1/v1")
                         .modelName("text-embedding-3-small")
                         .dimensions(3)
-                        .executionConfig(ExecutionConfig.builder().maxAttempts(maxAttempts).build())
+                        .executionConfig(executionConfig)
                         .build();
     }
 
@@ -176,6 +186,61 @@ class OpenAITextEmbeddingLifecycleTest {
             assertTrue(error.getMessage().contains("closed"));
             mocked.verify(OpenAIOkHttpClient::builder, times(1));
             verify(embeddings, times(1)).create(any(EmbeddingCreateParams.class));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void closedModelDoesNotRetryEvenWhenRetriesAreEnabled(boolean initialized) {
+        AtomicInteger retryDecisions = new AtomicInteger();
+        createModel(
+                ExecutionConfig.builder()
+                        .maxAttempts(2)
+                        .initialBackoff(Duration.ofMillis(10))
+                        .maxBackoff(Duration.ofMillis(10))
+                        .retryOn(
+                                error -> {
+                                    retryDecisions.incrementAndGet();
+                                    return true;
+                                })
+                        .build());
+        try (MockedStatic<OpenAIOkHttpClient> mocked = mockClientBuilder()) {
+            if (initialized) {
+                assertNotNull(model.embed(text).block(Duration.ofSeconds(5)));
+            }
+            // Creating a Mono before close must not bypass the closed-state check at subscription.
+            var pending = model.embed(text);
+            model.close();
+
+            StepVerifier.withVirtualTime(() -> pending)
+                    .thenAwait(Duration.ofSeconds(1))
+                    .expectErrorSatisfies(
+                            error ->
+                                    assertTrue(
+                                            assertInstanceOf(EmbeddingException.class, error)
+                                                    .getMessage()
+                                                    .contains("closed")))
+                    .verify(Duration.ofSeconds(5));
+            StepVerifier.withVirtualTime(() -> model.embed(text))
+                    .thenAwait(Duration.ofSeconds(1))
+                    .expectErrorSatisfies(
+                            error ->
+                                    assertTrue(
+                                            assertInstanceOf(EmbeddingException.class, error)
+                                                    .getMessage()
+                                                    .contains("closed")))
+                    .verify(Duration.ofSeconds(5));
+
+            assertEquals(0, retryDecisions.get(), "Closed models must bypass the retry pipeline");
+            if (initialized) {
+                mocked.verify(OpenAIOkHttpClient::builder, times(1));
+                verify(clientBuilder, times(1)).build();
+                verify(embeddings, times(1)).create(any(EmbeddingCreateParams.class));
+                verify(client, times(1)).close();
+            } else {
+                mocked.verifyNoInteractions();
+                Mockito.verifyNoInteractions(clientBuilder, client, embeddings);
+            }
         }
     }
 

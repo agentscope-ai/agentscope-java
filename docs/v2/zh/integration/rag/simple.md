@@ -88,6 +88,7 @@ List<Document> hits = knowledge.retrieve(
 建议在 RAG 服务的整个生命周期内复用模型，等所有 embedding 操作完成后调用 `close()`
 （例如在应用关闭钩子中），短期使用也可以采用 try-with-resources。`SimpleKnowledge` 不会代为关闭
 共享的 embedding 模型。关闭未使用的模型不会创建客户端；模型关闭后不能再次使用。
+关闭后订阅会立即失败，不进入重试流程；关闭前创建、关闭后才订阅的 Mono 也遵循这一规则。
 
 ## 内置向量库适配
 

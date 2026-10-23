@@ -210,9 +210,19 @@ public class OpenAITextEmbedding implements EmbeddingModel, AutoCloseable {
                                             "openai");
                                 });
 
-        // Apply timeout and retry
-        return EmbeddingUtils.applyTimeoutAndRetry(
-                embeddingMono, defaultExecutionConfig, modelName, "openai", log);
+        // Check at subscription time, outside retry, including Monos created before close().
+        return Mono.defer(
+                () -> {
+                    synchronized (this) {
+                        if (closed) {
+                            return Mono.error(
+                                    new EmbeddingException(
+                                            "OpenAITextEmbedding is closed", modelName, "openai"));
+                        }
+                    }
+                    return EmbeddingUtils.applyTimeoutAndRetry(
+                            embeddingMono, defaultExecutionConfig, modelName, "openai", log);
+                });
     }
 
     private synchronized OpenAIClient getClient() {
@@ -238,7 +248,8 @@ public class OpenAITextEmbedding implements EmbeddingModel, AutoCloseable {
      *
      * <p>Wait for in-flight embedding operations to finish before closing. Closing an unused model
      * does not initialize a client. Subsequent embedding subscriptions fail with an
-     * {@link EmbeddingException}.
+     * {@link EmbeddingException} without entering the configured retry pipeline, including Monos
+     * created before close and subscribed afterward.
      */
     @Override
     public synchronized void close() {
