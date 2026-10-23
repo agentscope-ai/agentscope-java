@@ -387,6 +387,11 @@ public class AnthropicChatModel extends ChatModelBase {
         return modelName;
     }
 
+    @Override
+    public GenerateOptions getDefaultOptions() {
+        return defaultOptions;
+    }
+
     /**
      * Creates a builder for constructing AnthropicChatModel instances.
      *

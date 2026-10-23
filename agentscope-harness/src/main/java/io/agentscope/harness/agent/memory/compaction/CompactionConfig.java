@@ -29,11 +29,15 @@ import java.util.Set;
  *
  * <p>Defaults (dynamic mode):
  * <ul>
- *   <li>Trigger dynamically when estimated token count reaches {@code model.contextWindow - reserved(20k)}.
- *       Falls back to {@value #FALLBACK_TRIGGER_TOKENS} tokens when the model does not report its context
- *       window, or at 50 messages (whichever comes first)</li>
+ *   <li>Trigger dynamically when the conversation exceeds the request's conversation allowance
+ *       computed by the boundary preparer ({@code HarnessContextBuilder}): the final input limit
+ *       ({@code contextWindow - output reservation - safety margin}, or 64 000 tokens when the
+ *       model reports no window) minus the fixed system/tool tokens; or at 50 messages
+ *       (whichever comes first)</li>
  *   <li>Keep tail: dynamically computed as {@code min(8k, max(2k, usable * 0.25))} tokens.
- *       Falls back to 20 messages when the model does not report its context window</li>
+ *       Falls back to a 20-message tail only when the effective keep budget is not positive;
+ *       the boundary path derives a positive token budget, including when the model reports no
+ *       window</li>
  *   <li>Prune: enabled by default — aggregates old tool result outputs and trims them when the
  *       prunable total exceeds 20k tokens (protects the most recent 40k tokens)</li>
  *   <li>Summarization is enabled; memory flush is enabled before summary</li>
@@ -61,8 +65,10 @@ import java.util.Set;
 public class CompactionConfig {
 
     /**
-     * Fallback trigger threshold (in tokens) when the model does not report its context window
-     * and {@code triggerTokens} is set to dynamic mode (0).
+     * Fallback conversation budget (in tokens) for paths that cannot derive one from the model's
+     * context window: the standalone {@code CompactionMiddleware#onReasoning} path and the
+     * overflow-recovery retry. The boundary preparer does not use it — an unknown window there
+     * resolves to a 64 000-token input limit.
      */
     public static final int FALLBACK_TRIGGER_TOKENS = 160_000;
 
@@ -182,15 +188,18 @@ public class CompactionConfig {
 
     /**
      * Estimated token count above which compaction is triggered.
-     * {@code 0} = dynamic mode (compute from model's context window minus {@link #getReserved()}).
+     * {@code 0} = dynamic mode: the boundary preparer passes the request's conversation
+     * allowance as the effective threshold; the standalone {@code CompactionMiddleware#onReasoning}
+     * path uses {@code model.getContextWindowSize()} minus {@link #getReserved()} instead.
      */
     public int getTriggerTokens() {
         return triggerTokens;
     }
 
     /**
-     * Token buffer reserved for the compaction process itself (summary prompt + output).
-     * Only used in dynamic mode ({@code triggerTokens == 0}).
+     * Token buffer subtracted from the model's context window in the standalone
+     * {@code CompactionMiddleware#onReasoning} path. The boundary preparer does not use it: the
+     * request's input limit already carries the output reservation and safety margin.
      */
     public int getReserved() {
         return reserved;
@@ -324,8 +333,8 @@ public class CompactionConfig {
 
         /**
          * Trigger compaction when estimated token count exceeds this value.
-         * {@code 0} (default) = dynamic mode: compute from model's context window minus
-         * {@link #reserved(int)}.
+         * {@code 0} (default) = dynamic mode: the effective threshold is the request's
+         * conversation allowance computed at the model boundary.
          */
         public Builder triggerTokens(int triggerTokens) {
             this.triggerTokens = triggerTokens;
@@ -333,8 +342,9 @@ public class CompactionConfig {
         }
 
         /**
-         * Token buffer reserved for the compaction process (default 20 000).
-         * Only used in dynamic mode ({@code triggerTokens == 0}).
+         * Token buffer subtracted from the model's context window when the standalone
+         * {@code onReasoning} path derives its own dynamic threshold (default 20 000). The
+         * boundary preparer path ignores it.
          */
         public Builder reserved(int reserved) {
             this.reserved = reserved;
