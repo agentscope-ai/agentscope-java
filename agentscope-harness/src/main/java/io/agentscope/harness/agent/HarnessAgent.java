@@ -2856,7 +2856,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
                 if (compactionModel != null) {
                     compactionHook =
-                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
+                            new CompactionMiddleware(
+                                    wsManager,
+                                    compactionModel,
+                                    compactionConfig,
+                                    !disableMemoryHooks);
                     inner.middleware(compactionHook.overflowRecovery());
                 }
             }
