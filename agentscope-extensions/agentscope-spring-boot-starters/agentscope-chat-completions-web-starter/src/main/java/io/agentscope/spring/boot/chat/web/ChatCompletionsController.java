@@ -268,7 +268,7 @@ public class ChatCompletionsController {
 
             String model = request.getModel();
             return streamingService
-                    .streamAsSse(agent, messages, requestId, model)
+                    .streamAsSse(agent, messages, requestId, model, request.isIncludeUsage())
                     .onErrorResume(
                             error -> {
                                 log.error(

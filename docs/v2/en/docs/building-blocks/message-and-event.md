@@ -35,7 +35,8 @@ The core fields on `Msg` (via getters):
 | `getContent()` | `List<ContentBlock>` | Ordered list of content blocks (immutable) |
 | `getMetadata()` | `Map<String, Object>` | Arbitrary key/value metadata |
 | `getTimestamp()` | `String` | Creation time (`yyyy-MM-dd HH:mm:ss.SSS`) |
-| `getUsage()` | `ChatUsage` | Token usage (assistant messages only) |
+| `getUsage()` | `ChatUsage` | Token usage of the model call that produced this message (assistant messages only) |
+| `getInvocationUsage()` | `ChatUsage` | Total token usage of every model call in the agent invocation that returned this message. Set on the final reply of `call()` (also carried by `AgentResultEvent`); `null` when no usage was reported |
 | `getGenerateReason()` | `GenerateReason` | Termination reason: `MODEL_STOP` / `TOOL_SUSPENDED` / `REASONING_STOP_REQUESTED` / `ACTING_STOP_REQUESTED` / `ALL_TOOLS_DENIED` / `INTERRUPTED` / `MAX_ITERATIONS` |
 
 ### Content blocks

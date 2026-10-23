@@ -28,6 +28,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatUsage;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -100,20 +101,56 @@ public class ChatCompletionsResponseBuilder {
         ChatMessage message = convertMsgToChatMessage(reply);
         choice.setMessage(message);
 
-        // Set finish_reason based on GenerateReason or tool calls
-        GenerateReason generateReason = reply != null ? reply.getGenerateReason() : null;
-        if (generateReason == GenerateReason.TOOL_SUSPENDED
-                || (message.getToolCalls() != null && !message.getToolCalls().isEmpty())) {
-            choice.setFinishReason("tool_calls");
-        } else if (generateReason == GenerateReason.MAX_ITERATIONS) {
-            choice.setFinishReason("length");
-        } else {
-            choice.setFinishReason("stop");
-        }
+        choice.setFinishReason(finishReasonOf(reply));
 
         response.setChoices(List.of(choice));
+        response.setUsage(usageOf(reply));
 
         return response;
+    }
+
+    /**
+     * Map the agent's final reply to an OpenAI {@code finish_reason}. Shared by the non-streaming
+     * response and the final streaming chunk.
+     *
+     * @param reply The agent's final reply, may be null
+     * @return {@code "tool_calls"} when the agent suspended for tools or the reply contains tool
+     *     calls, {@code "length"} when it hit the iteration limit, otherwise {@code "stop"}
+     */
+    public static String finishReasonOf(Msg reply) {
+        GenerateReason generateReason = reply != null ? reply.getGenerateReason() : null;
+        boolean hasToolCalls =
+                reply != null
+                        && reply.getRole() == MsgRole.ASSISTANT
+                        && reply.hasContentBlocks(ToolUseBlock.class);
+        if (generateReason == GenerateReason.TOOL_SUSPENDED || hasToolCalls) {
+            return "tool_calls";
+        }
+        if (generateReason == GenerateReason.MAX_ITERATIONS) {
+            return "length";
+        }
+        return "stop";
+    }
+
+    /**
+     * Map the invocation's total usage to the OpenAI {@code usage} object. Shared by the
+     * non-streaming response and the streaming usage chunk.
+     *
+     * <p>Uses {@link Msg#getInvocationUsage()} rather than {@link Msg#getChatUsage()}: the latter
+     * covers only the last model call, so it would under-report any request in which the agent
+     * called a tool. Returns {@code null} (field omitted) when no usage was reported, instead of
+     * reporting zeros.
+     *
+     * @param reply The agent's final reply, may be null
+     * @return The usage of the whole request, or null when none was reported
+     */
+    public static ChatCompletionsResponse.Usage usageOf(Msg reply) {
+        ChatUsage usage = reply != null ? reply.getInvocationUsage() : null;
+        if (usage == null) {
+            return null;
+        }
+        return new ChatCompletionsResponse.Usage(
+                usage.getInputTokens(), usage.getOutputTokens(), usage.getTotalTokens());
     }
 
     /**

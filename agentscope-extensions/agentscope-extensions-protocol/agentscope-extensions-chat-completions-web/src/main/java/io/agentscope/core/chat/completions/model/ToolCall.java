@@ -124,7 +124,11 @@ public class ToolCall {
         this.function = function;
     }
 
-    /** Represents the function details within a tool call. */
+    /**
+     * Represents the function details within a tool call. Null fields are omitted, so streaming
+     * argument deltas carry only {@code arguments}.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class FunctionCall {
 
         private String name;

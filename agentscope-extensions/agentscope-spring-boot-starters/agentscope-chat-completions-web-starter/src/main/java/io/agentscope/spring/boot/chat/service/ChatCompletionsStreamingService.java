@@ -78,7 +78,27 @@ public class ChatCompletionsStreamingService {
      */
     public Flux<ServerSentEvent<String>> streamAsSse(
             ReActAgent agent, List<Msg> messages, String requestId, String model) {
-        return streamingAdapter.stream(agent, messages, requestId, model)
+        return streamAsSse(agent, messages, requestId, model, false);
+    }
+
+    /**
+     * Stream agent events as Server-Sent Events (SSE), optionally with a final usage chunk.
+     *
+     * @param agent The agent to stream from
+     * @param messages The messages to send to the agent
+     * @param requestId The request ID for tracking
+     * @param model The model name for the response
+     * @param includeUsage Whether to send the usage chunk before {@code [DONE]} ({@code
+     *     stream_options.include_usage})
+     * @return A {@link Flux} of {@link ServerSentEvent} objects
+     */
+    public Flux<ServerSentEvent<String>> streamAsSse(
+            ReActAgent agent,
+            List<Msg> messages,
+            String requestId,
+            String model,
+            boolean includeUsage) {
+        return streamingAdapter.stream(agent, messages, requestId, model, includeUsage)
                 .map(this::chunkToSseEvent)
                 .concatWith(Flux.just(createDoneSseEvent()));
     }

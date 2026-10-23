@@ -16,6 +16,7 @@
 package io.agentscope.spring.boot.chat.web;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -141,7 +142,8 @@ class ChatCompletionsControllerTest {
                     ServerSentEvent.<String>builder().data("test").build();
 
             when(messageConverter.convertMessages(anyList())).thenReturn(convertedMessages);
-            when(streamingService.streamAsSse(any(), anyList(), anyString(), anyString()))
+            when(streamingService.streamAsSse(
+                            any(), anyList(), anyString(), anyString(), anyBoolean()))
                     .thenReturn(Flux.just(sseEvent));
 
             Object result = controller.createCompletion(request);
@@ -163,7 +165,41 @@ class ChatCompletionsControllerTest {
             verify(messageConverter).convertMessages(eq(request.getMessages()));
             verify(streamingService)
                     .streamAsSse(
-                            eq(mockAgent), eq(convertedMessages), anyString(), eq("test-model"));
+                            eq(mockAgent),
+                            eq(convertedMessages),
+                            anyString(),
+                            eq("test-model"),
+                            eq(false));
+        }
+
+        @Test
+        @DisplayName("Should pass stream_options.include_usage to the streaming service")
+        void shouldPassIncludeUsageToStreamingService() {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setModel("test-model");
+            request.setStream(true);
+            request.setStreamOptions(new ChatCompletionsRequest.StreamOptions(true));
+            request.setMessages(List.of(new ChatMessage("user", "Hello")));
+
+            List<Msg> convertedMessages = List.of(mock(Msg.class));
+            when(messageConverter.convertMessages(anyList())).thenReturn(convertedMessages);
+            when(streamingService.streamAsSse(
+                            any(), anyList(), anyString(), anyString(), anyBoolean()))
+                    .thenReturn(Flux.empty());
+
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Flux<ServerSentEvent<String>>> responseEntity =
+                    (ResponseEntity<Flux<ServerSentEvent<String>>>)
+                            controller.createCompletion(request);
+            StepVerifier.create(responseEntity.getBody()).verifyComplete();
+
+            verify(streamingService)
+                    .streamAsSse(
+                            eq(mockAgent),
+                            eq(convertedMessages),
+                            anyString(),
+                            eq("test-model"),
+                            eq(true));
         }
 
         @Test
@@ -249,7 +285,8 @@ class ChatCompletionsControllerTest {
             verify(mockAgent).call(eq(convertedMessages));
             verify(responseBuilder).buildResponse(eq(request), eq(replyMsg), anyString());
             // Should NOT call streaming service
-            verify(streamingService, never()).streamAsSse(any(), any(), anyString(), anyString());
+            verify(streamingService, never())
+                    .streamAsSse(any(), any(), anyString(), anyString(), anyBoolean());
         }
 
         @Test
@@ -311,7 +348,8 @@ class ChatCompletionsControllerTest {
                     ServerSentEvent.<String>builder().data("Hi!").build();
 
             when(messageConverter.convertMessages(anyList())).thenReturn(convertedMessages);
-            when(streamingService.streamAsSse(any(), anyList(), anyString(), anyString()))
+            when(streamingService.streamAsSse(
+                            any(), anyList(), anyString(), anyString(), anyBoolean()))
                     .thenReturn(Flux.just(sseEvent));
 
             Flux<ServerSentEvent<String>> result = controller.createCompletionStream(request);
@@ -322,7 +360,11 @@ class ChatCompletionsControllerTest {
             verify(messageConverter).convertMessages(eq(request.getMessages()));
             verify(streamingService)
                     .streamAsSse(
-                            eq(mockAgent), eq(convertedMessages), anyString(), eq("test-model"));
+                            eq(mockAgent),
+                            eq(convertedMessages),
+                            anyString(),
+                            eq("test-model"),
+                            eq(false));
         }
 
         @Test
@@ -344,7 +386,8 @@ class ChatCompletionsControllerTest {
                     .verify();
 
             // Should NOT call streaming service
-            verify(streamingService, never()).streamAsSse(any(), any(), anyString(), anyString());
+            verify(streamingService, never())
+                    .streamAsSse(any(), any(), anyString(), anyString(), anyBoolean());
         }
 
         @Test
@@ -377,7 +420,8 @@ class ChatCompletionsControllerTest {
                     ServerSentEvent.<String>builder().data("Error").build();
 
             when(messageConverter.convertMessages(anyList())).thenReturn(List.of(mock(Msg.class)));
-            when(streamingService.streamAsSse(any(), anyList(), anyString(), anyString()))
+            when(streamingService.streamAsSse(
+                            any(), anyList(), anyString(), anyString(), anyBoolean()))
                     .thenReturn(Flux.error(error));
             when(streamingService.createErrorSseEvent(any(), anyString(), anyString()))
                     .thenReturn(errorEvent);
@@ -402,7 +446,8 @@ class ChatCompletionsControllerTest {
                     ServerSentEvent.<String>builder().data("Error").build();
 
             when(messageConverter.convertMessages(anyList())).thenReturn(List.of(mock(Msg.class)));
-            when(streamingService.streamAsSse(any(), anyList(), anyString(), anyString()))
+            when(streamingService.streamAsSse(
+                            any(), anyList(), anyString(), anyString(), anyBoolean()))
                     .thenReturn(Flux.error(error));
             when(streamingService.createErrorSseEvent(any(), anyString(), anyString()))
                     .thenReturn(errorEvent);
