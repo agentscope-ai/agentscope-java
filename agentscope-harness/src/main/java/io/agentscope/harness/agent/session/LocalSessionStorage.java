@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
@@ -75,6 +76,10 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
                     .map(file -> root.relativize(file).toString().replace('\\', '/'))
                     .sorted()
                     .toList();
+        } catch (NoSuchFileException vanished) {
+            // A concurrent delete removed the directory (or an entry) mid-walk; discovery is a
+            // best-effort snapshot, so report what is safely observable as empty.
+            return List.of();
         } catch (IOException error) {
             throw new SessionLogException("Journal discovery failed: " + directory, error);
         }
