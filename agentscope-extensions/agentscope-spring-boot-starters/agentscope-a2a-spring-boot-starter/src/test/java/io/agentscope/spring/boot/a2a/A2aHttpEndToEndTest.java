@@ -28,8 +28,10 @@ import io.agentscope.core.a2a.agent.card.WellKnownAgentCardResolver;
 import io.agentscope.core.a2a.server.executor.AgentScopeAgentExecutor;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
@@ -285,6 +287,39 @@ class A2aHttpEndToEndTest {
                 .extracting(ThinkingBlock::getThinking)
                 .containsExactly("let me think");
         assertThat(result.getTextContent()).isEqualTo("done");
+    }
+
+    @Test
+    void streamEventsDeliversDeltasAndResult() {
+        runner.script(
+                messages ->
+                        Flux.just(
+                                new ThinkingBlockDeltaEvent("reply-1", "think-1", "let me think"),
+                                new TextBlockDeltaEvent("reply-1", "text-1", "Hello, "),
+                                new TextBlockDeltaEvent("reply-1", "text-1", "world"),
+                                new AgentResultEvent(assistantMsg("final reply"))));
+
+        List<AgentEvent> events =
+                newAgent(null).streamEvents(userMsg("hi")).collectList().block(TIMEOUT);
+        Msg result = newAgent(null).call(userMsg("hi")).block(TIMEOUT);
+
+        assertThat(events).isNotNull();
+        assertThat(events.get(0)).isInstanceOf(AgentStartEvent.class);
+        assertThat(events)
+                .filteredOn(ThinkingBlockDeltaEvent.class::isInstance)
+                .extracting(event -> ((ThinkingBlockDeltaEvent) event).getDelta())
+                .containsExactly("let me think");
+        assertThat(events)
+                .filteredOn(TextBlockDeltaEvent.class::isInstance)
+                .extracting(event -> ((TextBlockDeltaEvent) event).getDelta())
+                .containsExactly("Hello, ", "world");
+        assertThat(events.get(events.size() - 2))
+                .isInstanceOfSatisfying(
+                        AgentResultEvent.class,
+                        event ->
+                                assertThat(event.getResult().getTextContent())
+                                        .isEqualTo(result.getTextContent()));
+        assertThat(events.get(events.size() - 1)).isInstanceOf(AgentEndEvent.class);
     }
 
     @Test

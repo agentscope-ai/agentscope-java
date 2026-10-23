@@ -58,6 +58,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             E2bSandboxClientOptions options) {
         String sessionId = UUID.randomUUID().toString();
         E2bSandboxClientOptions merged = merge(options);
+        requireAbsoluteWorkspaceRoot(merged.getWorkspaceRoot());
 
         E2bSandboxState state = new E2bSandboxState();
         state.setSessionId(sessionId);
@@ -70,6 +71,8 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         state.setCodec(merged.getCodec());
         state.setSandboxDomain(merged.getDomain());
         state.setEnvdSandboxUrl(merged.getEnvdSandboxUrl());
+        state.setVolumeMounts(merged.getVolumeMounts());
+        state.setWorkspaceOnVolume(isWorkspaceOnVolume(merged));
 
         if (snapshotSpec != null) {
             state.setSnapshot(snapshotSpec.build(sessionId));
@@ -85,6 +88,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             throw new IllegalArgumentException(
                     "Expected E2bSandboxState but got: " + state.getClass().getName());
         }
+        requireAbsoluteWorkspaceRoot(e2b.getWorkspaceRoot());
         E2bSandboxClientOptions resumed = copy(defaultOptions);
         resumed.setCodec(e2b.getCodec());
         resumed.setEnvdSandboxUrl(e2b.getEnvdSandboxUrl());
@@ -152,6 +156,11 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         if (call.getHttpClient() != null) {
             o.setHttpClient(call.getHttpClient());
         }
+        // Null or empty call mounts keep the defaults (same convention as AgentRun OSS mounts);
+        // there is intentionally no "clear all mounts" via merge.
+        if (call.getVolumeMounts() != null && !call.getVolumeMounts().isEmpty()) {
+            o.setVolumeMounts(call.getVolumeMounts());
+        }
         o.setConnectTimeoutSeconds(call.getConnectTimeoutSeconds());
         o.setReadTimeoutSeconds(call.getReadTimeoutSeconds());
         o.setMaxRetries(call.getMaxRetries());
@@ -164,6 +173,41 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             o.getEnvs().putAll(call.getEnvs());
         }
         return o;
+    }
+
+    /**
+     * Rejects blank or relative workspace roots fail-fast; every E2B operation assumes an
+     * absolute in-sandbox path.
+     *
+     * @param workspaceRoot workspace root to check
+     */
+    private static void requireAbsoluteWorkspaceRoot(String workspaceRoot) {
+        if (workspaceRoot == null
+                || workspaceRoot.isBlank()
+                || !workspaceRoot.strip().startsWith("/")) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "E2B workspaceRoot must be an absolute in-sandbox path but was: "
+                            + workspaceRoot);
+        }
+    }
+
+    /**
+     * Returns whether the workspace root lives on one of the configured volume mounts.
+     *
+     * @param opt merged client options
+     * @return true when a mount covers the workspace root
+     */
+    private static boolean isWorkspaceOnVolume(E2bSandboxClientOptions opt) {
+        String root = opt.getWorkspaceRoot();
+        if (root == null || root.isBlank() || opt.getVolumeMounts() == null) {
+            return false;
+        }
+        for (E2bVolumeMount m : opt.getVolumeMounts()) {
+            if (m != null && E2bVolumeMount.coversWorkspaceRoot(root, m.getPath())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static E2bSandboxClientOptions copy(E2bSandboxClientOptions src) {
@@ -179,6 +223,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         o.setPersistenceMode(src.getPersistenceMode());
         o.setCodec(src.getCodec());
         o.setHttpClient(src.getHttpClient());
+        o.setVolumeMounts(src.getVolumeMounts());
         o.setConnectTimeoutSeconds(src.getConnectTimeoutSeconds());
         o.setReadTimeoutSeconds(src.getReadTimeoutSeconds());
         o.setMaxRetries(src.getMaxRetries());

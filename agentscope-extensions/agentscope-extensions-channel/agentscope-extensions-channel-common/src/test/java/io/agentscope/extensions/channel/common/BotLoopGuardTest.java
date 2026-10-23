@@ -62,10 +62,15 @@ class BotLoopGuardTest {
 
     @Test
     void idlePeersAreEvictedAfterWindowPlusCooldown() throws InterruptedException {
+        // A loaded runner can overshoot a 60ms sleep past a 160ms threshold (observed in CI),
+        // so the not-idle phase uses a threshold no realistic stall can cross, and the idle
+        // phase only relies on Thread.sleep never returning early. Total sleep stays 240ms.
+        BotLoopGuard notIdle = new BotLoopGuard(5, 60_000L, 60_000L);
+        assertTrue(notIdle.allow("peer-1"));
+        Thread.sleep(60);
+        assertEquals(0, notIdle.evictIdlePeers()); // not idle yet
         BotLoopGuard guard = new BotLoopGuard(5, 80L, 80L); // idle threshold: 160ms
         assertTrue(guard.allow("peer-1"));
-        Thread.sleep(60);
-        assertEquals(0, guard.evictIdlePeers()); // not idle yet
         Thread.sleep(180);
         assertEquals(1, guard.evictIdlePeers());
         assertEquals(0, guard.trackedPeers());
@@ -75,11 +80,14 @@ class BotLoopGuardTest {
 
     @Test
     void activePeersSurviveEvictionOfIdleOnes() throws InterruptedException {
+        // The idle peer sits far past the threshold (a sleep overshoot only helps) and the
+        // active peer far inside it, so a multi-hundred-ms runner stall cannot flip either
+        // side of the check.
         BotLoopGuard guard = new BotLoopGuard(5, 500L, 500L); // idle threshold: 1000ms
         assertTrue(guard.allow("idle-peer"));
-        Thread.sleep(300);
+        Thread.sleep(900);
         assertTrue(guard.allow("active-peer"));
-        Thread.sleep(800); // idle-peer idle ~1100ms; active-peer idle ~800ms
+        Thread.sleep(150); // idle-peer idle ~1050ms; active-peer idle ~150ms
         assertEquals(1, guard.evictIdlePeers());
         assertTrue(guard.allow("active-peer"));
         assertEquals(1, guard.trackedPeers());
