@@ -248,8 +248,11 @@ public class WriteFileTool {
                             name = "ranges",
                             description =
                                     "The range of lines to be replaced as [start, end], e.g.,"
-                                            + " '[1,5]' or '1,5'. If null or empty, the entire file"
-                                            + " will be overwritten.",
+                                            + " '[1,5]' or '1,5'. Lines are 1-based and"
+                                            + " inclusive; negative indices are NOT supported"
+                                            + " for writes (view_text_file accepts them, this"
+                                            + " tool does not). If null or empty, the entire"
+                                            + " file will be overwritten.",
                             required = false)
                     String ranges) {
 
@@ -302,9 +305,11 @@ public class WriteFileTool {
                                                 "Create and write %s successfully.", filePath));
                             }
 
-                            // Read original lines
-                            List<String> originalLines =
-                                    Files.readAllLines(path, StandardCharsets.UTF_8);
+                            // Read the original text once and derive both the line
+                            // list and whether the file ends with a line terminator.
+                            String originalText = Files.readString(path, StandardCharsets.UTF_8);
+                            boolean originalEndsWithNewline = originalText.endsWith("\n");
+                            List<String> originalLines = originalText.lines().toList();
                             logger.debug(
                                     "Read {} lines from existing file: {}",
                                     originalLines.size(),
@@ -328,6 +333,29 @@ public class WriteFileTool {
                                 logger.debug(
                                         "Replacing lines {}-{} in file: {}", start, end, filePath);
 
+                                if (start < 1) {
+                                    logger.warn(
+                                            "Invalid start line {} for file: {}", start, filePath);
+                                    return ToolResultBlock.error(
+                                            String.format(
+                                                    "Invalid range: start line %d is invalid. Line"
+                                                            + " numbers start from 1.",
+                                                    start));
+                                }
+
+                                if (start > end) {
+                                    logger.warn(
+                                            "Invalid range: start {} > end {} for file: {}",
+                                            start,
+                                            end,
+                                            filePath);
+                                    return ToolResultBlock.error(
+                                            String.format(
+                                                    "Invalid range: start line %d is greater than"
+                                                            + " end line %d.",
+                                                    start, end));
+                                }
+
                                 if (start > originalLines.size()) {
                                     logger.warn(
                                             "Start line {} exceeds file length {} for file: {}",
@@ -341,19 +369,33 @@ public class WriteFileTool {
                                                     start, originalLines.size()));
                                 }
 
-                                // Build new content
+                                // Build new content. Strip at most one trailing line
+                                // terminator from the replacement content so it cannot
+                                // survive the join as an unintended blank line; the
+                                // block below is the sole authority on the final
+                                // terminator.
+                                String strippedContent = content;
+                                if (strippedContent.endsWith("\n")) {
+                                    strippedContent =
+                                            strippedContent.substring(
+                                                    0, strippedContent.length() - 1);
+                                }
                                 List<String> newContent = new ArrayList<>();
                                 if (start > 1) {
                                     newContent.addAll(originalLines.subList(0, start - 1));
                                 }
-                                newContent.add(content);
+                                newContent.add(strippedContent);
                                 if (end < originalLines.size()) {
                                     newContent.addAll(
                                             originalLines.subList(end, originalLines.size()));
                                 }
 
-                                // Write the new content
+                                // Write the new content, preserving the original file's
+                                // trailing line terminator so line counts stay stable.
                                 String joinedContent = String.join("\n", newContent);
+                                if (originalEndsWithNewline) {
+                                    joinedContent += "\n";
+                                }
                                 Files.writeString(path, joinedContent, StandardCharsets.UTF_8);
                                 logger.info(
                                         "Successfully replaced lines {}-{} in file: {}",
