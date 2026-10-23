@@ -2045,6 +2045,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     final class CallExecution {
         private static final String PERMISSION_DENIED_BY_USER = "Permission denied by user";
         private static final String PERMISSION_DENIED_BY_RULES = "Permission denied by rules";
+        private static final String MALFORMED_TOOL_ARGUMENTS =
+                "Tool call not executed: its arguments were incomplete or malformed (likely"
+                        + " truncated by the output token limit) and could not be parsed."
+                        + " Reissue the call with complete arguments.";
 
         InterruptControl interruption = new InterruptControl();
         AgentState state;
@@ -3455,9 +3459,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Mono<Msg> acting(int iter) {
             List<ToolUseBlock> pendingToolCalls =
                     MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
+            String replyId = UUID.randomUUID().toString().replace("-", "");
+
+            // Tool calls whose streamed arguments never formed a valid JSON object (typically
+            // truncated by a max-tokens stop) are not executable. Synthesize ERROR results with
+            // the original call IDs so tool_use ↔ tool_result pairing stays complete, and never
+            // hand them to the permission gate, middleware chain or executor. The loop continues
+            // to the next reasoning iteration; no automatic retry is attempted this turn.
+            List<ToolUseBlock> malformedToolCalls =
+                    pendingToolCalls.stream().filter(ToolUseBlock::hasMalformedArguments).toList();
+            if (!malformedToolCalls.isEmpty()) {
+                writeMalformedArgumentResults(malformedToolCalls, replyId);
+            }
+            List<ToolUseBlock> executableToolCalls =
+                    pendingToolCalls.stream().filter(tc -> !tc.hasMalformedArguments()).toList();
+
             List<ToolUseBlock> roundToolCalls = extractRecentToolCalls();
 
-            if (pendingToolCalls.isEmpty()) {
+            if (executableToolCalls.isEmpty()) {
                 List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
                 if (!recentToolCalls.isEmpty()
                         && MessageUtils.allToolCallsDenied(
@@ -3467,13 +3486,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return executeIteration(iter + 1);
             }
 
-            String replyId = UUID.randomUUID().toString().replace("-", "");
             AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder =
                     new AtomicReference<>(List.of());
 
             AtomicReference<RequestStopEvent> actingStopRequested = new AtomicReference<>();
             return hookDispatcher
-                    .firePreActing(pendingToolCalls, toolkit)
+                    .firePreActing(executableToolCalls, toolkit)
                     .flatMap(
                             toolCalls -> {
                                 Function<ActingInput, Flux<AgentEvent>> actingCore =
@@ -3534,7 +3552,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
 
                                 boolean returnDirect =
-                                        pendingToolCalls.size() == roundToolCalls.size()
+                                        executableToolCalls.size() == roundToolCalls.size()
                                                 && pendingPairs.isEmpty()
                                                 && !successPairs.isEmpty()
                                                 && successPairs.stream()
@@ -3690,6 +3708,30 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 .withState(ToolResultState.DENIED);
                 Msg deniedMsg = ToolResultMessageBuilder.buildToolResultMsg(denied, tc, getName());
                 state.contextMutable().add(deniedMsg);
+            }
+        }
+
+        /**
+         * Synthesise ERROR ToolResultBlocks for tool calls whose streamed arguments never formed a
+         * valid JSON object (marked via {@link
+         * ToolUseBlock#METADATA_MALFORMED_ARGUMENTS}). The handler is never invoked; results are
+         * appended to the context and emitted as lifecycle events so the tool_use ↔ tool_result
+         * pairing stays complete and the model can reissue the call.
+         */
+        private void writeMalformedArgumentResults(List<ToolUseBlock> toolCalls, String replyId) {
+            for (ToolUseBlock tc : toolCalls) {
+                ToolResultBlock errorResult =
+                        ToolResultBlock.error(tc.getId(), MALFORMED_TOOL_ARGUMENTS);
+                Msg toolResultMsg =
+                        ToolResultMessageBuilder.buildToolResultMsg(errorResult, tc, getName());
+                state.contextMutable().add(toolResultMsg);
+                publishEvent(new ToolResultStartEvent(replyId, tc.getId(), tc.getName()));
+                publishEvent(
+                        new ToolResultTextDeltaEvent(
+                                replyId, tc.getId(), tc.getName(), MALFORMED_TOOL_ARGUMENTS));
+                publishEvent(
+                        new ToolResultEndEvent(
+                                replyId, tc.getId(), tc.getName(), ToolResultState.ERROR));
             }
         }
 
