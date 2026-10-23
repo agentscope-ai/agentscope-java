@@ -35,6 +35,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -141,28 +142,68 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         }
     }
 
+    /**
+     * Writes the script to the process stdin and closes the stream (EOF tells non-interactive
+     * {@code sh} to run the buffered script). Package-private seam so the stdin transport —
+     * the actual #2924 fix — is testable without a Docker daemon.
+     */
+    static void writeScriptTo(java.io.OutputStream stdin, String command)
+            throws java.io.IOException {
+        try (OutputStream out = stdin) {
+            out.write(command.getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * Builds the {@code docker exec} argument list for a shell command. On Windows the script
+     * travels via stdin ({@code -i} + plain {@code sh}, no {@code -c}): Java's {@link
+     * ProcessBuilder} quotes argv into a single command line for {@code CreateProcess}, and a
+     * native child (docker.exe) re-parses that line with MSVCRT-style rules, which strips the
+     * nested double quotes sandbox commands rely on (e.g. {@code "$(dirname ...)"}); a
+     * Linux/macOS host passes them through untouched (#2924).
+     *
+     * <p>Package-private for tests.
+     */
+    static List<String> buildExecArgs(
+            String command, String workspaceRoot, String containerId, boolean windows) {
+        List<String> cmd = new ArrayList<>();
+        cmd.add("docker");
+        cmd.add("exec");
+        if (windows) {
+            cmd.add("-i");
+        }
+        cmd.add("-w");
+        cmd.add(workspaceRoot);
+        cmd.add(containerId);
+        cmd.add("sh");
+        if (windows) {
+            // no "-c": sh executes the whole stdin as the script
+        } else {
+            cmd.add("-c");
+            cmd.add(command);
+        }
+        return cmd;
+    }
+
     @Override
     protected ExecResult doExec(RuntimeContext runtimeContext, String command, int timeoutSeconds)
             throws Exception {
         String containerId = dockerState.getContainerId();
         String workspaceRoot = dockerState.getWorkspaceRoot();
 
-        List<String> cmd = new ArrayList<>();
-        cmd.add("docker");
-        cmd.add("exec");
-        cmd.add("-w");
-        cmd.add(workspaceRoot);
-        cmd.add(containerId);
-        cmd.add("sh");
-        cmd.add("-c");
-        cmd.add(command);
+        boolean windows =
+                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        List<String> cmd = buildExecArgs(command, workspaceRoot, containerId, windows);
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
         Process process = pb.start();
 
+        // 3 threads on Windows: stdout drainer + stderr drainer + the stdin writer — the
+        // drainers only finish at process EOF, which never comes while sh waits for stdin,
+        // so a 2-thread pool would starve the write into a guaranteed deadlock (#2924 review).
         ExecutorService drainer =
                 Executors.newFixedThreadPool(
-                        2,
+                        windows ? 3 : 2,
                         r -> {
                             Thread t =
                                     new Thread(
@@ -176,6 +217,34 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                 drainer.submit(() -> readStream(process.getInputStream(), OUTPUT_TRUNCATE_BYTES));
         Future<String> stderrFuture =
                 drainer.submit(() -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
+
+        if (windows) {
+            // The script travels via stdin (-i, no -c): write it, then close so sh runs the
+            // buffered script to completion and exits with its status (#2924). Written from
+            // the drainer pool AFTER the output drainers started, so early child output can
+            // never fill the stdout pipe and deadlock the write before waitFor() arms the
+            // timeout (#2924 review).
+            Future<?> stdinWrite =
+                    drainer.submit(
+                            () -> {
+                                try {
+                                    writeScriptTo(process.getOutputStream(), command);
+                                    return null;
+                                } catch (IOException e) {
+                                    throw new java.util.concurrent.CompletionException(e);
+                                }
+                            });
+            try {
+                stdinWrite.get(timeoutSeconds, TimeUnit.SECONDS);
+            } catch (Exception stdinFailure) {
+                process.destroyForcibly();
+                drainer.shutdownNow();
+                throw new SandboxException(
+                        SandboxErrorCode.EXEC_NONZERO,
+                        "Failed to write script to docker exec stdin",
+                        stdinFailure);
+            }
+        }
         drainer.shutdown();
 
         boolean exited = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
