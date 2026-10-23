@@ -24,7 +24,7 @@ flowchart TD
 
 At call entry, the Agent restores the session's committed working state and accepts the new input. The conversation can contain earlier user and assistant messages, tool calls, tool results, and a summary from an earlier compaction. New tool results join this working context before the next reasoning step. A single `call()` can therefore prepare many model requests.
 
-When a model stops at its output limit, incomplete tool-call starts receive error results instead of executing with empty arguments. Complete calls in the same batch remain executable, and malformed JSON is rejected even when it begins with a valid object.
+When a model stops at its output limit, incomplete tool-call starts receive error results instead of executing with empty arguments. Complete calls in the same batch remain executable, and malformed JSON is rejected even when it begins with a valid object. Anthropic history replay preserves native content-block order and each thinking block's corresponding signature.
 
 Configure a shared Builder at application startup. Build and close an Agent for each direct request, keeping the same identity and storage configuration when continuing a conversation:
 
