@@ -20,6 +20,7 @@ import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -27,12 +28,23 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +56,9 @@ import org.slf4j.LoggerFactory;
 public class MediaUtils {
 
     private static final Logger log = LoggerFactory.getLogger(MediaUtils.class);
+    // Avoid concurrent duplicate writes of the same content; publication validates independently.
+    private static final Object[] MATERIALIZATION_LOCKS = createMaterializationLocks();
+    private static volatile Path materializedMediaDirectory;
 
     // File size limits
     private static final long WARN_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
@@ -99,6 +114,199 @@ public class MediaUtils {
         checkFileSize(path);
         byte[] bytes = Files.readAllBytes(filePath);
         return Base64.getEncoder().encodeToString(bytes);
+    }
+
+    /**
+     * Materialize Base64 media content to a deterministic temporary file.
+     *
+     * <p>The file name is derived from the decoded content, so formatting unchanged media more
+     * than once reuses the same path within this process. The returned file may be shared by
+     * multiple formatted messages; callers must not modify it. An existing invalid file is
+     * rejected rather than overwritten, and must be removed when no readers depend on it or
+     * recovered by restarting the process. Neither the file nor its per-process directory is
+     * automatically removed.
+     *
+     * @param mediaType MIME type used to derive a safe file extension
+     * @param base64Data Base64-encoded media data without a data URL prefix
+     * @return absolute path to the materialized file
+     * @throws IOException if the Base64 payload is invalid or the file cannot be safely
+     *     materialized
+     * @throws NullPointerException if an argument is null
+     */
+    public static String materializeBase64ToTempFile(String mediaType, String base64Data)
+            throws IOException {
+        return materializeBase64ToTempFile(mediaType, base64Data, materializedMediaDirectory())
+                .toAbsolutePath()
+                .toString();
+    }
+
+    static Path materializeBase64ToTempFile(String mediaType, String base64Data, Path tempDirectory)
+            throws IOException {
+        return materializeBase64ToTempFile(mediaType, base64Data, tempDirectory, true);
+    }
+
+    static Path materializeBase64ToTempFile(
+            String mediaType, String base64Data, Path tempDirectory, boolean preferAtomicMove)
+            throws IOException {
+        Objects.requireNonNull(mediaType, "mediaType cannot be null");
+        Objects.requireNonNull(base64Data, "base64Data cannot be null");
+        Objects.requireNonNull(tempDirectory, "tempDirectory cannot be null");
+
+        Files.createDirectories(tempDirectory);
+        byte[] decodedData;
+        try {
+            decodedData = Base64.getDecoder().decode(base64Data);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid Base64 media payload", e);
+        }
+        String digest = sha256(decodedData);
+        String extension = safeMediaExtension(mediaType);
+        Path target =
+                tempDirectory
+                        .resolve("agentscope_" + digest + "." + extension)
+                        .toAbsolutePath()
+                        .normalize();
+
+        synchronized (materializationLock(target)) {
+            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+                validateMaterializedFile(target, decodedData);
+                log.trace("Reusing materialized Base64 media at {}", target);
+                return target;
+            }
+
+            Path staging = Files.createTempFile(tempDirectory, ".agentscope_", ".tmp");
+            Throwable failure = null;
+            try {
+                Files.write(
+                        staging,
+                        decodedData,
+                        StandardOpenOption.WRITE,
+                        StandardOpenOption.TRUNCATE_EXISTING);
+                publishStagingFile(staging, target, decodedData, preferAtomicMove);
+                log.debug("Materialized Base64 media at {}", target);
+                return target;
+            } catch (IOException | RuntimeException | Error e) {
+                failure = e;
+                throw e;
+            } finally {
+                try {
+                    Files.deleteIfExists(staging);
+                } catch (IOException | SecurityException cleanupError) {
+                    if (failure != null) {
+                        failure.addSuppressed(cleanupError);
+                    } else {
+                        log.warn("Failed to clean up staging media file {}", staging, cleanupError);
+                    }
+                }
+            }
+        }
+    }
+
+    private static Path materializedMediaDirectory() throws IOException {
+        Path directory = materializedMediaDirectory;
+        if (directory == null) {
+            synchronized (MediaUtils.class) {
+                directory = materializedMediaDirectory;
+                if (directory == null) {
+                    directory = Files.createTempDirectory("agentscope_media_");
+                    materializedMediaDirectory = directory;
+                }
+            }
+        }
+        return directory;
+    }
+
+    private static Object[] createMaterializationLocks() {
+        Object[] locks = new Object[64];
+        Arrays.setAll(locks, ignored -> new Object());
+        return locks;
+    }
+
+    private static Object materializationLock(Path target) {
+        return MATERIALIZATION_LOCKS[
+                Math.floorMod(target.hashCode(), MATERIALIZATION_LOCKS.length)];
+    }
+
+    private static String sha256(byte[] data) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    private static String safeMediaExtension(String mediaType) {
+        String subtype = mediaType;
+        int slash = subtype.lastIndexOf('/');
+        if (slash >= 0) {
+            subtype = subtype.substring(slash + 1);
+        }
+        int parameters = subtype.indexOf(';');
+        if (parameters >= 0) {
+            subtype = subtype.substring(0, parameters);
+        }
+        String normalized =
+                subtype.toLowerCase(Locale.ROOT)
+                        .replaceAll("[^a-z0-9]+", "_")
+                        .replaceAll("^_+|_+$", "");
+        return normalized.isEmpty() || normalized.length() > 32 ? "bin" : normalized;
+    }
+
+    private static void validateMaterializedFile(Path target, byte[] expected) throws IOException {
+        if (!Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
+            throw invalidMaterializedFile(target);
+        }
+        try (InputStream input =
+                new BufferedInputStream(
+                        Files.newInputStream(
+                                target, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS))) {
+            byte[] buffer = new byte[8192];
+            int offset = 0;
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (offset + read > expected.length) {
+                    throw invalidMaterializedFile(target);
+                }
+                for (int i = 0; i < read; i++) {
+                    if (buffer[i] != expected[offset + i]) {
+                        throw invalidMaterializedFile(target);
+                    }
+                }
+                offset += read;
+            }
+            if (offset != expected.length) {
+                throw invalidMaterializedFile(target);
+            }
+        }
+    }
+
+    private static IOException invalidMaterializedFile(Path target) {
+        log.warn(
+                "Rejected invalid materialized media file at {}. Remove it when no readers depend"
+                        + " on it, or restart the process; the file will not be overwritten.",
+                target);
+        return new IOException("Existing materialized media file is invalid");
+    }
+
+    private static void publishStagingFile(
+            Path staging, Path target, byte[] expected, boolean preferAtomicMove)
+            throws IOException {
+        try {
+            if (preferAtomicMove) {
+                Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE);
+            } else {
+                Files.move(staging, target);
+            }
+        } catch (AtomicMoveNotSupportedException e) {
+            try {
+                Files.move(staging, target);
+            } catch (FileAlreadyExistsException concurrentWriter) {
+                // The common validation below also covers a concurrently published target.
+            }
+        } catch (FileAlreadyExistsException concurrentWriter) {
+            // The common validation below also covers a concurrently published target.
+        }
+        validateMaterializedFile(target, expected);
     }
 
     /**
