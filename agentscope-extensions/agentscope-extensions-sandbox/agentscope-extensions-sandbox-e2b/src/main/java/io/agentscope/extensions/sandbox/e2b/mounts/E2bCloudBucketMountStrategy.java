@@ -17,7 +17,13 @@ package io.agentscope.extensions.sandbox.e2b.mounts;
 
 /**
  * Placeholder for E2B cloud bucket mount configuration.
+ *
+ * @deprecated Superseded by {@link io.agentscope.extensions.sandbox.e2b.E2bVolumeMount}
+ *     attach-at-create mounts. Kept for one transition release so downstream consumers
+ *     referencing this type keep compiling; it carries no behavior and will be removed
+ *     afterwards.
  */
+@Deprecated
 public interface E2bCloudBucketMountStrategy {
     // intentionally empty — extend when wiring E2B volume mounts from Harness workspace specs
 }

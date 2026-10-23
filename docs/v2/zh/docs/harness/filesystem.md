@@ -205,6 +205,25 @@ HarnessAgent agent = HarnessAgent.builder()
     ...)
 ```
 
+E2B volumes（private beta）提供独立于沙箱生命周期的持久存储。用 `volumeMount(name, path)`
+在沙箱创建时挂载已存在的 volume——`name` 是已存在的 volume 名，`path` 是沙箱内绝对挂载路径。
+挂载以 `volumeMounts: [{name, path}]` 随 `POST /sandboxes` 发送，沙箱重建（connect 失败回退或
+原生快照恢复）时会自动重新挂载。平台 400 错误（无 beta 权限、volume 名不存在）会连同响应体抛出。
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .templateId("my-template")
+    .volumeMount("my-data", "/mnt/data")   // 已存在的 volume
+    .workspaceRoot("/mnt/data/ws")          // 工作区落在该 volume 上
+    .isolationScope(IsolationScope.SESSION))
+```
+
+当 `workspaceRoot` 落在 volume 挂载点上时，TAR 工作区持久化自动跳过（数据已在 volume 里持久化），
+销毁时也不再 `rm -rf`；原生快照仍然执行，用于保留软件环境（安装的依赖、系统状态）。E2B volume
+可读写、可同时被多个沙箱挂载且无锁保证——workspace-on-volume 布局请按单写者使用。Volume 的
+生命周期管理（创建/删除/查看）仍在 E2B 控制台/SDK 里完成——这里只覆盖创建时挂载。
+
 #### Daytona 沙箱
 
 ```java
@@ -496,6 +515,8 @@ workspace/
 | 本机 | `OverlayFilesystem`：写落 workspace（上层），读先 workspace 后 project（下层）。开启 `projectWritable(true)` 后，非元数据写入路由到项目目录 |
 | 共享存储 | `CompositeFilesystem`：命中路由的路径走 KV overlay（远端上层 + 本地模板下层），其余走本地 |
 | 沙箱 | 所有文件操作转发到沙箱容器内 |
+
+`edit_file` 的 `oldString` 不能为空，`newString` 不能为 `null`；要删除匹配文本，请将 `newString` 设为空字符串 `""`。替换前会把 CRLF 和单独的 CR 行尾统一为 LF，所有文件系统模式下的匹配与写回语义一致，写回内容使用 LF 行尾。
 
 ### Shell 执行（execute）
 
