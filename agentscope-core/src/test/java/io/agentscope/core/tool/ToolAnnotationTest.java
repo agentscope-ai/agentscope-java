@@ -146,39 +146,9 @@ class ToolAnnotationTest {
                 registeredTools <= methods.length, "Should not register more tools than methods");
     }
 
-    @SuppressWarnings("unchecked")
     @Test
-    @DisplayName("Should include additionalProperties=false in schema when set")
-    void testAdditionalPropertiesFalseInSchema() {
-        toolkit.registerTool(
-                new Object() {
-                    @Tool(
-                            name = "query_data",
-                            description = "Query data",
-                            additionalProperties = false)
-                    public String queryData(
-                            @ToolParam(name = "keyword", description = "keyword") String keyword) {
-                        return "result";
-                    }
-                });
-
-        Map<String, Object> schema = toolkit.getToolSchemas().get(0).getParameters();
-
-        assertTrue(
-                schema.containsKey("additionalProperties"),
-                "Schema should contain additionalProperties key");
-        assertEquals(
-                false, schema.get("additionalProperties"), "additionalProperties should be false");
-
-        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
-        assertFalse(
-                properties.containsKey("additionalProperties"),
-                "additionalProperties should NOT be inside properties map");
-    }
-
-    @Test
-    @DisplayName("Should not include additionalProperties when default (true)")
-    void testAdditionalPropertiesDefaultNotInSchema() {
+    @DisplayName("Should not include additionalProperties when strict not set")
+    void testAdditionalPropertiesAbsentByDefault() {
         toolkit.registerTool(
                 new Object() {
                     @Tool(name = "query_data", description = "Query data")
@@ -196,14 +166,11 @@ class ToolAnnotationTest {
     }
 
     @Test
-    @DisplayName("Should reject hallucinated params when additionalProperties=false")
+    @DisplayName("Should reject hallucinated params when strict=true")
     void testRejectHallucinatedParamsWhenStrict() {
         toolkit.registerTool(
                 new Object() {
-                    @Tool(
-                            name = "query_data",
-                            description = "Query data",
-                            additionalProperties = false)
+                    @Tool(name = "query_data", description = "Query data", strict = true)
                     public String queryData(
                             @ToolParam(name = "keyword", description = "keyword") String keyword) {
                         return "result";
@@ -217,8 +184,7 @@ class ToolAnnotationTest {
 
         assertNotNull(
                 validationError,
-                "ToolValidator should reject hallucinated params when "
-                        + "additionalProperties=false");
+                "ToolValidator should reject hallucinated params when strict=true");
         assertTrue(
                 validationError.contains("owners"),
                 "Error message should mention the hallucinated param");
@@ -248,10 +214,8 @@ class ToolAnnotationTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    @DisplayName(
-            "strict=true should inject additionalProperties=false even when additionalProperties"
-                    + " defaults to true")
-    void testStrictOverridesAdditionalProperties() {
+    @DisplayName("strict=true should inject additionalProperties=false into the schema")
+    void testStrictInjectsAdditionalPropertiesFalse() {
         toolkit.registerTool(
                 new Object() {
                     @Tool(name = "strict_tool", description = "Strict tool", strict = true)
@@ -270,5 +234,10 @@ class ToolAnnotationTest {
                 false,
                 schema.get("additionalProperties"),
                 "strict=true should force additionalProperties=false");
+
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+        assertFalse(
+                properties.containsKey("additionalProperties"),
+                "additionalProperties should NOT be inside properties map");
     }
 }

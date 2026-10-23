@@ -89,10 +89,15 @@ public @interface Tool {
     /**
      * Whether to enable strict schema mode for this tool.
      *
-     * <p>When enabled, compatible model providers can enforce stronger adherence to the declared
-     * JSON schema for tool arguments. This also automatically injects
-     * {@code additionalProperties: false} into all object types in the generated schema, as
-     * required by OpenAI's strict mode (otherwise the request is rejected with 400 Bad Request).
+     * <p>When enabled, the framework recursively injects {@code additionalProperties: false}
+     * into all object types in the generated schema, so that tool-argument validation rejects
+     * parameters not declared in the schema on any model provider, and the schema satisfies
+     * OpenAI's strict mode (which rejects schemas without it with 400 Bad Request). Compatible
+     * model providers additionally enforce stronger adherence to the declared JSON schema for
+     * tool arguments.
+     *
+     * <p>For finer-grained, per-node control of the {@code additionalProperties} keyword, provide
+     * a hand-written schema via {@link SchemaOnlyTool} or a custom {@link AgentTool} instead.
      *
      * @return true to enable strict mode for this tool
      */
@@ -236,22 +241,4 @@ public @interface Tool {
      * @see DefaultToolResultConverter
      */
     Class<? extends ToolResultConverter> converter() default DefaultToolResultConverter.class;
-
-    /**
-     * Whether to allow additional properties beyond those defined in the schema.
-     *
-     * <p>Corresponds to the {@code additionalProperties} keyword in JSON Schema. When set to
-     * {@code false}, any extra parameters passed by the LLM that are not defined in the schema will
-     * cause a validation error, preventing the LLM from hallucinating undefined parameters.
-     *
-     * <p>This setting is applied recursively to all nested objects within the generated schema.
-     *
-     * <p>Note: when {@link #strict()} is enabled, this setting is overridden to {@code false}
-     * because OpenAI strict mode requires all object types to have
-     * {@code additionalProperties: false}.
-     *
-     * @return {@code true} to allow additional properties (default, backward compatible), {@code
-     *     false} to disallow
-     */
-    boolean additionalProperties() default true;
 }

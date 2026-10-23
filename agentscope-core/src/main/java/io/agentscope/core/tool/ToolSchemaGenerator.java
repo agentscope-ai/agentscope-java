@@ -36,6 +36,10 @@ class ToolSchemaGenerator {
     /**
      * Generate parameter schema with additionalProperties control.
      *
+     * <p>Internal implementation detail backing {@link Tool#strict()}: when additional
+     * properties are disallowed, {@code additionalProperties: false} is injected
+     * recursively into all object-typed nodes.
+     *
      * @param method the method to generate schema for
      * @param excludeParams set of parameter names to exclude (may be null or empty)
      * @param allowAdditionalProperties whether to allow additional properties in the schema

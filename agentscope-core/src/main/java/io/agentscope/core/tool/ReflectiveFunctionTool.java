@@ -128,14 +128,14 @@ final class ReflectiveFunctionTool extends ToolBase {
                             + "set stateInjected=true to enable state injection.");
         }
 
-        // strict=true requires additionalProperties=false on all object types
-        // (OpenAI rejects with 400 otherwise)
-        boolean allowAdditional = annotation.additionalProperties() && !annotation.strict();
+        // strict=true is the single switch: it recursively injects
+        // additionalProperties=false into the schema (satisfying OpenAI strict mode
+        // and enabling local rejection of undeclared parameters on any provider)
         Map<String, Object> schema =
                 schemaGenerator.generateParameterSchema(
                         method,
                         presetParamNames == null ? Set.of() : presetParamNames,
-                        allowAdditional);
+                        !annotation.strict());
 
         ToolBase.Builder builder =
                 ToolBase.builder()
