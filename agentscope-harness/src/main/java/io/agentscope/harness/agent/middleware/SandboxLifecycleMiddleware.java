@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
+import io.agentscope.harness.agent.sandbox.LazySandboxBinding;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
@@ -29,6 +30,9 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Middleware that manages the sandbox session lifecycle around each agent call.
+ *
+ * <p>With lazy initialization enabled, acquisition and startup below run on the first
+ * sandbox filesystem access. Calls without such access have no sandbox to release.
  *
  * <h2>Pre-{@code next.apply}</h2>
  * <ol>
@@ -91,9 +95,9 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Acquires the sandbox for the current call. Called from
-     * {@code ReActAgent.beforeAgentExecution()} to ensure the sandbox is available
-     * for both the {@code call()} and {@code streamEvents()} paths.
+     * Prepares sandbox access for the current call. Called by HarnessAgent for both
+     * {@code call()} and {@code streamEvents()}. With lazy initialization enabled, this only
+     * installs a per-call binding; acquisition and the pre-start callback run on first access.
      *
      * @param ctx the per-call RuntimeContext (must not be null)
      */
@@ -105,6 +109,17 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         if (sandboxContext == null) {
             return;
         }
+        if (sandboxContext.isLazyInitialization()) {
+            ctx.put(
+                    LazySandboxBinding.class,
+                    new LazySandboxBinding(() -> acquireSandbox(ctx, sandboxContext)));
+        } else {
+            ctx.put(LazySandboxBinding.class, null);
+            acquireSandbox(ctx, sandboxContext);
+        }
+    }
+
+    private SandboxAcquireResult acquireSandbox(RuntimeContext ctx, SandboxContext sandboxContext) {
         try {
             Consumer<RuntimeContext> cb = beforeStartCallback;
             if (cb != null) {
@@ -133,6 +148,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
                 log.debug(
                         "[sandbox-mw] Acquired sandbox {}",
                         sandbox.getState() != null ? sandbox.getState().getSessionId() : "?");
+                return result;
             } catch (Exception e) {
                 ctx.put(SandboxAcquireResult.class, null);
                 filesystemProxy.clearSandboxIfCurrent(sandbox);
@@ -154,8 +170,8 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Releases the sandbox after the current call. Called from
-     * {@code ReActAgent.afterAgentExecution()} to ensure cleanup for both paths.
+     * Releases the sandbox after the current call, including cancellation. An unused lazy
+     * binding is closed without acquiring a sandbox or touching its persisted state.
      *
      * @param ctx the per-call RuntimeContext (captured at acquire time)
      */
@@ -165,7 +181,9 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         }
         // Read back the binding this same call established in acquireForCall, so a call only ever
         // tears down its own sandbox — never a concurrent session's (issue #2490).
-        SandboxAcquireResult result = ctx.get(SandboxAcquireResult.class);
+        LazySandboxBinding lazy = ctx.get(LazySandboxBinding.class);
+        SandboxAcquireResult result =
+                lazy != null ? lazy.release() : ctx.get(SandboxAcquireResult.class);
         if (result == null) {
             return;
         }
