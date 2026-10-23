@@ -44,6 +44,12 @@ en_link: /v2/en/docs/harness/architecture
 | MCP 集成与工具白名单 | 声明式 MCP server + 工具粒度允许 / 拒绝 | `workspace/tools.json` | [工作区](/v2/zh/docs/harness/workspace) |
 | Channel 路由 | 会话管理、per-session 并发控制、多 agent 路由、流式事件 | `agent.channel(...)` / `GatewayBootstrap` | [Channel](/v2/zh/docs/harness/channel) |
 
+## 内置网页读取结果
+
+`web_fetch` 返回 HTTP 状态码和正文预览。`max_chars` 按 Unicode 码点计数，默认最多返回 20,000 个，上限为 100,000；未指定或非正数时使用默认值。截断后的预览以 `...[truncated]` 结尾，不会切断 Unicode 代理对。
+
+非 2xx 响应保留 `ERROR` 工具结果状态。错误正文最多返回有效 `max_chars` 与 2,000 中较小的码点数，并带有 `response body (untrusted):` 前缀；正文为空时只返回状态码。该标签用于标识服务器提供的内容，不会清洗内容。这些限制约束发送给模型的预览长度，不限制 HTTP 客户端接收正文时的缓冲量。
+
 ## 状态怎么流转
 
 状态分三层，框架自动在层之间搬数据。
