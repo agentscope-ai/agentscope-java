@@ -17,6 +17,8 @@ package io.agentscope.core.embedding.ollama;
 
 import io.agentscope.core.embedding.EmbeddingException;
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
+import io.agentscope.core.embedding.EmbeddingUsage;
 import io.agentscope.core.embedding.EmbeddingUtils;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
@@ -25,6 +27,8 @@ import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.extensions.model.ollama.OllamaHttpClient;
 import io.agentscope.extensions.model.ollama.dto.OllamaEmbeddingRequest;
 import io.agentscope.extensions.model.ollama.dto.OllamaEmbeddingResponse;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,7 +85,7 @@ public class OllamaTextEmbedding implements EmbeddingModel {
     }
 
     @Override
-    public Mono<double[]> embed(ContentBlock block) {
+    public Mono<EmbeddingResponse> embed(ContentBlock block) {
         if (block == null) {
             return Mono.error(
                     new EmbeddingException("ContentBlock cannot be null", modelName, "ollama"));
@@ -103,10 +107,11 @@ public class OllamaTextEmbedding implements EmbeddingModel {
                             "TextBlock text cannot be null or empty", modelName, "ollama"));
         }
 
-        Mono<double[]> embeddingMono =
+        Mono<EmbeddingResponse> embeddingMono =
                 Mono.fromCallable(
                                 () -> {
                                     try {
+                                        Instant startTime = Instant.now();
                                         log.debug(
                                                 "Ollama embedding call: model={},"
                                                         + " text_length={}",
@@ -160,7 +165,8 @@ public class OllamaTextEmbedding implements EmbeddingModel {
                                                     embeddingArray.length);
                                         }
 
-                                        return embeddingArray;
+                                        EmbeddingUsage usage = extractUsage(response, startTime);
+                                        return new EmbeddingResponse(embeddingArray, usage);
                                     } catch (EmbeddingException e) {
                                         throw e;
                                     } catch (Exception e) {
@@ -196,6 +202,31 @@ public class OllamaTextEmbedding implements EmbeddingModel {
         // Apply timeout and retry
         return EmbeddingUtils.applyTimeoutAndRetry(
                 embeddingMono, defaultExecutionConfig, modelName, "ollama", log);
+    }
+
+    /**
+     * Extracts token usage from the Ollama embedding response.
+     *
+     * <p>Ollama reports the evaluated prompt token count in {@code prompt_eval_count};
+     * since embedding requests consume input tokens only, the same value is used for
+     * both fields.
+     *
+     * @param response the response from the Ollama API
+     * @param startTime the request start time for elapsed time calculation
+     * @return usage information, or null when the provider does not report usage
+     */
+    private static EmbeddingUsage extractUsage(
+            OllamaEmbeddingResponse response, Instant startTime) {
+        if (response == null || response.getPromptEvalCount() == null) {
+            return null;
+        }
+        int tokens = response.getPromptEvalCount();
+        double elapsedSeconds = Duration.between(startTime, Instant.now()).toMillis() / 1000.0;
+        return EmbeddingUsage.builder()
+                .inputTokens(tokens)
+                .totalTokens(tokens)
+                .time(elapsedSeconds)
+                .build();
     }
 
     @Override

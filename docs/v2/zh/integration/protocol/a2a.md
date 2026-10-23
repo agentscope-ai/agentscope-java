@@ -46,6 +46,51 @@ A2aAgent remote = A2aAgent.builder()
 Msg result = remote.call(new UserMessage("Translate to English: 你好")).block();
 ```
 
+### 流式获取回复
+
+`streamEvents` 按事件流式返回一次调用：远端流式返回的文本和思考分别是 `TextBlockDeltaEvent`、`ThinkingBlockDeltaEvent`，最后的 `AgentResultEvent` 带着和 `call()` 相同的结果消息。工具调用和工具结果只在结果消息里。
+
+```java
+remote.streamEvents(new UserMessage("Translate to English: 你好"))
+    .doOnNext(event -> {
+        if (event instanceof TextBlockDeltaEvent delta) {
+            System.out.print(delta.getDelta());
+        }
+    })
+    .blockLast();
+```
+
+### 会话
+
+每个会话由 `RuntimeContext` 的用户 id 和会话 id 确定，各自在 `AgentState` 里保存历史，同一会话的调用按顺序执行；不带会话 id 的调用共用以 Agent 名字命名的默认会话。`interrupt(RuntimeContext)` 取消该会话正在进行的远端任务。
+
+```java
+RuntimeContext context = RuntimeContext.builder().userId("alice").sessionId("chat-1").build();
+Msg reply = remote.call(List.of(new UserMessage("Translate to English: 你好")), context).block();
+List<Msg> history = remote.getAgentState(context).getContext();
+```
+
+### Middleware
+
+`A2aAgent` 在两个位置执行 `MiddlewareBase`：`onAgent` 包住整次调用，`onReasoning` 包住和远端 Agent 的交互。`onReasoning` 的输入消息就是发给远端的消息，事件是远端流式返回的文本和思考。其他扩展点不适用于远端 Agent。
+
+```java
+A2aAgent remote = A2aAgent.builder()
+    .name("remote")
+    .agentCardResolver(resolver)
+    .middleware(new MiddlewareBase() {
+        @Override
+        public Flux<AgentEvent> onAgent(
+                Agent agent, RuntimeContext ctx, AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
+            long start = System.currentTimeMillis();
+            return next.apply(input).doFinally(signal ->
+                    log.info("remote call took {} ms", System.currentTimeMillis() - start));
+        }
+    })
+    .build();
+```
+
 ### 用 well-known 自动获取 AgentCard
 
 ```java

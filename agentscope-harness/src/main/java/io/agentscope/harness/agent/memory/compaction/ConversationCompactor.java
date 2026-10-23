@@ -21,6 +21,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.SessionLogException;
@@ -500,8 +501,8 @@ public class ConversationCompactor {
     /**
      * Formats a list of messages as a human-readable text block for the summarization LLM.
      *
-     * <p>Renders TEXT blocks verbatim; TOOL_USE and TOOL_RESULT blocks as concise inline
-     * representations so the summarizer understands what actions were taken.
+     * <p>Tool calls retain their names and argument previews; tool results retain their names,
+     * error state, and head+tail previews. Omitted content is marked explicitly.
      */
     static String formatMessagesForSummary(List<Msg> messages) {
         return messages.stream()
@@ -510,6 +511,8 @@ public class ConversationCompactor {
                 .filter(s -> !s.isBlank())
                 .collect(Collectors.joining("\n\n"));
     }
+
+    private static final int SUMMARY_PREVIEW_CHARS = 600;
 
     private static String renderMessageForSummary(Msg msg) {
         String roleLabel =
@@ -528,18 +531,40 @@ public class ConversationCompactor {
             if (block instanceof TextBlock tb && tb.getText() != null && !tb.getText().isBlank()) {
                 sb.append(tb.getText().strip());
             } else if (block instanceof ToolUseBlock tu) {
-                sb.append("[tool_call: ").append(tu.getName()).append("]");
+                sb.append("[tool_call: ")
+                        .append(tu.getName())
+                        .append(" ")
+                        .append(renderToolArgsForSummary(tu))
+                        .append("]");
             } else if (block instanceof ToolResultBlock tr) {
-                String text = extractToolResultText(tr);
-                sb.append("[tool_result: ")
-                        .append(tr.getName() != null ? tr.getName() : "?")
-                        .append("] ");
-                if (!text.isBlank()) {
-                    sb.append(text.length() > 500 ? text.substring(0, 500) + "..." : text);
+                sb.append("[tool_result: ").append(tr.getName() != null ? tr.getName() : "?");
+                if (tr.getState() == ToolResultState.ERROR) {
+                    sb.append(" (error)");
                 }
+                sb.append("] ");
+                sb.append(buildPrunePreview(extractToolResultText(tr), SUMMARY_PREVIEW_CHARS));
             }
         }
         return sb.toString().strip();
+    }
+
+    /** Keep every argument name and short value; abbreviate large values individually. */
+    private static String renderToolArgsForSummary(ToolUseBlock toolUse) {
+        String json = JsonUtils.resolveToolCallArgsJson(toolUse);
+        if (json.length() <= SUMMARY_PREVIEW_CHARS) {
+            return json;
+        }
+        var codec = JsonUtils.getJsonCodec();
+        Map<?, ?> args = codec.fromJson(json, Map.class);
+        return args.entrySet().stream()
+                .map(
+                        entry ->
+                                codec.toJson(entry.getKey())
+                                        + ":"
+                                        + buildPrunePreview(
+                                                codec.toJson(entry.getValue()),
+                                                SUMMARY_PREVIEW_CHARS))
+                .collect(Collectors.joining(",", "{", "}"));
     }
 
     private static String extractToolResultText(ToolResultBlock tr) {
@@ -561,24 +586,29 @@ public class ConversationCompactor {
      * <p>When a native session is active, include its logical history lookup. Otherwise use a
      * summary without claiming that a durable full history exists.
      *
+     * <p>Both variants carry the same continuation preamble: the summary is established
+     * background, and the model continues from it directly — no recap, no fresh greeting, no
+     * mention of the summarization step itself.
+     *
      * <p>The message name is set to {@link #SUMMARY_MSG_NAME} so hooks can identify generated
      * summaries, and the stable content-based ID keeps repeated summaries identifiable.
      */
     private static Msg buildSummaryMessage(String summary, String historyReference) {
-        String content;
-        if (historyReference != null) {
-            content =
-                    "You are in the middle of a conversation that has been summarized.\n\n"
-                            + "Retrieve earlier conversation details with "
-                            + historyReference
-                            + ".\n\n"
-                            + "A condensed summary follows:\n\n"
-                            + "<summary>\n"
-                            + summary
-                            + "\n</summary>";
-        } else {
-            content = "Here is a summary of the conversation to date:\n\n" + summary;
-        }
+        String historyHint =
+                historyReference == null
+                        ? ""
+                        : "Earlier conversation details are retrievable with "
+                                + historyReference
+                                + ".\n\n";
+        String content =
+                "You are continuing a conversation that has been summarized.\n\n"
+                        + historyHint
+                        + "A condensed summary of the conversation so far follows. Treat it as "
+                        + "established background: continue the work directly — do not recap the "
+                        + "summary, do not greet the user anew, and do not mention the "
+                        + "summarization.\n\n<summary>\n"
+                        + summary
+                        + "\n</summary>";
         return Msg.builder()
                 .id(buildSummaryMessageId(content))
                 .role(MsgRole.USER)

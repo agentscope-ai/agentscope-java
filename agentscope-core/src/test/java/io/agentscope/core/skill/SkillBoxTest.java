@@ -190,14 +190,9 @@ class SkillBoxTest {
         void testSuccessfullyRegisterWhenOnlyMcpClientProvided() {
             McpClientWrapper mcpClient = mock(McpClientWrapper.class);
             McpSchema.Tool mockToolInfo =
-                    new McpSchema.Tool(
-                            "mcp_only_tool",
-                            null,
-                            "MCP only tool",
-                            new McpSchema.JsonSchema("object", null, null, null, null, null),
-                            null,
-                            null,
-                            null);
+                    McpSchema.Tool.builder("mcp_only_tool", Map.of("type", "object"))
+                            .description("MCP only tool")
+                            .build();
             when(mcpClient.listTools()).thenReturn(Mono.just(List.of(mockToolInfo)));
             when(mcpClient.isInitialized()).thenReturn(true);
             when(mcpClient.initialize()).thenReturn(Mono.empty());

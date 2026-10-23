@@ -90,10 +90,14 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
 
-        <!-- Model Context Protocol (MCP) SDK -->
+        <!-- Model Context Protocol (MCP) SDK: core + Jackson 2 binding -->
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>
-            <artifactId>mcp</artifactId>
+            <artifactId>mcp-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-json-jackson2</artifactId>
         </dependency>
 
         <!-- OkHttp for HTTP client -->

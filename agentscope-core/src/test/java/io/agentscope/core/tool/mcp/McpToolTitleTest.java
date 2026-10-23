@@ -39,6 +39,8 @@ class McpToolTitleTest {
     private McpClientWrapper clientWrapper;
     private Map<String, Object> parameters;
 
+    private static final Map<String, Object> INPUT_SCHEMA = Map.of("type", "object");
+
     @BeforeEach
     void setUp() {
         clientWrapper = McpClientWrapperTestSupport.mockWrapper("test-client", true);
@@ -48,17 +50,16 @@ class McpToolTitleTest {
     }
 
     private static McpSchema.Tool toolWith(String title, String annotationTitle) {
-        return new McpSchema.Tool(
-                "create_ticket",
-                title,
-                "Creates a repair ticket",
-                null,
-                null,
-                annotationTitle == null
-                        ? null
-                        : new McpSchema.ToolAnnotations(
-                                annotationTitle, null, null, null, null, null),
-                null);
+        McpSchema.Tool.Builder builder =
+                McpSchema.Tool.builder("create_ticket", INPUT_SCHEMA)
+                        .description("Creates a repair ticket");
+        if (title != null) {
+            builder.title(title);
+        }
+        if (annotationTitle != null) {
+            builder.annotations(McpSchema.ToolAnnotations.builder().title(annotationTitle).build());
+        }
+        return builder.build();
     }
 
     @Test
@@ -78,7 +79,7 @@ class McpToolTitleTest {
     @Test
     void resolveDisplayTitle_skipsBlankTitles() {
         McpSchema.Tool blank =
-                new McpSchema.Tool("create_ticket", "   ", "desc", null, null, null, null);
+                McpSchema.Tool.builder("create_ticket", INPUT_SCHEMA).description("desc").build();
         assertNull(McpTool.resolveDisplayTitle(blank), "a blank title is no title");
 
         assertNull(
@@ -89,7 +90,7 @@ class McpToolTitleTest {
     @Test
     void resolveDisplayTitle_absentAnnotationsYieldsNull() {
         McpSchema.Tool tool =
-                new McpSchema.Tool("create_ticket", null, "desc", null, null, null, null);
+                McpSchema.Tool.builder("create_ticket", INPUT_SCHEMA).description("desc").build();
 
         assertNull(McpTool.resolveDisplayTitle(tool));
     }
