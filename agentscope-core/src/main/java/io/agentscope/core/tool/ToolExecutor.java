@@ -27,6 +27,7 @@ import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -243,9 +244,12 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
-        // Validate input against schema
+        // Validate input against schema. Resolve the effective arguments the same way the
+        // invocation path does (raw content when valid, otherwise the parsed input map), so
+        // input-only tool calls are not rejected with a misleading NPE-derived error.
         String validationError =
-                ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
+                ToolValidator.validateInput(
+                        JsonUtils.resolveToolCallArgsJson(toolCall), tool.getParameters());
         if (validationError != null) {
             String errorMsg =
                     String.format(
