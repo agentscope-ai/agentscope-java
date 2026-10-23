@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -1240,6 +1241,94 @@ class ReActAgentHitlTest {
                         .orElse("");
         assertTrue(
                 error.startsWith("Error: Parameter validation failed for tool 'ask_scope'"), error);
+    }
+
+    @Test
+    void schemaErrorIsPersistedWhenActingStreamIsCanceledBeforeToolBatch() {
+        CountingAskTool invalidTool = new CountingAskTool();
+        AllowingTool allow = new AllowingTool("allow");
+        ToolUseBlock invalid =
+                ToolUseBlock.builder()
+                        .id("bad")
+                        .name("ask_scope")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+        ToolUseBlock valid =
+                ToolUseBlock.builder().id("good").name("allow").input(Map.of("query", "x")).build();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse(List.of(invalid, valid)))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(invalidTool, allow))
+                        .middlewares(List.of(new CancelAfterFirstActingEvent()))
+                        .build();
+
+        assertDoesNotThrow(() -> agent.call(List.of()).block(Duration.ofSeconds(8)));
+
+        assertEquals(1, toolResultIds(agent).stream().filter("bad"::equals).count());
+    }
+
+    @Test
+    void schemaErrorIsPersistedWhenActingStreamFailsBeforeToolBatch() {
+        CountingAskTool invalidTool = new CountingAskTool();
+        AllowingTool allow = new AllowingTool("allow");
+        ToolUseBlock invalid =
+                ToolUseBlock.builder()
+                        .id("bad")
+                        .name("ask_scope")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+        ToolUseBlock valid =
+                ToolUseBlock.builder().id("good").name("allow").input(Map.of("query", "x")).build();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse(List.of(invalid, valid)))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(invalidTool, allow))
+                        .middlewares(List.of(new FailBeforeToolBatch()))
+                        .build();
+
+        assertThrows(Exception.class, () -> agent.call(List.of()).block(Duration.ofSeconds(8)));
+
+        assertEquals(1, toolResultIds(agent).stream().filter("bad"::equals).count());
+    }
+
+    private static final class CancelAfterFirstActingEvent implements MiddlewareBase {
+        @Override
+        public Flux<AgentEvent> onActing(
+                io.agentscope.core.agent.Agent agent,
+                io.agentscope.core.agent.RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
+            return next.apply(input).take(1);
+        }
+    }
+
+    private static final class FailBeforeToolBatch implements MiddlewareBase {
+        @Override
+        public Flux<AgentEvent> onActing(
+                io.agentscope.core.agent.Agent agent,
+                io.agentscope.core.agent.RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
+            return next.apply(input)
+                    .concatMap(
+                            event -> {
+                                if (event instanceof ToolResultStartEvent start
+                                        && "bad".equals(start.getToolCallId())) {
+                                    return Flux.error(new IllegalStateException("acting failed"));
+                                }
+                                return Flux.just(event);
+                            });
+        }
     }
 
     /**

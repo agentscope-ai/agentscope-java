@@ -32,6 +32,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Method;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -1056,5 +1057,15 @@ class ToolValidatorTest {
                         .input(Map.of())
                         .build();
         assertEquals("{}", ToolValidator.resolveArgsForValidation(blank));
+    }
+
+    @Test
+    @DisplayName("resolveArgsForValidation fails closed when input cannot be serialized")
+    void resolveArgsFailsClosedWhenInputCannotBeSerialized() {
+        Map<String, Object> cyclic = new HashMap<>();
+        cyclic.put("self", cyclic);
+        ToolUseBlock call = ToolUseBlock.builder().id("t").name("ask_scope").input(cyclic).build();
+
+        assertNull(ToolValidator.resolveArgsForValidation(call));
     }
 }
