@@ -293,6 +293,9 @@ func (s *Server) projectNativeServiceEvents(ctx context.Context, ep *model.Endpo
 }
 
 func (s *Server) nativeConfirmationAllowed(ctx context.Context, ep *model.Endpoint, inv *model.EndpointInvocation, owner, principal string, request map[string]any) bool {
+	if s.localDev {
+		return true
+	}
 	if !strings.HasPrefix(principal, "platform-user:") {
 		return false
 	}

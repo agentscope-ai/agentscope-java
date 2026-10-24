@@ -6,7 +6,7 @@ en_link: /v2/en/service/session-event-log
 
 Session 保存应用与执行目标之间的一段工作记录，Turn 表示其中一次提交的任务。Agent、Team 和 Workflow 都通过同一套 Session API 接收工作；Managed Agent 在这个入口上进一步提供连续对话、运行中补充输入、上下文恢复和子 Agent 等能力。关闭页面或断开事件连接不会取消后台任务。
 
-首次接入请先完成[通过 Session API 接入应用](/v2/zh/service/service-api)，取得 `SESSION_URL`、`TURN_ID` 和应用凭据 `AGENTSCOPE_API_KEY`。提交任务后，用户可能需要调整要求、回答 Agent 的询问，或者停止并恢复执行，本页说明这些操作如何作用于已有的 Session 和 Turn。请求也可以使用有权访问该 Session 的平台用户 Bearer token；应用凭据必须同时具有相应 scope 和目标资源授权。
+首次接入请先完成[通过 Session API 接入应用](/v2/zh/service/service-api)，取得 `SESSION_URL`、`TURN_ID` 。提交任务后，用户可能需要调整要求、回答 Agent 的询问，或者停止并恢复执行，本页说明这些操作如何作用于已有的 Session 和 Turn。本页使用本地免鉴权模式；生产身份和授权见[生产指南](/v2/zh/service/kubernetes#production-api-access)。
 
 ## 理解 Session 与 Turn 的关系
 
@@ -19,9 +19,6 @@ Managed 会话可通过 `PATCH` 调整运行资源绑定。先完成一次 Turn 
 ```bash
 ENVIRONMENT_ID="YOUR_ENVIRONMENT_ID"
 curl -sS --fail-with-body -X PATCH "$SESSION_URL" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
   -H "Content-Type: application/json" \
   --data-binary @- <<JSON
 {
@@ -41,8 +38,7 @@ JSON
 应用可以通过 `GET /turns/{turnId}` 查询任务状态，也可以读取 Session 的 `/snapshot` 恢复界面，再从快照返回的 `as_of` 连接 `/events/stream`。如果只显示某个任务，则成对使用这个 Turn 的 `/snapshot` 和 `/events/stream`，不能混用 Session 与 Turn 的游标。
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
 ```
 
 <Accordion title="列出 Session 与历史任务">
@@ -51,20 +47,17 @@ Session 列表默认仅返回 active 会话；`status=all` 包括归档记录。
 
 ```bash
 curl -sS --fail-with-body -G "$BASE_URL/api/v1/agent-sessions" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --data-urlencode "status=all" \
   --data-urlencode "limit=20" \
   --data-urlencode "offset=0"
 ```
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL"
 ```
 
 ```bash
 curl -sS --fail-with-body -G "$SESSION_URL/turns" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --data-urlencode "limit=20" \
   --data-urlencode "offset=0"
 ```
@@ -80,13 +73,11 @@ Managed Session 的快照保留消息、工具调用、输入、待办和子 Age
 调用前查看当前 Turn 允许的命令；不要仅根据 Agent 类型显示操作按钮：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities"
 ```
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/steer" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: correction-001" \
   --data-binary @- <<'JSON'
@@ -102,7 +93,6 @@ Managed 输入可以使用非空 `message`，也可以使用包含用户消息�
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/inputs/inject" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: context-001" \
   --data-binary @- <<'JSON'
@@ -117,8 +107,7 @@ JSON
 Agent 需要用户确认或等待外部执行结果时，会生成 required action。应用应保存快照或事件中的 `request_id`，向用户说明所请求的操作，再将真实决定提交到对应 Turn。下面是一条工具确认答复，`request_id` 必须使用实际收到的值：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions"
 ```
 
 从返回的待办中选取实际 `request_id`，并核对它要求的答复类型。工具允许/拒绝答复如下；拒绝时将 `allow` 改为 `false` 并说明原因。
@@ -127,9 +116,6 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
 REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
 COMMAND_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: approval-001" \
     --data-binary @- <<JSON
@@ -145,13 +131,10 @@ JSON
 COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 ```
 
-接口返回命令回执和状态地址。应用继续查询回执，直到命令执行完毕，同时等待任务状态变化；提交答复成功不代表整个任务已经完成。相同答复重试时沿用原来的 key，修改答复时先重新读取待办。`interact` scope 只允许调用交互接口，不会把应用密钥变成指定的人工审批人；涉及身份约束的业务审批仍需使用被授权的用户身份。
+接口返回命令回执和状态地址。应用继续查询回执，直到命令执行完毕，同时等待任务状态变化；提交答复成功不代表整个任务已经完成。相同答复重试时沿用原来的 key，修改答复时先重新读取待办。本地模式使用开发身份答复；生产调用与审批身份配置见[生产部署](/v2/zh/service/kubernetes#production-api-access)。
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID"
 ```
 
 <Accordion title="外部工具结果与指定人员的审批">
@@ -160,9 +143,6 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID" \
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: tool-result-001" \
   --data-binary @- <<JSON
@@ -176,15 +156,12 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
 JSON
 ```
 
-业务审批必须使用待办中的最新版本号，并由指定审批人的 `TOKEN` 提交。将 `EXPECTED_VERSION` 替换为实际数字；拒绝时使用 `decision: "rejected"`。
+业务审批必须使用待办中的最新版本号。将 `EXPECTED_VERSION` 替换为实际数字；拒绝时使用 `decision: "rejected"`。
 
 ```bash
 REQUEST_ID="BUSINESS_APPROVAL_REQUEST_ID"
 EXPECTED_VERSION=1
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: business-approval-001" \
   --data-binary @- <<JSON
@@ -205,7 +182,6 @@ JSON
 ```bash
 CANCEL_JSON=$(
   curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/cancel" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Idempotency-Key: cancel-001"
 )
 CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
@@ -216,7 +192,6 @@ CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
 ```bash
 RESUME_JSON=$(
   curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/resume" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Idempotency-Key: resume-001"
 )
 RESUME_COMMAND_ID=$(jq -er '.command.id' <<< "$RESUME_JSON")
@@ -225,13 +200,11 @@ RESUME_COMMAND_ID=$(jq -er '.command.id' <<< "$RESUME_JSON")
 取消或恢复后查询对应命令，再读取 Turn 状态。例如，检查上面的取消命令：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$CANCEL_COMMAND_ID" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$CANCEL_COMMAND_ID"
 ```
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
 ```
 
 <span id="budgets"></span>
@@ -246,13 +219,11 @@ Managed Session 的 `/subagents` 可以列出它派生的子会话。应用只�
 
 ```bash
 curl -sS --fail-with-body -G "$SESSION_URL/usage" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --data-urlencode "include_children=true"
 ```
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/usage" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/usage"
 ```
 
 <Accordion title="查看子 Agent 的进度">
@@ -260,23 +231,20 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/usage" \
 先读取关联列表，从返回的关联中选择子会话 ID。下面的快照和 SSE 都属于该子会话：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/subagents" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/subagents"
 ```
 
 ```bash
 CHILD_SESSION_ID="CHILD_SESSION_ID_FROM_RESPONSE"
 CHILD_URL="$SESSION_URL/subagents/$CHILD_SESSION_ID"
 CHILD_SNAPSHOT=$(
-  curl -sS --fail-with-body "$CHILD_URL/snapshot" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY"
+  curl -sS --fail-with-body "$CHILD_URL/snapshot"
 )
 CHILD_CURSOR=$(jq -er '.as_of' <<< "$CHILD_SNAPSHOT")
 ```
 
 ```bash
 curl -sS --fail-with-body -N -G "$CHILD_URL/events/stream" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Accept: text/event-stream" \
   --data-urlencode "after=$CHILD_CURSOR"
 ```
@@ -287,7 +255,6 @@ curl -sS --fail-with-body -N -G "$CHILD_URL/events/stream" \
 
 ```bash
 curl -sS --fail-with-body -X PUT "$SESSION_URL/budget" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Content-Type: application/json" \
   --data-binary @- <<'JSON'
 {
@@ -302,8 +269,7 @@ Token 与费用预算依据已报告用量检查，无法硬截断已经开始�
 读取当前 Managed 会话的预算和已报告用量：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/budget" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/budget"
 ```
 
 ## 从 checkpoint 继续试验
@@ -312,7 +278,6 @@ Managed Session 的 `/checkpoints` 返回可恢复的上下文记录。选择实
 
 ```bash
 curl -sS --fail-with-body -G "$SESSION_URL/checkpoints" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --data-urlencode "limit=20"
 ```
 
@@ -321,7 +286,6 @@ curl -sS --fail-with-body -G "$SESSION_URL/checkpoints" \
 ```bash
 CHECKPOINT_ID="CHECKPOINT_ID_FROM_RESPONSE"
 curl -sS --fail-with-body "$SESSION_URL/checkpoints/restore" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: restore-context-001" \
   --data-binary @- <<JSON
@@ -339,7 +303,6 @@ JSON
 ```bash
 TARGET_SESSION_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: fork-target-001" \
     --data-binary @- <<JSON
@@ -356,7 +319,6 @@ TARGET_SESSION_ID=$(jq -er '.id' <<< "$TARGET_SESSION_JSON")
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/fork" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: fork-context-001" \
   --data-binary @- <<JSON
@@ -381,22 +343,19 @@ Session 的 `/archive` 暂停新的提交，`/restore` 解除归档；它们与 
 归档：
 
 ```bash
-curl -sS --fail-with-body -X POST "$SESSION_URL/archive" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body -X POST "$SESSION_URL/archive"
 ```
 
 解除归档：
 
 ```bash
-curl -sS --fail-with-body -X POST "$SESSION_URL/restore" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body -X POST "$SESSION_URL/restore"
 ```
 
 删除：
 
 ```bash
-curl -sS --fail-with-body -X DELETE "$SESSION_URL" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body -X DELETE "$SESSION_URL"
 ```
 
 </Accordion>
@@ -407,7 +366,6 @@ curl -sS --fail-with-body -X DELETE "$SESSION_URL" \
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/export" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --output session-events.jsonl
 ```
 

@@ -5,25 +5,35 @@ zh_link: /v2/zh/service/vault
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This page uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 A Vault stores credentials an Agent uses to access external tools. Save the credentials, then include the Vault ID in the Agent's `defaultVaultIds` or select it through `vaultIds` when creating a Session. At runtime, credentials from the attached Vaults are resolved for matching MCP connections. Creating a Vault or saving a secret does not itself authenticate an Agent.
 
 The Agent definition declares connection addresses and tools, while Vaults hold authentication material. This lets different Sessions using the same Agent use different authorizations. Tool credentials authenticate access to external systems; the platform `TOKEN` or Application key authenticates an application calling Service. Public resource APIs return credential metadata after creation, without returning the secret again.
 
-Use the platform identity variables from the [API identity setup](/v2/en/service/create-managed-agent#api-setup). Before verification, configure a Managed Agent's MCP connection using the [tool guide](/v2/en/service/tools) and retain `AGENT_ID`. This page uses the connection name `reports` and variable `REPORTS_TOKEN`; adapt both names and the service URL to your actual connection.
+Use the local URL and default scope variables from the [API identity setup](/v2/en/service/create-managed-agent#api-setup). Before verification, configure a Managed Agent's MCP connection using the [tool guide](/v2/en/service/tools) and retain `AGENT_ID`. This page uses the connection name `reports` and variable `REPORTS_TOKEN`; adapt both names and the service URL to your actual connection.
 
 ## Create a Vault and add a credential
 
 Create a Vault for the report-service credentials and retain the returned `VAULT_ID`. Credentials added next belong to this collection. Session creation attaches the Vault ID, while rotating an individual credential uses that credential's own ID.
 
 ```bash
-VAULT_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/vaults" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"displayName":"Reports credentials","metadata":{"purpose":"reports"}}')
-VAULT_ID=$(printf '%s' "$VAULT_JSON" | jq -er '.id')
+set -euo pipefail
+
+VAULT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/vaults" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<'JSON'
+{
+  "displayName": "Report service credentials",
+  "metadata": {
+    "purpose": "reports"
+  }
+}
+JSON
+)
+VAULT_ID=$(jq -er '.id' <<< "$VAULT_JSON")
 ```
 
 Prepare `credential.json` readable only by your user, replacing the placeholder with a token issued by the external service. Do not commit the real file:
@@ -38,10 +48,14 @@ Prepare `credential.json` readable only by your user, replacing the placeholder 
 ```
 
 ```bash
-curl --fail-with-body -sS "$BASE_URL/api/vaults/$VAULT_ID/credentials" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data-binary @credential.json
+chmod 600 credential.json
+
+CREDENTIAL_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/vaults/$VAULT_ID/credentials" \
+    -H "Content-Type: application/json" \
+    --data-binary @credential.json
+)
+CREDENTIAL_ID=$(jq -er '.id' <<< "$CREDENTIAL_JSON")
 ```
 
 Retain the credential `id` for updates, checks, and deletion. Rotate by PATCHing that credential's `secret`; the request does not issue a new token in the external system.
@@ -85,14 +99,25 @@ Add the fields to a connection in the Agent's `mcpServers` and select the matchi
 After the Agent has the matching MCP configuration, create a Session with this Vault attached. The request explicitly supplies `vaultIds`, affecting this Session without changing the Agent defaults. If the Agent already sets `defaultVaultIds`, omit the field to inherit that collection. An explicit `[]` attaches none of the default Vaults.
 
 ```bash
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --arg agent "$AGENT_ID" --arg vault "$VAULT_ID" \
-    '{target:{type:"agent",id:$agent},vaultIds:[$vault]}')")
-SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: vault-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "agent",
+    "id": "$AGENT_ID"
+  },
+  "vaultIds": [
+    "$VAULT_ID"
+  ]
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
 SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
-printf '%s' "$SESSION_JSON" | jq '{id, target, vaultIds}'
+printf '%s\n' "$SESSION_JSON" | jq '{id, target, vaultIds}'
 ```
 
 The returned `vaultIds` should contain the created Vault ID. This confirms resource selection, but you still need to [submit a Turn](/v2/en/service/service-api#submit-a-turn) requesting a real read-only MCP call to verify authentication. Follow [tool verification](/v2/en/service/tools#verify-that-the-binding-takes-effect) to inspect calls, returned data, and Session errors. If the external system rejects access, check the connection name or URL, credential type, Header placeholders, and actual authorization scope.
@@ -114,6 +139,56 @@ Use Vault OAuth connection APIs when a user needs to authorize access on the pro
 
 Open the returned `authorizationUrl` in a browser and complete provider authorization. After callback success, the initiating user must call complete to save the credential; creating a connection alone does not authorize it. The flow checks its browser-bound cookie and initiator identity, so it is not an unattended token import. GitHub connections use `provider:"github"` and require administrator integration settings; see [Integrations](/v2/en/service/api-reference#integrations).
 
+<Accordion title="Complete OAuth authorization through the API">
+
+OAuth requires a configured public callback origin and the actual callbackUrl registered with the provider. This example uses a public client with PKCE. Replace example domains and CLIENT_ID and use the provider’s required scope. For client_secret_basic or client_secret_post, send clientSecret in a protected JSON file instead of copying this public-client configuration.
+
+Click Connect on the Vault OAuth connection in Console, then authorize with the provider in that browser. The `/authorize` response sets an HttpOnly cookie. Starting with curl and copying its URL into a browser loses that cookie and makes the callback fail. A custom frontend must also start authorization in the browser and retain the returned flowId before querying or completing it.
+
+```bash
+FLOW_ID="FLOW_ID_FROM_BROWSER_AUTHORIZE_RESPONSE"
+```
+
+Click Connect on the Vault OAuth connection in Console, then authorize with the provider in that browser. The `/authorize` response sets an HttpOnly cookie. Starting with curl and copying its URL into a browser loses that cookie and makes the callback fail. A custom frontend must also start authorization in the browser and retain the returned flowId before querying or completing it.
+
+```bash
+FLOW_ID="FLOW_ID_FROM_BROWSER_AUTHORIZE_RESPONSE"
+```
+
+Use the same user TOKEN that initiated authorization. Query and complete only after the callback succeeds. Console normally completes this step automatically; a custom frontend can use the interfaces below.
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/vaults/$VAULT_ID/oauth-connections/$CONNECTION_ID/flows/$FLOW_ID"
+```
+
+```bash
+CONNECTED_OAUTH=$(
+  curl -sS --fail-with-body -X POST "$BASE_URL/api/vaults/$VAULT_ID/oauth-connections/$CONNECTION_ID/flows/$FLOW_ID/complete"
+)
+CREDENTIAL_ID=$(jq -er '.credentialId' <<< "$CONNECTED_OAUTH")
+```
+
+Cancel an abandoned pending flow; disconnect an already connected account. These are alternatives to completing authorization.
+
+<Tabs>
+<Tab title="Cancel">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/vaults/$VAULT_ID/oauth-connections/$CONNECTION_ID/flows/$FLOW_ID/cancel"
+```
+
+</Tab>
+<Tab title="Disconnect">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/vaults/$VAULT_ID/oauth-connections/$CONNECTION_ID/disconnect"
+```
+
+</Tab>
+</Tabs>
+
+</Accordion>
+
 ## Validate and rotate
 
 `validate` checks local decryption and attempts a bounded reachability probe for HTTP(S) targets; it does not send the secret to verify provider permissions. `ok:true` does not establish external authorization. Inspect the checks and perform an actual tool call. Confirm the replacement token externally, then PATCH that credential's `secret`. A Session retains the Vault ID, and later runtime resolution reads the available credentials; it does not freeze the creation-time secret into the Agent definition. Verify rotation with a new read-only call. Requests already sent to external systems are not recalled by rotation. Inspect consumers before deletion to avoid interrupting several Agents.
@@ -134,7 +209,7 @@ Create collections and maintain credentials under **Resources → Vault**, then 
 
 ## Management APIs
 
-Use a platform user Bearer token with `X-AgentScope-Tenant` and `X-AgentScope-Namespace`; prepare variables as in the [API identity setup](/v2/en/service/create-managed-agent#api-setup). Reads require inspect, mutations require edit, and creation requires namespace resource creation rights. Listings are filtered to inspectable resources; Agent binding also checks dependency access.
+Local examples use the default scope without authentication headers. See [production deployment](/v2/en/service/kubernetes#production-api-access) for production grants.
 
 | Operation | API | Parameters and response |
 | --- | --- | --- |
@@ -147,3 +222,97 @@ Use a platform user Bearer token with `X-AgentScope-Tenant` and `X-AgentScope-Na
 | Check a credential | `POST /api/vaults/{id}/credentials/{credentialId}/validate` | Returns `ok`, `checks`, `checkedAt` |
 
 Vault listings support `limit` (1–500), `offset` (requires limit), and `X-Total-Count`. Vault and static credential PATCH currently have no version condition; inspect current metadata before updating and avoid concurrent overwrites. Credential responses contain `id`, `type`, `label`, `target`, and `createdAt`.
+
+<span id="curl-management"></span>
+
+## Query and maintain credentials
+
+Use the platform identity and scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup). Use resource IDs returned by creation or lookup.
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/vaults/$VAULT_ID/credentials"
+```
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/vaults/$VAULT_ID/credentials/$CREDENTIAL_ID/validate"
+```
+
+<Accordion title="Update or delete a credential">
+
+Write the new secret to local `credential-update.json`, for example `{"secret":"YOUR_NEW_SECRET"}`. Create a valid replacement at the external service before updating and validating. Deletion is a separate operation that removes the stored credential.
+
+```bash
+chmod 600 credential-update.json
+
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/vaults/$VAULT_ID/credentials/$CREDENTIAL_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @credential-update.json
+```
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/vaults/$VAULT_ID/credentials/$CREDENTIAL_ID"
+```
+
+</Accordion>
+
+
+<Accordion title="Maintain OAuth connection configuration">
+
+OAuth connection lists do not return the client secret. Prepare oauth-update.json with complete provider settings before updating a connection. Supply a new clientSecret when replacing it, rather than a masked value. Configuration changes invalidate pending flows.
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/vaults/$VAULT_ID/oauth-connections"
+```
+
+```bash
+chmod 600 oauth-update.json
+
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/vaults/$VAULT_ID/oauth-connections/$CONNECTION_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @oauth-update.json
+```
+
+</Accordion>
+
+<Accordion title="Maintain the Vault name and lifecycle">
+
+Check Agent and Session consumers first. Renaming does not rotate credentials; archive and deletion are separate maintenance operations.
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/vaults" \
+  --data-urlencode "limit=25" \
+  --data-urlencode "offset=0"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/vaults/$VAULT_ID"
+```
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/vaults/$VAULT_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "displayName": "Report credentials updated"
+}
+JSON
+```
+
+<Tabs>
+<Tab title="Archive">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/vaults/$VAULT_ID/archive"
+```
+
+</Tab>
+<Tab title="Delete">
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/vaults/$VAULT_ID"
+```
+
+</Tab>
+</Tabs>
+
+</Accordion>

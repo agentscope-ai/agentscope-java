@@ -12,47 +12,19 @@ Create a HarnessAgent-based Managed Agent with curl. It will organize meeting no
 
 ## Prepare
 
-Complete the [Docker Compose quickstart](/v2/en/service/quickstart), configure model credentials, and enable `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`. The commands require Bash, curl, and jq. Run them in order in one Bash terminal.
+Complete the [local Docker Compose quickstart](/v2/en/service/quickstart) and configure model credentials. The commands require Bash or zsh, curl, and jq. Run them in order in one terminal.
 
 <span id="api-setup"></span>
 
-Set your Service address, platform user token, and authorized namespace. For an existing team deployment, use the configuration supplied by your administrator.
+Local development needs no sign-in, user token, or application key and uses the default namespace. Set your Service URL and default scope variables. See [production deployment](/v2/en/service/kubernetes#production-api-access) for production identity setup.
 
 ```bash
 set -euo pipefail
 export BASE_URL="http://localhost:18080"
-export TOKEN="YOUR_USER_TOKEN"
-export TENANT="YOUR_TENANT"
-export NAMESPACE="YOUR_NAMESPACE"
+export TENANT="default"
+export NAMESPACE="default"
 ```
 
-<Accordion title="Need a user token? Sign in and list namespaces">
-
-Enter your platform username and password. On a new deployment, use `admin` and the password from `.env`, or the password you changed in Profile.
-
-```bash
-read -r -p "Username: " LOGIN_USER
-read -r -s -p "Password: " LOGIN_PASSWORD
-printf '\n'
-
-LOGIN_JSON=$(
-  jq -n --arg username "$LOGIN_USER" --arg password "$LOGIN_PASSWORD" \
-    '{username: $username, password: $password}' \
-  | curl -sS --fail-with-body "$BASE_URL/api/auth/login" \
-      -H "Content-Type: application/json" \
-      --data-binary @-
-)
-unset LOGIN_PASSWORD
-TOKEN=$(jq -er '.token' <<< "$LOGIN_JSON")
-
-curl -sS --fail-with-body "$BASE_URL/api/v1/me/namespaces" \
-  -H "Authorization: Bearer $TOKEN" \
-  | jq '.items[] | {tenant, name}'
-```
-
-Choose a namespace from the response and use its `tenant` and `name` for `TENANT` and `NAMESPACE` above. The user token manages resources; see [application integration](/v2/en/service/service-api) for application credentials.
-
-</Accordion>
 
 <span id="prepare-execution-resources"></span>
 
@@ -65,9 +37,6 @@ Create a Local Environment so file tools run inside the Dataplane container. If 
 ```bash
 ENVIRONMENT_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/environments" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     --data-binary @- <<'JSON'
 {
@@ -91,9 +60,6 @@ Create a notes assistant using the deployment’s default model and only the fil
 ```bash
 AGENT_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     --data-binary @- <<JSON
 {
@@ -135,9 +101,6 @@ Create a Session referencing the Agent to retain messages and execution history.
 ```bash
 SESSION_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     --data-binary @- <<JSON
 {
@@ -160,7 +123,6 @@ Send a message to the session to create a Turn.
 ```bash
 TURN_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/turns" \
-    -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: notes-check-001" \
     --data-binary @- <<'JSON'
@@ -185,8 +147,7 @@ Read the snapshot to inspect existing messages, tool results, and task status:
 
 ```bash
 SNAPSHOT=$(
-  curl -sS --fail-with-body "$SESSION_URL/snapshot" \
-    -H "Authorization: Bearer $TOKEN"
+  curl -sS --fail-with-body "$SESSION_URL/snapshot"
 )
 jq '{items, tools, turns, required_actions}' <<< "$SNAPSHOT"
 CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
@@ -196,7 +157,6 @@ If work is still running, receive SSE events after the snapshot’s `as_of` curs
 
 ```bash
 curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "Authorization: Bearer $TOKEN" \
   --data-urlencode "after=$CURSOR"
 ```
 
@@ -204,11 +164,9 @@ After receiving `turn.completed` for your `TURN_ID`, press Ctrl-C to stop the st
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  -H "Authorization: Bearer $TOKEN" \
   | jq '{id, status, error}'
 
 curl -sS --fail-with-body "$SESSION_URL/snapshot" \
-  -H "Authorization: Bearer $TOKEN" \
   | jq '{items, tools, required_actions}'
 ```
 

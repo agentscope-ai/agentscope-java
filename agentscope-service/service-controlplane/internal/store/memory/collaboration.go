@@ -1913,7 +1913,7 @@ func (r *collaborationRepo) ListApprovals(ctx context.Context, filter store.Appr
 	return page(out, filter.Offset, filter.Limit), nil
 }
 
-func (r *collaborationRepo) DecideApproval(_ context.Context, id uuid.UUID, expectedVersion int64, status controlmodel.ApprovalStatus, actor controlmodel.Actor, decision json.RawMessage) (*controlmodel.Approval, error) {
+func (r *collaborationRepo) DecideApproval(ctx context.Context, id uuid.UUID, expectedVersion int64, status controlmodel.ApprovalStatus, actor controlmodel.Actor, decision json.RawMessage) (*controlmodel.Approval, error) {
 	if status != controlmodel.ApprovalApproved && status != controlmodel.ApprovalRejected && status != controlmodel.ApprovalCancelled {
 		return nil, store.ErrConflict
 	}
@@ -1923,7 +1923,7 @@ func (r *collaborationRepo) DecideApproval(_ context.Context, id uuid.UUID, expe
 	if approval == nil {
 		return nil, store.ErrNotFound
 	}
-	actorAllowed := actor.Type == controlmodel.ActorHuman && actor.Ref == approval.ApproverRef ||
+	actorAllowed := store.WorkAccessFrom(ctx).LocalDev || actor.Type == controlmodel.ActorHuman && actor.Ref == approval.ApproverRef ||
 		status == controlmodel.ApprovalCancelled && actor.Type == controlmodel.ActorSystem
 	if approval.Status != controlmodel.ApprovalPending || expectedVersion > 0 && approval.Version != expectedVersion || !actorAllowed {
 		return nil, store.ErrConflict

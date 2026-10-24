@@ -4,7 +4,7 @@ zh_link: /v2/zh/service/workflows
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This page uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 Use a Workflow when the business prescribes steps such as drafting, approval, and delivery. Publish a revision, create a Session targeting that Workflow, and submit Turns. Use a [Team](/v2/en/service/create-team) when a Leader should choose steps dynamically. Both share the application invocation path.
@@ -15,31 +15,62 @@ Use a verified Managed Agent as a process node; call a Team when a step needs co
 
 ## Create and validate the process
 
-The examples use Bash, `curl`, and `jq`. Set `SERVICE_URL` to your Service address, `TOKEN` to a user Bearer token, and `TENANT` / `NAMESPACE` to your authorized scope; see [API authentication](/v2/en/service/api-reference). Define this request helper:
+The examples use Bash, `curl`, and `jq`. Set `BASE_URL` to your Service address, and `TENANT` / `NAMESPACE` to the default scope; see [API authentication](/v2/en/service/api-reference). Run the following steps in the same Bash terminal:
 
 ```bash
-api() {
-  curl --fail-with-body --silent --show-error \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H 'Content-Type: application/json' "$@"
-}
+set -euo pipefail
 ```
 
 Set `AGENT_ID` to a task-capable Agent and `APPROVER_ID` to the reviewer's account identifier. This process drafts a report, then waits for approval:
 
 ```bash
-defined=$(api "$SERVICE_URL/api/v1/orchestration-definitions" --data "$(jq -n \
-  --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
-  --arg agent "$AGENT_ID" --arg approver "$APPROVER_ID" \
-  '{tenant:$tenant,namespace:$namespace,name:"Report review workflow",
-    draftSpec:{nodes:[
-      {key:"draft",type:"agent",agentId:$agent,input:{request:"run.input.request"}},
-      {key:"review",type:"approval",approval:{approverType:"human",approverRef:$approver,prompt:"Review the report and evidence"}}
-    ],edges:[{from:"draft",to:"review",on:["succeeded"]}]}}')")
-WORKFLOW_ID=$(jq -r '.definition.id' <<<"$defined")
-api "$SERVICE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/validate" --data '{}'
+WORKFLOW_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-definitions" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE",
+  "name": "Report review workflow",
+  "draftSpec": {
+    "nodes": [
+      {
+        "key": "draft",
+        "type": "agent",
+        "agentId": "$AGENT_ID",
+        "input": {
+          "request": "run.input.request"
+        }
+      },
+      {
+        "key": "review",
+        "type": "approval",
+        "approval": {
+          "approverType": "human",
+          "approverRef": "$APPROVER_ID",
+          "prompt": "Review the report and evidence"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "draft",
+        "to": "review",
+        "on": [
+          "succeeded"
+        ]
+      }
+    ]
+  }
+}
+JSON
+)
+WORKFLOW_ID=$(jq -er '.definition.id' <<< "$WORKFLOW_JSON")
+WORKFLOW_VERSION=$(jq -er '.definition.version' <<< "$WORKFLOW_JSON")
+```
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/validate"
 ```
 
 Each node `key` is unique. Edges connect an upstream state to downstream work. `input` maps field names to CEL expressions; here it passes the request's `request` field to the draft node. Expressions can read `run`, `issue`, `trigger`, and predecessor `nodes`, rather than execute arbitrary scripts. Validation checks types, references, expressions, and cycles; verify target availability separately.
@@ -49,18 +80,51 @@ Each node `key` is unique. Edges connect an upstream state to downstream work. `
 Publish the validated definition and save the revision ID. To edit later, call `PATCH /api/v1/orchestration-definitions/{definitionId}` with `draftSpec` and `expectedVersion`, then publish again.
 
 ```bash
-published=$(api "$SERVICE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/publish" \
-  --data "$(jq -n --argjson version "$(jq '.definition.version' <<<"$defined")" \
-  '{expectedVersion:$version}')")
-REVISION_ID=$(jq -r '.revision.id' <<<"$published")
-session=$(api "$SERVICE_URL/api/v1/agent-sessions" --data "$(jq -n \
-  --arg workflow "$WORKFLOW_ID" --arg revision "$REVISION_ID" \
-  '{target:{type:"workflow",id:$workflow,revisionId:$revision}}')")
-SESSION_ID=$(jq -er '.id' <<<"$session")
-turn=$(api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns" \
-  -H 'Idempotency-Key: weekly-report-001' \
-  --data '{"input":{"request":"Produce this week’s report with sources"}}')
-TURN_ID=$(jq -er '.id' <<<"$turn")
+PUBLISHED_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/publish" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "expectedVersion": $WORKFLOW_VERSION
+}
+JSON
+)
+REVISION_ID=$(jq -er '.revision.id' <<< "$PUBLISHED_JSON")
+```
+
+```bash
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: workflow-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "workflow",
+    "id": "$WORKFLOW_ID",
+    "revisionId": "$REVISION_ID"
+  }
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+```
+
+```bash
+TURN_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: weekly-report-001" \
+    --data-binary @- <<'JSON'
+{
+  "input": {
+    "request": "Produce this week’s report with sources"
+  }
+}
+JSON
+)
+TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
 ```
 
 Save the Session and Turn IDs for observation, actions, and cancellation. Service creates the workflow execution and work records. Retry unchanged work with the same idempotency key.
@@ -68,8 +132,11 @@ Save the Session and Turn IDs for observation, actions, and cancellation. Servic
 ## Follow nodes, output, and approval
 
 ```bash
-api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns/$TURN_ID"
-api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/snapshot"
+curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions/$SESSION_ID/turns/$TURN_ID"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions/$SESSION_ID/snapshot"
 ```
 
 Turn detail returns the task status, result, and error. The Session snapshot restores the application view; follow [SSE replay](/v2/en/service/sse-events) for live updates. Open the associated Run graph in Console when diagnosing individual workflow nodes.
@@ -77,6 +144,43 @@ Turn detail returns the task status, result, and error. The Session snapshot res
 The review node appears in the Turn’s required_actions. Its designated approver uses their platform token to submit `request_id`, `expected_version`, and `decision` to the Turn’s `/actions`. Approval allows the workflow to continue; an application key cannot replace the designated human identity.
 
 ## Add process capabilities gradually
+
+<Accordion title="Answer the review node approval">
+
+Use the local URL and default scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup).
+
+Answer directly in local mode; see [production deployment](/v2/en/service/kubernetes#production-api-access) for approval identities. Read and review the pending action, select request_id and expected_version for the review node, and submit only after deciding to approve. Use decision:"rejected" to reject.
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions"
+```
+
+```bash
+REQUEST_ID="REVIEW_REQUEST_ID_FROM_ACTIONS"
+EXPECTED_VERSION="VERSION_FROM_ACTIONS"
+```
+
+```bash
+ACTION_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: workflow-review-001" \
+    --data-binary @- <<JSON
+{
+  "request_id": "$REQUEST_ID",
+  "expected_version": $EXPECTED_VERSION,
+  "decision": "approved"
+}
+JSON
+)
+COMMAND_ID=$(jq -er '.command.id' <<< "$ACTION_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID"
+```
+
+</Accordion>
 
 | Node | Purpose and key fields |
 | --- | --- |
@@ -91,9 +195,24 @@ The review node appears in the Turn’s required_actions. Its designated approve
 After adding a signal node waiting for `report.ready`, a business system can send:
 
 ```bash
-api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns/$TURN_ID/inputs" \
-  -H 'Idempotency-Key: report-upload-001' \
-  --data '{"request_id":"RETURNED_SIGNAL_REQUEST_ID","expected_version":1,"payload":{"artifactId":"YOUR_ARTIFACT_ID"}}'
+REQUEST_ID="SIGNAL_REQUEST_ID_FROM_ACTIONS"
+EXPECTED_VERSION="SIGNAL_VERSION_FROM_ACTIONS"
+ARTIFACT_ID="YOUR_ARTIFACT_ID"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/inputs" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: report-upload-001" \
+  --data-binary @- <<JSON
+{
+  "request_id": "$REQUEST_ID",
+  "expected_version": $EXPECTED_VERSION,
+  "payload": {
+    "artifactId": "$ARTIFACT_ID"
+  }
+}
+JSON
 ```
 
 Read the request ID and version from the current required_actions rather than using the placeholders. Signals provide external process input; they do not replace approval. Run small examples and inspect real output before writing downstream mappings. Different runtimes do not necessarily return identical result structures.
@@ -108,3 +227,42 @@ Applications cancel a Turn through `/cancel`, check capabilities before `/resume
 After a terminal state, post `{"idempotencyKey":"weekly-report-retry-001"}` to `/rerun` to create a new Run with lineage. Include `input` to replace the input. Nodes support `timeoutSeconds`, `retry`, and `failurePolicy`, including `fail_fast`, `continue`, and `partial_success`. Retries do not undo existing external side effects.
 
 Create a Session with `target:{"type":"workflow","id":"WORKFLOW_ID","revisionId":"REVISION_ID"}`. Omitting `revisionId` selects the latest published revision at creation. Existing Sessions do not switch automatically. See [Console](/v2/en/service/console/index#console-orchestration) for the designer and run graph.
+
+<span id="curl-management"></span>
+
+## Inspect and update a draft
+
+Use the local URL and default scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup).
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/orchestration-definitions" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
+```
+
+```bash
+WORKFLOW_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID"
+)
+```
+
+The following keeps the nodes and edges and changes only the workflow name. Preserve other settings when editing draftSpec, then validate and publish. A new revision does not change an active Run.
+
+```bash
+jq '.definition | {name,description,draftSpec,expectedVersion:.version}
+  | .name = "Evidence review workflow"' <<< "$WORKFLOW_JSON" > workflow-update.json
+```
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @workflow-update.json
+```
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/validate"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-definitions/$WORKFLOW_ID/revisions"
+```

@@ -92,6 +92,7 @@ spec:
             - secretRef: {name: {{ $secret | quote }}}
           {{- end }}
           env:
+            - {name: BUILDER_LOCAL_DEV, value: "false"}
             - {name: SERVER_PORT, value: {{ $port | quote }}}
             - {name: BUILDER_CONTROL_URL, value: "http://{{ $name }}-control:8081"}
             - {name: BUILDER_DATA_URL, value: "http://{{ $name }}-dataplane:8082"}

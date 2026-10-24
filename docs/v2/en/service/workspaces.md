@@ -5,30 +5,44 @@ zh_link: /v2/zh/service/workspaces
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This page uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 A Workspace maintains instructions, Skills, tool connections, and internal subagent definitions that several Agents can reuse. Prepare the content, publish a revision, and select it through the Agent definition's `workspaceId` and `workspaceBinding.version`. Service resolves that revision into the Agent definition, so subsequently created Sessions can use those capabilities. Creating a Workspace or editing its files alone does not associate it with an Agent.
 
 A Workspace defines how the Agent should work. An [Environment](/v2/en/service/environments) supplies the execution location for file and Shell tools, [Memory](/v2/en/service/memory) supplies shared knowledge that can change, and a [Vault](/v2/en/service/vault) supplies tool credentials. Session inputs and outputs follow the [files and artifacts](/v2/en/service/files) lifecycle; sharing a Workspace does not automatically share those files among Agents.
 
-The following steps add shared report-review capabilities to `AGENT_ID` from [your first Managed Agent](/v2/en/service/create-managed-agent). Retain `BASE_URL`, `TOKEN`, `TENANT`, and `NAMESPACE`, and ensure you can edit the Agent and create and publish a Workspace. A complete API index appears at the end of this page.
+The following steps add shared report-review capabilities to `AGENT_ID` from [your first Managed Agent](/v2/en/service/create-managed-agent). Retain `BASE_URL`, `TENANT`, and `NAMESPACE`, and ensure you can edit the Agent and create and publish a Workspace. A complete API index appears at the end of this page.
 
 ## Create and maintain a draft
 
 First create a reporting Workspace and write the team's shared guidance to `AGENTS.md`. The returned `id` identifies the Workspace for publication and binding. These changes affect its draft and do not replace a published revision.
 
 ```bash
-WORKSPACE_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/workspaces" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"name":"Reporting workspace","description":"Shared reporting guidance"}')
-WORKSPACE_ID=$(printf '%s' "$WORKSPACE_JSON" | jq -er '.id')
+set -euo pipefail
 
-curl --fail-with-body -sS -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/file" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"path":"AGENTS.md","content":"Facts must have sources. Include separate Sources and Open Questions sections."}'
+WORKSPACE_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/workspaces" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<'JSON'
+{
+  "name": "Report workspace",
+  "description": "Shared report conventions"
+}
+JSON
+)
+WORKSPACE_ID=$(jq -er '.id' <<< "$WORKSPACE_JSON")
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/file" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "path": "AGENTS.md",
+  "content": "Facts must be traceable to sources. List sources and open questions separately."
+}
+JSON
 ```
 
 Creation generates an initial `AGENTS.md`, which you can update before adding skills, tools, and subagents. This request omits `tools`, so the platform supplies its default built-in toolset. To share a restricted tool configuration, prepare `tools` and `mcpServers` using the [tool guide](/v2/en/service/tools) and save them through the Workspace's `/tools` endpoint before publication. Referenced directories and task inputs still need to be prepared in the execution environment.
@@ -43,11 +57,16 @@ Creation generates an initial `AGENTS.md`, which you can update before adding sk
 Use the saved `WORKSPACE_ID` to add a report-review Skill and its checklist. This endpoint saves the Skill files and adds `report-review` to the Workspace's `skills` configuration. After publication, Agents inheriting that configuration can use it.
 
 ```bash
-curl --fail-with-body -sS -X PUT \
-  "$BASE_URL/api/workspaces/$WORKSPACE_ID/skills/report-review" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"markdown": "---\nname: report-review\ndescription: Review a report against its supplied evidence.\n---\n\nRead the report and its sources. List unsupported claims, missing dates, and open questions. Never invent sources.\n", "resources": {"checklist.md": "- Every factual claim has a source.\n- Unknown dates remain unconfirmed.\n- Distinguish evidence from suggestions.\n"}}'
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/skills/report-review" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "markdown": "---\nname: report-review\ndescription: Review a report against its supplied evidence.\n---\n\nRead the report and sources. List unsupported claims, missing dates and open questions. Never invent sources.\n",
+  "resources": {
+    "checklist.md": "- Every factual claim has a source.\n- Unknown dates remain unconfirmed.\n- Distinguish evidence from suggestions.\n"
+  }
+}
+JSON
 ```
 
 The Skill name identifies its resource path; frontmatter name and description help the Agent recognize its purpose. Use relative paths for `resources` keys. Scripts and reference files can accompany a Skill, but interpreters, programs, and network permissions must be prepared in the Environment.
@@ -56,9 +75,28 @@ If you upload `skills/report-review/SKILL.md` through the general file API, also
 
 ### Add an internal subagent
 
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/subagents/evidence-reviewer" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "description": "Review supplied evidence for unsupported claims.",
+  "inlineBody": "Read the supplied report and sources. Return unsupported claims and open questions. Do not invent evidence.",
+  "workspaceMode": "isolated",
+  "tools": [
+    "read_file"
+  ]
+}
+JSON
+```
+
 To let the current Agent delegate specialist review to an internal subagent, save its responsibilities and instructions in the Workspace draft through `PUT /api/workspaces/{id}/subagents/{name}`. The request uses `description` and `inlineBody`, with optional model, tool, and working-directory settings. Like a Skill, it enters the selected definition through Workspace publication, Agent binding, and creation of a new Session. Saving the definition does not start a child task.
 
 After delegation occurs, query `GET /api/v1/agent-sessions/{sessionId}/subagents` for child associations, then inspect child snapshots and events. Each child has its own event cursor, so do not reuse the parent's cursor. Confirm completion from the child's execution record and check that its result reaches the parent task. See [budgets](/v2/en/service/session-event-log#budgets) for aggregate usage.
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/subagents"
+```
 
 
 ## Publish and bind an Agent
@@ -66,10 +104,9 @@ After delegation occurs, query `GET /api/v1/agent-sessions/{sessionId}/subagents
 Publish the prepared Workspace draft first. The returned `version` identifies the immutable publication, while `draftVersion` records the source draft. Save the publication as `WORKSPACE_VERSION` so the Agent binding can reference it.
 
 ```bash
-REVISION_JSON=$(curl --fail-with-body -sS -X POST \
-  "$BASE_URL/api/workspaces/$WORKSPACE_ID/publish" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+REVISION_JSON=$(
+  curl -sS --fail-with-body -X POST "$BASE_URL/api/workspaces/$WORKSPACE_ID/publish"
+)
 WORKSPACE_VERSION=$(printf '%s' "$REVISION_JSON" | jq -er '.version')
 printf '%s' "$REVISION_JSON" | jq '{version, draftVersion, digest}'
 ```
@@ -77,9 +114,9 @@ printf '%s' "$REVISION_JSON" | jq '{version, draftVersion, digest}'
 Next, bind that publication to the existing `AGENT_ID`. The request reads and preserves the Agent's other writable fields before setting `workspaceId` and `workspaceBinding`. This example uses an empty `overrides` array, so tools, MCP connections, and Skills come from the Workspace. Existing Agent-specific instructions are preserved in `instructions` and appended to the shared guidance. To keep the Agent's own tool configuration, adjust the overrides as described below before saving.
 
 ```bash
-CURRENT=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+CURRENT=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/definition"
+)
 UPDATED=$(printf '%s' "$CURRENT" | jq --arg workspace "$WORKSPACE_ID" \
   --argjson revision "$WORKSPACE_VERSION" '
   .definition | {
@@ -93,10 +130,11 @@ UPDATED=$(printf '%s' "$CURRENT" | jq --arg workspace "$WORKSPACE_ID" \
       instructions:(if .workspaceBinding != null then
         (.workspaceBinding.instructions // "") else (.system // "") end)
     }')
-SAVED=$(curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$UPDATED")
+SAVED=$(
+  curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+    -H "Content-Type: application/json" \
+    --data-binary "$UPDATED"
+)
 AGENT_VERSION=$(printf '%s' "$SAVED" | jq -er '.definition.version')
 printf '%s' "$SAVED" | jq '.definition | {version, workspaceId, workspaceBinding, skills, tools}'
 ```
@@ -112,12 +150,21 @@ Binding version `0` publishes and selects the current draft, without continuousl
 Create a Session using the returned Agent definition version. The Session request does not need `workspaceId`, because the selected Workspace publication is already part of that definition.
 
 ```bash
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --arg agent "$AGENT_ID" --argjson version "$AGENT_VERSION" \
-    '{target:{type:"agent",id:$agent,version:$version}}')")
-SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: workspace-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "agent",
+    "id": "$AGENT_ID",
+    "version": $AGENT_VERSION
+  }
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
 SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 ```
 
@@ -152,7 +199,7 @@ Inspect consumers before editing and verify changes with new work. Resolve depen
 
 ## APIs and access
 
-Authenticate with a platform user Bearer token and select a scope with `X-AgentScope-Tenant` and `X-AgentScope-Namespace`. Reading, editing, and publishing require the corresponding inspect, edit, and publish resource permissions; creation requires namespace resource creation rights. Set variables as shown in the [API identity setup](/v2/en/service/create-managed-agent#api-setup). Below, `{id}` is the returned Workspace ID; encode URL parameters.
+Local examples need no authentication headers. See [production deployment](/v2/en/service/kubernetes#production-api-access) for identity and grants. `{id}` is the returned resource ID; encode URL parameters.
 
 | Operation | API | Request or response |
 | --- | --- | --- |
@@ -168,3 +215,107 @@ Authenticate with a platform user Bearer token and select a scope with `X-AgentS
 | Consumers | `GET /api/workspaces/{id}/agents` | `{items:[{id,name,version}]}` |
 
 The Workspace resource's `version` tracks the draft. Draft PATCH, file, and capability writes currently have no `expectedVersion` condition; avoid concurrent overwrites. Published revisions are immutable snapshots. Publishing identical content again returns the existing revision. Deleting a Workspace still referenced by Agents returns 409.
+
+<span id="curl-management"></span>
+
+## Inspect drafts, revisions and consumers
+
+Use the platform identity and scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup). Use resource IDs returned by creation or lookup.
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/files"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/workspaces/$WORKSPACE_ID/file" \
+  --data-urlencode "path=AGENTS.md"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/skills"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/subagents"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/revisions"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/agents"
+```
+
+<Accordion title="Update draft tools and remove content">
+
+Read the full tool configuration, then edit `workspace-tools.json` using the [tool guide](/v2/en/service/tools), retaining tools and mcpServers you need. The separate deletion examples change the draft; publish and bind a new revision for new Sessions.
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/tools" \
+  --output workspace-tools.json
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/tools" \
+  -H "Content-Type: application/json" \
+  --data-binary @workspace-tools.json
+```
+
+<Tabs>
+<Tab title="File">
+
+```bash
+curl -sS --fail-with-body -G -X DELETE "$BASE_URL/api/workspaces/$WORKSPACE_ID/file" \
+  --data-urlencode "path=AGENTS.md"
+```
+
+</Tab>
+<Tab title="Skill">
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/workspaces/$WORKSPACE_ID/skills/report-review"
+```
+
+</Tab>
+<Tab title="Subagent">
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/workspaces/$WORKSPACE_ID/subagents/evidence-reviewer"
+```
+
+</Tab>
+</Tabs>
+
+</Accordion>
+
+
+<Accordion title="Maintain the Workspace name or delete the resource">
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/workspaces" \
+  --data-urlencode "limit=25" \
+  --data-urlencode "offset=0"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID"
+```
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/workspaces/$WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "name": "Report workspace updated"
+}
+JSON
+```
+
+Delete the complete Workspace only after checking Agent consumers and migrating them. Deletion does not undo external operations.
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/workspaces/$WORKSPACE_ID"
+```
+
+</Accordion>

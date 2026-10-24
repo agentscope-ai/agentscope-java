@@ -5,30 +5,44 @@ en_link: /v2/en/service/workspaces
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 Workspace 用来维护多个 Agent 可以复用的指令、Skills、工具连接和内部子 Agent 定义。先在 Workspace 中准备这些内容，再发布一个版本，并通过 Agent 定义中的 `workspaceId` 和 `workspaceBinding.version` 选择它。Service 会把选中版本的内容解析到该 Agent 的定义中，后续创建的 Session 才会使用这些能力。仅创建 Workspace 或编辑其中的文件，还没有完成与 Agent 的关联。
 
 Workspace 提供的是“如何工作”的定义。[Environment](/v2/zh/service/environments) 提供实际执行文件和 Shell 工具的位置，[Memory](/v2/zh/service/memory) 提供可更新的共享知识，[Vault](/v2/zh/service/vault) 提供工具认证凭据。Session 的输入和输出文件按[文件与产物](/v2/zh/service/files)管理；它们不会因为使用了同一个 Workspace 就自动成为所有 Agent 的共享文件。
 
-下面沿用[第一个托管 Agent](/v2/zh/service/create-managed-agent)的 `AGENT_ID`，为它增加共享的报告核验能力。继续使用 `BASE_URL`、`TOKEN`、`TENANT` 和 `NAMESPACE`，并确认你可以编辑目标 Agent、创建和发布 Workspace。API 的完整路径索引放在本页末尾。
+下面沿用[第一个托管 Agent](/v2/zh/service/create-managed-agent)的 `AGENT_ID`，为它增加共享的报告核验能力。继续使用 `BASE_URL`、`TENANT` 和 `NAMESPACE`，并确认你可以编辑目标 Agent、创建和发布 Workspace。API 的完整路径索引放在本页末尾。
 
 ## 创建并维护草稿
 
 下面先创建“报告工作区”，再写入团队共同遵循的 `AGENTS.md`。响应中的 `id` 是后面发布和绑定时使用的 Workspace ID。此时维护的是草稿，修改不会直接替换已发布的版本。
 
 ```bash
-WORKSPACE_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/workspaces" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"name":"报告工作区","description":"共享报告约定"}')
-WORKSPACE_ID=$(printf '%s' "$WORKSPACE_JSON" | jq -er '.id')
+set -euo pipefail
 
-curl --fail-with-body -sS -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/file" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"path":"AGENTS.md","content":"事实必须可追溯到来源。输出分别列出来源和待确认事项。"}'
+WORKSPACE_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/workspaces" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<'JSON'
+{
+  "name": "报告工作区",
+  "description": "共享报告约定"
+}
+JSON
+)
+WORKSPACE_ID=$(jq -er '.id' <<< "$WORKSPACE_JSON")
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/file" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "path": "AGENTS.md",
+  "content": "事实必须可追溯到来源。输出分别列出来源和待确认事项。"
+}
+JSON
 ```
 
 创建时会生成初始 `AGENTS.md`，你可以像上面一样更新正文，再添加技能、工具和子 Agent。这个创建请求没有指定 `tools`，平台会使用默认内置工具集；如果希望共享一组受限工具，应在发布前按[工具配置](/v2/zh/service/tools)准备 `tools` 和 `mcpServers`，通过 Workspace 的 `/tools` 接口保存。指令中提到的目录和输入资料仍需在实际执行环境中准备。
@@ -43,11 +57,16 @@ curl --fail-with-body -sS -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/file" \
 使用刚才保存的 `WORKSPACE_ID`，可以把报告核验方法写成一个 Skill，并附上核验清单。下面的接口会保存 Skill 文件，同时把 `report-review` 加入这个 Workspace 的 `skills` 配置。发布后，继承该配置的 Agent 才会把它作为可用技能。
 
 ```bash
-curl --fail-with-body -sS -X PUT \
-  "$BASE_URL/api/workspaces/$WORKSPACE_ID/skills/report-review" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"markdown": "---\nname: report-review\ndescription: Review a report against its supplied evidence.\n---\n\nRead the report and its sources. List unsupported claims, missing dates, and open questions. Never invent sources.\n", "resources": {"checklist.md": "- Every factual claim has a source.\n- Unknown dates remain unconfirmed.\n- Distinguish evidence from suggestions.\n"}}'
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/skills/report-review" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "markdown": "---\nname: report-review\ndescription: Review a report against its supplied evidence.\n---\n\nRead the report and sources. List unsupported claims, missing dates and open questions. Never invent sources.\n",
+  "resources": {
+    "checklist.md": "- Every factual claim has a source.\n- Unknown dates remain unconfirmed.\n- Distinguish evidence from suggestions.\n"
+  }
+}
+JSON
 ```
 
 Skill 名用于资源路径；正文中的 name、description 帮助 Agent 识别用途。`resources` 的 key 使用相对路径。脚本与参考资料可以随 Skill 保存，但所需解释器、程序和网络权限要在 Environment 中准备。
@@ -56,9 +75,28 @@ Skill 名用于资源路径；正文中的 name、description 帮助 Agent 识�
 
 ### 增加内部 Subagent
 
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/subagents/evidence-reviewer" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "description": "Review supplied evidence for unsupported claims.",
+  "inlineBody": "Read the supplied report and sources. Return unsupported claims and open questions. Do not invent evidence.",
+  "workspaceMode": "isolated",
+  "tools": [
+    "read_file"
+  ]
+}
+JSON
+```
+
 如果希望当前 Agent 将专项审阅委派给内部子 Agent，可以通过 `PUT /api/workspaces/{id}/subagents/{name}` 把职责说明和执行指令保存到 Workspace 草稿中。请求使用 `description` 和 `inlineBody`，还可以指定模型、工具和工作目录策略。它和 Skill 一样，需要经过 Workspace 发布、Agent 绑定以及新 Session 的创建，才会进入所选定义；保存成功本身不会启动子任务。
 
 实际发生委派后，可以通过 `GET /api/v1/agent-sessions/{sessionId}/subagents` 查询关联子会话，再读取子会话的快照和事件检查执行结果。子会话有自己的事件游标，不能复用父会话的游标；应根据子会话的执行记录确认任务结束，再核对结果是否回到父任务。用量汇总方式见[预算指南](/v2/zh/service/session-event-log#budgets)。
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/subagents"
+```
 
 
 ## 发布并绑定 Agent
@@ -66,10 +104,9 @@ Skill 名用于资源路径；正文中的 name、description 帮助 Agent 识�
 准备好草稿后，先发布 Workspace。发布返回的 `version` 是不可变的发布版本，`draftVersion` 则记录它来自哪个草稿版本。把发布版本保存为 `WORKSPACE_VERSION`，后面的 Agent 绑定要引用这个值。
 
 ```bash
-REVISION_JSON=$(curl --fail-with-body -sS -X POST \
-  "$BASE_URL/api/workspaces/$WORKSPACE_ID/publish" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+REVISION_JSON=$(
+  curl -sS --fail-with-body -X POST "$BASE_URL/api/workspaces/$WORKSPACE_ID/publish"
+)
 WORKSPACE_VERSION=$(printf '%s' "$REVISION_JSON" | jq -er '.version')
 printf '%s' "$REVISION_JSON" | jq '{version, draftVersion, digest}'
 ```
@@ -77,9 +114,9 @@ printf '%s' "$REVISION_JSON" | jq '{version, draftVersion, digest}'
 接下来将这个发布版本绑定到已有的 `AGENT_ID`。下面的请求先读取并保留 Agent 的其他可写字段，再设置 `workspaceId` 和 `workspaceBinding`。本例将 `overrides` 设为空数组，因此工具、MCP 和 Skills 都继承 Workspace；已有 Agent 的专用指令保存在 `instructions` 中，追加到 Workspace 的共同指令后面。如果需要保留 Agent 自己的工具配置，应在保存前按下一段说明调整覆盖项。
 
 ```bash
-CURRENT=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+CURRENT=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/definition"
+)
 UPDATED=$(printf '%s' "$CURRENT" | jq --arg workspace "$WORKSPACE_ID" \
   --argjson revision "$WORKSPACE_VERSION" '
   .definition | {
@@ -93,10 +130,11 @@ UPDATED=$(printf '%s' "$CURRENT" | jq --arg workspace "$WORKSPACE_ID" \
       instructions:(if .workspaceBinding != null then
         (.workspaceBinding.instructions // "") else (.system // "") end)
     }')
-SAVED=$(curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$UPDATED")
+SAVED=$(
+  curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+    -H "Content-Type: application/json" \
+    --data-binary "$UPDATED"
+)
 AGENT_VERSION=$(printf '%s' "$SAVED" | jq -er '.definition.version')
 printf '%s' "$SAVED" | jq '.definition | {version, workspaceId, workspaceBinding, skills, tools}'
 ```
@@ -112,12 +150,21 @@ printf '%s' "$SAVED" | jq '.definition | {version, workspaceId, workspaceBinding
 完成绑定后，使用返回的 Agent 定义版本创建 Session。Session 请求无需再传 `workspaceId`，因为该 Workspace 的发布内容已经成为所选 Agent 定义的一部分。
 
 ```bash
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --arg agent "$AGENT_ID" --argjson version "$AGENT_VERSION" \
-    '{target:{type:"agent",id:$agent,version:$version}}')")
-SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: workspace-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "agent",
+    "id": "$AGENT_ID",
+    "version": $AGENT_VERSION
+  }
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
 SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 ```
 
@@ -152,7 +199,7 @@ Managed Agent 通过所选 [Environment](/v2/zh/service/environments) 访问输�
 
 ## API 与访问范围
 
-请求使用平台用户 Bearer token，并通过 `X-AgentScope-Tenant`、`X-AgentScope-Namespace` 选择范围。读取、修改和发布分别受资源的 inspect、edit、publish 权限约束；创建还需要空间资源创建权限。配置变量见[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)。下文 `{id}` 为响应返回的 Workspace ID，URL 参数需编码。
+本地示例无需认证请求头。生产权限配置见[生产部署指南](/v2/zh/service/kubernetes#production-api-access)。下文 `{id}` 是创建或查询得到的资源 ID；URL 参数需编码。
 
 | 操作 | API | 请求或响应 |
 | --- | --- | --- |
@@ -168,3 +215,107 @@ Managed Agent 通过所选 [Environment](/v2/zh/service/environments) 访问输�
 | 查看消费者 | `GET /api/workspaces/{id}/agents` | `{items:[{id,name,version}]}` |
 
 Workspace 响应中的 `version` 是草稿版本；当前草稿 PATCH、文件和能力写入没有 `expectedVersion` 条件更新，应避免多个维护者同时覆盖同一配置。发布版本则是不可变快照，同一内容重复发布返回已有 revision。仍被 Agent 引用的 Workspace 删除时返回 409。
+
+<span id="curl-management"></span>
+
+## 检查草稿、发布版本与使用者
+
+以下示例沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的本地地址和默认空间变量。将资源 ID 替换为前面创建或查询得到的值。
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/files"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/workspaces/$WORKSPACE_ID/file" \
+  --data-urlencode "path=AGENTS.md"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/skills"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/subagents"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/revisions"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/agents"
+```
+
+<Accordion title="调整草稿工具与移除内容">
+
+先读取完整工具配置，再按[工具指南](/v2/zh/service/tools)编辑 `workspace-tools.json`，保留需要沿用的 tools 与 mcpServers。后面的删除仅修改草稿；重新发布并绑定新版本后才用于新 Session。
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID/tools" \
+  --output workspace-tools.json
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/workspaces/$WORKSPACE_ID/tools" \
+  -H "Content-Type: application/json" \
+  --data-binary @workspace-tools.json
+```
+
+<Tabs>
+<Tab title="File">
+
+```bash
+curl -sS --fail-with-body -G -X DELETE "$BASE_URL/api/workspaces/$WORKSPACE_ID/file" \
+  --data-urlencode "path=AGENTS.md"
+```
+
+</Tab>
+<Tab title="Skill">
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/workspaces/$WORKSPACE_ID/skills/report-review"
+```
+
+</Tab>
+<Tab title="Subagent">
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/workspaces/$WORKSPACE_ID/subagents/evidence-reviewer"
+```
+
+</Tab>
+</Tabs>
+
+</Accordion>
+
+
+<Accordion title="维护 Workspace 名称或删除资源">
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/workspaces" \
+  --data-urlencode "limit=25" \
+  --data-urlencode "offset=0"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/workspaces/$WORKSPACE_ID"
+```
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/workspaces/$WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "name": "Report workspace updated"
+}
+JSON
+```
+
+只有检查 Agent 使用关系并完成迁移后才删除整个 Workspace。删除不能撤销已执行的外部操作。
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/workspaces/$WORKSPACE_ID"
+```
+
+</Accordion>
