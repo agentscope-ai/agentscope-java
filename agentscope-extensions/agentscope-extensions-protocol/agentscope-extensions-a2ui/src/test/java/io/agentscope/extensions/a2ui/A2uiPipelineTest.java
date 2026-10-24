@@ -17,21 +17,16 @@ package io.agentscope.extensions.a2ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.RequestStopEvent;
-import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -40,7 +35,6 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolSuspendException;
 import io.agentscope.extensions.a2ui.catalog.A2uiCatalog;
 import io.agentscope.extensions.a2ui.envelope.A2uiEnvelopeValidator;
-import io.agentscope.extensions.a2ui.middleware.A2uiRenderStopMiddleware;
 import io.agentscope.extensions.a2ui.tool.A2uiRenderTool;
 import io.agentscope.extensions.a2ui.tool.A2uiTreeRenderTool;
 import io.agentscope.extensions.a2ui.tool.AskUserQuestionTool;
@@ -124,10 +118,6 @@ class A2uiPipelineTest {
     private static Map<String, Object> comp(
             String id, String component, Map<String, Object> props) {
         return Map.of("id", id, "component", component, "props", props);
-    }
-
-    private static ToolUseBlock toolCall(String id, String name) {
-        return ToolUseBlock.builder().id(id).name(name).build();
     }
 
     private static String textOf(ToolResultBlock block) {
@@ -505,75 +495,20 @@ class A2uiPipelineTest {
     }
 
     @Test
-    void successfulRenderEmitsStopEvent() {
-        A2uiRenderStopMiddleware mw = new A2uiRenderStopMiddleware(A2uiConfig.defaults());
-        ToolResultEndEvent renderEnd =
-                new ToolResultEndEvent("r1", "tc1", "a2ui_render", ToolResultState.SUCCESS);
-        List<AgentEvent> events =
-                mw.onActing(
-                                null,
-                                RuntimeContext.empty(),
-                                new ActingInput(List.of(toolCall("tc1", "a2ui_render"))),
-                                in -> Flux.just(renderEnd))
-                        .collectList()
-                        .block();
-        assertEquals(2, events.size());
-        assertInstanceOf(RequestStopEvent.class, events.get(1));
-    }
-
-    @Test
-    void failedRenderDoesNotStop() {
-        A2uiRenderStopMiddleware mw = new A2uiRenderStopMiddleware(A2uiConfig.defaults());
-        ToolResultEndEvent renderError =
-                new ToolResultEndEvent("r1", "tc1", "a2ui_render", ToolResultState.ERROR);
-        List<AgentEvent> events =
-                mw.onActing(
-                                null,
-                                RuntimeContext.empty(),
-                                new ActingInput(List.of(toolCall("tc1", "a2ui_render"))),
-                                in -> Flux.just(renderError))
-                        .collectList()
-                        .block();
-        assertEquals(1, events.size());
-        assertTrue(events.stream().noneMatch(e -> e instanceof RequestStopEvent));
-    }
-
-    @Test
-    void mixedToolBatchDoesNotStopEvenWhenRenderSucceeds() {
-        A2uiRenderStopMiddleware mw = new A2uiRenderStopMiddleware(A2uiConfig.defaults());
-        ToolResultEndEvent otherEnd =
-                new ToolResultEndEvent("r1", "tc1", "some_tool", ToolResultState.SUCCESS);
-        ToolResultEndEvent renderEnd =
-                new ToolResultEndEvent("r1", "tc2", "a2ui_render", ToolResultState.SUCCESS);
-        List<AgentEvent> events =
-                mw.onActing(
-                                null,
-                                RuntimeContext.empty(),
-                                new ActingInput(
-                                        List.of(
-                                                toolCall("tc1", "some_tool"),
-                                                toolCall("tc2", "a2ui_render"))),
-                                in -> Flux.just(otherEnd, renderEnd))
-                        .collectList()
-                        .block();
-        assertEquals(2, events.size());
-        assertTrue(events.stream().noneMatch(e -> e instanceof RequestStopEvent));
-    }
-
-    @Test
     void systemPromptAppendCarriesUsageConstraints() {
-        A2uiRenderStopMiddleware mw = new A2uiRenderStopMiddleware(A2uiConfig.defaults());
+        A2uiMiddleware mw = new A2uiMiddleware(A2uiConfig.defaults());
         String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE").block();
         assertTrue(prompt.startsWith("BASE"));
         assertTrue(prompt.contains("a2ui_render"));
         assertTrue(prompt.contains("`surfaceId` is managed by the system"));
+        assertTrue(prompt.contains("end your turn there"));
     }
 
     @Test
     void userPreferenceAppendsToMainAndRenderPrompts() {
         A2uiConfig config = A2uiConfig.builder().appendPreference("深色主题\n表单字段紧凑排列").build();
         String prompt =
-                new A2uiRenderStopMiddleware(config)
+                new A2uiMiddleware(config)
                         .onSystemPrompt(null, RuntimeContext.empty(), "BASE")
                         .block();
         assertTrue(prompt.contains("## User UI preference"));

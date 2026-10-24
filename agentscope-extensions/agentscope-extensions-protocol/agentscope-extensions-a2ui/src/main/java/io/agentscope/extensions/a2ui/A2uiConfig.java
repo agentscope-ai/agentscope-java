@@ -24,7 +24,6 @@ public final class A2uiConfig {
 
     private final String catalogId;
     private final String catalogResource;
-    private final boolean stopAfterPresent;
     private final int maxComponents;
     private final boolean surfacePersistEnabled;
     private final String renderPrompt;
@@ -35,7 +34,6 @@ public final class A2uiConfig {
     private A2uiConfig(Builder builder) {
         this.catalogId = builder.catalogId;
         this.catalogResource = builder.catalogResource;
-        this.stopAfterPresent = builder.stopAfterPresent;
         this.maxComponents = builder.maxComponents;
         this.surfacePersistEnabled = builder.surfacePersistEnabled;
         this.renderPrompt = builder.renderPrompt;
@@ -60,15 +58,6 @@ public final class A2uiConfig {
     /** Classpath resource path of the component catalog JSON. */
     public String catalogResource() {
         return catalogResource;
-    }
-
-    /**
-     * Whether a successful {@code a2ui_render} stops the current acting round (the delivered
-     * surface then waits for user interaction). Name kept for config compatibility; {@code
-     * a2ui_present} is now the render sub-agent's component-tree submit tool, not a parent tool.
-     */
-    public boolean stopAfterPresent() {
-        return stopAfterPresent;
     }
 
     /**
@@ -109,8 +98,8 @@ public final class A2uiConfig {
 
     /**
      * Renders {@link #appendPreference()} as a prompt block, or an empty string when unset.
-     * Shared by the main-agent system prompt ({@code A2uiRenderStopMiddleware}) and the render
-     * sub-agent system prompt ({@code A2uiRenderManager}).
+     * Shared by the main-agent system prompt ({@link A2uiMiddleware}) and the render sub-agent
+     * system prompt ({@link A2uiRenderManager}).
      */
     public String preferenceBlock() {
         if (appendPreference == null || appendPreference.isBlank()) {
@@ -127,7 +116,6 @@ public final class A2uiConfig {
 
         private String catalogId = "agentscope.io:a2ui/basic";
         private String catalogResource = "a2ui/basic-catalog.json";
-        private boolean stopAfterPresent = true;
         private int maxComponents = 50;
         private boolean surfacePersistEnabled = true;
         private String renderPrompt = null;
@@ -144,11 +132,6 @@ public final class A2uiConfig {
 
         public Builder catalogResource(String catalogResource) {
             this.catalogResource = catalogResource;
-            return this;
-        }
-
-        public Builder stopAfterPresent(boolean stopAfterPresent) {
-            this.stopAfterPresent = stopAfterPresent;
             return this;
         }
 

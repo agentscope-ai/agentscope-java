@@ -19,7 +19,6 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
@@ -27,7 +26,6 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.a2ui.catalog.A2uiCatalog;
-import io.agentscope.extensions.a2ui.middleware.A2uiRenderStopMiddleware;
 import io.agentscope.extensions.a2ui.state.A2uiSurfaceRegistry;
 import io.agentscope.extensions.a2ui.tool.A2uiRenderTool;
 import io.agentscope.extensions.a2ui.tool.AskUserQuestionTool;
@@ -43,8 +41,7 @@ import reactor.core.publisher.Mono;
  * HarnessAgent.builder().middleware(new A2uiMiddleware(config))} — no framework-side seam.
  *
  * <p>Registers only the parent-facing tools {@code a2ui_render} (natural-language intent — the
- * single UI entry; one successful call delivers the surface, and {@link
- * A2uiConfig#stopAfterPresent()} can then end the round) and {@code ask_user_question} with its
+ * single UI entry; one successful call delivers the surface) and {@code ask_user_question} with its
  * A2UI form flavour ({@code enableA2ui=true}; the plain clarification flavour lives on {@link
  * ClarificationMiddleware} and is independent of this toggle). A tool the host already binds under
  * one of these names is left alone (logged, not overwritten). The component DSL itself is
@@ -52,11 +49,15 @@ import reactor.core.publisher.Mono;
  * internal {@code a2ui_present} tree-submit tool — the catalog guide ships in that agent's SYSTEM
  * prompt, so the main model never sees the DSL at all.
  *
+ * <p>The round is deliberately not stopped after a successful render: the model keeps the turn and
+ * closes it itself, which costs one extra inference but avoids the extension depending on
+ * framework-side acting-stop behaviour. {@link #onSystemPrompt} carries the constraints that keep
+ * the delivered surface from being paraphrased back as text.
+ *
  * <p>Uses only existing public surfaces: {@link #installTools} as the install point (the assembler
  * calls it once per agent build, after {@code build()}, against the agent's own deep-copied {@link
  * Toolkit} — the framework no longer callbacks into middleware to install tools), {@link #onAgent}
- * to capture the agent-resolved {@link AgentStateStore} and model lazily, and the lifecycle hooks
- * to extend {@link A2uiRenderStopMiddleware}'s stop/prompt behavior.
+ * to capture the agent-resolved {@link AgentStateStore} and model lazily.
  *
  * <p>The render model is the one passed to {@link #A2uiMiddleware(A2uiConfig, Model)} — for a
  * lighter/cheaper UI model than the conversation model — or, when {@code null}, the hosting
@@ -71,9 +72,23 @@ public final class A2uiMiddleware implements MiddlewareBase, ToolInstallingMiddl
 
     private static final Logger logger = LoggerFactory.getLogger(A2uiMiddleware.class);
 
+    private static final String SYSTEM_PROMPT_APPEND =
+            "\n\n"
+                + "## A2UI structured UI\n"
+                + "- Show structured UI with `a2ui_render` — it is the only UI entry; it creates or"
+                + " updates the surface from your request. Never hand-write A2UI envelope JSON in"
+                + " reply text.\n"
+                + "- The tool takes a natural-language `description` of the UI (plus optional"
+                + " `context` data it must show); a dedicated render agent builds the component"
+                + " tree — you never handle components or props yourself.\n"
+                + "- `surfaceId` is managed by the system: never generate, guess, or modify it.\n"
+                + "- Once `a2ui_render` succeeds, the surface is on screen: end your turn there"
+                + " instead of restating it in words.\n"
+                + "- Collect user input with `ask_user_question` instead of plain-text follow-up"
+                + " questions.\n";
+
     private final A2uiConfig config;
     private final A2uiCatalog catalog;
-    private final A2uiRenderStopMiddleware renderStopDelegate;
     private final AtomicReference<AgentStateStore> stateStore = new AtomicReference<>();
     private final AtomicReference<Model> renderModel = new AtomicReference<>();
 
@@ -92,7 +107,6 @@ public final class A2uiMiddleware implements MiddlewareBase, ToolInstallingMiddl
     public A2uiMiddleware(A2uiConfig config, Model renderModel) {
         this.config = config != null ? config : A2uiConfig.defaults();
         this.catalog = A2uiCatalog.load(this.config.catalogResource(), this.config.catalogId());
-        this.renderStopDelegate = new A2uiRenderStopMiddleware(this.config);
         this.renderModel.set(renderModel);
     }
 
@@ -140,16 +154,7 @@ public final class A2uiMiddleware implements MiddlewareBase, ToolInstallingMiddl
     }
 
     @Override
-    public Flux<AgentEvent> onActing(
-            Agent agent,
-            RuntimeContext ctx,
-            ActingInput input,
-            Function<ActingInput, Flux<AgentEvent>> next) {
-        return renderStopDelegate.onActing(agent, ctx, input, next);
-    }
-
-    @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
-        return renderStopDelegate.onSystemPrompt(agent, ctx, currentPrompt);
+        return Mono.just(currentPrompt + SYSTEM_PROMPT_APPEND + config.preferenceBlock());
     }
 }
