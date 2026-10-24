@@ -373,6 +373,8 @@ if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_AS
 
 使用 `streamEvents()` 时，不需要从返回的 `Msg` 提取 `ToolUseBlock` —— 通过事件流直接获得 `RequireUserConfirmEvent`，它携带了待确认的工具调用列表：
 
+配置状态存储或原生会话日志后，agent 会先保存待确认工具状态和确认请求的 replyId，再发布该事件；原生会话日志还会在同一边界提交待确认请求记录。如果保存失败，本次调用会报错，不发布授权提示。跨进程重启恢复需要持久化后端，内存后端不提供这一保证。此顺序不保证保存完成后订阅者断开连接时仍能收到提示。
+
 ```java
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ConfirmResult;
