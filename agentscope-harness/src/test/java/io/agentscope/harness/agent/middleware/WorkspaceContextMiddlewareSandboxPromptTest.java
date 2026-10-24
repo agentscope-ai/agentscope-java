@@ -24,10 +24,15 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.FileData;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
+import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.util.List;
@@ -40,6 +45,25 @@ import org.junit.jupiter.api.io.TempDir;
  * "upload/download tools".
  */
 class WorkspaceContextMiddlewareSandboxPromptTest {
+
+    @Test
+    void sandboxPrompt_usesActiveWorkspaceRoot(@TempDir Path workspace) {
+        WorkspaceSpec spec = new WorkspaceSpec();
+        spec.setRoot("/home/user");
+        SandboxState state = mock(SandboxState.class);
+        when(state.getWorkspaceSpec()).thenReturn(spec);
+        Sandbox sandbox = mock(Sandbox.class);
+        when(sandbox.getState()).thenReturn(state);
+        RuntimeContext context = RuntimeContext.empty();
+        context.put(SandboxAcquireResult.class, SandboxAcquireResult.selfManaged(sandbox));
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
+            String prompt =
+                    WorkspacePromptTestSupport.render(
+                            new WorkspaceContextMiddleware(wm), context, "BASE\n");
+            assertTrue(prompt.contains("Sandbox root: /home/user"), () -> prompt);
+            assertFalse(prompt.contains("Sandbox root: /workspace"), () -> prompt);
+        }
+    }
 
     private AbstractSandboxFilesystem mockSandboxFilesystem() {
         AbstractSandboxFilesystem fs = mock(AbstractSandboxFilesystem.class);

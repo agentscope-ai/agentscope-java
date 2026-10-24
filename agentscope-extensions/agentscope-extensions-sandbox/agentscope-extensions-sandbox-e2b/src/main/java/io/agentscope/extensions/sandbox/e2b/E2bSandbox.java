@@ -74,6 +74,14 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     public E2bSandbox(E2bSandboxState state, E2bSandboxClientOptions opt) {
         super(state);
         this.e2bState = state;
+        // Older state may retain /workspace in the manifest while execution uses /home/user.
+        // Preserve the actual execution directory and only align its descriptive manifest.
+        var workspace =
+                state.getWorkspaceSpec() != null
+                        ? state.getWorkspaceSpec().copy()
+                        : new io.agentscope.harness.agent.sandbox.WorkspaceSpec();
+        workspace.setRoot(state.getWorkspaceRoot());
+        state.setWorkspaceSpec(workspace);
         this.opt = opt != null ? opt : new E2bSandboxClientOptions();
         this.platform = new E2bPlatformHttp(this.opt);
     }

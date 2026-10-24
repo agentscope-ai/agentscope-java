@@ -189,6 +189,14 @@ SandboxContext callCtx = SandboxContext.builder()
 
 所有后端实现同一组接口，agent 代码、工具集、`AGENTS.md` 都不用变。
 
+### 工作区根目录
+
+系统提示词中的沙箱目录说明和文件工具的路径归一化使用当前调用绑定的沙箱工作区根目录。恢复旧会话时保留已保存的目录，不改用 Agent 的新配置。根目录内的绝对路径会转换为工作区相对路径，其他路径继续受现有文件系统策略约束。
+
+E2B 默认根目录是 `/home/user`，可通过 `new E2bFilesystemSpec().workspaceRoot("/home/user/project")` 修改，也可以提供设置了根目录的 `WorkspaceSpec`。如果显式提供两者，根目录必须一致（忽略末尾斜杠），否则构建沙箱上下文时报错。有效工作区配置通过复制生成，不修改调用者提供的对象，并保留其中的 entries 和 environment。恢复根目录字段不一致的旧 E2B 状态时，以已保存的实际执行目录为准，只对齐 manifest，不移动文件。Docker 默认目录仍为 `/workspace`。
+
+如果提供 `WorkspaceSpec` 只是为了配置 entries 或 environment，没有调用 `setRoot(...)`，其默认的 `/workspace` 不算显式配置，会沿用 E2B 的执行根目录。但是，主动调用 `setRoot("/workspace")` 属于显式选择，会与另一个不同的显式 `workspaceRoot(...)` 配置产生冲突。
+
 ## 运行时镜像约束
 
 沙箱镜像（Docker 的 `image`、Kubernetes agent-sandbox 的运行时镜像等）由你指定，但**不是任意镜像都能用**。Harness 的文件工具（`read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files`）和快照机制全部通过在沙箱内执行 POSIX shell 命令实现，镜像必须满足下面的契约，否则工具会以难以排查的方式失败。
