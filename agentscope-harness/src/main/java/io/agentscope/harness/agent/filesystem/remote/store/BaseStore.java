@@ -25,7 +25,14 @@ import java.util.Map;
  * and identified by a key within each namespace.
  */
 public interface BaseStore {
-    /** Explicit opt-in: versioned reads and durable cross-writer compare-and-set are supported. */
+    /**
+     * Explicit opt-in: versioned reads and durable cross-writer compare-and-set are supported.
+     *
+     * <p>Stores returning {@code true} must return positive item versions. {@link #putIfVersion}
+     * creates only an absent item at expected version zero, or replaces only the observed positive
+     * version. Successful writes advance the version; a failed comparison writes nothing. Storage
+     * failures must propagate instead of being reported as version mismatches.
+     */
     default boolean supportsAtomicSessionStorage() {
         return false;
     }

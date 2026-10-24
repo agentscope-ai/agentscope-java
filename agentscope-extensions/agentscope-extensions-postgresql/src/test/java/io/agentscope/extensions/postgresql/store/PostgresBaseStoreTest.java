@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -45,6 +46,8 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -260,10 +263,28 @@ class PostgresBaseStoreTest {
     @Test
     void putIfVersionInsertDuplicateReturnsFalse() throws SQLException {
         when(preparedStatement.executeUpdate())
-                .thenThrow(new SQLIntegrityConstraintViolationException("dup"));
+                .thenThrow(new SQLIntegrityConstraintViolationException("duplicate key", "23505"));
 
         PostgresBaseStore store = PostgresBaseStore.builder(dataSource).build();
         assertFalse(store.putIfVersion(List.of("a"), "key", Map.of(), 0L));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"23502", "23503", "23514", "23000", ""})
+    void putIfVersionPreservesNonDuplicateConstraintCauses(String state) throws SQLException {
+        SQLException cause = new SQLIntegrityConstraintViolationException("constraint", state);
+        when(preparedStatement.executeUpdate()).thenThrow(cause);
+        PostgresBaseStore store = PostgresBaseStore.builder(dataSource).build();
+
+        for (long version : new long[] {0, 3}) {
+            IllegalStateException failure =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () ->
+                                    store.putIfVersion(
+                                            List.of("a"), "key", Map.of("k", "v"), version));
+            assertSame(cause, failure.getCause());
+        }
     }
 
     @Test

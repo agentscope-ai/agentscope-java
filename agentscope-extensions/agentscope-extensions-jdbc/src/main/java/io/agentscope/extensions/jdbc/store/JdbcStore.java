@@ -17,6 +17,7 @@ package io.agentscope.extensions.jdbc.store;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.extensions.jdbc.JdbcConstraintErrors;
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
 import io.agentscope.extensions.jdbc.dialect.table.StoreDialect;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
@@ -25,7 +26,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -129,10 +129,8 @@ public class JdbcStore implements BaseStore {
                 bindParams(ps, boundSql.params());
                 ps.executeUpdate();
                 return true;
-            } catch (SQLIntegrityConstraintViolationException dup) {
-                return false;
             } catch (SQLException e) {
-                if (isDuplicateKey(e)) {
+                if (JdbcConstraintErrors.isDuplicateKey(e)) {
                     return false;
                 }
                 throw new IllegalStateException("JdbcStore putIfVersion (insert) failed", e);
@@ -250,17 +248,6 @@ public class JdbcStore implements BaseStore {
         if (key == null || key.isEmpty()) {
             throw new IllegalArgumentException("key must not be null or empty");
         }
-    }
-
-    private static boolean isDuplicateKey(SQLException e) {
-        if (e instanceof SQLIntegrityConstraintViolationException) {
-            return true;
-        }
-        String state = e.getSQLState();
-        if (state != null && state.startsWith("23")) {
-            return true;
-        }
-        return e.getErrorCode() == 19 && e.getClass().getName().startsWith("org.sqlite.");
     }
 
     // -------------------------------------------------------------------------
