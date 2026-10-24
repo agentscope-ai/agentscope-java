@@ -4566,6 +4566,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                             return finalMsg;
                                                                         }));
                             })
+                    .switchIfEmpty(Mono.defer(this::handleEmptySummary))
                     .onErrorResume(this::handleSummaryError);
         }
 
@@ -4733,6 +4734,45 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             .build();
             state.contextMutable().add(errorMsg);
             return Mono.just(errorMsg);
+        }
+
+        /**
+         * Fallback for a summary that finishes without producing a visible message.
+         *
+         * <p>{@link ReasoningContext#buildFinalMessage()} returns {@code null} when the summary
+         * model answers with nothing but reasoning blocks, and {@code summarizing()} used to hand
+         * that {@code null} straight to {@code call()} as an empty {@code Mono}: no value, no
+         * error, no log. Callers cannot tell "the agent had nothing to say" from "the agent
+         * finished", which breaks consumers that expect one message per call (AG-UI events,
+         * delegated sub-agents) and hides the iteration exhaustion from diagnostics.
+         *
+         * <p>Synthesizing the message keeps the contract that a call that hits the iteration limit
+         * always yields a {@link Msg}. It mirrors {@link #handleSummaryError(Throwable)} for the
+         * no-content case, so both summary failure modes are observable through {@code
+         * SUMMARY_FAILED} metadata and the {@code MAX_ITERATIONS} generate reason.
+         */
+        private Mono<Msg> handleEmptySummary() {
+            log.warn(
+                    "Maximum iterations ({}) reached and the summary produced no visible output."
+                            + " Returning a fallback message.",
+                    maxIters);
+            Msg emptySummaryMsg =
+                    AssistantMessage.builder()
+                            .name(getName())
+                            .content(
+                                    TextBlock.builder()
+                                            .text(
+                                                    String.format(
+                                                            "Maximum iterations (%d) reached. The"
+                                                                    + " summary produced no visible"
+                                                                    + " output.",
+                                                            maxIters))
+                                            .build())
+                            .metadata(Map.of(MessageMetadataKeys.SUMMARY_FAILED, true))
+                            .generateReason(GenerateReason.MAX_ITERATIONS)
+                            .build();
+            state.contextMutable().add(emptySummaryMsg);
+            return Mono.just(emptySummaryMsg);
         }
 
         // ==================== Helper Methods ====================
