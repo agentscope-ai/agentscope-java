@@ -61,6 +61,13 @@ default thinking configuration. Do not set both in the same `GenerateOptions`. F
 `additionalBodyParam("thinking", Map.of("type", "disabled"))` overrides a default manual budget
 without inheriting `budget_tokens`.
 
+Manual thinking supports only `ToolChoice.Auto` and `ToolChoice.None`. When it is active, the
+adapter converts `ToolChoice.Specific` and `ToolChoice.Required` to `Auto`, including automatic
+structured-output retries. The thinking configuration and `parallelToolCalls` setting remain
+unchanged. Tool selection follows the model's decision and the structured-output prompt.
+
+Thinking, text, server tool calls/results, and local tool calls retain their interleaved order
+through reasoning accumulation and subsequent requests.
 Keep the returned `ThinkingBlock` metadata when saving conversation history or sending tool
 results back. It carries the native thinking signatures and redacted blocks needed for a round
 trip. Malformed Anthropic-owned metadata fails locally with an actionable error; restore the

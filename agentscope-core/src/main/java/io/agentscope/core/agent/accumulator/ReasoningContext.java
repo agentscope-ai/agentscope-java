@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * Reasoning context that manages all state and content accumulation for a single reasoning round.
@@ -51,6 +52,13 @@ public class ReasoningContext {
     private final ThinkingAccumulator thinkingAcc = new ThinkingAccumulator();
     private final ToolCallsAccumulator toolCallsAcc = new ToolCallsAccumulator();
     private final ServerToolResultAccumulator serverToolResults = new ServerToolResultAccumulator();
+
+    // Preserve content order. Only adjacent text/thinking chunks share a segment; tool
+    // fragments and result updates retain the position of their first occurrence.
+    private final List<Supplier<ContentBlock>> contentOrder = new ArrayList<>();
+    private final List<TextAccumulator> textSegments = new ArrayList<>();
+    private TextAccumulator currentText;
+    private ThinkingAccumulator currentThinking;
 
     // ChatUsage
     private int inputTokens = 0;
@@ -107,6 +115,13 @@ public class ReasoningContext {
         for (ContentBlock block : chunk.getContent()) {
             if (block instanceof TextBlock tb) {
                 textAcc.add(tb);
+                currentThinking = null;
+                if (currentText == null) {
+                    currentText = new TextAccumulator();
+                    textSegments.add(currentText);
+                    contentOrder.add(currentText::buildAggregated);
+                }
+                currentText.add(tb);
 
                 // Emit text block immediately
                 Msg msg = buildChunkMsg(tb);
@@ -114,6 +129,12 @@ public class ReasoningContext {
 
             } else if (block instanceof ThinkingBlock tb) {
                 thinkingAcc.add(tb);
+                currentText = null;
+                if (currentThinking == null) {
+                    currentThinking = new ThinkingAccumulator();
+                    contentOrder.add(currentThinking::buildAggregated);
+                }
+                currentThinking.add(tb);
 
                 // Emit thinking block immediately
                 Msg msg = buildChunkMsg(tb);
@@ -121,7 +142,9 @@ public class ReasoningContext {
 
             } else if (block instanceof ToolUseBlock tub) {
                 // Accumulate tool calls and emit immediately for real-time streaming
-                toolCallsAcc.add(tub);
+                currentText = null;
+                currentThinking = null;
+                toolCallsAcc.add(tub, contentOrder::add);
 
                 // Emit ToolUseBlock chunk immediately for real-time display
                 // Each tool call chunk is emitted separately, supporting multiple parallel tool
@@ -135,7 +158,9 @@ public class ReasoningContext {
             } else if (block instanceof ToolResultBlock trb && trb.isServerTool()) {
                 // Server tool results arrive as part of the assistant response; keep them so
                 // they end up in the final message and can be echoed back on later turns.
-                serverToolResults.add(trb);
+                currentText = null;
+                currentThinking = null;
+                serverToolResults.add(trb, contentOrder::add);
 
                 Msg msg = buildChunkMsg(trb);
                 streamingMsgs.add(msg);
@@ -152,13 +177,8 @@ public class ReasoningContext {
      * <p>This method ensures that a single reasoning round produces one message
      * that may contain multiple content blocks.
      *
-     * <p>Strategy:
-     *
-     * <ol>
-     *   <li>Add text content if present
-     *   <li>Add thinking content if present
-     *   <li>Add all tool calls
-     * </ol>
+     * <p>Content remains in arrival order. Adjacent text/thinking fragments are combined,
+     * while tool-call fragments and server-result updates replace their original entries.
      *
      * @hidden
      * @return The complete reasoning message with all blocks, or null if no content
@@ -166,19 +186,12 @@ public class ReasoningContext {
     public Msg buildFinalMessage() {
         List<ContentBlock> blocks = new ArrayList<>();
 
-        // Add thinking content if present
-        if (thinkingAcc.hasContent()) {
-            blocks.add(thinkingAcc.buildAggregated());
+        for (Supplier<ContentBlock> supplier : contentOrder) {
+            ContentBlock block = supplier.get();
+            if (block != null) {
+                blocks.add(block);
+            }
         }
-
-        // Add text content if present
-        if (textAcc.hasContent()) {
-            blocks.add(textAcc.buildAggregated());
-        }
-
-        // Add all tool calls, placing server tool results right after their calls
-        List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
-        blocks.addAll(serverToolResults.placeAfterToolCalls(toolCalls));
 
         // If no content at all, return null
         if (blocks.isEmpty()) {
@@ -269,7 +282,19 @@ public class ReasoningContext {
      * @param text text reconstructed from the transformed event stream
      */
     public void replaceAccumulatedText(String text) {
+        if (textAcc.getAccumulated().equals(text == null ? "" : text)) {
+            return;
+        }
         textAcc.replace(text);
+        // A whole-text transformation supplies no original segment boundaries. Keep the
+        // replacement at the first text position and discard all superseded text segments.
+        if (textSegments.isEmpty()) {
+            currentText = new TextAccumulator();
+            textSegments.add(currentText);
+            contentOrder.add(currentText::buildAggregated);
+        }
+        textSegments.forEach(TextAccumulator::reset);
+        textSegments.get(0).replace(text);
     }
 
     /**

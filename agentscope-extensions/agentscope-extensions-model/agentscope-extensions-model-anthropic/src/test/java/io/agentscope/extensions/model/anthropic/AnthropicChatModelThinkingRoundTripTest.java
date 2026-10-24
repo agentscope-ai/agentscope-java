@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -153,6 +154,119 @@ class AnthropicChatModelThinkingRoundTripTest {
         assertEquals("call_2", resultContent.get(1).path("tool_use_id").asText());
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void testPreservesInterleavedThinkingThroughReasoningContext(boolean streaming)
+            throws Exception {
+        String response =
+                """
+                {"id":"msg_interleaved","type":"message","role":"assistant","model":"claude-sonnet-4-6",
+                 "content":[
+                    {"type":"thinking","thinking":"First search","signature":"sig-before"},
+                    {"type":"text","text":"Searching now."},
+                    {"type":"server_tool_use","id":"srv_1","name":"web_search","input":{"query":"weather"}},
+                    {"type":"web_search_tool_result","tool_use_id":"srv_1","content":[]},
+                    {"type":"thinking","thinking":"Now compare","signature":"sig-after"},
+                    {"type":"redacted_thinking","data":"encrypted-reasoning"},
+                    {"type":"text","text":"Checking the forecast."},
+                    {"type":"tool_use","id":"call_1","name":"get_weather","input":{"city":"Beijing"}}
+                 ],"stop_reason":"tool_use","stop_sequence":null,
+                 "usage":{"input_tokens":10,"output_tokens":20}}
+                """;
+        AnthropicChatModel model = testModel(streaming, null);
+        mockServer.enqueue(streaming ? streamResponse(response) : jsonResponse(response));
+        mockServer.enqueue(
+                streaming
+                        ? streamResponse(finalAssistantResponse())
+                        : jsonResponse(finalAssistantResponse()));
+        Msg user = Msg.builder().role(MsgRole.USER).textContent("Check the weather.").build();
+        List<ToolSchema> tools =
+                List.of(ModelTestUtils.createSimpleToolSchema("get_weather", "Get weather"));
+        ReasoningContext context = new ReasoningContext("Assistant");
+        model.stream(List.of(user), tools, null).doOnNext(context::processChunk).blockLast(TIMEOUT);
+        // ReActAgent performs this reconciliation even when middleware does not change the text.
+        context.replaceAccumulatedText(context.getAccumulatedText());
+        Msg assistant = context.buildFinalMessage();
+        assertNotNull(assistant);
+        model.stream(List.of(user, assistant, toolResult("call_1", "Sunny")), tools, null)
+                .blockLast(TIMEOUT);
+        assertNotNull(mockServer.takeRequest(1, TimeUnit.SECONDS));
+        RecordedRequest continuation = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(continuation);
+        JsonNode content =
+                OBJECT_MAPPER
+                        .readTree(continuation.getBody().readUtf8())
+                        .path("messages")
+                        .get(1)
+                        .path("content");
+        assertEquals(OBJECT_MAPPER.readTree(response).path("content"), content);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void testStructuredOutputRetryWithManualThinking(boolean streaming) throws Exception {
+        String first =
+                """
+                {"id":"msg_plain","type":"message","role":"assistant","model":"claude-sonnet-4-5",
+                 "content":[{"type":"thinking","thinking":"The answer is sunny","signature":"sig-first"},
+                            {"type":"text","text":"Sunny"}],
+                 "stop_reason":"end_turn","stop_sequence":null,
+                 "usage":{"input_tokens":10,"output_tokens":20}}
+                """;
+        String retry =
+                """
+                {"id":"msg_structured","type":"message","role":"assistant","model":"claude-sonnet-4-5",
+                 "content":[{"type":"thinking","thinking":"Use the response tool","signature":"sig-retry"},
+                            {"type":"tool_use","id":"output_1","name":"generate_response","input":{"response":{"weather":"Sunny"}}}],
+                 "stop_reason":"tool_use","stop_sequence":null,
+                 "usage":{"input_tokens":30,"output_tokens":20}}
+                """;
+        mockServer.enqueue(streaming ? streamResponse(first) : jsonResponse(first));
+        mockServer.enqueue(streaming ? streamResponse(retry) : jsonResponse(retry));
+        AnthropicChatModel model =
+                testModel(
+                        streaming,
+                        GenerateOptions.builder().thinkingBudget(2048).maxTokens(4096).build());
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("Assistant")
+                        .sysPrompt("Answer weather questions")
+                        .model(model)
+                        .build();
+        Msg result =
+                agent.call(
+                                Msg.builder().role(MsgRole.USER).textContent("Weather?").build(),
+                                Weather.class)
+                        .block(TIMEOUT);
+        assertNotNull(result);
+        assertEquals("Sunny", result.getStructuredData(Weather.class).weather);
+        assertEquals(2, mockServer.getRequestCount());
+        RecordedRequest initial = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        RecordedRequest second = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(initial);
+        assertNotNull(second);
+        JsonNode initialBody = OBJECT_MAPPER.readTree(initial.getBody().readUtf8());
+        JsonNode retryBody = OBJECT_MAPPER.readTree(second.getBody().readUtf8());
+        assertEquals(initialBody.path("thinking"), retryBody.path("thinking"));
+        assertEquals("enabled", retryBody.path("thinking").path("type").asText());
+        assertEquals(2048, retryBody.path("thinking").path("budget_tokens").asInt());
+        assertEquals("auto", retryBody.path("tool_choice").path("type").asText());
+    }
+
+    public static class Weather {
+        public String weather;
+    }
+
+    private AnthropicChatModel testModel(boolean streaming, GenerateOptions defaults) {
+        return AnthropicChatModel.builder()
+                .apiKey("test-api-key")
+                .baseUrl(mockServer.url("/").toString())
+                .modelName("claude-sonnet-4-6")
+                .stream(streaming)
+                .defaultOptions(defaults)
+                .build();
+    }
+
     private static Msg toolResult(String id, String output) {
         return Msg.builder()
                 .name("Tool")
@@ -179,10 +293,10 @@ class AnthropicChatModelThinkingRoundTripTest {
         for (int index = 0; index < message.path("content").size(); index++) {
             JsonNode block = message.path("content").get(index);
             String type = block.path("type").asText();
-            Map<String, Object> initial =
+            Object initial =
                     switch (type) {
                         case "thinking" -> Map.of("type", type, "thinking", "", "signature", "");
-                        case "tool_use" ->
+                        case "tool_use", "server_tool_use" ->
                                 Map.of(
                                         "type",
                                         type,
@@ -192,7 +306,8 @@ class AnthropicChatModelThinkingRoundTripTest {
                                         block.path("name").asText(),
                                         "input",
                                         Map.of());
-                        default -> Map.of("type", "text", "text", "");
+                        case "text" -> Map.of("type", "text", "text", "");
+                        default -> block;
                     };
             appendEvent(
                     events,
@@ -211,17 +326,21 @@ class AnthropicChatModelThinkingRoundTripTest {
                                         "thinking_delta",
                                         "thinking",
                                         block.path("thinking").asText());
-                        case "tool_use" ->
+                        case "tool_use", "server_tool_use" ->
                                 Map.of(
                                         "type",
                                         "input_json_delta",
                                         "partial_json",
                                         block.path("input").toString());
-                        default ->
+                        case "text" ->
                                 Map.of("type", "text_delta", "text", block.path("text").asText());
+                        default -> null;
                     };
-            appendEvent(
-                    events, Map.of("type", "content_block_delta", "index", index, "delta", delta));
+            if (delta != null) {
+                appendEvent(
+                        events,
+                        Map.of("type", "content_block_delta", "index", index, "delta", delta));
+            }
             if ("thinking".equals(type)) {
                 String signature = block.path("signature").asText();
                 int split = signature.length() / 2;

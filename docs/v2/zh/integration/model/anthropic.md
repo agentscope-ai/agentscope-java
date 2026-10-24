@@ -61,6 +61,11 @@ thinking 配置。不要在同一个 `GenerateOptions` 中同时设置两者。�
 `additionalBodyParam("thinking", Map.of("type", "disabled"))` 会覆盖默认的 manual budget，
 不会继承 `budget_tokens`。
 
+Manual thinking 仅支持 `ToolChoice.Auto` 和 `ToolChoice.None`。启用时，适配器会将
+`ToolChoice.Specific` 和 `ToolChoice.Required` 转为 `Auto`，包括结构化输出的自动重试。
+thinking 配置和 `parallelToolCalls` 设置保持不变，工具选择由模型根据结构化输出提示决定。
+
+Thinking、文本、服务端工具调用及结果、本地工具调用在推理聚合和后续请求中会保留交错顺序。
 保存对话历史或回传工具结果时，请保留返回的 `ThinkingBlock` metadata，其中包含多轮往返所需的
 原生思考签名和 redacted blocks。如果 Anthropic 专属 metadata 损坏，会在本地给出明确错误；
 请恢复原始签名块，或从历史中移除受影响的轮次及其工具结果。将损坏的签名块静默转换为文本无法修复签名。

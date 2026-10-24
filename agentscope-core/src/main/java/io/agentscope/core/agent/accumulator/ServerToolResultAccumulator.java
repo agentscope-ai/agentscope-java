@@ -23,6 +23,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +57,11 @@ final class ServerToolResultAccumulator {
      * @param result the result block returned by the provider
      */
     void add(ToolResultBlock result) {
+        add(result, ignored -> {});
+    }
+
+    /** Records each result's position while allowing a running result to be replaced in place. */
+    void add(ToolResultBlock result, Consumer<Supplier<ContentBlock>> onNewBlock) {
         if (result == null || !result.isServerTool()) {
             return;
         }
@@ -62,9 +69,13 @@ final class ServerToolResultAccumulator {
         String id = result.getId();
         if (id == null || id.isBlank()) {
             resultsWithoutId.add(result);
+            onNewBlock.accept(() -> result);
             return;
         }
         ToolResultBlock existing = resultsById.get(id);
+        if (existing == null) {
+            onNewBlock.accept(() -> resultsById.get(id));
+        }
         if (existing == null || existing.getState() == ToolResultState.RUNNING) {
             resultsById.put(id, result);
         }

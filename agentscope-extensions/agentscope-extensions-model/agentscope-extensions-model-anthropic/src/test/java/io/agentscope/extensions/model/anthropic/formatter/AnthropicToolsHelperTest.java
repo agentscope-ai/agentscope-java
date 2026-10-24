@@ -33,7 +33,11 @@ import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /** Unit tests for AnthropicToolsHelper. */
 class AnthropicToolsHelperTest {
@@ -522,6 +526,76 @@ class AnthropicToolsHelperTest {
 
         MessageCreateParams params = builder.build();
         assertEquals(2048, params.maxTokens());
+    }
+
+    @ParameterizedTest
+    @MethodSource("thinkingToolChoiceCases")
+    void testToolChoiceUsesEffectiveThinkingConfiguration(
+            GenerateOptions defaults, GenerateOptions call, boolean manualThinking) {
+        for (ToolChoice choice :
+                List.of(new ToolChoice.Required(), new ToolChoice.Specific("search"))) {
+            for (Boolean parallel : new Boolean[] {null, false, true}) {
+                AnthropicChatFormatter formatter = new AnthropicChatFormatter();
+                MessageCreateParams.Builder builder = createBuilder();
+                GenerateOptions options =
+                        GenerateOptions.mergeOptions(
+                                GenerateOptions.builder()
+                                        .toolChoice(choice)
+                                        .parallelToolCalls(parallel)
+                                        .build(),
+                                call);
+                formatter.applyOptions(builder, options, defaults);
+                formatter.applyTools(
+                        builder,
+                        List.of(
+                                ToolSchema.builder()
+                                        .name("search")
+                                        .description("Search")
+                                        .parameters(Map.of("type", "object"))
+                                        .build()));
+                var actual = builder.build().toolChoice().orElseThrow();
+                if (manualThinking) {
+                    assertTrue(actual.isAuto());
+                    assertEquals(
+                            parallel == null
+                                    ? java.util.Optional.empty()
+                                    : java.util.Optional.of(!parallel),
+                            actual.asAuto().disableParallelToolUse());
+                } else if (choice instanceof ToolChoice.Specific) {
+                    assertTrue(actual.isTool());
+                } else {
+                    assertTrue(actual.isAny());
+                }
+            }
+        }
+    }
+
+    private static Stream<Arguments> thinkingToolChoiceCases() {
+        GenerateOptions budget = GenerateOptions.builder().thinkingBudget(2048).build();
+        GenerateOptions enabled =
+                GenerateOptions.builder()
+                        .additionalBodyParam(
+                                "thinking", Map.of("type", "enabled", "budget_tokens", 2048))
+                        .build();
+        GenerateOptions adaptive =
+                GenerateOptions.builder()
+                        .additionalBodyParam("thinking", Map.of("type", "adaptive"))
+                        .build();
+        GenerateOptions disabled =
+                GenerateOptions.builder()
+                        .additionalBodyParam("thinking", Map.of("type", "disabled"))
+                        .build();
+        return Stream.of(
+                Arguments.of(null, null, false),
+                Arguments.of(budget, null, true),
+                Arguments.of(null, budget, true),
+                Arguments.of(enabled, null, true),
+                Arguments.of(null, enabled, true),
+                Arguments.of(budget, disabled, false),
+                Arguments.of(budget, adaptive, false),
+                Arguments.of(enabled, disabled, false),
+                Arguments.of(adaptive, budget, true),
+                Arguments.of(disabled, enabled, true));
     }
 
     @Test
