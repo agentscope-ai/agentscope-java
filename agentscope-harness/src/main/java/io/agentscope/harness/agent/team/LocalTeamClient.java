@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.team;
 
+import io.agentscope.core.session.SessionLogStore;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
@@ -61,6 +62,29 @@ public final class LocalTeamClient implements TeamClient {
             String relationDomain, Map<String, AgentStateStore> stateStores) {
         TeamSessionMembership membership =
                 new TeamSessionMembership(store, relationDomain, stateStores);
+        sessionMembershipEnabled = true;
+        return membership;
+    }
+
+    /**
+     * Enables persistent associations for existing legacy and native Sessions.
+     *
+     * <p>Native domain IDs identify actual log backends and their partition routing. Log stores
+     * receive the member's user/session context; bind any additional routing attributes in a
+     * configured store adapter. Upgrade and drain older writers before storing native records.
+     *
+     * @param relationDomain shared relationship authority domain
+     * @param stateStores legacy state domains; existing mappings retain their meaning
+     * @param sessionLogs native log domains, disjoint from legacy domains
+     * @return adoption, binding, query and safe removal operations on this client's Team store
+     * @throws IllegalArgumentException if the store lacks atomic version support or domains overlap
+     */
+    public TeamSessionMembership sessionMembership(
+            String relationDomain,
+            Map<String, AgentStateStore> stateStores,
+            Map<String, SessionLogStore> sessionLogs) {
+        TeamSessionMembership membership =
+                new TeamSessionMembership(store, relationDomain, stateStores, sessionLogs);
         sessionMembershipEnabled = true;
         return membership;
     }

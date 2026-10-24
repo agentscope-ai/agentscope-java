@@ -19,17 +19,30 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.SessionLogStore;
+import io.agentscope.core.session.SessionProjection;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.state.JdbcAgentStateStore;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
+import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.team.LocalTeamClient;
 import io.agentscope.harness.agent.team.TeamConflictException;
 import io.agentscope.harness.agent.team.TeamCreateSpec;
@@ -45,6 +58,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -58,6 +72,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import reactor.core.publisher.Flux;
 
 class TeamSessionMembershipH2Test {
     @TempDir Path temp;
@@ -401,39 +417,73 @@ class TeamSessionMembershipH2Test {
         shutdown(finalRead.ds());
     }
 
-    @Test
-    void independentJdbcStoresAtomicallyCompeteAndIdenticalRequestsRetainOneToken()
-            throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void independentJdbcStoresAtomicallyCompeteAndIdenticalRequestsRetainOneToken(
+            boolean nativeSessions) throws Exception {
         Fixture first = open(), second = open();
+        var firstLogs =
+                new WorkspaceSessionLogStore(new LocalFilesystem(temp.resolve("native-workspace")));
+        var secondLogs =
+                new WorkspaceSessionLogStore(new LocalFilesystem(temp.resolve("native-workspace")));
+        Map<String, SessionLogStore> firstDomains =
+                nativeSessions ? Map.of("native-logs", firstLogs) : Map.of();
+        Map<String, SessionLogStore> secondDomains =
+                nativeSessions ? Map.of("native-logs", secondLogs) : Map.of();
+        var firstMembership =
+                first.client()
+                        .sessionMembership("app", Map.of("sessions", first.states()), firstDomains);
+        var secondMembership =
+                second.client()
+                        .sessionMembership(
+                                "app", Map.of("sessions", second.states()), secondDomains);
         create(first.client(), a);
         create(first.client(), b);
-        first.membership()
+        firstMembership
                 .adoptTeam(
                         "alice",
                         a,
                         "same display",
-                        List.of(member(first, "lead", "one", "leader-agent")))
+                        List.of(
+                                competitionMember(
+                                        first,
+                                        "lead",
+                                        "one",
+                                        "leader-agent",
+                                        nativeSessions ? firstLogs : null)))
                 .block();
-        first.membership()
+        firstMembership
                 .adoptTeam(
                         "alice",
                         b,
                         "same display",
-                        List.of(member(first, "lead", "two", "leader-agent")))
+                        List.of(
+                                competitionMember(
+                                        first,
+                                        "lead",
+                                        "two",
+                                        "leader-agent",
+                                        nativeSessions ? firstLogs : null)))
                 .block();
-        MemberSession worker = member(first, "worker", "worker", "worker-agent");
+        MemberSession worker =
+                competitionMember(
+                        first,
+                        "worker",
+                        "worker",
+                        "worker-agent",
+                        nativeSessions ? firstLogs : null);
         CyclicBarrier barrier = new CyclicBarrier(2);
         AtomicInteger writes = new AtomicInteger();
-        TeamSessionMembership left = racing(first, barrier, writes);
-        TeamSessionMembership right = racing(second, barrier, writes);
+        TeamSessionMembership left = racing(first, barrier, writes, firstDomains);
+        TeamSessionMembership right = racing(second, barrier, writes, secondDomains);
         CompletableFuture<Object> x = attempt(() -> left.bindMember("alice", a, worker).block());
         CompletableFuture<Object> y = attempt(() -> right.bindMember("alice", b, worker).block());
         List<Object> outcomes = List.of(x.get(10, TimeUnit.SECONDS), y.get(10, TimeUnit.SECONDS));
         assertEquals(1, outcomes.stream().filter(Membership.class::isInstance).count());
         assertEquals(1, outcomes.stream().filter(TeamConflictException.class::isInstance).count());
-        Membership winner = second.membership().findMembership(worker.session()).block();
-        assertEquals(winner, first.membership().findMembership(worker.session()).block());
-        first.membership()
+        Membership winner = secondMembership.findMembership(worker.session()).block();
+        assertEquals(winner, firstMembership.findMembership(worker.session()).block());
+        firstMembership
                 .unbindMember("alice", winner.address(), worker.session(), winner.token())
                 .block();
         writes.set(0);
@@ -442,7 +492,7 @@ class TeamSessionMembershipH2Test {
         Object lx = x.get(10, TimeUnit.SECONDS), ry = y.get(10, TimeUnit.SECONDS);
         assertTrue(lx instanceof Membership);
         assertEquals(lx, ry);
-        assertEquals(lx, second.membership().findMembership(worker.session()).block());
+        assertEquals(lx, secondMembership.findMembership(worker.session()).block());
         shutdown(first.ds());
     }
 
@@ -503,6 +553,167 @@ class TeamSessionMembershipH2Test {
         shutdown(reopened.ds());
     }
 
+    @Test
+    void nativeAssociationsSurviveDatabaseAndSessionLogReopenAndSafeRemoval() throws Exception {
+        Path nativeWorkspace = temp.resolve("native-workspace");
+        var logs = new WorkspaceSessionLogStore(new LocalFilesystem(nativeWorkspace));
+        var leaderKey =
+                SessionKey.nativeSession(
+                        "native-logs",
+                        new io.agentscope.core.session.SessionKey(
+                                "alice", "runtime-leader", "leader-session"));
+        var workerKey =
+                SessionKey.nativeSession(
+                        "native-logs",
+                        new io.agentscope.core.session.SessionKey(
+                                "alice", "runtime-worker", "worker-session"));
+        var leader =
+                new MemberSession(
+                        "lead", "definition-owner", "leader-agent", Role.LEADER, leaderKey);
+        var worker =
+                new MemberSession(
+                        "worker", "definition-owner", "worker-agent", Role.WORKER, workerKey);
+        persistNative(leaderKey, logs);
+        persistNative(workerKey, logs);
+        var nativeWorkerKey =
+                new io.agentscope.core.session.SessionKey(
+                        "alice", "runtime-worker", "worker-session");
+        var workerContext =
+                RuntimeContext.builder().userId("alice").sessionId("worker-session").build();
+        long committedSeq = logs.open(nativeWorkerKey, workerContext).head().seq();
+        Fixture initial = open();
+        try {
+            create(initial.client(), a);
+            var membership =
+                    initial.client()
+                            .sessionMembership(
+                                    "app",
+                                    Map.of("sessions", initial.states()),
+                                    Map.of("native-logs", logs));
+            var team = membership.adoptTeam("alice", a, "Native display", List.of(leader)).block();
+            Membership binding = membership.bindMember("alice", a, worker).block();
+            assertFalse(initial.states().exists("alice", "leader-session"));
+            assertFalse(initial.states().exists("alice", "worker-session"));
+            shutdown(initial.ds());
+
+            Fixture reopened = open();
+            var reopenedLogs = new WorkspaceSessionLogStore(new LocalFilesystem(nativeWorkspace));
+            var reopenedMembership =
+                    reopened.client()
+                            .sessionMembership(
+                                    "app",
+                                    Map.of("sessions", reopened.states()),
+                                    Map.of("native-logs", reopenedLogs));
+            assertEquals(binding, reopenedMembership.findMembership(workerKey).block());
+            assertEquals(team.teamId(), reopenedMembership.getTeam("alice", a).block().teamId());
+            assertEquals(
+                    "Native display", reopenedMembership.getTeam("alice", a).block().displayName());
+            assertEquals(2, reopenedMembership.listMemberships("alice", a).block().size());
+            assertEquals(
+                    "worker-session",
+                    reopened.client().listMembers("ns-a", "a").block().stream()
+                            .filter(m -> m.memberName().equals("worker"))
+                            .findFirst()
+                            .orElseThrow()
+                            .sessionId());
+            assertTrue(
+                    reopenedMembership
+                            .unbindMember("alice", a, workerKey, binding.token())
+                            .block());
+            var rebound = reopenedMembership.bindMember("alice", a, worker).block();
+            assertNotEquals(binding.token(), rebound.token());
+            assertThrows(
+                    TeamConflictException.class,
+                    () ->
+                            reopenedMembership
+                                    .unbindMember("alice", a, workerKey, binding.token())
+                                    .block());
+            assertEquals(rebound, reopenedMembership.findMembership(workerKey).block());
+            assertTrue(
+                    reopenedMembership
+                            .unbindMember("alice", a, workerKey, rebound.token())
+                            .block());
+            shutdown(reopened.ds());
+
+            Fixture finalRead = open();
+            var finalLogs = new WorkspaceSessionLogStore(new LocalFilesystem(nativeWorkspace));
+            var finalMembership =
+                    finalRead
+                            .client()
+                            .sessionMembership(
+                                    "app",
+                                    Map.of("sessions", finalRead.states()),
+                                    Map.of("native-logs", finalLogs));
+            assertNull(finalMembership.findMembership(workerKey).block());
+            assertEquals(1, finalMembership.listMemberships("alice", a).block().size());
+            assertEquals(
+                    "",
+                    finalRead.client().listMembers("ns-a", "a").block().stream()
+                            .filter(m -> m.memberName().equals("worker"))
+                            .findFirst()
+                            .orElseThrow()
+                            .sessionId());
+            assertEquals(committedSeq, finalLogs.open(nativeWorkerKey, workerContext).head().seq());
+            assertNotNull(
+                    SessionProjection.read(finalLogs.open(nativeWorkerKey, workerContext))
+                            .stateJson());
+            assertFalse(finalRead.states().exists("alice", "worker-session"));
+        } finally {
+            shutdown(initial.ds());
+        }
+    }
+
+    private void persistNative(SessionKey key, SessionLogStore logs) {
+        Model model =
+                new Model() {
+                    public String getModelName() {
+                        return "native-jdbc-fixture";
+                    }
+
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("initialized")
+                                                                .build()))
+                                        .build());
+                    }
+                };
+        try (var agent =
+                HarnessAgent.builder()
+                        .agentId(key.agentId())
+                        .workspace(temp.resolve("native-workspace"))
+                        .model(model)
+                        .sessionLogStore(logs)
+                        .disableShellTool()
+                        .disableFilesystemTools()
+                        .disableWebTools()
+                        .disableSubagents()
+                        .disableDynamicSubagents()
+                        .disableDynamicSkills()
+                        .disableDefaultWorkspaceSkills()
+                        .disableMemoryTools()
+                        .disableMemoryHooks()
+                        .disableToolsConfig()
+                        .disableWorkspaceContext()
+                        .disableAtPathExpansion()
+                        .build()) {
+            assertEquals(
+                    "initialized",
+                    agent.call(
+                                    "initialize",
+                                    RuntimeContext.builder()
+                                            .userId(key.owner())
+                                            .sessionId(key.sessionId())
+                                            .build())
+                            .block(Duration.ofSeconds(15))
+                            .getTextContent());
+        }
+    }
+
     private Fixture open() {
         JdbcDataSource ds = new JdbcDataSource();
         ds.setURL("jdbc:h2:file:" + temp.resolve("teams").toAbsolutePath() + ";DB_CLOSE_DELAY=-1");
@@ -555,8 +766,24 @@ class TeamSessionMembershipH2Test {
                 new SessionKey("sessions", owner, sessionId));
     }
 
+    private MemberSession competitionMember(
+            Fixture fixture, String name, String sessionId, String agentRef, SessionLogStore logs) {
+        if (logs == null) return member(fixture, name, sessionId, agentRef);
+        var key = new SessionKey("native-logs", "alice", sessionId, "runtime-" + agentRef);
+        persistNative(key, logs);
+        return new MemberSession(
+                name,
+                "definition-owner",
+                agentRef,
+                name.equals("lead") ? Role.LEADER : Role.WORKER,
+                key);
+    }
+
     private static TeamSessionMembership racing(
-            Fixture fixture, CyclicBarrier barrier, AtomicInteger writes) {
+            Fixture fixture,
+            CyclicBarrier barrier,
+            AtomicInteger writes,
+            Map<String, SessionLogStore> logs) {
         DelegatingStore controlled =
                 new DelegatingStore(fixture.store()) {
                     @Override
@@ -574,7 +801,7 @@ class TeamSessionMembershipH2Test {
                     }
                 };
         return new LocalTeamClient(controlled)
-                .sessionMembership("app", Map.of("sessions", fixture.states()));
+                .sessionMembership("app", Map.of("sessions", fixture.states()), logs);
     }
 
     private static CompletableFuture<Object> attempt(Callable<Object> action) {

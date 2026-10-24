@@ -15,9 +15,13 @@
  */
 package io.agentscope.harness.agent.team;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.session.SessionLogStore;
+import io.agentscope.core.session.SessionProjection;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
@@ -70,9 +74,18 @@ public final class TeamSessionMembership {
     private final BaseStore store;
     private final String domain;
     private final Map<String, AgentStateStore> stateStores;
+    private final Map<String, SessionLogStore> sessionLogs;
 
     TeamSessionMembership(
             BaseStore store, String domain, Map<String, AgentStateStore> stateStores) {
+        this(store, domain, stateStores, Map.of());
+    }
+
+    TeamSessionMembership(
+            BaseStore store,
+            String domain,
+            Map<String, AgentStateStore> stateStores,
+            Map<String, SessionLogStore> sessionLogs) {
         if (!store.supportsAtomicSessionStorage()) {
             throw new IllegalArgumentException(
                     "Session membership requires atomic versioned storage");
@@ -81,6 +94,11 @@ public final class TeamSessionMembership {
         this.domain = text(domain, "relationship domain");
         this.stateStores = Map.copyOf(stateStores);
         this.stateStores.keySet().forEach(id -> text(id, "state store domain"));
+        this.sessionLogs = Map.copyOf(sessionLogs);
+        this.sessionLogs.keySet().forEach(id -> text(id, "session log domain"));
+        if (this.sessionLogs.keySet().stream().anyMatch(this.stateStores::containsKey)) {
+            throw new IllegalArgumentException("Legacy and native stores need distinct domain IDs");
+        }
     }
 
     /** Declared responsibility, independent of how a member's resources were obtained. */
@@ -109,17 +127,43 @@ public final class TeamSessionMembership {
     }
 
     /**
-     * Exact Session slot in a configured state store domain. Null owner means anonymous.
-     * @param stateStoreDomain stable identifier for the actual state store partition
+     * Exact legacy state slot or native Session in a configured physical storage domain.
+     * Null owner means anonymous; empty owners and the reserved alias {@code __anon__} are rejected.
+     * A nonnull agentId selects native log identity, independently of the definition reference.
+     * @param stateStoreDomain stable identifier for the actual state or native log partition
      * @param owner nullable Session owner
      * @param sessionId Session identifier within that partition and owner
+     * @param agentId native running Agent ID; null selects the legacy state slot
      */
-    public record SessionKey(String stateStoreDomain, String owner, String sessionId) {
+    public record SessionKey(
+            String stateStoreDomain,
+            String owner,
+            String sessionId,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String agentId) {
+        /** Preserves the legacy state-store slot constructor and JSON shape. */
+        public SessionKey(String stateStoreDomain, String owner, String sessionId) {
+            this(stateStoreDomain, owner, sessionId, null);
+        }
+
+        /**
+         * Builds a complete native identity in the application's actual log-store domain.
+         * @param logDomain stable identifier for the actual log backend and partition routing
+         * @param key existing native Session identity; no owner normalization is performed
+         * @return identity for registration, lookup and token-checked removal
+         */
+        public static SessionKey nativeSession(
+                String logDomain, io.agentscope.core.session.SessionKey key) {
+            return new SessionKey(logDomain, key.userId(), key.sessionId(), key.agentId());
+        }
+
         /** Validates the slot, rejecting reserved anonymous aliases. */
         public SessionKey {
             text(stateStoreDomain, "state store domain");
             validOwner(owner);
             text(sessionId, "session ID");
+            if (agentId != null) {
+                text(agentId, "native agent ID");
+            }
         }
     }
 
@@ -253,7 +297,7 @@ public final class TeamSessionMembership {
                         }
                         Marker next =
                                 new Marker(
-                                        1,
+                                        schema(initial),
                                         domain,
                                         owner,
                                         UUID.randomUUID().toString(),
@@ -345,13 +389,13 @@ public final class TeamSessionMembership {
 
     /**
      * Finds the current association of a precisely identified Session, including across namespaces.
-     * @param session Session identity in a configured state store domain
+     * @param session Session identity in a configured state or native log domain
      * @return empty if unbound; does not require the Session still to exist
      */
     public Mono<Membership> findMembership(SessionKey session) {
         return io(
                 () -> {
-                    requireStateStore(session);
+                    requireDomain(session);
                     return readOwner(session.owner()).state().memberships().stream()
                             .filter(m -> m.member().session().equals(session))
                             .findFirst()
@@ -499,18 +543,43 @@ public final class TeamSessionMembership {
                 || declared.isLead() != (member.role() == Role.LEADER)) {
             throw new TeamConflictException("Member definition or declared role does not match");
         }
-        if (!requireStateStore(member.session()).exists(owner, member.session().sessionId())) {
-            throw new IllegalArgumentException(
-                    "Session has no persisted state in the configured domain");
+        requirePersistedSession(member.session());
+    }
+
+    private void requireDomain(SessionKey session) {
+        boolean known =
+                session.agentId() == null
+                        ? stateStores.containsKey(session.stateStoreDomain())
+                        : sessionLogs.containsKey(session.stateStoreDomain());
+        if (!known) {
+            throw new IllegalArgumentException("Unknown Session store domain or identity kind");
         }
     }
 
-    private AgentStateStore requireStateStore(SessionKey session) {
-        AgentStateStore result = stateStores.get(session.stateStoreDomain());
-        if (result == null) {
-            throw new IllegalArgumentException("Unknown state store domain");
+    private void requirePersistedSession(SessionKey session) {
+        requireDomain(session);
+        if (session.agentId() == null) {
+            if (!stateStores
+                    .get(session.stateStoreDomain())
+                    .exists(session.owner(), session.sessionId())) {
+                throw new IllegalArgumentException(
+                        "Session has no persisted state in the configured domain");
+            }
+        } else {
+            var key =
+                    new io.agentscope.core.session.SessionKey(
+                            session.owner(), session.agentId(), session.sessionId());
+            var context =
+                    RuntimeContext.builder()
+                            .userId(session.owner())
+                            .sessionId(session.sessionId())
+                            .build();
+            var log = sessionLogs.get(session.stateStoreDomain()).open(key, context);
+            if (SessionProjection.read(log).stateJson() == null) {
+                throw new IllegalArgumentException(
+                        "Native Session has no committed baseline in the configured domain");
+            }
         }
-        return result;
     }
 
     private StoreItem requireMeta(TeamAddress address) {
@@ -554,7 +623,12 @@ public final class TeamSessionMembership {
             return new OwnerItem(0, new OwnerState(1, Map.of(), List.of()));
         }
         OwnerState state = decodeOwner(item.value());
-        if (state.schema() != 1) {
+        if (state.schema() != 1 && state.schema() != 2) {
+            throw corrupt();
+        }
+        if (state.schema() == 1
+                && state.memberships().stream()
+                        .anyMatch(m -> m.member().session().agentId() != null)) {
             throw corrupt();
         }
         Set<SessionKey> sessions = new HashSet<>();
@@ -592,7 +666,12 @@ public final class TeamSessionMembership {
                 ownerKey(owner),
                 encode(
                         new StoredOwnerState(
-                                1,
+                                Math.max(
+                                        current.state().schema(),
+                                        schema(
+                                                memberships.stream()
+                                                        .map(Membership::member)
+                                                        .toList())),
                                 receipts,
                                 memberships.stream().map(StoredMembership::from).toList())),
                 current.version());
@@ -693,7 +772,7 @@ public final class TeamSessionMembership {
             return null;
         }
         Marker marker = decode(meta.value().get(MARKER), Marker.class);
-        if (marker.schema() != 1) {
+        if (marker.schema() != 1 && marker.schema() != 2) {
             throw corrupt();
         }
         return marker;
@@ -714,6 +793,9 @@ public final class TeamSessionMembership {
             text(displayName, "display name");
             text(registrationToken, "registration token");
             initial = canonical(initial);
+            if (schema != TeamSessionMembership.schema(initial)) {
+                throw corrupt();
+            }
             if (initial.stream().filter(m -> m.role() == Role.LEADER).count() != 1) {
                 throw corrupt();
             }
@@ -816,6 +898,10 @@ public final class TeamSessionMembership {
         return List.copyOf(initial).stream()
                 .sorted(Comparator.comparing(MemberSession::memberName))
                 .toList();
+    }
+
+    private static int schema(List<MemberSession> members) {
+        return members.stream().anyMatch(m -> m.session().agentId() != null) ? 2 : 1;
     }
 
     private static List<String> teamNs(TeamAddress address) {

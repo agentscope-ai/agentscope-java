@@ -48,7 +48,7 @@ Configure capabilities and use session operations as your application needs them
 
 `LocalTeamClient.sessionMembership(...)` explicitly enables adoption, binding, queries and safe removal for existing Leader and manually supplied **BYO** member Sessions. A definition's different Sessions may join different Teams; one exact Session may belong to only one Team in the configured relationship domain, including across Team namespaces. This programming API uses the existing `BaseStore` capability: `supportsAtomicSessionStorage()` must return `true`, with positive item versions and atomic `putIfVersion` across writers sharing the backend. A failed comparison writes nothing; storage errors must propagate. The existing `InMemoryStore` and JDBC `JdbcStore` declare this capability. Custom providers use the same contract; its default remains `false`. Other `BaseStore` and `TeamClient` implementations continue to work through their existing APIs.
 
-Create the Team through the existing `createTeam`, then adopt it with an existing persisted Leader Session. Bind only members already declared in that Team's directory. The example uses `.block()` at an application entry point; compose the returned `Mono` operations instead on reactive request paths.
+Create the Team through the existing `createTeam`, then adopt it with an existing persisted Leader Session. Bind only members already declared in that Team's directory. The following example uses legacy `AgentStateStore` Sessions; native Session logs are supported through the configuration below. The example uses `.block()` at an application entry point; compose the returned `Mono` operations instead on reactive request paths.
 
 ```java
 import io.agentscope.core.state.AgentState;
@@ -92,14 +92,41 @@ boolean removed = membership.unbindMember("alice", address, worker.session(), bi
 boolean stateKept = stateStore.exists("alice", "worker-session");
 ```
 
-The in-memory example demonstrates the operations without models or Worker execution. For process-restart persistence, configure the existing JDBC `JdbcStore` with a durable database and use the same relationship domain and Session-store domain mapping on every application instance. Membership does not write or delete `AgentStateStore` state; a file or JDBC state store can retain the existing conversations independently. The configured stores here are `AgentStateStore` backends; this API does not automatically discover native `AgentSession`/`SessionLog` Sessions or map their `(userId, agentId, sessionId)` identities.
+The in-memory example demonstrates the operations without models or Worker execution. For process-restart persistence, configure the existing JDBC `JdbcStore` with a durable database and use the same relationship domain and Session-store domain mapping on every application instance. Membership does not write or delete Session state or logs; their configured backends retain existing conversations independently.
+
+### Existing native Sessions
+
+For native history, use the three-argument `sessionMembership` overload with the actual `SessionLogStore`. Replace the legacy store configuration and member keys in the example above with the following configuration; the `createTeam`, `adoptTeam`, binding, query and removal operations stay the same. Here, both existing agents use `logs` through `.sessionLogStore(logs)`, and their contexts identify already initialized Sessions owned by `alice`.
+
+```java
+var membership = client.sessionMembership(
+        "app-relations", Map.of(), Map.of("native-logs", logs));
+var leader = new MemberSession("lead", "alice", "leader-agent", Role.LEADER,
+        SessionKey.nativeSession("native-logs", leaderAgent.sessionKey(leaderContext)));
+var worker = new MemberSession("researcher", "alice", "research-agent", Role.WORKER,
+        SessionKey.nativeSession("native-logs", workerAgent.sessionKey(workerContext)));
+```
+
+Native registration reads the committed Session log baseline. Initialize the Session through a normal agent call or an `AgentSession.submit` task before adoption or binding. Opening a Session handle or accepting a queued task alone does not establish a committed baseline. A missing baseline rejects registration, and log read errors propagate; membership does not write an `AgentState` placeholder or repair the log. Queries and token-based removal remain available if the log later becomes unavailable.
+
+The [NativeTeamMembershipExample](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/harness/teams/NativeTeamMembershipExample.java) runs two real native conversations with an offline scripted model, registers them through this programming API, reopens the clients and log backend, and removes one association while checking that its Session log remains. Run it from the repository root:
+
+```bash
+mvn -B -T1C -pl agentscope-examples/documentation -am install -DskipTests
+mvn -B -pl agentscope-examples/documentation exec:exec \
+  -Dexec.executable=java \
+  -Dexec.args="-classpath %classpath io.agentscope.examples.documentation2.harness.teams.NativeTeamMembershipExample"
+```
+
+The example requires no provider credentials. It stores Session logs in a temporary workspace and reopens them in the same process. Its Team records use `InMemoryStore`, so it does not retain associations after process exit; use a durable `JdbcStore` for that requirement.
 
 ### Identity and ownership
 
 - `TeamAddress(namespace, teamName)` is the existing storage/routing address. Supply it explicitly; adoption rejects null/blank namespaces instead of silently moving historical records. Nonblank strings are preserved. Logical `teamId` and `displayName` are separate: two Teams may have the same display name when created at distinct addresses. One address can be adopted by only one owner and relationship domain.
-- `SessionKey(stateStoreDomain, owner, sessionId)` identifies the actual Session slot. Use the same stable domain ID for the same physical store partition, and different IDs for independent partitions. Assigning two IDs to the same backing store bypasses this identity contract. Provider-specific aliases must also be resolved by the application; Agent references do not establish storage isolation.
-- Session owner must equal Team owner. Definition owner is recorded separately and may differ; this trusted application API does not establish definition access or invitation authorization. Session existence means any persisted state, including legacy keys. A Session with no persisted state cannot be registered.
-- Null owner supports anonymous Sessions. Blank owners and the reserved `__anon__` literal are rejected by this new API to avoid aliasing existing anonymous state slots. Old APIs retain their accepted inputs. IDs and addresses reject blank values and control characters.
+- `SessionKey(stateStoreDomain, owner, sessionId)` retains the legacy state-slot identity and JSON shape. The four-argument form adds the running `agentId`; `nativeSession(logDomain, coreSessionKey)` preserves the native `(userId, agentId, sessionId)` identity. Running `agentId` and the declared definition's `agentRef` are independent. Native Sessions differing in user, agent, session or actual storage domain are distinct.
+- A domain ID identifies the actual backend and partition routing, independently of the relationship domain or Team namespace. Use the same stable ID for the same physical partition on every client, and different IDs for independent partitions. Legacy and native domain names must not overlap. Assigning two IDs to one backing partition bypasses Session uniqueness. The application must resolve provider aliases and, when extra tenant attributes select storage, configure a trusted adapter that fixes those attributes to the declared partition. Membership supplies the Session's user and session IDs when opening its log; it does not infer additional routing context.
+- Session owner must equal Team owner. Definition owner is recorded separately and may differ; this trusted application API does not establish definition access or invitation authorization. Legacy existence accepts persisted state, including old state keys; native existence requires a committed log baseline. Neither check grants access to a definition.
+- Null owner supports anonymous Sessions. Empty or blank owners, control characters and the reserved `__anon__` literal are rejected by this API. Use a supported identity consistently from Session initialization onward; converting an existing empty user ID to null can select a different Session on some backends. Old APIs retain their accepted inputs. IDs and addresses reject blank values and control characters.
 
 ### Queries, retries and compatibility
 
@@ -115,11 +142,11 @@ For adopted Teams, legacy `listMembers` reads the same associations and projects
 
 Before adopting a Team, stop its older-version and unenabled writers and wait for their in-flight writes to finish. Upgrade all participating writers and enable protection on each client with `sessionMembership(...)`. Enabling a client does not stop writes that already entered its legacy path. Older binaries do not understand the relationship projection, and their unconditional completion fallback can erase a concurrent adoption marker. Mixed-version writes to adopted Teams are not supported. For rollback, use a version that understands the stored format, or stop all writers and restore a backup taken before adoption.
 
-Relationship schema 1 reads earlier BYO records containing `source: "BYO"` and draft records that omitted the field. Missing source means manually supplied existing resources; it does not grant ownership for deletion. New relationship writes retain BYO in the internal storage format independently of the public `Membership` record. Unknown sources, fields or schema versions are rejected without resetting or overwriting the record.
+Purely legacy relationships retain schema 1 and read earlier BYO records containing `source: "BYO"` and draft records that omitted the field. Native identities use schema 2; an owner item upgraded to schema 2 does not downgrade after native associations are removed. Before registering native Sessions, stop and drain older writers and upgrade every participating client to a version that understands schema 2. Older readers cannot read native records. Missing source means manually supplied existing resources; it does not grant ownership for deletion. New relationship writes retain BYO in the internal storage format independently of the public `Membership` record. Unknown sources, fields or schema versions are rejected without resetting or overwriting the record.
 
 Team metadata, phase and declared definitions remain in their existing records. Only relationship links and adoption receipts are kept in one item per relationship domain and owner; read/write cost and contention grow with that owner's links. All writers to adopted records must honor the versioned capability; direct raw mutation or deletion is unsupported. Malformed or unknown relationship formats fail rather than being reset. Session existence validation and relationship commit are separate operations, so external Session deletion can leave an association that the application must explicitly remove.
 
-Unbinding preserves the Agent definition, Session state and workspace. It does **not** stop runs, revoke tools, update a constructed static `TeamContext`, or unregister `bindSession` notifications. Task boards, mailboxes and static `teamsMode` keep their existing runtime behavior. This capability does not create models, Workers, invitations, schedules or Service Team/Run resources.
+Unbinding preserves the Agent definition, Session state, native logs and workspace. It does **not** stop runs, revoke tools, update a constructed static `TeamContext`, or unregister `bindSession` notifications. Task boards, mailboxes and static `teamsMode` keep their existing runtime behavior. This capability does not create models, Workers, invitations, schedules or Service Team/Run resources.
 
 ## How state flows
 
