@@ -154,6 +154,14 @@ server.close();
 
 `AgentScopeA2aServer` does not bind a port or expose endpoints itself; it only assembles components and the request-handling chain. You wire transport into Spring Boot, Quarkus, Vert.x, etc. as you prefer.
 
+### Request session identifiers
+
+The server fills `AgentRequestOptions.sessionId` for the `AgentRunner` from the SDK-resolved A2A `contextId`. Clients can use the standard protocol field without adding a custom metadata key. If the client omits `contextId`, the SDK generates one.
+
+For compatibility, a non-null, non-blank `message.metadata["sessionId"]` overrides this mapping, even when it differs from `contextId`. This preserves existing session keys when the SDK generates a new context ID. Null, empty, or whitespace-only metadata values fall back to `contextId`. The protocol message's `contextId` is not changed.
+
+This mapping supplies the runner's request options; it does not automatically enable session persistence. A custom runner can use the identifier when setting up its runtime context or state store.
+
 ### Optional components
 
 - `TaskStore` / `QueueManager`: task and event queue stores; in-memory by default, swap for persistent versions in production.
