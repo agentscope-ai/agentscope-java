@@ -73,6 +73,9 @@ public final class LocalTeamClient implements TeamClient {
      * receive the member's user/session context; bind any additional routing attributes in a
      * configured store adapter. Upgrade and drain older writers before storing native records.
      *
+     * <p>A successful call also enables strict completion CAS on this client, including Teams
+     * awaiting adoption. Enable every writer before adopting Teams.
+     *
      * @param relationDomain shared relationship authority domain
      * @param stateStores legacy state domains; existing mappings retain their meaning
      * @param sessionLogs native log domains, disjoint from legacy domains

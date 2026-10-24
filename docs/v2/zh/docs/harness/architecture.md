@@ -107,7 +107,7 @@ var worker = new MemberSession("researcher", "alice", "research-agent", Role.WOR
         SessionKey.nativeSession("native-logs", workerAgent.sessionKey(workerContext)));
 ```
 
-原生登记读取 Session 日志中已提交的 baseline。接入或绑定之前，应通过普通 Agent 调用或 `AgentSession.submit` 任务初始化 Session。仅打开 Session 句柄或接受排队任务，不表示 baseline 已提交。缺少 baseline 时拒绝登记，日志读取错误直接传播；归属操作不写入占位 `AgentState`，也不修复日志。日志后来不可用时，仍可查询归属和使用 token 解除关联。
+原生登记读取 Session 日志中已提交的 baseline。每次存在性校验都会扫描已提交的日志历史，因此接入和绑定的成本随会话长度增长。接入或绑定之前，应通过普通 Agent 调用或 `AgentSession.submit` 任务初始化 Session。仅打开 Session 句柄或接受排队任务，不表示 baseline 已提交。缺少 baseline 时拒绝登记，日志读取错误直接传播；归属操作不写入占位 `AgentState`，也不修复日志。日志后来不可用时，仍可查询归属和使用 token 解除关联。
 
 [NativeTeamMembershipExample](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/harness/teams/NativeTeamMembershipExample.java) 通过离线脚本模型执行两个真实原生会话，再使用编程 API 登记、重开客户端及日志后端，最后解除一个关联并检查其 Session 日志仍然保留。在仓库根目录运行：
 
@@ -122,7 +122,7 @@ mvn -B -pl agentscope-examples/documentation exec:exec \
 
 ### 身份与所有权
 
-- `TeamAddress(namespace, teamName)` 是已有存储/路由地址。接入时显式提供，拒绝 null/空白 namespace，避免静默迁移历史记录；非空白字符串原样保留。逻辑 `teamId` 和 `displayName` 独立；不同地址的 Team 可以使用相同展示名。同一地址只能由一个 owner 和关系域接入。
+- `TeamAddress(namespace, teamName)` 是已有存储/路由地址。接入时显式提供，拒绝 null/空白 namespace，避免静默迁移历史记录；非空白字符串原样保留。若 `createTeam` 收到 null namespace，Team 实际保存在 `"default"` 下；构造接入地址时应使用该 namespace，也可从返回的 `TeamInfo` 读取。逻辑 `teamId` 和 `displayName` 独立；不同地址的 Team 可以使用相同展示名。同一地址只能由一个 owner 和关系域接入。
 - `SessionKey(stateStoreDomain, owner, sessionId)` 保留旧状态槽身份及 JSON 形状。四参数形式增加运行 `agentId`；`nativeSession(logDomain, coreSessionKey)` 保留原生 `(userId, agentId, sessionId)` 身份。运行 `agentId` 与声明定义的 `agentRef` 独立。用户、Agent、Session 或实际存储域不同的原生会话，是不同的 Session。
 - 域 ID 标识实际后端及分区路由，与关系域、Team namespace 分开。同一物理分区在所有客户端使用相同稳定 ID，独立分区使用不同 ID；legacy 与 native 域名不能重叠。将同一底层分区配置成两个域 ID 会绕过 Session 唯一性。应用须处理 provider 别名；额外 tenant 属性参与存储路由时，应配置可信 adapter，将这些属性固定到声明的分区。归属操作打开日志时传入 Session 的 user 和 session ID，不推断额外路由上下文。
 - Session owner 必须等于 Team owner。定义 owner 独立记录，可以不同；可信应用编程 API 不提供定义访问或邀请授权。旧存储的存在校验接受已持久化状态，包括旧 state keys；原生存在校验要求已提交的日志 baseline。两种校验都不授予定义访问权限。
@@ -136,15 +136,19 @@ mvn -B -pl agentscope-examples/documentation exec:exec \
 
 随后在原 Team meta 写标记，再在单个 owner 关系记录中原子提交初始关系和回执。这两次写入中间发生故障或 Session 被并发抢占，仍可能留下 `PENDING`：`getTeam` 返回该状态和空的已提交成员列表，`listMemberships` 明确报错。旧 `listMembers` 及 `broadcastMessage` 继续使用原声明目录，包括原 Session 字段；这不代表新归属已经提交。提交后 `listMembers` 才切换到关系投影。用相同完整 `adoptTeam` 请求重试，包含展示名和初始成员；冲突的初始请求不能覆盖标记。已经提交的接入请求重放只返回当前关系，不恢复后来已解除的成员。
 
-完全相同的绑定保留 token。解除需要预期 token；实际解除返回 `true`，已无关联返回 `false`。错误 Team 或过期 token 报错；真正解除后重绑会生成新 token。CAS 竞争最多重试十次，之后抛 `TeamConflictException`；存储错误直接传播，不降级为无条件写。提交后响应失败时，可查询或用相同请求重试确认结果；取消订阅不回滚已经提交的关系。
+恢复要求原始初始 Session 仍然可用且可以关联。遇到临时存储故障，应先恢复后端可用性，再重试原请求。若 Session 已被其他 Team 占用，应通过有权执行的应用流程处理该关联后再重试。已删除的 Session 必须通过其受支持的存储/恢复路径还原为原来的持久会话；写入占位状态不属于恢复。若无法恢复这些条件，Team 会保持 `PENDING`：目前没有受支持的取消/放弃接入 API。不要通过删除或改写 marker、owner 记录绕过该状态。
 
-已接入 Team 的旧 `listMembers` 读取同一关系并投影 `sessionId`，未关联的声明成员投影为空。旧 record 结构、声明的 `isLead`、`phase` 和 `deployMode` 不变。旧数据已有非空 Session 字段时，初始接入必须显式提供对应完整身份。`completeTeam` 仍只将原 phase 改为 `Completed`，保留关系及接入标记。成功调用 `sessionMembership(...)` 后，当前 client 启用严格完成 CAS，包括尚未接入的 Team；新实例观察到接入标记时也使用严格 CAS。持续竞争时报冲突，避免覆盖其他写入方。未启用 client 对未接入 Team 保留旧完成 fallback，包括版本存储。
+完全相同的绑定保留 token。解除需要预期 token；实际解除返回 `true`，已无关联返回 `false`。观察到绑定存在时，错误 Team 或过期 token 报错；真正解除后重绑会生成新 token。`false` 表示操作期间观察到无关联，不保证调用返回时仍未绑定：与解除重叠的新绑定可能随后完成，该新关系会被保留。CAS 竞争最多重试十次，之后抛 `TeamConflictException`；存储错误直接传播，不降级为无条件写。提交后响应失败时，可查询或用相同请求重试确认结果；取消订阅不回滚已经提交的关系。
+
+已接入 Team 的旧 `listMembers` 读取同一关系并投影 `sessionId`，未关联的声明成员投影为空。旧 record 结构、声明的 `isLead`、`phase` 和 `deployMode` 不变。已有 `TeamTool.listMembers` 会序列化这份名册，因此模型可见的 `sessionId` 来自实际关联的 Session，解绑后为空；输出不包含 binding token、关系记录或完整原生存储身份。旧数据已有非空 Session 字段时，初始接入必须显式提供对应完整身份。`completeTeam` 仍只将原 phase 改为 `Completed`，保留关系及接入标记。成功调用 `sessionMembership(...)` 后，当前 client 启用严格完成 CAS，包括尚未接入的 Team；新实例观察到接入标记时也使用严格 CAS。持续竞争时报冲突，避免覆盖其他写入方。未启用 client 对未接入 Team 保留旧完成 fallback，包括版本存储。
 
 接入 Team 前，先停止该 Team 的旧版本及未启用写入方，等待其在途写操作结束，再升级所有参与写入的实例，并在每个 client 上调用 `sessionMembership(...)` 启用保护。启用 client 不会停止已经进入旧路径的写操作。旧二进制不理解归属投影，其无条件完成 fallback 可能清掉并发接入标记。已接入 Team 不支持新旧版本混写。回滚需使用理解现有存储格式的版本，或停止全部写入方后恢复接入前的备份。
 
 纯 legacy 关系保留 schema 1，可以读取早期包含 `source: "BYO"` 的记录，以及曾省略该字段的草案记录。原生身份使用 schema 2；owner 记录升级到 schema 2 后，即使解除全部原生关联也不降级。登记原生 Session 前，须停止并排空旧写入者，将所有参与客户端升级到理解 schema 2 的版本；旧读取器无法读取原生记录。缺省来源只表示手工提供的既有资源，不授予删除权。新关系写入在内部存储格式中保留 BYO，与公开 `Membership` record 分开。未知来源、字段或格式版本明确拒绝，不重置或覆盖原记录。
 
-Team 元数据、phase 和声明定义继续使用原记录；每个关系域、每个 owner 的单条记录只保存关联和接入回执，读写成本与竞争随该 owner 的关联数增加。已接入记录的所有写入者须遵守版本能力；不支持直接原始修改或删除。损坏或未知关系格式会报错，不重置为空。Session 存在校验与关系提交是独立操作，外部删除 Session 可能留下关联，应用须显式解除。
+Team 元数据、phase 和声明定义继续使用原记录；每个关系域、每个 owner 的单条记录只保存关联和接入回执，读写成本与竞争随该 owner 的关联数增加。目前没有基于压测的容量上限；大规模使用前，应结合实际后端评估预期关联数和并发写入量。已接入记录的所有写入者须遵守版本能力；不支持直接原始修改或删除。损坏或未知关系格式会报错，不重置为空。Session 存在校验与关系提交是独立操作，外部删除 Session 可能留下关联，应用须显式解除。
+
+JDBC adapter 仅将已识别的重复键诊断视为 CAS 竞争。其他或未知 SQL 诊断保留原因传播，包括诊断码尚未识别的驱动重复键错误。这是对旧版宽泛完整性约束分类的有意收紧；新增后端时应验证实际驱动。JDBC、MySQL 和 PostgreSQL 扩展分别在自己的独立模块及支持方言内维护分类。
 
 解除保留 Agent 定义、Session 状态、原生日志和 workspace，不停止运行、撤销工具权限、更新已构造的静态 `TeamContext` 或注销 `bindSession` 通知。任务板、mailbox 和静态 `teamsMode` 保留原运行语义。该能力不创建模型、Worker、邀请、调度或 Service Team/Run 资源。
 

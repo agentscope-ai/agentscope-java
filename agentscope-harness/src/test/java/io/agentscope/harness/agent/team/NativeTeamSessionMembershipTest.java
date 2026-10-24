@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.team;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -27,6 +28,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -49,6 +51,7 @@ import io.agentscope.harness.agent.team.TeamSessionMembership.Role;
 import io.agentscope.harness.agent.team.TeamSessionMembership.SessionKey;
 import io.agentscope.harness.agent.team.TeamSessionMembership.Status;
 import io.agentscope.harness.agent.team.TeamSessionMembership.TeamAddress;
+import io.agentscope.harness.agent.tool.TeamTool;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashSet;
@@ -77,6 +80,63 @@ class NativeTeamSessionMembershipTest {
     private final InMemorySessionLogStore logs = new InMemorySessionLogStore();
     private final TeamAddress a = new TeamAddress("ns", "a");
     private final TeamAddress b = new TeamAddress("other-ns", "b");
+
+    @Test
+    void memberToolProjectsNativeSessionIdsWithoutExposingRelationshipRecords() throws Exception {
+        var client = new LocalTeamClient(new InMemoryStore());
+        create(client, a);
+        var service = client.sessionMembership("relations", Map.of(), Map.of("journal", logs));
+        MemberSession leader =
+                member("lead", "journal", "alice", "runtime-leader", "leader-session");
+        MemberSession worker =
+                member("worker", "journal", "alice", "runtime-worker", "worker-session");
+        persist(leader, logs);
+        persist(worker, logs);
+        service.adoptTeam("alice", a, "Display", List.of(leader)).block(WAIT);
+        Membership binding = service.bindMember("alice", a, worker).block(WAIT);
+        var tool =
+                new TeamTool(
+                        client,
+                        new TeamContext(
+                                a.teamName(),
+                                a.namespace(),
+                                "objective",
+                                "lead",
+                                true,
+                                List.of(),
+                                List.of("listMembers")));
+        var json = new ObjectMapper();
+
+        for (boolean bound : List.of(true, false)) {
+            if (!bound) {
+                assertTrue(
+                        service.unbindMember("alice", a, worker.session(), binding.token())
+                                .block(WAIT));
+            }
+            var rows = json.readTree(assertText(tool.listMembers(), ToolResultState.SUCCESS));
+            assertTrue(rows.isArray());
+            assertEquals(2, rows.size());
+            var sessions = new LinkedHashMap<String, String>();
+            for (var row : rows) {
+                var fields = new HashSet<String>();
+                row.fieldNames().forEachRemaining(fields::add);
+                assertEquals(
+                        Set.of(
+                                "memberName",
+                                "agentRef",
+                                "phase",
+                                "sessionId",
+                                "deployMode",
+                                "isLead"),
+                        fields);
+                sessions.put(row.get("memberName").asText(), row.get("sessionId").asText());
+            }
+            assertEquals(
+                    Map.of("lead", "leader-session", "worker", bound ? "worker-session" : ""),
+                    sessions);
+        }
+        assertNotNull(SessionProjection.read(log(worker.session(), logs)).stateJson());
+    }
 
     @Test
     void existingNativeSessionsSupportAdoptionBindingQueriesAndTokenSafeRemoval() {

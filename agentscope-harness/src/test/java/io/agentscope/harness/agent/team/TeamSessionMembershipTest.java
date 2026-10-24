@@ -339,6 +339,12 @@ class TeamSessionMembershipTest {
                 TeamConflictException.class,
                 () ->
                         client.sessionMembership("other-app", Map.of("state", states))
+                                .getTeam("alice", a)
+                                .block());
+        assertThrows(
+                TeamConflictException.class,
+                () ->
+                        client.sessionMembership("other-app", Map.of("state", states))
                                 .adoptTeam("alice", a, "a", List.of(la))
                                 .block());
     }
@@ -563,6 +569,78 @@ class TeamSessionMembershipTest {
                 () -> service.unbindMember("alice", a, worker.session(), original.token()).block());
 
         assertNotEquals(original.token(), replacement.get().token());
+        assertEquals(replacement.get(), service.findMembership(worker.session()).block());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void concurrentBindAndUnbindAcrossTeamsPreserveBothChanges(boolean unbindRetries) {
+        CountingStore counting = useCountingStore();
+        MemberSession leadA = member(states, "alice", "lead", "leader-a", "leader-agent");
+        MemberSession leadB = member(states, "alice", "lead", "leader-b", "leader-agent");
+        MemberSession workerA = member(states, "alice", "worker", "worker-a", "worker-agent");
+        MemberSession workerB = member(states, "alice", "worker", "worker-b", "worker-agent");
+        TeamView teamA = service.adoptTeam("alice", a, "a", List.of(leadA, workerA)).block();
+        TeamView teamB = service.adoptTeam("alice", b, "b", List.of(leadB)).block();
+        Membership leaderA = service.findMembership(leadA.session()).block();
+        Membership leaderB = service.findMembership(leadB.session()).block();
+        Membership original = service.findMembership(workerA.session()).block();
+        TeamSessionMembership other =
+                new LocalTeamClient(counting).sessionMembership("app", Map.of("state", states));
+        AtomicReference<Membership> added = new AtomicReference<>();
+
+        if (unbindRetries) {
+            counting.beforeOwnerCas.set(
+                    () -> added.set(other.bindMember("alice", b, workerB).block()));
+            assertTrue(
+                    service.unbindMember("alice", a, workerA.session(), original.token()).block());
+        } else {
+            counting.beforeOwnerCas.set(
+                    () ->
+                            assertTrue(
+                                    other.unbindMember(
+                                                    "alice", a, workerA.session(), original.token())
+                                            .block()));
+            added.set(service.bindMember("alice", b, workerB).block());
+        }
+
+        TeamSessionMembership reopened =
+                new LocalTeamClient(counting).sessionMembership("app", Map.of("state", states));
+        assertNull(reopened.findMembership(workerA.session()).block());
+        assertNotNull(added.get());
+        assertEquals(added.get(), reopened.findMembership(workerB.session()).block());
+        assertEquals(List.of(leaderA), reopened.listMemberships("alice", a).block());
+        assertEquals(leaderB, reopened.findMembership(leadB.session()).block());
+        assertEquals(2, reopened.listMemberships("alice", b).block().size());
+        assertEquals(teamA.teamId(), reopened.getTeam("alice", a).block().teamId());
+        assertEquals(teamB.teamId(), reopened.getTeam("alice", b).block().teamId());
+        assertEquals(
+                List.of(leaderA),
+                reopened.adoptTeam("alice", a, "a", List.of(leadA, workerA)).block().memberships());
+    }
+
+    @Test
+    void absentUnbindCanPrecedeOverlappingBindWithoutRemovingItsNewToken() {
+        CountingStore counting = useCountingStore();
+        MemberSession lead = member(states, "alice", "lead", "one", "leader-agent");
+        MemberSession worker = member(states, "alice", "worker", "worker", "worker-agent");
+        service.adoptTeam("alice", a, "a", List.of(lead)).block();
+        Membership original = service.bindMember("alice", a, worker).block();
+        assertTrue(service.unbindMember("alice", a, worker.session(), original.token()).block());
+        TeamSessionMembership other =
+                new LocalTeamClient(counting).sessionMembership("app", Map.of("state", states));
+        AtomicReference<Membership> replacement = new AtomicReference<>();
+        counting.afterOwnerRead.set(
+                () -> replacement.set(other.bindMember("alice", a, worker).block()));
+
+        assertFalse(service.unbindMember("alice", a, worker.session(), original.token()).block());
+
+        assertNotNull(replacement.get());
+        assertNotEquals(original.token(), replacement.get().token());
+        assertEquals(replacement.get(), service.findMembership(worker.session()).block());
+        assertThrows(
+                TeamConflictException.class,
+                () -> service.unbindMember("alice", a, worker.session(), original.token()).block());
         assertEquals(replacement.get(), service.findMembership(worker.session()).block());
     }
 
@@ -1290,13 +1368,19 @@ class TeamSessionMembershipTest {
     private static class CountingStore extends InMemoryStore {
         final AtomicInteger ownerReads = new AtomicInteger();
         final AtomicReference<Runnable> beforeOwnerCas = new AtomicReference<>();
+        final AtomicReference<Runnable> afterOwnerRead = new AtomicReference<>();
 
         @Override
         public StoreItem get(List<String> ns, String key) {
+            StoreItem snapshot = super.get(ns, key);
             if (ns.get(0).equals("team-session-membership")) {
                 ownerReads.incrementAndGet();
+                Runnable interleave = afterOwnerRead.getAndSet(null);
+                if (interleave != null) {
+                    interleave.run();
+                }
             }
-            return super.get(ns, key);
+            return snapshot;
         }
 
         @Override
