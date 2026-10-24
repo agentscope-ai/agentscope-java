@@ -44,12 +44,16 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -119,7 +123,7 @@ class ReActAgentHitlTest {
         return ChatResponse.builder().content(List.copyOf(toolUses)).build();
     }
 
-    private static final class AskingTool extends ToolBase {
+    private static class AskingTool extends ToolBase {
         AskingTool(String name) {
             super(name, "asks for permission", schemaFor(), false, true, false, null, false, false);
         }
@@ -145,6 +149,19 @@ class ReActAgentHitlTest {
         public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
             Object q = param.getInput() == null ? "" : param.getInput().get("query");
             return Mono.just(ToolResultBlock.text("executed:" + q));
+        }
+    }
+
+    /** AskingTool whose matchRule honors an exact query match, so a remembered
+     * conditional rule can fail to cover a later, differently-parameterized ask. */
+    private static final class QueryScopedTool extends AskingTool {
+        QueryScopedTool(String name) {
+            super(name);
+        }
+
+        @Override
+        public boolean matchRule(String ruleContent, Map<String, Object> toolInput) {
+            return ruleContent != null && ruleContent.equals(toolInput.get("query"));
         }
     }
 
@@ -932,5 +949,233 @@ class ReActAgentHitlTest {
                 "Permission denied by user",
                 toolResultText(deniedResult),
                 "default denial text must be preserved for backward compatibility");
+    }
+
+    @Test
+    void confirmedRulesPersistAcrossCallsWithStateStore() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "ping")),
+                                () -> Flux.just(textResponse("done")),
+                                () -> Flux.just(toolUseResponse("tc2", "ask", "pong")),
+                                () -> Flux.just(textResponse("done again"))));
+        Toolkit toolkit = toolkitWith(new AskingTool("ask"));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("persist-asst")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        // Call 1: tool asks, call pauses with PERMISSION_ASKING
+        Msg firstResult = agent.call(List.of()).block();
+        assertNotNull(firstResult);
+        assertEquals(GenerateReason.PERMISSION_ASKING, firstResult.getGenerateReason());
+
+        // Call 2: confirm WITH a rule to remember ("always allow ask")
+        ToolUseBlock pending = firstResult.getContentBlocks(ToolUseBlock.class).get(0);
+        // Null ruleContent = unconditional match (ToolBase.matchRule
+        // convention); a real UI would use tool.generateSuggestions(input).
+        PermissionRule remembered =
+                new PermissionRule("ask", null, PermissionBehavior.ALLOW, "user_confirm");
+        PermissionRule sessionDeny =
+                new PermissionRule("bash", "rm -rf", PermissionBehavior.DENY, "user_confirm");
+        PermissionRule sessionAsk =
+                new PermissionRule("write", "/etc/**", PermissionBehavior.ASK, "user_confirm");
+        PermissionRule sessionPassthrough =
+                new PermissionRule("noop", null, PermissionBehavior.PASSTHROUGH, "user_confirm");
+        Msg secondResult =
+                agent.call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                pending,
+                                                                Arrays.asList(
+                                                                        remembered,
+                                                                        sessionDeny,
+                                                                        sessionAsk,
+                                                                        sessionPassthrough,
+                                                                        null),
+                                                                null)))))
+                        .block();
+        assertNotNull(secondResult);
+
+        // The accepted rule must reach the persisted session state: the next
+        // call rebuilds the engine from the stored permission context, so an
+        // engine-only addition would be lost (issue #3369).
+        AgentState saved =
+                store.get(null, "persist-asst", "agent_state", AgentState.class).orElse(null);
+        assertNotNull(saved, "agent state must be persisted");
+        Map<String, List<PermissionRule>> allowRules = saved.getPermissionContext().getAllowRules();
+        assertTrue(
+                allowRules.getOrDefault("ask", List.of()).contains(remembered),
+                "accepted rule must be persisted into the permission context");
+        assertTrue(
+                saved.getPermissionContext()
+                        .getDenyRules()
+                        .getOrDefault("bash", List.of())
+                        .contains(sessionDeny),
+                "deny rule must be persisted too");
+        assertTrue(
+                saved.getPermissionContext()
+                        .getAskRules()
+                        .getOrDefault("write", List.of())
+                        .contains(sessionAsk),
+                "ask rule must be persisted too");
+        assertTrue(
+                saved.getPermissionContext().getAllowRules().values().stream()
+                        .noneMatch(l -> l.contains(sessionPassthrough)),
+                "passthrough rules must not be persisted");
+
+        // A rules list containing only null entries: nothing accepted, so
+        // the persisted context must not change.
+        ChatModelBase nullRulesModel =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc3", "ask", "again")),
+                                () -> Flux.just(textResponse("done3")),
+                                () -> Flux.just(toolUseResponse("tc4", "ask", "once more")),
+                                () -> Flux.just(textResponse("done4"))));
+        ReActAgent nullRulesAgent =
+                ReActAgent.builder()
+                        .name("null-rules-asst")
+                        .model(nullRulesModel)
+                        .toolkit(toolkitWith(new AskingTool("ask")))
+                        .stateStore(store)
+                        .build();
+
+        Msg nullAsk = nullRulesAgent.call(List.of()).block();
+        assertNotNull(nullAsk);
+        assertEquals(GenerateReason.PERMISSION_ASKING, nullAsk.getGenerateReason());
+
+        ToolUseBlock nullPending = nullAsk.getContentBlocks(ToolUseBlock.class).get(0);
+        Msg nullConfirmResult =
+                nullRulesAgent
+                        .call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                nullPending,
+                                                                Arrays.asList(
+                                                                        (PermissionRule) null),
+                                                                null)))))
+                        .block();
+        assertNotNull(nullConfirmResult);
+
+        AgentState reloaded =
+                store.get(null, "null-rules-asst", "agent_state", AgentState.class).orElse(null);
+        assertNotNull(reloaded);
+        assertTrue(
+                reloaded.getPermissionContext()
+                        .getAllowRules()
+                        .getOrDefault("ask", List.of())
+                        .isEmpty(),
+                "no rule may be persisted when nothing was accepted");
+
+        // Cross-instance persistence: a second agent over the same store
+        // and slot rebuilds its engine from the persisted context, so the
+        // remembered rule suppresses the ask without any re-confirm.
+        ChatModelBase secondModel =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc2", "ask", "pong")),
+                                () -> Flux.just(textResponse("finally done"))));
+        ReActAgent secondAgent =
+                ReActAgent.builder()
+                        .name("persist-asst")
+                        .model(secondModel)
+                        .toolkit(toolkitWith(new AskingTool("ask")))
+                        .stateStore(store)
+                        .build();
+        Msg resumed = secondAgent.call(List.of()).block();
+        assertNotNull(resumed, "persisted rule must allow the tool to run");
+        assertNotEquals(
+                GenerateReason.PERMISSION_ASKING,
+                resumed.getGenerateReason(),
+                "remembered rule must suppress the follow-up ask");
+        assertTrue(
+                resumed.getContentBlocks(TextBlock.class).stream()
+                        .anyMatch(b -> "finally done".equals(b.getText())),
+                "the allowed tool call must complete normally");
+    }
+
+    @Test
+    void confirmedIdenticalRuleTwiceKeepsSinglePersistedEntry() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("dc1", "ask", "foo")),
+                                () -> Flux.just(textResponse("ran foo")),
+                                () -> Flux.just(toolUseResponse("dc2", "ask", "bar")),
+                                () -> Flux.just(textResponse("ran bar"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("dedup-asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new QueryScopedTool("ask")))
+                        .stateStore(store)
+                        .build();
+
+        // First ask: query=foo pauses; the user remembers an ALLOW rule
+        // scoped to exactly that query.
+        Msg firstAsk = agent.call(List.of()).block();
+        assertNotNull(firstAsk);
+        assertEquals(GenerateReason.PERMISSION_ASKING, firstAsk.getGenerateReason());
+        PermissionRule scoped =
+                new PermissionRule("ask", "foo", PermissionBehavior.ALLOW, "user_confirm");
+        Msg ranFoo =
+                agent.call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                firstAsk.getContentBlocks(
+                                                                                ToolUseBlock.class)
+                                                                        .get(0),
+                                                                List.of(scoped),
+                                                                null)))))
+                        .block();
+        assertNotNull(ranFoo);
+
+        // A different query is not covered by the scoped rule: it asks
+        // again, and the user confirms with the identical rule a second
+        // time — the real integration path for a repeated accept.
+        Msg secondAsk = agent.call(List.of()).block();
+        assertNotNull(secondAsk);
+        assertEquals(GenerateReason.PERMISSION_ASKING, secondAsk.getGenerateReason());
+        Msg ranBar =
+                agent.call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                secondAsk
+                                                                        .getContentBlocks(
+                                                                                ToolUseBlock.class)
+                                                                        .get(0),
+                                                                List.of(scoped),
+                                                                null)))))
+                        .block();
+        assertNotNull(ranBar);
+
+        // Both accepts carried the identical rule: the persisted context
+        // must hold exactly one entry, not one per accept.
+        AgentState saved =
+                store.get(null, "dedup-asst", "agent_state", AgentState.class).orElse(null);
+        assertNotNull(saved, "agent state must be persisted");
+        List<PermissionRule> persisted =
+                saved.getPermissionContext().getAllowRules().getOrDefault("ask", List.of());
+        assertEquals(1, persisted.size(), "identical re-accept must not grow the persisted table");
+        assertTrue(persisted.contains(scoped), "the accepted rule must be persisted");
     }
 }
