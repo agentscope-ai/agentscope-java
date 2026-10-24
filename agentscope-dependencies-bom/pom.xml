@@ -60,27 +60,27 @@
     </developers>
 
     <properties>
-        <revision>2.0.4-SNAPSHOT</revision>
+        <revision>2.1.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
 
-        <opentelemetry.version>1.61.0</opentelemetry.version>
+        <opentelemetry.version>1.66.0</opentelemetry.version>
         <okhttp.version>5.3.2</okhttp.version>
         <reactor-bom.version>2025.0.2</reactor-bom.version>
         <jackson.version>2.21.1</jackson.version>
         <mockito.version>5.23.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <testcontainers.version>1.21.4</testcontainers.version>
-        <guava.version>33.7.1-jre</guava.version>
-        <google-genai.version>1.45.0</google-genai.version>
-        <dashscope-sdk-java.version>2.22.9</dashscope-sdk-java.version>
-        <bailian.version>2.8.2</bailian.version>
-        <openai-java.version>4.52.0</openai-java.version>
-        <anthropic.version>2.52.0</anthropic.version>
-        <mcp.version>0.17.2</mcp.version>
+        <guava.version>33.7.2-jre</guava.version>
+        <google-genai.version>1.78.0</google-genai.version>
+        <dashscope-sdk-java.version>2.23.2</dashscope-sdk-java.version>
+        <bailian.version>2.14.4</bailian.version>
+        <openai-java.version>4.85.0</openai-java.version>
+        <anthropic.version>2.72.0</anthropic.version>
+        <mcp.version>2.0.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.17.0</qdrant.version>
         <milvus.version>2.6.17</milvus.version>
@@ -96,9 +96,7 @@
         <opentelemetry-reactor.version>2.27.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.41.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.2.0</redisson.version>
-        <a2a-client.version>0.3.3.Final</a2a-client.version>
-        <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
-        <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
+        <a2a-java-sdk.version>1.4.0.Final</a2a-java-sdk.version>
         <jedis.version>7.4.1</jedis.version>
         <lettuce.version>6.4.2.RELEASE</lettuce.version>
         <mongodb-driver.version>5.3.1</mongodb-driver.version>
@@ -117,11 +115,11 @@
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
         <jgit.version>7.6.0.202603022253-r</jgit.version>
         <fabric8.kubernetes-client.version>7.8.0</fabric8.kubernetes-client.version>
-        <protobuf.java.version>4.29.3</protobuf.java.version>
+        <protobuf.java.version>4.35.0</protobuf.java.version>
 
         <spotless.version>3.4.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
-        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
+        <maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
         <google-java-format.version>1.28.0</google-java-format.version>
         <maven.deploy.skip>false</maven.deploy.skip>
@@ -250,10 +248,16 @@
                 <version>${anthropic.version}</version>
             </dependency>
 
-            <!-- Model Context Protocol (MCP) SDK -->
+            <!-- Model Context Protocol (MCP) SDK: use core + Jackson 2 module
+                 instead of the mcp aggregator (which defaults to Jackson 3) -->
             <dependency>
                 <groupId>io.modelcontextprotocol.sdk</groupId>
-                <artifactId>mcp</artifactId>
+                <artifactId>mcp-core</artifactId>
+                <version>${mcp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.modelcontextprotocol.sdk</groupId>
+                <artifactId>mcp-json-jackson2</artifactId>
                 <version>${mcp.version}</version>
             </dependency>
 
@@ -381,14 +385,14 @@
 
             <!-- A2A dependencies -->
             <dependency>
-                <groupId>io.github.a2asdk</groupId>
+                <groupId>org.a2aproject.sdk</groupId>
                 <artifactId>a2a-java-sdk-client</artifactId>
-                <version>${a2a-client.version}</version>
+                <version>${a2a-java-sdk.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.github.a2asdk</groupId>
+                <groupId>org.a2aproject.sdk</groupId>
                 <artifactId>a2a-java-sdk-server-common</artifactId>
-                <version>${a2a-server-common.version}</version>
+                <version>${a2a-java-sdk.version}</version>
                 <exclusions>
                     <exclusion>
                         <groupId>org.eclipse.microprofile.config</groupId>
@@ -397,9 +401,9 @@
                 </exclusions>
             </dependency>
             <dependency>
-                <groupId>io.github.a2asdk</groupId>
+                <groupId>org.a2aproject.sdk</groupId>
                 <artifactId>a2a-java-sdk-transport-jsonrpc</artifactId>
-                <version>${a2a-transport-jsonrpc.version}</version>
+                <version>${a2a-java-sdk.version}</version>
             </dependency>
 
             <!-- Jedis client for Redis-based session implementation -->

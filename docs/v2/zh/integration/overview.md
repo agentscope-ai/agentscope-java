@@ -32,13 +32,17 @@ en_link: /v2/en/integration/overview
 </Note>
 
 
+## 结构化决策
+
+[OpenAI Decisions](/v2/zh/integration/judge/openai-decisions) 通过独立 judge 客户端判断文本和图片，返回类型化的 predicate、choice 和 score 结果。
+
 ## 分布式存储（Distributed Store）
 
 生产多副本部署所需的全链路分布式存储组件。通过 `DistributedStore` 一键配置 Agent 状态、工作区文件系统、沙箱快照与并发锁。
 
 - [分布式存储总览](/v2/zh/integration/distributed/index) — `DistributedStore` API、能力矩阵、混合后端
 - [Redis](/v2/zh/integration/distributed/redis) — `AgentStateStore` + `BaseStore` + `SandboxSnapshotSpec` + `SandboxExecutionGuard`
-- [MySQL / JDBC](/v2/zh/integration/distributed/mysql) — `AgentStateStore` + `JdbcStore` + `JdbcSnapshotSpec` + `JdbcSandboxExecutionGuard`
+- [JDBC](/v2/zh/integration/distributed/jdbc) — `AgentStateStore` + `JdbcStore` + `JdbcSnapshotSpec` + `JdbcSandboxExecutionGuard`
 - [阿里云 OSS](/v2/zh/integration/distributed/oss) — `AgentStateStore` + `OssBaseStore` + `OssSnapshotSpec`
 
 ## 沙箱执行环境（Sandbox）

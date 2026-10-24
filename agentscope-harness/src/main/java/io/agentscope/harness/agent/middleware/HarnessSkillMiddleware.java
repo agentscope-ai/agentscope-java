@@ -23,6 +23,8 @@ import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.RuntimeContextSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.context.ContextItem;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.skill.LazyResourceCapable;
 import io.agentscope.harness.agent.skill.SkillResources;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
@@ -35,10 +37,12 @@ import io.agentscope.harness.agent.skill.runtime.SkillCatalog;
 import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -60,8 +64,9 @@ import reactor.core.publisher.Mono;
  *       resolved {@code filesRoot}).
  *   <li>Bind the catalog to the current {@link RuntimeContext} through {@link SkillRuntime}, which
  *       also (idempotently) registers {@code load_skill_through_path} on the runtime toolkit.
- *   <li>Render the {@code <available_skills>} prompt block and append it to the current system
- *       prompt.
+ *   <li>Render the {@code <available_skills>} prompt block and register it as a tail runtime
+ *       material ({@code WorkspaceContextMaterials}) instead of appending it to the system
+ *       prompt, keeping the system head byte-stable across steps.
  * </ol>
  *
  * <p><b>Toolkit note:</b> construction registers the load tool as ungrouped before {@link
@@ -213,6 +218,12 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         this.runtime.prepareToolkit(toolkit);
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+    }
+
     /** Visible for tests / introspection. */
     public SkillRuntime runtime() {
         return runtime;
@@ -269,6 +280,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         Map<String, RepoBound> merged = skillsForCall(ctx);
         if (merged.isEmpty()) {
             runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
+            registerSkillsMaterial(ctx, "");
             return Mono.just(currentPrompt);
         }
 
@@ -276,6 +288,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
         if (enabled.isEmpty()) {
             runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
+            registerSkillsMaterial(ctx, "");
             return Mono.just(currentPrompt);
         }
 
@@ -305,13 +318,20 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         SkillCatalog catalog = SkillCatalog.of(entries);
         runtime.install(catalog, ctx, agentToolkit);
 
-        String append = runtime.renderPrompt(catalog, SkillFilter.all());
-        if (append == null || append.isEmpty()) {
-            return Mono.just(currentPrompt);
-        }
-        String base = currentPrompt != null ? currentPrompt : "";
-        String separator = base.isEmpty() || base.endsWith("\n") ? "" : "\n";
-        return Mono.just(base + separator + append);
+        registerSkillsMaterial(ctx, runtime.renderPrompt(catalog, SkillFilter.all()));
+        return Mono.just(currentPrompt);
+    }
+
+    /**
+     * Ships the rendered {@code <available_skills>} block as a tail runtime material instead of
+     * appending it to the system prompt: the catalog changes while a session runs (skills are
+     * installed or removed), and head bytes must stay stable for prefix caching. Registering a
+     * blank item keeps the sourceId deterministic when nothing is visible. The catalog is
+     * required so skill discovery remains available when conversation history is compacted.
+     */
+    private static void registerSkillsMaterial(RuntimeContext ctx, String block) {
+        WorkspaceContextMaterials.register(
+                ctx, List.of(ContextItem.runtimeState("skills", "harness:skills", true, block)));
     }
 
     // ---------------------------------------------------------------------

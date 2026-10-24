@@ -24,9 +24,11 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.Tool;
 import com.anthropic.models.messages.ToolUnion;
+import com.anthropic.models.messages.WebSearchTool20250305;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -375,6 +377,89 @@ class AnthropicToolsHelperTest {
         assertTrue(params.toolChoice().get().isAuto());
         assertTrue(params.toolChoice().get().asAuto().disableParallelToolUse().isPresent());
         assertTrue(params.toolChoice().get().asAuto().disableParallelToolUse().get());
+    }
+
+    @Test
+    void testServerOnlyToolsApplyParallelToolUseOptions() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options = GenerateOptions.builder().parallelToolCalls(false).build();
+        AnthropicToolsHelper.applyTools(
+                builder, List.of(), List.of(webSearchServerTool()), options, null);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.tools().isPresent());
+        assertEquals(1, params.tools().get().size());
+        assertTrue(params.tools().get().get(0).isWebSearchTool20250305());
+        assertTrue(params.toolChoice().isPresent());
+        assertTrue(params.toolChoice().get().isAuto());
+        assertTrue(params.toolChoice().get().asAuto().disableParallelToolUse().isPresent());
+        assertTrue(params.toolChoice().get().asAuto().disableParallelToolUse().get());
+    }
+
+    @Test
+    void testServerOnlyToolsApplyToolChoice() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options =
+                GenerateOptions.builder().toolChoice(new ToolChoice.Specific("web_search")).build();
+        AnthropicToolsHelper.applyTools(
+                builder, List.of(), List.of(webSearchServerTool()), options, null);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.toolChoice().isPresent());
+        assertTrue(params.toolChoice().get().isTool());
+        assertEquals("web_search", params.toolChoice().get().asTool().name());
+    }
+
+    @Test
+    void testClientAndServerToolsAreAppliedAsOneToolSet() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema clientTool =
+                ToolSchema.builder()
+                        .name("get_weather")
+                        .description("Get weather")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+        GenerateOptions options = GenerateOptions.builder().parallelToolCalls(false).build();
+        AnthropicToolsHelper.applyTools(
+                builder, List.of(clientTool), List.of(webSearchServerTool()), options, null);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.tools().isPresent());
+        assertEquals(2, params.tools().get().size());
+        assertTrue(params.tools().get().get(0).isWebSearchTool20250305());
+        assertTrue(params.tools().get().get(1).isTool());
+        assertEquals("get_weather", params.tools().get().get(1).asTool().name());
+        assertTrue(params.toolChoice().isPresent());
+        assertTrue(params.toolChoice().get().isAuto());
+        assertTrue(params.toolChoice().get().asAuto().disableParallelToolUse().get());
+    }
+
+    @Test
+    void testClientAndServerToolNameCollisionFailsFast() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        ToolSchema clientTool =
+                ToolSchema.builder()
+                        .name("web_search")
+                        .description("Local search")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                AnthropicToolsHelper.applyTools(
+                                        builder,
+                                        List.of(clientTool),
+                                        List.of(webSearchServerTool()),
+                                        GenerateOptions.builder().build(),
+                                        null));
+        assertTrue(exception.getMessage().contains("web_search"));
+        assertTrue(builder.build().tools().isEmpty());
     }
 
     @Test
@@ -767,5 +852,10 @@ class AnthropicToolsHelperTest {
 
         MessageCreateParams params = builder.build();
         assertNotNull(params);
+    }
+
+    private static AnthropicServerTool webSearchServerTool() {
+        return AnthropicServerTool.of(
+                ToolUnion.ofWebSearchTool20250305(WebSearchTool20250305.builder().build()));
     }
 }

@@ -22,6 +22,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeChoice;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeFunction;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
@@ -167,7 +168,7 @@ public class DashScopeResponseParser {
             // For DashScope streaming tool calls:
             // - First chunk: has name, id, and partial arguments
             // - Subsequent chunks: only have argument fragments, no name/id
-            if (name != null && !name.trim().isEmpty()) {
+            if (name != null && ToolValidator.requireNonBlank("DashScope", name, id)) {
                 // First chunk with complete metadata
                 String callId =
                         id != null ? id : ("tool_call_" + System.currentTimeMillis() + "_" + idx);
@@ -179,9 +180,12 @@ public class DashScopeResponseParser {
                                 .content(argsJson)
                                 .build());
             } else if (argsJson != null) {
-                // Subsequent chunks with only argument fragments
-                String callId =
-                        id != null ? id : ("fragment_" + System.currentTimeMillis() + "_" + idx);
+                // Subsequent chunks with only argument fragments.
+                // A fragment must not carry an id of its own: the accumulator merges a
+                // continuation chunk into the last named tool call when the id is empty
+                // (same contract as the OpenAI and Anthropic parsers). A synthesized
+                // per-chunk id would strand the fragment in its own nameless tool call.
+                String callId = id != null ? id : "";
                 blocks.add(
                         ToolUseBlock.builder()
                                 .id(callId)

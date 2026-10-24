@@ -102,7 +102,7 @@ This mode **does not provide shell** — on purpose: for shell, use mode 2 (sand
 | Implementation | Description |
 |---------------|-------------|
 | `RedisStore` | Jedis-based, for low-latency high-concurrency | `agentscope-extensions-redis` |
-| `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 | `agentscope-extensions-mysql` |
+| `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
 | `InMemoryStore` | In-memory, for testing | `agentscope-harness` |
 
 ---
@@ -135,14 +135,14 @@ HarnessAgent agent = HarnessAgent.builder()
 | Method | Description | Default |
 |--------|-------------|---------|
 | `image(String)` | Docker image | required |
-| `isolationScope(IsolationScope)` | Isolation dimension | `SESSION` |
+| `isolationScope(IsolationScope)` | Isolation dimension | `USER` |
 | `memorySizeBytes(Long)` | Container memory limit | Docker default |
 | `cpuCount(Long)` | CPU limit | Docker default |
 | `network(String)` | Docker network | Docker default |
 | `exposedPorts(int...)` | Exposed ports | none |
 | `environment(Map)` | Container environment variables | none |
 | `workspaceRoot(String)` | Workspace mount point inside the container | `/workspace` |
-| `additionalRunArgs(String...)` | Extra `docker run` arguments | none |
+| `additionalRunArgs(String...)` / `additionalRunArgs(List)` | Extra `docker run` arguments; repeated calls append | none |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` (no snapshots) |
 | `workspaceSpec(WorkspaceSpec)` | Workspace mount rules | default |
 | `executionGuard(SandboxExecutionGuard)` | Concurrency guard for AGENT / GLOBAL scope | none |
@@ -196,6 +196,40 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
+Self-hosted E2B-compatible backends (e.g. CubeSandbox) that front the data plane with a single fixed gateway address can set `envdSandboxUrl` — the equivalent of the official SDK's `E2B_SANDBOX_URL`. Every sandbox's envd traffic then goes to that URL, and routing relies on the `E2b-Sandbox-Id` / `E2b-Sandbox-Port` request headers (sent automatically, like the official SDKs), so no wildcard DNS is required:
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .apiBaseUrl("http://10.0.0.1:3000")     // control plane
+    .envdSandboxUrl("http://10.0.0.1:8080") // data plane (gateway must route by the E2B headers)
+    ...)
+```
+
+E2B volumes (private beta) provide persistent storage independent of sandbox lifecycles.
+Mount a pre-existing volume at sandbox creation time with `volumeMount(name, path)` —
+`name` is the existing volume name, `path` is the absolute in-sandbox mount path.
+The mounts are sent as `volumeMounts: [{name, path}]` on `POST /sandboxes` and re-attached
+automatically whenever the sandbox is recreated (connect-fallback or native-snapshot restore).
+Platform 400s (no beta access, unknown volume name) propagate with the response body.
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .templateId("my-template")
+    .volumeMount("my-data", "/mnt/data")   // pre-existing volume
+    .workspaceRoot("/mnt/data/ws")          // workspace lives on the volume
+    .isolationScope(IsolationScope.SESSION))
+```
+
+When `workspaceRoot` sits on a volume mount, TAR workspace persistence becomes a no-op
+(the bytes are already durable) and destroy skips `rm -rf`; native snapshots still run so
+the software environment (installed deps, system state) is preserved. E2B volumes are
+read-write and can be mounted by multiple sandboxes at once with no locking guarantees —
+treat the workspace-on-volume layout as single-writer. Volume lifecycle
+management (create/delete/list) stays in the E2B dashboard/SDK — this covers attach-at-create
+only.
+
 #### Daytona sandbox
 
 ```java
@@ -235,7 +269,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | Method | Description | Default |
 |--------|-------------|---------|
-| `isolationScope(IsolationScope)` | Isolation dimension | store-specific (usually `SESSION`) |
+| `isolationScope(IsolationScope)` | Isolation dimension | store-specific (defaults to `USER`) |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` |
 | `executionGuard(SandboxExecutionGuard)` | Concurrency serialization guard for AGENT/GLOBAL scopes | none |
 | `workspaceProjectionEnabled(boolean)` | Project static assets from host to sandbox | `true` |
@@ -468,12 +502,12 @@ workspace/
 
 ### Skills
 
-`DynamicSkillMiddleware` merges skills from the repository list before each reasoning turn and renders them into the system prompt. Skill file loading goes through the `AbstractFilesystem` interface, so it works transparently across all three modes:
+`HarnessSkillMiddleware` merges skills from the repository list before each call and renders them into the system prompt. Skill file loading goes through the `AbstractFilesystem` interface, so it works transparently across all three modes:
 
 | Mode | How skills load |
 |------|----------------|
 | Local | Read directly from `workspace/skills/` on local disk; `<userId>/skills/` for per-user overrides |
-| Shared store | `skills/` routes to KV — checks remote first, falls back to local template. Admin edits take effect on the next reasoning turn across all replicas |
+| Shared store | `skills/` routes to KV — checks remote first, falls back to local template. Admin edits take effect on the next call across all replicas |
 | Sandbox | Host `skills/` are injected into the sandbox's `/workspace/skills/` via workspace projection at startup |
 
 The four-layer priority is unchanged (low → high): `projectGlobalSkillsDir` → `skillRepository` → `workspace/skills/` → `<userId>/skills/`.
@@ -487,6 +521,8 @@ All file tools call through the `AbstractFilesystem` interface, passing the curr
 | Local | `OverlayFilesystem`: writes land in workspace (upper); reads check workspace first, then project (lower). With `projectWritable(true)`, non-metadata writes are routed to the project directory |
 | Shared store | `CompositeFilesystem`: routed paths go through KV overlay (remote upper + local template lower); others go local |
 | Sandbox | All file operations forwarded into the sandbox container |
+
+`edit_file` requires a non-empty `oldString` and a non-null `newString`; pass `""` as `newString` to delete the matched text. Replacement normalizes CRLF and lone-CR line endings to LF before matching and writes the edited content with LF line endings, consistently across filesystem modes.
 
 ### Shell execution (execute)
 

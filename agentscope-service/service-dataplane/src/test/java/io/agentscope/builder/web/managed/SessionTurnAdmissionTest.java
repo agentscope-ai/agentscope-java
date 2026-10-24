@@ -26,6 +26,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.builder.control.ControlPlaneClient;
+import io.agentscope.builder.control.ControlPlaneClient.ManagedExecutionScope;
 import io.agentscope.builder.web.catalog.HarnessAgentBuildService;
 import io.agentscope.builder.web.coord.CoordinationStore;
 import io.agentscope.builder.web.coord.TurnLeaseService;
@@ -35,7 +36,10 @@ import io.agentscope.builder.web.toolbus.ToolConfirmationCoordinator;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +52,7 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Flux;
 
 /**
  * A wake that cannot start a turn must leave no trace. The control plane retries a rejected wake
@@ -55,6 +60,83 @@ import org.springframework.web.server.ResponseStatusException;
  * lease is held would be written once per retry.
  */
 class SessionTurnAdmissionTest {
+    @Test
+    void rejectedManagedStartCannotAdmitInputOrScheduleTheModel() {
+        var controlPlane = mock(ControlPlaneClient.class);
+        var scope = new ManagedExecutionScope("tenant", "task", "attempt", 2, "turn");
+        when(controlPlane.beginManagedExecution("sess_lead")).thenReturn(scope);
+        doThrow(new ResponseStatusException(HttpStatus.GONE, "attempt replaced"))
+                .when(controlPlane)
+                .startManagedExecution("sess_lead", scope);
+        var leases = freeLease();
+        var heldLease = mock(TurnLeaseService.TurnLease.class);
+        when(leases.acquireOrConflictFenced(anyString(), anyString(), any())).thenReturn(heldLease);
+        var runner = runnerWithLease(leases, controlPlane, mock(ToolConfirmationCoordinator.class));
+        var recorded = new AtomicInteger();
+
+        assertThatThrownBy(() -> runner.runTurnAsync(session(), "input", recorded::incrementAndGet))
+                .isInstanceOf(ResponseStatusException.class);
+
+        assertThat(recorded).hasValue(0);
+        verify(controlPlane).endManagedExecution("sess_lead", scope);
+        verify(heldLease).close();
+    }
+
+    @Test
+    void normalPublisherCompletionDoesNotOverrideLogicalOutcome() throws Exception {
+        for (var entry :
+                Map.of(
+                                GenerateReason.TOOL_SUSPENDED,
+                                "requires_action",
+                                GenerateReason.MAX_ITERATIONS,
+                                "failed",
+                                GenerateReason.INTERRUPTED,
+                                "interrupted")
+                        .entrySet()) {
+            var agent = mock(HarnessAgent.class);
+            var build = mock(HarnessAgentBuildService.class);
+            when(build.getOrBuildAgent(any(), any())).thenReturn(agent);
+            AgentRun<AgentEvent> run =
+                    AgentRun.create(
+                            "a",
+                            () ->
+                                    Flux.just(
+                                            new AgentResultEvent(
+                                                    Msg.builder()
+                                                            .role(MsgRole.ASSISTANT)
+                                                            .textContent("result")
+                                                            .generateReason(entry.getKey())
+                                                            .build())));
+            when(agent.prepareRun(any(), any())).thenReturn(run);
+            var runner =
+                    new SessionTurnRunner(
+                            build,
+                            mock(DataSessionService.class),
+                            mock(SessionEventLog.class),
+                            mock(SessionEventPreviewBus.class),
+                            mock(DataEnvironmentService.class),
+                            mock(HandsLeaseService.class),
+                            freeLease(),
+                            mock(CoordinationStore.class),
+                            new DeletedSessionRegistry(),
+                            mock(ControlPlaneClient.class),
+                            mock(ToolConfirmationCoordinator.class),
+                            new AgentRunRegistry());
+            var done = new CountDownLatch(1);
+            var outcome = new AtomicReference<String>();
+            runner.runDurableTurnAsync(
+                    session(),
+                    "input",
+                    "logical",
+                    (status, error) -> {
+                        outcome.set(status);
+                        done.countDown();
+                    });
+            assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(run.status()).isEqualTo(AgentRun.Status.COMPLETED);
+            assertThat(outcome.get()).isEqualTo(entry.getValue());
+        }
+    }
 
     @Test
     void aRejectedWakeDoesNotRecordTheMessageItCouldNotDeliver() {
@@ -214,7 +296,6 @@ class SessionTurnAdmissionTest {
                         builds,
                         mock(DataSessionService.class),
                         mock(SessionEventLog.class),
-                        mock(SessionEventMapper.class),
                         mock(SessionEventPreviewBus.class),
                         mock(DataEnvironmentService.class),
                         hands,
@@ -314,7 +395,6 @@ class SessionTurnAdmissionTest {
                 mock(HarnessAgentBuildService.class),
                 mock(DataSessionService.class),
                 mock(SessionEventLog.class),
-                mock(SessionEventMapper.class),
                 mock(SessionEventPreviewBus.class),
                 mock(DataEnvironmentService.class),
                 mock(HandsLeaseService.class),

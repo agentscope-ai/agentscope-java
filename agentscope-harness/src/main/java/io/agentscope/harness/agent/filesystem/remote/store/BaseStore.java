@@ -25,6 +25,10 @@ import java.util.Map;
  * and identified by a key within each namespace.
  */
 public interface BaseStore {
+    /** Explicit opt-in: versioned reads and durable cross-writer compare-and-set are supported. */
+    default boolean supportsAtomicSessionStorage() {
+        return false;
+    }
 
     /**
      * Get a single item by namespace and key.

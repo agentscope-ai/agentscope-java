@@ -21,6 +21,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openai.dto.OpenAIChoice;
@@ -270,9 +271,8 @@ public class OpenAIResponseParser {
                                         thoughtSignature = reasoningSignatures.get(toolCallId);
                                     }
 
-                                    // 防御性检查：确保必要字段不为null
-                                    if (name == null) {
-                                        log.warn("Tool call has null name, skipping");
+                                    if (!ToolValidator.requireNonBlank(
+                                            "OpenAI", name, toolCallId)) {
                                         continue;
                                     }
                                     if (toolCallId == null) {
@@ -513,9 +513,6 @@ public class OpenAIResponseParser {
                                     if (toolCallId == null) {
                                         toolCallId = "streaming_" + System.currentTimeMillis();
                                     }
-                                    if (toolName == null) {
-                                        toolName = "";
-                                    }
                                     if (arguments == null) {
                                         arguments = "";
                                     }
@@ -530,7 +527,9 @@ public class OpenAIResponseParser {
 
                                     // For streaming, we get partial tool calls that need to be
                                     // accumulated
-                                    if (!toolName.isEmpty()) {
+                                    if (toolName != null
+                                            && ToolValidator.requireNonBlank(
+                                                    "OpenAI", toolName, toolCallId)) {
                                         // First chunk with complete metadata (has tool name)
                                         Map<String, Object> argsMap = new HashMap<>();
 

@@ -101,7 +101,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | 实现 | 说明 |
 |------|------|
 | `RedisStore` | 基于 Jedis，适合低延迟高并发 | `agentscope-extensions-redis` |
-| `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 | `agentscope-extensions-mysql` |
+| `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
 | `InMemoryStore` | 内存实现，适合测试 | `agentscope-harness` |
 
 ---
@@ -134,14 +134,14 @@ HarnessAgent agent = HarnessAgent.builder()
 | 方法 | 说明 | 默认值 |
 |------|------|-------|
 | `image(String)` | Docker 镜像 | 必填 |
-| `isolationScope(IsolationScope)` | 隔离维度 | `SESSION` |
+| `isolationScope(IsolationScope)` | 隔离维度 | `USER` |
 | `memorySizeBytes(Long)` | 容器内存限制 | Docker 默认 |
 | `cpuCount(Long)` | CPU 限制 | Docker 默认 |
 | `network(String)` | Docker network | Docker 默认 |
 | `exposedPorts(int...)` | 暴露端口 | 无 |
 | `environment(Map)` | 容器环境变量 | 无 |
 | `workspaceRoot(String)` | 容器内工作区挂载点 | `/workspace` |
-| `additionalRunArgs(String...)` | 额外的 `docker run` 参数 | 无 |
+| `additionalRunArgs(String...)` / `additionalRunArgs(List)` | 额外的 `docker run` 参数，多次调用会追加 | 无 |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec`（不快照） |
 | `workspaceSpec(WorkspaceSpec)` | 工作区挂载规则 | 默认 |
 | `executionGuard(SandboxExecutionGuard)` | 并发执行守卫（用于 AGENT / GLOBAL scope） | 无 |
@@ -195,6 +195,35 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
+对接自建 E2B 兼容后端（如 CubeSandbox）时，如果数据面由单一固定网关地址承载，可以设置 `envdSandboxUrl`——等价于官方 SDK 的 `E2B_SANDBOX_URL`。设置后所有沙箱的 envd 流量都打到该地址，路由依赖请求头 `E2b-Sandbox-Id` / `E2b-Sandbox-Port`（与官方 SDK 一样自动携带），因此不需要泛域名 DNS：
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .apiBaseUrl("http://10.0.0.1:3000")     // 控制面
+    .envdSandboxUrl("http://10.0.0.1:8080") // 数据面（网关需按 E2B header 路由）
+    ...)
+```
+
+E2B volumes（private beta）提供独立于沙箱生命周期的持久存储。用 `volumeMount(name, path)`
+在沙箱创建时挂载已存在的 volume——`name` 是已存在的 volume 名，`path` 是沙箱内绝对挂载路径。
+挂载以 `volumeMounts: [{name, path}]` 随 `POST /sandboxes` 发送，沙箱重建（connect 失败回退或
+原生快照恢复）时会自动重新挂载。平台 400 错误（无 beta 权限、volume 名不存在）会连同响应体抛出。
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .templateId("my-template")
+    .volumeMount("my-data", "/mnt/data")   // 已存在的 volume
+    .workspaceRoot("/mnt/data/ws")          // 工作区落在该 volume 上
+    .isolationScope(IsolationScope.SESSION))
+```
+
+当 `workspaceRoot` 落在 volume 挂载点上时，TAR 工作区持久化自动跳过（数据已在 volume 里持久化），
+销毁时也不再 `rm -rf`；原生快照仍然执行，用于保留软件环境（安装的依赖、系统状态）。E2B volume
+可读写、可同时被多个沙箱挂载且无锁保证——workspace-on-volume 布局请按单写者使用。Volume 的
+生命周期管理（创建/删除/查看）仍在 E2B 控制台/SDK 里完成——这里只覆盖创建时挂载。
+
 #### Daytona 沙箱
 
 ```java
@@ -234,7 +263,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | 方法 | 说明 | 默认值 |
 |------|------|-------|
-| `isolationScope(IsolationScope)` | 隔离维度 | 后端默认（通常 `SESSION`） |
+| `isolationScope(IsolationScope)` | 隔离维度 | 后端默认（默认 `USER`） |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec` |
 | `executionGuard(SandboxExecutionGuard)` | AGENT/GLOBAL scope 下的并发串行化守卫 | 无 |
 | `workspaceProjectionEnabled(boolean)` | 是否从宿主投影静态资产到沙箱 | `true` |
@@ -467,12 +496,12 @@ workspace/
 
 ### 技能（Skills）
 
-`DynamicSkillMiddleware` 在每轮推理前从技能仓库列表合并技能，渲染到 system prompt 里。技能文件的加载走 `AbstractFilesystem` 接口，所以在三种模式下透明工作：
+`HarnessSkillMiddleware` 在每次 call 前从技能仓库列表合并技能，渲染到 system prompt 里。技能文件的加载走 `AbstractFilesystem` 接口，所以在三种模式下透明工作：
 
 | 模式 | 技能加载方式 |
 |------|------------|
 | 本机 | 从 `workspace/skills/` 直接读本地磁盘；`<userId>/skills/` 做用户覆盖 |
-| 共享存储 | `skills/` 路由到 KV，先查远端再退回本地模板。管理台编辑技能后所有副本下次推理生效 |
+| 共享存储 | `skills/` 路由到 KV，先查远端再退回本地模板。管理台编辑技能后所有副本下次 call 生效 |
 | 沙箱 | 宿主 `skills/` 在启动时通过 workspace projection 注入沙箱的 `/workspace/skills/` |
 
 四层优先级不变（低 → 高）：`projectGlobalSkillsDir` → `skillRepository` → `workspace/skills/` → `<userId>/skills/`。
@@ -486,6 +515,8 @@ workspace/
 | 本机 | `OverlayFilesystem`：写落 workspace（上层），读先 workspace 后 project（下层）。开启 `projectWritable(true)` 后，非元数据写入路由到项目目录 |
 | 共享存储 | `CompositeFilesystem`：命中路由的路径走 KV overlay（远端上层 + 本地模板下层），其余走本地 |
 | 沙箱 | 所有文件操作转发到沙箱容器内 |
+
+`edit_file` 的 `oldString` 不能为空，`newString` 不能为 `null`；要删除匹配文本，请将 `newString` 设为空字符串 `""`。替换前会把 CRLF 和单独的 CR 行尾统一为 LF，所有文件系统模式下的匹配与写回语义一致，写回内容使用 LF 行尾。
 
 ### Shell 执行（execute）
 

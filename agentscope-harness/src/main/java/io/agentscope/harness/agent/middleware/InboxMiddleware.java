@@ -32,8 +32,10 @@ import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -79,6 +81,12 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
         this.staleTtl = staleTtl != null ? staleTtl : DEFAULT_STALE_TTL;
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_REASONING);
+    }
+
     @Override
     public Flux<AgentEvent> onReasoning(
             Agent agent,
@@ -120,7 +128,7 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                                                 UUID.randomUUID()
                                                                         .toString()
                                                                         .replace("-", ""),
-                                                                "<system-notification>Tool '"
+                                                                "<system-reminder>Tool '"
                                                                         + rec.toolName()
                                                                         + "' (id="
                                                                         + rec.toolCallId()
@@ -129,7 +137,7 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                                                         + " timeout). You may"
                                                                         + " retry or proceed"
                                                                         + " without the result."
-                                                                        + "</system-notification>",
+                                                                        + "</system-reminder>",
                                                                 "system"));
                                             }
                                             return Mono.just(hints);

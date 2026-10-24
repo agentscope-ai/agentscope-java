@@ -36,7 +36,11 @@ import reactor.core.publisher.Mono;
  * @param <T> the execution's output type (typically Msg or AgentEvent)
  */
 public final class AgentRun<T> {
-    /** Execution state. QUEUED includes setup before admission to the core lifecycle. */
+    /**
+     * Execution-handle state. COMPLETED means the publisher returned normally, including a
+     * suspended or unsuccessful semantic result. Inspect AgentResult / durable turn status for
+     * the logical outcome. QUEUED includes setup before admission to the core lifecycle.
+     */
     public enum Status {
         CREATED,
         QUEUED,
@@ -51,15 +55,13 @@ public final class AgentRun<T> {
         }
     }
 
-    private final String runId;
     private final RunControl control;
     private final AtomicBoolean subscribed = new AtomicBoolean();
     private final AtomicReference<Supplier<? extends Publisher<T>>> pendingSource;
     private final Flux<T> stream = Flux.defer(this::subscribeOnce);
 
     private AgentRun(String agentId, String runId, Supplier<? extends Publisher<T>> source) {
-        control = new RunControl(Objects.requireNonNull(agentId, "agentId"));
-        this.runId = runId == null || runId.isBlank() ? RuntimeContext.generateRunId() : runId;
+        control = new RunControl(Objects.requireNonNull(agentId, "agentId"), runId);
         pendingSource = new AtomicReference<>(Objects.requireNonNull(source, "source"));
         control.termination().subscribe(status -> pendingSource.set(null));
     }
@@ -119,7 +121,7 @@ public final class AgentRun<T> {
 
     /** Stable opaque identifier for this single execution. */
     public String runId() {
-        return runId;
+        return control.runId();
     }
 
     /** Current execution state; a cooperative interrupt may still be RUNNING until observed. */

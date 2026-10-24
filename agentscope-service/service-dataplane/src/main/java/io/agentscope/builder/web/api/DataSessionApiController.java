@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.web.api.error.ApiException;
 import io.agentscope.builder.web.auth.InternalTokenAuthFilter;
 import io.agentscope.builder.web.managed.DataSessionService;
+import io.agentscope.builder.web.managed.LegacySessionEventAdapter;
 import io.agentscope.builder.web.managed.ManagedSessionDto;
 import io.agentscope.builder.web.managed.SessionEventDto;
 import io.agentscope.builder.web.managed.SessionEventPreviewBus;
@@ -63,7 +64,7 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>Authorization is <b>session ownership</b> via {@link DataSessionService#get}: the control
  * plane resolve payload's {@code ownerId} must match the JWT user. Product agents now live in
- * aistiod's schema, so a dataplane JPA {@code AgentAccessGuard} lookup would 404 even for valid
+ * service-controlplane's schema, so a dataplane JPA {@code AgentAccessGuard} lookup would 404 even for valid
  * sessions; agent RUN/EDIT was already enforced when the session was created.
  */
 @RestController
@@ -135,10 +136,14 @@ public class DataSessionApiController {
         return Mono.fromCallable(
                         () -> {
                             sessionService.get(userId, id);
-                            if (after == null) {
-                                return eventLog.list(id, types);
-                            }
-                            return eventLog.listAfter(id, after, types);
+                            return eventLog.listAfter(id, after == null ? 0 : after, null).stream()
+                                    .map(LegacySessionEventAdapter::adapt)
+                                    .filter(
+                                            event ->
+                                                    types == null
+                                                            || types.isEmpty()
+                                                            || types.contains(event.type()))
+                                    .toList();
                         })
                 .subscribeOn(BLOCKING);
     }
@@ -189,7 +194,7 @@ public class DataSessionApiController {
                 .subscribeOn(BLOCKING);
     }
 
-    /** Opt-in preview targets for {@code event_deltas=} (Claude: message + thinking; we also allow tool_use). */
+    /** Old preview target values remain accepted; only public text previews are produced. */
     private static final Set<String> ALLOWED_EVENT_DELTAS =
             Set.of(
                     SessionEventTypes.AGENT_MESSAGE,
@@ -234,7 +239,9 @@ public class DataSessionApiController {
                 .subscribeOn(BLOCKING)
                 .flatMapMany(
                         ignored -> {
-                            Flux<SessionEventDto> persisted = eventLog.subscribe(id, afterSeq);
+                            Flux<SessionEventDto> persisted =
+                                    eventLog.subscribe(id, afterSeq)
+                                            .map(LegacySessionEventAdapter::adapt);
                             if (eventDeltas == null || eventDeltas.isEmpty()) {
                                 return persisted.map(this::toSse);
                             }
@@ -242,6 +249,7 @@ public class DataSessionApiController {
                             Flux<SessionEventDto> previews =
                                     previewBus
                                             .subscribe(id)
+                                            .map(LegacySessionEventAdapter::adapt)
                                             .filter(
                                                     dto -> {
                                                         if (dto.payload() == null) {
@@ -267,18 +275,22 @@ public class DataSessionApiController {
         Map<String, Object> payload = event.payload() != null ? event.payload() : Map.of();
         return switch (type) {
             case SessionEventTypes.USER_MESSAGE -> {
-                // Recorded only once a turn has been admitted. A team wake that arrives
-                // while the session is mid-turn is rejected and retried by the control
-                // plane, and recording each rejection would fill the transcript with
-                // copies of a message no turn ever read.
+                // Keep a small command-admission marker for ordering and Endpoint correlation.
+                // The message text is stored only by the committed native input fact.
+                Map<String, Object> accepted = new LinkedHashMap<>();
+                accepted.put("status", "accepted");
+                for (String key : List.of("endpointInvocationId", "endpointTurnId"))
+                    if (payload.containsKey(key)) accepted.put(key, payload.get(key));
                 AtomicReference<SessionEventDto> admitted = new AtomicReference<>();
                 sessionService.runTurn(
                         userId,
                         sessionId,
                         payload,
-                        () -> admitted.set(eventLog.append(sessionId, type, payload)));
-                SessionEventDto recorded = admitted.get();
-                yield recorded != null ? recorded : eventLog.append(sessionId, type, payload);
+                        () ->
+                                admitted.set(
+                                        eventLog.append(
+                                                sessionId, "session.input_accepted", accepted)));
+                yield admitted.get();
             }
             case SessionEventTypes.USER_INTERRUPT -> {
                 if (payload.containsKey("run_id")) {
@@ -336,19 +348,18 @@ public class DataSessionApiController {
                                                 HttpStatus.CONFLICT,
                                                 "Tool confirmation decision event is unavailable"));
             }
-            case SessionEventTypes.USER_CUSTOM_TOOL_RESULT -> {
-                SessionEventDto recorded = eventLog.append(sessionId, type, payload);
+            case SessionEventTypes.USER_CUSTOM_TOOL_RESULT, SessionEventTypes.USER_TOOL_RESULT -> {
                 ToolResultBlock block = SessionTurnRunner.toolResultFromPayload(payload);
                 ManagedSessionDto session = sessionService.get(userId, sessionId);
                 turnRunner.resumeWithToolResults(session, List.of(block));
-                yield recorded;
-            }
-            case SessionEventTypes.USER_TOOL_RESULT -> {
-                SessionEventDto recorded = eventLog.append(sessionId, type, payload);
-                ToolResultBlock block = SessionTurnRunner.toolResultFromPayload(payload);
-                ManagedSessionDto session = sessionService.get(userId, sessionId);
-                turnRunner.resumeWithToolResults(session, List.of(block));
-                yield recorded;
+                yield new SessionEventDto(
+                        null,
+                        sessionId,
+                        -1L,
+                        "session.input_accepted",
+                        Map.of("status", "accepted", "tool_use_id", block.getId()),
+                        null,
+                        System.currentTimeMillis());
             }
             case SessionEventTypes.USER_DEFINE_OUTCOME -> eventLog.append(sessionId, type, payload);
             case SessionEventTypes.SYSTEM_MESSAGE -> {

@@ -90,6 +90,11 @@ Deny rules and dangerous-path checks are **non-bypassable** — they apply even 
 </Note>
 
 
+### Interceptors and the permission engine
+
+Use [tool call interceptors](/v2/en/docs/building-blocks/tool#tool-call-interceptors) (`ToolkitConfig.interceptor(...)`) for business rules on a specific call's arguments — sandboxing, tenant scoping, auditing; use the permission engine for human-review policy (ALLOW/ASK/DENY). The engine judges the raw model input (that is also what an ASK prompt shows); interceptors run afterwards on the final arguments, so a rewrite lands *after* user approval — when the final value of a security-sensitive argument (path, SQL, URL) must be user-confirmed, suspend for human review from the interceptor instead of rewriting silently. An interceptor denying an already-approved call is expected: the denial feeds back to the model without a second approval round.
+
+
 ## Permission Mode
 
 The `PermissionMode` enum (`io.agentscope.core.permission.PermissionMode`) supports the following modes:
@@ -204,13 +209,13 @@ PermissionContextState permCtx =
 ```java
 import io.agentscope.core.event.ConfirmResult;
 
-// ASK decisions carry suggestedRules on the ToolUseBlock.
-// Accept them by attaching to the result:
+// ASK decisions carry suggested rules on the PermissionDecision (visible to
+// permission hooks), not on the ToolUseBlock. At the resume layer, accept the
+// call as-is, or pass your own rules to remember a choice for future calls:
 ConfirmResult result =
         new ConfirmResult(
                 /* confirmed = */ true,
-                /* toolCall  = */ toolCall,
-                /* rules     = */ toolCall.getSuggestedRules());
+                /* toolCall  = */ toolCall);
 ```
 
 Runnable examples: `agentscope-examples/documentation/.../tool/PermissionContextExample.java`, `hitl/PermissionHITLExample.java`.
