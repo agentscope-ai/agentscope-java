@@ -26,8 +26,10 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 
 /**
  * Host-filesystem journal storage. POSIX hosts use OS locks, forced files, atomic renames and
@@ -97,6 +99,20 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
         } catch (IOException e) {
             throw new SessionLogException("Journal read failed: " + file, e);
         }
+    }
+
+    @Override
+    public <T> T withReadSession(Function<ReadSession, T> operation) {
+        Objects.requireNonNull(operation, "operation");
+        if (transactionalStorage == null)
+            return AtomicSessionStorage.super.withReadSession(operation);
+        return transactionalStorage.withReadSession(
+                reader ->
+                        operation.apply(
+                                key -> {
+                                    path(key);
+                                    return reader.read(key);
+                                }));
     }
 
     @Override
