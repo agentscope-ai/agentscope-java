@@ -17,7 +17,10 @@ package io.agentscope.core.shutdown;
 
 import io.agentscope.core.agent.RunControl;
 import io.agentscope.core.interruption.InterruptSource;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentState;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +50,9 @@ final class ActiveRequestContext {
      */
     private volatile AgentState boundState;
 
+    /** IDs of the input messages accepted by this request, in caller order. */
+    private volatile List<String> inputMessageIds;
+
     ActiveRequestContext(String requestId, ShutdownStateSaver saver, RunControl control) {
         this.requestId = requestId;
         this.control = control;
@@ -68,6 +74,25 @@ final class ActiveRequestContext {
         }
     }
 
+    /**
+     * Capture the current request inputs so a shutdown checkpoint can identify a true retry.
+     *
+     * <p>The list is replaced as lifecycle hooks refine the accepted inputs. Null message IDs are
+     * retained deliberately: they make the checkpoint non-deduplicable instead of falling back to
+     * content comparison and accidentally dropping a distinct multimodal or batched request.
+     */
+    void bindInputs(List<Msg> inputs) {
+        if (inputs == null) {
+            this.inputMessageIds = List.of();
+            return;
+        }
+        List<String> ids = new ArrayList<>(inputs.size());
+        for (Msg input : inputs) {
+            ids.add(input == null ? null : input.getId());
+        }
+        this.inputMessageIds = ids;
+    }
+
     private AgentState resolveState() {
         return boundState;
     }
@@ -77,6 +102,7 @@ final class ActiveRequestContext {
         if (state == null) return;
         // Native sessions persist this flag through their owning recorder's final checkpoint.
         // A missing standalone saver must not suppress the runtime interruption marker.
+        state.setShutdownInputMessageIds(inputMessageIds);
         state.setShutdownInterrupted(true);
         if (saver == null) return;
         try {
