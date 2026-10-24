@@ -180,7 +180,7 @@ public final class HttpSelfRegistration implements AutoCloseable {
                             "POST",
                             "/api/v1/dataplanes/" + id + "/heartbeat",
                             Map.of("generation", generation.get()));
-            if (code == 404) {
+            if (code < 200 || code >= 300) {
                 registered.set(false);
                 tryRegister();
             }
