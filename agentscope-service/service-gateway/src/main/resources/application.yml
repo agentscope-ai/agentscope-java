@@ -87,6 +87,15 @@ spring:
             # Control plane (service-controlplane) — Managed Agents APIs, the /api/v1
             # management API, and the console SPA, all on one upstream port.
             # ------------------------------------------------------------------
+            - id: control-events
+              uri: ${builder.control-plane-url}
+              order: 9
+              predicates:
+                - Path=/api/v1/events
+              filters:
+                # The WebSocket same-origin check compares Origin with Host.
+                - PreserveHostHeader
+                - RemoveRequestHeader=X-Builder-Environment-Key
             - id: control-api
               uri: ${builder.control-plane-url}
               order: 10
