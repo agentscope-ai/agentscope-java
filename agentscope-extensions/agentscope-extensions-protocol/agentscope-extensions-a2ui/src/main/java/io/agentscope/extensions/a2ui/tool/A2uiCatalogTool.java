@@ -24,7 +24,11 @@ import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
 
-/** Returns the full A2UI component catalog guide — the sole delivery channel for it (spec §2.3). */
+/**
+ * On-demand catalog read tool: mounted on the render sub-agent only when {@code
+ * A2uiConfig.catalogInPrompt()} is off, in which case the child pays one iteration to load the
+ * same guide the SYSTEM prompt would otherwise carry (spec §2.3).
+ */
 public class A2uiCatalogTool implements AgentTool {
 
     private final A2uiCatalog catalog;
@@ -41,7 +45,7 @@ public class A2uiCatalogTool implements AgentTool {
     @Override
     public String getDescription() {
         return "Load the A2UI component catalog (component names, props, examples). Call this"
-                + " once before your first a2ui_render submission.";
+                + " once before your first a2ui_present submission.";
     }
 
     @Override

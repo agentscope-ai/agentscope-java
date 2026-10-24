@@ -33,10 +33,17 @@ import reactor.core.publisher.SignalType;
 
 /**
  * The A2UI render sub-agent: spins up a dedicated, throwaway {@link ReActAgent} per tool call that
- * owns the UI DSL — it reads the catalog through {@code a2ui_catalog}, submits component trees
- * through the internal tree tool and self-corrects against validation results inside its own ReAct
- * loop — so the main agent only ever speaks natural language. Same "agent-as-tool" shape as the
- * core {@code SubAgentTool} (fresh agent per call, {@code interrupt(ctx)} on cancellation).
+ * owns the UI DSL — it submits component trees through the internal {@code a2ui_present} tool and
+ * self-corrects against validation results inside its own ReAct loop — so the main agent only ever
+ * speaks natural language. Same "agent-as-tool" shape as the core {@code SubAgentTool} (fresh agent
+ * per call, {@code interrupt(ctx)} on cancellation).
+ *
+ * <p>The catalog guide is composed into this agent's SYSTEM prompt at build time ({@link
+ * A2uiConfig#catalogInPrompt()}), which is what makes it survive the validation-retry rounds
+ * without re-fetching; the render manager is constructed once per agent build and its prompt is
+ * immutable, so no framework hook is needed for the "inject before every reasoning round" effect.
+ * With {@code catalogInPrompt} off the child instead reads the guide from {@code a2ui_catalog} at
+ * the cost of one iteration.
  *
  * <p>The accepted envelope (produced by the shared {@link A2uiRenderer} pipeline inside the child's
  * submit tool) is captured through an {@link AtomicReference} and returned as this call's result;
@@ -47,27 +54,29 @@ public final class A2uiRenderManager {
 
     /**
      * Default SYSTEM prompt of the render sub-agent. Exposed publicly so callers can extend
-     * (e.g. append product-specific style rules) via {@link A2uiConfig.Builder#renderPrompt}.
+     * (e.g. append product-specific style rules) via {@link A2uiConfig.Builder#renderPrompt}. The
+     * manager appends the catalog guide (or the {@code a2ui_catalog} load instruction, per {@link
+     * A2uiConfig#catalogInPrompt()}) and the user preference block to whichever prompt it uses.
      */
     public static final String DEFAULT_RENDER_PROMPT =
             """
-            You are a dedicated A2UI interface generator. You receive a natural-language\
-            description of the UI the user should see, and you deliver it as a structured A2UI\
+            You are a dedicated A2UI interface generator. You receive a natural-language \
+            description of the UI the user should see, and you deliver it as a structured A2UI \
             surface.
 
             Workflow (strict):
-            1. Call `a2ui_catalog` once to load the component catalog.
-            2. Design the smallest UI that fulfills the request and submit it by calling\
-            `a2ui_render` with a `components` array of {id, component, props} objects.
-            3. If `a2ui_render` reports validation errors, correct the tree and resubmit.
-            4. After a successful submission, stop and reply with exactly: done
+            1. Design the smallest UI that fulfills the request and submit it by calling \
+            `a2ui_present` with a `components` array of {id, component, props} objects.
+            2. If `a2ui_present` reports validation errors, correct the tree and resubmit.
+            3. After a successful submission, stop and reply with exactly: done
 
             Rules:
-            - The only accepted channel for UI is the `a2ui_render` tool — never write A2UI JSON\
+            - The only accepted channel for UI is the `a2ui_present` tool — never write A2UI JSON \
             in reply text.
-            - Put all content (headings, texts, options, data) directly into props; nobody sees\
+            - Use only the components and props listed in the component catalog.
+            - Put all content (headings, texts, options, data) directly into props; nobody sees \
             this conversation.
-            - Prefer read-only components for information and form components only to collect\
+            - Prefer read-only components for information and form components only to collect \
             input; use Row/Column composition as the catalog describes.\
             """;
 
@@ -96,7 +105,23 @@ public final class A2uiRenderManager {
         this.catalog = catalog;
         this.model = model;
         this.renderer = renderer;
-        this.renderPrompt = renderPrompt != null ? renderPrompt : DEFAULT_RENDER_PROMPT;
+        this.renderPrompt = catalogBlock(renderPrompt, catalog, config) + config.preferenceBlock();
+    }
+
+    /** The render sub-agent's base SYSTEM prompt plus the catalog block it needs to submit. */
+    private static String catalogBlock(
+            String renderPrompt, A2uiCatalog catalog, A2uiConfig config) {
+        String base = renderPrompt != null ? renderPrompt : DEFAULT_RENDER_PROMPT;
+        return config.catalogInPrompt()
+                ? base + "\n" + catalog.guideText()
+                : base
+                        + "\n\nComponent catalog: call `a2ui_catalog` once, before your first"
+                        + " `a2ui_present` submission, to load it.\n";
+    }
+
+    /** Effective SYSTEM prompt of the render sub-agent (base prompt + catalog + preference). */
+    String renderPrompt() {
+        return renderPrompt;
     }
 
     /**
@@ -111,7 +136,9 @@ public final class A2uiRenderManager {
                 () -> {
                     AtomicReference<String> submitted = new AtomicReference<>();
                     Toolkit toolkit = new Toolkit();
-                    toolkit.registerTool(new A2uiCatalogTool(catalog));
+                    if (!config.catalogInPrompt()) {
+                        toolkit.registerTool(new A2uiCatalogTool(catalog));
+                    }
                     toolkit.registerTool(new A2uiTreeRenderTool(renderer, submitted::set));
                     ReActAgent renderAgent =
                             ReActAgent.builder()

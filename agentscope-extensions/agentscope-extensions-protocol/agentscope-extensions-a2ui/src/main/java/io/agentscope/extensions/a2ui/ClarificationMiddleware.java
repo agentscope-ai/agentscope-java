@@ -17,7 +17,6 @@ package io.agentscope.extensions.a2ui;
 
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tool.ToolkitAware;
 import io.agentscope.extensions.a2ui.tool.AskUserQuestionTool;
 
 /**
@@ -33,12 +32,12 @@ import io.agentscope.extensions.a2ui.tool.AskUserQuestionTool;
  * <p>When A2UI is enabled, {@link A2uiMiddleware} registers the same tool name with
  * {@code enableA2ui=true} (questions compiled into an A2UI form envelope). {@code
  * Toolkit#registerTool} is a map put, so mount exactly one of the two; if both are mounted, the
- * middleware rebound last wins.
+ * middleware installed last wins.
  */
-public final class ClarificationMiddleware implements MiddlewareBase, ToolkitAware {
+public final class ClarificationMiddleware implements MiddlewareBase, ToolInstallingMiddleware {
 
     @Override
-    public void rebindToolkit(Toolkit toolkit) {
+    public void installTools(Toolkit toolkit) {
         toolkit.registerTool(new AskUserQuestionTool(null, false));
     }
 }

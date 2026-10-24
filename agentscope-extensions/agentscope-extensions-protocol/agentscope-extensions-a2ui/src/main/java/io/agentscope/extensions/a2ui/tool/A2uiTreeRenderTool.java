@@ -32,6 +32,10 @@ import reactor.core.publisher.Mono;
  * props} trees here, validation failures come back as error results for in-loop self-correction,
  * and an accepted envelope is additionally captured into {@code envelopeSink} so the outer intent
  * tool can return it verbatim without parsing the child's reply text.
+ *
+ * <p>Deliberately named {@code a2ui_present}, not the parent's {@code a2ui_render}: sharing one
+ * name made parent/child events and validation errors indistinguishable in logs and in the stop
+ * hook, which matches tool results by name.
  */
 public class A2uiTreeRenderTool implements AgentTool {
 
@@ -45,13 +49,13 @@ public class A2uiTreeRenderTool implements AgentTool {
 
     @Override
     public String getName() {
-        return A2uiConstants.TOOL_RENDER;
+        return A2uiConstants.TOOL_PRESENT;
     }
 
     @Override
     public String getDescription() {
         return "Submit the A2UI component tree as {id, component, props} objects per the"
-                + " a2ui_catalog entries. Fix reported validation errors and resubmit until it is"
+                + " component catalog. Fix reported validation errors and resubmit until it is"
                 + " accepted; a successful call delivers the UI to the user.";
     }
 

@@ -26,8 +26,9 @@ import java.util.Set;
 
 /**
  * Component catalog loaded from a classpath JSON resource (format: {@code a2ui/basic-catalog.json}
- * in the A2UI spec §6.4). Doubles as the validation whitelist and the guide text returned by the
- * {@code a2ui_catalog} tool.
+ * in the A2UI spec §6.4). Doubles as the validation whitelist and the guide text the render
+ * sub-agent is prompted with ({@link #guideText()}, composed into its SYSTEM prompt unless {@code
+ * catalogInPrompt} is off, in which case the {@code a2ui_catalog} tool serves it on demand).
  */
 public final class A2uiCatalog {
 
@@ -103,7 +104,11 @@ public final class A2uiCatalog {
         return components.get(name);
     }
 
-    /** Markdown rendering of the catalog; the sole delivery channel of {@code a2ui_catalog}. */
+    /**
+     * Markdown rendering of the catalog. Channel-agnostic: composed into the render sub-agent's
+     * SYSTEM prompt by default and returned verbatim by {@code a2ui_catalog} when {@code
+     * catalogInPrompt} is off, so it states the submission contract without naming a tool.
+     */
     public String guideText() {
         StringBuilder sb = new StringBuilder();
         sb.append("# A2UI Component Catalog (")
@@ -111,10 +116,9 @@ public final class A2uiCatalog {
                 .append(", version ")
                 .append(version)
                 .append(")\n\n");
-        sb.append("Submit the UI through `a2ui_render` as a `components` array of\n");
-        sb.append(
-                "`{id, component, props}` objects. `id` must be unique per submission; `props`\n");
-        sb.append("must follow the entry below; unknown components are rejected.\n\n");
+        sb.append("The UI is a flat `components` array of `{id, component, props}` objects.\n");
+        sb.append("`id` must be unique per submission, `props` must follow the entry below, and\n");
+        sb.append("unknown components are rejected.\n\n");
         for (ComponentDef def : components.values()) {
             sb.append("### ").append(def.name()).append('\n');
             if (def.description() != null && !def.description().isBlank()) {

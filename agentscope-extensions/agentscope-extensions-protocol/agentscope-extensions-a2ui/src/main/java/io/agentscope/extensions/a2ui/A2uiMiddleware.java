@@ -24,8 +24,8 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tool.ToolkitAware;
 import io.agentscope.extensions.a2ui.catalog.A2uiCatalog;
 import io.agentscope.extensions.a2ui.middleware.A2uiRenderStopMiddleware;
 import io.agentscope.extensions.a2ui.state.A2uiSurfaceRegistry;
@@ -33,6 +33,8 @@ import io.agentscope.extensions.a2ui.tool.A2uiRenderTool;
 import io.agentscope.extensions.a2ui.tool.AskUserQuestionTool;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -41,19 +43,20 @@ import reactor.core.publisher.Mono;
  * HarnessAgent.builder().middleware(new A2uiMiddleware(config))} — no framework-side seam.
  *
  * <p>Registers only the parent-facing tools {@code a2ui_render} (natural-language intent — the
- * single UI entry, also carrying the old {@code a2ui_present} "final delivery" semantics via
- * {@link A2uiConfig#stopAfterPresent()}) and {@code ask_user_question} with its A2UI form
- * flavour ({@code enableA2ui=true}; the plain clarification flavour lives on {@link
- * ClarificationMiddleware} and is independent of this toggle). The component DSL itself is
- * quarantined in the {@link A2uiRenderManager} sub-agent, which owns the {@code a2ui_catalog}
- * read tool and the internal tree-submit tool on its own throwaway toolkit — the main model
- * never sees the catalog.
+ * single UI entry; one successful call delivers the surface, and {@link
+ * A2uiConfig#stopAfterPresent()} can then end the round) and {@code ask_user_question} with its
+ * A2UI form flavour ({@code enableA2ui=true}; the plain clarification flavour lives on {@link
+ * ClarificationMiddleware} and is independent of this toggle). A tool the host already binds under
+ * one of these names is left alone (logged, not overwritten). The component DSL itself is
+ * quarantined in the {@link A2uiRenderManager} sub-agent, whose throwaway toolkit carries only the
+ * internal {@code a2ui_present} tree-submit tool — the catalog guide ships in that agent's SYSTEM
+ * prompt, so the main model never sees the DSL at all.
  *
- * <p>Uses only existing public surfaces: {@link ToolkitAware#rebindToolkit} as the build-time
- * install point (the agent builder deep-copies the toolkit and rebinds every middleware, see the
- * interface javadoc on re-registering contributed tools), {@link #onAgent} to capture the
- * agent-resolved {@link AgentStateStore} and model lazily, and the lifecycle hooks to extend
- * {@link A2uiRenderStopMiddleware}'s stop/prompt behavior.
+ * <p>Uses only existing public surfaces: {@link #installTools} as the install point (the assembler
+ * calls it once per agent build, after {@code build()}, against the agent's own deep-copied {@link
+ * Toolkit} — the framework no longer callbacks into middleware to install tools), {@link #onAgent}
+ * to capture the agent-resolved {@link AgentStateStore} and model lazily, and the lifecycle hooks
+ * to extend {@link A2uiRenderStopMiddleware}'s stop/prompt behavior.
  *
  * <p>The render model is the one passed to {@link #A2uiMiddleware(A2uiConfig, Model)} — for a
  * lighter/cheaper UI model than the conversation model — or, when {@code null}, the hosting
@@ -61,10 +64,12 @@ import reactor.core.publisher.Mono;
  *
  * <p>The catalog resource is loaded in the constructor — a missing/broken catalog fails fast at
  * the call site that builds the middleware. One instance is bound to one agent build; reusing the
- * same instance across agents rebinds per-copy but shares the resolved state store, so prefer one
- * middleware per agent.
+ * same instance across agents installs per toolkit but shares the resolved state store, so prefer
+ * one middleware per agent.
  */
-public final class A2uiMiddleware implements MiddlewareBase, ToolkitAware {
+public final class A2uiMiddleware implements MiddlewareBase, ToolInstallingMiddleware {
+
+    private static final Logger logger = LoggerFactory.getLogger(A2uiMiddleware.class);
 
     private final A2uiConfig config;
     private final A2uiCatalog catalog;
@@ -92,15 +97,33 @@ public final class A2uiMiddleware implements MiddlewareBase, ToolkitAware {
     }
 
     @Override
-    public void rebindToolkit(Toolkit toolkit) {
+    public void installTools(Toolkit toolkit) {
         A2uiRenderer renderer =
                 new A2uiRenderer(
                         config,
                         catalog,
                         new A2uiSurfaceRegistry(config, stateStore::get),
                         renderModel::get);
-        toolkit.registerTool(new A2uiRenderTool(renderer));
-        toolkit.registerTool(new AskUserQuestionTool(renderer, true));
+        installUnlessTaken(toolkit, new A2uiRenderTool(renderer));
+        installUnlessTaken(toolkit, new AskUserQuestionTool(renderer, true));
+    }
+
+    /**
+     * Registers an A2UI tool unless the toolkit already binds a foreign tool under the same name —
+     * overwriting a host tool would silently remove behaviour the host depends on. A previous
+     * binding of the same type is this capability's own, so it is replaced to rebind the fresh
+     * renderer.
+     */
+    private static void installUnlessTaken(Toolkit toolkit, AgentTool tool) {
+        AgentTool existing = toolkit.getTool(tool.getName());
+        if (existing != null && !tool.getClass().isInstance(existing)) {
+            logger.warn(
+                    "Skip A2UI tool \"{}\": the toolkit already binds {} under that name",
+                    tool.getName(),
+                    existing.getClass().getName());
+            return;
+        }
+        toolkit.registerTool(tool);
     }
 
     @Override

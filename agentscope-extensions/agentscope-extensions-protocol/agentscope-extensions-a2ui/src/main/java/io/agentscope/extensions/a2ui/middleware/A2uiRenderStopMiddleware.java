@@ -22,10 +22,12 @@ import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.extensions.a2ui.A2uiConfig;
 import io.agentscope.extensions.a2ui.envelope.A2uiConstants;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
@@ -33,7 +35,9 @@ import reactor.core.publisher.Mono;
 
 /**
  * Stops the acting round right after a successful {@code a2ui_render} tool result so the
- * delivered envelope is never paraphrased back into reply text (spec §8.2). Also appends the A2UI
+ * delivered envelope is never paraphrased back into reply text (spec §8.2). The stop only fires for
+ * a round whose single tool call is {@code a2ui_render}: when the model batches the UI with other
+ * calls, the run must continue so it can account for those results too. Also appends the A2UI
  * usage constraints to the system prompt (spec §5.4).
  */
 public final class A2uiRenderStopMiddleware implements MiddlewareBase {
@@ -63,7 +67,7 @@ public final class A2uiRenderStopMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             ActingInput input,
             Function<ActingInput, Flux<AgentEvent>> next) {
-        if (!config.stopAfterPresent()) {
+        if (!config.stopAfterPresent() || !soloRenderRound(input)) {
             return next.apply(input);
         }
         return Flux.defer(
@@ -73,8 +77,8 @@ public final class A2uiRenderStopMiddleware implements MiddlewareBase {
                             .doOnNext(
                                     event -> {
                                         // Parent-toolkit render only: the child render agent runs
-                                        // without middleware chains, so its internal tool events
-                                        // never reach this hook.
+                                        // without middleware chains, and its submit tool is named
+                                        // a2ui_present, so this name can only match the parent.
                                         if (event instanceof ToolResultEndEvent end
                                                 && A2uiConstants.TOOL_RENDER.equals(
                                                         end.getToolCallName())
@@ -96,8 +100,16 @@ public final class A2uiRenderStopMiddleware implements MiddlewareBase {
                 });
     }
 
+    /** @return true when the round's only tool call is the parent UI entry */
+    private static boolean soloRenderRound(ActingInput input) {
+        List<ToolUseBlock> calls = input == null ? null : input.toolCalls();
+        return calls != null
+                && calls.size() == 1
+                && A2uiConstants.TOOL_RENDER.equals(calls.get(0).getName());
+    }
+
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
-        return Mono.just(currentPrompt + SYSTEM_PROMPT_APPEND);
+        return Mono.just(currentPrompt + SYSTEM_PROMPT_APPEND + config.preferenceBlock());
     }
 }

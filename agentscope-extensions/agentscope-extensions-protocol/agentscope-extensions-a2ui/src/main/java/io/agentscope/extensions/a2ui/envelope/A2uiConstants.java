@@ -22,7 +22,13 @@ public final class A2uiConstants {
     public static final String MESSAGE_TYPE_CREATE_SURFACE = "createSurface";
     public static final String MESSAGE_TYPE_UPDATE_COMPONENTS = "updateComponents";
 
+    /** The hosting agent's single UI entry (natural-language intent in, envelope out). */
     public static final String TOOL_RENDER = "a2ui_render";
+
+    /** Component-tree submit tool, bound ONLY to the render sub-agent's private toolkit. */
+    public static final String TOOL_PRESENT = "a2ui_present";
+
+    /** Catalog read tool, bound ONLY to the render sub-agent (see {@code catalogInPrompt}). */
     public static final String TOOL_CATALOG = "a2ui_catalog";
 
     /** HITL ask tool — no {@code a2ui_} prefix: plain mode (ClarificationMiddleware) is A2UI-free. */

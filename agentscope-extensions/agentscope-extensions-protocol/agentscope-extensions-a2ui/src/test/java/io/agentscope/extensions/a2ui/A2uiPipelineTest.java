@@ -79,6 +79,7 @@ class A2uiPipelineTest {
         private final List<ChatResponse> script;
         private final AtomicInteger idx = new AtomicInteger();
         final AtomicInteger calls = new AtomicInteger();
+        volatile List<String> toolNames = List.of();
 
         ScriptedModel(List<ChatResponse> script) {
             this.script = script;
@@ -93,6 +94,7 @@ class A2uiPipelineTest {
         protected Flux<ChatResponse> doStream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             calls.incrementAndGet();
+            toolNames = tools.stream().map(ToolSchema::getName).toList();
             int i = idx.getAndIncrement();
             return Flux.just(i < script.size() ? script.get(i) : textResponse(""));
         }
@@ -124,6 +126,10 @@ class A2uiPipelineTest {
         return Map.of("id", id, "component", component, "props", props);
     }
 
+    private static ToolUseBlock toolCall(String id, String name) {
+        return ToolUseBlock.builder().id(id).name(name).build();
+    }
+
     private static String textOf(ToolResultBlock block) {
         return block.getOutput().stream()
                 .filter(b -> b instanceof TextBlock)
@@ -139,6 +145,8 @@ class A2uiPipelineTest {
         String guide = CATALOG.guideText();
         assertTrue(guide.contains("### Heading"));
         assertTrue(guide.contains("agentscope.io:a2ui/basic"));
+        // Channel-agnostic: the prompt/tool description names the submit tool, the guide does not.
+        assertFalse(guide.contains("a2ui_"));
     }
 
     @Test
@@ -239,6 +247,7 @@ class A2uiPipelineTest {
         AtomicReference<String> sink = new AtomicReference<>();
         A2uiTreeRenderTool tool =
                 new A2uiTreeRenderTool(renderer(A2uiConfig.defaults()), sink::set);
+        assertEquals("a2ui_present", tool.getName());
         RuntimeContext rc = RuntimeContext.builder().sessionId("s").build();
 
         ToolResultBlock invalid =
@@ -277,14 +286,13 @@ class A2uiPipelineTest {
     }
 
     @Test
-    void renderToolRunsChildAgentThroughCatalogAndSubmitTurns() {
+    void renderToolRunsChildAgentInSubmitAndDoneTurns() {
         ScriptedModel child =
                 new ScriptedModel(
                         List.of(
-                                toolUse("t1", "a2ui_catalog", Map.of()),
                                 toolUse(
-                                        "t2",
-                                        "a2ui_render",
+                                        "t1",
+                                        "a2ui_present",
                                         Map.of(
                                                 "components",
                                                 List.of(
@@ -306,7 +314,8 @@ class A2uiPipelineTest {
                         .block();
         assertEquals(ToolResultState.RUNNING, result.getState(), textOf(result));
         assertTrue(textOf(result).contains("\"messageType\":\"createSurface\""));
-        assertEquals(3, child.calls.get());
+        assertEquals(2, child.calls.get());
+        assertEquals(List.of("a2ui_present"), child.toolNames);
     }
 
     @Test
@@ -314,16 +323,15 @@ class A2uiPipelineTest {
         ScriptedModel child =
                 new ScriptedModel(
                         List.of(
-                                toolUse("t1", "a2ui_catalog", Map.of()),
                                 toolUse(
-                                        "t2",
-                                        "a2ui_render",
+                                        "t1",
+                                        "a2ui_present",
                                         Map.of(
                                                 "components",
                                                 List.of(comp("c1", "Nope", Map.of())))),
                                 toolUse(
-                                        "t3",
-                                        "a2ui_render",
+                                        "t2",
+                                        "a2ui_present",
                                         Map.of(
                                                 "components",
                                                 List.of(comp("c1", "Text", Map.of("text", "ok"))))),
@@ -339,7 +347,41 @@ class A2uiPipelineTest {
                         .block();
         assertEquals(ToolResultState.RUNNING, result.getState(), textOf(result));
         assertTrue(textOf(result).contains("\"messageType\":\"createSurface\""));
-        assertEquals(4, child.calls.get());
+        assertEquals(3, child.calls.get());
+    }
+
+    @Test
+    void renderPromptCarriesCatalogGuideByDefault() {
+        A2uiRenderManager manager =
+                new A2uiRenderManager(
+                        A2uiConfig.defaults(), CATALOG, new ScriptedModel(List.of()), null);
+        String prompt = manager.renderPrompt();
+        assertTrue(prompt.contains("# A2UI Component Catalog"));
+        assertTrue(prompt.contains("### Heading"));
+        assertTrue(prompt.contains("`a2ui_present`"));
+        assertFalse(prompt.contains("a2ui_catalog"));
+    }
+
+    @Test
+    void catalogInPromptOffFallsBackToOnDemandTool() {
+        A2uiConfig config = A2uiConfig.builder().catalogInPrompt(false).build();
+        String prompt =
+                new A2uiRenderManager(config, CATALOG, new ScriptedModel(List.of()), null)
+                        .renderPrompt();
+        assertTrue(prompt.contains("call `a2ui_catalog` once"));
+        assertFalse(prompt.contains("# A2UI Component Catalog"));
+
+        ScriptedModel child = new ScriptedModel(List.of(textResponse("done")));
+        new A2uiRenderTool(renderer(config, child))
+                .callAsync(
+                        ToolCallParam.builder()
+                                .runtimeContext(RuntimeContext.builder().sessionId("s").build())
+                                .input(Map.of("description", "Anything"))
+                                .build())
+                .block();
+        assertEquals(2, child.toolNames.size());
+        assertTrue(child.toolNames.contains("a2ui_catalog"), child.toolNames.toString());
+        assertTrue(child.toolNames.contains("a2ui_present"), child.toolNames.toString());
     }
 
     @Test
@@ -471,7 +513,7 @@ class A2uiPipelineTest {
                 mw.onActing(
                                 null,
                                 RuntimeContext.empty(),
-                                new ActingInput(List.of()),
+                                new ActingInput(List.of(toolCall("tc1", "a2ui_render"))),
                                 in -> Flux.just(renderEnd))
                         .collectList()
                         .block();
@@ -480,18 +522,38 @@ class A2uiPipelineTest {
     }
 
     @Test
-    void otherToolResultsDoNotStop() {
+    void failedRenderDoesNotStop() {
         A2uiRenderStopMiddleware mw = new A2uiRenderStopMiddleware(A2uiConfig.defaults());
-        ToolResultEndEvent otherEnd =
-                new ToolResultEndEvent("r1", "tc1", "some_tool", ToolResultState.SUCCESS);
         ToolResultEndEvent renderError =
-                new ToolResultEndEvent("r1", "tc2", "a2ui_render", ToolResultState.ERROR);
+                new ToolResultEndEvent("r1", "tc1", "a2ui_render", ToolResultState.ERROR);
         List<AgentEvent> events =
                 mw.onActing(
                                 null,
                                 RuntimeContext.empty(),
-                                new ActingInput(List.of()),
-                                in -> Flux.just(otherEnd, renderError))
+                                new ActingInput(List.of(toolCall("tc1", "a2ui_render"))),
+                                in -> Flux.just(renderError))
+                        .collectList()
+                        .block();
+        assertEquals(1, events.size());
+        assertTrue(events.stream().noneMatch(e -> e instanceof RequestStopEvent));
+    }
+
+    @Test
+    void mixedToolBatchDoesNotStopEvenWhenRenderSucceeds() {
+        A2uiRenderStopMiddleware mw = new A2uiRenderStopMiddleware(A2uiConfig.defaults());
+        ToolResultEndEvent otherEnd =
+                new ToolResultEndEvent("r1", "tc1", "some_tool", ToolResultState.SUCCESS);
+        ToolResultEndEvent renderEnd =
+                new ToolResultEndEvent("r1", "tc2", "a2ui_render", ToolResultState.SUCCESS);
+        List<AgentEvent> events =
+                mw.onActing(
+                                null,
+                                RuntimeContext.empty(),
+                                new ActingInput(
+                                        List.of(
+                                                toolCall("tc1", "some_tool"),
+                                                toolCall("tc2", "a2ui_render"))),
+                                in -> Flux.just(otherEnd, renderEnd))
                         .collectList()
                         .block();
         assertEquals(2, events.size());
@@ -505,5 +567,35 @@ class A2uiPipelineTest {
         assertTrue(prompt.startsWith("BASE"));
         assertTrue(prompt.contains("a2ui_render"));
         assertTrue(prompt.contains("`surfaceId` is managed by the system"));
+    }
+
+    @Test
+    void userPreferenceAppendsToMainAndRenderPrompts() {
+        A2uiConfig config = A2uiConfig.builder().appendPreference("深色主题\n表单字段紧凑排列").build();
+        String prompt =
+                new A2uiRenderStopMiddleware(config)
+                        .onSystemPrompt(null, RuntimeContext.empty(), "BASE")
+                        .block();
+        assertTrue(prompt.contains("## User UI preference"));
+        assertTrue(prompt.contains("- 深色主题"));
+        assertTrue(prompt.contains("- 表单字段紧凑排列"));
+
+        A2uiRenderManager manager =
+                new A2uiRenderManager(config, CATALOG, null, renderer(config), null);
+        assertTrue(manager.renderPrompt().startsWith("You are a dedicated A2UI interface"));
+        assertTrue(manager.renderPrompt().contains("## User UI preference"));
+    }
+
+    @Test
+    void blankPreferenceAddsNothing() {
+        A2uiConfig plain = A2uiConfig.defaults();
+        assertEquals("", plain.preferenceBlock());
+        A2uiRenderManager manager =
+                new A2uiRenderManager(plain, CATALOG, null, renderer(plain), "CUSTOM");
+        String prompt = manager.renderPrompt();
+        // A custom prompt replaces only the base section; the catalog guide still ships with it.
+        assertTrue(prompt.startsWith("CUSTOM"));
+        assertTrue(prompt.contains("# A2UI Component Catalog"));
+        assertFalse(prompt.contains("User UI preference"));
     }
 }

@@ -29,6 +29,8 @@ public final class A2uiConfig {
     private final boolean surfacePersistEnabled;
     private final String renderPrompt;
     private final int renderMaxIters;
+    private final boolean catalogInPrompt;
+    private final String appendPreference;
 
     private A2uiConfig(Builder builder) {
         this.catalogId = builder.catalogId;
@@ -38,6 +40,8 @@ public final class A2uiConfig {
         this.surfacePersistEnabled = builder.surfacePersistEnabled;
         this.renderPrompt = builder.renderPrompt;
         this.renderMaxIters = builder.renderMaxIters;
+        this.catalogInPrompt = builder.catalogInPrompt;
+        this.appendPreference = builder.appendPreference;
     }
 
     public static A2uiConfig defaults() {
@@ -61,10 +65,18 @@ public final class A2uiConfig {
     /**
      * Whether a successful {@code a2ui_render} stops the current acting round (the delivered
      * surface then waits for user interaction). Name kept for config compatibility; {@code
-     * a2ui_present} no longer exists as a separate tool.
+     * a2ui_present} is now the render sub-agent's component-tree submit tool, not a parent tool.
      */
     public boolean stopAfterPresent() {
         return stopAfterPresent;
+    }
+
+    /**
+     * Whether the component catalog guide is composed into the render sub-agent's SYSTEM prompt
+     * (default) instead of being loaded through one {@code a2ui_catalog} call per render.
+     */
+    public boolean catalogInPrompt() {
+        return catalogInPrompt;
     }
 
     /** Upper bound on components per envelope. */
@@ -87,6 +99,30 @@ public final class A2uiConfig {
         return renderMaxIters;
     }
 
+    /**
+     * User UI preference appended to both the hosting agent's system prompt and the render
+     * sub-agent's system prompt; {@code null}/blank = none.
+     */
+    public String appendPreference() {
+        return appendPreference;
+    }
+
+    /**
+     * Renders {@link #appendPreference()} as a prompt block, or an empty string when unset.
+     * Shared by the main-agent system prompt ({@code A2uiRenderStopMiddleware}) and the render
+     * sub-agent system prompt ({@code A2uiRenderManager}).
+     */
+    public String preferenceBlock() {
+        if (appendPreference == null || appendPreference.isBlank()) {
+            return "";
+        }
+        return "\n\n## User UI preference\n"
+                + "The user has stated a standing preference about the UI they see. Honor it in"
+                + " every surface you produce, unless it conflicts with the current request:\n- "
+                + appendPreference.trim().replace("\n", "\n- ")
+                + "\n";
+    }
+
     public static final class Builder {
 
         private String catalogId = "agentscope.io:a2ui/basic";
@@ -96,6 +132,8 @@ public final class A2uiConfig {
         private boolean surfacePersistEnabled = true;
         private String renderPrompt = null;
         private int renderMaxIters = 6;
+        private boolean catalogInPrompt = true;
+        private String appendPreference = null;
 
         private Builder() {}
 
@@ -131,6 +169,31 @@ public final class A2uiConfig {
 
         public Builder renderMaxIters(int renderMaxIters) {
             this.renderMaxIters = renderMaxIters;
+            return this;
+        }
+
+        /**
+         * {@code true} (default) composes the catalog guide into the render sub-agent's SYSTEM
+         * prompt: the child then submits on its first turn and keeps the guide visible through
+         * validation-retry rounds. {@code false} keeps the on-demand {@code a2ui_catalog} tool
+         * instead, which saves context for very large catalogs.
+         */
+        public Builder catalogInPrompt(boolean catalogInPrompt) {
+            this.catalogInPrompt = catalogInPrompt;
+            return this;
+        }
+
+        /**
+         * User UI preference (free text, may be multi-line — each line is one preference).
+         * Appended verbatim to the hosting agent's system prompt and to the render sub-agent's
+         * system prompt.
+         *
+         * <p>Trust boundary: both targets are SYSTEM prompts, so pass host-authored static text
+         * resolved at wiring time — never the user's request content or anything assembled per
+         * request. Request content belongs in the tool arguments.
+         */
+        public Builder appendPreference(String appendPreference) {
+            this.appendPreference = appendPreference;
             return this;
         }
 

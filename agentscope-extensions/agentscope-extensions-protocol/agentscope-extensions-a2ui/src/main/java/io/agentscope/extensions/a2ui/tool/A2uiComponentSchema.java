@@ -44,7 +44,7 @@ final class A2uiComponentSchema {
                                 "array",
                                 "description",
                                 "A2UI component tree as {id, component, props} objects,"
-                                        + " following the a2ui_catalog entries.",
+                                        + " per the A2UI component catalog.",
                                 "items",
                                 Map.of(
                                         "type",

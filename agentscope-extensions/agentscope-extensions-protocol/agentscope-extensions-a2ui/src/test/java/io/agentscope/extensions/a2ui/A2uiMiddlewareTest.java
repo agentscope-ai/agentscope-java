@@ -16,6 +16,7 @@
 package io.agentscope.extensions.a2ui;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,10 +25,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.a2ui.tool.A2uiRenderTool;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import java.nio.file.Files;
@@ -37,10 +43,12 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Verifies {@link A2uiMiddleware} wires the A2UI capability through public framework surfaces
- * only: {@code builder.middleware(...)} plus toolkit rebinding at build time.
+ * only: {@code builder.middleware(...)} plus an explicit {@link ToolInstallingMiddleware} install
+ * onto the built agent's own toolkit.
  */
 class A2uiMiddlewareTest {
 
@@ -60,7 +68,12 @@ class A2uiMiddlewareTest {
         return model;
     }
 
-    private HarnessAgent build(A2uiMiddleware middleware) throws Exception {
+    /**
+     * Assembles an agent the way a hosting application does: middlewares are mounted before {@code
+     * build()}, then each {@link ToolInstallingMiddleware} installs its tools on the built agent's
+     * own toolkit.
+     */
+    private HarnessAgent buildWith(MiddlewareBase... middlewares) throws Exception {
         Files.createDirectories(workspace);
         HarnessAgent.Builder builder =
                 HarnessAgent.builder()
@@ -68,10 +81,17 @@ class A2uiMiddlewareTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace));
-        if (middleware != null) {
+        for (MiddlewareBase middleware : middlewares) {
             builder.middleware(middleware);
         }
-        return builder.build();
+        HarnessAgent agent = builder.build();
+        Toolkit toolkit = agent.getDelegate().getToolkit();
+        for (MiddlewareBase middleware : middlewares) {
+            if (middleware instanceof ToolInstallingMiddleware installer) {
+                installer.installTools(toolkit);
+            }
+        }
+        return agent;
     }
 
     private static List<String> toolNamesOf(HarnessAgent agent) {
@@ -82,12 +102,12 @@ class A2uiMiddlewareTest {
 
     @Test
     void attachedMiddlewareRegistersParentToolsWithoutCatalog() throws Exception {
-        HarnessAgent agent = build(new A2uiMiddleware());
+        HarnessAgent agent = buildWith(new A2uiMiddleware());
         List<String> toolNames = toolNamesOf(agent);
         assertTrue(toolNames.contains("a2ui_render"));
         assertTrue(toolNames.contains("ask_user_question"));
-        // The component DSL (catalog read + tree submit) lives only on the render sub-agent,
-        // and a2ui_present has been merged into a2ui_render.
+        // The component DSL (catalog guide + a2ui_present tree submit) lives only on the render
+        // sub-agent, so none of it may leak onto the parent toolkit.
         assertFalse(toolNames.contains("a2ui_catalog"));
         assertFalse(toolNames.contains("a2ui_present"));
         assertFalse(toolNames.contains("a2ui_ask_user_question"));
@@ -101,20 +121,9 @@ class A2uiMiddlewareTest {
         assertFalse(toolNames.contains("a2ui_render"));
     }
 
-    private HarnessAgent buildWith(MiddlewareBase middleware) throws Exception {
-        Files.createDirectories(workspace);
-        return HarnessAgent.builder()
-                .name("a2ui-middleware-test")
-                .model(stubModel())
-                .workspace(workspace)
-                .abstractFilesystem(new LocalFilesystem(workspace))
-                .middleware(middleware)
-                .build();
-    }
-
     @Test
     void withoutMiddlewareNoA2uiTools() throws Exception {
-        HarnessAgent agent = build(null);
+        HarnessAgent agent = buildWith();
         List<String> toolNames = toolNamesOf(agent);
         assertFalse(toolNames.contains("a2ui_catalog"));
         assertFalse(toolNames.contains("a2ui_render"));
@@ -131,5 +140,40 @@ class A2uiMiddlewareTest {
                                 A2uiConfig.builder()
                                         .catalogResource("a2ui/does-not-exist.json")
                                         .build()));
+    }
+
+    @Test
+    void installToolsNeverOverwritesForeignHostToolOfSameName() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new ForeignAskTool());
+
+        new A2uiMiddleware().installTools(toolkit);
+
+        assertInstanceOf(ForeignAskTool.class, toolkit.getTool("ask_user_question"));
+        assertInstanceOf(A2uiRenderTool.class, toolkit.getTool("a2ui_render"));
+    }
+
+    /** A host tool that happens to occupy the A2UI ask name. */
+    private static final class ForeignAskTool implements AgentTool {
+
+        @Override
+        public String getName() {
+            return "ask_user_question";
+        }
+
+        @Override
+        public String getDescription() {
+            return "host-owned tool occupying the A2UI ask name";
+        }
+
+        @Override
+        public Map<String, Object> getParameters() {
+            return Map.of("type", "object", "properties", Map.of());
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            return Mono.just(ToolResultBlock.text("host"));
+        }
     }
 }
