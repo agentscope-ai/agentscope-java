@@ -20,17 +20,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.APIKeySecurityScheme;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.AgentProvider;
-import io.a2a.spec.AgentSkill;
-import io.a2a.spec.HTTPAuthSecurityScheme;
-import io.a2a.spec.OAuth2SecurityScheme;
-import io.a2a.spec.OAuthFlows;
-import io.a2a.spec.OpenIdConnectSecurityScheme;
-import io.a2a.spec.SecurityScheme;
-import io.a2a.util.Utils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
@@ -45,6 +34,18 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
+import org.a2aproject.sdk.spec.APIKeySecurityScheme;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentProvider;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.HTTPAuthSecurityScheme;
+import org.a2aproject.sdk.spec.OAuth2SecurityScheme;
+import org.a2aproject.sdk.spec.OAuthFlows;
+import org.a2aproject.sdk.spec.OpenIdConnectSecurityScheme;
+import org.a2aproject.sdk.spec.SecurityRequirement;
+import org.a2aproject.sdk.spec.SecurityScheme;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
@@ -150,7 +151,7 @@ class AgentscopeA2aAutoConfigurationTest {
                             AgentCardController controller =
                                     context.getBean(AgentCardController.class);
                             AgentCard agentCard =
-                                    Utils.OBJECT_MAPPER.readValue(
+                                    JsonUtil.fromJson(
                                             controller.getAgentCard().getBody(), AgentCard.class);
                             assertThat(agentCard.name()).isEqualTo("Test Agent");
                             assertThat(agentCard.description()).isEqualTo("Test Description");
@@ -186,7 +187,8 @@ class AgentscopeA2aAutoConfigurationTest {
                     assertThat(context).hasNotFailed();
                     AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
                     AgentCard agentCard = server.getAgentCard();
-                    Assertions.assertEquals("http://localhost:8080", agentCard.url());
+                    Assertions.assertEquals(
+                            "http://localhost:8080", agentCard.supportedInterfaces().get(0).url());
                 });
     }
 
@@ -208,11 +210,9 @@ class AgentscopeA2aAutoConfigurationTest {
                     assertThat(context).hasNotFailed();
                     AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
                     AgentCard agentCard = server.getAgentCard();
-                    Assertions.assertEquals("http://192.168.1.100:8081/api", agentCard.url());
-                    // Verify additional interfaces also contain the context-path
-                    assertThat(agentCard.additionalInterfaces()).isNotEmpty();
-                    assertThat(agentCard.additionalInterfaces().get(0).url())
-                            .isEqualTo("http://192.168.1.100:8081/api");
+                    assertThat(agentCard.supportedInterfaces())
+                            .extracting(AgentInterface::url)
+                            .containsExactly("http://192.168.1.100:8081/api");
                 });
     }
 
@@ -232,7 +232,7 @@ class AgentscopeA2aAutoConfigurationTest {
                     AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
                     AgentCard agentCard = server.getAgentCard();
                     // URL should contain the context-path
-                    assertThat(agentCard.url()).contains("/myapp/v1");
+                    assertThat(agentCard.supportedInterfaces().get(0).url()).contains("/myapp/v1");
                 });
     }
 
@@ -284,6 +284,26 @@ class AgentscopeA2aAutoConfigurationTest {
     }
 
     @Test
+    void shouldStopServerThreadsWhenContextCloses() {
+        long before = processorThreads();
+
+        contextRunner.run(
+                context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(processorThreads()).isEqualTo(before + 1);
+                });
+
+        assertThat(processorThreads()).isEqualTo(before);
+    }
+
+    /** Live A2A event processor threads, one per open server. */
+    private static long processorThreads() {
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(t -> t.isAlive() && "MainEventBusProcessor".equals(t.getName()))
+                .count();
+    }
+
+    @Test
     void shouldServeConfiguredSecuritySchemes() {
         contextRunner
                 .withPropertyValues(
@@ -297,12 +317,12 @@ class AgentscopeA2aAutoConfigurationTest {
                         "agentscope.a2a.server.card.security-schemes.oauth.flows.authorization-code.authorization-url=https://auth/authorize",
                         "agentscope.a2a.server.card.security-schemes.oauth.flows.authorization-code.token-url=https://auth/token",
                         "agentscope.a2a.server.card.security-schemes.oauth.flows.authorization-code.scopes.read=Read",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.authorization-code.pkce-required=true",
                         "agentscope.a2a.server.card.security-schemes.oauth.flows.client-credentials.token-url=https://auth/token",
                         "agentscope.a2a.server.card.security-schemes.oauth.flows.client-credentials.scopes.read=Read",
-                        "agentscope.a2a.server.card.security-schemes.oauth.flows.implicit.authorization-url=https://auth/authorize",
-                        "agentscope.a2a.server.card.security-schemes.oauth.flows.implicit.scopes.read=Read",
-                        "agentscope.a2a.server.card.security-schemes.oauth.flows.password.token-url=https://auth/token",
-                        "agentscope.a2a.server.card.security-schemes.oauth.flows.password.scopes.read=Read",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.device-code.device-authorization-url=https://auth/device",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.device-code.token-url=https://auth/token",
+                        "agentscope.a2a.server.card.security-schemes.oauth.flows.device-code.scopes.read=Read",
                         "agentscope.a2a.server.card.security-schemes.machine.type=oauth2",
                         "agentscope.a2a.server.card.security-schemes.machine.flows.client-credentials.token-url=https://auth/token",
                         "agentscope.a2a.server.card.security-schemes.machine.flows.client-credentials.scopes.read=Read",
@@ -322,43 +342,48 @@ class AgentscopeA2aAutoConfigurationTest {
 
                             APIKeySecurityScheme apiKey =
                                     (APIKeySecurityScheme) schemes.get("apiKey");
-                            assertThat(apiKey.getName()).isEqualTo("X-API-Key");
-                            assertThat(apiKey.getIn()).isEqualTo("header");
+                            assertThat(apiKey.name()).isEqualTo("X-API-Key");
+                            assertThat(apiKey.location())
+                                    .isEqualTo(APIKeySecurityScheme.Location.HEADER);
 
                             HTTPAuthSecurityScheme bearer =
                                     (HTTPAuthSecurityScheme) schemes.get("bearer");
-                            assertThat(bearer.getScheme()).isEqualTo("bearer");
-                            assertThat(bearer.getBearerFormat()).isEqualTo("JWT");
+                            assertThat(bearer.scheme()).isEqualTo("bearer");
+                            assertThat(bearer.bearerFormat()).isEqualTo("JWT");
 
                             OAuthFlows flows =
-                                    ((OAuth2SecurityScheme) schemes.get("oauth")).getFlows();
+                                    ((OAuth2SecurityScheme) schemes.get("oauth")).flows();
                             assertThat(flows.authorizationCode().authorizationUrl())
                                     .isEqualTo("https://auth/authorize");
                             assertThat(flows.authorizationCode().tokenUrl())
                                     .isEqualTo("https://auth/token");
+                            assertThat(flows.authorizationCode().pkceRequired()).isTrue();
                             assertThat(flows.clientCredentials().tokenUrl())
                                     .isEqualTo("https://auth/token");
-                            assertThat(flows.implicit().authorizationUrl())
-                                    .isEqualTo("https://auth/authorize");
-                            assertThat(flows.password().scopes()).containsEntry("read", "Read");
+                            assertThat(flows.deviceCode().deviceAuthorizationUrl())
+                                    .isEqualTo("https://auth/device");
+                            assertThat(flows.deviceCode().tokenUrl())
+                                    .isEqualTo("https://auth/token");
+                            assertThat(flows.deviceCode().scopes()).containsEntry("read", "Read");
 
                             // A scheme may declare only some of the flows.
                             OAuthFlows machine =
-                                    ((OAuth2SecurityScheme) schemes.get("machine")).getFlows();
+                                    ((OAuth2SecurityScheme) schemes.get("machine")).flows();
                             assertThat(machine.clientCredentials().tokenUrl())
                                     .isEqualTo("https://auth/token");
                             assertThat(machine.authorizationCode()).isNull();
-                            assertThat(machine.implicit()).isNull();
-                            assertThat(machine.password()).isNull();
+                            assertThat(machine.deviceCode()).isNull();
 
                             assertThat(
                                             ((OpenIdConnectSecurityScheme) schemes.get("oidc"))
-                                                    .getOpenIdConnectUrl())
+                                                    .openIdConnectUrl())
                                     .isEqualTo("https://auth/.well-known/openid-configuration");
-                            assertThat(schemes.get("mtls").getDescription())
+                            assertThat(schemes.get("mtls").description())
                                     .isEqualTo("Client certificate");
-                            assertThat(card.security())
-                                    .containsExactly(Map.of("oauth", List.of("read")));
+                            assertThat(card.securityRequirements())
+                                    .containsExactly(
+                                            new SecurityRequirement(
+                                                    Map.of("oauth", List.of("read"))));
                         });
     }
 
@@ -409,8 +434,12 @@ class AgentscopeA2aAutoConfigurationTest {
                                                     List.of("Translate hello"),
                                                     List.of("text"),
                                                     List.of("text"),
-                                                    List.of(Map.of("oauth", List.of("read")))));
-                            assertThat(card.additionalInterfaces())
+                                                    List.of(
+                                                            new SecurityRequirement(
+                                                                    Map.of(
+                                                                            "oauth",
+                                                                            List.of("read"))))));
+                            assertThat(card.supportedInterfaces())
                                     .containsExactly(
                                             new AgentInterface(
                                                     "JSONRPC", "http://localhost:8080/a2a"));
@@ -434,12 +463,12 @@ class AgentscopeA2aAutoConfigurationTest {
                         context -> {
                             Map<String, SecurityScheme> schemes =
                                     servedAgentCard(context).securitySchemes();
-                            assertThat(((APIKeySecurityScheme) schemes.get("inHeader")).getIn())
-                                    .isEqualTo("header");
-                            assertThat(((APIKeySecurityScheme) schemes.get("inQuery")).getIn())
-                                    .isEqualTo("query");
-                            assertThat(((APIKeySecurityScheme) schemes.get("inCookie")).getIn())
-                                    .isEqualTo("cookie");
+                            assertThat(((APIKeySecurityScheme) schemes.get("inHeader")).location())
+                                    .isEqualTo(APIKeySecurityScheme.Location.HEADER);
+                            assertThat(((APIKeySecurityScheme) schemes.get("inQuery")).location())
+                                    .isEqualTo(APIKeySecurityScheme.Location.QUERY);
+                            assertThat(((APIKeySecurityScheme) schemes.get("inCookie")).location())
+                                    .isEqualTo(APIKeySecurityScheme.Location.COOKIE);
                         });
     }
 
@@ -465,6 +494,27 @@ class AgentscopeA2aAutoConfigurationTest {
     }
 
     @Test
+    void shouldRejectOAuthFlowsRemovedInA2a1() {
+        for (String flow : new String[] {"implicit", "password"}) {
+            contextRunner
+                    .withPropertyValues(
+                            "agentscope.a2a.server.card.security-schemes.oauth.type=oauth2",
+                            "agentscope.a2a.server.card.security-schemes.oauth.flows."
+                                    + flow
+                                    + ".token-url=https://auth/token")
+                    .run(
+                            context ->
+                                    assertThat(context)
+                                            .getFailure()
+                                            .rootCause()
+                                            .hasMessageContaining(
+                                                    "OAuth "
+                                                            + flow
+                                                            + " flow of security scheme 'oauth'"));
+        }
+    }
+
+    @Test
     void shouldAcceptOAuthFlowsWithoutScopes() {
         withYaml(
                         """
@@ -483,7 +533,7 @@ class AgentscopeA2aAutoConfigurationTest {
                                                     servedAgentCard(context)
                                                             .securitySchemes()
                                                             .get("oauth"))
-                                            .getFlows();
+                                            .flows();
                             assertThat(flows.clientCredentials().scopes()).isEmpty();
                         });
     }
@@ -509,7 +559,7 @@ class AgentscopeA2aAutoConfigurationTest {
                                                     servedAgentCard(context)
                                                             .securitySchemes()
                                                             .get("oauth"))
-                                            .getFlows();
+                                            .flows();
                             assertThat(flows.clientCredentials().scopes())
                                     .containsOnlyKeys("read:user", "https://example.com/scope");
                         });
@@ -540,7 +590,7 @@ class AgentscopeA2aAutoConfigurationTest {
     private static AgentCard servedAgentCard(AssertableWebApplicationContext context)
             throws Exception {
         assertThat(context).hasNotFailed();
-        return Utils.OBJECT_MAPPER.readValue(
+        return JsonUtil.fromJson(
                 context.getBean(AgentCardController.class).getAgentCard().getBody(),
                 AgentCard.class);
     }

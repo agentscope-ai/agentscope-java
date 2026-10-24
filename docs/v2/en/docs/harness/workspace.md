@@ -179,7 +179,7 @@ and reference data separately rather than appending all files to System.
 
 | Material | Model placement | Budget behavior |
 | --- | --- | --- |
-| AGENTS.md | System / `project_rules` | Not directly evicted; included in final budget |
+| AGENTS.md | System / `project_rules` | Not directly evicted; head-truncated at 100 KiB (UTF-8-safe) with a truncation marker |
 | Guidance and environment | System / `working_principles`, `environment` | Included in final budget |
 | MEMORY.md | USER reference / `HARNESS_CONTEXT`, kind=memory | May be truncated during preparation or omitted for final budget |
 | Knowledge entry and path index | USER reference / `HARNESS_CONTEXT`, kind=knowledge | May be omitted for final budget |
@@ -190,7 +190,9 @@ The final budget also includes System, history, state and tool schemas; unresolv
 the request. MEMORY.md is excluded when both memory tools and hooks are disabled.
 Knowledge loads the entry and index; other files are read on demand.
 
-Write ordinary Markdown in AGENTS.md. Files are not automatically refreshed within a call;
+Write ordinary Markdown in AGENTS.md. An applicability note rides the first line of the
+injected body; a file larger than 100 KiB is head-truncated at a UTF-8 code-point boundary and
+marked `[File truncated: AGENTS.md]`. Files are not automatically refreshed within a call;
 the next call reloads them. See [Context management](/v2/en/docs/harness/context)
 for message examples, dynamic sources and budgeting.
 
@@ -386,7 +388,7 @@ There are four registration layers (low → high priority):
 3. `workspace/skills/` — workspace shared
 4. `<userId>/skills/` — per-user (overrides all above)
 
-Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each call, `HarnessSkillMiddleware` re-merges and renders an `<available_skills>` block (name + description only) into the system prompt. The agent calls `load_skill_through_path` to pull full details when relevant. Full mechanics in [Skills](/v2/en/docs/harness/skill).
+Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each call, `HarnessSkillMiddleware` re-merges and renders an `<available_skills>` block (name + description only) as a per-call runtime material placed after the conversation. The agent calls `load_skill_through_path` to pull full details when relevant. Full mechanics in [Skills](/v2/en/docs/harness/skill).
 
 ### `subagents/`
 

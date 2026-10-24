@@ -3,12 +3,14 @@ title: A2A
 en_link: /v2/en/integration/protocol/a2a
 ---
 
-`agentscope-extensions-a2a` 实现了 [A2A 协议](https://a2aproject.github.io/A2A/)，包含两个子模块：
+`agentscope-extensions-a2a` 基于 A2A Java SDK 实现了 [A2A 协议](https://a2aproject.github.io/A2A/) 1.0 版本，包含两个子模块：
 
 - `agentscope-extensions-a2a-client`：把一个远端 A2A Agent 包装成本地 `Agent`，可以直接 `agent.call(...)`。
 - `agentscope-extensions-a2a-server`：把本地 `ReActAgent` 暴露成 A2A Server。
 
 两个模块完全独立，可以单用其一。
+
+不支持 A2A 0.3：客户端无法调用 A2A 0.3 的 Agent；A2A 0.3 客户端的请求不带 `A2A-Version` 请求头，服务端会以版本错误拒绝。服务端暂不支持 `ListTasks`，因为还不认证调用方。
 
 ## 客户端：调用远端 A2A Agent
 
@@ -25,12 +27,14 @@ en_link: /v2/en/integration/protocol/a2a
 ### 直接传入 AgentCard
 
 ```java
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.agent.A2aAgent;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
 
 AgentCard card = AgentCard.builder()
     .name("remote-translator")
-    .url("http://other-service:8080")
+    // 第一个接口是首选接口
+    .supportedInterfaces(List.of(new AgentInterface("JSONRPC", "http://other-service:8080")))
     // ...
     .build();
 
@@ -40,6 +44,51 @@ A2aAgent remote = A2aAgent.builder()
     .build();
 
 Msg result = remote.call(new UserMessage("Translate to English: 你好")).block();
+```
+
+### 流式获取回复
+
+`streamEvents` 按事件流式返回一次调用：远端流式返回的文本和思考分别是 `TextBlockDeltaEvent`、`ThinkingBlockDeltaEvent`，最后的 `AgentResultEvent` 带着和 `call()` 相同的结果消息。工具调用和工具结果只在结果消息里。
+
+```java
+remote.streamEvents(new UserMessage("Translate to English: 你好"))
+    .doOnNext(event -> {
+        if (event instanceof TextBlockDeltaEvent delta) {
+            System.out.print(delta.getDelta());
+        }
+    })
+    .blockLast();
+```
+
+### 会话
+
+每个会话由 `RuntimeContext` 的用户 id 和会话 id 确定，各自在 `AgentState` 里保存历史，同一会话的调用按顺序执行；不带会话 id 的调用共用以 Agent 名字命名的默认会话。`interrupt(RuntimeContext)` 取消该会话正在进行的远端任务。
+
+```java
+RuntimeContext context = RuntimeContext.builder().userId("alice").sessionId("chat-1").build();
+Msg reply = remote.call(List.of(new UserMessage("Translate to English: 你好")), context).block();
+List<Msg> history = remote.getAgentState(context).getContext();
+```
+
+### Middleware
+
+`A2aAgent` 在两个位置执行 `MiddlewareBase`：`onAgent` 包住整次调用，`onReasoning` 包住和远端 Agent 的交互。`onReasoning` 的输入消息就是发给远端的消息，事件是远端流式返回的文本和思考。其他扩展点不适用于远端 Agent。
+
+```java
+A2aAgent remote = A2aAgent.builder()
+    .name("remote")
+    .agentCardResolver(resolver)
+    .middleware(new MiddlewareBase() {
+        @Override
+        public Flux<AgentEvent> onAgent(
+                Agent agent, RuntimeContext ctx, AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
+            long start = System.currentTimeMillis();
+            return next.apply(input).doFinally(signal ->
+                    log.info("remote call took {} ms", System.currentTimeMillis() - start));
+        }
+    })
+    .build();
 ```
 
 ### 用 well-known 自动获取 AgentCard
@@ -97,6 +146,10 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 // AgentCard 端点直接返回 server.getAgentCardJson()。
 
 server.postEndpointReady();   // Web 服务监听端口后再调用，触发注册等动作
+
+// 关闭时：停止请求处理器的线程。正在运行的执行会被要求停止（中断），close() 不等待它们结束。
+// 使用 Spring Boot Starter 时会自动调用。
+server.close();
 ```
 
 `AgentScopeA2aServer` 本身不监听端口、不暴露 endpoint，只负责构建组件、组装请求处理链；具体监听由你的 Web 框架完成。这样可以无缝接入 Spring Boot、Quarkus、Vert.x 等。
@@ -104,7 +157,7 @@ server.postEndpointReady();   // Web 服务监听端口后再调用，触发注�
 ### 可选组件
 
 - `TaskStore` / `QueueManager`：任务和事件队列存储，默认是内存实现，生产可换成持久化版本。
-- `PushNotificationConfigStore` / `PushNotificationSender`：推送通知。
+- `PushNotificationConfigStore` / `PushNotificationSender`：推送通知。目前还不支持推送：AgentCard 声明不支持，消息里附带的推送配置会被忽略。
 - `AgentRegistry`：把 `AgentCard` 注册到外部注册中心（如 Nacos，见 [Nacos](/v2/zh/integration/infrastructure/nacos)）。
 
 ## Spring Boot Starter
@@ -129,6 +182,8 @@ agentscope:
         security:
           - bearerAuth: []
 ```
+
+OAuth 2.0 方案支持 `authorization-code`（可设 `pkce-required`）、`client-credentials` 和 `device-code` 三种流程。A2A 1.0 没有 `implicit` 和 `password` 流程，配置了会启动失败。
 
 Map 的键含特殊字符时（例如 OAuth scope 名 `read:user` 或 URL），请用引号加方括号写成 `"[read:user]": 读取用户信息`。不加方括号时，`:`、`/` 等字符会被去掉；`security-schemes` 的名称如果含 `.`，会被当作嵌套路径，该方案不会生效。
 

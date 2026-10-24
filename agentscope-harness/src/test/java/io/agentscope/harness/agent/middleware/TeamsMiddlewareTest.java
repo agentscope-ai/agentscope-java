@@ -21,10 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.harness.agent.bus.BusEntry;
@@ -38,6 +37,7 @@ import io.agentscope.harness.agent.team.TeamMessage;
 import io.agentscope.harness.agent.team.TeamTask;
 import io.agentscope.harness.agent.team.TeamWakeups;
 import io.agentscope.harness.agent.tool.TeamTool;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -298,8 +298,8 @@ class TeamsMiddlewareTest {
             assertTrue(
                     TeamsMiddleware.wakeupTeamMember(
                             " namespace ", "space-scope", "worker", "exact"));
-            assertTrue(reasoningSystemText(mw).contains("exact"));
-            assertFalse(reasoningSystemText(mw).contains("exact"), "notice is consumed once");
+            assertTrue(reasoningTeamStateText(mw).contains("exact"));
+            assertFalse(reasoningTeamStateText(mw).contains("exact"), "notice is consumed once");
         } finally {
             TeamsMiddleware.unregisterSession("session-space-scope");
         }
@@ -340,9 +340,9 @@ class TeamsMiddlewareTest {
                     TeamWakeups.wake(
                             "namespace-a", "unbound-scoped", "worker", "buffered A notice"));
 
-            assertTrue(reasoningSystemText(a).contains("buffered A notice"));
-            assertFalse(reasoningSystemText(b).contains("buffered A notice"));
-            assertFalse(reasoningSystemText(a).contains("buffered A notice"));
+            assertTrue(reasoningTeamStateText(a).contains("buffered A notice"));
+            assertFalse(reasoningTeamStateText(b).contains("buffered A notice"));
+            assertFalse(reasoningTeamStateText(a).contains("buffered A notice"));
         } finally {
             a.bindSession("session-unbound-a");
             b.bindSession("session-unbound-b");
@@ -351,30 +351,12 @@ class TeamsMiddlewareTest {
         }
     }
 
-    private static String reasoningSystemText(TeamsMiddleware mw) {
-        AtomicReference<ReasoningInput> captured = new AtomicReference<>();
-        ReasoningInput input =
-                new ReasoningInput(
-                        List.of(
-                                Msg.builder()
-                                        .role(MsgRole.SYSTEM)
-                                        .content(
-                                                TextBlock.builder()
-                                                        .text("base system prompt")
-                                                        .build())
-                                        .build()),
-                        List.of(),
-                        null);
-        mw.onReasoning(
-                        null,
-                        RuntimeContext.empty(),
-                        input,
-                        rebuilt -> {
-                            captured.set(rebuilt);
-                            return Flux.empty();
-                        })
-                .blockLast();
-        return ((TextBlock) captured.get().messages().get(0).getContent().get(0)).getText();
+    private static String reasoningTeamStateText(TeamsMiddleware mw) {
+        ReasoningInput input = runReasoning(mw);
+        Msg state = input.messages().get(input.messages().size() - 1);
+        assertEquals("team_state", state.getMetadata().get(Msg.METADATA_REMINDER_KIND));
+        assertEquals(Boolean.TRUE, state.getMetadata().get(Msg.METADATA_SYNTHETIC));
+        return state.getTextContent();
     }
 
     @Test
@@ -494,6 +476,75 @@ class TeamsMiddlewareTest {
     private static TeamTask task(
             String id, String subject, String state, String owner, String result) {
         return new TeamTask(id, "research", "ns", subject, "", state, owner, List.of(), result, 1);
+    }
+
+    @Test
+    void onReasoning_keepsHeadByteStableWhileNoticesChange_andRidesTailState() {
+        TeamsMiddleware mw = middleware(leadContext());
+        mw.notifyWakeup(null, "[team] Task A settled by w1.");
+        ReasoningInput round1 = runReasoning(mw);
+        mw.notifyWakeup(null, "[team] Task B failed by w2.");
+        ReasoningInput round2 = runReasoning(mw);
+
+        // Prefix-cache contract: volatile state (roster statuses, notices, board digest) never
+        // touches the system head.
+        String head1 = round1.messages().get(0).getTextContent();
+        assertEquals(head1, round2.messages().get(0).getTextContent());
+        assertTrue(head1.contains("## Agent Team"));
+        assertTrue(head1.contains("createTask"));
+        assertFalse(head1.contains("**Roster**"), "roster statuses are runtime state");
+
+        Msg tail1 = round1.messages().get(round1.messages().size() - 1);
+        assertEquals("team_state", tail1.getMetadata().get(Msg.METADATA_REMINDER_KIND));
+        assertEquals(Boolean.TRUE, tail1.getMetadata().get(Msg.METADATA_SYNTHETIC));
+        assertTrue(tail1.getTextContent().contains("<RUNTIME_STATE>"));
+        assertTrue(tail1.getTextContent().contains("**Roster**"));
+        assertTrue(tail1.getTextContent().contains("Task A settled by w1"));
+        assertTrue(
+                round2.messages()
+                        .get(round2.messages().size() - 1)
+                        .getTextContent()
+                        .contains("Task B failed by w2"));
+    }
+
+    @Test
+    void onReasoning_noStateToAdd_leavesMessagesUntouched() {
+        TeamsMiddleware mw =
+                middleware(
+                        new TeamContext(
+                                "solo", "default", "obj", "worker", false, List.of(), List.of()));
+        ReasoningInput round = runReasoning(mw);
+        // No members, no digest, no notices: no tail message is appended.
+        assertFalse(
+                round.messages().stream()
+                        .anyMatch(
+                                m ->
+                                        m.getMetadata() != null
+                                                && "team_state"
+                                                        .equals(
+                                                                m.getMetadata()
+                                                                        .get(
+                                                                                Msg
+                                                                                        .METADATA_REMINDER_KIND))));
+        assertTrue(round.messages().get(0).getTextContent().contains("## Agent Team"));
+    }
+
+    private static ReasoningInput runReasoning(TeamsMiddleware mw) {
+        List<Msg> base =
+                List.of(
+                        Msg.builder().role(MsgRole.SYSTEM).textContent("Base.").build(),
+                        Msg.builder().role(MsgRole.USER).textContent("hi").build());
+        AtomicReference<ReasoningInput> forwarded = new AtomicReference<>();
+        mw.onReasoning(
+                        null,
+                        null,
+                        new ReasoningInput(new ArrayList<>(base), List.of(), null),
+                        in -> {
+                            forwarded.set(in);
+                            return Flux.<AgentEvent>empty();
+                        })
+                .blockLast();
+        return forwarded.get();
     }
 
     @Test

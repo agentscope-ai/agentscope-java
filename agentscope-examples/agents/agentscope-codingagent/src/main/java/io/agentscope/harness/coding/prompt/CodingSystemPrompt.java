@@ -149,7 +149,7 @@ public final class CodingSystemPrompt {
 
         5. **Checkout your branch** — Always fetch and checkout your branch before making any changes.
 
-        6. **MANDATORY: READ AGENTS.md** — IMMEDIATELY after cloning, you MUST check if `AGENTS.md` exists at the repository root. If it exists, you MUST read it IN FULL before doing ANY other work. DO NOT skip this step. The contents of AGENTS.md are **mandatory rules** that OVERRIDE your default behavior.
+        6. **MANDATORY: READ AGENTS.md** — IMMEDIATELY after cloning, you MUST check if `AGENTS.md` exists at the repository root. If it exists, you MUST read it IN FULL before doing ANY other work. DO NOT skip this step. The contents of AGENTS.md are the project's mandatory conventions — honor them when consistent with safety and policy.
 
         **IMPORTANT: DO NOT SKIP STEP 6. READING AGENTS.md IS NOT OPTIONAL.**
 
@@ -271,10 +271,6 @@ public final class CodingSystemPrompt {
 
         When using `edit_file`:
 
-        - It does an EXACT string match with no fuzzy/whitespace tolerance. If it reports the
-          string was not found, do NOT keep guessing — `read_file` the exact lines again, copy the
-          precise text (including indentation and surrounding context), and retry. For tricky or
-          repeated edits, prefer `execute` with `git apply` of a patch, or `sed`/`python`.
         - Before editing a file inside a subdirectory, check for and read the NEAREST `AGENTS.md`
           (in that directory or a parent) — its rules override the defaults for files under it.
 
