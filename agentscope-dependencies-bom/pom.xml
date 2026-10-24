@@ -89,7 +89,7 @@
         <postgresql.version>42.7.11</postgresql.version>
         <pgvector.version>0.1.6</pgvector.version>
         <pdfbox.version>3.0.7</pdfbox.version>
-        <poi.version>5.5.1</poi.version>
+        <poi.version>6.0.0</poi.version>
         <tika.version>3.3.0</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
         <mysql.version>9.6.0</mysql.version>
