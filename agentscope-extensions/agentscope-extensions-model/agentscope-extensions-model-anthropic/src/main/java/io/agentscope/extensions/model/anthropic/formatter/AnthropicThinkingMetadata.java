@@ -53,6 +53,13 @@ final class AnthropicThinkingMetadata {
         return Map.of(key(index), Map.of("type", "redacted_thinking", "data", data));
     }
 
+    static boolean hasNativeBlocks(ThinkingBlock block) {
+        return block != null
+                && block.getMetadata() != null
+                && block.getMetadata().keySet().stream()
+                        .anyMatch(key -> key != null && key.startsWith(KEY_PREFIX));
+    }
+
     static List<ContentBlockParam> toContentBlockParams(ThinkingBlock block) {
         if (block == null || block.getMetadata() == null || block.getMetadata().isEmpty()) {
             return List.of();
@@ -136,11 +143,18 @@ final class AnthropicThinkingMetadata {
 
     private static IllegalArgumentException invalidMetadata(long index) {
         return new IllegalArgumentException(
-                "Invalid Anthropic thinking metadata at content index " + index);
+                "Invalid Anthropic thinking metadata at content index "
+                        + index
+                        + "; restore the original signed block or remove the affected turn from"
+                        + " history");
     }
 
     private static IllegalArgumentException invalidMetadataKey(String key) {
-        return new IllegalArgumentException("Invalid Anthropic thinking metadata key: " + key);
+        return new IllegalArgumentException(
+                "Invalid Anthropic thinking metadata key: "
+                        + key
+                        + "; restore the original signed block or remove the affected turn from"
+                        + " history");
     }
 
     private static String stringValue(Object value) {

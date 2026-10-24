@@ -207,8 +207,7 @@ public class AnthropicMessageConverter {
 
     private boolean hasNativeThinkingBlocks(Msg msg) {
         return msg.getContentBlocks(ThinkingBlock.class).stream()
-                .anyMatch(
-                        block -> !AnthropicThinkingMetadata.toContentBlockParams(block).isEmpty());
+                .anyMatch(AnthropicThinkingMetadata::hasNativeBlocks);
     }
 
     /** Preserve the original signed assistant message and group its parallel tool results. */
@@ -217,7 +216,7 @@ public class AnthropicMessageConverter {
         MessageParam assistantParam =
                 convertMessageContent(assistantMsg, assistantMsg.getContent(), false);
         List<ToolResultBlock> toolResults =
-                assistantMsg.getContentBlocks(ToolUseBlock.class).stream()
+                clientToolUses(assistantMsg).stream()
                         .map(toolUse -> splitResults.resultsById().get(toolUse.getId()))
                         .toList();
         return List.of(assistantParam, convertToolResults(toolResults));

@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -39,7 +40,8 @@ import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Integration tests for signed thinking round trips through the Anthropic SDK transport. */
 @Tag("integration")
@@ -49,21 +51,11 @@ class AnthropicChatModelThinkingRoundTripTest {
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
     private MockWebServer mockServer;
-    private AnthropicChatModel model;
 
     @BeforeEach
     void setUp() throws IOException {
         mockServer = new MockWebServer();
         mockServer.start();
-
-        String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
-        model =
-                AnthropicChatModel.builder()
-                        .apiKey("test-api-key")
-                        .baseUrl(baseUrl)
-                        .modelName("claude-sonnet-4-6")
-                        .stream(false)
-                        .build();
     }
 
     @AfterEach
@@ -71,9 +63,21 @@ class AnthropicChatModelThinkingRoundTripTest {
         mockServer.shutdown();
     }
 
-    @Test
-    void testPreservesSignedThinkingInParallelToolRoundTripRequest() throws Exception {
-        mockServer.enqueue(jsonResponse(firstAssistantResponse()));
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void testPreservesSignedThinkingInParallelToolRoundTripRequest(boolean streaming)
+            throws Exception {
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .modelName("claude-sonnet-4-6")
+                        .stream(streaming)
+                        .build();
+        mockServer.enqueue(
+                streaming
+                        ? streamResponse(firstAssistantResponse())
+                        : jsonResponse(firstAssistantResponse()));
 
         Msg userMessage =
                 Msg.builder()
@@ -92,21 +96,21 @@ class AnthropicChatModelThinkingRoundTripTest {
                                 "thinking", Map.of("type", "adaptive", "display", "summarized"))
                         .build();
 
-        ChatResponse firstResponse =
-                model.stream(List.of(userMessage), tools, options).single().block(TIMEOUT);
-        assertNotNull(firstResponse);
-        assertEquals(3, firstResponse.getContent().size());
+        ReasoningContext context = new ReasoningContext("Assistant");
+        model.stream(List.of(userMessage), tools, options)
+                .doOnNext(context::processChunk)
+                .blockLast(TIMEOUT);
+        Msg assistantMessage = context.buildFinalMessage();
+        assertNotNull(assistantMessage);
+        assertEquals(3, assistantMessage.getContent().size());
 
-        Msg assistantMessage =
-                Msg.builder()
-                        .name("Assistant")
-                        .role(MsgRole.ASSISTANT)
-                        .content(firstResponse.getContent())
-                        .build();
         Msg firstToolResult = toolResult("call_1", "Sunny");
         Msg secondToolResult = toolResult("call_2", "Cloudy");
 
-        mockServer.enqueue(jsonResponse(finalAssistantResponse()));
+        mockServer.enqueue(
+                streaming
+                        ? streamResponse(finalAssistantResponse())
+                        : jsonResponse(finalAssistantResponse()));
         ChatResponse finalResponse =
                 model.stream(
                                 List.of(
@@ -116,8 +120,7 @@ class AnthropicChatModelThinkingRoundTripTest {
                                         secondToolResult),
                                 tools,
                                 options)
-                        .single()
-                        .block(TIMEOUT);
+                        .blockLast(TIMEOUT);
         assertNotNull(finalResponse);
 
         RecordedRequest firstRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
@@ -165,6 +168,102 @@ class AnthropicChatModelThinkingRoundTripTest {
 
     private static MockResponse jsonResponse(String body) {
         return new MockResponse().setHeader("Content-Type", "application/json").setBody(body);
+    }
+
+    private static MockResponse streamResponse(String messageJson) throws IOException {
+        JsonNode message = OBJECT_MAPPER.readTree(messageJson);
+        StringBuilder events = new StringBuilder();
+        var start = message.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) start).putArray("content");
+        appendEvent(events, Map.of("type", "message_start", "message", start));
+        for (int index = 0; index < message.path("content").size(); index++) {
+            JsonNode block = message.path("content").get(index);
+            String type = block.path("type").asText();
+            Map<String, Object> initial =
+                    switch (type) {
+                        case "thinking" -> Map.of("type", type, "thinking", "", "signature", "");
+                        case "tool_use" ->
+                                Map.of(
+                                        "type",
+                                        type,
+                                        "id",
+                                        block.path("id").asText(),
+                                        "name",
+                                        block.path("name").asText(),
+                                        "input",
+                                        Map.of());
+                        default -> Map.of("type", "text", "text", "");
+                    };
+            appendEvent(
+                    events,
+                    Map.of(
+                            "type",
+                            "content_block_start",
+                            "index",
+                            index,
+                            "content_block",
+                            initial));
+            Map<String, Object> delta =
+                    switch (type) {
+                        case "thinking" ->
+                                Map.of(
+                                        "type",
+                                        "thinking_delta",
+                                        "thinking",
+                                        block.path("thinking").asText());
+                        case "tool_use" ->
+                                Map.of(
+                                        "type",
+                                        "input_json_delta",
+                                        "partial_json",
+                                        block.path("input").toString());
+                        default ->
+                                Map.of("type", "text_delta", "text", block.path("text").asText());
+                    };
+            appendEvent(
+                    events, Map.of("type", "content_block_delta", "index", index, "delta", delta));
+            if ("thinking".equals(type)) {
+                String signature = block.path("signature").asText();
+                int split = signature.length() / 2;
+                for (String fragment :
+                        List.of(signature.substring(0, split), signature.substring(split))) {
+                    appendEvent(
+                            events,
+                            Map.of(
+                                    "type",
+                                    "content_block_delta",
+                                    "index",
+                                    index,
+                                    "delta",
+                                    Map.of("type", "signature_delta", "signature", fragment)));
+                }
+            }
+            appendEvent(events, Map.of("type", "content_block_stop", "index", index));
+        }
+        appendEvent(
+                events,
+                Map.of(
+                        "type",
+                        "message_delta",
+                        "delta",
+                        Map.of("stop_reason", message.path("stop_reason").asText()),
+                        "usage",
+                        Map.of(
+                                "output_tokens",
+                                message.path("usage").path("output_tokens").asInt())));
+        appendEvent(events, Map.of("type", "message_stop"));
+        return new MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(events.toString());
+    }
+
+    private static void appendEvent(StringBuilder events, Map<String, Object> event)
+            throws IOException {
+        events.append("event: ")
+                .append(event.get("type"))
+                .append("\ndata: ")
+                .append(OBJECT_MAPPER.writeValueAsString(event))
+                .append("\n\n");
     }
 
     private static String firstAssistantResponse() {

@@ -331,6 +331,10 @@ public class AnthropicToolsHelper {
         }
 
         if (thinkingBudget != null) {
+            if (thinkingBudget < 1024) {
+                throw new IllegalArgumentException(
+                        "Anthropic thinkingBudget must be at least 1024 tokens");
+            }
             builder.enabledThinking(thinkingBudget);
             return;
         }

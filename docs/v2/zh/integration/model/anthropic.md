@@ -46,12 +46,24 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
-对于支持 adaptive thinking 的当前 Claude 模型，推荐使用 adaptive 模式。对于要求 manual
-extended thinking 的旧模型，可以改为设置 `thinkingBudget(2048)`；AgentScope 会将其映射为
-`thinking: {"type": "enabled", "budget_tokens": 2048}`。Manual thinking budget 在 Claude
-4.6 上已弃用，在 Claude 4.7 及更高版本会被拒绝。不要同时设置 `thinkingBudget` 和显式的
-`thinking` additional body parameter。不同模型版本的能力不同，选择模式前请查阅 Anthropic
-模型文档。
+### 扩展思考
+
+对于支持 adaptive thinking 的模型，使用 adaptive 模式。对于要求 manual extended thinking 的模型，
+设置 `thinkingBudget(2048)` 会发送 `thinking: {"type": "enabled", "budget_tokens": 2048}`。
+`thinkingBudget` 至少为 1024 tokens，更小的值会在本地报错。普通 manual thinking 还需要将
+`maxTokens` 设置得高于 thinking budget。Interleaved thinking 允许 budget 大于 `maxTokens`，
+因此 AgentScope 将这项与模型相关的校验交给 API。请查阅
+[Anthropic thinking 文档](https://platform.claude.com/docs/en/build-with-claude/extended-thinking)
+确认所用模型支持的模式和预算规则。
+
+单次调用中的 `thinkingBudget` 或显式 `thinking` additional body parameter 会替换整个默认
+thinking 配置。不要在同一个 `GenerateOptions` 中同时设置两者。例如，
+`additionalBodyParam("thinking", Map.of("type", "disabled"))` 会覆盖默认的 manual budget，
+不会继承 `budget_tokens`。
+
+保存对话历史或回传工具结果时，请保留返回的 `ThinkingBlock` metadata，其中包含多轮往返所需的
+原生思考签名和 redacted blocks。如果 Anthropic 专属 metadata 损坏，会在本地给出明确错误；
+请恢复原始签名块，或从历史中移除受影响的轮次及其工具结果。将损坏的签名块静默转换为文本无法修复签名。
 
 ## 服务端工具
 

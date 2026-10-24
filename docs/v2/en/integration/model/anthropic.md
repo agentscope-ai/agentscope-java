@@ -46,12 +46,26 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
-Adaptive thinking is the recommended mode for current Claude models that support it. For older
-models that require manual extended thinking, set `thinkingBudget(2048)` instead; AgentScope maps it
-to `thinking: {"type": "enabled", "budget_tokens": 2048}`. Manual thinking budgets are deprecated
-on Claude 4.6 and rejected by Claude 4.7 and later. Do not combine `thinkingBudget` with an explicit
-`thinking` additional body parameter. Consult the Anthropic model documentation before selecting a
-mode because capabilities vary by model version.
+### Extended thinking
+
+Use adaptive thinking on models that support it. For models that require manual extended thinking,
+set `thinkingBudget(2048)` to send `thinking: {"type": "enabled", "budget_tokens": 2048}`.
+`thinkingBudget` must be at least 1024 tokens; smaller values fail locally. For ordinary manual
+thinking, also set `maxTokens` higher than the thinking budget. Interleaved thinking permits a
+budget larger than `maxTokens`, so AgentScope leaves that model-dependent validation to the API.
+Check [Anthropic's thinking documentation](https://platform.claude.com/docs/en/build-with-claude/extended-thinking)
+for supported modes and budget rules for your model.
+
+A per-call `thinkingBudget` or explicit `thinking` additional body parameter replaces the entire
+default thinking configuration. Do not set both in the same `GenerateOptions`. For example,
+`additionalBodyParam("thinking", Map.of("type", "disabled"))` overrides a default manual budget
+without inheriting `budget_tokens`.
+
+Keep the returned `ThinkingBlock` metadata when saving conversation history or sending tool
+results back. It carries the native thinking signatures and redacted blocks needed for a round
+trip. Malformed Anthropic-owned metadata fails locally with an actionable error; restore the
+original signed block or remove the affected turn and its tool results from history. Silently
+converting a damaged signed block to text cannot repair the signature.
 
 ## Server-side tools
 

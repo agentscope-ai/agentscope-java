@@ -35,6 +35,7 @@ import com.anthropic.models.messages.MessageDeltaUsage;
 import com.anthropic.models.messages.OutputTokensDetails;
 import com.anthropic.models.messages.RawContentBlockDeltaEvent;
 import com.anthropic.models.messages.RawContentBlockStartEvent;
+import com.anthropic.models.messages.RawContentBlockStopEvent;
 import com.anthropic.models.messages.RawMessageDeltaEvent;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
@@ -498,7 +499,13 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
 
         Flux<ChatResponse> responses =
                 AnthropicResponseParser.parseStreamEvents(
-                        Flux.just(firstThinking, secondThinking, signature, redacted),
+                        Flux.just(
+                                firstThinking,
+                                secondThinking,
+                                signature,
+                                RawMessageStreamEvent.ofContentBlockStop(
+                                        RawContentBlockStopEvent.builder().index(0).build()),
+                                redacted),
                         Instant.now());
 
         StepVerifier.create(responses.collectList())
@@ -521,6 +528,112 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                             assertEquals(
                                     "encrypted-data",
                                     nativeBlocks.get(1).asRedactedThinking().data());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void testThinkingStartContentAndSignatureFragmentsArePreservedAtBlockStop() throws Exception {
+        RawMessageStreamEvent start =
+                ObjectMappers.jsonMapper()
+                        .readValue(
+                                """
+                                {"type":"content_block_start","index":0,"content_block":
+                                    {"type":"thinking","thinking":"Initial ","signature":"sig-"}}
+                                """,
+                                RawMessageStreamEvent.class);
+        Flux<ChatResponse> responses =
+                AnthropicResponseParser.parseStreamEvents(
+                        Flux.just(
+                                start,
+                                RawMessageStreamEvent.ofContentBlockDelta(
+                                        RawContentBlockDeltaEvent.builder()
+                                                .index(0)
+                                                .signatureDelta("part-")
+                                                .build()),
+                                RawMessageStreamEvent.ofContentBlockDelta(
+                                        RawContentBlockDeltaEvent.builder()
+                                                .index(0)
+                                                .thinkingDelta("reasoning")
+                                                .build()),
+                                RawMessageStreamEvent.ofContentBlockDelta(
+                                        RawContentBlockDeltaEvent.builder()
+                                                .index(0)
+                                                .signatureDelta("end")
+                                                .build()),
+                                RawMessageStreamEvent.ofContentBlockStop(
+                                        RawContentBlockStopEvent.builder().index(0).build())),
+                        Instant.now());
+        // Each subscription owns its accumulation state.
+        for (int subscription = 0; subscription < 2; subscription++) {
+            StepVerifier.create(responses.collectList())
+                    .assertNext(
+                            chunks -> {
+                                ReasoningContext context = new ReasoningContext("Assistant");
+                                chunks.forEach(context::processChunk);
+                                ThinkingBlock thinking =
+                                        context.buildFinalMessage()
+                                                .getFirstContentBlock(ThinkingBlock.class);
+                                assertEquals("Initial reasoning", thinking.getThinking());
+                                var blocks =
+                                        AnthropicThinkingMetadata.toContentBlockParams(thinking);
+                                assertEquals(1, blocks.size());
+                                assertEquals(
+                                        "Initial reasoning", blocks.get(0).asThinking().thinking());
+                                assertEquals(
+                                        "sig-part-end", blocks.get(0).asThinking().signature());
+                                assertEquals(
+                                        1,
+                                        chunks.stream()
+                                                .flatMap(chunk -> chunk.getContent().stream())
+                                                .filter(
+                                                        block ->
+                                                                block instanceof ThinkingBlock tb
+                                                                        && tb.getMetadata() != null
+                                                                        && !tb.getMetadata()
+                                                                                .isEmpty())
+                                                .count());
+                            })
+                    .verifyComplete();
+        }
+    }
+
+    @Test
+    void testThinkingStateIsReleasedAfterBlockStop() {
+        RawMessageStreamEvent thinking =
+                RawMessageStreamEvent.ofContentBlockDelta(
+                        RawContentBlockDeltaEvent.builder()
+                                .index(0)
+                                .thinkingDelta("First block")
+                                .build());
+        RawMessageStreamEvent signature =
+                RawMessageStreamEvent.ofContentBlockDelta(
+                        RawContentBlockDeltaEvent.builder().index(0).signatureDelta("sig").build());
+        RawMessageStreamEvent stop =
+                RawMessageStreamEvent.ofContentBlockStop(
+                        RawContentBlockStopEvent.builder().index(0).build());
+        StepVerifier.create(
+                        AnthropicResponseParser.parseStreamEvents(
+                                        Flux.just(thinking, signature, stop, signature, stop),
+                                        Instant.now())
+                                .collectList())
+                .assertNext(
+                        chunks -> {
+                            var blocks =
+                                    chunks.stream()
+                                            .flatMap(chunk -> chunk.getContent().stream())
+                                            .filter(ThinkingBlock.class::isInstance)
+                                            .map(ThinkingBlock.class::cast)
+                                            .flatMap(
+                                                    block ->
+                                                            AnthropicThinkingMetadata
+                                                                    .toContentBlockParams(block)
+                                                                    .stream())
+                                            .toList();
+                            assertEquals(2, blocks.size());
+                            assertEquals("First block", blocks.get(0).asThinking().thinking());
+                            assertEquals("", blocks.get(1).asThinking().thinking());
+                            assertEquals("sig", blocks.get(1).asThinking().signature());
                         })
                 .verifyComplete();
     }

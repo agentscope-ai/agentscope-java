@@ -598,6 +598,65 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testSignedThinkingWithServerToolsAndParallelClientTools() {
+        Msg assistant =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("Search then compare")
+                                                .metadata(
+                                                        AnthropicThinkingMetadata.thinking(
+                                                                0, "Search then compare", "sig"))
+                                                .build(),
+                                        serverToolUseBlock("server_1"),
+                                        serverToolResultBlock("server_1"),
+                                        ToolUseBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .input(Map.of())
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_2")
+                                                .name("get_weather")
+                                                .input(Map.of())
+                                                .build()))
+                        .build();
+        Msg results =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_2")
+                                                .name("get_weather")
+                                                .output(TextBlock.builder().text("Cloudy").build())
+                                                .build(),
+                                        ToolResultBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .output(TextBlock.builder().text("Sunny").build())
+                                                .build()))
+                        .build();
+        List<MessageParam> converted = converter.convert(List.of(assistant, results));
+        assertEquals(2, converted.size());
+        List<ContentBlockParam> blocks = converted.get(0).content().asBlockParams();
+        assertEquals(5, blocks.size());
+        assertEquals("sig", blocks.get(0).asThinking().signature());
+        assertEquals("server_1", blocks.get(1).asServerToolUse().id());
+        assertEquals("server_1", blocks.get(2).asWebSearchToolResult().toolUseId());
+        assertEquals("call_1", blocks.get(3).asToolUse().id());
+        assertEquals("call_2", blocks.get(4).asToolUse().id());
+        List<ContentBlockParam> toolResults = converted.get(1).content().asBlockParams();
+        assertEquals(2, toolResults.size());
+        assertEquals("call_1", toolResults.get(0).asToolResult().toolUseId());
+        assertEquals("call_2", toolResults.get(1).asToolResult().toolUseId());
+    }
+
+    @Test
     void testConvertToolResultBlockNullOutput() {
         // Builder without output() call will have null output, which becomes empty list
         Msg msg =

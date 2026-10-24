@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.anthropic.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -578,6 +579,52 @@ class AnthropicToolsHelperTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> AnthropicToolsHelper.applyOptions(builder, options, null));
+    }
+
+    @Test
+    void testRejectsThinkingBudgetBelowProviderMinimum() {
+        for (int budget : List.of(-1, 0, 1023)) {
+            GenerateOptions options = GenerateOptions.builder().thinkingBudget(budget).build();
+            IllegalArgumentException error =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () ->
+                                    AnthropicToolsHelper.applyOptions(
+                                            createBuilder(), options, null));
+            assertTrue(error.getMessage().contains("1024"));
+        }
+    }
+
+    @Test
+    void testPerCallBudgetOverridesDefaultAdaptiveThinking() {
+        GenerateOptions defaults =
+                GenerateOptions.builder()
+                        .additionalBodyParam("thinking", Map.of("type", "adaptive"))
+                        .build();
+        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicToolsHelper.applyOptions(
+                builder, GenerateOptions.builder().thinkingBudget(1024).build(), defaults);
+        MessageCreateParams params = builder.build();
+        assertEquals(1024, params.thinking().orElseThrow().asEnabled().budgetTokens());
+        assertFalse(params._additionalBodyProperties().containsKey("thinking"));
+    }
+
+    @Test
+    void testExplicitThinkingReplacesDefaultObjectInsteadOfMerging() {
+        GenerateOptions defaults =
+                GenerateOptions.builder()
+                        .additionalBodyParam(
+                                "thinking", Map.of("type", "enabled", "budget_tokens", 2048))
+                        .build();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("thinking", Map.of("type", "disabled"))
+                        .build();
+        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicToolsHelper.applyOptions(builder, options, defaults);
+        assertEquals(
+                com.anthropic.core.JsonValue.from(Map.of("type", "disabled")),
+                builder.build()._additionalBodyProperties().get("thinking"));
     }
 
     @Test

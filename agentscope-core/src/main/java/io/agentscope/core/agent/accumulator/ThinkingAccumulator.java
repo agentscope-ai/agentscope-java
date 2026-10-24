@@ -43,13 +43,10 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
      */
     @Override
     public void add(ThinkingBlock block) {
-        if (block == null) {
-            return;
-        }
-        if (block.getThinking() != null) {
+        if (block != null && block.getThinking() != null) {
             accumulated.append(block.getThinking());
         }
-        if (block.getMetadata() != null && !block.getMetadata().isEmpty()) {
+        if (block != null && block.getMetadata() != null && !block.getMetadata().isEmpty()) {
             mergeMetadata(block.getMetadata());
         }
     }

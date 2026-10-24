@@ -247,15 +247,8 @@ public class AnthropicResponseParser {
                     .signature()
                     .ifPresent(
                             signatureDelta ->
-                                    contentBlocks.add(
-                                            ThinkingBlock.builder()
-                                                    .metadata(
-                                                            AnthropicThinkingMetadata.thinking(
-                                                                    deltaEvent.index(),
-                                                                    streamState.getThinking(
-                                                                            deltaEvent.index()),
-                                                                    signatureDelta.signature()))
-                                                    .build()));
+                                    streamState.appendSignature(
+                                            deltaEvent.index(), signatureDelta.signature()));
 
             // Input JSON delta (tool calling)
             deltaEvent
@@ -277,6 +270,23 @@ public class AnthropicResponseParser {
         // Content block start - tool use
         if (event.isContentBlockStart()) {
             var startEvent = event.asContentBlockStart();
+
+            startEvent
+                    .contentBlock()
+                    .thinking()
+                    .ifPresent(
+                            thinking -> {
+                                streamState.thinkingByIndex.remove(startEvent.index());
+                                streamState.appendThinking(startEvent.index(), thinking.thinking());
+                                streamState.appendSignature(
+                                        startEvent.index(), thinking.signature());
+                                if (!thinking.thinking().isEmpty()) {
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .thinking(thinking.thinking())
+                                                    .build());
+                                }
+                            });
 
             startEvent
                     .contentBlock()
@@ -344,6 +354,21 @@ public class AnthropicResponseParser {
                     .ifPresent(param -> contentBlocks.add(SERVER_TOOL_HELPER.decodeResult(param)));
         }
 
+        if (event.isContentBlockStop()) {
+            long index = event.asContentBlockStop().index();
+            ThinkingState thinking = streamState.thinkingByIndex.remove(index);
+            if (thinking != null && thinking.signature.length() > 0) {
+                contentBlocks.add(
+                        ThinkingBlock.builder()
+                                .metadata(
+                                        AnthropicThinkingMetadata.thinking(
+                                                index,
+                                                thinking.text.toString(),
+                                                thinking.signature.toString()))
+                                .build());
+            }
+        }
+
         // Message delta - final usage information; combine the cumulative output tokens with
         // the prompt usage captured on message_start
         if (event.isMessageDelta()) {
@@ -379,7 +404,8 @@ public class AnthropicResponseParser {
 
     private static final class StreamState {
 
-        private final Map<Long, StringBuilder> thinkingByIndex = new HashMap<>();
+        // Flux.defer creates one state per subscriber; upstream signals are serialized.
+        private final Map<Long, ThinkingState> thinkingByIndex = new HashMap<>();
         private int inputTokens;
         private int cachedTokens;
         private int cacheCreationTokens;
@@ -387,15 +413,25 @@ public class AnthropicResponseParser {
         private void appendThinking(long index, String thinking) {
             if (thinking != null && !thinking.isEmpty()) {
                 thinkingByIndex
-                        .computeIfAbsent(index, ignored -> new StringBuilder())
+                        .computeIfAbsent(index, ignored -> new ThinkingState())
+                        .text
                         .append(thinking);
             }
         }
 
-        private String getThinking(long index) {
-            StringBuilder thinking = thinkingByIndex.get(index);
-            return thinking != null ? thinking.toString() : "";
+        private void appendSignature(long index, String signature) {
+            if (signature != null && !signature.isEmpty()) {
+                thinkingByIndex
+                        .computeIfAbsent(index, ignored -> new ThinkingState())
+                        .signature
+                        .append(signature);
+            }
         }
+    }
+
+    private static final class ThinkingState {
+        private final StringBuilder text = new StringBuilder();
+        private final StringBuilder signature = new StringBuilder();
     }
 
     /**
