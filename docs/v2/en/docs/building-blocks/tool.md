@@ -8,6 +8,8 @@ zh_link: /v2/zh/docs/building-blocks/tool
 
 Tools are how an agent acts on the world — running business operations, calling APIs, reading and writing data. Each tool exposes itself to the LLM as a JSON Schema, and the agent invokes it through a unified interface.
 
+The default `JacksonJsonCodec` reads exactly one JSON value. Trailing whitespace is accepted; an extra value or other trailing content raises `JsonException`. This also lets tool-call argument validation fall back to the structured input when raw arguments contain trailing garbage.
+
 AgentScope organizes tool-related building blocks under three concepts:
 
 - **Tool** — any object implementing the `AgentTool` contract (typically by extending `ToolBase`) or any plain class whose methods are annotated with `@Tool`. Java refers to the latter as *reflective function tools* — `Toolkit#registerTool(Object)` registers them by reflection automatically.
