@@ -68,6 +68,8 @@ Pause 不冻结已经开始的外部进程。Cancel 也不自动回滚已经产�
 
 诊断接口包括 `/messages`（`offset`、`limit`、`fromEnd`）、`/context`、`/events`、`/events/stream`、`/turns`。内容是否可用取决于运行时提供的观测与查询能力，注册为 Agent 不代表都支持完整上下文或恢复。该组接口用于执行诊断；业务侧会话管理优先使用下述 Agent API。
 
+Managed Agent 的个人 Chat 在执行被接纳后，也会将消息和执行事件同步到控制面，即使该会话没有编排 Attempt。同步为异步投递，控制面暂时不可用时会重试。刷新原有对话即可读取已投递的事件，无需重复发送同一条消息。
+
 ## Managed Session 的日志与恢复入口
 
 Agent API 使用 session_id → turn_id → run_id 关联推理工作；run_id 不是编排 Run ID。GET snapshot 返回已保存的 items/tools/turns/required_actions 与公共 as_of cursor，再从 events/stream 续传。GET turns 按提交返回的 turn ID 查询队列和结果。
