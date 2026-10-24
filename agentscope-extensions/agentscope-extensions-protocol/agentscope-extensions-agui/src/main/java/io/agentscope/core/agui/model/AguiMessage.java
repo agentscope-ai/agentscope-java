@@ -249,6 +249,7 @@ public class AguiMessage {
      *
      * @return The content, may be null
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public MessageContent getContent() {
         return content;
     }
