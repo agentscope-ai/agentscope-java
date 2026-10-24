@@ -51,7 +51,7 @@
         <central.publishing.maven.version>0.10.0</central.publishing.maven.version>
 
         <!-- Alibaba Cloud SDK transitive version-range pins; see dependencyManagement below. -->
-        <aliyun-tea.version>1.4.1</aliyun-tea.version>
+        <aliyun-tea.version>1.4.2</aliyun-tea.version>
         <aliyun-java-sdk-core.version>4.7.8</aliyun-java-sdk-core.version>
 
         <maven.deploy.skip>false</maven.deploy.skip>
