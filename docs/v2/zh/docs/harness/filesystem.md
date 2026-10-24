@@ -553,6 +553,27 @@ HarnessAgent.builder()
 
 通常不需要——三种模式覆盖了 95% 的场景。
 
+如果你的文件系统是**包在另一个文件系统外面**的（做路径过滤、审计、收窄权限），请实现 `FilesystemDecorator`，在 `unwrap()` 里返回被包的那一层。否则 agent 看不到里面是什么，会静默丢掉 `execute` 工具、命名空间感知的路径处理和 skill 的 shell 路径：
+
+```java
+public class SanitizingFilesystem implements FilesystemDecorator {
+    private final AbstractFilesystem delegate;
+
+    @Override
+    public AbstractFilesystem unwrap() {
+        return delegate;
+    }
+    // ls / read / write / ... 委托给 delegate
+}
+
+HarnessAgent.builder()
+    ...
+    .abstractFilesystem(new SanitizingFilesystem(new LocalFilesystemWithShell(workspace)))
+    .build();   // execute 会注册到被包的 LocalFilesystemWithShell 上
+```
+
+`execute` 用的是链上第一个实现了 `AbstractSandboxFilesystem` 的文件系统。如果只有被包的那一层实现了，shell 命令会绕过你的包装器；要连命令一起过滤，就让包装器自己也实现 `AbstractSandboxFilesystem`。
+
 ## 相关文档
 
 - [沙箱](/v2/zh/docs/harness/sandbox) — 模式 2 的运行时细节（容器生命周期、快照恢复链路）

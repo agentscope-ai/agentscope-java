@@ -67,6 +67,7 @@ import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.FilesystemDecorator;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
@@ -2033,7 +2034,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Escape hatch: sets a custom {@link AbstractFilesystem} implementation directly. */
+        /**
+         * Escape hatch: sets a custom {@link AbstractFilesystem} implementation directly.
+         *
+         * <p>Shell tool registration, path normalization and the skill shell-path policy depend on
+         * the filesystem's type. A wrapper around another filesystem should implement {@link
+         * FilesystemDecorator} so they follow the wrapped filesystem instead of being disabled.
+         */
         public Builder abstractFilesystem(AbstractFilesystem store) {
             this.abstractFilesystem = store;
             return this;
@@ -2959,8 +2966,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                             : new WorkspaceSessionLogStore(wsManager)));
                 }
             }
+            // Wrappers implementing FilesystemDecorator are classified by what they wrap.
+            AbstractFilesystem layoutFs = FilesystemDecorator.innermost(filesystem);
             WorkspacePathNormalizer pathNormalizer;
-            if (filesystem instanceof OverlayFilesystem ov
+            if (layoutFs instanceof OverlayFilesystem ov
                     && ov.getUpper() instanceof LocalFilesystemWithShell) {
                 // Local overlay mode. ShellAwareOverlay is instanceof AbstractSandboxFilesystem,
                 // so this branch must come before the sandbox check below to avoid using the
@@ -2972,7 +2981,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 pathNormalizer =
                         WorkspacePathNormalizer.of(
                                 resolvedWorkspace.toAbsolutePath().toString(), nsFactory);
-            } else if (filesystem instanceof AbstractSandboxFilesystem) {
+            } else if (layoutFs instanceof AbstractSandboxFilesystem) {
                 pathNormalizer =
                         WorkspacePathNormalizer.of(ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
             } else {
@@ -2987,8 +2996,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         new ArtifactDeliveryTool(
                                 filesystem, pathNormalizer, artifactDeliveryTarget));
             }
-            if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
-                agentToolkit.registerTool(new ShellExecuteTool(sandbox));
+            AbstractSandboxFilesystem shellFs = FilesystemDecorator.findShell(filesystem);
+            if (!disableShellTool && shellFs != null) {
+                agentToolkit.registerTool(new ShellExecuteTool(shellFs));
             }
             if (!disableWebTools) {
                 if (webHttpClient != null) {
@@ -3139,17 +3149,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 if (!shellToolAvailable) {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
-                } else if (filesystem instanceof LocalFilesystemWithShell) {
+                } else if (layoutFs instanceof LocalFilesystemWithShell) {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
                                     .localWithShell(resolvedWorkspace);
-                } else if (filesystem instanceof OverlayFilesystem ov
+                } else if (layoutFs instanceof OverlayFilesystem ov
                         && ov.getUpper() instanceof LocalFilesystemWithShell) {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
                                     .localWithShell(resolvedWorkspace);
-                } else if (filesystem instanceof SandboxBackedFilesystem
-                        || (filesystem instanceof RoutedSandboxFilesystem routed
+                } else if (layoutFs instanceof SandboxBackedFilesystem
+                        || (layoutFs instanceof RoutedSandboxFilesystem routed
                                 && routed.primary() instanceof SandboxBackedFilesystem)) {
                     String wsPrefix =
                             defaultSandboxContext != null
