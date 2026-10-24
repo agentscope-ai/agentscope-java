@@ -393,7 +393,7 @@ HarnessAgent agent = HarnessAgent.builder()
     .inheritEnv(true))
 ```
 
-读取行为不变——仍然是 workspace 优先、project 兜底。
+读取行为不变——仍然是 workspace 优先、project 兜底。启用按用户的命名空间隔离时，项目写入会落到 `{project}/{userId}/` 下；`read_file`、`list_files`、`glob` 和 `grep` 也会在该目录下解析同一个相对路径，因此以 `hi.txt` 写入的文件可以直接用 `hi.txt` 读回。
 
 #### 示例场景：本地开发助手
 
