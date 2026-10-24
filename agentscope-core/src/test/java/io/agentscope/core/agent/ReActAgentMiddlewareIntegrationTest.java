@@ -28,9 +28,11 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -270,6 +272,54 @@ class ReActAgentMiddlewareIntegrationTest {
                         .toList());
         assertEquals(2L, events.stream().filter(ModelCallEndEvent.class::isInstance).count());
         assertTrue(events.stream().anyMatch(ToolCallStartEvent.class::isInstance));
+    }
+
+    @Test
+    void actingStopStillPersistsExecutedToolResults() {
+        ToolThenFinalModel model = new ToolThenFinalModel();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(new LookupTool());
+        MiddlewareBase stopAfterActing =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .concatWith(
+                                        Flux.just(
+                                                new RequestStopEvent(
+                                                        "surface delivered",
+                                                        GenerateReason.ACTING_STOP_REQUESTED)));
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hello-system")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(stopAfterActing)
+                        .build();
+
+        Msg reply = agent.call(List.of()).block();
+
+        assertNotNull(reply);
+        assertEquals(GenerateReason.ACTING_STOP_REQUESTED, reply.getGenerateReason());
+        assertEquals(1, model.calls.get(), "the stop must end the loop before the next round");
+        List<ToolResultBlock> persisted =
+                agent.getAgentState().contextMutable().stream()
+                        .flatMap(msg -> msg.getContentBlocks(ToolResultBlock.class).stream())
+                        .toList();
+        assertEquals(
+                1,
+                persisted.size(),
+                "an executed tool result must reach the context, otherwise the assistant turn"
+                        + " keeps a dangling tool_use: "
+                        + agent.getAgentState().contextMutable());
+        assertEquals("tool-call-1", persisted.get(0).getId());
     }
 
     @Test
