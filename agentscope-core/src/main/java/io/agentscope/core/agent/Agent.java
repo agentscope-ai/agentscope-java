@@ -17,6 +17,9 @@ package io.agentscope.core.agent;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.tool.Toolkit;
+import java.util.List;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Complete agent interface combining all capabilities.
@@ -45,6 +48,40 @@ import io.agentscope.core.tool.Toolkit;
  * {@code Mono<Msg>} return type on the call methods.
  */
 public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
+
+    /**
+     * Calls an agent with per-call user/session metadata. Implementations with their own context
+     * handling can override this; legacy implementations receive the context through Reactor.
+     *
+     * @param messages input messages
+     * @param context per-call context
+     * @return the agent response
+     */
+    default Mono<Msg> call(List<Msg> messages, RuntimeContext context) {
+        Mono<Msg> result = call(messages);
+        return context == null
+                ? result
+                : result.contextWrite(
+                        current -> current.put(AgentBase.RUNTIME_CONTEXT_KEY, context));
+    }
+
+    /**
+     * Streams with per-call user/session metadata, retaining legacy implementation compatibility.
+     *
+     * @param messages input messages
+     * @param options stream options
+     * @param context per-call context
+     * @return execution events
+     * @deprecated use an agent's fine-grained streamEvents API when available
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    default Flux<Event> stream(List<Msg> messages, StreamOptions options, RuntimeContext context) {
+        Flux<Event> result = stream(messages, options);
+        return context == null
+                ? result
+                : result.contextWrite(
+                        current -> current.put(AgentBase.RUNTIME_CONTEXT_KEY, context));
+    }
 
     /**
      * Get the unique identifier for this agent.

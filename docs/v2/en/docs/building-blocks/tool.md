@@ -802,3 +802,34 @@ Repositories with user- or session-dependent visibility implement `io.agentscope
 Final results are notified before ordered batch aggregation, so a fast tool does not wait for a slow tool. Retry, timeout, and tool error handling retain their existing behavior. Progress callback exceptions retain the existing logging and isolation; final-result callback exceptions propagate through the returned publisher. Implementations must be thread-safe and nonblocking. Cancellation or infrastructure failure can terminate without a final result.
 
 The Agent publishes results progressively by default, without a configuration flag. Ordinary tools and synthetic `generate_response` use this callback; provider results and permission denials retain direct event conversion. Callback only publishes events: it does not create messages or update conversation state. Message settlement and interruption recovery retain their existing flow, and an early event does not imply that the result has been stored.
+
+## Agent providers and resource ownership
+
+A `SubAgentProvider` can return a shared singleton or create a new agent per delegation. Shared ReActAgent instances preserve their normal per-session serialization, state caches, and shutdown registration when used as tools.
+
+```java
+SubAgentConfig config = SubAgentConfig.builder()
+    .toolName("ask_expert")
+    .description("Ask the expert a question")
+    .lifecyclePolicy(SubAgentConfig.LifecyclePolicy.SHARED)
+    .build();
+toolkit.registration().subAgent(() -> expertAgent, config).apply();
+```
+
+- `AUTO` (default): compare the first two provided instances by identity, assuming a provider returns either one stable singleton or independently owned factory instances. Leave a stable singleton open; close distinct factory instances asynchronously after saving state. An unresolved registration sample remains pending until first invocation. When both metadata fields are configured, registration skips the provider and first invocation performs the probe.
+- `SHARED`: never close provided instances. Choose this for caller-managed pools/caches whose ownership cannot be inferred from identity.
+- `PER_CALL`: the tool owns every provided instance, including a metadata sample, and closes each `AutoCloseable` after use. Choose this for known factories, including tools that may be registered but never called.
+
+The tool preserves the caller's user identity and uses its `session_id` argument as the child session. Child execution, state access, and cancellation use that identity consistently. Agent-owned state stores and native session logs remain authoritative; otherwise the configured tool store persists detached state snapshots with conditional writes. Legacy non-versioning stores coordinate retry writes inside one tool instance; distributed writers need a versioning backend. Graceful shutdown also waits for pending invocation cleanup within the configured shutdown budget.
+
+### Migrating existing sub-agent sessions
+
+User isolation changes tool-managed state from `(null, childSessionId)` to `(callerUserId, childSessionId)`. Agent-owned stores now execute under that same caller user and child session. The old tool forwarded caller context only to `ReActAgent`, which used the caller user and parent session (or its configured default session if absent). Legacy `HarnessAgent` calls instead used an empty context and the delegate's default session, so their records can have both an anonymous user and a different session even when the tool received caller context. Check other implementations' legacy defaults as well. Legacy entries remain present, but are not read under a different new identity. For JsonFile stores, anonymous entries are under `__anon__/`; SQL, Redis, and other stores encode the same identity in backend-specific keys.
+
+1. Pause old and new writers and back up the complete store before migration. For tools with no durable state, there is no persisted history to migrate.
+2. Use trusted application records to map each child session to its owner and, for agent-owned persistence, its previous user/session pair, including anonymous/default identities. Do not infer the old identity from the current caller context or assign anonymous history to whichever user requests that session next. If multiple child conversations were combined in one parent/default slot and cannot be separated from records, retain that legacy history and explicitly start new child sessions.
+3. Copy tool-managed `agent_state` from the anonymous key to the confirmed user's child key. For agent-owned persistence, migrate the required conversation state from the confirmed old user/session pair to the destination user/child-session pair, including related state keys. Normalize embedded `user_id`/`session_id` fields to the confirmed destination where the backend stores them. If caller userId is null and the old/new key is identical, no tool-managed key migration is needed.
+4. Use the backend's supported state APIs or migration tooling to create new entries with the appropriate key encoding, indexes, and version metadata. For versioned stores, use create-if-absent/CAS semantics; do not overwrite a destination already used by the new code. For non-versioning stores, keep writers stopped and verify destination absence before copying. Avoid moving directories or constructing Redis/SQL keys without accounting for that backend's full storage format.
+5. Resume a known conversation under its confirmed user and child session; verify both its previous history and a subsequent saved turn. Keep the backup and legacy data until migration is validated. Repeat for each migrated owner/session before removing old entries.
+
+There is no implicit read from an anonymous key when a user-specific key is absent. This avoids treating an unowned legacy session identifier as authorization to read another user's history.

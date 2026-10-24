@@ -26,6 +26,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -73,9 +74,12 @@ class SubAgentToolCancellationTest {
                 .when(spyAgent)
                 .call(anyList(), any(RuntimeContext.class));
 
+        var providedAgents =
+                List.of(ReActAgent.builder().name("sampleAgent").build(), spyAgent).iterator();
         SubAgentTool tool =
                 new SubAgentTool(
-                        () -> spyAgent, SubAgentConfig.builder().forwardEvents(false).build());
+                        providedAgents::next,
+                        SubAgentConfig.builder().forwardEvents(false).build());
 
         ToolEmitter emitter = Mockito.mock(ToolEmitter.class);
         RuntimeContext rtCtx =
