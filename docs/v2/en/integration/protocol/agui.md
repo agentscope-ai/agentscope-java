@@ -236,8 +236,6 @@ agentscope:
 connection is closed, times out, or fails while sending an event. It defaults to `true` for
 backward compatibility. Set it to `false` to let the Agent continue running after the client
 disconnects; events produced while the connection is closed are not replayed by the starter.
-With `false`, failed sends to a disconnected or completed MVC SSE connection do not cancel
-the run; the Agent continues until it finishes or is explicitly interrupted.
 
 You can extend the default chain with beans:
 

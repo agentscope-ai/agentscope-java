@@ -28,6 +28,7 @@ import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -177,7 +178,14 @@ public class AguiMvcController {
                                 new BaseSubscriber<>() {
                                     @Override
                                     protected void hookOnNext(AguiEvent event) {
-                                        sendEvent(emitter, event);
+                                        if (sendEvent(emitter, event) || !interruptOnDisconnect) {
+                                            return;
+                                        }
+                                        logger.info(
+                                                "SSE event send failed for run {}, interrupting"
+                                                        + " agent",
+                                                runId);
+                                        interruptAndCancel(result, threadId, this);
                                     }
 
                                     @Override
@@ -300,14 +308,14 @@ public class AguiMvcController {
         return queryParams;
     }
 
-    private void sendEvent(SseEmitter emitter, AguiEvent event) {
+    private boolean sendEvent(SseEmitter emitter, AguiEvent event) {
+        String jsonData = encoder.encodeToJson(event);
         try {
-            String jsonData = encoder.encodeToJson(event);
             emitter.send(SseEmitter.event().data(jsonData, MediaType.APPLICATION_JSON));
-        } catch (Exception e) {
-            // A completed emitter throws IllegalStateException. A transport failure must not
-            // cancel the run; disconnect callbacks apply interruptOnDisconnect separately.
+            return true;
+        } catch (IOException | IllegalStateException e) {
             logger.debug("Failed to send SSE event: {}", e.getMessage());
+            return false;
         }
     }
 

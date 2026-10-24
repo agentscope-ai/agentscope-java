@@ -17,18 +17,22 @@ package io.agentscope.spring.boot.agui.mvc;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
+import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
 import io.agentscope.core.agui.model.AguiMessage;
@@ -52,6 +56,24 @@ import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
 
 class AguiMvcControllerTest {
+
+    @Test
+    void eventEncodingFailureFailsEmitterInsteadOfCompletingSuccessfully() throws Exception {
+        ControllerFixture fixture =
+                fixture(true, Flux.just(new AguiEvent.RunFinished("thread-1", "run-1")));
+        AguiEventEncoder encoder = mock(AguiEventEncoder.class);
+        when(encoder.encodeToJson(any(AguiEvent.class)))
+                .thenThrow(new AguiException.EncodingException("encode failed", null));
+        ReflectionTestUtils.setField(fixture.controller, "encoder", encoder);
+        try {
+            SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
+
+            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertNotNull(awaitEmitterFailure(emitter));
+        } finally {
+            fixture.executor.shutdownNow();
+        }
+    }
 
     @Test
     void eventStreamSignalsAreForwardedAndEmitterCompletes() throws Exception {
@@ -169,6 +191,32 @@ class AguiMvcControllerTest {
     }
 
     @Test
+    void completedEmitterCancelsRunWhenInterruptOnDisconnectIsEnabled() throws Exception {
+        Sinks.Many<AguiEvent> events = Sinks.many().unicast().onBackpressureBuffer();
+        AtomicReference<SignalType> termination = new AtomicReference<>();
+        ControllerFixture fixture =
+                fixture(true, events.asFlux().doOnCancel(() -> termination.set(SignalType.CANCEL)));
+        try {
+            SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
+            assertTrue(fixture.firstRunSubscribed.await(5, TimeUnit.SECONDS));
+
+            emitter.complete();
+            assertEquals(
+                    Sinks.EmitResult.OK,
+                    events.tryEmitNext(new AguiEvent.RunStarted("thread-1", "run-1")));
+
+            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertEquals(SignalType.CANCEL, termination.get());
+            verify(fixture.agent).interrupt(any(RuntimeContext.class));
+            awaitSecondRunAccepted(fixture);
+            assertEquals(2, fixture.runCount.get());
+        } finally {
+            events.tryEmitComplete();
+            fixture.executor.shutdownNow();
+        }
+    }
+
+    @Test
     void eventStreamErrorWithoutMessageCompletesEmitter() throws Exception {
         ControllerFixture fixture = fixture(false, Flux.error(new RuntimeException()));
         try {
@@ -268,6 +316,16 @@ class AguiMvcControllerTest {
         Object errorCallback = ReflectionTestUtils.getField(emitter, "errorCallback");
         ReflectionTestUtils.invokeMethod(
                 errorCallback, "accept", new IOException("client disconnected"));
+    }
+
+    private static Object awaitEmitterFailure(SseEmitter emitter) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        Object failure = ReflectionTestUtils.getField(emitter, "failure");
+        while (failure == null && System.nanoTime() < deadline) {
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
+            failure = ReflectionTestUtils.getField(emitter, "failure");
+        }
+        return failure;
     }
 
     /**

@@ -235,8 +235,6 @@ agentscope:
 `interrupt-on-disconnect` 用于控制 MVC/WebFlux 的 SSE 连接关闭、超时或发送事件失败时是否中断
 Agent run。默认值为 `true`，用于保持现有行为兼容。设置为 `false` 后，客户端断开时 Agent
 会继续执行；连接关闭期间产生的事件不会由 starter 重放。
-设置为 `false` 时，向已断开或已完成的 MVC SSE 连接发送事件失败不会取消 run；Agent
-会继续执行，直到运行结束或被显式中断。
 
 可以通过 bean 扩展默认链路：
 
