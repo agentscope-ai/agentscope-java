@@ -521,6 +521,8 @@ ReActAgent agent =
                 .build();
 ```
 
+The `baseDir` restriction also checks the resolved target of existing symbolic links and Windows directory junctions. Links to locations outside the configured base are rejected before reads, overwrites, or directory creation; links that stay inside the base and a linked base directory remain supported.
+
 - **`HarnessAgent`** — the harness module ships workspace-aware shell and file tools (`execute`, `read_file`, `write_file`, etc.) out of the box; no extra registration needed.
 
 ### Skill + ToolGroup: on-demand tool disclosure
