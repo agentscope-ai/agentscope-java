@@ -94,6 +94,18 @@ public class AnthropicToolsHelper {
             List<AnthropicServerTool> serverTools,
             GenerateOptions options,
             String cacheTtl) {
+        applyTools(builder, tools, serverTools, options, null, cacheTtl);
+    }
+
+    static void applyTools(
+            MessageCreateParams.Builder builder,
+            List<ToolSchema> tools,
+            List<AnthropicServerTool> serverTools,
+            GenerateOptions options,
+            GenerateOptions defaultOptions,
+            String cacheTtl) {
+        GenerateOptions thinkingOptions = resolveThinkingOptions(options, defaultOptions);
+        options = GenerateOptions.mergeOptions(options, defaultOptions);
         List<ToolSchema> clientTools = tools != null ? tools : List.of();
         List<AnthropicServerTool> anthropicServerTools =
                 serverTools != null ? serverTools : List.of();
@@ -132,6 +144,14 @@ public class AnthropicToolsHelper {
         // Resolve effective parallelToolCalls and toolChoice
         Boolean parallelToolCalls = options != null ? options.getParallelToolCalls() : null;
         ToolChoice toolChoice = options != null ? options.getToolChoice() : null;
+
+        // Manual thinking cannot be combined with forced tool use, including ReActAgent's
+        // structured-output retry. Keep thinking unchanged for the entire tool-use turn.
+        if ((toolChoice instanceof ToolChoice.Required || toolChoice instanceof ToolChoice.Specific)
+                && isManualThinking(thinkingOptions)) {
+            log.debug("Using auto tool choice because Anthropic manual thinking is enabled");
+            toolChoice = new ToolChoice.Auto();
+        }
 
         if (toolChoice != null) {
             // Explicit tool choice — pass parallelToolCalls along
@@ -266,6 +286,8 @@ public class AnthropicToolsHelper {
             builder.maxTokens(maxTokens);
         }
 
+        applyThinking(builder, options, defaultOptions);
+
         // Apply additional parameters (merge defaultOptions first, then options to override)
         // Apply additional headers
         applyAdditionalHeaders(builder, defaultOptions);
@@ -298,10 +320,79 @@ public class AnthropicToolsHelper {
         Map<String, Object> params = opts.getAdditionalBodyParams();
         if (params != null && !params.isEmpty()) {
             for (Map.Entry<String, Object> entry : params.entrySet()) {
+                if ("thinking".equals(entry.getKey())) {
+                    continue;
+                }
                 builder.putAdditionalBodyProperty(entry.getKey(), JsonValue.from(entry.getValue()));
             }
             log.debug("Applied {} additional body params to Anthropic request", params.size());
         }
+    }
+
+    private static void applyThinking(
+            MessageCreateParams.Builder builder,
+            GenerateOptions options,
+            GenerateOptions defaultOptions) {
+        GenerateOptions source = resolveThinkingOptions(options, defaultOptions);
+        if (source == null) {
+            return;
+        }
+
+        Integer thinkingBudget = source.getThinkingBudget();
+        Map<String, Object> bodyParams = source.getAdditionalBodyParams();
+        boolean hasExplicitThinking = bodyParams != null && bodyParams.containsKey("thinking");
+        if (thinkingBudget != null && hasExplicitThinking) {
+            throw new IllegalArgumentException(
+                    "Configure Anthropic thinking with either thinkingBudget or the explicit"
+                            + " thinking body parameter, not both");
+        }
+
+        if (thinkingBudget != null) {
+            if (thinkingBudget < 1024) {
+                throw new IllegalArgumentException(
+                        "Anthropic thinkingBudget must be at least 1024 tokens");
+            }
+            builder.enabledThinking(thinkingBudget);
+            return;
+        }
+
+        Object thinking = bodyParams.get("thinking");
+        if (thinking == null) {
+            throw new IllegalArgumentException(
+                    "Anthropic thinking body parameter must not be null");
+        }
+        builder.putAdditionalBodyProperty("thinking", JsonValue.from(thinking));
+    }
+
+    private static GenerateOptions resolveThinkingOptions(
+            GenerateOptions options, GenerateOptions defaultOptions) {
+        return hasThinkingConfiguration(options)
+                ? options
+                : hasThinkingConfiguration(defaultOptions) ? defaultOptions : null;
+    }
+
+    private static boolean isManualThinking(GenerateOptions source) {
+        if (source == null) {
+            return false;
+        }
+        if (source.getThinkingBudget() != null) {
+            return true;
+        }
+        return "enabled"
+                .equals(
+                        ObjectMappers.jsonMapper()
+                                .valueToTree(source.getAdditionalBodyParams().get("thinking"))
+                                .path("type")
+                                .asText());
+    }
+
+    private static boolean hasThinkingConfiguration(GenerateOptions options) {
+        if (options == null) {
+            return false;
+        }
+        Map<String, Object> bodyParams = options.getAdditionalBodyParams();
+        return options.getThinkingBudget() != null
+                || (bodyParams != null && bodyParams.containsKey("thinking"));
     }
 
     private static void applyAdditionalQueryParams(

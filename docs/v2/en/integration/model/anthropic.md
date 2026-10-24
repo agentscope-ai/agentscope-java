@@ -31,14 +31,48 @@ ReActAgent agent = ReActAgent.builder()
 Use the builder when you need a custom endpoint, formatter, transport, prompt caching, thinking, or generation options:
 
 ```java
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.anthropic.AnthropicChatModel;
+import java.util.Map;
 
 AnthropicChatModel model = AnthropicChatModel.builder()
     .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-    .modelName("claude-sonnet-4.5")
+    .modelName("claude-sonnet-4-6")
     .stream(true)
+    .defaultOptions(GenerateOptions.builder()
+        .maxTokens(4096)
+        .additionalBodyParam("thinking", Map.of("type", "adaptive"))
+        .build())
     .build();
 ```
+
+### Extended thinking
+
+Use adaptive thinking on models that support it. For models that require manual extended thinking,
+set `thinkingBudget(2048)` to send `thinking: {"type": "enabled", "budget_tokens": 2048}`.
+`thinkingBudget` must be at least 1024 tokens; smaller values fail locally. For ordinary manual
+thinking, also set `maxTokens` higher than the thinking budget. Interleaved thinking permits a
+budget larger than `maxTokens`, so AgentScope leaves that model-dependent validation to the API.
+Check [Anthropic's thinking documentation](https://platform.claude.com/docs/en/build-with-claude/extended-thinking)
+for supported modes and budget rules for your model.
+
+A per-call `thinkingBudget` or explicit `thinking` additional body parameter replaces the entire
+default thinking configuration. Do not set both in the same `GenerateOptions`. For example,
+`additionalBodyParam("thinking", Map.of("type", "disabled"))` overrides a default manual budget
+without inheriting `budget_tokens`.
+
+Manual thinking supports only `ToolChoice.Auto` and `ToolChoice.None`. When it is active, the
+adapter converts `ToolChoice.Specific` and `ToolChoice.Required` to `Auto`, including automatic
+structured-output retries. The thinking configuration and `parallelToolCalls` setting remain
+unchanged. Tool selection follows the model's decision and the structured-output prompt.
+
+Thinking, text, server tool calls/results, and local tool calls retain their interleaved order
+through reasoning accumulation and subsequent requests.
+Keep the returned `ThinkingBlock` metadata when saving conversation history or sending tool
+results back. It carries the native thinking signatures and redacted blocks needed for a round
+trip. Malformed Anthropic-owned metadata fails locally with an actionable error; restore the
+original signed block or remove the affected turn and its tool results from history. Silently
+converting a damaged signed block to text cannot repair the signature.
 
 ## Server-side tools
 

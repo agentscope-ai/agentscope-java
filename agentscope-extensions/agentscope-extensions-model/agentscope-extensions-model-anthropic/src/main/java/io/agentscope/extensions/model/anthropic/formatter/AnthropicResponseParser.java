@@ -31,6 +31,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -54,7 +55,9 @@ public class AnthropicResponseParser {
         List<ContentBlock> contentBlocks = new ArrayList<>();
 
         // Process content blocks
-        for (var block : message.content()) {
+        for (int index = 0; index < message.content().size(); index++) {
+            final int blockIndex = index;
+            var block = message.content().get(index);
             // Text block
             block.text()
                     .ifPresent(
@@ -77,10 +80,7 @@ public class AnthropicResponseParser {
                                                 .id(toolUse.id())
                                                 .name(toolUse.name())
                                                 .input(input)
-                                                .content(
-                                                        toolUse._input() != null
-                                                                ? toolUse._input().toString()
-                                                                : "")
+                                                .content(JsonUtils.getJsonCodec().toJson(input))
                                                 .build());
                             });
 
@@ -91,6 +91,25 @@ public class AnthropicResponseParser {
                                     contentBlocks.add(
                                             ThinkingBlock.builder()
                                                     .thinking(thinking.thinking())
+                                                    .metadata(
+                                                            AnthropicThinkingMetadata.thinking(
+                                                                    blockIndex,
+                                                                    thinking.thinking(),
+                                                                    thinking.signature()))
+                                                    .build()));
+
+            // Redacted thinking block
+            block.redactedThinking()
+                    .ifPresent(
+                            redactedThinking ->
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .metadata(
+                                                            AnthropicThinkingMetadata
+                                                                    .redactedThinking(
+                                                                            blockIndex,
+                                                                            redactedThinking
+                                                                                    .data()))
                                                     .build()));
 
             // Server tool use block (e.g. web_search executed on Anthropic's side)
@@ -136,29 +155,20 @@ public class AnthropicResponseParser {
     }
 
     /**
-     * Mutable holder for prompt token counts observed on the message_start event, so the final
-     * usage emitted on message_delta can include input and cached token counts.
-     */
-    private static class StreamUsageState {
-        int inputTokens;
-        int cachedTokens;
-        int cacheCreationTokens;
-    }
-
-    /**
      * Parse streaming Anthropic events to ChatResponse Flux.
      */
     public static Flux<ChatResponse> parseStreamEvents(
             Flux<RawMessageStreamEvent> eventFlux, Instant startTime) {
         return Flux.defer(
                 () -> {
-                    StreamUsageState usageState = new StreamUsageState();
+                    StreamState streamState = new StreamState();
                     return eventFlux
                             .flatMap(
                                     event -> {
                                         try {
                                             return Flux.just(
-                                                    parseStreamEvent(event, startTime, usageState));
+                                                    parseStreamEvent(
+                                                            event, startTime, streamState));
                                         } catch (Exception e) {
                                             log.warn(
                                                     "Error parsing stream event: {}",
@@ -177,8 +187,12 @@ public class AnthropicResponseParser {
     /**
      * Parse single stream event.
      */
+    private static ChatResponse parseStreamEvent(RawMessageStreamEvent event, Instant startTime) {
+        return parseStreamEvent(event, startTime, new StreamState());
+    }
+
     private static ChatResponse parseStreamEvent(
-            RawMessageStreamEvent event, Instant startTime, StreamUsageState usageState) {
+            RawMessageStreamEvent event, Instant startTime, StreamState streamState) {
         List<ContentBlock> contentBlocks = new ArrayList<>();
         ChatUsage usage = null;
         String messageId = null;
@@ -194,10 +208,10 @@ public class AnthropicResponseParser {
             long cacheCreationTokens = startUsage.cacheCreationInputTokens().orElse(0L);
             // Anthropic reports input_tokens excluding cached tokens; add them back so
             // cachedTokens stays a subset of inputTokens (ChatUsage invariant).
-            usageState.inputTokens =
+            streamState.inputTokens =
                     (int) (startUsage.inputTokens() + cacheReadTokens + cacheCreationTokens);
-            usageState.cachedTokens = (int) cacheReadTokens;
-            usageState.cacheCreationTokens = (int) cacheCreationTokens;
+            streamState.cachedTokens = (int) cacheReadTokens;
+            streamState.cacheCreationTokens = (int) cacheCreationTokens;
         }
 
         // Content block delta - text
@@ -216,11 +230,22 @@ public class AnthropicResponseParser {
                     .delta()
                     .thinking()
                     .ifPresent(
-                            thinkingDelta ->
-                                    contentBlocks.add(
-                                            ThinkingBlock.builder()
-                                                    .thinking(thinkingDelta.thinking())
-                                                    .build()));
+                            thinkingDelta -> {
+                                streamState.appendThinking(
+                                        deltaEvent.index(), thinkingDelta.thinking());
+                                contentBlocks.add(
+                                        ThinkingBlock.builder()
+                                                .thinking(thinkingDelta.thinking())
+                                                .build());
+                            });
+
+            deltaEvent
+                    .delta()
+                    .signature()
+                    .ifPresent(
+                            signatureDelta ->
+                                    streamState.appendSignature(
+                                            deltaEvent.index(), signatureDelta.signature()));
 
             // Input JSON delta (tool calling)
             deltaEvent
@@ -242,6 +267,38 @@ public class AnthropicResponseParser {
         // Content block start - tool use
         if (event.isContentBlockStart()) {
             var startEvent = event.asContentBlockStart();
+
+            startEvent
+                    .contentBlock()
+                    .thinking()
+                    .ifPresent(
+                            thinking -> {
+                                streamState.thinkingByIndex.remove(startEvent.index());
+                                streamState.appendThinking(startEvent.index(), thinking.thinking());
+                                streamState.appendSignature(
+                                        startEvent.index(), thinking.signature());
+                                if (!thinking.thinking().isEmpty()) {
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .thinking(thinking.thinking())
+                                                    .build());
+                                }
+                            });
+
+            startEvent
+                    .contentBlock()
+                    .redactedThinking()
+                    .ifPresent(
+                            redactedThinking ->
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .metadata(
+                                                            AnthropicThinkingMetadata
+                                                                    .redactedThinking(
+                                                                            startEvent.index(),
+                                                                            redactedThinking
+                                                                                    .data()))
+                                                    .build()));
 
             startEvent
                     .contentBlock()
@@ -294,20 +351,35 @@ public class AnthropicResponseParser {
                     .ifPresent(param -> contentBlocks.add(SERVER_TOOL_HELPER.decodeResult(param)));
         }
 
+        if (event.isContentBlockStop()) {
+            long index = event.asContentBlockStop().index();
+            ThinkingState thinking = streamState.thinkingByIndex.remove(index);
+            if (thinking != null && thinking.signature.length() > 0) {
+                contentBlocks.add(
+                        ThinkingBlock.builder()
+                                .metadata(
+                                        AnthropicThinkingMetadata.thinking(
+                                                index,
+                                                thinking.text.toString(),
+                                                thinking.signature.toString()))
+                                .build());
+            }
+        }
+
         // Message delta - final usage information; combine the cumulative output tokens with
         // the prompt usage captured on message_start
         if (event.isMessageDelta()) {
             var deltaUsage = event.asMessageDelta().usage();
             long cacheReadTokens =
-                    deltaUsage.cacheReadInputTokens().orElse((long) usageState.cachedTokens);
+                    deltaUsage.cacheReadInputTokens().orElse((long) streamState.cachedTokens);
             long cacheCreationTokens =
                     deltaUsage
                             .cacheCreationInputTokens()
-                            .orElse((long) usageState.cacheCreationTokens);
+                            .orElse((long) streamState.cacheCreationTokens);
             long inputTokens =
                     deltaUsage.inputTokens().isPresent()
                             ? deltaUsage.inputTokens().get() + cacheReadTokens + cacheCreationTokens
-                            : usageState.inputTokens;
+                            : streamState.inputTokens;
             long reasoningTokens =
                     deltaUsage
                             .outputTokensDetails()
@@ -325,6 +397,38 @@ public class AnthropicResponseParser {
         }
 
         return ChatResponse.builder().id(messageId).content(contentBlocks).usage(usage).build();
+    }
+
+    private static final class StreamState {
+
+        // Flux.defer creates one state per subscriber; upstream signals are serialized.
+        private final Map<Long, ThinkingState> thinkingByIndex = new HashMap<>();
+        private int inputTokens;
+        private int cachedTokens;
+        private int cacheCreationTokens;
+
+        private void appendThinking(long index, String thinking) {
+            if (thinking != null && !thinking.isEmpty()) {
+                thinkingByIndex
+                        .computeIfAbsent(index, ignored -> new ThinkingState())
+                        .text
+                        .append(thinking);
+            }
+        }
+
+        private void appendSignature(long index, String signature) {
+            if (signature != null && !signature.isEmpty()) {
+                thinkingByIndex
+                        .computeIfAbsent(index, ignored -> new ThinkingState())
+                        .signature
+                        .append(signature);
+            }
+        }
+    }
+
+    private static final class ThinkingState {
+        private final StringBuilder text = new StringBuilder();
+        private final StringBuilder signature = new StringBuilder();
     }
 
     /**

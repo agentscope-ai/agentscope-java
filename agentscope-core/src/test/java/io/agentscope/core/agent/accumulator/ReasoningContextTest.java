@@ -20,11 +20,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -236,6 +239,53 @@ class ReasoningContextTest {
         assertNotNull(msg);
         ChatUsage resultUsage = msg.getChatUsage();
         assertNull(resultUsage);
+    }
+
+    @Test
+    @DisplayName("Should preserve metadata-only thinking blocks")
+    void testMetadataOnlyThinkingBlock() {
+        ThinkingBlock thinkingBlock =
+                ThinkingBlock.builder()
+                        .metadata(Map.of("signature", "encrypted-signature"))
+                        .build();
+        ChatResponse chunk =
+                ChatResponse.builder().id("msg-1").content(List.of(thinkingBlock)).build();
+
+        context.processChunk(chunk);
+
+        Msg msg = context.buildFinalMessage();
+        assertNotNull(msg);
+        ThinkingBlock result = msg.getFirstContentBlock(ThinkingBlock.class);
+        assertNotNull(result);
+        assertEquals("", result.getThinking());
+        assertEquals("encrypted-signature", result.getMetadata().get("signature"));
+    }
+
+    @Test
+    @DisplayName("Should merge thinking text and metadata across chunks")
+    void testThinkingTextAndMetadataAccumulation() {
+        ChatResponse textChunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(ThinkingBlock.builder().thinking("Reasoning").build()))
+                        .build();
+        ChatResponse metadataChunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .metadata(Map.of("signature", "signature-123"))
+                                                .build()))
+                        .build();
+
+        context.processChunk(textChunk);
+        context.processChunk(metadataChunk);
+
+        ThinkingBlock result =
+                context.buildFinalMessage().getFirstContentBlock(ThinkingBlock.class);
+        assertEquals("Reasoning", result.getThinking());
+        assertEquals("signature-123", result.getMetadata().get("signature"));
     }
 
     @Test
@@ -580,12 +630,12 @@ class ReasoningContextTest {
 
         List<io.agentscope.core.message.ContentBlock> blocks = msg.getContent();
         assertEquals(3, blocks.size());
-        // Order: text first (per buildFinalMessage), then tool call, then its result
-        assertEquals("Based on the search...", ((TextBlock) blocks.get(0)).getText());
-        ToolUseBlock toolUse = (ToolUseBlock) blocks.get(1);
+        // Preserve the provider's order: tool call, its result, then the answer.
+        assertEquals("Based on the search...", ((TextBlock) blocks.get(2)).getText());
+        ToolUseBlock toolUse = (ToolUseBlock) blocks.get(0);
         assertEquals("srvtoolu_1", toolUse.getId());
         assertTrue(toolUse.isServerTool());
-        ToolResultBlock toolResult = (ToolResultBlock) blocks.get(2);
+        ToolResultBlock toolResult = (ToolResultBlock) blocks.get(1);
         assertEquals("srvtoolu_1", toolResult.getId());
         assertTrue(toolResult.isServerTool());
     }
@@ -609,5 +659,88 @@ class ReasoningContextTest {
 
         assertTrue(emitted.isEmpty());
         assertNull(context.buildFinalMessage());
+    }
+
+    @Test
+    void testInterleavedFragmentsUpdateTheirOriginalPositions() {
+        ToolUseBlock call =
+                ToolUseBlock.builder().id("call_1").name("search").content("{\"query\":").build();
+        ToolResultBlock running =
+                ToolResultBlock.builder()
+                        .id("call_1")
+                        .name("search")
+                        .state(ToolResultState.RUNNING)
+                        .output(TextBlock.builder().text("Searching").build())
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+        ToolResultBlock finished =
+                ToolResultBlock.builder()
+                        .id("call_1")
+                        .name("search")
+                        .state(ToolResultState.SUCCESS)
+                        .output(TextBlock.builder().text("Found").build())
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+        process(
+                call,
+                TextBlock.builder().text("Waiting").build(),
+                ToolUseBlock.builder().id("").name("__fragment__").content("\"weather\"}").build(),
+                running,
+                ThinkingBlock.builder().thinking("Reviewing").build(),
+                finished,
+                running);
+        List<ContentBlock> content = context.buildFinalMessage().getContent();
+        assertEquals(4, content.size());
+        assertEquals(Map.of("query", "weather"), ((ToolUseBlock) content.get(0)).getInput());
+        assertEquals("Waiting", ((TextBlock) content.get(1)).getText());
+        assertEquals(finished, content.get(2));
+        assertEquals("Reviewing", ((ThinkingBlock) content.get(3)).getThinking());
+        assertEquals(4, context.buildFinalMessage().getContent().size());
+    }
+
+    @Test
+    void testPreservesThinkingMetadataWithinEachSegment() {
+        process(
+                ThinkingBlock.builder().thinking("First").build(),
+                ThinkingBlock.builder().metadata(Map.of("signature", "sig-first")).build(),
+                TextBlock.builder().text("Between").build(),
+                ThinkingBlock.builder().thinking("Second").build(),
+                ThinkingBlock.builder().metadata(Map.of("signature", "sig-second")).build());
+        List<ContentBlock> content = context.buildFinalMessage().getContent();
+        assertEquals(3, content.size());
+        assertEquals("sig-first", ((ThinkingBlock) content.get(0)).getMetadata().get("signature"));
+        assertEquals("sig-second", ((ThinkingBlock) content.get(2)).getMetadata().get("signature"));
+        assertEquals("FirstSecond", context.getAccumulatedThinking());
+    }
+
+    @Test
+    void testWholeTextReplacementDoesNotRestoreSupersededSegments() {
+        process(
+                ThinkingBlock.builder().thinking("Before").build(),
+                TextBlock.builder().text("One").build(),
+                ToolUseBlock.builder().id("call_1").name("search").build(),
+                TextBlock.builder().text("Two").build());
+        context.replaceAccumulatedText("Transformed");
+        List<ContentBlock> content = context.buildFinalMessage().getContent();
+        assertEquals(3, content.size());
+        assertEquals("Before", ((ThinkingBlock) content.get(0)).getThinking());
+        assertEquals("Transformed", ((TextBlock) content.get(1)).getText());
+        assertEquals("call_1", ((ToolUseBlock) content.get(2)).getId());
+        assertEquals("Transformed", context.getAccumulatedText());
+        context.replaceAccumulatedText("");
+        assertEquals(2, context.buildFinalMessage().getContent().size());
+    }
+
+    @Test
+    void testTextReplacementWithoutOriginalText() {
+        context.replaceAccumulatedText("Injected by middleware");
+        assertEquals("Injected by middleware", context.buildFinalMessage().getTextContent());
+    }
+
+    private void process(ContentBlock... blocks) {
+        for (ContentBlock block : blocks) {
+            context.processChunk(
+                    ChatResponse.builder().id("msg-1").content(List.of(block)).build());
+        }
     }
 }

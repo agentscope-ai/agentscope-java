@@ -31,14 +31,44 @@ ReActAgent agent = ReActAgent.builder()
 需要自定义 endpoint、formatter、transport、prompt caching、thinking 或生成参数时，使用 builder：
 
 ```java
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.anthropic.AnthropicChatModel;
+import java.util.Map;
 
 AnthropicChatModel model = AnthropicChatModel.builder()
     .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-    .modelName("claude-sonnet-4.5")
+    .modelName("claude-sonnet-4-6")
     .stream(true)
+    .defaultOptions(GenerateOptions.builder()
+        .maxTokens(4096)
+        .additionalBodyParam("thinking", Map.of("type", "adaptive"))
+        .build())
     .build();
 ```
+
+### 扩展思考
+
+对于支持 adaptive thinking 的模型，使用 adaptive 模式。对于要求 manual extended thinking 的模型，
+设置 `thinkingBudget(2048)` 会发送 `thinking: {"type": "enabled", "budget_tokens": 2048}`。
+`thinkingBudget` 至少为 1024 tokens，更小的值会在本地报错。普通 manual thinking 还需要将
+`maxTokens` 设置得高于 thinking budget。Interleaved thinking 允许 budget 大于 `maxTokens`，
+因此 AgentScope 将这项与模型相关的校验交给 API。请查阅
+[Anthropic thinking 文档](https://platform.claude.com/docs/en/build-with-claude/extended-thinking)
+确认所用模型支持的模式和预算规则。
+
+单次调用中的 `thinkingBudget` 或显式 `thinking` additional body parameter 会替换整个默认
+thinking 配置。不要在同一个 `GenerateOptions` 中同时设置两者。例如，
+`additionalBodyParam("thinking", Map.of("type", "disabled"))` 会覆盖默认的 manual budget，
+不会继承 `budget_tokens`。
+
+Manual thinking 仅支持 `ToolChoice.Auto` 和 `ToolChoice.None`。启用时，适配器会将
+`ToolChoice.Specific` 和 `ToolChoice.Required` 转为 `Auto`，包括结构化输出的自动重试。
+thinking 配置和 `parallelToolCalls` 设置保持不变，工具选择由模型根据结构化输出提示决定。
+
+Thinking、文本、服务端工具调用及结果、本地工具调用在推理聚合和后续请求中会保留交错顺序。
+保存对话历史或回传工具结果时，请保留返回的 `ThinkingBlock` metadata，其中包含多轮往返所需的
+原生思考签名和 redacted blocks。如果 Anthropic 专属 metadata 损坏，会在本地给出明确错误；
+请恢复原始签名块，或从历史中移除受影响的轮次及其工具结果。将损坏的签名块静默转换为文本无法修复签名。
 
 ## 服务端工具
 

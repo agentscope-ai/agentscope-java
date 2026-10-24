@@ -45,7 +45,11 @@ public abstract class AnthropicBaseFormatter
     protected final AnthropicMessageConverter messageConverter;
 
     /** Thread-local storage for generation options (passed from applyOptions to applyTools). */
-    private final ThreadLocal<GenerateOptions> currentOptions = new ThreadLocal<>();
+    private final ThreadLocal<RequestOptions> currentOptions = new ThreadLocal<>();
+
+    // Keep the two sources separate: a per-call thinking object replaces a default budget,
+    // and a per-call budget replaces a default thinking object as a whole.
+    private record RequestOptions(GenerateOptions options, GenerateOptions defaults) {}
 
     protected AnthropicBaseFormatter() {
         this.messageConverter = new AnthropicMessageConverter(this::convertToolResultToString);
@@ -63,11 +67,9 @@ public abstract class AnthropicBaseFormatter
             MessageCreateParams.Builder paramsBuilder,
             GenerateOptions options,
             GenerateOptions defaultOptions) {
-        // Save effective options for applyTools, including model-level defaults.
-        currentOptions.set(GenerateOptions.mergeOptions(options, defaultOptions));
-
-        // Apply other options
+        currentOptions.remove();
         AnthropicToolsHelper.applyOptions(paramsBuilder, options, defaultOptions);
+        currentOptions.set(new RequestOptions(options, defaultOptions));
     }
 
     /**
@@ -93,10 +95,16 @@ public abstract class AnthropicBaseFormatter
             MessageCreateParams.Builder paramsBuilder,
             List<ToolSchema> tools,
             List<AnthropicServerTool> serverTools) {
-        GenerateOptions options = currentOptions.get();
+        RequestOptions options = currentOptions.get();
 
         try {
-            AnthropicToolsHelper.applyTools(paramsBuilder, tools, serverTools, options, cacheTtl);
+            AnthropicToolsHelper.applyTools(
+                    paramsBuilder,
+                    tools,
+                    serverTools,
+                    options != null ? options.options() : null,
+                    options != null ? options.defaults() : null,
+                    cacheTtl);
         } finally {
             // Clean up thread-local storage even when tool validation fails.
             currentOptions.remove();

@@ -23,6 +23,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -161,6 +163,11 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      */
     @Override
     public void add(ToolUseBlock block) {
+        add(block, ignored -> {});
+    }
+
+    /** Records a supplier once per tool call, so later fragments update its original position. */
+    void add(ToolUseBlock block, Consumer<Supplier<ContentBlock>> onNewBlock) {
         if (block == null) {
             return;
         }
@@ -169,7 +176,12 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         String key = determineKey(block);
 
         // Get or create the corresponding builder
-        ToolCallBuilder builder = builders.computeIfAbsent(key, k -> new ToolCallBuilder());
+        ToolCallBuilder builder = builders.get(key);
+        if (builder == null) {
+            builder = new ToolCallBuilder();
+            builders.put(key, builder);
+            onNewBlock.accept(builder::build);
+        }
 
         // Merge the block
         builder.merge(block);
