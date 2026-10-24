@@ -36,6 +36,7 @@ import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -67,6 +68,7 @@ public final class AgentProtocolTaskStore {
 
     private static final Logger log = LoggerFactory.getLogger(AgentProtocolTaskStore.class);
     private static final ObjectMapper JSON = new ObjectMapper();
+    static final int TASK_LOCK_STRIPE_COUNT = 64;
 
     /** Sentinel returned when the agent paused for HITL confirmation. */
     static final String AWAITING_CONFIRM_SENTINEL = "__awaiting_confirm__";
@@ -88,8 +90,8 @@ public final class AgentProtocolTaskStore {
     private final Map<String, CompletableFuture<String>> futures = new ConcurrentHashMap<>();
     private final Map<String, SubmitContext> submitContexts = new ConcurrentHashMap<>();
 
-    /** Serializes resume transitions per task so concurrent resumes cannot double-start a run. */
-    private final ConcurrentHashMap<String, Object> taskLocks = new ConcurrentHashMap<>();
+    /** Fixed stripes bound lock storage while serializing submit and resume transitions. */
+    private final Object[] taskLocks = createTaskLockStripes();
 
     public AgentProtocolTaskStore(
             AgentFactory agentFactory,
@@ -144,33 +146,36 @@ public final class AgentProtocolTaskStore {
     }
 
     public void submit(String taskId, String agentId, String input, Map<String, Object> context) {
-        Optional<TaskRecord> existing = taskRepository.find(taskId);
-        if (existing.isPresent() && existing.get().getStatus().isTerminal()) {
-            throw new IllegalStateException("task_id already finished: " + taskId);
+        Object lock = taskLockFor(taskId);
+        synchronized (lock) {
+            Optional<TaskRecord> existing = taskRepository.find(taskId);
+            if (existing.isPresent() && existing.get().getStatus().isTerminal()) {
+                throw new IllegalStateException("task_id already finished: " + taskId);
+            }
+            CompletableFuture<String> prior = futures.get(taskId);
+            if (prior != null && !prior.isDone()) {
+                return;
+            }
+
+            SubmitContext ctx = SubmitContext.from(context);
+            submitContexts.put(taskId, ctx);
+
+            TaskRecord pending =
+                    new TaskRecord(
+                            taskId,
+                            agentId != null ? agentId : "default",
+                            AgentProtocolConstants.PROTOCOL_AGENT_ID,
+                            AgentProtocolConstants.PROTOCOL_SESSION_ID,
+                            null);
+            pending.setStatus(TaskStatus.PENDING);
+            persist(pending);
+
+            CompletableFuture<String> f =
+                    CompletableFuture.supplyAsync(
+                            () -> runAgent(taskId, agentId, input, ctx, null), executor);
+            futures.put(taskId, f);
+            f.whenComplete((r, ex) -> futures.remove(taskId, f));
         }
-        CompletableFuture<String> prior = futures.get(taskId);
-        if (prior != null && !prior.isDone()) {
-            return;
-        }
-
-        SubmitContext ctx = SubmitContext.from(context);
-        submitContexts.put(taskId, ctx);
-
-        TaskRecord pending =
-                new TaskRecord(
-                        taskId,
-                        agentId != null ? agentId : "default",
-                        AgentProtocolConstants.PROTOCOL_AGENT_ID,
-                        AgentProtocolConstants.PROTOCOL_SESSION_ID,
-                        null);
-        pending.setStatus(TaskStatus.PENDING);
-        persist(pending);
-
-        CompletableFuture<String> f =
-                CompletableFuture.supplyAsync(
-                        () -> runAgent(taskId, agentId, input, ctx, null), executor);
-        futures.put(taskId, f);
-        f.whenComplete((r, ex) -> futures.remove(taskId, f));
     }
 
     /**
@@ -189,7 +194,7 @@ public final class AgentProtocolTaskStore {
         if (!properties.isHitlEnabled()) {
             throw new IllegalStateException("HITL is disabled on this server");
         }
-        Object lock = taskLocks.computeIfAbsent(taskId, k -> new Object());
+        Object lock = taskLockFor(taskId);
         synchronized (lock) {
             Optional<TaskRecord> existing = taskRepository.find(taskId);
             if (existing.isEmpty() || !existing.get().isAwaitingConfirm()) {
@@ -216,6 +221,16 @@ public final class AgentProtocolTaskStore {
             futures.put(taskId, f);
             f.whenComplete((r, ex) -> futures.remove(taskId, f));
         }
+    }
+
+    private Object taskLockFor(String taskId) {
+        return taskLocks[Math.floorMod(taskId.hashCode(), taskLocks.length)];
+    }
+
+    private static Object[] createTaskLockStripes() {
+        Object[] locks = new Object[TASK_LOCK_STRIPE_COUNT];
+        Arrays.setAll(locks, ignored -> new Object());
+        return locks;
     }
 
     private String runAgent(
