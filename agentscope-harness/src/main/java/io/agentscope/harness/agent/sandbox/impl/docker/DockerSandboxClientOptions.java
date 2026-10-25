@@ -56,6 +56,12 @@ public class DockerSandboxClientOptions extends SandboxClientOptions {
     /** Docker network mode or network name passed to {@code docker run --network}. */
     private String network;
 
+    /**
+     * Per-stream byte cap for exec command output capture. {@code null} keeps the 512 KB
+     * default.
+     */
+    private Integer outputTruncateBytes;
+
     @Override
     public String getType() {
         return "docker";
@@ -305,6 +311,48 @@ public class DockerSandboxClientOptions extends SandboxClientOptions {
             if (additionalRunArg != null && !additionalRunArg.isBlank()) {
                 this.additionalRunArgs.add(additionalRunArg);
             }
+        }
+    }
+
+    /**
+     * Returns the per-stream byte cap for exec command output capture.
+     *
+     * @return output truncate cap in bytes, or {@code null} for the default (512 KB)
+     */
+    public Integer getOutputTruncateBytes() {
+        return outputTruncateBytes;
+    }
+
+    /**
+     * Sets the per-stream byte cap applied to stdout and stderr captured from {@code docker
+     * exec} commands. Raise it when a command must return more than the default 512 KB in one
+     * piece (e.g. base64-encoded assets read back from the sandbox).
+     *
+     * @param outputTruncateBytes cap in bytes, or {@code null} to restore the default
+     * @return this options instance
+     * @throws IllegalArgumentException if the value is present but not positive
+     */
+    public DockerSandboxClientOptions outputTruncateBytes(Integer outputTruncateBytes) {
+        requirePositiveIfPresent(outputTruncateBytes);
+        this.outputTruncateBytes = outputTruncateBytes;
+        return this;
+    }
+
+    /**
+     * Sets the per-stream byte cap for exec command output capture.
+     *
+     * @param outputTruncateBytes cap in bytes, or {@code null} to restore the default
+     * @throws IllegalArgumentException if the value is present but not positive
+     */
+    public void setOutputTruncateBytes(Integer outputTruncateBytes) {
+        requirePositiveIfPresent(outputTruncateBytes);
+        this.outputTruncateBytes = outputTruncateBytes;
+    }
+
+    private static void requirePositiveIfPresent(Integer outputTruncateBytes) {
+        if (outputTruncateBytes != null && outputTruncateBytes <= 0) {
+            throw new IllegalArgumentException(
+                    "outputTruncateBytes must be positive: " + outputTruncateBytes);
         }
     }
 
