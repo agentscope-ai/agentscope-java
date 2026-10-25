@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingException;
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
@@ -223,7 +224,9 @@ class DashScopeTextEmbeddingTest {
                                 .setHeader("Content-Type", "application/json")
                                 .setBody(
                                         "{\"output\":{\"embeddings\":[{\"embedding\":[0.25],"
-                                                + "\"text_index\":0}]},\"request_id\":\"test\"}");
+                                                + "\"text_index\":0}]},"
+                                                + "\"usage\":{\"total_tokens\":7},"
+                                                + "\"request_id\":\"test\"}");
                     }
                 });
         server.start();
@@ -231,7 +234,7 @@ class DashScopeTextEmbeddingTest {
         Scheduler subscriberScheduler = Schedulers.newSingle("embedding-subscriber");
         CountDownLatch markerRan = new CountDownLatch(1);
         CountDownLatch completed = new CountDownLatch(1);
-        AtomicReference<double[]> embedding = new AtomicReference<>();
+        AtomicReference<EmbeddingResponse> response = new AtomicReference<>();
         AtomicReference<Throwable> error = new AtomicReference<>();
         Disposable subscription = null;
         boolean requestObserved;
@@ -248,7 +251,7 @@ class DashScopeTextEmbeddingTest {
                     model.embed(TextBlock.builder().text("hello").build())
                             .subscribeOn(subscriberScheduler)
                             .subscribe(
-                                    embedding::set,
+                                    response::set,
                                     throwable -> {
                                         error.set(throwable);
                                         completed.countDown();
@@ -273,7 +276,44 @@ class DashScopeTextEmbeddingTest {
                 markerObserved,
                 "The synchronous DashScope SDK call must not block the subscriber scheduler");
         assertNull(error.get());
-        assertNotNull(embedding.get());
-        assertEquals(0.25, embedding.get()[0]);
+        assertNotNull(response.get());
+        assertEquals(0.25, response.get().getEmbedding()[0]);
+        assertNotNull(response.get().getUsage());
+        assertEquals(7, response.get().getUsage().getTotalTokens());
+        assertEquals(7, response.get().getUsage().getInputTokens());
+    }
+
+    @Test
+    @DisplayName("Should return null usage when provider does not report token usage")
+    void testUsageIsNullWhenNotReported() throws Exception {
+        MockWebServer server = new MockWebServer();
+        server.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                "{\"output\":{\"embeddings\":[{\"embedding\":[0.25],"
+                                        + "\"text_index\":0}]},\"request_id\":\"test\"}"));
+        server.start();
+
+        try {
+            DashScopeTextEmbedding model =
+                    DashScopeTextEmbedding.builder()
+                            .apiKey(TEST_API_KEY)
+                            .modelName(TEST_MODEL_NAME)
+                            .dimensions(1)
+                            .baseUrl(server.url("/").toString())
+                            .build();
+
+            StepVerifier.create(model.embed(TextBlock.builder().text("hello").build()))
+                    .assertNext(
+                            response -> {
+                                assertEquals(0.25, response.getEmbedding()[0]);
+                                assertNull(response.getUsage());
+                            })
+                    .verifyComplete();
+        } finally {
+            server.shutdown();
+        }
     }
 }

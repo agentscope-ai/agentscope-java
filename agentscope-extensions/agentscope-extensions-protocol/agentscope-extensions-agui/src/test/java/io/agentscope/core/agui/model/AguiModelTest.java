@@ -227,6 +227,36 @@ class AguiModelTest {
         }
 
         @Test
+        void testJsonSerializationOmitsNonProtocolProperties() throws JsonProcessingException {
+            AguiMessage assistant = AguiMessage.assistantMessage("msg-1", "Hello");
+
+            String assistantJson = JsonUtils.getJsonCodec().toJson(assistant);
+            assertFalse(assistantJson.contains("textContent"), assistantJson);
+            assertFalse(assistantJson.contains("userMessage"), assistantJson);
+            assertFalse(assistantJson.contains("assistantMessage"), assistantJson);
+            assertFalse(assistantJson.contains("systemMessage"), assistantJson);
+            assertFalse(assistantJson.contains("toolMessage"), assistantJson);
+            assertFalse(assistantJson.contains("reasoningMessage"), assistantJson);
+            assertFalse(assistantJson.contains("toolCallId"), assistantJson);
+            assertFalse(assistantJson.contains("toolCalls"), assistantJson);
+
+            AguiMessage tool = AguiMessage.toolMessage("msg-2", "tc-1", "Result");
+            String toolJson = JsonUtils.getJsonCodec().toJson(tool);
+            assertTrue(toolJson.contains("\"toolCallId\":\"tc-1\""), toolJson);
+
+            AguiFunctionCall function = new AguiFunctionCall("get_weather", "{}");
+            AguiMessage assistantWithToolCalls =
+                    new AguiMessage(
+                            "msg-3",
+                            "assistant",
+                            new MessageContent.Text("Checking"),
+                            List.of(new AguiToolCall("tc-1", function)),
+                            null);
+            String withToolCallsJson = JsonUtils.getJsonCodec().toJson(assistantWithToolCalls);
+            assertTrue(withToolCallsJson.contains("\"toolCalls\":["), withToolCallsJson);
+        }
+
+        @Test
         void testJsonSerializationOmitsErrorWhenAbsent() throws JsonProcessingException {
             // The field is newer than the wire format it joins: a message that reports no error
             // must keep the representation it had before the field existed, so a strict client

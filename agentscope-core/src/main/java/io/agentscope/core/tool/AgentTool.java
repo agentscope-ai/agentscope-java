@@ -116,6 +116,24 @@ public interface AgentTool {
     }
 
     /**
+     * Gets the human-readable display name of this tool, for rendering to an end user.
+     *
+     * <p>{@link #getName()} is a programmatic identifier chosen for model consumption and
+     * {@link #getDescription()} is model-facing guidance; neither is suitable as a UI label. MCP
+     * servers may supply a display name via the spec's {@code Tool.title} (falling back to
+     * {@code ToolAnnotations.title}), which {@link io.agentscope.core.tool.mcp.McpTool} surfaces
+     * here.
+     *
+     * <p>Local {@code @Tool} methods have no display name, so the default implementation returns
+     * {@code null}. Callers must fall back to {@link #getName()} when this is {@code null}.
+     *
+     * @return the display title, or {@code null} when the tool provides none
+     */
+    default String getTitle() {
+        return null;
+    }
+
+    /**
      * Returns whether this tool performs only read operations and never mutates state.
      *
      * <p>Read-only tools are automatically permitted in restricted execution modes such as

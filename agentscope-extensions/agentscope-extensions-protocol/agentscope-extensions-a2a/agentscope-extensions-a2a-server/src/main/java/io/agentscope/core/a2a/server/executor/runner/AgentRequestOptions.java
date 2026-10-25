@@ -27,7 +27,9 @@ public class AgentRequestOptions {
     private String taskId;
 
     /**
-     * AgentStateStore id, if null or empty string means not found session id from request.
+     * Session identifier passed to the runner. A non-blank legacy message metadata {@code sessionId}
+     * takes precedence; otherwise the SDK-resolved A2A {@code contextId} is used. Null or empty means
+     * that no session identifier was available.
      */
     private String sessionId;
 

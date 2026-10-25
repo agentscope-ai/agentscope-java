@@ -19,6 +19,7 @@ package io.agentscope.core.a2a.server.executor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -31,22 +32,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.server.ServerCallContext;
-import io.a2a.server.agentexecution.RequestContext;
-import io.a2a.server.events.EventQueue;
-import io.a2a.spec.Artifact;
-import io.a2a.spec.DataPart;
-import io.a2a.spec.JSONRPCError;
-import io.a2a.spec.Message;
-import io.a2a.spec.MessageSendConfiguration;
-import io.a2a.spec.MessageSendParams;
-import io.a2a.spec.StreamingEventKind;
-import io.a2a.spec.Task;
-import io.a2a.spec.TaskArtifactUpdateEvent;
-import io.a2a.spec.TaskState;
-import io.a2a.spec.TaskStatus;
-import io.a2a.spec.TaskStatusUpdateEvent;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
@@ -65,25 +50,50 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionRule;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
+import org.a2aproject.sdk.server.ServerCallContext;
+import org.a2aproject.sdk.server.agentexecution.RequestContext;
+import org.a2aproject.sdk.server.events.EventQueue;
+import org.a2aproject.sdk.server.tasks.AgentEmitter;
+import org.a2aproject.sdk.spec.A2AError;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.MessageSendConfiguration;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.StreamingEventKind;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskArtifactUpdateEvent;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
@@ -119,14 +129,10 @@ class AgentScopeAgentExecutorTest {
         when(mockContext.getContextId()).thenReturn(contextId);
 
         Message mockMessage = mock(Message.class);
-        when(mockMessage.getTaskId()).thenReturn(taskId);
-        when(mockMessage.getContextId()).thenReturn(contextId);
-        when(mockMessage.getParts()).thenReturn(List.of());
+        when(mockMessage.taskId()).thenReturn(taskId);
+        when(mockMessage.contextId()).thenReturn(contextId);
+        when(mockMessage.parts()).thenReturn(List.of());
         when(mockContext.getMessage()).thenReturn(mockMessage);
-
-        MessageSendParams mockParams = mock(MessageSendParams.class);
-        when(mockContext.getParams()).thenReturn(mockParams);
-        when(mockParams.message()).thenReturn(mockMessage);
 
         when(mockContext.getCallContext()).thenReturn(serverCallContext);
         if (isStreaming || blockingByState) {
@@ -135,10 +141,118 @@ class AgentScopeAgentExecutorTest {
         }
         if (blockingByConfig) {
             MessageSendConfiguration messageSendConfiguration =
-                    new MessageSendConfiguration.Builder().build();
-            when(mockParams.configuration()).thenReturn(messageSendConfiguration);
+                    MessageSendConfiguration.builder().build();
+            when(mockContext.getConfiguration()).thenReturn(messageSendConfiguration);
         }
         return taskId;
+    }
+
+    /**
+     * An emitter that writes to {@code mockEventQueue}, as the SDK creates one for each execute and
+     * cancel call. Create it after the context is mocked: it reads the task and context ids.
+     */
+    private AgentEmitter emitter() {
+        return new AgentEmitter(mockContext, mockEventQueue);
+    }
+
+    static Stream<Arguments> sessionIdCases() {
+        return Stream.of(false, true)
+                .flatMap(
+                        streaming ->
+                                Stream.of(
+                                        Arguments.of(streaming, "context-1", null, "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("userId", "alice"),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", ""),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", " \t"),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Collections.singletonMap("sessionId", null),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", "legacy-session"),
+                                                "legacy-session"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", "context-1"),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                null,
+                                                Map.of("sessionId", "legacy-session"),
+                                                "legacy-session"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", 42),
+                                                "42"),
+                                        Arguments.of(streaming, null, null, null)));
+    }
+
+    @ParameterizedTest(name = "streaming={0}, contextId={1}, metadata={2}, sessionId={3}")
+    @MethodSource("sessionIdCases")
+    void testResolveRunnerSessionId(
+            boolean streaming,
+            String contextId,
+            Map<String, Object> metadata,
+            String expectedSessionId)
+            throws A2AError {
+        Message message =
+                Message.builder()
+                        .role(Message.Role.ROLE_USER)
+                        .parts(new TextPart("hello"))
+                        .contextId(contextId)
+                        .metadata(metadata)
+                        .build();
+        ServerCallContext callContext =
+                new ServerCallContext(
+                        null,
+                        Map.of(A2aServerConstants.ContextKeys.IS_STREAM_KEY, streaming),
+                        Set.of());
+        RequestContext context =
+                new RequestContext.Builder()
+                        .setParams(MessageSendParams.builder().message(message).build())
+                        .setServerCallContext(callContext)
+                        .build();
+        when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                .thenReturn(Flux.empty());
+
+        executor.execute(context, new AgentEmitter(context, mockEventQueue));
+
+        ArgumentCaptor<AgentRequestOptions> options =
+                ArgumentCaptor.forClass(AgentRequestOptions.class);
+        verify(mockAgentRunner).streamEvents(anyList(), options.capture());
+        assertEquals(
+                expectedSessionId == null ? context.getContextId() : expectedSessionId,
+                options.getValue().getSessionId());
+        assertEquals(context.getTaskId(), options.getValue().getTaskId());
+        assertEquals(
+                metadata != null && metadata.containsKey("userId") ? "alice" : "",
+                options.getValue().getUserId());
+        assertEquals(context.getContextId(), context.getMessage().contextId());
+        if (contextId == null) {
+            assertFalse(context.getContextId().isBlank());
+            if (metadata != null) {
+                assertNotEquals(expectedSessionId, context.getContextId());
+            }
+        } else {
+            assertEquals(contextId, context.getContextId());
+        }
     }
 
     @Nested
@@ -146,7 +260,7 @@ class AgentScopeAgentExecutorTest {
     class ExecuteForBlockingRequestTests {
         @Test
         @DisplayName("Should execute agent and process blocking request")
-        void testExecuteAgentWithBlockingRequest() throws JSONRPCError {
+        void testExecuteAgentWithBlockingRequest() throws A2AError {
             doMockForContext(false, false, true);
             Flux<AgentEvent> mockFlux = mockFlux(false, true, false);
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
@@ -162,7 +276,7 @@ class AgentScopeAgentExecutorTest {
                                     })
                     .when(mockEventQueue)
                     .enqueueEvent(any(Message.class));
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             assertNotNull(messageRef.get());
             assertBlockResultMessage(
@@ -174,7 +288,7 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should execute agent and process blocking request without agent result event")
-        void testExecuteAgentWithBlockingRequestWithoutAgentResultEvent() throws JSONRPCError {
+        void testExecuteAgentWithBlockingRequestWithoutAgentResultEvent() throws A2AError {
             doMockForContext(false, true, false);
             Flux<AgentEvent> mockFlux = mockFlux(false, false, false);
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
@@ -190,7 +304,7 @@ class AgentScopeAgentExecutorTest {
                                     })
                     .when(mockEventQueue)
                     .enqueueEvent(any(Message.class));
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             assertNotNull(messageRef.get());
             assertBlockResultMessage(
@@ -202,7 +316,7 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should execute agent and process blocking request with inner event")
-        void testExecuteAgentWithBlockingRequestWithInnerEvent() throws JSONRPCError {
+        void testExecuteAgentWithBlockingRequestWithInnerEvent() throws A2AError {
             AgentExecuteProperties agentExecuteProperties =
                     AgentExecuteProperties.builder().requireInnerMessage(true).build();
             executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
@@ -220,21 +334,21 @@ class AgentScopeAgentExecutorTest {
                                     })
                     .when(mockEventQueue)
                     .enqueueEvent(any(Message.class));
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             assertNotNull(messageRef.get());
             Message message = messageRef.get();
-            assertEquals(mockContext.getTaskId(), message.getTaskId());
-            assertEquals(mockContext.getContextId(), message.getContextId());
-            assertEquals(2, message.getParts().size());
-            assertInstanceOf(DataPart.class, message.getParts().get(0));
-            assertInstanceOf(TextPart.class, message.getParts().get(1));
-            assertEquals("streaming result 1 2", ((TextPart) message.getParts().get(1)).getText());
+            assertEquals(mockContext.getTaskId(), message.taskId());
+            assertEquals(mockContext.getContextId(), message.contextId());
+            assertEquals(2, message.parts().size());
+            assertInstanceOf(DataPart.class, message.parts().get(0));
+            assertInstanceOf(TextPart.class, message.parts().get(1));
+            assertEquals("streaming result 1 2", ((TextPart) message.parts().get(1)).text());
         }
 
         @Test
         @DisplayName("Should preserve hint semantics in blocking fallback")
-        void testExecuteAgentWithBlockingRequestPreservesHint() throws JSONRPCError {
+        void testExecuteAgentWithBlockingRequestPreservesHint() throws A2AError {
             AgentExecuteProperties agentExecuteProperties =
                     AgentExecuteProperties.builder().requireInnerMessage(true).build();
             executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
@@ -256,29 +370,29 @@ class AgentScopeAgentExecutorTest {
                                     })
                     .when(mockEventQueue)
                     .enqueueEvent(any(Message.class));
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             Message message = messageRef.get();
             assertNotNull(message);
-            assertEquals(2, message.getParts().size());
-            TextPart hintPart = assertInstanceOf(TextPart.class, message.getParts().get(0));
-            assertEquals("Check the inbox", hintPart.getText());
+            assertEquals(2, message.parts().size());
+            TextPart hintPart = assertInstanceOf(TextPart.class, message.parts().get(0));
+            assertEquals("Check the inbox", hintPart.text());
             assertEquals(
                     MessageConstants.BlockContent.TYPE_HINT,
-                    hintPart.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+                    hintPart.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
             assertEquals(
                     "hint-block-id",
-                    hintPart.getMetadata().get(MessageConstants.HINT_ID_METADATA_KEY));
+                    hintPart.metadata().get(MessageConstants.HINT_ID_METADATA_KEY));
             assertEquals(
-                    "alice", hintPart.getMetadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
-            TextPart answerPart = assertInstanceOf(TextPart.class, message.getParts().get(1));
-            assertEquals("Final answer", answerPart.getText());
+                    "alice", hintPart.metadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
+            TextPart answerPart = assertInstanceOf(TextPart.class, message.parts().get(1));
+            assertEquals("Final answer", answerPart.text());
         }
 
         @Test
         @DisplayName(
                 "Should execute agent and process blocking request with inner event but disabled")
-        void testExecuteAgentWithBlockingRequestDisabledInnerEvent() throws JSONRPCError {
+        void testExecuteAgentWithBlockingRequestDisabledInnerEvent() throws A2AError {
             doMockForContext(false, true, false);
             Flux<AgentEvent> mockFlux = mockFlux(true, false, false);
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
@@ -293,7 +407,7 @@ class AgentScopeAgentExecutorTest {
                                     })
                     .when(mockEventQueue)
                     .enqueueEvent(any(Message.class));
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             assertNotNull(messageRef.get());
             assertBlockResultMessage(
@@ -305,7 +419,7 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should execute error agent and process blocking request")
-        void testExecuteAgentWithError() throws JSONRPCError {
+        void testExecuteAgentWithError() throws A2AError {
             doMockForContext(false, false, false);
             Flux<AgentEvent> mockFlux = mockFlux(false, true, true);
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
@@ -320,7 +434,7 @@ class AgentScopeAgentExecutorTest {
                                     })
                     .when(mockEventQueue)
                     .enqueueEvent(any(Message.class));
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             assertNotNull(messageRef.get());
             assertBlockResultMessage(
@@ -332,7 +446,7 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should return an input-required task for a blocking confirmation request")
-        void testBlockingRequestRequiresUserConfirmation() throws JSONRPCError {
+        void testBlockingRequestRequiresUserConfirmation() throws A2AError {
             doMockForContext(false, false, true);
             ToolUseBlock toolCall =
                     ToolUseBlock.builder()
@@ -355,7 +469,7 @@ class AgentScopeAgentExecutorTest {
                     .when(mockEventQueue)
                     .enqueueEvent(any(StreamingEventKind.class));
 
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             List<TaskStatusUpdateEvent> statuses =
                     events.get().stream()
@@ -363,37 +477,36 @@ class AgentScopeAgentExecutorTest {
                             .map(TaskStatusUpdateEvent.class::cast)
                             .toList();
             assertEquals(2, statuses.size());
-            assertEquals(TaskState.WORKING, statuses.get(0).getStatus().state());
+            assertEquals(TaskState.TASK_STATE_WORKING, statuses.get(0).status().state());
             TaskStatusUpdateEvent inputRequired = statuses.get(1);
-            assertEquals(TaskState.INPUT_REQUIRED, inputRequired.getStatus().state());
+            assertEquals(TaskState.TASK_STATE_INPUT_REQUIRED, inputRequired.status().state());
             assertFalse(inputRequired.isFinal());
             DataPart payload =
-                    inputRequired.getStatus().message().getParts().stream()
+                    inputRequired.status().message().parts().stream()
                             .filter(DataPart.class::isInstance)
                             .map(DataPart.class::cast)
                             .findFirst()
                             .orElseThrow();
+            Map<?, ?> payloadData = assertInstanceOf(Map.class, payload.data());
             assertEquals(
-                    AgentScopeAgentExecutor.CONFIRMATION_REQUEST_TYPE,
-                    payload.getData().get("type"));
-            assertEquals("reply-1", payload.getData().get("replyId"));
+                    AgentScopeAgentExecutor.CONFIRMATION_REQUEST_TYPE, payloadData.get("type"));
+            assertEquals("reply-1", payloadData.get("replyId"));
             assertFalse(
                     statuses.stream()
                             .anyMatch(
                                     status ->
-                                            TaskState.COMPLETED.equals(
-                                                    status.getStatus().state())));
+                                            TaskState.TASK_STATE_COMPLETED.equals(
+                                                    status.status().state())));
         }
 
         private void assertBlockResultMessage(
                 Message message, List<String> expectedBlocks, String taskId, String contextId) {
-            assertEquals(taskId, message.getTaskId());
-            assertEquals(contextId, message.getContextId());
-            assertEquals(expectedBlocks.size(), message.getParts().size());
+            assertEquals(taskId, message.taskId());
+            assertEquals(contextId, message.contextId());
+            assertEquals(expectedBlocks.size(), message.parts().size());
             for (int i = 0; i < expectedBlocks.size(); i++) {
-                assertInstanceOf(TextPart.class, message.getParts().get(i));
-                assertEquals(
-                        expectedBlocks.get(i), ((TextPart) message.getParts().get(i)).getText());
+                assertInstanceOf(TextPart.class, message.parts().get(i));
+                assertEquals(expectedBlocks.get(i), ((TextPart) message.parts().get(i)).text());
             }
         }
     }
@@ -403,15 +516,48 @@ class AgentScopeAgentExecutorTest {
     class ExecuteForStreamingRequestTests {
 
         @Test
+        @DisplayName("Should send event metadata objects as JSON values")
+        void testStreamingEventMetadataIsJson() throws A2AError {
+            doMockForContext(true, false, false);
+            ChatUsage usage = ChatUsage.builder().inputTokens(3).outputTokens(5).build();
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.just(
+                                    new TextBlockDeltaEvent("reply-id", "block-id", "done")
+                                            .withMetadata(Map.of("usage", usage))));
+            List<Object> events = new CopyOnWriteArrayList<>();
+            doAnswer(
+                            invocation -> {
+                                events.add(invocation.getArgument(0));
+                                return null;
+                            })
+                    .when(mockEventQueue)
+                    .enqueueEvent(any());
+
+            executor.execute(mockContext, emitter());
+
+            TaskArtifactUpdateEvent artifactUpdate =
+                    events.stream()
+                            .filter(TaskArtifactUpdateEvent.class::isInstance)
+                            .map(TaskArtifactUpdateEvent.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            Map<?, ?> json =
+                    assertInstanceOf(Map.class, artifactUpdate.artifact().metadata().get("usage"));
+            assertEquals(3, json.get("inputTokens"));
+            assertEquals(5, json.get("outputTokens"));
+        }
+
+        @Test
         @DisplayName("Should execute agent and process streaming request")
-        void testExecuteAgentWithStreamingRequest() throws JSONRPCError {
+        void testExecuteAgentWithStreamingRequest() throws A2AError {
             doMockForContext(true, false, false);
             Flux<AgentEvent> mockFlux = mockFlux(false, true, false);
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
 
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             assertFalse(messageRef.get().isEmpty());
             assertStreamingEventKind(
@@ -425,7 +571,7 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should pause an A2A task for user confirmation")
-        void testStreamingRequestRequiresUserConfirmation() throws JSONRPCError {
+        void testStreamingRequestRequiresUserConfirmation() throws A2AError {
             doMockForContext(true, false, false);
             ToolUseBlock toolCall =
                     ToolUseBlock.builder()
@@ -439,7 +585,7 @@ class AgentScopeAgentExecutorTest {
                             Flux.just(new RequireUserConfirmEvent("reply-1", List.of(toolCall))));
             AtomicReference<List<StreamingEventKind>> events = mockStreamingEventQueueRef();
 
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             List<TaskStatusUpdateEvent> statuses =
                     events.get().stream()
@@ -448,16 +594,17 @@ class AgentScopeAgentExecutorTest {
                             .toList();
             assertEquals(2, statuses.size());
             TaskStatusUpdateEvent inputRequired = statuses.get(1);
-            assertEquals(TaskState.INPUT_REQUIRED, inputRequired.getStatus().state());
+            assertEquals(TaskState.TASK_STATE_INPUT_REQUIRED, inputRequired.status().state());
             assertFalse(inputRequired.isFinal());
             DataPart payload =
-                    inputRequired.getStatus().message().getParts().stream()
+                    inputRequired.status().message().parts().stream()
                             .filter(DataPart.class::isInstance)
                             .map(DataPart.class::cast)
                             .findFirst()
                             .orElseThrow();
-            assertEquals("reply-1", payload.getData().get("replyId"));
-            Object rawRequestedCalls = payload.getData().get("toolCalls");
+            Map<?, ?> payloadData = assertInstanceOf(Map.class, payload.data());
+            assertEquals("reply-1", payloadData.get("replyId"));
+            Object rawRequestedCalls = payloadData.get("toolCalls");
             assertTrue(rawRequestedCalls instanceof List<?>);
             List<?> requestedCalls = (List<?>) rawRequestedCalls;
             assertTrue(requestedCalls.get(0) instanceof Map<?, ?>);
@@ -470,15 +617,15 @@ class AgentScopeAgentExecutorTest {
                     statuses.stream()
                             .anyMatch(
                                     status ->
-                                            TaskState.COMPLETED.equals(
-                                                    status.getStatus().state())));
+                                            TaskState.TASK_STATE_COMPLETED.equals(
+                                                    status.status().state())));
         }
 
         @ParameterizedTest
         @CsvSource({"false, false", "true, false", "false, true", "true, true"})
         @DisplayName("Should convert a confirmation response into validated AgentScope metadata")
         void testStreamingRequestConvertsConfirmationResponse(boolean clearInput, boolean streaming)
-                throws JSONRPCError {
+                throws A2AError {
             Map<String, Object> approvedInput =
                     clearInput ? Map.of() : Map.of("path", "approved.txt");
             String taskId = doMockForContext(streaming, false, true);
@@ -495,8 +642,8 @@ class AgentScopeAgentExecutorTest {
                             "metadata",
                             Map.of("provider", "value"));
             Message pendingMessage =
-                    new Message.Builder()
-                            .role(Message.Role.AGENT)
+                    Message.builder()
+                            .role(Message.Role.ROLE_AGENT)
                             .parts(
                                     new DataPart(
                                             Map.of(
@@ -525,13 +672,15 @@ class AgentScopeAgentExecutorTest {
                             taskId,
                             contextId,
                             new TaskStatus(
-                                    TaskState.INPUT_REQUIRED, pendingMessage, OffsetDateTime.now()),
+                                    TaskState.TASK_STATE_INPUT_REQUIRED,
+                                    pendingMessage,
+                                    OffsetDateTime.now()),
                             null,
                             List.of(),
                             null);
             Message request =
-                    new Message.Builder()
-                            .role(Message.Role.USER)
+                    Message.builder()
+                            .role(Message.Role.ROLE_USER)
                             .parts(
                                     new TextPart("Proceed"),
                                     new DataPart(
@@ -581,7 +730,7 @@ class AgentScopeAgentExecutorTest {
                             .build();
             when(mockContext.getTask()).thenReturn(task);
             when(mockContext.getMessage()).thenReturn(request);
-            when(mockContext.getParams().message()).thenReturn(request);
+
             AtomicReference<List<Msg>> agentInput = new AtomicReference<>();
             doAnswer(
                             (Answer<Flux<AgentEvent>>)
@@ -597,15 +746,15 @@ class AgentScopeAgentExecutorTest {
                     .streamEvents(anyList(), any(AgentRequestOptions.class));
             AtomicReference<List<StreamingEventKind>> output = mockStreamingEventQueueRef();
 
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             if (streaming) {
                 assertTrue(output.get().stream().anyMatch(TaskStatusUpdateEvent.class::isInstance));
             } else {
                 assertEquals(1, output.get().size());
                 Message response = assertInstanceOf(Message.class, output.get().get(0));
-                assertEquals(taskId, response.getTaskId());
-                assertEquals(contextId, response.getContextId());
+                assertEquals(taskId, response.taskId());
+                assertEquals(contextId, response.contextId());
             }
             assertEquals(1, agentInput.get().size());
             Msg confirmationMessage = agentInput.get().get(0);
@@ -637,13 +786,13 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should reject confirmation replies that change the requested tool")
-        void testStreamingRequestRejectsChangedToolIdentity() throws JSONRPCError {
+        void testStreamingRequestRejectsChangedToolIdentity() throws A2AError {
             String taskId = doMockForContext(true, false, false);
             String contextId = mockContext.getContextId();
             String replyId = "reply-current";
             Message pendingMessage =
-                    new Message.Builder()
-                            .role(Message.Role.AGENT)
+                    Message.builder()
+                            .role(Message.Role.ROLE_AGENT)
                             .parts(
                                     new DataPart(
                                             Map.of(
@@ -669,13 +818,15 @@ class AgentScopeAgentExecutorTest {
                             taskId,
                             contextId,
                             new TaskStatus(
-                                    TaskState.INPUT_REQUIRED, pendingMessage, OffsetDateTime.now()),
+                                    TaskState.TASK_STATE_INPUT_REQUIRED,
+                                    pendingMessage,
+                                    OffsetDateTime.now()),
                             null,
                             List.of(),
                             null);
             Message request =
-                    new Message.Builder()
-                            .role(Message.Role.USER)
+                    Message.builder()
+                            .role(Message.Role.ROLE_USER)
                             .parts(
                                     new DataPart(
                                             Map.of(
@@ -707,9 +858,8 @@ class AgentScopeAgentExecutorTest {
                             .build();
             when(mockContext.getTask()).thenReturn(task);
             when(mockContext.getMessage()).thenReturn(request);
-            when(mockContext.getParams().message()).thenReturn(request);
 
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             verify(mockAgentRunner, never())
                     .streamEvents(anyList(), any(AgentRequestOptions.class));
@@ -728,13 +878,13 @@ class AgentScopeAgentExecutorTest {
                 })
         @DisplayName("Should reject partial confirmation replies and fail the waiting task")
         void testStreamingRequestRejectsInvalidConfirmationReply(String invalidCase)
-                throws JSONRPCError {
+                throws A2AError {
             String taskId = doMockForContext(true, false, false);
             String contextId = mockContext.getContextId();
             String replyId = "reply-current";
             Message pendingMessage =
-                    new Message.Builder()
-                            .role(Message.Role.AGENT)
+                    Message.builder()
+                            .role(Message.Role.ROLE_AGENT)
                             .parts(
                                     new DataPart(
                                             Map.of(
@@ -761,7 +911,7 @@ class AgentScopeAgentExecutorTest {
                             taskId,
                             contextId,
                             new TaskStatus(
-                                    TaskState.INPUT_REQUIRED,
+                                    TaskState.TASK_STATE_INPUT_REQUIRED,
                                     invalidCase.equals("missingStatus") ? null : pendingMessage,
                                     OffsetDateTime.now()),
                             null,
@@ -781,24 +931,23 @@ class AgentScopeAgentExecutorTest {
                                     replyId,
                                     "results",
                                     List.of(result)));
-            List<io.a2a.spec.Part<?>> responseParts =
+            List<Part<?>> responseParts =
                     switch (invalidCase) {
                         case "missing" -> List.of(new TextPart("Proceed"));
                         case "duplicate" -> List.of(response, response);
                         default -> List.of(response);
                     };
             Message partialRequest =
-                    new Message.Builder()
-                            .role(Message.Role.USER)
+                    Message.builder()
+                            .role(Message.Role.ROLE_USER)
                             .parts(responseParts)
                             .taskId(taskId)
                             .contextId(contextId)
                             .build();
             when(mockContext.getTask()).thenReturn(task);
             when(mockContext.getMessage()).thenReturn(partialRequest);
-            when(mockContext.getParams().message()).thenReturn(partialRequest);
 
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             verify(mockAgentRunner, never())
                     .streamEvents(anyList(), any(AgentRequestOptions.class));
@@ -807,12 +956,12 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should reject stale confirmation replies before invoking the runner")
-        void testStreamingRequestRejectsStaleConfirmationReply() throws JSONRPCError {
+        void testStreamingRequestRejectsStaleConfirmationReply() throws A2AError {
             String taskId = doMockForContext(true, false, false);
             String contextId = mockContext.getContextId();
             Message pendingMessage =
-                    new Message.Builder()
-                            .role(Message.Role.AGENT)
+                    Message.builder()
+                            .role(Message.Role.ROLE_AGENT)
                             .parts(
                                     new DataPart(
                                             Map.of(
@@ -838,13 +987,15 @@ class AgentScopeAgentExecutorTest {
                             taskId,
                             contextId,
                             new TaskStatus(
-                                    TaskState.INPUT_REQUIRED, pendingMessage, OffsetDateTime.now()),
+                                    TaskState.TASK_STATE_INPUT_REQUIRED,
+                                    pendingMessage,
+                                    OffsetDateTime.now()),
                             null,
                             List.of(),
                             null);
             Message staleRequest =
-                    new Message.Builder()
-                            .role(Message.Role.USER)
+                    Message.builder()
+                            .role(Message.Role.ROLE_USER)
                             .parts(
                                     new DataPart(
                                             Map.of(
@@ -865,9 +1016,8 @@ class AgentScopeAgentExecutorTest {
                             .build();
             when(mockContext.getTask()).thenReturn(task);
             when(mockContext.getMessage()).thenReturn(staleRequest);
-            when(mockContext.getParams().message()).thenReturn(staleRequest);
 
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             verify(mockAgentRunner, never())
                     .streamEvents(anyList(), any(AgentRequestOptions.class));
@@ -879,14 +1029,14 @@ class AgentScopeAgentExecutorTest {
                     ArgumentCaptor.forClass(TaskStatusUpdateEvent.class);
             verify(mockEventQueue).enqueueEvent(eventCaptor.capture());
             TaskStatusUpdateEvent statusUpdate = eventCaptor.getValue();
-            assertEquals(TaskState.FAILED, statusUpdate.getStatus().state());
+            assertEquals(TaskState.TASK_STATE_FAILED, statusUpdate.status().state());
             assertTrue(statusUpdate.isFinal());
             verify(mockAgentRunner).stop(taskId);
         }
 
         @Test
         @DisplayName("Should execute agent and process streaming request with inner event")
-        void testExecuteAgentWithStreamingRequestWithInnerEvent() throws JSONRPCError {
+        void testExecuteAgentWithStreamingRequestWithInnerEvent() throws A2AError {
             AgentExecuteProperties agentExecuteProperties =
                     AgentExecuteProperties.builder().requireInnerMessage(true).build();
             executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
@@ -895,7 +1045,7 @@ class AgentScopeAgentExecutorTest {
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             assertFalse(messageRef.get().isEmpty());
             assertStreamingEventKind(
@@ -909,7 +1059,7 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should preserve hint and tool metadata in streaming artifacts")
-        void testExecuteAgentWithStreamingRequestPreservesEventMetadata() throws JSONRPCError {
+        void testExecuteAgentWithStreamingRequestPreservesEventMetadata() throws A2AError {
             AgentExecuteProperties agentExecuteProperties =
                     AgentExecuteProperties.builder().requireInnerMessage(true).build();
             executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
@@ -927,13 +1077,13 @@ class AgentScopeAgentExecutorTest {
                     .thenReturn(Flux.just(hintEvent, toolEvent));
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
 
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             List<Artifact> artifacts =
                     messageRef.get().stream()
                             .filter(TaskArtifactUpdateEvent.class::isInstance)
                             .map(TaskArtifactUpdateEvent.class::cast)
-                            .map(TaskArtifactUpdateEvent::getArtifact)
+                            .map(TaskArtifactUpdateEvent::artifact)
                             .toList();
             assertEquals(2, artifacts.size());
 
@@ -942,27 +1092,27 @@ class AgentScopeAgentExecutorTest {
             TextPart hintPart = assertInstanceOf(TextPart.class, hintArtifact.parts().get(0));
             assertEquals(
                     MessageConstants.BlockContent.TYPE_HINT,
-                    hintPart.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+                    hintPart.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
             assertEquals(
                     "hint-block-id",
-                    hintPart.getMetadata().get(MessageConstants.HINT_ID_METADATA_KEY));
+                    hintPart.metadata().get(MessageConstants.HINT_ID_METADATA_KEY));
             assertEquals(
-                    "alice", hintPart.getMetadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
+                    "alice", hintPart.metadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
             assertFalse(
-                    hintPart.getMetadata().containsKey(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+                    hintPart.metadata().containsKey(MessageConstants.STREAM_CHUNK_METADATA_KEY));
 
             Artifact toolArtifact = artifacts.get(1);
             assertEquals(toolMetadata, toolArtifact.metadata());
             DataPart toolPart = assertInstanceOf(DataPart.class, toolArtifact.parts().get(0));
             assertEquals(
                     Boolean.TRUE,
-                    toolPart.getMetadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
-            assertEquals("trace-1", toolPart.getMetadata().get("traceId"));
+                    toolPart.metadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+            assertEquals("trace-1", toolPart.metadata().get("traceId"));
         }
 
         @Test
         @DisplayName("Should forward tool progress while inner events are enabled")
-        void testToolProgressReachesClientWhenInnerEventsEnabled() throws JSONRPCError {
+        void testToolProgressReachesClientWhenInnerEventsEnabled() throws A2AError {
             AgentExecuteProperties properties =
                     AgentExecuteProperties.builder().requireInnerMessage(true).build();
             executor = new AgentScopeAgentExecutor(mockAgentRunner, properties);
@@ -977,13 +1127,13 @@ class AgentScopeAgentExecutorTest {
                                             TextBlock.builder().text("scanning 3 dirs").build())));
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
 
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             List<Artifact> artifacts =
                     messageRef.get().stream()
                             .filter(TaskArtifactUpdateEvent.class::isInstance)
                             .map(TaskArtifactUpdateEvent.class::cast)
-                            .map(TaskArtifactUpdateEvent::getArtifact)
+                            .map(TaskArtifactUpdateEvent::artifact)
                             .toList();
             assertEquals(
                     1,
@@ -991,13 +1141,12 @@ class AgentScopeAgentExecutorTest {
                     "progress moved to its own event type but still reaches the client");
             DataPart part = assertInstanceOf(DataPart.class, artifacts.get(0).parts().get(0));
             assertEquals(
-                    Boolean.TRUE,
-                    part.getMetadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+                    Boolean.TRUE, part.metadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
         }
 
         @Test
         @DisplayName("Should withhold tool progress when inner events are disabled")
-        void testToolProgressIsWithheldWhenInnerEventsDisabled() throws JSONRPCError {
+        void testToolProgressIsWithheldWhenInnerEventsDisabled() throws A2AError {
             doMockForContext(true, false, false);
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(
@@ -1009,13 +1158,13 @@ class AgentScopeAgentExecutorTest {
                                             TextBlock.builder().text("scanning 3 dirs").build())));
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
 
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             List<Artifact> artifacts =
                     messageRef.get().stream()
                             .filter(TaskArtifactUpdateEvent.class::isInstance)
                             .map(TaskArtifactUpdateEvent.class::cast)
-                            .map(TaskArtifactUpdateEvent::getArtifact)
+                            .map(TaskArtifactUpdateEvent::artifact)
                             .toList();
             assertTrue(
                     artifacts.isEmpty(),
@@ -1024,7 +1173,7 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should exclude tool progress from the completed message")
-        void testToolProgressIsExcludedFromCompletedMessage() throws JSONRPCError {
+        void testToolProgressIsExcludedFromCompletedMessage() throws A2AError {
             AgentExecuteProperties properties =
                     AgentExecuteProperties.builder()
                             .requireInnerMessage(true)
@@ -1046,7 +1195,7 @@ class AgentScopeAgentExecutorTest {
                                             Msg.builder().textContent("3 files found").build())));
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
 
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             // The artifact carries progress for live rendering, but the completed message
             // must contain only the tool result.
@@ -1054,7 +1203,7 @@ class AgentScopeAgentExecutorTest {
                     messageRef.get().stream()
                             .filter(TaskArtifactUpdateEvent.class::isInstance)
                             .map(TaskArtifactUpdateEvent.class::cast)
-                            .map(TaskArtifactUpdateEvent::getArtifact)
+                            .map(TaskArtifactUpdateEvent::artifact)
                             .toList();
             assertTrue(artifacts.size() >= 1, "progress is still forwarded as an artifact");
 
@@ -1062,15 +1211,17 @@ class AgentScopeAgentExecutorTest {
                     messageRef.get().stream()
                             .filter(TaskStatusUpdateEvent.class::isInstance)
                             .map(TaskStatusUpdateEvent.class::cast)
-                            .filter(event -> TaskState.COMPLETED.equals(event.getStatus().state()))
+                            .filter(
+                                    event ->
+                                            TaskState.TASK_STATE_COMPLETED.equals(
+                                                    event.status().state()))
                             .findFirst()
                             .orElseThrow();
             DataPart toolPart =
-                    assertInstanceOf(
-                            DataPart.class, completed.getStatus().message().getParts().get(0));
+                    assertInstanceOf(DataPart.class, completed.status().message().parts().get(0));
             String messageText =
                     String.valueOf(
-                            toolPart.getData()
+                            ((Map<?, ?>) toolPart.data())
                                     .get(MessageConstants.TOOL_RESULT_OUTPUT_METADATA_KEY));
             assertTrue(
                     messageText.contains("3 files found"),
@@ -1083,13 +1234,13 @@ class AgentScopeAgentExecutorTest {
         @Test
         @DisplayName(
                 "Should execute agent and process streaming request with inner event but disabled")
-        void testExecuteAgentWithStreamingRequestDisabledInnerEvent() throws JSONRPCError {
+        void testExecuteAgentWithStreamingRequestDisabledInnerEvent() throws A2AError {
             doMockForContext(true, false, false);
             Flux<AgentEvent> mockFlux = mockFlux(true, true, false);
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             assertFalse(messageRef.get().isEmpty());
             assertStreamingEventKind(
@@ -1103,7 +1254,7 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should execute agent and process streaming request with completed message")
-        void testExecuteAgentWithStreamingRequestCompletedMessage() throws JSONRPCError {
+        void testExecuteAgentWithStreamingRequestCompletedMessage() throws A2AError {
             AgentExecuteProperties agentExecuteProperties =
                     AgentExecuteProperties.builder().completeWithMessage(true).build();
             executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
@@ -1112,7 +1263,7 @@ class AgentScopeAgentExecutorTest {
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             assertFalse(messageRef.get().isEmpty());
             assertStreamingEventKind(
@@ -1126,26 +1277,29 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should execute fail agent and process streaming request")
-        void testExecuteAgentWithStreamingRequestFailure() throws JSONRPCError {
+        void testExecuteAgentWithStreamingRequestFailure() throws A2AError {
             doMockForContext(true, false, false);
             Flux<AgentEvent> mockFlux = mockFlux(false, false, true);
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
 
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             assertFalse(messageRef.get().isEmpty());
             assertTrue(
                     messageRef.get().stream()
                             .filter(event -> event instanceof TaskStatusUpdateEvent)
                             .map(event -> (TaskStatusUpdateEvent) event)
-                            .anyMatch(event -> TaskState.FAILED.equals(event.getStatus().state())));
+                            .anyMatch(
+                                    event ->
+                                            TaskState.TASK_STATE_FAILED.equals(
+                                                    event.status().state())));
         }
 
         @Test
         @DisplayName("Should ignore lifecycle events for streaming artifacts")
-        void testExecuteAgentWithStreamingRequestIgnoresLifecycleEvents() throws JSONRPCError {
+        void testExecuteAgentWithStreamingRequestIgnoresLifecycleEvents() throws A2AError {
             doMockForContext(true, false, false);
             Flux<AgentEvent> mockFlux =
                     Flux.just(
@@ -1158,7 +1312,7 @@ class AgentScopeAgentExecutorTest {
                     .thenReturn(mockFlux);
 
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
-            executor.execute(mockContext, mockEventQueue);
+            executor.execute(mockContext, emitter());
 
             List<TaskArtifactUpdateEvent> artifactEvents =
                     messageRef.get().stream()
@@ -1166,10 +1320,10 @@ class AgentScopeAgentExecutorTest {
                             .map(TaskArtifactUpdateEvent.class::cast)
                             .toList();
             assertEquals(1, artifactEvents.size());
-            assertInstanceOf(TextPart.class, artifactEvents.get(0).getArtifact().parts().get(0));
+            assertInstanceOf(TextPart.class, artifactEvents.get(0).artifact().parts().get(0));
             assertEquals(
                     "streaming result",
-                    ((TextPart) artifactEvents.get(0).getArtifact().parts().get(0)).getText());
+                    ((TextPart) artifactEvents.get(0).artifact().parts().get(0)).text());
         }
 
         private AtomicReference<List<StreamingEventKind>> mockStreamingEventQueueRef() {
@@ -1197,24 +1351,25 @@ class AgentScopeAgentExecutorTest {
             int additionalEventSize = withToolResult ? 4 : 3;
             assertEquals(expectedBlocks.size() + additionalEventSize, streamingEventKinds.size());
             assertInstanceOf(Task.class, streamingEventKinds.get(0));
-            assertEquals(taskId, ((Task) streamingEventKinds.get(0)).getId());
-            assertEquals(contextId, ((Task) streamingEventKinds.get(0)).getContextId());
+            assertEquals(taskId, ((Task) streamingEventKinds.get(0)).id());
+            assertEquals(contextId, ((Task) streamingEventKinds.get(0)).contextId());
             assertEquals(
-                    TaskState.SUBMITTED, ((Task) streamingEventKinds.get(0)).getStatus().state());
+                    TaskState.TASK_STATE_SUBMITTED,
+                    ((Task) streamingEventKinds.get(0)).status().state());
             assertInstanceOf(TaskStatusUpdateEvent.class, streamingEventKinds.get(1));
-            assertEquals(taskId, ((TaskStatusUpdateEvent) streamingEventKinds.get(1)).getTaskId());
+            assertEquals(taskId, ((TaskStatusUpdateEvent) streamingEventKinds.get(1)).taskId());
             assertEquals(
-                    TaskState.WORKING,
-                    ((TaskStatusUpdateEvent) streamingEventKinds.get(1)).getStatus().state());
+                    TaskState.TASK_STATE_WORKING,
+                    ((TaskStatusUpdateEvent) streamingEventKinds.get(1)).status().state());
             assertEquals(
-                    contextId, ((TaskStatusUpdateEvent) streamingEventKinds.get(1)).getContextId());
+                    contextId, ((TaskStatusUpdateEvent) streamingEventKinds.get(1)).contextId());
             if (withToolResult) {
                 assertInstanceOf(TaskArtifactUpdateEvent.class, streamingEventKinds.get(2));
                 TaskArtifactUpdateEvent artifactUpdateEvent =
                         (TaskArtifactUpdateEvent) streamingEventKinds.get(2);
-                assertEquals(taskId, artifactUpdateEvent.getTaskId());
-                assertEquals(contextId, artifactUpdateEvent.getContextId());
-                assertInstanceOf(DataPart.class, artifactUpdateEvent.getArtifact().parts().get(0));
+                assertEquals(taskId, artifactUpdateEvent.taskId());
+                assertEquals(contextId, artifactUpdateEvent.contextId());
+                assertInstanceOf(DataPart.class, artifactUpdateEvent.artifact().parts().get(0));
             }
             List<StreamingEventKind> subEvent =
                     streamingEventKinds.subList(
@@ -1223,25 +1378,25 @@ class AgentScopeAgentExecutorTest {
                 assertInstanceOf(TaskArtifactUpdateEvent.class, subEvent.get(i));
                 TaskArtifactUpdateEvent artifactUpdateEvent =
                         (TaskArtifactUpdateEvent) subEvent.get(i);
-                assertEquals(taskId, artifactUpdateEvent.getTaskId());
-                assertEquals(contextId, artifactUpdateEvent.getContextId());
-                Artifact artifact = artifactUpdateEvent.getArtifact();
+                assertEquals(taskId, artifactUpdateEvent.taskId());
+                assertEquals(contextId, artifactUpdateEvent.contextId());
+                Artifact artifact = artifactUpdateEvent.artifact();
                 assertEquals(1, artifact.parts().size());
                 assertInstanceOf(TextPart.class, artifact.parts().get(0));
-                assertEquals(expectedBlocks.get(i), ((TextPart) artifact.parts().get(0)).getText());
+                assertEquals(expectedBlocks.get(i), ((TextPart) artifact.parts().get(0)).text());
             }
             StreamingEventKind completedEvent =
                     streamingEventKinds.get(streamingEventKinds.size() - 1);
             assertInstanceOf(TaskStatusUpdateEvent.class, completedEvent);
-            assertEquals(taskId, ((TaskStatusUpdateEvent) completedEvent).getTaskId());
+            assertEquals(taskId, ((TaskStatusUpdateEvent) completedEvent).taskId());
             assertEquals(
-                    TaskState.COMPLETED,
-                    ((TaskStatusUpdateEvent) completedEvent).getStatus().state());
-            assertEquals(contextId, ((TaskStatusUpdateEvent) completedEvent).getContextId());
+                    TaskState.TASK_STATE_COMPLETED,
+                    ((TaskStatusUpdateEvent) completedEvent).status().state());
+            assertEquals(contextId, ((TaskStatusUpdateEvent) completedEvent).contextId());
             if (completeWithMessage) {
-                assertNotNull(((TaskStatusUpdateEvent) completedEvent).getStatus().message());
+                assertNotNull(((TaskStatusUpdateEvent) completedEvent).status().message());
             } else {
-                assertNull(((TaskStatusUpdateEvent) completedEvent).getStatus().message());
+                assertNull(((TaskStatusUpdateEvent) completedEvent).status().message());
             }
         }
     }
@@ -1253,7 +1408,7 @@ class AgentScopeAgentExecutorTest {
         @Test
         @DisplayName("Should cancel task successfully")
         void testCancelTaskSuccessfully()
-                throws JSONRPCError, ExecutionException, InterruptedException, TimeoutException {
+                throws A2AError, ExecutionException, InterruptedException, TimeoutException {
             // Given
             String taskId = doMockForContext(false, true, false);
 
@@ -1279,14 +1434,14 @@ class AgentScopeAgentExecutorTest {
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
 
-            Thread taskThread = new Thread(() -> executor.execute(mockContext, mockEventQueue));
+            Thread taskThread = new Thread(() -> executor.execute(mockContext, emitter()));
             try {
                 taskThread.start();
 
                 TimeUnit.MILLISECONDS.sleep(500);
 
                 // When
-                executor.cancel(mockContext, mockEventQueue);
+                executor.cancel(mockContext, emitter());
 
                 // Then
                 verify(mockAgentRunner).stop(taskId);
@@ -1299,12 +1454,12 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should cancel task successfully when no task found")
-        void testCancelTaskSuccessfullyNoTaskFound() throws JSONRPCError {
+        void testCancelTaskSuccessfullyNoTaskFound() throws A2AError {
             // Given
             String taskId = doMockForContext(false, true, false);
 
             // When
-            executor.cancel(mockContext, mockEventQueue);
+            executor.cancel(mockContext, emitter());
 
             // Then
             verify(mockAgentRunner).stop(taskId);
@@ -1312,7 +1467,7 @@ class AgentScopeAgentExecutorTest {
 
         @Test
         @DisplayName("Should handle exception during task cancellation")
-        void testHandleExceptionDuringTaskCancellation() throws JSONRPCError {
+        void testHandleExceptionDuringTaskCancellation() throws A2AError {
             // Given
             String taskId = doMockForContext(true, false, false);
 
@@ -1320,7 +1475,7 @@ class AgentScopeAgentExecutorTest {
             doThrow(new RuntimeException("Cancellation error")).when(mockAgentRunner).stop(taskId);
 
             // When
-            executor.cancel(mockContext, mockEventQueue);
+            executor.cancel(mockContext, emitter());
 
             // Then
             verify(mockAgentRunner).stop(taskId);
@@ -1329,14 +1484,14 @@ class AgentScopeAgentExecutorTest {
 
     @Test
     @DisplayName("Should handle exception during execution")
-    void testHandleExceptionDuringExecution() throws JSONRPCError {
+    void testHandleExceptionDuringExecution() throws A2AError {
         doMockForContext(true, false, false);
         // Given
         when(mockContext.getTask()).thenThrow(new RuntimeException("Context error"));
         when(mockContext.getTaskId()).thenReturn("mock Task Id");
 
         // When
-        executor.execute(mockContext, mockEventQueue);
+        executor.execute(mockContext, emitter());
 
         // Then
         verify(mockEventQueue).enqueueEvent(any(Message.class));

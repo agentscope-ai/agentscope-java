@@ -265,8 +265,8 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
 
         String hintContent =
                 String.format(
-                        "<system-notification>Tool '%s' running in background has completed.\n\n"
-                                + "Result:\n\n%s</system-notification>",
+                        "<system-reminder>Tool '%s' running in background has completed.\n\n"
+                                + "Result:\n\n%s</system-reminder>",
                         toolNames, resultText.length() > 0 ? resultText.toString() : "(no output)");
 
         String hintId = UUID.randomUUID().toString().replace("-", "");
