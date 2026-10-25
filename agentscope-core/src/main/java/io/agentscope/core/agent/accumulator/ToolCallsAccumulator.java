@@ -106,6 +106,10 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         }
 
         ToolUseBlock build() {
+            return build(false);
+        }
+
+        ToolUseBlock build(boolean truncated) {
             Map<String, Object> finalArgs = new HashMap<>(args);
             String rawContentStr = this.rawContent.toString();
 
@@ -141,14 +145,28 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
             // Always validate rawContent is a legal JSON object before using it
             // as content. This prevents persisting malformed JSON fragments
-            // (e.g. when streaming was interrupted mid-arguments).
+            // (e.g. when streaming was interrupted mid-arguments). Non-empty but
+            // invalid raw content means the arguments were truncated or corrupt;
+            // the fact is preserved as a metadata marker so the acting phase can
+            // refuse execution instead of silently running the call with {}.
             String contentStr;
+            Map<String, Object> finalMetadata = metadata;
+            boolean malformed;
             if (rawContentStr.isEmpty()) {
                 contentStr = "{}";
+                // Without a completed block or any parsed arguments, an output-limit stop
+                // cannot establish that an empty tool-call start was a complete no-arg call.
+                malformed = truncated && finalArgs.isEmpty();
             } else if (JsonUtils.isValidJsonObject(rawContentStr)) {
                 contentStr = rawContentStr;
+                malformed = false;
             } else {
                 contentStr = "{}";
+                malformed = true;
+            }
+            if (malformed) {
+                finalMetadata = new HashMap<>(metadata);
+                finalMetadata.put(ToolUseBlock.METADATA_MALFORMED_ARGUMENTS, true);
             }
 
             return ToolUseBlock.builder()
@@ -156,38 +174,37 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .name(name)
                     .input(finalArgs)
                     .content(contentStr)
-                    .metadata(metadata.isEmpty() ? null : metadata)
+                    .metadata(finalMetadata.isEmpty() ? null : finalMetadata)
                     .state(state)
                     .build();
         }
 
         /**
-         * Emits at most one sanitized warning when the accumulated raw content never parsed as
-         * valid JSON.
+         * Emits at most one sanitized warning when the final accumulated arguments are marked
+         * malformed.
          *
-         * <p>Called only from the finalization boundary ({@link #buildAllToolCalls()}), not from
-         * per-fragment builds, because incomplete JSON prefixes are normal mid-stream. The
-         * warning omits the raw arguments (they may contain credentials, PII, or user
+         * <p>Called only from the finalization boundary ({@link #buildAllToolCalls(boolean)}),
+         * not from per-fragment builds, because incomplete JSON prefixes are normal mid-stream.
+         * The warning omits the raw arguments (they may contain credentials, PII, or user
          * documents) and carries no stack trace.
          */
-        private void warnIfMalformedOnce() {
-            if (parseFailure != null && !parseWarned) {
-                parseWarned = true;
-                // Continuation deltas commonly carry an empty-string name, so
-                // fall back to the id (then a marker) the same way for "" as
-                // for null — otherwise the warning is not correlatable.
-                String displayName =
-                        name != null && !name.isEmpty()
-                                ? name
-                                : (toolId != null && !toolId.isEmpty() ? toolId : "<unnamed>");
-                LOG.warn(
-                        "Tool call '{}' arguments are not valid JSON after the stream ended"
-                                + " (raw length: {}); using partially accumulated arguments"
-                                + " instead. Cause: {}",
-                        displayName,
-                        rawContent.length(),
-                        parseFailure);
+        private void warnIfMalformedOnce(ToolUseBlock block, boolean truncated) {
+            if (!block.hasMalformedArguments() || parseWarned) {
+                return;
             }
+            parseWarned = true;
+            String cause =
+                    parseFailure != null
+                            ? parseFailure
+                            : (truncated ? "TruncatedEmptyArguments" : "NotAJsonObject");
+            LOG.warn(
+                    "Tool call '{}' (id '{}') has malformed arguments after the stream ended"
+                            + " (raw length: {}); the call will be rejected before execution."
+                            + " Cause: {}",
+                    name != null && !name.isEmpty() ? name : "<unnamed>",
+                    block.getId(),
+                    rawContent.length(),
+                    cause);
         }
 
         private boolean isPlaceholder(String name) {
@@ -303,16 +320,21 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      * @return List of tool calls
      */
     public List<ToolUseBlock> buildAllToolCalls() {
-        // Finalization boundary: the stream has ended, so malformed accumulated JSON is a
-        // real defect worth reporting — once per tool call, sanitized. build() runs first so
-        // parseFailure reflects the FINAL raw content: a prefix that failed mid-stream but
-        // completed validly must not warn, and a call that was never built mid-stream must
-        // still warn on this first finalization.
+        return buildAllToolCalls(false);
+    }
+
+    /**
+     * Builds calls, rejecting ambiguous empty starts when output stopped at its token limit.
+     *
+     * <p>This is the finalization boundary: malformed calls retain the upstream marker used to
+     * reject execution, and also emit one sanitized diagnostic warning.
+     */
+    public List<ToolUseBlock> buildAllToolCalls(boolean truncated) {
         return builders.values().stream()
                 .map(
                         builder -> {
-                            ToolUseBlock block = builder.build();
-                            builder.warnIfMalformedOnce();
+                            ToolUseBlock block = builder.build(truncated);
+                            builder.warnIfMalformedOnce(block, truncated);
                             return block;
                         })
                 .collect(Collectors.toList());

@@ -180,4 +180,53 @@ class ToolCallsAccumulatorParseWarningTest {
                 "warning must not render the empty name: " + message);
         assertNull(warns.get(0).getThrowableProxy());
     }
+
+    @Test
+    @DisplayName("JSON null arguments are marked malformed and warned")
+    void jsonNullArgumentsAreMarkedAndWarned() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call-json-null")
+                        .name("run_query")
+                        .content("null")
+                        .build());
+
+        ToolUseBlock result = accumulator.buildAllToolCalls().get(0);
+        assertEquals("{}", result.getContent());
+        assertTrue(result.hasMalformedArguments());
+
+        List<ILoggingEvent> warns = warnings();
+        assertEquals(1, warns.size(), "expected exactly one warning, got: " + warns);
+        String message = warns.get(0).getFormattedMessage();
+        assertTrue(message.contains("run_query"), "warning should name the tool: " + message);
+        assertTrue(message.contains("call-json-null"), "warning should name the call: " + message);
+        assertTrue(message.contains("NotAJsonObject"), "warning should name the cause: " + message);
+    }
+
+    @Test
+    @DisplayName("Parallel calls with the same tool name remain distinguishable")
+    void parallelCallsWithSameNameRemainDistinguishable() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call-a")
+                        .name("run_query")
+                        .content("{\"q\": \"a")
+                        .build());
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call-b")
+                        .name("run_query")
+                        .content("{\"q\": \"b")
+                        .build());
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(2, result.size());
+
+        List<ILoggingEvent> warns = warnings();
+        assertEquals(2, warns.size(), "expected one warning per call, got: " + warns);
+        assertTrue(
+                warns.get(0).getFormattedMessage().contains("call-a")
+                        && warns.get(1).getFormattedMessage().contains("call-b"),
+                "warnings should identify both calls: " + warns);
+    }
 }

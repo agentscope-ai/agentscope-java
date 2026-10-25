@@ -21,6 +21,7 @@ import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +37,7 @@ class MessageUtilsServerToolTest {
                         .name("web_search")
                         .output(TextBlock.builder().text("Result").build())
                         .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
+                        .state(ToolResultState.SUCCESS)
                         .build();
         ToolResultBlock localResult =
                 ToolResultBlock.builder()
@@ -52,6 +54,27 @@ class MessageUtilsServerToolTest {
         Set<String> resultIds = MessageUtils.inlineServerToolResultIds(message);
 
         assertEquals(Set.of("srvtoolu_01"), resultIds);
+    }
+
+    @Test
+    void shouldExcludeRunningServerToolResultIds() {
+        ToolResultBlock runningResult =
+                ToolResultBlock.builder()
+                        .id("srvtoolu_02")
+                        .name("image_generation")
+                        .output(TextBlock.builder().text("partial").build())
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
+                        .state(ToolResultState.RUNNING)
+                        .build();
+        Msg message =
+                AssistantMessage.builder()
+                        .name("assistant")
+                        .content(List.of(runningResult))
+                        .build();
+
+        Set<String> resultIds = MessageUtils.inlineServerToolResultIds(message);
+
+        assertEquals(Set.of(), resultIds);
     }
 
     @Test

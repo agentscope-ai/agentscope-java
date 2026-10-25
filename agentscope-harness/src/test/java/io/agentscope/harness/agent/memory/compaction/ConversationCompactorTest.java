@@ -20,8 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -29,14 +27,19 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -146,6 +149,68 @@ class ConversationCompactorTest {
         assertTrue(fixture.flushInputs.isEmpty());
     }
 
+    /**
+     * Verifies that when the safe cutoff is zero (nothing may be summarized) the lightweight
+     * prune/truncate result is still returned instead of being discarded.
+     */
+    @Test
+    void compactIfNeeded_returnsLightweightResultWhenCutoffIsZero() {
+        RecordingModel model = new RecordingModel();
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, new MemoryFlushManager(null, null));
+        List<Msg> input = List.of(message("hello"), toolResult("bash", "x".repeat(100_000)));
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerTokens(1)
+                        .keepTokens(1_000_000)
+                        .keepMessages(0)
+                        .flushBeforeCompact(false)
+                        .truncateArgs(null)
+                        .prune(
+                                CompactionConfig.PruneConfig.builder()
+                                        .protectTokens(0)
+                                        .minimumTokens(1)
+                                        .maxOutputChars(10)
+                                        .excludedTools(Set.of())
+                                        .build())
+                        .build();
+
+        Optional<List<Msg>> result =
+                compactor
+                        .compactIfNeeded(mock(RuntimeContext.class), input, config, "agent", "s")
+                        .block();
+
+        assertTrue(result.isPresent());
+        assertTrue(
+                TokenCounterUtil.calculateToken(result.orElseThrow())
+                        < TokenCounterUtil.calculateToken(input));
+    }
+
+    /** Verifies the empty result is preserved when the cutoff is zero and nothing changed. */
+    @Test
+    void compactIfNeeded_keepsEmptyWhenCutoffZeroAndNothingChanged() {
+        RecordingModel model = new RecordingModel();
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, new MemoryFlushManager(null, null));
+        List<Msg> input = List.of(message("M1"), message("M2"));
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerTokens(1)
+                        .keepTokens(1_000_000)
+                        .keepMessages(0)
+                        .flushBeforeCompact(false)
+                        .truncateArgs(null)
+                        .prune(null)
+                        .build();
+
+        Optional<List<Msg>> result =
+                compactor
+                        .compactIfNeeded(mock(RuntimeContext.class), input, config, "agent", "s")
+                        .block();
+
+        assertTrue(result.isEmpty());
+    }
+
     /** Verifies that memory-flush fallback does not swallow a user interruption. */
     @Test
     void compactIfNeeded_propagatesInterruptedMemoryFlush() {
@@ -159,38 +224,101 @@ class ConversationCompactorTest {
                         compactor.compactIfNeeded(
                                 mock(RuntimeContext.class),
                                 compactableMessages(),
-                                config(true, false),
+                                config(true),
                                 "agent-id",
                                 "session-id"))
                 .expectError(InterruptedException.class)
                 .verify();
     }
 
-    /** Verifies that message-offload fallback does not swallow a wrapped interruption. */
+    /** Verifies that the durable compaction end event contains before and after metrics. */
     @Test
-    void compactIfNeeded_propagatesInterruptedMessageOffload() {
-        RecordingModel model = new RecordingModel();
-        MemoryFlushManager flushManager = mock(MemoryFlushManager.class);
-        doThrow(
-                        new IllegalStateException(
-                                "offload wrapper",
-                                new InterruptedException("interrupted while offloading")))
-                .when(flushManager)
-                .offloadMessages(any(RuntimeContext.class), anyList(), anyString(), anyString());
-        ConversationCompactor compactor = new ConversationCompactor(model, flushManager);
+    void compactIfNeeded_recordsCompactionMetrics() {
+        InMemorySessionLogStore store = new InMemorySessionLogStore();
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder().userId("user").sessionId("session").build();
+        var log = store.open(new SessionKey("user", "agent-id", "session"), runtimeContext);
+        SessionRecorder recorder = new SessionRecorder(log, "turn");
+        runtimeContext.put(SessionRecorder.CONTEXT_KEY, recorder);
 
-        StepVerifier.create(
-                        compactor.compactIfNeeded(
-                                mock(RuntimeContext.class),
-                                compactableMessages(),
-                                config(false, true),
-                                "agent-id",
-                                "session-id"))
-                .expectErrorMatches(
-                        error ->
-                                error instanceof IllegalStateException
-                                        && error.getCause() instanceof InterruptedException)
-                .verify();
+        List<Msg> input = compactableMessages();
+        MemoryFlushManager flushManager = new MemoryFlushManager(null, null);
+        try {
+            List<Msg> compacted =
+                    new ConversationCompactor(new RecordingModel(), flushManager)
+                            .compactIfNeeded(
+                                    runtimeContext, input, config(false), "agent-id", "session")
+                            .block()
+                            .orElseThrow();
+
+            var end =
+                    log.readAfter(0, 100).stream()
+                            .filter(event -> event.type().equals("compaction/end"))
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals("completed", end.data().get("status"));
+            assertEquals(input.size(), end.data().get("beforeMsgCount"));
+            assertEquals(
+                    TokenCounterUtil.calculateToken(input), end.data().get("beforeTokenCount"));
+            assertEquals(compacted.size(), end.data().get("afterMsgCount"));
+            assertEquals(
+                    TokenCounterUtil.calculateToken(compacted), end.data().get("afterTokenCount"));
+        } finally {
+            recorder.close();
+        }
+    }
+
+    /** Verifies that failed compaction records only metrics known before execution. */
+    @Test
+    void compactIfNeeded_failedEventOmitsAfterMetrics() {
+        InMemorySessionLogStore store = new InMemorySessionLogStore();
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder().userId("user").sessionId("session").build();
+        var log = store.open(new SessionKey("user", "agent-id", "failed-session"), runtimeContext);
+        SessionRecorder recorder = new SessionRecorder(log, "turn");
+        runtimeContext.put(SessionRecorder.CONTEXT_KEY, recorder);
+        Model failingModel =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.error(new IllegalStateException("summary failed"));
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "failing-model";
+                    }
+                };
+
+        List<Msg> input = compactableMessages();
+        try {
+            StepVerifier.create(
+                            new ConversationCompactor(
+                                            failingModel, new MemoryFlushManager(null, null))
+                                    .compactIfNeeded(
+                                            runtimeContext,
+                                            input,
+                                            config(false),
+                                            "agent-id",
+                                            "failed-session"))
+                    .expectErrorMessage("summary failed")
+                    .verify();
+
+            var end =
+                    log.readAfter(0, 100).stream()
+                            .filter(event -> event.type().equals("compaction/end"))
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals("failed", end.data().get("status"));
+            assertEquals(input.size(), end.data().get("beforeMsgCount"));
+            assertEquals(
+                    TokenCounterUtil.calculateToken(input), end.data().get("beforeTokenCount"));
+            assertFalse(end.data().containsKey("afterMsgCount"));
+            assertFalse(end.data().containsKey("afterTokenCount"));
+        } finally {
+            recorder.close();
+        }
     }
 
     /** Creates a regular user message. */
@@ -198,6 +326,19 @@ class ConversationCompactorTest {
         return Msg.builder()
                 .role(MsgRole.USER)
                 .content(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    /** Creates a TOOL message carrying a single tool result. */
+    private static Msg toolResult(String name, String output) {
+        return Msg.builder()
+                .role(MsgRole.TOOL)
+                .content(
+                        ToolResultBlock.builder()
+                                .id("call-1")
+                                .name(name)
+                                .output(TextBlock.builder().text(output).build())
+                                .build())
                 .build();
     }
 
@@ -216,8 +357,7 @@ class ConversationCompactorTest {
     }
 
     /** Creates focused compaction configuration for fallback-boundary tests. */
-    private static CompactionConfig config(
-            boolean flushBeforeCompact, boolean offloadBeforeCompact) {
+    private static CompactionConfig config(boolean flushBeforeCompact) {
         return CompactionConfig.builder()
                 .triggerMessages(3)
                 .triggerTokens(0)
@@ -225,7 +365,6 @@ class ConversationCompactorTest {
                 .keepTokens(0)
                 .summaryPrompt("SUMMARY_INPUT:\n{messages}")
                 .flushBeforeCompact(flushBeforeCompact)
-                .offloadBeforeCompact(offloadBeforeCompact)
                 .truncateArgs(null)
                 .prune(null)
                 .build();
@@ -266,7 +405,7 @@ class ConversationCompactorTest {
                                 return Mono.empty();
                             });
             compactor = new ConversationCompactor(model, flushManager);
-            config = config(flushBeforeCompact, false);
+            config = config(flushBeforeCompact);
         }
 
         /** Runs compaction and requires the supplied input to trigger it. */
