@@ -90,8 +90,10 @@ class ChatSessionsTest {
             var session = sessions.session("conversation");
             var task = session.submit("read the reference");
             // A single streamed reply can exceed 15 seconds on Windows runners under -T1C
-            // contention (measured at 16.5s from submit to run/end in CI).
-            var done = session.await(task).block(Duration.ofSeconds(60));
+            // contention (measured at 16.5s from submit to run/end, later at 65s when one
+            // demo reasoning call alone was starved for 56.6s while sibling modules
+            // compiled — the turn then finished ~1s past the former 60s budget).
+            var done = session.await(task).block(Duration.ofSeconds(120));
             assertEquals("completed", done.status());
             assertEquals(
                     1,

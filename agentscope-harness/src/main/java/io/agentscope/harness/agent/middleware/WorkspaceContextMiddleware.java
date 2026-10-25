@@ -28,6 +28,10 @@ import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -202,7 +206,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void collectWorkspaceMaterials(RuntimeContext rc) {
-        String agentsContent = workspaceManager.readAgentsMd(rc).strip();
+        String agentsContent = composeAgentsContent(workspaceManager.readAgentsMd(rc));
         boolean includeMemoryContext = includeMemoryContext();
         String memoryContent =
                 includeMemoryContext ? workspaceManager.readMemoryMd(rc).strip() : "";
@@ -258,6 +262,38 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                         new ContextItem("knowledge", "workspace:knowledge", knowledgeBlock),
                         new ContextItem(
                                 "additional", "workspace:additional-files", additionalBlock)));
+    }
+
+    /** Head-truncation cap for AGENTS.md content, in UTF-8 bytes. */
+    private static final int MAX_AGENTS_MD_BYTES = 100 * 1024;
+
+    /**
+     * Caps the rule body at {@link #MAX_AGENTS_MD_BYTES} UTF-8 bytes and prefixes the
+     * applicability line so the note travels with the rules instead of a distant block.
+     */
+    private static String composeAgentsContent(String raw) {
+        String content = truncateUtf8(raw.strip(), MAX_AGENTS_MD_BYTES);
+        if (content.isEmpty()) {
+            return "";
+        }
+        return "AGENTS.md defines persona and local conventions — honor them when consistent"
+                + " with safety and policy.\n\n"
+                + content;
+    }
+
+    /**
+     * Head-truncates to {@code maxBytes} UTF-8 bytes and appends a visible truncation marker.
+     * Encodes into a fixed-size buffer; the encoder stops before a code point that no longer
+     * fits, so the head always decodes back without splitting a character.
+     */
+    private static String truncateUtf8(String content, int maxBytes) {
+        CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder();
+        ByteBuffer out = ByteBuffer.allocate(maxBytes);
+        if (encoder.encode(CharBuffer.wrap(content), out, true).isUnderflow()) {
+            return content;
+        }
+        return new String(out.array(), 0, out.position(), StandardCharsets.UTF_8)
+                + "\n\n[File truncated: AGENTS.md]";
     }
 
     /**
@@ -391,9 +427,6 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                     "Treat this directory as the single global workspace for file operations"
                             + " unless explicitly instructed otherwise.\n");
         }
-        sb.append(
-                "AGENTS.md defines persona and local conventions — honor them when consistent"
-                        + " with safety and policy.\n");
         if (artifactDeliveryEnabled
                 && fs instanceof AbstractSandboxFilesystem
                 && !(fs instanceof OverlayFilesystem)) {

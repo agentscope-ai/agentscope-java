@@ -21,8 +21,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -1666,6 +1671,7 @@ public sealed interface AguiEvent
      * Represents an interrupt that occurred during agent execution, requiring
      * user input to resolve before the agent can continue.
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     record Interrupt(
             String id,
             String reason,
@@ -1699,6 +1705,7 @@ public sealed interface AguiEvent
      * events for
      * incremental state updates.
      */
+    @JsonSerialize(using = JsonPatchOperation.JsonPatchOperationSerializer.class)
     record JsonPatchOperation(String op, String path, Object value, String from) {
 
         @JsonCreator
@@ -1743,6 +1750,44 @@ public sealed interface AguiEvent
          */
         public static JsonPatchOperation replace(String path, Object value) {
             return new JsonPatchOperation("replace", path, value, null);
+        }
+
+        /**
+         * Whether this operation carries a {@code value} member per RFC 6902.
+         *
+         * @return false for operations that do not define a value
+         */
+        private boolean includesValue() {
+            return !"remove".equals(op) && !"move".equals(op) && !"copy".equals(op);
+        }
+
+        /**
+         * Serializes a JSON Patch operation, omitting {@code value} for
+         * operations that do not define it and {@code from} when absent.
+         *
+         * <p>The {@code value} member is kept even when it is {@code null} for
+         * {@code add}, {@code replace} and {@code test} operations, as RFC 6902
+         * requires the member to be present.
+         */
+        public static final class JsonPatchOperationSerializer
+                extends JsonSerializer<JsonPatchOperation> {
+
+            @Override
+            public void serialize(
+                    JsonPatchOperation operation, JsonGenerator gen, SerializerProvider serializers)
+                    throws IOException {
+                gen.writeStartObject();
+                gen.writeStringField("op", operation.op());
+                gen.writeStringField("path", operation.path());
+                if (operation.includesValue()) {
+                    gen.writeFieldName("value");
+                    gen.writeObject(operation.value());
+                }
+                if (operation.from() != null) {
+                    gen.writeStringField("from", operation.from());
+                }
+                gen.writeEndObject();
+            }
         }
     }
 }

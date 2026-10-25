@@ -85,6 +85,14 @@ Pass a `usageListener` to `SimpleKnowledge.builder()` to receive each non-null e
 report. The listener runs on the embedding response thread and should be non-blocking and
 thread-safe; providers that omit usage do not invoke it.
 
+`OpenAITextEmbedding` lazily creates one SDK client and reuses it for all requests, including
+concurrent calls and retries. Reuse the model for the lifetime of your RAG service. After all
+embedding operations have completed, call `close()` (for example, from your application shutdown
+hook), or use try-with-resources for a scoped model. `SimpleKnowledge` does not close a shared
+embedding model for you. Closing an unused model does not create a client; a closed model cannot
+be used again. Subscribing to a closed model fails immediately without retrying, including when
+the Mono was created before the model was closed.
+
 ## Built-in vector stores
 
 | Implementation | Deployment |

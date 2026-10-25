@@ -171,7 +171,12 @@ public class FilesystemTool {
     public ToolResultBlock editFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File to edit") String path,
-            @ToolParam(name = "old_string", description = "Text to find") String oldString,
+            @ToolParam(
+                            name = "old_string",
+                            description =
+                                    "Text to find. Must match exactly once unless replace_all is"
+                                            + " true; otherwise the edit fails.")
+                    String oldString,
             @ToolParam(name = "new_string", description = "Replacement text") String newString,
             @ToolParam(
                             name = "replace_all",
@@ -206,7 +211,11 @@ public class FilesystemTool {
                     String path,
             @ToolParam(
                             name = "glob",
-                            description = "Optional file glob filter (e.g., *.java)",
+                            description =
+                                    "Optional file glob filter matched against the file name only"
+                                            + " (e.g., *.java). Path-based patterns such as"
+                                            + " **/*.java are not supported here; the search"
+                                            + " already recurses into subdirectories.",
                             required = false)
                     String glob,
             @ToolParam(
@@ -247,8 +256,10 @@ public class FilesystemTool {
             name = "glob_files",
             readOnly = true,
             description =
-                    "Find files matching a glob pattern. Returns at most 200 files by default to"
-                            + " keep tool output bounded.")
+                    "Find files by name using a glob pattern (e.g., **/*.java). Use this to locate"
+                            + " files by path/name; use grep_files instead to search file"
+                            + " contents. Returns at most 200 files by default to keep tool"
+                            + " output bounded.")
     public ToolResultBlock globFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Glob pattern (e.g., **/*.java)")
