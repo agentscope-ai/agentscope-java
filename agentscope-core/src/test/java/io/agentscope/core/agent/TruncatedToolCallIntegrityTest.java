@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -132,7 +133,10 @@ class TruncatedToolCallIntegrityTest {
             ToolResultBlock result = findToolResult(agent.getAgentState().getContext(), "trunc-1");
             assertNotNull(result, "an ERROR tool_result must pair the truncated tool_use");
             assertEquals(ToolResultState.ERROR, result.getState());
-            assertTrue(resultText(result).contains("not executed"));
+            String resultMessage = resultText(result);
+            assertTrue(resultMessage.contains("output token limit"));
+            assertTrue(resultMessage.contains("Do not repeat the same large arguments"));
+            assertTrue(resultMessage.contains("Split the work into smaller tool calls"));
 
             // The loop continued to a second model request (no auto-retry, but also no stall),
             // and that request carried the error result so the model can reissue the call.
@@ -216,7 +220,69 @@ class TruncatedToolCallIntegrityTest {
             assertEquals(ToolResultState.SUCCESS, findToolResult(history, "complete").getState());
             assertEquals(ToolResultState.SUCCESS, findToolResult(history, "input-only").getState());
             assertEquals(
-                    "length", history.get(0).getMetadata().get(MessageMetadataKeys.FINISH_REASON));
+                    Boolean.TRUE,
+                    history.get(0).getMetadata().get(MessageMetadataKeys.OUTPUT_LIMIT_REACHED));
+        }
+    }
+
+    @Test
+    void malformedArgumentsWithoutOutputLimitRequestJsonCorrection() {
+        AtomicInteger executions = new AtomicInteger();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(
+                tool(
+                        "write_text_file",
+                        p -> {
+                            executions.incrementAndGet();
+                            return Mono.just(ToolResultBlock.text("written"));
+                        }));
+
+        AtomicInteger round = new AtomicInteger();
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            if (round.getAndIncrement() == 0) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("invalid-1")
+                                                                        .name("write_text_file")
+                                                                        .content(
+                                                                                "{\"file_path\":"
+                                                                                    + "\"prefix\"}{\"file_path\":")
+                                                                        .build()))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("recovered")
+                                                                    .build()))
+                                            .build());
+                        });
+
+        try (ReActAgent agent =
+                ReActAgent.builder().name("test").model(model).toolkit(toolkit).build()) {
+            agent.call(List.of()).block(Duration.ofSeconds(5));
+
+            assertEquals(0, executions.get(), "malformed tool call must not reach the handler");
+            ToolResultBlock result =
+                    findToolResult(agent.getAgentState().getContext(), "invalid-1");
+            assertNotNull(result);
+            assertEquals(ToolResultState.ERROR, result.getState());
+            String resultMessage = resultText(result);
+            assertTrue(resultMessage.contains("not a valid JSON object"));
+            assertFalse(resultMessage.contains("output token limit"));
+            assertFalse(
+                    agent.getAgentState()
+                            .getContext()
+                            .get(0)
+                            .getMetadata()
+                            .containsKey(MessageMetadataKeys.OUTPUT_LIMIT_REACHED));
         }
     }
 
