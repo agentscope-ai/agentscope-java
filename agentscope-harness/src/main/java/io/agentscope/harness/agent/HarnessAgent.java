@@ -1460,7 +1460,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
         CapabilityResolver capabilityResolver;
         final List<String> additionalContextFiles = new ArrayList<>();
         int maxContextTokens = 8000;
-        boolean useLegacyXmlWorkspaceContext = false;
 
         ArtifactDeliveryTarget artifactDeliveryTarget;
         boolean disableFilesystemTools = false;
@@ -2353,9 +2352,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Switches workspace context rendering between markdown (default) and legacy XML style. */
+        /** The legacy XML rendering of workspace context has been removed; the current format is the only mode.
+         * @deprecated No configuration is required; the legacy XML rendering no longer exists.
+         */
+        @Deprecated
         public Builder useLegacyXmlWorkspaceContext(boolean enabled) {
-            this.useLegacyXmlWorkspaceContext = enabled;
             return this;
         }
 

@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.event;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -600,13 +601,60 @@ class AguiEventTest {
         }
 
         @Test
-        void testRemoveOperation() {
+        void testRemoveOperation() throws JsonProcessingException {
             AguiEvent.JsonPatchOperation op = AguiEvent.JsonPatchOperation.remove("/path");
 
             assertEquals("remove", op.op());
             assertEquals("/path", op.path());
             assertNull(op.value());
             assertNull(op.from());
+
+            String json = JsonUtils.getJsonCodec().toJson(op);
+            assertFalse(json.contains("value"), json);
+            assertFalse(json.contains("from"), json);
+        }
+
+        @Test
+        void testAddNullValueKeepsValueField() throws JsonProcessingException {
+            AguiEvent.JsonPatchOperation op = AguiEvent.JsonPatchOperation.add("/path", null);
+
+            String json = JsonUtils.getJsonCodec().toJson(op);
+
+            assertTrue(json.contains("\"value\":null"), json);
+            assertFalse(json.contains("\"from\""), json);
+        }
+
+        @Test
+        void testReplaceNullValueKeepsValueField() throws JsonProcessingException {
+            AguiEvent.JsonPatchOperation op = AguiEvent.JsonPatchOperation.replace("/path", null);
+
+            String json = JsonUtils.getJsonCodec().toJson(op);
+
+            assertTrue(json.contains("\"value\":null"), json);
+            assertFalse(json.contains("\"from\""), json);
+        }
+
+        @Test
+        void testMoveOperationOmitsValueAndKeepsFrom() throws JsonProcessingException {
+            AguiEvent.JsonPatchOperation op =
+                    new AguiEvent.JsonPatchOperation("move", "/to", null, "/from");
+
+            String json = JsonUtils.getJsonCodec().toJson(op);
+
+            assertFalse(json.contains("\"value\""), json);
+            assertTrue(json.contains("\"from\":\"/from\""), json);
+        }
+
+        @Test
+        void testAddNullValueDeserializes() throws JsonProcessingException {
+            String json = "{\"op\":\"add\",\"path\":\"/path\",\"value\":null}";
+
+            AguiEvent.JsonPatchOperation op =
+                    JsonUtils.getJsonCodec().fromJson(json, AguiEvent.JsonPatchOperation.class);
+
+            assertEquals("add", op.op());
+            assertEquals("/path", op.path());
+            assertNull(op.value());
         }
 
         @Test
@@ -1219,7 +1267,7 @@ class AguiEventTest {
                             "approval_required",
                             "Please approve",
                             "tc-1",
-                            Map.of("type", "object"),
+                            null,
                             null,
                             null);
             AguiEvent.RunFinished event =
@@ -1232,6 +1280,39 @@ class AguiEventTest {
             assertTrue(json.contains("\"type\":\"RUN_FINISHED\""));
             assertTrue(json.contains("\"outcome\""));
             assertTrue(json.contains("\"interrupts\""));
+            assertTrue(json.contains("\"id\":\"int-1\""));
+            assertTrue(json.contains("\"reason\":\"approval_required\""));
+            assertTrue(json.contains("\"message\":\"Please approve\""));
+            assertTrue(json.contains("\"toolCallId\":\"tc-1\""));
+            assertFalse(json.contains("expiresAt"), json);
+            assertFalse(json.contains("metadata"), json);
+            assertFalse(json.contains("responseSchema"), json);
+        }
+
+        @Test
+        void testJsonSerializationKeepsNonEmptyResponseSchema() throws Exception {
+            AguiEvent.Interrupt interrupt =
+                    new AguiEvent.Interrupt(
+                            "int-1",
+                            "approval_required",
+                            "Please approve",
+                            "tc-1",
+                            Map.of("type", "object"),
+                            null,
+                            null);
+            AguiEvent.RunFinished event =
+                    new AguiEvent.RunFinished(
+                            "t1",
+                            "r1",
+                            null,
+                            new AguiEvent.RunFinishedInterruptOutcome(List.of(interrupt)));
+
+            String json = JsonUtils.getJsonCodec().toJson(event);
+
+            assertTrue(json.contains("\"responseSchema\""), json);
+            assertTrue(json.contains("\"type\":\"object\""), json);
+            assertFalse(json.contains("expiresAt"), json);
+            assertFalse(json.contains("metadata"), json);
         }
     }
 

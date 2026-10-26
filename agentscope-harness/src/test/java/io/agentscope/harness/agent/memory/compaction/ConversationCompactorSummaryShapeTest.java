@@ -179,6 +179,12 @@ class ConversationCompactorSummaryShapeTest {
             assertTrue(prompt.contains(section), "missing section: " + section);
         }
         assertTrue(prompt.contains("Preserve verbatim"), "verbatim preservation rule");
+        assertTrue(
+                prompt.contains("Still-active user constraints"),
+                "still-active user constraints kept in their own wording");
+        assertTrue(
+                prompt.contains("Mark superseded decisions as superseded"),
+                "superseded decisions must be marked");
         assertTrue(prompt.contains("merge it with the new material"), "re-compaction merge rule");
         assertTrue(prompt.contains("Do NOT mention this summarization"), "secrecy rule");
         assertTrue(prompt.contains("{messages}"), "custom-prompt placeholder contract");

@@ -73,9 +73,11 @@ class SubagentPendingToolRecoveryTest {
             RuntimeContext.builder().userId("user").sessionId("child-session").build();
     // One child call serializes ~30 SQLite journal commits (connection-per-op, DELETE journal,
     // synchronous=EXTRA). Windows CI's parallel builds plus real-time AV scans of the fresh
-    // -journal files can stall those fsyncs past 10s — the same budget as SQLite's own busy
-    // timeout, leaving no headroom. 30s keeps the guards intact with CI-grade headroom.
-    private static final Duration TIMEOUT = Duration.ofSeconds(30);
+    // -journal files can stall those fsyncs for tens of seconds — a 2026-10-23 run (PR #3731)
+    // blew past the former 30s guard with escalating per-iteration times (3.6s/10.1s/30.7s).
+    // 60s is ~2x the worst observed call; the healthy path stays sub-second and the guard
+    // against real hangs remains.
+    private static final Duration TIMEOUT = Duration.ofSeconds(60);
 
     @TempDir Path workspace;
 
