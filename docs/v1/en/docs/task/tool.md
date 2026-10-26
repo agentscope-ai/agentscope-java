@@ -1,5 +1,6 @@
 ---
 title: Tool System
+zh_link: /v1/zh/docs/task/tool
 ---
 
 The tool system enables agents to perform external operations such as API calls, database queries, file operations, etc.

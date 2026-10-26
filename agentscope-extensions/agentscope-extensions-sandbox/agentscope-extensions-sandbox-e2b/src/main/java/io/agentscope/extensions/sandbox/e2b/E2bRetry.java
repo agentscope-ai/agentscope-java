@@ -51,11 +51,11 @@ final class E2bRetry {
     }
 
     private static boolean retryable(Exception e) {
-        String m = e.getMessage() != null ? e.getMessage() : "";
-        return m.contains("HTTP 408")
-                || m.contains("HTTP 429")
-                || m.contains("HTTP 502")
-                || m.contains("HTTP 503");
+        if (e instanceof E2bPlatformHttp.PlatformHttpException platformException) {
+            int statusCode = platformException.statusCode();
+            return statusCode == 408 || statusCode == 429 || statusCode == 502 || statusCode == 503;
+        }
+        return false;
     }
 
     private static void sleepBackoff(int attempt) {

@@ -1,5 +1,6 @@
 ---
 title: Simple
+en_link: /v2/en/integration/rag/simple
 ---
 
 `agentscope-extensions-rag-simple` 提供一个"自己掌控全部链路"的 RAG 实现：自带文档读取器、分块策略、Embedding 模型适配、以及 5 个开箱即用的向量库适配器。
@@ -76,6 +77,18 @@ List<Document> hits = knowledge.retrieve(
 | `OllamaTextEmbedding` | Ollama 本地 | 文本 |
 
 也可以实现 `EmbeddingModel` 自行扩展。
+
+`EmbeddingModel.embed(ContentBlock)` 返回 `Mono<EmbeddingResponse>`；响应中包含向量，并在
+提供方返回用量时附带 `EmbeddingUsage` 的 token 统计。
+
+可以向 `SimpleKnowledge.builder()` 传入 `usageListener`，接收每一次非空的 embedding 用量。
+监听器会在 embedding 响应线程上执行，应保持非阻塞且线程安全；提供方未返回用量时不会触发。
+
+`OpenAITextEmbedding` 首次使用时创建一个 SDK 客户端，后续请求、并发调用和重试均复用该客户端。
+建议在 RAG 服务的整个生命周期内复用模型，等所有 embedding 操作完成后调用 `close()`
+（例如在应用关闭钩子中），短期使用也可以采用 try-with-resources。`SimpleKnowledge` 不会代为关闭
+共享的 embedding 模型。关闭未使用的模型不会创建客户端；模型关闭后不能再次使用。
+关闭后订阅会立即失败，不进入重试流程；关闭前创建、关闭后才订阅的 Mono 也遵循这一规则。
 
 ## 内置向量库适配
 

@@ -89,12 +89,31 @@ public @interface Tool {
     /**
      * Whether to enable strict schema mode for this tool.
      *
-     * <p>When enabled, compatible model providers can enforce stronger adherence to the declared
-     * JSON schema for tool arguments.
+     * <p>When enabled, the framework recursively injects {@code additionalProperties: false}
+     * into all object types in the generated schema, so that tool-argument validation rejects
+     * parameters not declared in the schema on any model provider, and the schema satisfies
+     * OpenAI's strict mode (which rejects schemas without it with 400 Bad Request). Compatible
+     * model providers additionally enforce stronger adherence to the declared JSON schema for
+     * tool arguments.
+     *
+     * <p>For finer-grained, per-node control of the {@code additionalProperties} keyword, provide
+     * a hand-written schema via {@link SchemaOnlyTool} or a custom {@link AgentTool} instead.
      *
      * @return true to enable strict mode for this tool
      */
     boolean strict() default false;
+
+    /**
+     * Whether to defer loading this tool's full definition until the model needs it.
+     *
+     * <p>This is a per-tool hint for providers that support deferred tool loading (such as the
+     * OpenAI Responses {@code tool_search} server tool). The tool name and description remain
+     * visible to the model, while the parameter schema is loaded only after a tool search.
+     * Providers without deferred loading support ignore this flag.
+     *
+     * @return true to defer this tool's schema until tool search loads it
+     */
+    boolean deferLoading() default false;
 
     /**
      * Whether the tool only reads data without observable side effects.

@@ -17,6 +17,7 @@ package io.agentscope.core.agent.accumulator;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -472,5 +473,82 @@ class ToolCallsAccumulatorTest {
         assertEquals(1, result.size());
         assertEquals("a.md", result.get(0).getInput().get("file_path"));
         assertEquals("hello", result.get(0).getInput().get("content"));
+    }
+
+    @Test
+    @DisplayName("Should mark truncated raw arguments as malformed")
+    void testInterruptedStreamingMarksMalformedArguments() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("write_text_file")
+                        .content("{\"file_path\": \"src/Main.ja")
+                        .build());
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        ToolUseBlock toolCall = result.get(0);
+
+        assertEquals("{}", toolCall.getContent());
+        assertTrue(
+                toolCall.hasMalformedArguments(),
+                "truncated arguments must carry the malformed marker");
+        assertTrue(
+                Boolean.TRUE.equals(
+                        toolCall.getMetadata().get(ToolUseBlock.METADATA_MALFORMED_ARGUMENTS)));
+    }
+
+    @Test
+    @DisplayName("Should not mark complete raw arguments as malformed")
+    void testCompleteArgumentsNotMarkedMalformed() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("write_text_file")
+                        .content("{\"file_path\": \"a.md\"}")
+                        .build());
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        assertFalse(result.get(0).hasMalformedArguments());
+    }
+
+    @Test
+    @DisplayName("Should not mark calls whose arguments arrive only via input merge")
+    void testInputOnlyChunksNotMarkedMalformed() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("weather")
+                        .input(Map.of("city", "Tokyo"))
+                        .build());
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        assertFalse(result.get(0).hasMalformedArguments());
+    }
+
+    @Test
+    @DisplayName("Should keep prior metadata when marking malformed arguments")
+    void testExistingMetadataPreservedWhenMarkingMalformed() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, "sig".getBytes());
+
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("tool")
+                        .metadata(metadata)
+                        .content("{\"partial\":")
+                        .build());
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        ToolUseBlock toolCall = result.get(0);
+
+        assertTrue(toolCall.hasMalformedArguments());
+        assertArrayEquals(
+                "sig".getBytes(),
+                (byte[]) toolCall.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
     }
 }

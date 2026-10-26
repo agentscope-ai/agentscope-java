@@ -16,6 +16,7 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
@@ -55,6 +56,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         Map<String, Object> args = new HashMap<>();
         StringBuilder rawContent = new StringBuilder();
         Map<String, Object> metadata = new HashMap<>();
+        ToolCallState state;
 
         void merge(ToolUseBlock block) {
             // Update ID if present
@@ -88,9 +90,15 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             if (block.getMetadata() != null && !block.getMetadata().isEmpty()) {
                 this.metadata.putAll(block.getMetadata());
             }
+
+            this.state = block.getState();
         }
 
         ToolUseBlock build() {
+            return build(false);
+        }
+
+        ToolUseBlock build(boolean truncated) {
             Map<String, Object> finalArgs = new HashMap<>(args);
             String rawContentStr = this.rawContent.toString();
 
@@ -120,14 +128,28 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
             // Always validate rawContent is a legal JSON object before using it
             // as content. This prevents persisting malformed JSON fragments
-            // (e.g. when streaming was interrupted mid-arguments).
+            // (e.g. when streaming was interrupted mid-arguments). Non-empty but
+            // invalid raw content means the arguments were truncated or corrupt;
+            // the fact is preserved as a metadata marker so the acting phase can
+            // refuse execution instead of silently running the call with {}.
             String contentStr;
+            Map<String, Object> finalMetadata = metadata;
+            boolean malformed;
             if (rawContentStr.isEmpty()) {
                 contentStr = "{}";
+                // Without a completed block or any parsed arguments, an output-limit stop
+                // cannot establish that an empty tool-call start was a complete no-arg call.
+                malformed = truncated && finalArgs.isEmpty();
             } else if (JsonUtils.isValidJsonObject(rawContentStr)) {
                 contentStr = rawContentStr;
+                malformed = false;
             } else {
                 contentStr = "{}";
+                malformed = true;
+            }
+            if (malformed) {
+                finalMetadata = new HashMap<>(metadata);
+                finalMetadata.put(ToolUseBlock.METADATA_MALFORMED_ARGUMENTS, true);
             }
 
             return ToolUseBlock.builder()
@@ -135,7 +157,8 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .name(name)
                     .input(finalArgs)
                     .content(contentStr)
-                    .metadata(metadata.isEmpty() ? null : metadata)
+                    .metadata(finalMetadata.isEmpty() ? null : finalMetadata)
+                    .state(state)
                     .build();
         }
 
@@ -246,7 +269,12 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      * @return List of tool calls
      */
     public List<ToolUseBlock> buildAllToolCalls() {
-        return builders.values().stream().map(ToolCallBuilder::build).collect(Collectors.toList());
+        return buildAllToolCalls(false);
+    }
+
+    /** Builds calls, rejecting ambiguous empty starts when output stopped at its token limit. */
+    public List<ToolUseBlock> buildAllToolCalls(boolean truncated) {
+        return builders.values().stream().map(b -> b.build(truncated)).collect(Collectors.toList());
     }
 
     /**

@@ -20,6 +20,7 @@ import { authHeaders, readApiError } from './http';
 export interface ManagedSession {
   id: string;
   ownerId?: string;
+  runtimeKind?: string;
   agentId: string;
   agentOwnerId?: string;
   agentVersion?: number | null;
@@ -92,13 +93,13 @@ export function agentTaskDetailPath(ref: AgentTaskSessionRef): string {
 
 
 export async function createManagedSession(req: CreateManagedSessionRequest): Promise<ManagedSession> {
-  const res = await fetch('/api/sessions', {
+  const res = await fetch('/api/v1/agent-sessions', {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { ...authHeaders(), 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify(req),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to create session');
-  return res.json();
+  return normalizeManagedSession(await res.json() as ManagedSession);
 }
 
 export async function listManagedSessions(
@@ -110,55 +111,66 @@ export async function listManagedSessions(
   if (status && status !== 'active') params.set('status', status);
   // Always send status=active explicitly for clarity when listing active; server defaults match.
   if (status === 'active') params.set('status', 'active');
-  const qs = params.toString() ? `?${params.toString()}` : '';
-  const res = await fetch(`/api/sessions${qs}`, { headers: authHeaders() });
-  if (!res.ok) throw await readApiError(res, 'Failed to list sessions');
-  return res.json();
+  const sessions: ManagedSession[] = [];
+  let offset: number | null = 0;
+  while (offset !== null) {
+    params.set('offset', String(offset));
+    const res = await fetch(`/api/v1/agent-sessions?${params}`, { headers: authHeaders() });
+    if (!res.ok) throw await readApiError(res, 'Failed to list sessions');
+    const page = await res.json() as { items: ManagedSession[]; next_offset?: number | null };
+    sessions.push(...page.items.map(normalizeManagedSession));
+    offset = page.next_offset ?? null;
+  }
+  return sessions.filter(session => !session.runtimeKind || session.runtimeKind === 'managed');
 }
 
 export async function getManagedSession(id: string): Promise<ManagedSession> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { headers: authHeaders() });
+  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}`, { headers: authHeaders() });
   if (!res.ok) throw await readApiError(res, 'Failed to load session');
-  return res.json();
+  return normalizeManagedSession(await res.json() as ManagedSession);
 }
 
 export async function updateManagedSession(
   id: string,
   req: UpdateManagedSessionRequest,
 ): Promise<ManagedSession> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify(req),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to update session');
-  return res.json();
+  return normalizeManagedSession(await res.json() as ManagedSession);
 }
 
 export async function archiveManagedSession(id: string): Promise<ManagedSession> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/archive`, {
+  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}/archive`, {
     method: 'POST',
     headers: authHeaders(),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to archive session');
-  return res.json();
+  return normalizeManagedSession(await res.json() as ManagedSession);
 }
 
 export async function restoreManagedSession(id: string): Promise<ManagedSession> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/restore`, {
+  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}/restore`, {
     method: 'POST',
     headers: authHeaders(),
   });
   if (!res.ok) throw await readApiError(res, 'Failed to restore session');
-  return res.json();
+  return normalizeManagedSession(await res.json() as ManagedSession);
 }
 
 export async function deleteManagedSession(id: string): Promise<void> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+  const res = await fetch(`/api/v1/agent-sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     headers: authHeaders(),
   });
   if (!res.ok && res.status !== 204) throw await readApiError(res, 'Failed to delete session');
+}
+
+export function normalizeManagedSession(value: ManagedSession): ManagedSession {
+  return { ...value, createdAt: typeof value.createdAt === 'string' ? Date.parse(value.createdAt) : value.createdAt, updatedAt: typeof value.updatedAt === 'string' ? Date.parse(value.updatedAt) : value.updatedAt };
 }
 
 export async function postEvents(sessionId: string, events: InboundEvent[]): Promise<SessionEvent[]> {

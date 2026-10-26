@@ -16,6 +16,7 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
 import java.util.HashMap;
@@ -36,6 +37,21 @@ public final class ToolUseBlock extends ContentBlock {
     /** Metadata key for Gemini thought signature (byte[] value). */
     public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
 
+    /**
+     * Metadata key marking this tool call as a provider server tool (Boolean value). Server tools
+     * (e.g. Anthropic's built-in web_search) are executed on the provider's infrastructure and
+     * must not be dispatched to the local toolkit; their results arrive in the same assistant
+     * message as {@link ToolResultBlock}s carrying the same marker.
+     */
+    public static final String METADATA_SERVER_TOOL = "serverTool";
+
+    /**
+     * Metadata key marking a streamed tool call whose accumulated raw arguments never formed a
+     * valid JSON object (Boolean value) — typically truncated by the output token limit. Such a
+     * call must not be executed with empty arguments.
+     */
+    public static final String METADATA_MALFORMED_ARGUMENTS = "malformedArguments";
+
     private final String id;
     private final String name;
     private final Map<String, Object> input;
@@ -44,7 +60,7 @@ public final class ToolUseBlock extends ContentBlock {
     private final ToolCallState state;
 
     /**
-     * Creates a new tool use block for JSON deserialization.
+     * Creates a new tool use block with metadata (convenience constructor).
      *
      * @param id Unique identifier for this tool call
      * @param name Name of the tool to execute
@@ -173,6 +189,28 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public ToolCallState getState() {
         return state;
+    }
+
+    /**
+     * Checks whether this tool call is executed by the provider on the server side (marked via
+     * {@link #METADATA_SERVER_TOOL}).
+     *
+     * @return true if this is a server-side tool call
+     */
+    @JsonIgnore
+    public boolean isServerTool() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_SERVER_TOOL));
+    }
+
+    /**
+     * Checks whether this tool call's streamed arguments never formed a valid JSON object
+     * (marked via {@link #METADATA_MALFORMED_ARGUMENTS}), e.g. truncated mid-arguments.
+     *
+     * @return true if the accumulated arguments were malformed
+     */
+    @JsonIgnore
+    public boolean hasMalformedArguments() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_MALFORMED_ARGUMENTS));
     }
 
     /**

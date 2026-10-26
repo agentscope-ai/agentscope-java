@@ -1,5 +1,6 @@
 ---
 title: DashScope
+en_link: /v2/en/integration/model/dashscope
 ---
 
 `agentscope-extensions-model-dashscope` 接入阿里云 DashScope Qwen Model，包括多模态和推理能力的 Qwen 模型。

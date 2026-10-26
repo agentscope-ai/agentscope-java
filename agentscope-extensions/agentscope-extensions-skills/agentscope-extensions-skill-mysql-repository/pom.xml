@@ -28,7 +28,7 @@
 
     <artifactId>agentscope-extensions-skill-mysql-repository</artifactId>
     <name>AgentScope Java - Extensions - Skill MySQL</name>
-    <description>AgentScope Extensions - MySQL Skill Storage</description>
+    <description>DEPRECATED: use agentscope-extensions-jdbc (JdbcAgentSkillRepository) instead — AgentScope Extensions - MySQL Skill Storage</description>
 
     <dependencies>
         <dependency>

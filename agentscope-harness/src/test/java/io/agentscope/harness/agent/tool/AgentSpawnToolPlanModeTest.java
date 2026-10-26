@@ -15,11 +15,13 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -64,7 +66,10 @@ class AgentSpawnToolPlanModeTest {
         String childSessionId =
                 "sub-"
                         + AgentSpawnTool.deterministicHash(
-                                fixture.context().getSessionId(), "worker", "persistent-worker");
+                                fixture.context().getUserId(),
+                                fixture.context().getSessionId(),
+                                "worker",
+                                "persistent-worker");
         assertFalse(reused.isPlanModeActive(fixture.context().getUserId(), childSessionId));
 
         fixture.parentState().getPlanModeContext().setPlanActive(true);
@@ -89,16 +94,18 @@ class AgentSpawnToolPlanModeTest {
         Fixture fixture = fixture();
 
         String spawnResult =
-                fixture.tool()
-                        .agentSpawn(
-                                fixture.context(),
-                                fixture.parentState(),
-                                "worker",
-                                null,
-                                "persistent-worker",
-                                null,
-                                null)
-                        .block();
+                assertText(
+                        fixture.tool()
+                                .agentSpawn(
+                                        fixture.context(),
+                                        fixture.parentState(),
+                                        "worker",
+                                        null,
+                                        "persistent-worker",
+                                        null,
+                                        null)
+                                .block(),
+                        ToolResultState.SUCCESS);
         HarnessAgent reused = createdAgents.get(0);
         String key = firstLineValue(spawnResult, "agent_key: ");
         String childSessionId = firstLineValue(spawnResult, "session_id: ");

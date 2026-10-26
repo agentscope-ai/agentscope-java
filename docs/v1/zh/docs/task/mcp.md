@@ -1,5 +1,6 @@
 ---
 title: MCP
+en_link: /v1/en/docs/task/mcp
 ---
 
 AgentScope Java 提供对 MCP (Model Context Protocol) 的完整支持，使智能体能够连接到外部工具服务器并使用 MCP 生态系统中的工具。

@@ -18,6 +18,30 @@ import { expect, it } from 'vitest';
 import { presentEvent } from './eventPresentation';
 import { runtimeEventsToConversation } from './adapters';
 
+it('labels verification as a versioned historical check rather than task completion', () => {
+  const info = presentEvent({ id: 'check', type: 'span.task_verification', category: 'other', payload: {
+    verification_id: 'v1', requirement_id: 'r1', action_id: 'a1', outcome: 'PASSED',
+    evidence_binding: { taskId: 't1', contractVersion: 3, subjectVersion: 'hash1' },
+  } });
+  expect(info.title).toBe('Acceptance check recorded');
+  expect(info.description).toContain('may become stale');
+  expect(info.relations).toEqual(expect.arrayContaining([
+    expect.objectContaining({ label: 'Checked version', value: 'hash1' }),
+    expect.objectContaining({ label: 'Recorded outcome', value: 'PASSED' }),
+  ]));
+});
+
+it('shows action facts without promoting them to task verification', () => {
+  const info = presentEvent({ id: 'action', type: 'span.action_observation', category: 'other', payload: {
+    action_id: 'a1', tool_call_id: 'call1', status: 'RETURNED',
+    execution_details: { kind: 'shell', outcome: 'SUCCEEDED', exitCode: 0, outputTruncated: true },
+  } });
+  expect(info.title).toBe('Action recorded');
+  expect(info.relations).toEqual(expect.arrayContaining([
+    expect.objectContaining({ label: 'Exit code', value: '0' }),
+  ]));
+});
+
 it('explains managed provenance and hides absent task identities', () => {
   const [event] = runtimeEventsToConversation([{ seq: 3, eventType: 'span.model_request_start', frameworkMeta: {
     managedEventId: 'evt-origin', managedSeq: 2, sourceKey: 'managed:evt-origin', turnId: '', attemptId: '', agentTaskId: '', dispatchGeneration: 0,

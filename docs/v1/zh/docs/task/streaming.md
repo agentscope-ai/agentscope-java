@@ -1,5 +1,6 @@
 ---
 title: 流式输出
+en_link: /v1/en/docs/task/streaming
 ---
 
 `Agent.stream()` 返回一条 `Flux<Event>` 响应式事件流，让调用方可以**实时**看到每一步推理、工具结果和最终回复，而不必等 `call()` 返回整体 `Msg`。

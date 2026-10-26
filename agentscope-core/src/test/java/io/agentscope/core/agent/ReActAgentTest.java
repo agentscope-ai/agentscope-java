@@ -15,11 +15,14 @@
  */
 package io.agentscope.core.agent;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -51,6 +54,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.BeforeEach;
@@ -110,6 +114,55 @@ class ReActAgentTest {
         // Verify memory is initially empty
         assertTrue(
                 agent.getAgentState().getContext().isEmpty(), "Memory should be empty initially");
+    }
+
+    @Test
+    @DisplayName(
+            "Explicit agent id is trimmed and used, blank falls back to UUID, invalid rejected")
+    void testAgentIdOverride() {
+        ReActAgent explicit =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .agentId("custom-agent-id")
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .build();
+        assertEquals("custom-agent-id", explicit.getAgentId(), "Explicit agent id should be used");
+
+        ReActAgent padded =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .agentId("  padded-agent-id  ")
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .build();
+        assertEquals(
+                "padded-agent-id",
+                padded.getAgentId(),
+                "Whitespace-padded agent id should be trimmed");
+
+        ReActAgent blank =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .agentId("   ")
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .build();
+        assertNotEquals("   ", blank.getAgentId(), "Blank agent id should not be used as-is");
+        assertDoesNotThrow(
+                () -> UUID.fromString(blank.getAgentId()),
+                "Blank agent id should fall back to a generated UUID");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        ReActAgent.builder()
+                                .name(TestConstants.TEST_REACT_AGENT_NAME)
+                                .agentId("../other-agent")
+                                .model(mockModel)
+                                .toolkit(mockToolkit)
+                                .build(),
+                "Agent id with path traversal characters should be rejected");
     }
 
     @Test
@@ -803,18 +856,12 @@ class ReActAgentTest {
     @Test
     @DisplayName("Should have interrupt API methods")
     void testInterruptAfterToolCompletion() {
-        // ReActAgent routes interrupts to the active session's per-session InterruptControl
-        // (on its AgentState) rather than a shared instance flag, so concurrent sessions are
-        // isolated.
-        assertFalse(
-                agent.getAgentState().interruptControl().isInterrupted(),
-                "Session should not be interrupted initially");
-
-        // Test interrupt() method
+        // An idle-session interrupt must not poison the next execution.
         agent.interrupt();
-        assertTrue(
-                agent.getAgentState().interruptControl().isInterrupted(),
-                "Session interrupt control should be set");
+        Msg reply = agent.call(TestUtils.createUserMessage("User", "hello")).block();
+        assertNotNull(reply);
+        assertNotEquals(
+                io.agentscope.core.message.GenerateReason.INTERRUPTED, reply.getGenerateReason());
     }
 
     @Test
@@ -822,15 +869,11 @@ class ReActAgentTest {
     void testInterruptRecoveryMessage() {
         Msg interruptMsg = TestUtils.createUserMessage("User", "Stop processing");
 
-        // Test interrupt(Msg) method: routed to the active session's InterruptControl
         agent.interrupt(interruptMsg);
-        assertTrue(
-                agent.getAgentState().interruptControl().isInterrupted(),
-                "Session interrupt control should be set");
-        assertEquals(
-                interruptMsg,
-                agent.getAgentState().interruptControl().getUserMessage(),
-                "User message should be stored on the session interrupt control");
+        Msg reply = agent.call(TestUtils.createUserMessage("User", "hello")).block();
+        assertNotNull(reply);
+        assertNotEquals(
+                io.agentscope.core.message.GenerateReason.INTERRUPTED, reply.getGenerateReason());
     }
 
     @Test

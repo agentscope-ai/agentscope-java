@@ -21,6 +21,7 @@ import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -28,6 +29,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Reasoning context that manages all state and content accumulation for a single reasoning round.
@@ -49,8 +51,9 @@ public class ReasoningContext {
     private final TextAccumulator textAcc = new TextAccumulator();
     private final ThinkingAccumulator thinkingAcc = new ThinkingAccumulator();
     private final ToolCallsAccumulator toolCallsAcc = new ToolCallsAccumulator();
+    private final ServerToolResultAccumulator serverToolResults = new ServerToolResultAccumulator();
 
-    private final List<Msg> allStreamedChunks = new ArrayList<>();
+    private String finishReason;
 
     // ChatUsage
     private int inputTokens = 0;
@@ -62,7 +65,6 @@ public class ReasoningContext {
     private double time = 0;
 
     // Provider-specific response metadata to propagate to the final message
-    // (e.g. openai.reasoning.encrypted_content for reasoning replay)
     private final Map<String, Object> responseMetadata = new HashMap<>();
 
     public ReasoningContext(String agentName) {
@@ -85,6 +87,9 @@ public class ReasoningContext {
      */
     public List<Msg> processChunk(ChatResponse chunk) {
         this.messageId = chunk.getId();
+        if (chunk.getFinishReason() != null) {
+            finishReason = chunk.getFinishReason();
+        }
 
         // Accumulate ChatUsage
         ChatUsage usage = chunk.getUsage();
@@ -112,7 +117,6 @@ public class ReasoningContext {
                 // Emit text block immediately
                 Msg msg = buildChunkMsg(tb);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
 
             } else if (block instanceof ThinkingBlock tb) {
                 thinkingAcc.add(tb);
@@ -120,7 +124,6 @@ public class ReasoningContext {
                 // Emit thinking block immediately
                 Msg msg = buildChunkMsg(tb);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
 
             } else if (block instanceof ToolUseBlock tub) {
                 // Accumulate tool calls and emit immediately for real-time streaming
@@ -134,7 +137,14 @@ public class ReasoningContext {
                 ToolUseBlock outputBlock = enrichToolUseBlockWithId(tub);
                 Msg msg = buildChunkMsg(outputBlock);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
+
+            } else if (block instanceof ToolResultBlock trb && trb.isServerTool()) {
+                // Server tool results arrive as part of the assistant response; keep them so
+                // they end up in the final message and can be echoed back on later turns.
+                serverToolResults.add(trb);
+
+                Msg msg = buildChunkMsg(trb);
+                streamingMsgs.add(msg);
             }
         }
 
@@ -172,9 +182,10 @@ public class ReasoningContext {
             blocks.add(textAcc.buildAggregated());
         }
 
-        // Add all tool calls
-        List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
-        blocks.addAll(toolCalls);
+        // Add all tool calls, placing server tool results right after their calls
+        boolean outputLimitReached = isTruncated();
+        List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls(outputLimitReached);
+        blocks.addAll(serverToolResults.placeAfterToolCalls(toolCalls));
 
         // If no content at all, return null
         if (blocks.isEmpty()) {
@@ -183,6 +194,9 @@ public class ReasoningContext {
 
         // Build metadata: start with propagated response metadata, then add ChatUsage
         Map<String, Object> metadata = new HashMap<>(responseMetadata);
+        if (outputLimitReached) {
+            metadata.put(MessageMetadataKeys.OUTPUT_LIMIT_REACHED, true);
+        }
         ChatUsage chatUsage = null;
         if (inputTokens > 0 || outputTokens > 0 || time > 0) {
             chatUsage =
@@ -205,6 +219,23 @@ public class ReasoningContext {
                 .metadata(metadata)
                 .usage(chatUsage)
                 .build();
+    }
+
+    private boolean isTruncated() {
+        // OpenAI Chat Completions and DashScope report "length"; Anthropic and Gemini report
+        // "max_tokens" or "MAX_TOKENS".
+        return "length".equalsIgnoreCase(finishReason)
+                || "max_tokens".equalsIgnoreCase(finishReason)
+                || isOpenAiResponsesOutputLimit();
+    }
+
+    private boolean isOpenAiResponsesOutputLimit() {
+        if (!"incomplete".equalsIgnoreCase(finishReason)) {
+            return false;
+        }
+        String incompleteReason =
+                Objects.toString(responseMetadata.get("openai.response.incomplete_reason"), null);
+        return "max_output_tokens".equalsIgnoreCase(incompleteReason);
     }
 
     /**
@@ -244,6 +275,7 @@ public class ReasoningContext {
                 .input(block.getInput())
                 .content(block.getContent())
                 .metadata(block.getMetadata())
+                .state(block.getState())
                 .build();
     }
 
