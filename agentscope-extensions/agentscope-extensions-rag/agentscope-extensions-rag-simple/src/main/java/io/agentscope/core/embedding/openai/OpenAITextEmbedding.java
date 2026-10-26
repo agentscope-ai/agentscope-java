@@ -47,8 +47,11 @@ import reactor.core.publisher.Mono;
  * an {@link EmbeddingException}.
  *
  * <p>Supports timeout and retry configuration through ExecutionConfig.
+ *
+ * <p>Reuses one lazily initialized SDK client per model, including concurrent calls and retries.
+ * Close the model when it is no longer needed, after all embedding operations have completed.
  */
-public class OpenAITextEmbedding implements EmbeddingModel {
+public class OpenAITextEmbedding implements EmbeddingModel, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAITextEmbedding.class);
 
@@ -58,6 +61,10 @@ public class OpenAITextEmbedding implements EmbeddingModel {
     private final ExecutionConfig defaultExecutionConfig;
 
     private final String baseUrl;
+
+    // Guarded by this; SDK initialization and close must not race.
+    private OpenAIClient client;
+    private boolean closed;
 
     /**
      * Creates a new OpenAI text embedding model instance.
@@ -119,24 +126,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                                 () -> {
                                     try {
                                         Instant startTime = Instant.now();
-                                        // Initialize OpenAI client
-                                        OpenAIOkHttpClient.Builder clientBuilder =
-                                                OpenAIOkHttpClient.builder();
-
-                                        if (apiKey != null) {
-                                            clientBuilder.apiKey(apiKey);
-                                        }
-
-                                        if (baseUrl != null) {
-                                            clientBuilder.baseUrl(baseUrl);
-                                        }
-
-                                        // Set unified AgentScope User-Agent (overrides OpenAI SDK
-                                        // default)
-                                        clientBuilder.putHeader(
-                                                "User-Agent", Version.getUserAgent());
-
-                                        OpenAIClient client = clientBuilder.build();
+                                        OpenAIClient client = getClient();
 
                                         EmbeddingCreateParams createParams =
                                                 EmbeddingCreateParams.builder()
@@ -220,9 +210,55 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                                             "openai");
                                 });
 
-        // Apply timeout and retry
-        return EmbeddingUtils.applyTimeoutAndRetry(
-                embeddingMono, defaultExecutionConfig, modelName, "openai", log);
+        // Check at subscription time, outside retry, including Monos created before close().
+        return Mono.defer(
+                () -> {
+                    synchronized (this) {
+                        if (closed) {
+                            return Mono.error(
+                                    new EmbeddingException(
+                                            "OpenAITextEmbedding is closed", modelName, "openai"));
+                        }
+                    }
+                    return EmbeddingUtils.applyTimeoutAndRetry(
+                            embeddingMono, defaultExecutionConfig, modelName, "openai", log);
+                });
+    }
+
+    private synchronized OpenAIClient getClient() {
+        if (closed) {
+            throw new EmbeddingException("OpenAITextEmbedding is closed", modelName, "openai");
+        }
+        if (client == null) {
+            OpenAIOkHttpClient.Builder clientBuilder = OpenAIOkHttpClient.builder();
+            if (apiKey != null) {
+                clientBuilder.apiKey(apiKey);
+            }
+            if (baseUrl != null) {
+                clientBuilder.baseUrl(baseUrl);
+            }
+            clientBuilder.putHeader("User-Agent", Version.getUserAgent());
+            client = clientBuilder.build();
+        }
+        return client;
+    }
+
+    /**
+     * Closes this model and its SDK client. Repeated calls have no effect.
+     *
+     * <p>Wait for in-flight embedding operations to finish before closing. Closing an unused model
+     * does not initialize a client. Subsequent embedding subscriptions fail with an
+     * {@link EmbeddingException} without entering the configured retry pipeline, including Monos
+     * created before close and subscribed afterward.
+     */
+    @Override
+    public synchronized void close() {
+        if (!closed) {
+            closed = true;
+            if (client != null) {
+                client.close();
+            }
+        }
     }
 
     /**
