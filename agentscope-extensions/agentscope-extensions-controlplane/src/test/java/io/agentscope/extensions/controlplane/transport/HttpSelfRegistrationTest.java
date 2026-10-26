@@ -134,6 +134,8 @@ class HttpSelfRegistrationTest {
         AtomicReference<JsonNode> heartbeatBody = new AtomicReference<>();
         AtomicReference<JsonNode> deleteBody = new AtomicReference<>();
         AtomicReference<String> authHeader = new AtomicReference<>();
+        AtomicReference<String> heartbeatCredential = new AtomicReference<>();
+        AtomicReference<String> deleteCredential = new AtomicReference<>();
 
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         ExecutorService executor = Executors.newCachedThreadPool();
@@ -157,6 +159,10 @@ class HttpSelfRegistrationTest {
         server.createContext(
                 "/api/v1/dataplanes/" + durableId + "/heartbeat",
                 exchange -> {
+                    heartbeatCredential.set(
+                            exchange.getRequestHeaders()
+                                    .getFirst(
+                                            ControlPlaneHttpClient.REGISTRATION_CREDENTIAL_HEADER));
                     heartbeatBody.set(readJson(exchange));
                     heartbeat.countDown();
                     try {
@@ -173,6 +179,10 @@ class HttpSelfRegistrationTest {
         server.createContext(
                 "/api/v1/dataplanes/" + durableId,
                 exchange -> {
+                    deleteCredential.set(
+                            exchange.getRequestHeaders()
+                                    .getFirst(
+                                            ControlPlaneHttpClient.REGISTRATION_CREDENTIAL_HEADER));
                     deleteBody.set(readJson(exchange));
                     deletedAfterHeartbeat.set(heartbeatCompleted.get());
                     deleted.countDown();
@@ -205,6 +215,7 @@ class HttpSelfRegistrationTest {
                     "runtime-instance-key", registrationBody.get().path("instanceKey").asText());
             assertEquals("reviewer", registrationBody.get().path("agentKey").asText());
             assertEquals("secret-token", authHeader.get());
+            assertEquals("asreg_test", heartbeatCredential.get());
             assertEquals(7, heartbeatBody.get().path("generation").asLong());
             Future<?> closing = executor.submit(registration::close);
             try {
@@ -227,6 +238,7 @@ class HttpSelfRegistrationTest {
         }
         assertTrue(deletedAfterHeartbeat.get());
         assertEquals(7, deleteBody.get().path("generation").asLong());
+        assertEquals("asreg_test", deleteCredential.get());
     }
 
     @Test

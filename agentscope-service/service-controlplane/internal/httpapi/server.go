@@ -760,9 +760,9 @@ func (s *Server) registerRoutes() {
 	}
 
 	// Data-plane self-registration: authenticated by the shared internal token
-	// so workers can register without a console JWT.
+	// or the scoped registration credential issued to this Agent instance.
 	dp := s.router.Group("/api/v1/dataplanes")
-	dp.Use(s.internalTokenMiddleware())
+	dp.Use(s.dataPlaneAuthMiddleware())
 	{
 		dp.POST("/:instanceId/heartbeat", s.heartbeatDataPlane)
 		dp.DELETE("/:instanceId", s.deleteDataPlane)

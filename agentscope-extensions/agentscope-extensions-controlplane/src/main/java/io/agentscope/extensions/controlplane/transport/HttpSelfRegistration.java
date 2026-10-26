@@ -149,7 +149,8 @@ public final class HttpSelfRegistration implements AutoCloseable {
                 request(
                         "DELETE",
                         "/api/v1/dataplanes/" + id,
-                        Map.of("generation", generation.get()));
+                        Map.of("generation", generation.get()),
+                        registrationCredentialHeaders());
             }
             LOG.info(() -> "controlplane: unregistered instance " + instanceKey);
         } catch (Exception e) {
@@ -179,7 +180,8 @@ public final class HttpSelfRegistration implements AutoCloseable {
                     request(
                             "POST",
                             "/api/v1/dataplanes/" + id + "/heartbeat",
-                            Map.of("generation", generation.get()));
+                            Map.of("generation", generation.get()),
+                            registrationCredentialHeaders());
             if (code < 200 || code >= 300) {
                 registered.set(false);
                 tryRegister();
@@ -214,7 +216,9 @@ public final class HttpSelfRegistration implements AutoCloseable {
             Map<String, String> headers =
                     claimCredential.isBlank()
                             ? Map.of()
-                            : Map.of("X-Agent-Registration-Credential", claimCredential);
+                            : Map.of(
+                                    ControlPlaneHttpClient.REGISTRATION_CREDENTIAL_HEADER,
+                                    claimCredential);
             ControlPlaneHttpClient.Response response =
                     http.send("POST", "/api/v1/agent-registrations", body, headers);
             int code = response.status();
@@ -270,7 +274,12 @@ public final class HttpSelfRegistration implements AutoCloseable {
     }
 
     private int request(String method, String path, Object body) throws Exception {
-        ControlPlaneHttpClient.Response resp = http.send(method, path, body);
+        return request(method, path, body, Map.of());
+    }
+
+    private int request(String method, String path, Object body, Map<String, String> headers)
+            throws Exception {
+        ControlPlaneHttpClient.Response resp = http.send(method, path, body, headers);
         if (resp.status() >= 200 && resp.status() < 300 && resp.body() != null) {
             // Touch response for future heartbeatInterval parsing; ignore unknown shapes.
             try {
@@ -283,5 +292,16 @@ public final class HttpSelfRegistration implements AutoCloseable {
             }
         }
         return resp.status();
+    }
+
+    private Map<String, String> registrationCredentialHeaders() {
+        RegisteredIdentity current = identity.get();
+        String credential =
+                current == null
+                        ? configuredRegistrationCredential
+                        : current.registrationCredential();
+        return credential.isBlank()
+                ? Map.of()
+                : Map.of(ControlPlaneHttpClient.REGISTRATION_CREDENTIAL_HEADER, credential);
     }
 }

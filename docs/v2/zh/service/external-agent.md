@@ -64,6 +64,8 @@ SessionBridge bridge = ControlPlane.instrument(agent,
 
 先按[注册指南](/v2/zh/service/register-agentscope-agent)取得 `registrationCredential`，将其设置为 `CONTROL_PLANE_REGISTRATION_CREDENTIAL`。当前 Java bridge 在未配置注册凭据或 bootstrap 参数时会跳过自动注册。当前预览版本的服务端注册入口不验证调用者身份，应限制在受控网络或网关内使用。返回的 registration credential 用于后续运行连接，不能替代注册入口的访问控制。HTTP contract 可读到的历史与命令取决于适配器；Java 实时上报还需在构建 Agent 时装入适配器 middleware，并启用 ASDP 运行连接。
 
+注册成功后，Java 会在心跳和注销请求的 X-Agent-Registration-Credential header 中发送返回的凭据，控制面会校验它与目标 Agent 实例的关联。这些请求可以经过公网 Gateway；Gateway 会按设计移除 X-Builder-Internal-Token。请妥善保管返回的凭据。
+
 <span id="python连接支持-asdp-的部署" />
 
 ## Python：使用 HTTP 运行连接
@@ -149,7 +151,7 @@ Python 默认使用出站 HTTP exchange（`POST /api/v1/agent-runtime/exchange`�
 | `controlPlane` | `control_plane` | 选择 gRPC 时使用的 `host:port` |
 | `publicBaseUrl` | `contract_http_base_url` | 控制面可回连的合约 URL |
 | `contractHttpPort` | `contract_http_port` | 合约监听端口；Java 默认 18090，Python 默认 8080；0 使用临时端口 |
-| `registrationCredential` | `registration_credential` | 注册返回的凭据，用于后续运行连接 |
+| `registrationCredential` | `registration_credential` | 注册返回的凭据；Java 也会用于 HTTP 心跳和注销 |
 | `internalToken` | `internal_token` | 由部署维护者提供的可选运行/bootstrap 参数；当前注册 HTTP API 不校验它 |
 | `registeredIdentity(agentId, bindingId, generation)` | `agent_id` / `binding_id` / `generation` | 已注册身份；必须保持同一次身份的一组值匹配 |
 | `eventJournalDir` | `event_journal_dir` | 事件 outbox 持久目录；不替代业务 Session store |
