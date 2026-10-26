@@ -20,7 +20,7 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.skill.repository.RuntimeContextSkillRepository;
-import io.agentscope.core.skill.util.SkillUtil;
+import io.agentscope.core.skill.util.MarkdownSkillParser;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -174,10 +174,22 @@ public class WorkspaceSkillRepository
                 if (!rr.isSuccess() || rr.fileData() == null || rr.fileData().content() == null) {
                     continue;
                 }
-                // Resources are intentionally left null here; harness skill runtime resolves
-                // them lazily via resourcesFor(name, ctx) so per-call namespace switching is
-                // honored without preloading every byte.
-                skills.add(SkillUtil.createFrom(rr.fileData().content(), null, source));
+                // Head-only: keep just the frontmatter metadata plus a content digest
+                // (for change detection); body and resources are read on demand via
+                // resourcesFor(name, ctx) — per-call namespacing is unchanged and the
+                // full SKILL.md is no longer resident per agent.
+                try {
+                    String md = rr.fileData().content();
+                    MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(md);
+                    if (parsed.getContent() != null && !parsed.getContent().isEmpty()) {
+                        skills.add(
+                                AgentSkill.headOf(
+                                        parsed.getMetadata(), source, null, sha256Hex(md)));
+                    }
+                } catch (Exception parseEx) {
+                    log.warn(
+                            "Failed to parse skill head from '{}': {}", path, parseEx.getMessage());
+                }
             } catch (Exception e) {
                 log.warn("Failed to load skill from '{}': {}", path, e.getMessage());
             }
@@ -473,6 +485,20 @@ public class WorkspaceSkillRepository
      * {@code MarkdownSkillParser}, tolerant of whatever scalar/list/map metadata the
      * {@link AgentSkill} carries.
      */
+    private static String sha256Hex(String content) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(d.length * 2);
+            for (byte b : d) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
+    }
+
     static String toMarkdown(AgentSkill skill) {
         DumperOptions options = new DumperOptions();
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
@@ -495,6 +521,17 @@ public class WorkspaceSkillRepository
 
         String fm = yaml.dump(ordered).trim();
         String body = skill.getSkillContent() != null ? skill.getSkillContent() : "";
+        if (body.isEmpty() && skill.getOriginDir() != null && skill.getOriginDir().isPresent()) {
+            // Head-only sources recover the body from disk so write-backs keep the content
+            try {
+                String full =
+                        io.agentscope.core.skill.util.SkillFileSystemHelper.readFullMarkdownFromDir(
+                                skill.getOriginDir().get());
+                body = io.agentscope.core.skill.util.MarkdownSkillParser.parse(full).getContent();
+            } catch (Exception e) {
+                // Fall back to an empty body
+            }
+        }
         return "---\n" + fm + "\n---\n" + body;
     }
 

@@ -73,6 +73,14 @@ public class AgentSkill {
     private final String source;
 
     /**
+     * SHA-256 digest (hex) of the SKILL.md body. Head-only instances do not keep the body
+     * resident; the digest feeds the visible-skill-set fingerprint (DynamicSkillMiddleware)
+     * for change detection — lazy sources without an originDir whose mtimes could be
+     * enumerated (workspace filesystems) rely on it to notice body edits.
+     */
+    private final String contentDigest;
+
+    /**
      * Optional absolute path to the skill's on-disk source directory. When present, the prompt
      * provider can emit a {@code <files-root>} per skill so the LLM can shell-execute scripts
      * directly without going through {@code uploadSkillFiles}; the load tool can also use it as
@@ -177,6 +185,53 @@ public class AgentSkill {
         this.resources = resources != null ? new HashMap<>(resources) : new HashMap<>();
         this.source = source != null ? source : "custom";
         this.originDir = originDir;
+        this.contentDigest = null;
+    }
+
+    /**
+     * Creates a metadata-only (head-only) skill: body and resources are not kept in memory;
+     * consumers read them from disk through {@code originDir} at runtime (load_skill /
+     * load_skill_through_path).
+     *
+     * <p>This trims the registration path — only name and description are needed to
+     * register a skill into a Toolkit/skill list, while body and resources are
+     * turn-scoped data that should not stay resident. A null body is only allowed on
+     * instances created by this factory; the non-null body validation of the legacy
+     * construction paths (direct {@code new} / createFrom) is unchanged.
+     *
+     * @param metadata metadata containing {@code name} and {@code description} (required)
+     * @param source source identifier
+     * @param originDir the skill's origin directory; addressing root for disk reads
+     * @return head-only AgentSkill whose {@code getSkillContent()} returns null
+     */
+    public static AgentSkill headOf(Map<String, Object> metadata, String source, Path originDir) {
+        return headOf(metadata, source, originDir, null);
+    }
+
+    /**
+     * Head-only construction carrying the body digest: the digest is computed by the
+     * loader while it transiently reads SKILL.md, and backs change detection for sources
+     * without a disk path — see {@link #getContentDigest()}.
+     */
+    public static AgentSkill headOf(
+            Map<String, Object> metadata, String source, Path originDir, String contentDigest) {
+        String name = getRequiredMetadataString(metadata, "name");
+        String description = getRequiredMetadataString(metadata, "description");
+        LinkedHashMap<String, Object> metadataCopy = new LinkedHashMap<>(metadata);
+        metadataCopy.put("name", name);
+        metadataCopy.put("description", description);
+        return new AgentSkill(metadataCopy, source, originDir, contentDigest);
+    }
+
+    /** Raw head-only constructor: skips the non-null body check (only for {@link #headOf}). */
+    private AgentSkill(
+            Map<String, Object> metadata, String source, Path originDir, String contentDigest) {
+        this.metadata = Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+        this.skillContent = null;
+        this.resources = new HashMap<>();
+        this.source = source != null ? source : "custom";
+        this.originDir = originDir;
+        this.contentDigest = contentDigest;
     }
 
     /**
@@ -221,10 +276,22 @@ public class AgentSkill {
      *
      * <p>This contains the actual skill implementation or instructions.
      *
-     * @return The skill content (never null)
+     * <p>Head-only instances (built via {@link #headOf}) do not keep the body in memory
+     * and return null; consumers should read from disk through originDir instead (see
+     * SkillFileSystemHelper).
+     *
+     * @return The skill content, or {@code null} for head-only instances
      */
     public String getSkillContent() {
         return skillContent;
+    }
+
+    /**
+     * Digest of the SKILL.md body (present on head-only instances; null when the body is
+     * resident and consumers can compute it from getSkillContent themselves).
+     */
+    public String getContentDigest() {
+        return contentDigest;
     }
 
     /**

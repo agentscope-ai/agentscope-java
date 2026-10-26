@@ -121,6 +121,232 @@ public final class SkillFileSystemHelper {
     }
 
     /**
+     * Size limit for inlining a resource into a tool result. Resources above this limit are
+     * not loaded into the conversation context; the load tool instead returns the file path
+     * and points the model at shell/read_file. Guards against a single large asset (e.g. a
+     * base64-encoded document template) blowing up both the context window and the heap.
+     */
+    public static final long MAX_INLINE_RESOURCE_BYTES = 512 * 1024;
+
+    /**
+     * Thrown by the read helpers when a resource exceeds {@link
+     * #MAX_INLINE_RESOURCE_BYTES}; callers turn it into a path hint for the model.
+     */
+    public static final class ResourceTooLargeException extends RuntimeException {
+        /** Relative path of the resource inside the skill's origin directory. */
+        public final String relPath;
+
+        /** Absolute path of the file, for the hint message to reference. */
+        public final Path file;
+
+        /** Size of the file in bytes. */
+        public final long sizeBytes;
+
+        public ResourceTooLargeException(String relPath, Path file, long sizeBytes) {
+            super("resource too large: " + relPath + " (" + sizeBytes + " bytes)");
+            this.relPath = relPath;
+            this.file = file;
+            this.sizeBytes = sizeBytes;
+        }
+    }
+
+    /**
+     * Loads a skill head-only: SKILL.md is read transiently to parse name/description, the
+     * body is dropped immediately, and the returned {@link AgentSkill} carries metadata only
+     * (body and resources are read from disk on demand via {@code originDir}).
+     *
+     * <p>Registration paths (getAllSkills) use this instead of the full load, cutting the
+     * resident cost of a skill from "body + every resource (potentially MBs)" down to its
+     * metadata (~KBs).
+     *
+     * @param skillDir The directory containing SKILL.md
+     * @param source The source identifier for the created skill
+     * @return head-only AgentSkill whose {@code originDir} points to {@code skillDir}
+     */
+    public static AgentSkill loadSkillHead(Path skillDir, String source) {
+        Path skillFile = requireSkillFile(skillDir);
+        try {
+            String skillMdContent = Files.readString(skillFile, StandardCharsets.UTF_8);
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(skillMdContent);
+            Map<String, Object> metadata = parsed.getMetadata();
+            if (parsed.getContent() == null || parsed.getContent().isEmpty()) {
+                throw new IllegalArgumentException(
+                        "The SKILL.md must have content except for the YAML Front Matter.");
+            }
+            return AgentSkill.headOf(
+                    metadata,
+                    source,
+                    skillDir.toAbsolutePath().normalize(),
+                    sha256Hex(skillMdContent));
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load skill head from: " + skillDir, e);
+        }
+    }
+
+    /**
+     * Head-only load resolving the skill directory by name, for the getSkill fallback path;
+     * same semantics as {@link #loadSkillHead(Path, String)}.
+     */
+    public static AgentSkill loadSkillHead(Path baseDir, String skillName, String source) {
+        Path skillDir =
+                findSkillDirectoryByName(baseDir, skillName)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "Skill directory does not exist for skill name: "
+                                                        + skillName));
+        return loadSkillHead(skillDir, source);
+    }
+
+    /**
+     * Loads every skill under the directory head-only: only SKILL.md metadata is parsed,
+     * bodies and resources stay on disk. The registration-time slim variant of {@link
+     * #getAllSkills(Path, String)}.
+     */
+    public static List<AgentSkill> getAllSkillHeads(Path baseDir, String source) {
+        List<AgentSkill> skills = new ArrayList<>();
+        try (Stream<Path> subdirs = Files.list(baseDir)) {
+            subdirs.filter(Files::isDirectory)
+                    .forEach(
+                            dir -> {
+                                if (hasSkillFile(dir)) {
+                                    try {
+                                        skills.add(loadSkillHead(dir, source));
+                                    } catch (Exception e) {
+                                        logger.warn(
+                                                "Failed to load skill head from '{}': {}",
+                                                dir,
+                                                e.getMessage(),
+                                                e);
+                                    }
+                                }
+                            });
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to list skill directories", e);
+        }
+        return skills;
+    }
+
+    /**
+     * Reads the skill's full SKILL.md (frontmatter + body) from disk on demand.
+     *
+     * <p>Shared channel for head-only skills: load_skill("SKILL.md") and any flow that
+     * needs the body (promotion, write-back). Returns the original bytes rather than a
+     * reassembled document so the content stays byte-identical with skill_manage patches.
+     *
+     * @param originDir the skill's origin directory
+     * @return the SKILL.md content as written on disk
+     */
+    public static String readFullMarkdownFromDir(Path originDir) {
+        try {
+            return Files.readString(requireSkillFile(originDir), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read SKILL.md from: " + originDir, e);
+        }
+    }
+
+    /**
+     * Reads a skill resource file from disk on demand (the lazy channel behind
+     * load_skill_through_path).
+     *
+     * <p>Text is returned as UTF-8; binaries follow the {@code base64:} prefix convention,
+     * matching the semantics of the eager preloaded resource map. Files larger than {@link
+     * #MAX_INLINE_RESOURCE_BYTES} raise {@link ResourceTooLargeException}, which the caller
+     * converts into a path hint.
+     *
+     * @param originDir the skill's origin directory
+     * @param relPath relative path (absolute paths and ".." are rejected)
+     * @return the content, or empty when the file is missing/unreadable or the path is
+     *     invalid
+     */
+    public static Optional<String> readResourceFromDir(Path originDir, String relPath) {
+        if (relPath == null || relPath.isBlank()) {
+            return Optional.empty();
+        }
+        String normalized = relPath.replace('\\', '/');
+        if (normalized.startsWith("/") || normalized.contains("..")) {
+            return Optional.empty();
+        }
+        if (SKILL_FILE_NAME.equals(normalized)) {
+            return Optional.of(readFullMarkdownFromDir(originDir));
+        }
+        Path target = originDir.resolve(normalized).normalize();
+        if (!target.startsWith(originDir.normalize())) {
+            return Optional.empty();
+        }
+        if (!Files.isRegularFile(target) || !Files.isReadable(target)) {
+            return Optional.empty();
+        }
+        try {
+            long size = Files.size(target);
+            if (size > MAX_INLINE_RESOURCE_BYTES) {
+                throw new ResourceTooLargeException(normalized, target, size);
+            }
+            String content = Files.readString(target, StandardCharsets.UTF_8);
+            return Optional.of(content);
+        } catch (MalformedInputException e) {
+            try {
+                byte[] bytes = Files.readAllBytes(target);
+                if (bytes.length > MAX_INLINE_RESOURCE_BYTES) {
+                    throw new ResourceTooLargeException(normalized, target, bytes.length);
+                }
+                return Optional.of("base64:" + Base64.getEncoder().encodeToString(bytes));
+            } catch (IOException ex) {
+                logger.warn("Failed to read binary resource: {}", target, ex);
+                return Optional.empty();
+            }
+        } catch (IOException e) {
+            logger.warn("Failed to read resource: {}", target, e);
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Lists the relative paths under a skill directory that can serve as resources
+     * (SKILL.md and hidden files excluded), for the load tool's not-found listing and for
+     * the visible-skill-set fingerprint.
+     */
+    public static List<String> listResourceRelPaths(Path skillDir) {
+        List<String> out = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(skillDir)) {
+            walk.filter(Files::isRegularFile)
+                    .filter(p -> !p.getFileName().toString().startsWith("."))
+                    .filter(p -> !p.getFileName().toString().equals(SKILL_FILE_NAME))
+                    .forEach(p -> out.add(skillDir.relativize(p).toString().replace('\\', '/')));
+        } catch (IOException e) {
+            logger.warn("Failed to list resources of: {}", skillDir, e);
+        }
+        out.sort(Comparator.naturalOrder());
+        return out;
+    }
+
+    private static String sha256Hex(String content) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(content.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(d.length * 2);
+            for (byte b : d) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
+    }
+
+    private static Path requireSkillFile(Path skillDir) {
+        if (!Files.isDirectory(skillDir)) {
+            throw new IllegalArgumentException("Skill directory does not exist: " + skillDir);
+        }
+        Path skillFile = skillDir.resolve(SKILL_FILE_NAME);
+        if (!Files.exists(skillFile)) {
+            throw new IllegalArgumentException(
+                    "SKILL.md not found in skill directory: " + skillDir);
+        }
+        return skillFile;
+    }
+
+    /**
      * Retrieves all skill names by parsing SKILL.md metadata in each skill folder.
      *
      * @param baseDir The base directory containing skill folders

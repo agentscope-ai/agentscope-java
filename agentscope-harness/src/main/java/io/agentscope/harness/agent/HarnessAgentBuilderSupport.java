@@ -898,7 +898,11 @@ final class HarnessAgentBuilderSupport {
         // Layer 1 (lowest priority): project-global skills directory.
         if (b.projectGlobalSkillsDir != null && Files.isDirectory(b.projectGlobalSkillsDir)) {
             try {
-                ordered.add(new FileSystemSkillRepository(b.projectGlobalSkillsDir));
+                // lazy (head-only): registration keeps metadata only; body and resources
+                // are read through originDir on demand, so skills carrying large template
+                // assets are not resident whole per agent.
+                ordered.add(
+                        new FileSystemSkillRepository(b.projectGlobalSkillsDir, true, null, true));
             } catch (Exception e) {
                 log.warn(
                         "Failed to register project-global skills dir {}: {}",
@@ -914,7 +918,8 @@ final class HarnessAgentBuilderSupport {
         Path workspaceSkillsDir = wsManager.getSkillsDir();
         if (workspaceSkillsDir != null && Files.isDirectory(workspaceSkillsDir)) {
             try {
-                ordered.add(new FileSystemSkillRepository(workspaceSkillsDir));
+                // Same as above: head-only, large-asset skills stay out of the heap.
+                ordered.add(new FileSystemSkillRepository(workspaceSkillsDir, true, null, true));
             } catch (Exception e) {
                 log.warn(
                         "Failed to load workspace skills from {}: {}",

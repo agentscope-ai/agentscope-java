@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -371,10 +372,26 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
                 md.update((byte) 0);
                 hashMetadata(md, s.getMetadata());
                 md.update((byte) 0);
-                md.update(
-                        s.getSkillContent() != null
-                                ? s.getSkillContent().getBytes(StandardCharsets.UTF_8)
-                                : new byte[0]);
+                if (s.getOriginDir().isPresent()) {
+                    // Disk-backed (head-only) skill: fingerprint by file manifest (relative
+                    // path + size + mtime) instead of hashing content. Equivalent change
+                    // detection with zero content scanning — head-only instances carry no
+                    // resident resources, and hashing multi-MB assets on every signature
+                    // pass would be wasted CPU and allocation churn.
+                    hashDirManifest(md, s.getOriginDir().get());
+                    md.update((byte) 1);
+                    continue;
+                }
+                // Head-only skill without a disk path: detect body edits through the
+                // load-time digest; skills with resident content keep hashing it.
+                if (s.getContentDigest() != null) {
+                    md.update(s.getContentDigest().getBytes(StandardCharsets.UTF_8));
+                } else {
+                    md.update(
+                            s.getSkillContent() != null
+                                    ? s.getSkillContent().getBytes(StandardCharsets.UTF_8)
+                                    : new byte[0]);
+                }
                 md.update((byte) 0);
                 for (String key : new TreeSet<>(s.getResourcePaths())) {
                     md.update(key.getBytes(StandardCharsets.UTF_8));
@@ -384,8 +401,6 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
                     }
                     md.update((byte) 0);
                 }
-                s.getOriginDir()
-                        .ifPresent(p -> md.update(p.toString().getBytes(StandardCharsets.UTF_8)));
                 md.update((byte) 1);
             }
             byte[] hash = md.digest();
@@ -441,6 +456,42 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
             md.update((byte) ']');
         } else {
             md.update(String.valueOf(value).getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * Fingerprints a skill directory by manifest — relative path, size and mtime per file —
+     * without reading file contents. Falls back to hashing the directory path string when the
+     * tree cannot be walked, keeping the signature deterministic.
+     */
+    private static void hashDirManifest(MessageDigest md, Path dir) {
+        try (var walk = Files.walk(dir)) {
+            walk.filter(Files::isRegularFile)
+                    .sorted()
+                    .forEach(
+                            f -> {
+                                md.update(
+                                        dir.relativize(f)
+                                                .toString()
+                                                .replace('\\', '/')
+                                                .getBytes(StandardCharsets.UTF_8));
+                                md.update((byte) 0);
+                                try {
+                                    var attrs = Files.readAttributes(f, BasicFileAttributes.class);
+                                    md.update(
+                                            Long.toString(attrs.size())
+                                                    .getBytes(StandardCharsets.UTF_8));
+                                    md.update((byte) 0);
+                                    md.update(
+                                            Long.toString(attrs.lastModifiedTime().toMillis())
+                                                    .getBytes(StandardCharsets.UTF_8));
+                                } catch (IOException e) {
+                                    md.update((byte) 0);
+                                }
+                                md.update((byte) 0);
+                            });
+        } catch (IOException e) {
+            md.update(dir.toString().getBytes(StandardCharsets.UTF_8));
         }
     }
 }

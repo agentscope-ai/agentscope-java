@@ -305,12 +305,15 @@ agent 每次 call 时，harness 会构建一个 `<available_skills>` 块，列�
 
 | Skill 来源 | path 解析方式 |
 |-----------|--------------|
-| 项目全局目录（Layer 1） | 注册时预载到内存 |
-| 市场——Git / MySQL / Nacos / classpath（Layer 2） | 由后端预载到内存 |
-| `workspace/skills/` 共用（Layer 3） | 注册时预载到内存 |
-| `<userId>/skills/` 用户隔离（Layer 4） | SKILL.md 预载；其它文件按需通过 `AbstractFilesystem` 读取（自动遵循 per-user namespace + sandbox 路由） |
+| 项目全局目录（Layer 1） | 注册时只留元数据；正文和资源文件按需从磁盘读取 |
+| 市场——Git / MySQL / Nacos（Layer 2） | 由后端预载到内存 |
+| 市场——classpath（Layer 2） | 注册时只留元数据；正文和资源文件按需从磁盘读取 |
+| `workspace/skills/` 共用（Layer 3） | 注册时只留元数据；正文和资源文件按需通过 `AbstractFilesystem` 读取 |
+| `<userId>/skills/` 用户隔离（Layer 4） | 只留元数据；正文和其它文件按需通过 `AbstractFilesystem` 读取（自动遵循 per-user namespace + sandbox 路由） |
 
-agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。底层查找顺序是"内存命中 → 文件系统读取 → 找不到时返回所有真正可用的路径列表"，所以传错 path 也只会拿到清单而不是死路。
+注册时每个 skill 只驻留 frontmatter 元数据（name/description）——SKILL.md 正文和资源文件都按需读取，因此庞大的技能库（或携带数 MB 模板资产的技能）不再按 agent 数量放大堆内存占用。
+
+agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。底层查找顺序是"内存命中 → 文件系统读取 → 找不到时返回所有真正可用的路径列表"，所以传错 path 也只会拿到清单而不是死路。读取路径上有一道护栏：超过 512KB 的资源不会内联进对话，工具会返回该文件的绝对路径并提示改用 `shell` / `read_file` 按路径处理。
 
 ### `<files-root>` 和 shell 执行
 

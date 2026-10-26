@@ -18,10 +18,12 @@ package io.agentscope.core.skill.repository;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -97,7 +99,12 @@ class ClasspathSkillRepositoryTest {
         assertNotNull(skill);
         assertEquals("writing-skill", skill.getName());
         assertEquals("A skill for writing and content creation", skill.getDescription());
-        assertTrue(skill.getSkillContent().contains("Writing Skill"));
+        // Head-only contract: body is not resident, read through originDir
+        assertNull(skill.getSkillContent());
+        assertNotNull(skill.getContentDigest());
+        assertTrue(
+                SkillFileSystemHelper.readFullMarkdownFromDir(skill.getOriginDir().get())
+                        .contains("Writing Skill"));
     }
 
     @Test
@@ -108,9 +115,12 @@ class ClasspathSkillRepositoryTest {
         AgentSkill skill = repository.getSkill("writing-skill");
         assertNotNull(skill);
 
-        // Verify nested resource is loaded
-        assertTrue(skill.getResources().containsKey("references/guide.md"));
-        String guideContent = skill.getResources().get("references/guide.md");
+        // Head-only contract: resources are not in the map, read through originDir
+        assertTrue(skill.getResources().isEmpty());
+        String guideContent =
+                SkillFileSystemHelper.readResourceFromDir(
+                                skill.getOriginDir().get(), "references/guide.md")
+                        .orElse("");
         assertTrue(guideContent.contains("Writing Guide"));
         assertTrue(guideContent.contains("Best Practices"));
     }
@@ -152,7 +162,9 @@ class ClasspathSkillRepositoryTest {
             assertNotNull(skill);
             assertEquals("test-skill", skill.getName());
             assertEquals("Test Skill", skill.getDescription());
-            assertTrue(skill.getSkillContent().contains("Test content"));
+            assertTrue(
+                    SkillFileSystemHelper.readFullMarkdownFromDir(skill.getOriginDir().get())
+                            .contains("Test content"));
         }
     }
 
@@ -170,12 +182,17 @@ class ClasspathSkillRepositoryTest {
             assertNotNull(skill);
             assertEquals("jar-skill", skill.getName());
 
-            // Verify nested resources are loaded
-            assertTrue(skill.getResources().containsKey("config.json"));
-            assertEquals("{\"key\": \"value\"}", skill.getResources().get("config.json"));
-
-            assertTrue(skill.getResources().containsKey("data/sample.txt"));
-            assertEquals("Sample data", skill.getResources().get("data/sample.txt"));
+            // Head-only contract: resource read through originDir (jar filesystem path)
+            assertEquals(
+                    "{\"key\": \"value\"}",
+                    SkillFileSystemHelper.readResourceFromDir(
+                                    skill.getOriginDir().get(), "config.json")
+                            .orElse(""));
+            assertEquals(
+                    "Sample data",
+                    SkillFileSystemHelper.readResourceFromDir(
+                                    skill.getOriginDir().get(), "data/sample.txt")
+                            .orElse(""));
         }
     }
 
@@ -297,7 +314,9 @@ class ClasspathSkillRepositoryTest {
             assertNotNull(skill);
             assertEquals("sb-skill", skill.getName());
             assertEquals("SB Skill", skill.getDescription());
-            assertTrue(skill.getSkillContent().contains("SB content"));
+            assertTrue(
+                    SkillFileSystemHelper.readFullMarkdownFromDir(skill.getOriginDir().get())
+                            .contains("SB content"));
         }
     }
 
@@ -359,7 +378,9 @@ class ClasspathSkillRepositoryTest {
             assertNotNull(skill);
             assertEquals("nested-lib-skill", skill.getName());
             assertEquals("Nested Lib Skill", skill.getDescription());
-            assertTrue(skill.getSkillContent().contains("Nested lib content"));
+            assertTrue(
+                    SkillFileSystemHelper.readFullMarkdownFromDir(skill.getOriginDir().get())
+                            .contains("Nested lib content"));
         } finally {
             TestNestedFileSystemProvider.configuredInnerJarPath = null;
         }

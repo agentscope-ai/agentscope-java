@@ -115,9 +115,11 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
      * @param baseDir The base directory containing skill subdirectories (must not be null)
      * @param writeable Whether the repository supports write operations
      * @param source The custom source identifier for skills (null to use default)
-     * @param lazy when {@code true}, support files are NOT pre-loaded; consumers must resolve
-     *     them via the skill's {@code originDir}. Use this together with a
-     *     {@code load_skill_through_path} disk-fallback for large skill libraries
+     * @param lazy when {@code true}, skills are loaded head-only: only SKILL.md
+     *     frontmatter metadata is retained; body and resource files are read from disk
+     *     on demand via the skill's {@code originDir} (load_skill_through_path
+     *     disk-fallback). Use this for large skill libraries or skills carrying big
+     *     binary assets — prevents multi-MB residency per agent
      * @throws IllegalArgumentException if baseDir is null, doesn't exist, is not a directory,
      *                                  or is empty
      */
@@ -167,7 +169,9 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
         }
         // Fallback path for cases where a skill was just written and the cache hasn't seen
         // it: read directly. Honour the lazy flag.
-        return SkillFileSystemHelper.loadSkill(baseDir, name, getSource());
+        return lazy
+                ? SkillFileSystemHelper.loadSkillHead(baseDir, name, getSource())
+                : SkillFileSystemHelper.loadSkill(baseDir, name, getSource());
     }
 
     @Override
@@ -200,8 +204,14 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
                         out.add(cached.skill);
                         continue;
                     }
+                    // lazy mode = head-only: only SKILL.md metadata is parsed (body and
+                    // resources are read from disk via originDir), so large skill libraries
+                    // (e.g. skills carrying template assets) are no longer resident whole
                     AgentSkill skill =
-                            SkillFileSystemHelper.loadSkillFromDirectory(dir, getSource(), !lazy);
+                            lazy
+                                    ? SkillFileSystemHelper.loadSkillHead(dir, getSource())
+                                    : SkillFileSystemHelper.loadSkillFromDirectory(
+                                            dir, getSource(), true);
                     skillCache.put(key, new Snapshot(mtime, size, skill));
                     out.add(skill);
                 } catch (IOException e) {
