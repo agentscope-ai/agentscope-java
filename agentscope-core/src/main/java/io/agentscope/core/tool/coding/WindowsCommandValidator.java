@@ -234,7 +234,7 @@ public class WindowsCommandValidator implements CommandValidator {
         return false;
     }
 
-    public boolean containsMultipleCommands(String command) {
+        public boolean containsMultipleCommands(String command) {
         if (command == null || command.isEmpty()) {
             return false;
         }

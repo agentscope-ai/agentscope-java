@@ -198,11 +198,11 @@ public class UnixCommandValidator implements CommandValidator {
                 escaped = false;
                 continue;
             }
-            if (c == '\\') {
+            if (c == '\') {
                 escaped = true;
                 continue;
             }
-            if (c == '\'' && !inDoubleQuote) {
+            if (c == ''' && !inDoubleQuote) {
                 inSingleQuote = !inSingleQuote;
                 continue;
             }
@@ -222,7 +222,7 @@ public class UnixCommandValidator implements CommandValidator {
         return false;
     }
 
-    public boolean containsMultipleCommands(String command) {
+        public boolean containsMultipleCommands(String command) {
         if (command == null || command.isEmpty()) {
             return false;
         }
