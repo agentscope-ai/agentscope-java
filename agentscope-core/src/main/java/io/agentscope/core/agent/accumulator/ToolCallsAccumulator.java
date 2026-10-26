@@ -72,8 +72,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                 this.toolId = block.getId();
             }
 
-            // Update name (ignore placeholders and empty continuation names —
-            // empty is a common wire shape and must not clobber a captured name)
+            // Update name (ignore placeholders)
             if (block.getName() != null
                     && !block.getName().isEmpty()
                     && !isPlaceholder(block.getName())) {
@@ -262,8 +261,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             return key;
         }
 
-        // 2. Use tool name (non-placeholder, non-empty — an empty name is a
-        //    continuation shape and must not become the constant key "name:")
+        // 2. Use tool name (non-placeholder)
         if (block.getName() != null
                 && !block.getName().isEmpty()
                 && !isPlaceholder(block.getName())) {
@@ -342,10 +340,6 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
     /**
      * Get accumulated tool call by ID.
-     *
-     * <p>Mid-stream accessor: malformed prefixes are expected here, so no parse warning is
-     * emitted. The sanitized warn-once only fires at the {@link #buildAllToolCalls()}
-     * finalization boundary.
      *
      * <p>If the ID is null or empty, or if no builder is found for the given ID,
      * this method falls back to using the lastToolCallKey.
