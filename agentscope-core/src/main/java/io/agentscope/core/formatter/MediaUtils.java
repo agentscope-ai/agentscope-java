@@ -126,18 +126,40 @@ public class MediaUtils {
                         "Failed to download URL: HTTP " + responseCode + " for " + url);
             }
 
-            try (InputStream is = connection.getInputStream()) {
-                byte[] bytes = is.readAllBytes();
+            // Reject early when the server declares an oversized body, so a 10 GB
+            // Content-Length never starts downloading at all.
+            long declared = connection.getContentLengthLong();
+            if (declared > MAX_SIZE_BYTES) {
+                throw new IOException(
+                        "Downloaded content too large: "
+                                + declared
+                                + " bytes (max: "
+                                + MAX_SIZE_BYTES
+                                + ")");
+            }
 
-                // Check size after download
-                if (bytes.length > MAX_SIZE_BYTES) {
-                    throw new IOException(
-                            "Downloaded content too large: "
-                                    + bytes.length
-                                    + " bytes (max: "
-                                    + MAX_SIZE_BYTES
-                                    + ")");
+            try (InputStream is = connection.getInputStream()) {
+                // Bounded read: enforce the cap WHILE reading, not after — readAllBytes()
+                // allocated the full body first, so an oversized or length-less response
+                // (chunked encoding, lying/absent Content-Length) was fully buffered before
+                // rejection (#3318).
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                byte[] chunk = new byte[64 * 1024];
+                long total = 0;
+                int read;
+                while ((read = is.read(chunk)) != -1) {
+                    total += read;
+                    if (total > MAX_SIZE_BYTES) {
+                        throw new IOException(
+                                "Downloaded content too large: more than "
+                                        + MAX_SIZE_BYTES
+                                        + " bytes (max: "
+                                        + MAX_SIZE_BYTES
+                                        + ")");
+                    }
+                    buffer.write(chunk, 0, read);
                 }
+                byte[] bytes = buffer.toByteArray();
                 if (bytes.length > WARN_SIZE_BYTES) {
                     log.warn("Large download detected: {} bytes from {}", bytes.length, url);
                 }
