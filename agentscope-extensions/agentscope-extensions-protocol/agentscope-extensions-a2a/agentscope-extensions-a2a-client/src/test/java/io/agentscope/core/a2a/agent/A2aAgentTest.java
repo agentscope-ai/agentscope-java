@@ -20,12 +20,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -36,6 +38,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.a2a.agent.card.AgentCardResolver;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.MetadataUtil;
 import io.agentscope.core.agent.Agent;
@@ -157,6 +160,79 @@ public class A2aAgentTest {
         assertNotNull(result);
         assertEquals("mock success.", result.getTextContent());
         assertEquals(2, agent.getMemory().getMessages().size());
+        verify(a2aClient).close();
+    }
+
+    @Test
+    @DisplayName("Should resolve the agent card once for each call and stream")
+    void testResolveAgentCardOncePerExecution() {
+        AgentCardResolver resolver = mock(AgentCardResolver.class);
+        when(resolver.getAgentCard("test-agent")).thenReturn(agentCard);
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCardResolver(resolver)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        // Building the agent also resolves its description from the card.
+        clearInvocations(resolver);
+        doAnswer(mockSuccessMessage())
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Msg result = agent.call(Msg.builder().textContent("call").build()).block();
+        assertNotNull(result);
+        assertEquals("mock success.", result.getTextContent());
+        verify(resolver).getAgentCard("test-agent");
+        verify(a2aClient).close();
+
+        List<AgentEvent> events =
+                agent.streamEvents(Msg.builder().textContent("stream").build())
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+        assertTrue(events.stream().anyMatch(AgentResultEvent.class::isInstance));
+        verify(resolver, times(2)).getAgentCard("test-agent");
+        verify(a2aClient, times(2)).close();
+    }
+
+    @Test
+    @DisplayName("Should finish the current call before resolving the card for the next call")
+    void testAgentCardResolutionFailureOnNextCall() {
+        AgentCardResolver resolver = mock(AgentCardResolver.class);
+        RuntimeException failure = new RuntimeException("Agent card discovery failed");
+        when(resolver.getAgentCard("test-agent")).thenReturn(agentCard);
+        AtomicInteger clientsBuilt = new AtomicInteger();
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCardResolver(resolver)
+                        .clientReplacer(
+                                built -> {
+                                    clientsBuilt.incrementAndGet();
+                                    return useMockClient(built);
+                                })
+                        .build();
+        clearInvocations(resolver);
+        when(resolver.getAgentCard("test-agent")).thenReturn(agentCard).thenThrow(failure);
+        doAnswer(mockSuccessMessage())
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Msg result = agent.call(Msg.builder().textContent("first").build()).block();
+        assertNotNull(result);
+        assertEquals("mock success.", result.getTextContent());
+        verify(resolver).getAgentCard("test-agent");
+        verify(a2aClient).close();
+
+        assertSame(
+                failure,
+                assertThrows(
+                        RuntimeException.class,
+                        () -> agent.call(Msg.builder().textContent("next").build()).block()));
+        verify(resolver, times(2)).getAgentCard("test-agent");
+        assertEquals(1, clientsBuilt.get());
+        verify(a2aClient).sendMessage(any(Message.class), anyList(), any());
         verify(a2aClient).close();
     }
 
