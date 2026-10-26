@@ -72,11 +72,14 @@ public final class SkillPromptBuilder {
             ## Code Execution
 
             <code_execution>
-            You have access to the execute tool. Each skill in <available_skills>
-            includes a <files-root> element giving the absolute path to that skill's files.
+            You have access to the execute tool. For skills that provide a <files-root>
+            in <available_skills>, it gives the absolute path to their files.
+            Skills without <files-root> provide documentation through load_skill_through_path;
+            no shell-accessible resource directory is declared for them.
 
             Workflow:
-            1. After loading a skill, look at its <files-root> in <available_skills>
+            1. After loading a skill, check whether it provides <files-root> in <available_skills>
+               Continue with file listing and script execution only when that field is present
             2. List its files:    ls <files-root>/
             3. Run scripts:       python3 <files-root>/scripts/<script-name>
             4. Always use absolute paths derived from <files-root>; never invent paths
