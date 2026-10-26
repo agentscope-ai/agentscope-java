@@ -177,51 +177,6 @@ public class UnixCommandValidator implements CommandValidator {
      * @return true if multiple commands are detected, false otherwise
      */
     @Override
-    /**
-     * Detects shell metacharacters that let a whitelisted executable execute additional
-     * commands or redirect output: command substitution ({@code $(...)}), backticks, variable
-     * expansion ({@code $VAR}/{@code ${...}}), and redirection ({@code >}/{@code <}).
-     * Single-quoted content is literal in {@code sh}; double quotes do NOT neutralize
-     * substitution, so {@code $} and backticks are checked outside single quotes only, while
-     * redirection is checked outside both quote kinds (#3285).
-     */
-    public boolean containsShellMetacharacters(String command) {
-        if (command == null || command.isEmpty()) {
-            return false;
-        }
-        boolean inSingleQuote = false;
-        boolean inDoubleQuote = false;
-        boolean escaped = false;
-        for (int i = 0; i < command.length(); i++) {
-            char c = command.charAt(i);
-            if (escaped) {
-                escaped = false;
-                continue;
-            }
-            if (c == '\\') {
-                escaped = true;
-                continue;
-            }
-            if (c == '\'' && !inDoubleQuote) {
-                inSingleQuote = !inSingleQuote;
-                continue;
-            }
-            if (c == '"' && !inSingleQuote) {
-                inDoubleQuote = !inDoubleQuote;
-                continue;
-            }
-            // Command substitution and variable expansion survive double quotes.
-            if ((c == '$' || c == '`') && !inSingleQuote) {
-                return true;
-            }
-            // Redirection is literal inside either quote kind.
-            if ((c == '>' || c == '<') && !inSingleQuote && !inDoubleQuote) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     public boolean containsMultipleCommands(String command) {
         if (command == null || command.isEmpty()) {
             return false;
@@ -265,6 +220,51 @@ public class UnixCommandValidator implements CommandValidator {
             }
         }
 
+        return false;
+    }
+
+    /**
+     * Detects shell metacharacters that let a whitelisted executable execute additional
+     * commands or redirect output: command substitution ({@code $(...)}), backticks, variable
+     * expansion ({@code $VAR}/{@code ${...}}), and redirection ({@code >}/{@code <}).
+     * Single-quoted content is literal in {@code sh}; double quotes do NOT neutralize
+     * substitution, so {@code $} and backticks are checked outside single quotes only, while
+     * redirection is checked outside both quote kinds (#3285).
+     */
+    public boolean containsShellMetacharacters(String command) {
+        if (command == null || command.isEmpty()) {
+            return false;
+        }
+        boolean inSingleQuote = false;
+        boolean inDoubleQuote = false;
+        boolean escaped = false;
+        for (int i = 0; i < command.length(); i++) {
+            char c = command.charAt(i);
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (c == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (c == '\'' && !inDoubleQuote) {
+                inSingleQuote = !inSingleQuote;
+                continue;
+            }
+            if (c == '"' && !inSingleQuote) {
+                inDoubleQuote = !inDoubleQuote;
+                continue;
+            }
+            // Command substitution and variable expansion survive double quotes.
+            if ((c == '$' || c == '`') && !inSingleQuote) {
+                return true;
+            }
+            // Redirection is literal inside either quote kind.
+            if ((c == '>' || c == '<') && !inSingleQuote && !inDoubleQuote) {
+                return true;
+            }
+        }
         return false;
     }
 }

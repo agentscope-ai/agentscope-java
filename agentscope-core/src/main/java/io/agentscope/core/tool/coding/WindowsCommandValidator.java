@@ -67,9 +67,8 @@ public class WindowsCommandValidator implements CommandValidator {
                     extractExecutable(command));
         }
 
-        // Check for shell metacharacters that survive executable whitelisting under
-        // cmd.exe: variable expansion (%VAR%), redirection (>/<), and the ^ escape used to
-        // smuggle separators past lexical scans (#3285)
+        // Check for cmd.exe metacharacters that survive executable whitelisting: variable
+        // expansion, redirection, and the ^ escape used to smuggle separators (#3285)
         if (containsShellMetacharacters(command)) {
             logger.debug("Command contains cmd.exe metacharacters: {}", command);
             return ValidationResult.rejected(
@@ -215,26 +214,7 @@ public class WindowsCommandValidator implements CommandValidator {
      * @return true if multiple commands are detected, false otherwise
      */
     @Override
-    /**
-     * Detects {@code cmd.exe} metacharacters that let a whitelisted executable execute
-     * additional commands or redirect output: variable expansion ({@code %VAR%}), redirection
-     * ({@code >}/{@code <}), and the {@code ^} escape character (which can smuggle separators
-     * and strip quote characters in {@code cmd /c} round-trips) (#3285).
-     */
-    public boolean containsShellMetacharacters(String command) {
-        if (command == null || command.isEmpty()) {
-            return false;
-        }
-        for (int i = 0; i < command.length(); i++) {
-            char c = command.charAt(i);
-            if (c == '%' || c == '>' || c == '<' || c == '^') {
-                return true;
-            }
-        }
-        return false;
-    }
-
-        public boolean containsMultipleCommands(String command) {
+    public boolean containsMultipleCommands(String command) {
         if (command == null || command.isEmpty()) {
             return false;
         }
@@ -272,6 +252,25 @@ public class WindowsCommandValidator implements CommandValidator {
             }
         }
 
+        return false;
+    }
+
+    /**
+     * Detects {@code cmd.exe} metacharacters that let a whitelisted executable execute
+     * additional commands or redirect output: variable expansion ({@code %VAR%}), redirection
+     * ({@code >}/{@code <}), and the {@code ^} escape character (which can smuggle separators
+     * and strip quote characters in {@code cmd /c} round-trips) (#3285).
+     */
+    public boolean containsShellMetacharacters(String command) {
+        if (command == null || command.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < command.length(); i++) {
+            char c = command.charAt(i);
+            if (c == '%' || c == '>' || c == '<' || c == '^') {
+                return true;
+            }
+        }
         return false;
     }
 }
