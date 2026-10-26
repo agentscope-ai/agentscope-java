@@ -877,7 +877,8 @@ class ReActAgentHitlTest {
                         .id("tc-malformed-ask")
                         .name("ask")
                         .input(Map.of("query", "stale"))
-                        .content("{\"query\": \"unterminated}")
+                        .content("{}")
+                        .metadata(Map.of(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED, true))
                         .build();
         ChatModelBase model =
                 new ScriptedModel(
@@ -915,7 +916,8 @@ class ReActAgentHitlTest {
                         .orElse(null);
         assertNotNull(result);
         assertEquals(ToolResultState.ERROR, result.getState());
-        assertTrue(toolResultText(result).contains("malformed arguments"));
+        assertTrue(toolResultText(result).contains("tc-malformed-ask"));
+        assertTrue(toolResultText(result).contains("was not executed"));
     }
 
     @Test

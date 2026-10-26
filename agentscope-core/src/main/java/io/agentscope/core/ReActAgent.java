@@ -2049,10 +2049,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         + " complete arguments could be parsed. Do not repeat the same large"
                         + " arguments. Split the work into smaller tool calls or provide a"
                         + " shorter argument payload, then reissue the call.";
-        private static final String INVALID_TOOL_ARGUMENTS =
-                "Tool call not executed: its arguments were not a valid JSON object. Reissue"
-                        + " the call with corrected JSON object arguments.";
-
         InterruptControl interruption = new InterruptControl();
         AgentState state;
         PermissionEngine permissionEngine;
@@ -3749,9 +3745,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         private void writeMalformedArgumentResults(
                 List<ToolUseBlock> toolCalls, String replyId, boolean outputLimitReached) {
-            String message =
-                    outputLimitReached ? OUTPUT_LIMIT_TOOL_ARGUMENTS : INVALID_TOOL_ARGUMENTS;
             for (ToolUseBlock tc : toolCalls) {
+                String message =
+                        outputLimitReached
+                                ? OUTPUT_LIMIT_TOOL_ARGUMENTS
+                                : malformedToolCallMessage(tc);
                 ToolResultBlock errorResult = ToolResultBlock.error(tc.getId(), message);
                 Msg toolResultMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(errorResult, tc, getName());
@@ -4267,13 +4265,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private ToolResultBlock malformedToolCallResult(ToolUseBlock toolCall) {
-            return ToolResultBlock.error(
-                    toolCall.getId(),
-                    "Tool execution rejected: malformed arguments for '"
-                            + toolCall.getName()
-                            + "' ("
-                            + toolCall.getId()
-                            + ")");
+            return ToolResultBlock.error(toolCall.getId(), malformedToolCallMessage(toolCall));
+        }
+
+        private String malformedToolCallMessage(ToolUseBlock toolCall) {
+            String toolName = toolCall.getName();
+            if (toolName == null || toolName.isBlank()) {
+                toolName = "unknown";
+            }
+            return "Tool call '"
+                    + toolName
+                    + "' (id="
+                    + toolCall.getId()
+                    + ") was not executed because its arguments were not a valid JSON object. "
+                    + "Reissue the call with corrected JSON object arguments.";
         }
 
         /**
