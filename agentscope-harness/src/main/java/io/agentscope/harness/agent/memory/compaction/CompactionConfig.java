@@ -68,8 +68,9 @@ public class CompactionConfig {
 
     /**
      * Default summary prompt with structured format. Extraction disciplines: verbatim
-     * preservation of reusable strings, user corrections, merge rules for chained compaction,
-     * and secrecy about the summarization step itself.
+     * preservation of reusable strings, still-active user constraints and corrections (with
+     * superseded decisions marked), merge rules for chained compaction, and secrecy about the
+     * summarization step itself.
      */
     public static final String DEFAULT_SUMMARY_PROMPT =
             """
@@ -122,6 +123,10 @@ public class CompactionConfig {
             <extraction_rules>
             - Preserve verbatim: file paths, commands, URLs, identifiers, and exact error \
             strings. Do not paraphrase them — they must be reusable exactly as they occurred.
+            - Still-active user constraints, corrections, acceptance criteria, and authorization \
+            boundaries: keep the user's exact wording where it governs behavior. Mark superseded \
+            decisions as superseded; a retracted instruction must not be carried forward as a \
+            current requirement.
             - Keep durable facts and decisions; drop superseded intermediate state (old file \
             versions, outdated hypotheses, already-resolved blockers).
             - If the history already contains an earlier summary, merge it with the new material \

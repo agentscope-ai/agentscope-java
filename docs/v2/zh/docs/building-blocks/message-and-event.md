@@ -298,7 +298,7 @@ sequenceDiagram
 
 <Accordion title="工具结果流式事件">
 
-**ToolResultStartEvent** — 工具开始执行（带 `toolCallId`、`toolCallName`）。
+**ToolResultStartEvent** — 工具开始执行（带 `toolCallId`、`toolCallName`）。串行批次中在该工具轮到执行时发送，而非批次受理时。
 
     **ToolProgressEvent** — 工具执行过程中通过 `ToolEmitter` 发布的中间进度。进度仅用于展示，不会发送给 LLM，也不属于工具结果的一部分。
 
@@ -306,7 +306,7 @@ sequenceDiagram
 
     **ToolResultDataDeltaEvent** — 工具返回值的二进制或结构化输出；与 `DataBlockDeltaEvent` 类似，包含 `mediaType` / `data` / `url` 字段。
 
-    **ToolResultEndEvent** — 工具执行完成。
+    **ToolResultEndEvent** — 工具最终结果就绪。对应的 Text/Data Delta 和 End 事件无需等待同批其他工具即可发送。结果可能按完成顺序到达，请用 `replyId` 和 `toolCallId` 关联。PostActing、上下文写入和下一轮模型调用仍等待整批完成，结果保持原调用顺序。
 
     | 方法 | 类型 | 说明 |
     |------|------|------|

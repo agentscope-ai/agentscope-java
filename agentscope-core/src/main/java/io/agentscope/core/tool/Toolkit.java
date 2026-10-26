@@ -558,7 +558,28 @@ public class Toolkit {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        return executor.execute(param);
+        return executor.executeWithInfrastructure(param, resolveToolExecutionConfig(null));
+    }
+
+    /**
+     * Execute a tool with a per-call execution configuration.
+     *
+     * <p>The configuration is merged as {@code per-call > toolkit-level > system default}. A
+     * {@code null} configuration is equivalent to {@link #callTool(ToolCallParam)}.
+     *
+     * @param param Tool call parameters containing execution information
+     * @param perCallConfig per-call execution configuration; may be {@code null}
+     * @return Mono containing execution result
+     */
+    public Mono<ToolResultBlock> callTool(ToolCallParam param, ExecutionConfig perCallConfig) {
+        return executor.executeWithInfrastructure(param, resolveToolExecutionConfig(perCallConfig));
+    }
+
+    private ExecutionConfig resolveToolExecutionConfig(ExecutionConfig perCallConfig) {
+        ExecutionConfig base =
+                ExecutionConfig.mergeConfigs(
+                        config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS);
+        return perCallConfig == null ? base : ExecutionConfig.mergeConfigs(perCallConfig, base);
     }
 
     /**
@@ -619,12 +640,39 @@ public class Toolkit {
             RuntimeContext agentRuntimeContext,
             ToolRequestConfig requestConfig,
             BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
-        // Merge execution configs: agent-level > toolkit-level > system default
-        ExecutionConfig effectiveConfig =
-                ExecutionConfig.mergeConfigs(
-                        agentExecutionConfig,
-                        ExecutionConfig.mergeConfigs(
-                                config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
+        ToolExecutionCallback callback =
+                internalChunkCallback == null
+                        ? null
+                        : new ToolExecutionCallback() {
+                            @Override
+                            public void onProgress(ToolUseBlock call, ToolResultBlock chunk) {
+                                internalChunkCallback.accept(call, chunk);
+                            }
+                        };
+        return callToolsWithCallback(
+                toolCalls,
+                agentExecutionConfig,
+                agent,
+                agentRuntimeContext,
+                requestConfig,
+                callback);
+    }
+
+    /**
+     * Execute a batch with start, progress, and final-result notifications before ordered
+     * aggregation. The returned list retains declaration order. {@link
+     * ToolExecutionCallback#onStart} fires when the executor begins each invocation (in
+     * sequential batches, when the call's turn arrives) and results may arrive in completion
+     * order.
+     */
+    public Mono<List<ToolResultBlock>> callToolsWithCallback(
+            List<ToolUseBlock> toolCalls,
+            ExecutionConfig agentExecutionConfig,
+            Agent agent,
+            RuntimeContext agentRuntimeContext,
+            ToolRequestConfig requestConfig,
+            ToolExecutionCallback executionCallback) {
+        ExecutionConfig effectiveConfig = resolveToolExecutionConfig(agentExecutionConfig);
 
         return executor.executeAll(
                 toolCalls,
@@ -637,7 +685,7 @@ public class Toolkit {
                         : agentRuntimeContext == null
                                 ? ToolRequestConfig.NONE
                                 : agentRuntimeContext.getToolRequestConfig(),
-                internalChunkCallback);
+                executionCallback);
     }
 
     // ==================== MCP Client Registration (Delegated) ====================
