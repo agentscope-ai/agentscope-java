@@ -175,6 +175,7 @@ sequenceDiagram
         rect rgba(200, 200, 100, 0.1)
             Note over Client,Agent: ToolResultBlock (toolCallId)
             Agent->>Client: ToolResultStartEvent
+            Agent->>Client: ToolProgressEvent (×N, from ToolEmitter)
             Agent->>Client: ToolResultTextDeltaEvent (×N)
             Agent->>Client: ToolResultDataDeltaEvent (×N)
             Agent->>Client: ToolResultEndEvent
@@ -297,13 +298,15 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
 <Accordion title="Tool-result streaming events">
 
-**ToolResultStartEvent** — tool starts executing (carries `toolCallId`, `toolCallName`).
+**ToolResultStartEvent** — the tool starts executing (carries `toolCallId`, `toolCallName`); in sequential batches it fires when the tool's turn arrives, not when the batch is admitted.
 
-    **ToolResultTextDeltaEvent** — incremental text output from the tool; `getDelta()` returns a text fragment.
+    **ToolProgressEvent** — an intermediate update published by a running tool through `ToolEmitter`. Progress is for display only and is never sent to the LLM; it must not be treated as part of the tool result.
 
-    **ToolResultDataDeltaEvent** — incremental binary output from the tool; similar to `DataBlockDeltaEvent` with `mediaType` / `data` / `url`.
+    **ToolResultTextDeltaEvent** — incremental text output from the tool's return value; `getDelta()` returns a text fragment. This is what the LLM receives as the tool result.
 
-    **ToolResultEndEvent** — tool completes.
+    **ToolResultDataDeltaEvent** — incremental binary or structured output from the tool's return value; similar to `DataBlockDeltaEvent` with `mediaType` / `data` / `url`.
+
+    **ToolResultEndEvent** — the final tool result is available. Its text/data deltas and end event are delivered without waiting for other tools in the batch. Results may arrive in completion order; correlate them by `replyId` and `toolCallId`. PostActing, context updates, and the next model call still wait for the whole batch, with results kept in the original call order.
 
     | Method | Type | Description |
     |--------|------|-------------|

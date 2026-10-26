@@ -61,6 +61,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -214,7 +215,10 @@ public class AgentSpawnTool {
             wait_async_results(task_ids=...) to wait for a chosen group, \
             wait_async_results(wait_all=true) to wait for all current background tasks, \
             task_cancel(task_id='%s') to cancel, or task_list() to see all tasks. \
-            Do NOT call task_output immediately — the task has just started.\
+            Do NOT call task_output immediately — the task has just started. \
+            Do not redo the task's work yourself while it runs in the background. \
+            Never mention task_id, agent_key, or session_id to the user — they are internal handles. \
+            Do not read the task's output files to watch progress; wait for the result instead.\
             """;
 
     /** Short poll interval used while waiting for a remote sync task, to detect awaiting_confirm promptly. */
@@ -230,7 +234,10 @@ public class AgentSpawnTool {
             String key, String agentId, String sessionId, String label, Agent agent, int depth) {}
 
     private final ConcurrentHashMap<String, SpawnedAgent> agentsByKey = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, String> labelToKey = new ConcurrentHashMap<>();
+
+    private record LabelKey(String userId, String parentSessionId, String label) {}
+
+    private final ConcurrentHashMap<LabelKey, String> labelToKey = new ConcurrentHashMap<>();
 
     /**
      * Creates an {@code AgentSpawnTool} that derives the active user-id from each tool call's
@@ -298,7 +305,12 @@ public class AgentSpawnTool {
                     async (timeout_seconds=0) adds task_id for task_output or wait_async_results; \
                     task_id is NOT agent_key. Multiple sync tool calls in one turn run in parallel \
                     by default; pass a Toolkit with parallel=false to serialize, \
-                    or use async tasks for fire-and-forget parallelism.\
+                    or use async tasks for fire-and-forget parallelism. \
+                    The subagent does not inherit the parent conversation, so include every \
+                    file path, constraint, and expected output format the task needs. New \
+                    sessions start from the supplied task; persistent sessions may retain their own history. \
+                    Do not re-spawn the same task reworded to bypass a permission denial; \
+                    report the limitation instead.\
                     """)
     public Mono<ToolResultBlock> agentSpawn(
             RuntimeContext runtimeContext,
@@ -351,21 +363,16 @@ public class AgentSpawnTool {
         String canonLabel = label != null && !label.isBlank() ? label.trim() : null;
         DefaultAgentManager manager = managerFor(runtimeContext);
 
-        Optional<Agent> agentOpt = manager.createAgentIfPresent(agentId, runtimeContext);
-        if (agentOpt.isEmpty()) {
-            if (manager.isPrimaryOnly(agentId)) {
-                return Mono.just(
-                        ToolResultBlock.error(
-                                "agent_id '"
-                                        + agentId
-                                        + "' is PRIMARY-only and cannot be spawned as a"
-                                        + " subagent."));
-            }
-            log.warn("agent_spawn unknown agentId={}, known={}", agentId, manager);
+        if (manager.isPrimaryOnly(agentId)) {
+            return Mono.just(
+                    ToolResultBlock.error(
+                            "agent_id '"
+                                    + agentId
+                                    + "' is PRIMARY-only and cannot be spawned as a subagent."));
+        }
+        if (!manager.hasAgent(agentId)) {
             return Mono.just(ToolResultBlock.error("Unknown agent_id: " + agentId));
         }
-        log.debug("agent_spawn resolved: agentId={}", agentId);
-        Agent agent = agentOpt.get();
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         var declOpt = manager.getDeclaration(agentId);
@@ -374,47 +381,54 @@ public class AgentSpawnTool {
         String key;
         String sessionId;
         if (persist) {
-            String hash = deterministicHash(parentSessionId, agentId, canonLabel);
+            String hash = deterministicHash(currentUserId, parentSessionId, agentId, canonLabel);
             key = "agent:" + agentId + ":" + hash;
             sessionId = "sub-" + hash;
-            // Reuse existing agent if same deterministic key was already spawned.
-            SpawnedAgent existing = agentsByKey.get(key);
-            if (existing != null) {
-                propagatePlanMode(
-                        parentState, currentUserId, existing.sessionId(), existing.agent());
-                propagateParentDenyRules(
-                        parentState,
-                        currentUserId,
-                        existing.sessionId(),
-                        existing.agent(),
-                        declOpt);
-                String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
-                boolean hasTask = task != null && !task.isBlank();
-                if (!hasTask) {
-                    return Mono.just(
-                            ToolResultBlock.success(spawnInfo + "\nstatus: accepted (reused)"));
-                }
-                return execSpawnTask(
-                        existing,
-                        runtimeContext,
-                        parentState,
-                        spawnInfo,
-                        task,
-                        timeoutSeconds,
-                        declOpt);
-            }
         } else {
             key = "agent:" + agentId + ":" + UUID.randomUUID();
             sessionId = "sub-" + UUID.randomUUID();
         }
 
-        // Label uniqueness check — skipped above for persist=true reuse path (already returned).
-        if (canonLabel != null && labelToKey.containsKey(canonLabel.toLowerCase())) {
+        LabelKey labelKey = canonLabel != null ? labelKey(runtimeContext, canonLabel) : null;
+        String labeledKey = labelKey != null ? labelToKey.get(labelKey) : null;
+        if (labeledKey != null && (!persist || !labeledKey.equals(key))) {
             return Mono.just(ToolResultBlock.error("Label already in use: " + canonLabel));
         }
 
+        // Create only on a cache miss, including concurrent spawns of the same identity.
+        AtomicBoolean created = new AtomicBoolean();
         SpawnedAgent spawned =
-                new SpawnedAgent(key, agentId, sessionId, canonLabel, agent, nextDepth);
+                agentsByKey.computeIfAbsent(
+                        key,
+                        ignored -> {
+                            Optional<Agent> agentOpt =
+                                    manager.createAgentIfPresent(agentId, runtimeContext);
+                            if (agentOpt.isEmpty()) {
+                                return null;
+                            }
+                            created.set(true);
+                            return new SpawnedAgent(
+                                    key, agentId, sessionId, canonLabel, agentOpt.get(), nextDepth);
+                        });
+        if (spawned == null) {
+            return Mono.just(ToolResultBlock.error("Unknown agent_id: " + agentId));
+        }
+        Agent agent = spawned.agent();
+        if (labelKey != null) {
+            labelToKey.put(labelKey, key);
+        }
+        persistSpawnEntry(parentState, key, agentId, sessionId, canonLabel, nextDepth);
+        if (!created.get()) {
+            propagatePlanMode(parentState, currentUserId, sessionId, agent);
+            propagateParentDenyRules(parentState, currentUserId, sessionId, agent, declOpt);
+            String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
+            if (task == null || task.isBlank()) {
+                return Mono.just(
+                        ToolResultBlock.success(spawnInfo + "\nstatus: accepted (reused)"));
+            }
+            return execSpawnTask(
+                    spawned, runtimeContext, parentState, spawnInfo, task, timeoutSeconds, declOpt);
+        }
         var recorder = io.agentscope.core.session.SessionRecorder.from(runtimeContext);
         if (recorder != null)
             recorder.recordNow(
@@ -435,11 +449,6 @@ public class AgentSpawnTool {
                                                             .build())
                                             .agentId()
                                     : agentId));
-        agentsByKey.put(key, spawned);
-        if (canonLabel != null) {
-            labelToKey.put(canonLabel.toLowerCase(), key);
-        }
-        persistSpawnEntry(parentState, key, agentId, sessionId, canonLabel, nextDepth);
 
         // Propagate plan mode: if parent is in plan mode, force child into read-only mode too.
         propagatePlanMode(parentState, currentUserId, sessionId, agent);
@@ -574,7 +583,10 @@ public class AgentSpawnTool {
                     Send a message to an existing subagent. Use the exact string from the \
                     agent_key line of agent_spawn output (starts with agent:), or the label \
                     you set at spawn. Do not pass agent_id, session_id, or task_id here. \
-                    timeout_seconds=0 returns task_id for task_output or wait_async_results.\
+                    timeout_seconds=0 returns task_id for task_output or wait_async_results. \
+                    Sends are follow-ups to a subagent that already holds the context you \
+                    gave it. Use follow-ups to steer the task or continue its work. Do not \
+                    re-send the same request reworded to bypass a permission denial.\
                     """)
     public Mono<ToolResultBlock> agentSend(
             RuntimeContext runtimeContext,
@@ -622,7 +634,7 @@ public class AgentSpawnTool {
         if (hasKey) {
             key = agentKey.trim();
         } else {
-            key = labelToKey.get(label.trim().toLowerCase());
+            key = labelToKey.get(labelKey(runtimeContext, label.trim()));
             if (key == null) {
                 key = tryResolveLabelFromState(parentState, label.trim());
             }
@@ -1127,10 +1139,11 @@ public class AgentSpawnTool {
         if (parentState == null) {
             return null;
         }
-        String lowerLabel = label.toLowerCase();
+        String lowerLabel = label.toLowerCase(Locale.ROOT);
         for (io.agentscope.core.state.ToolContextState.SpawnEntry entry :
                 parentState.getToolContext().getSpawnRegistry().values()) {
-            if (entry.label() != null && entry.label().toLowerCase().equals(lowerLabel)) {
+            if (entry.label() != null
+                    && entry.label().toLowerCase(Locale.ROOT).equals(lowerLabel)) {
                 return entry.key();
             }
         }
@@ -1165,7 +1178,7 @@ public class AgentSpawnTool {
                         entry.depth());
         agentsByKey.put(key, restored);
         if (entry.label() != null) {
-            labelToKey.put(entry.label().toLowerCase(), key);
+            labelToKey.put(labelKey(runtimeContext, entry.label()), key);
         }
         log.info(
                 "Restored subagent from persisted state: key={}, agentId={}", key, entry.agentId());
@@ -1194,7 +1207,8 @@ public class AgentSpawnTool {
         return String.format(
                 """
                 status: timeout
-                The task exceeded the %ds sync timeout and was interrupted because force_sync                 is enabled. Background promotion is disabled for this call.\
+                The task exceeded the %ds sync timeout and was interrupted because force_sync \
+                is enabled. Background promotion is disabled for this call.\
                 """,
                 timeoutMs / 1000);
     }
@@ -1756,15 +1770,29 @@ public class AgentSpawnTool {
                 forceSync);
     }
 
+    private static LabelKey labelKey(RuntimeContext runtimeContext, String label) {
+        return new LabelKey(
+                runtimeContext != null ? runtimeContext.getUserId() : null,
+                runtimeContext != null ? runtimeContext.getSessionId() : null,
+                label.toLowerCase(Locale.ROOT));
+    }
+
     /**
-     * Derives a deterministic 12-char hex hash from (parentSessionId, agentId, label). Same inputs
-     * always produce the same key, enabling subagent state recovery across parent calls.
+     * Derives a deterministic 12-char hex hash from (userId, parentSessionId, agentId, label).
+     * Length prefixes distinguish null values and embedded separators without changing the
+     * external key format.
      */
-    static String deterministicHash(String parentSessionId, String agentId, String label) {
-        String parent = parentSessionId != null ? parentSessionId : "anon";
-        return label != null
-                ? SessionIdUtils.deterministicHash(parent, agentId, label)
-                : SessionIdUtils.deterministicHash(parent, agentId);
+    static String deterministicHash(
+            String userId, String parentSessionId, String agentId, String label) {
+        return SessionIdUtils.deterministicHash(
+                identityPart(userId),
+                identityPart(parentSessionId),
+                identityPart(agentId),
+                identityPart(label));
+    }
+
+    private static String identityPart(String value) {
+        return value == null ? "-1:" : value.length() + ":" + value;
     }
 
     private static void propagateParentDenyRules(

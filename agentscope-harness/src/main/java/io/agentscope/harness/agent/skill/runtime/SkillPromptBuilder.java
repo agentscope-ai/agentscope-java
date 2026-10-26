@@ -24,6 +24,11 @@ import java.util.regex.Pattern;
 /**
  * Renders the harness {@code <available_skills>} system-prompt block from a {@link SkillCatalog}.
  *
+ * <p>By default the catalog renders the slim view: one {@code <skill>} element per entry with
+ * {@code <name>}, {@code <description>}, {@code <skill-id>} and, when present, {@code
+ * <files-root>}. The full frontmatter view (all YAML metadata rendered as XML) remains available
+ * by constructing the builder with {@code exposeAllMetadata=true}.
+ *
  * <p>Differences from the legacy {@code AgentSkillPromptProvider}:
  *
  * <ul>
@@ -51,22 +56,10 @@ public final class SkillPromptBuilder {
             <usage>
             Skills provide specialized capabilities and domain knowledge. Use them when they match your current task.
 
-            How to use skills:
-            - Load skill: load_skill_through_path(skillId="<skill-id>", path="SKILL.md")
-            - The skill will be activated and its documentation loaded with detailed instructions
-            - Additional resources (scripts, assets, references) can be loaded with the same tool and other paths
-
-            Example:
-            1. User asks to analyze data -> find a matching skill below (e.g. <skill-id>data-analysis_workspace</skill-id>)
-            2. Load it: load_skill_through_path(skillId="data-analysis_workspace", path="SKILL.md")
-            3. Follow the instructions returned by the skill
-
-            Metadata is rendered as XML under each <skill> element:
-            - scalar metadata becomes a simple child element
-            - nested maps become nested XML elements
-            - lists become repeated <item> elements
-            - <skill-id> is always appended for tool loading
-            - <files-root>, when present, gives the absolute path for shell-executing this skill's scripts
+            How to use a skill:
+            - Load: load_skill_through_path(skillId="<skill-id>", path="SKILL.md") loads its documentation with detailed instructions
+            - Other resources (scripts, assets, references) load with the same tool and other paths
+            - <files-root>, when present, gives the absolute path to that skill's files
             </usage>
 
             <available_skills>
@@ -96,7 +89,7 @@ public final class SkillPromptBuilder {
     private final boolean exposeAllMetadata;
 
     public SkillPromptBuilder() {
-        this(null, null, true);
+        this(null, null, false);
     }
 
     public SkillPromptBuilder(
@@ -114,7 +107,7 @@ public final class SkillPromptBuilder {
      * caller can no-op concatenation.
      *
      * @param catalog the per-call snapshot (non-null)
-     * @param filter  visibility filter applied per skillId (non-null; use {@link SkillFilter#all()})
+     * @param filter  visibility filter applied per skill name (non-null; use {@link SkillFilter#all()})
      * @return prompt text, or empty string when nothing is visible
      */
     public String render(SkillCatalog catalog, SkillFilter filter) {

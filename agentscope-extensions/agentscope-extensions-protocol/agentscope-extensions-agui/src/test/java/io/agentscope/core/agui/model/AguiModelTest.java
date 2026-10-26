@@ -79,6 +79,17 @@ class AguiModelTest {
         }
 
         @Test
+        void testReasoningMessageFactory() {
+            AguiMessage msg = AguiMessage.reasoningMessage("msg-r1", "Think step by step");
+
+            assertEquals("msg-r1", msg.getId());
+            assertEquals("reasoning", msg.getRole());
+            assertEquals("Think step by step", msg.getTextContent());
+            assertTrue(msg.isReasoningMessage());
+            assertFalse(msg.isAssistantMessage());
+        }
+
+        @Test
         void testRoleHelpersAreCaseInsensitive() {
             AguiMessage user =
                     new AguiMessage("msg-1", "USER", new MessageContent.Text("Hello"), null, null);
@@ -91,11 +102,15 @@ class AguiModelTest {
             AguiMessage tool =
                     new AguiMessage(
                             "msg-4", "TOOL", new MessageContent.Text("Hello"), null, "tc-1");
+            AguiMessage reasoning =
+                    new AguiMessage(
+                            "msg-5", "REASONING", new MessageContent.Text("Think"), null, null);
 
             assertTrue(user.isUserMessage());
             assertTrue(assistant.isAssistantMessage());
             assertTrue(system.isSystemMessage());
             assertTrue(tool.isToolMessage());
+            assertTrue(reasoning.isReasoningMessage());
         }
 
         @Test
@@ -209,6 +224,36 @@ class AguiModelTest {
             assertEquals(msg.getId(), deserialized.getId());
             assertEquals(msg.getRole(), deserialized.getRole());
             assertEquals("Hello", deserialized.getTextContent());
+        }
+
+        @Test
+        void testJsonSerializationOmitsNonProtocolProperties() throws JsonProcessingException {
+            AguiMessage assistant = AguiMessage.assistantMessage("msg-1", "Hello");
+
+            String assistantJson = JsonUtils.getJsonCodec().toJson(assistant);
+            assertFalse(assistantJson.contains("textContent"), assistantJson);
+            assertFalse(assistantJson.contains("userMessage"), assistantJson);
+            assertFalse(assistantJson.contains("assistantMessage"), assistantJson);
+            assertFalse(assistantJson.contains("systemMessage"), assistantJson);
+            assertFalse(assistantJson.contains("toolMessage"), assistantJson);
+            assertFalse(assistantJson.contains("reasoningMessage"), assistantJson);
+            assertFalse(assistantJson.contains("toolCallId"), assistantJson);
+            assertFalse(assistantJson.contains("toolCalls"), assistantJson);
+
+            AguiMessage tool = AguiMessage.toolMessage("msg-2", "tc-1", "Result");
+            String toolJson = JsonUtils.getJsonCodec().toJson(tool);
+            assertTrue(toolJson.contains("\"toolCallId\":\"tc-1\""), toolJson);
+
+            AguiFunctionCall function = new AguiFunctionCall("get_weather", "{}");
+            AguiMessage assistantWithToolCalls =
+                    new AguiMessage(
+                            "msg-3",
+                            "assistant",
+                            new MessageContent.Text("Checking"),
+                            List.of(new AguiToolCall("tc-1", function)),
+                            null);
+            String withToolCallsJson = JsonUtils.getJsonCodec().toJson(assistantWithToolCalls);
+            assertTrue(withToolCallsJson.contains("\"toolCalls\":["), withToolCallsJson);
         }
 
         @Test

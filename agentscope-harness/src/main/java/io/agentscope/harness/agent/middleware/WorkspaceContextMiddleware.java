@@ -28,10 +28,13 @@ import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -56,9 +59,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private static final String SESSION_CONTEXT_SECTION_TEMPLATE =
             """
             ## Runtime Environment
-            This is the %s. We are setting up the context for our chat.
-            Today's date is %s.
-            My operating system is: %s
+            You are the %s agent.
+            The host operating system is: %s
             The workspace directory is: %s
             The project's temporary directory is: %s
             %s
@@ -204,7 +206,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void collectWorkspaceMaterials(RuntimeContext rc) {
-        String agentsContent = workspaceManager.readAgentsMd(rc).strip();
+        String agentsContent = composeAgentsContent(workspaceManager.readAgentsMd(rc));
         boolean includeMemoryContext = includeMemoryContext();
         String memoryContent =
                 includeMemoryContext ? workspaceManager.readMemoryMd(rc).strip() : "";
@@ -215,7 +217,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                 detectLocalUpper(filesystem) != null
                         ? workspaceManager.resolveRuntimeDataPath(rc, "")
                         : workspace;
-        String sessionContext = buildSessionContextSection(effectiveWorkspace, rc);
+        String sessionContext = buildSessionContextSection(effectiveWorkspace);
 
         String knowledgeBlock = buildKnowledgeBlock(rc, knowledgeContent, workspace);
         String additionalBlock = buildAdditionalContextBlock(rc);
@@ -251,10 +253,47 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                                 "environment",
                                 "harness:workspace-environment",
                                 sessionContext + "\n" + workspaceParagraph),
+                        ContextItem.runtimeState(
+                                "session_state",
+                                "harness:session-state",
+                                false,
+                                buildSessionStateSection(rc)),
                         new ContextItem("memory", "workspace:MEMORY.md", memoryContent),
                         new ContextItem("knowledge", "workspace:knowledge", knowledgeBlock),
                         new ContextItem(
                                 "additional", "workspace:additional-files", additionalBlock)));
+    }
+
+    /** Head-truncation cap for AGENTS.md content, in UTF-8 bytes. */
+    private static final int MAX_AGENTS_MD_BYTES = 100 * 1024;
+
+    /**
+     * Caps the rule body at {@link #MAX_AGENTS_MD_BYTES} UTF-8 bytes and prefixes the
+     * applicability line so the note travels with the rules instead of a distant block.
+     */
+    private static String composeAgentsContent(String raw) {
+        String content = truncateUtf8(raw.strip(), MAX_AGENTS_MD_BYTES);
+        if (content.isEmpty()) {
+            return "";
+        }
+        return "AGENTS.md defines persona and local conventions — honor them when consistent"
+                + " with safety and policy.\n\n"
+                + content;
+    }
+
+    /**
+     * Head-truncates to {@code maxBytes} UTF-8 bytes and appends a visible truncation marker.
+     * Encodes into a fixed-size buffer; the encoder stops before a code point that no longer
+     * fits, so the head always decodes back without splitting a character.
+     */
+    private static String truncateUtf8(String content, int maxBytes) {
+        CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder();
+        ByteBuffer out = ByteBuffer.allocate(maxBytes);
+        if (encoder.encode(CharBuffer.wrap(content), out, true).isUnderflow()) {
+            return content;
+        }
+        return new String(out.array(), 0, out.position(), StandardCharsets.UTF_8)
+                + "\n\n[File truncated: AGENTS.md]";
     }
 
     /**
@@ -388,9 +427,6 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                     "Treat this directory as the single global workspace for file operations"
                             + " unless explicitly instructed otherwise.\n");
         }
-        sb.append(
-                "AGENTS.md defines persona and local conventions — honor them when consistent"
-                        + " with safety and policy.\n");
         if (artifactDeliveryEnabled
                 && fs instanceof AbstractSandboxFilesystem
                 && !(fs instanceof OverlayFilesystem)) {
@@ -466,32 +502,37 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         };
     }
 
-    private String buildSessionContextSection(Path workspace, RuntimeContext rc) {
-        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE MMM d, yyyy"));
+    private String buildSessionContextSection(Path workspace) {
         String platform = System.getProperty("os.name") + " " + System.getProperty("os.version");
         String tempDir = System.getProperty("java.io.tmpdir");
-        String dynamicPart = buildSessionDynamicPart(rc);
+        String environmentMemoryPart =
+                environmentMemory != null && !environmentMemory.isBlank() ? environmentMemory : "";
 
         return String.format(
                         SESSION_CONTEXT_SECTION_TEMPLATE,
                         agentName,
-                        today,
                         platform,
                         workspace.toAbsolutePath(),
                         tempDir,
-                        dynamicPart)
+                        environmentMemoryPart)
                 .strip();
     }
 
-    private String buildSessionDynamicPart(RuntimeContext rc) {
-        List<String> parts = new ArrayList<>();
+    /**
+     * Per-call volatile facts for the tail runtime channel: the session id and the resolved date.
+     * Both change independently of the agent's identity and instructions (a long session crosses
+     * midnight), so they must not sit in the byte-stable system head.
+     */
+    private String buildSessionStateSection(RuntimeContext rc) {
+        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE MMM d, yyyy"));
+        StringBuilder sb = new StringBuilder();
         if (rc != null && rc.getSessionId() != null) {
-            parts.add("AgentStateStore ID: " + rc.getSessionId());
+            sb.append("AgentStateStore session id: ").append(rc.getSessionId()).append('\n');
         }
-        if (environmentMemory != null && !environmentMemory.isBlank()) {
-            parts.add(environmentMemory);
-        }
-        return parts.isEmpty() ? "" : String.join("\n", parts);
+        sb.append("Today's date: ")
+                .append(today)
+                .append(" (resolved at the start of this conversation turn)\n");
+        return sb.toString();
     }
 
     private static String indentByTwo(String text) {

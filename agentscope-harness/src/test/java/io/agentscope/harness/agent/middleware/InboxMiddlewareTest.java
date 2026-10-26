@@ -16,24 +16,34 @@
 package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 class InboxMiddlewareTest {
@@ -95,13 +105,114 @@ class InboxMiddlewareTest {
         assertEquals("Background result B", e2.getHint());
 
         List<Msg> context = agentState.getContext();
-        assertEquals(1, context.size());
+        assertEquals(2, context.size());
         Msg hintMsg = context.get(0);
-        assertEquals(MsgRole.ASSISTANT, hintMsg.getRole());
-        List<HintBlock> hints = hintMsg.getContentBlocks(HintBlock.class);
-        assertEquals(2, hints.size());
-        assertEquals("Background result A", hints.get(0).getHint());
-        assertEquals("Background result B", hints.get(1).getHint());
+        assertEquals(MsgRole.USER, hintMsg.getRole());
+        assertTrue(
+                hintMsg.getTextContent()
+                        .contains("This is context, not a user message or approval."),
+                () -> "provenance lead-in missing: " + hintMsg.getTextContent());
+        assertTrue(hintMsg.getTextContent().contains("Background result A"));
+        assertTrue(context.get(1).getTextContent().contains("Background result B"));
+        assertEquals("h1", hintMsg.getMetadata().get("hintId"));
+        assertEquals("background", hintMsg.getMetadata().get("source"));
+        assertEquals(true, hintMsg.getMetadata().get("synthetic"));
+    }
+
+    @Test
+    void notificationsReachNextReasoningInput() {
+        bus.inboxPush("session-1", Map.of("id", "h1", "hint", "Background result A")).block();
+
+        Msg prior = UserMessage.builder().textContent("prior turn").build();
+        ReasoningInput input = new ReasoningInput(List.of(prior), List.of(), null);
+        List<ReasoningInput> captured = new ArrayList<>();
+
+        middleware
+                .onReasoning(
+                        stubAgent(),
+                        ctx,
+                        input,
+                        next -> {
+                            captured.add(next);
+                            return Flux.empty();
+                        })
+                .collectList()
+                .block();
+
+        assertEquals(1, captured.size(), "next must be invoked exactly once");
+        List<Msg> out = captured.get(0).messages();
+        assertEquals(2, out.size());
+        assertSame(prior, out.get(0), "upstream messages must pass through untouched");
+        assertEquals(MsgRole.USER, out.get(1).getRole());
+        assertTrue(out.get(1).getTextContent().contains("Background result A"));
+    }
+
+    @Test
+    void labelsEachNotificationWithItsSource() {
+        bus.inboxPush(
+                        "session-1",
+                        Map.of("id", "h1", "hint", "tool finished", "source", "tool_output"))
+                .block();
+        bus.inboxPush("session-1", Map.of("id", "h2", "hint", "team ping", "source", "alice"))
+                .block();
+
+        ReasoningInput input = new ReasoningInput(List.of(), List.of(), null);
+        middleware.onReasoning(stubAgent(), ctx, input, next -> Flux.empty()).collectList().block();
+
+        List<Msg> context = agentState.getContext();
+        assertEquals(2, context.size(), "one notification message per hint");
+        assertTrue(context.get(0).getTextContent().contains("from tool_output."));
+        assertTrue(context.get(0).getTextContent().contains("tool finished"));
+        assertFalse(context.get(0).getTextContent().contains("team ping"));
+        assertTrue(context.get(1).getTextContent().contains("from alice."));
+        assertTrue(context.get(1).getTextContent().contains("team ping"));
+    }
+
+    @Test
+    void interleavedSourcesKeepQueueOrderAndStructuredProvenance() {
+        List<HintBlock> hints =
+                List.of(
+                        new HintBlock("a1", "first", "tool_output"),
+                        new HintBlock("b", "middle", "subagent_task"),
+                        new HintBlock("a2", "last", "tool_output"));
+        for (HintBlock hint : hints) {
+            bus.inboxPush(
+                            "session-1",
+                            Map.of(
+                                    "id",
+                                    hint.getId(),
+                                    "hint",
+                                    hint.getHint(),
+                                    "source",
+                                    hint.getSource()))
+                    .block();
+        }
+        List<Msg> requested = new ArrayList<>();
+        List<AgentEvent> events =
+                middleware
+                        .onReasoning(
+                                stubAgent(),
+                                ctx,
+                                new ReasoningInput(List.of(), List.of(), null),
+                                input -> {
+                                    requested.addAll(input.messages());
+                                    return Flux.empty();
+                                })
+                        .collectList()
+                        .block();
+
+        assertEquals(3, requested.size());
+        assertEquals(requested, agentState.getContext());
+        for (int i = 0; i < hints.size(); i++) {
+            HintBlock original = hints.get(i);
+            Msg notification = requested.get(i);
+            assertEquals(MsgRole.USER, notification.getRole());
+            assertEquals(original.getId(), notification.getMetadata().get("hintId"));
+            assertEquals(original.getSource(), notification.getMetadata().get("source"));
+            assertEquals("background_event", notification.getMetadata().get("reminderKind"));
+            assertTrue(notification.getTextContent().contains(original.getHint()));
+            assertEquals(original.getId(), ((HintBlockEvent) events.get(i)).getBlockId());
+        }
     }
 
     @Test
@@ -159,13 +270,126 @@ class InboxMiddlewareTest {
     }
 
     @Test
-    void injectAppendsToExistingAssistantMessage() {
+    void notificationReachesModelRequestUnderRealScheduling(@TempDir java.nio.file.Path wsDir) {
+        MessageBus realBus = new WorkspaceMessageBus(new LocalFilesystem(wsDir, true, 10), "/bus");
+        MockModel model = new MockModel("ack");
+        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("inbox-agent")
+                        .model(model)
+                        .workspace(wsDir)
+                        .abstractFilesystem(new LocalFilesystem(wsDir))
+                        .stateStore(stateStore)
+                        .messageBus(realBus)
+                        .build()) {
+
+            realBus.inboxPush(
+                            "sched-1",
+                            Map.of(
+                                    "id",
+                                    "h9",
+                                    "hint",
+                                    "async tool finished",
+                                    "source",
+                                    "tool_output"))
+                    .block();
+
+            agent.call(
+                            UserMessage.builder().textContent("hello").build(),
+                            RuntimeContext.builder().sessionId("sched-1").build())
+                    .block();
+
+            List<Msg> seen = model.getLastMessages();
+            assertNotNull(seen, "model must have been called");
+            String combined =
+                    seen.stream().map(Msg::getTextContent).collect(Collectors.joining("\n"));
+            assertTrue(
+                    combined.contains("async tool finished"),
+                    () -> "notification must reach the model request: " + combined);
+            assertTrue(
+                    combined.contains("Automated background event from tool_output."),
+                    () -> "provenance wrapper missing: " + combined);
+            assertTrue(combined.contains("hello"), "original user message must remain present");
+            // The HarnessContextBuilder-compiled request carries the notification exactly once
+            // (state-written once; the drained inbox never re-delivers).
+            assertEquals(
+                    1,
+                    seen.stream()
+                            .filter(m -> m.getTextContent().contains("async tool finished"))
+                            .count(),
+                    "notification must appear exactly once in the model request");
+
+            // Durable history (the per-session state the next call resumes from) holds it
+            // once too. Session state lives on the delegate keyed by (userId, sessionId),
+            // not in the deprecated no-arg getAgentState().
+            assertEquals(
+                    1,
+                    agent.getDelegate().getAgentState(null, "sched-1").getContext().stream()
+                            .filter(m -> m.getTextContent().contains("async tool finished"))
+                            .count(),
+                    "notification must be written into the history exactly once");
+        }
+    }
+
+    @Test
+    void notificationReachesModelRequestWithoutPreparer(@TempDir java.nio.file.Path busDir) {
+        // Bare ReActAgent has no ModelRequestPreparer: the model request is the reasoning
+        // input itself, so delivery relies entirely on the appended ReasoningInput.
+        MessageBus realBus = new WorkspaceMessageBus(new LocalFilesystem(busDir, true, 10), "/bus");
+        MockModel model = new MockModel("ack");
+
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("inbox-react")
+                        .model(model)
+                        .middlewares(List.of(new InboxMiddleware(realBus)))
+                        .build()) {
+
+            realBus.inboxPush(
+                            "react-1",
+                            Map.of(
+                                    "id",
+                                    "h1",
+                                    "hint",
+                                    "async tool finished",
+                                    "source",
+                                    "tool_output"))
+                    .block();
+
+            agent.call(
+                            List.of(UserMessage.builder().textContent("hello").build()),
+                            RuntimeContext.builder().sessionId("react-1").build())
+                    .block();
+
+            List<Msg> seen = model.getLastMessages();
+            assertNotNull(seen, "model must have been called");
+            String combined =
+                    seen.stream().map(Msg::getTextContent).collect(Collectors.joining("\n"));
+            assertTrue(
+                    combined.contains("async tool finished"),
+                    () -> "notification must reach the model request: " + combined);
+            assertTrue(combined.contains("hello"), "original user message must remain present");
+            assertEquals(
+                    1,
+                    seen.stream()
+                            .filter(m -> m.getTextContent().contains("async tool finished"))
+                            .count(),
+                    "notification must appear exactly once in the model request");
+        }
+    }
+
+    @Test
+    void notificationIsSeparateUserMessageAndAssistantUntouched() {
         List<HintBlock> existingHints = new ArrayList<>();
         existingHints.add(new HintBlock("existing-1", "existing hint"));
         Msg existingMsg =
                 Msg.builder()
+                        .id("asst-1")
                         .name("TestAgent")
                         .role(MsgRole.ASSISTANT)
+                        .metadata(Map.of("k", "v"))
                         .content(new ArrayList<>(existingHints))
                         .build();
         agentState.contextMutable().add(existingMsg);
@@ -177,11 +401,16 @@ class InboxMiddlewareTest {
         middleware.onReasoning(stubAgent(), ctx, input, next -> Flux.empty()).collectList().block();
 
         List<Msg> context = agentState.getContext();
-        assertEquals(1, context.size());
-        List<HintBlock> allHints = context.get(0).getContentBlocks(HintBlock.class);
-        assertEquals(2, allHints.size());
-        assertEquals("existing hint", allHints.get(0).getHint());
-        assertEquals("new hint", allHints.get(1).getHint());
+        assertEquals(2, context.size());
+        assertSame(existingMsg, context.get(0), "existing assistant message must not be rebuilt");
+        assertEquals(Map.of("k", "v"), existingMsg.getMetadata());
+        assertEquals(
+                1,
+                existingMsg.getContentBlocks(HintBlock.class).size(),
+                "no hints may be appended to the assistant message");
+        Msg notification = context.get(1);
+        assertEquals(MsgRole.USER, notification.getRole());
+        assertTrue(notification.getTextContent().contains("new hint"));
     }
 
     private static io.agentscope.core.agent.Agent stubAgent() {

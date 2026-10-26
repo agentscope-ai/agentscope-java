@@ -128,9 +128,14 @@ final class ReflectiveFunctionTool extends ToolBase {
                             + "set stateInjected=true to enable state injection.");
         }
 
+        // strict=true is the single switch: it recursively injects
+        // additionalProperties=false into the schema (satisfying OpenAI strict mode
+        // and enabling local rejection of undeclared parameters on any provider)
         Map<String, Object> schema =
                 schemaGenerator.generateParameterSchema(
-                        method, presetParamNames == null ? Set.of() : presetParamNames);
+                        method,
+                        presetParamNames == null ? Set.of() : presetParamNames,
+                        !annotation.strict());
 
         ToolBase.Builder builder =
                 ToolBase.builder()
