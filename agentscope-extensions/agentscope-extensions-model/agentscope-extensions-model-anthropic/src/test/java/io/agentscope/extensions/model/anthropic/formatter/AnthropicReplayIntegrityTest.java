@@ -127,9 +127,11 @@ class AnthropicReplayIntegrityTest {
                             .get(0)
                             .asToolResult()
                             .toolUseId());
-            assertEquals(
-                    "tool_use",
-                    nextRequest.get(1).getMetadata().get(MessageMetadataKeys.FINISH_REASON));
+            assertFalse(
+                    nextRequest
+                            .get(1)
+                            .getMetadata()
+                            .containsKey(MessageMetadataKeys.OUTPUT_LIMIT_REACHED));
         }
     }
 
@@ -155,8 +157,8 @@ class AnthropicReplayIntegrityTest {
             agent.call(new UserMessage("fixture")).block(Duration.ofSeconds(5));
             assertEquals(1, executions.get());
             assertEquals(
-                    "max_tokens",
-                    nextRequest.get(1).getMetadata().get(MessageMetadataKeys.FINISH_REASON));
+                    Boolean.TRUE,
+                    nextRequest.get(1).getMetadata().get(MessageMetadataKeys.OUTPUT_LIMIT_REACHED));
             List<ToolResultBlock> results =
                     nextRequest.stream()
                             .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
@@ -174,6 +176,20 @@ class AnthropicReplayIntegrityTest {
                                     r ->
                                             r.getId().equals("complete")
                                                     && r.getState() == ToolResultState.SUCCESS));
+            String errorText =
+                    results.stream()
+                            .filter(r -> r.getId().equals("incomplete"))
+                            .findFirst()
+                            .orElseThrow()
+                            .getOutput()
+                            .stream()
+                            .filter(TextBlock.class::isInstance)
+                            .map(TextBlock.class::cast)
+                            .map(TextBlock::getText)
+                            .reduce("", String::concat);
+            assertTrue(errorText.contains("output token limit"));
+            assertTrue(errorText.contains("Do not repeat the same large arguments"));
+            assertTrue(errorText.contains("Split the work into smaller tool calls"));
             var nativeMessages =
                     new AnthropicMessageConverter(blocks -> "result").convert(nextRequest);
             assertEquals(3, nativeMessages.size());

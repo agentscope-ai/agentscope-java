@@ -104,8 +104,8 @@ public final class MessageMetadataKeys {
      */
     public static final String CHAT_USAGE = "_chat_usage";
 
-    /** Metadata key preserving the provider's finish reason on the final assistant message. */
-    public static final String FINISH_REASON = "_finish_reason";
+    /** Metadata key marking that model generation stopped at its output token limit. */
+    public static final String OUTPUT_LIMIT_REACHED = "_output_limit_reached";
 
     /**
      * Metadata key for structured output data.

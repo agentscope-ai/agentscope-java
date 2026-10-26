@@ -134,7 +134,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         AgentRequestOptions requestOptions = new AgentRequestOptions();
         requestOptions.setTaskId(context.getTaskId());
         requestOptions.setUserId(getUserId(message));
-        requestOptions.setSessionId(getSessionId(message));
+        requestOptions.setSessionId(getSessionId(context));
         return requestOptions;
     }
 
@@ -145,11 +145,18 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         return "";
     }
 
-    private String getSessionId(Message message) {
-        if (message.metadata() != null && message.metadata().containsKey("sessionId")) {
-            return String.valueOf(message.metadata().get("sessionId"));
+    private String getSessionId(RequestContext context) {
+        Message message = context.getMessage();
+        Object legacySessionId =
+                message.metadata() == null ? null : message.metadata().get("sessionId");
+        if (legacySessionId != null) {
+            String sessionId = String.valueOf(legacySessionId);
+            if (!sessionId.isBlank()) {
+                return sessionId;
+            }
         }
-        return "";
+        String contextId = context.getContextId();
+        return contextId == null ? "" : contextId;
     }
 
     private Task newTask(RequestContext context) {

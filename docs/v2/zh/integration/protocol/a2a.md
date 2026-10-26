@@ -154,6 +154,14 @@ server.close();
 
 `AgentScopeA2aServer` 本身不监听端口、不暴露 endpoint，只负责构建组件、组装请求处理链；具体监听由你的 Web 框架完成。这样可以无缝接入 Spring Boot、Quarkus、Vert.x 等。
 
+### 请求的会话标识
+
+服务端使用 SDK 解析后的 A2A `contextId` 填充传给 `AgentRunner` 的 `AgentRequestOptions.sessionId`。客户端可以直接使用标准协议字段，无需额外添加自定义 metadata。客户端未传 `contextId` 时，SDK 会自动生成一个。
+
+为兼容已有客户端，非 null 且非空白的 `message.metadata["sessionId"]` 优先于该映射，即使它与 `contextId` 不同。这样，SDK 自动生成新的 context ID 时，已有会话键仍会保留。metadata 值为 null、空串或仅含空白时，回退到 `contextId`。协议消息本身的 `contextId` 不会被修改。
+
+这项映射只填充 Runner 的请求参数，不会自动启用会话持久化。自定义 Runner 可以使用该标识配置运行上下文或状态存储。
+
 ### 可选组件
 
 - `TaskStore` / `QueueManager`：任务和事件队列存储，默认是内存实现，生产可换成持久化版本。

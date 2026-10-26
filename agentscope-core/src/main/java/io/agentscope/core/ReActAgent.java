@@ -2045,10 +2045,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     final class CallExecution {
         private static final String PERMISSION_DENIED_BY_USER = "Permission denied by user";
         private static final String PERMISSION_DENIED_BY_RULES = "Permission denied by rules";
-        private static final String MALFORMED_TOOL_ARGUMENTS =
-                "Tool call not executed: its arguments were incomplete or malformed (likely"
-                        + " truncated by the output token limit) and could not be parsed."
-                        + " Reissue the call with complete arguments.";
+        private static final String OUTPUT_LIMIT_TOOL_ARGUMENTS =
+                "Tool call not executed: the response stopped at its output token limit before"
+                        + " complete arguments could be parsed. Do not repeat the same large"
+                        + " arguments. Split the work into smaller tool calls or provide a"
+                        + " shorter argument payload, then reissue the call.";
+        private static final String INVALID_TOOL_ARGUMENTS =
+                "Tool call not executed: its arguments were not a valid JSON object. Reissue"
+                        + " the call with corrected JSON object arguments.";
 
         InterruptControl interruption = new InterruptControl();
         AgentState state;
@@ -3469,7 +3473,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<ToolUseBlock> malformedToolCalls =
                     pendingToolCalls.stream().filter(ToolUseBlock::hasMalformedArguments).toList();
             if (!malformedToolCalls.isEmpty()) {
-                writeMalformedArgumentResults(malformedToolCalls, replyId);
+                writeMalformedArgumentResults(
+                        malformedToolCalls,
+                        replyId,
+                        MessageUtils.lastAssistantReachedOutputLimit(
+                                state.contextMutable(), getName()));
             }
             List<ToolUseBlock> executableToolCalls =
                     pendingToolCalls.stream().filter(tc -> !tc.hasMalformedArguments()).toList();
@@ -3477,11 +3485,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<ToolUseBlock> roundToolCalls = extractRecentToolCalls();
 
             if (executableToolCalls.isEmpty()) {
-                List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
-                if (!recentToolCalls.isEmpty()
+                if (!roundToolCalls.isEmpty()
                         && MessageUtils.allToolCallsDenied(
-                                state.contextMutable(), recentToolCalls)) {
-                    return emitAllToolsDeniedThroughMiddleware(recentToolCalls, iter);
+                                state.contextMutable(), roundToolCalls)) {
+                    return emitAllToolsDeniedThroughMiddleware(roundToolCalls, iter);
                 }
                 return executeIteration(iter + 1);
             }
@@ -3718,17 +3725,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * appended to the context and emitted as lifecycle events so the tool_use ↔ tool_result
          * pairing stays complete and the model can reissue the call.
          */
-        private void writeMalformedArgumentResults(List<ToolUseBlock> toolCalls, String replyId) {
+        private void writeMalformedArgumentResults(
+                List<ToolUseBlock> toolCalls, String replyId, boolean outputLimitReached) {
+            String message =
+                    outputLimitReached ? OUTPUT_LIMIT_TOOL_ARGUMENTS : INVALID_TOOL_ARGUMENTS;
             for (ToolUseBlock tc : toolCalls) {
-                ToolResultBlock errorResult =
-                        ToolResultBlock.error(tc.getId(), MALFORMED_TOOL_ARGUMENTS);
+                ToolResultBlock errorResult = ToolResultBlock.error(tc.getId(), message);
                 Msg toolResultMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(errorResult, tc, getName());
                 state.contextMutable().add(toolResultMsg);
                 publishEvent(new ToolResultStartEvent(replyId, tc.getId(), tc.getName()));
                 publishEvent(
-                        new ToolResultTextDeltaEvent(
-                                replyId, tc.getId(), tc.getName(), MALFORMED_TOOL_ARGUMENTS));
+                        new ToolResultTextDeltaEvent(replyId, tc.getId(), tc.getName(), message));
                 publishEvent(
                         new ToolResultEndEvent(
                                 replyId, tc.getId(), tc.getName(), ToolResultState.ERROR));

@@ -193,6 +193,7 @@ public class ReasoningContext {
      */
     public Msg buildFinalMessage() {
         List<ContentBlock> blocks = new ArrayList<>();
+        boolean outputLimitReached = isTruncated();
 
         if (!indexedChunks.isEmpty()) {
             blocks.addAll(buildIndexedContent());
@@ -208,7 +209,7 @@ public class ReasoningContext {
             }
 
             // Add all tool calls, placing server tool results right after their calls
-            List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls(isTruncated());
+            List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls(outputLimitReached);
             blocks.addAll(serverToolResults.placeAfterToolCalls(toolCalls));
         }
 
@@ -219,8 +220,8 @@ public class ReasoningContext {
 
         // Build metadata: start with propagated response metadata, then add ChatUsage
         Map<String, Object> metadata = new HashMap<>(responseMetadata);
-        if (finishReason != null) {
-            metadata.put(MessageMetadataKeys.FINISH_REASON, finishReason);
+        if (outputLimitReached) {
+            metadata.put(MessageMetadataKeys.OUTPUT_LIMIT_REACHED, true);
         }
         ChatUsage chatUsage = null;
         if (inputTokens > 0 || outputTokens > 0 || time > 0) {
@@ -247,8 +248,20 @@ public class ReasoningContext {
     }
 
     private boolean isTruncated() {
+        // OpenAI Chat Completions and DashScope report "length"; Anthropic and Gemini report
+        // "max_tokens" or "MAX_TOKENS".
         return "length".equalsIgnoreCase(finishReason)
-                || "max_tokens".equalsIgnoreCase(finishReason);
+                || "max_tokens".equalsIgnoreCase(finishReason)
+                || isOpenAiResponsesOutputLimit();
+    }
+
+    private boolean isOpenAiResponsesOutputLimit() {
+        if (!"incomplete".equalsIgnoreCase(finishReason)) {
+            return false;
+        }
+        String incompleteReason =
+                Objects.toString(responseMetadata.get("openai.response.incomplete_reason"), null);
+        return "max_output_tokens".equalsIgnoreCase(incompleteReason);
     }
 
     private List<ContentBlock> buildIndexedContent() {
