@@ -2625,7 +2625,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .toList();
         }
 
-                private void validateAndAddToolResults(
+        private void validateAndAddToolResults(
                 List<Msg> msgs, List<Msg> msgsToPersist, Set<String> pendingIds) {
             if (msgs == null || msgs.isEmpty()) {
                 return;
