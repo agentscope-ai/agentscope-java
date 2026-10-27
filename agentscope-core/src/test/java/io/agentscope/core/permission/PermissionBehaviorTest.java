@@ -27,8 +27,8 @@ class PermissionBehaviorTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
-    void enumeratesExactlyFourBehaviors() {
-        assertEquals(4, PermissionBehavior.values().length);
+    void enumeratesExactlyFiveBehaviors() {
+        assertEquals(5, PermissionBehavior.values().length);
     }
 
     @Test
@@ -36,6 +36,7 @@ class PermissionBehaviorTest {
         assertEquals("allow", PermissionBehavior.ALLOW.getValue());
         assertEquals("deny", PermissionBehavior.DENY.getValue());
         assertEquals("ask", PermissionBehavior.ASK.getValue());
+        assertEquals("ask_user", PermissionBehavior.ASK_USER.getValue());
         assertEquals("passthrough", PermissionBehavior.PASSTHROUGH.getValue());
     }
 
