@@ -60,6 +60,27 @@ en_link: /v2/en/docs/building-blocks/message-and-event
 </Note>
 
 
+### 媒体来源处理
+
+`URLSource` 可以引用本地路径、`file:` URI 或远程 HTTP(S) URL。
+对于签名下载地址等没有扩展名的来源，请设置 `mimeType`；DashScope 图片转换和 Gemini
+媒体转换会使用该提示。根据扩展名推断类型时，不会包含查询参数或片段标识。
+
+转换器可能直接转发远程 URL，也可能读取其字节并放入请求，具体取决于模型提供方。
+Gemini 的 URL 来源和 `MediaUtils` 字节/base64 读取方法会在读取过程中执行 50MB 上限，
+包括没有 `Content-Length` 头的响应。模型提供方通过转发的 URL 自行获取媒体时，不受此上限约束。
+
+`URLSource` 不会将文件访问限制在工作区内，也不执行网络目标白名单。
+本地内容可能被发送给模型提供方。接受不可信引用的应用应在转换前授权本地路径和网络目标，
+包括重定向目标。MIME 提示和扩展名检查仅用于格式路由，不验证文件的实际格式。
+
+共享 HTTP(S) 读取方法最多跟随五次同协议重定向。次数上限不等于目标白名单，读取方法也不提供
+逐跳授权回调。仅检查初始 URL 并不足够：应用应通过出站网络策略限制每次连接，或自行获取
+经过授权的内容，再以 `Base64Source` 传入。
+
+下载方法及支持协议的迁移说明，请参阅
+[媒体来源迁移说明](/v2/zh/docs/others/release-notes#媒体来源迁移说明)。
+
 ### 创建消息
 
 按 role 固定的子类提供便捷构造（`io.agentscope.core.message.UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage`）。当 content 是普通字符串时，会自动包装为 `TextBlock`。

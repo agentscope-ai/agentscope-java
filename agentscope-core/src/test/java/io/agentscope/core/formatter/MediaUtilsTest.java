@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -22,15 +23,30 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
+import java.net.HttpURLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.List;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.SocketPolicy;
+import okio.Buffer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Unit tests for MediaUtils.
@@ -50,6 +66,295 @@ class MediaUtilsTest {
 
     @TempDir Path tempDir;
 
+    @ParameterizedTest
+    @ValueSource(ints = {0, 3, 50 * 1024 * 1024})
+    void boundedReadAcceptsContentThroughExactLimit(int size) throws IOException {
+        InputStream input = new RepeatingInputStream(size);
+        assertEquals(size, MediaUtils.readLimitedBytes(input).length);
+    }
+
+    @Test
+    void boundedReadStopsAfterOneOverflowByte() {
+        RepeatingInputStream input = new RepeatingInputStream(50 * 1024 * 1024 + 2);
+        assertThrows(IOException.class, () -> MediaUtils.readLimitedBytes(input));
+        assertEquals(1, input.remaining);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 3, 20 * 1024, 64 * 1024, 64 * 1024 + 1})
+    void boundedReadUsesSmallBuffers(int size) throws IOException {
+        RepeatingInputStream input = new RepeatingInputStream(size);
+        assertEquals(size, MediaUtils.readLimitedBytes(input).length);
+        assertTrue(input.largestBuffer <= 64 * 1024);
+    }
+
+    @Test
+    void boundedReadPreservesContentAcrossShortReads() throws IOException {
+        byte[] content = new byte[128 * 1024 + 17];
+        for (int i = 0; i < content.length; i++) {
+            content[i] = (byte) (i % 251);
+        }
+        InputStream input =
+                new ByteArrayInputStream(content) {
+                    @Override
+                    public synchronized int read(byte[] bytes, int offset, int length) {
+                        return super.read(bytes, offset, Math.min(length, 997));
+                    }
+                };
+        assertArrayEquals(content, MediaUtils.readLimitedBytes(input));
+    }
+
+    @Test
+    void rejectsOversizedLocalFileAndDirectory() throws IOException {
+        Path file = tempDir.resolve("large.bin");
+        try (RandomAccessFile sparse = new RandomAccessFile(file.toFile(), "rw")) {
+            sparse.setLength(50L * 1024 * 1024 + 1);
+        }
+        for (String location :
+                List.of(file.toString(), file.toUri().toString(), tempDir.toString())) {
+            assertThrows(IOException.class, () -> MediaUtils.readUrlAsBytes(location));
+        }
+    }
+
+    @Test
+    void readsChunkedAndRedirectedHttpContent() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", "/media"));
+            server.enqueue(new MockResponse().setChunkedBody("fixture", 2));
+            assertArrayEquals(
+                    "fixture".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    MediaUtils.readUrlAsBytes(server.url("/redirect").toString()));
+            assertEquals(2, server.getRequestCount());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {301, 302, 303, 307, 308})
+    void followsRelativeMediaRedirects(int status) throws IOException, InterruptedException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(
+                    new MockResponse().setResponseCode(status).setHeader("Location", "media"));
+            server.enqueue(new MockResponse().setBody("fixture"));
+            assertEquals(
+                    "Zml4dHVyZQ==",
+                    MediaUtils.downloadUrlToBase64(server.url("/directory/start").toString()));
+            assertEquals("/directory/start", server.takeRequest().getPath());
+            assertEquals("/directory/media", server.takeRequest().getPath());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {5, 6})
+    void mediaRedirectsAreLimitedToFiveHops(int hops) throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            for (int i = 0; i < hops; i++) {
+                server.enqueue(
+                        new MockResponse().setResponseCode(302).setHeader("Location", "/loop"));
+            }
+            server.enqueue(new MockResponse().setBody("fixture"));
+            String url = server.url("/loop").toString();
+            if (hops == 5) {
+                assertEquals("Zml4dHVyZQ==", MediaUtils.downloadUrlToBase64(url));
+            } else {
+                IOException failure =
+                        assertThrows(IOException.class, () -> MediaUtils.downloadUrlToBase64(url));
+                assertTrue(failure.getMessage().contains("Too many media redirects"));
+            }
+            assertEquals(6, server.getRequestCount());
+        }
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" "})
+    void rejectsRedirectsWithoutLocation(String location) throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            MockResponse response = new MockResponse().setResponseCode(302);
+            if (location != null) {
+                response.setHeader("Location", location);
+            }
+            server.enqueue(response);
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () -> MediaUtils.readUrlAsBytes(server.url("/redirect").toString()));
+            assertTrue(failure.getMessage().contains("Location"));
+            assertEquals(1, server.getRequestCount());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "file:/media.png",
+                "ftp://localhost/media.png",
+                "https://localhost/media.png"
+            })
+    void rejectsRedirectSchemeChanges(String location) throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", location));
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () -> MediaUtils.readUrlAsBytes(server.url("/redirect").toString()));
+            assertTrue(failure.getMessage().contains("scheme"));
+            assertEquals(1, server.getRequestCount());
+        }
+    }
+
+    @Test
+    void redirectedDownloadStillRejectsOversizedContentLength() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", "/large"));
+            server.enqueue(
+                    new MockResponse()
+                            .setBody("small")
+                            .setHeader("Content-Length", 50L * 1024 * 1024 + 1)
+                            .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () -> MediaUtils.readUrlAsBytes(server.url("/redirect").toString()));
+            assertTrue(failure.getMessage().contains("too large"));
+            assertEquals(2, server.getRequestCount());
+        }
+    }
+
+    @Test
+    void preservesDisabledRedirectFollowing() throws IOException {
+        boolean previous = HttpURLConnection.getFollowRedirects();
+        try (MockWebServer server = new MockWebServer()) {
+            HttpURLConnection.setFollowRedirects(false);
+            server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", "/media"));
+            server.enqueue(new MockResponse().setBody("fixture"));
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () -> MediaUtils.readUrlAsBytes(server.url("/redirect").toString()));
+            assertTrue(failure.getMessage().contains("HTTP 302"));
+            assertEquals(1, server.getRequestCount());
+        } finally {
+            HttpURLConnection.setFollowRedirects(previous);
+        }
+    }
+
+    @Test
+    void downloadAboveWarningThresholdStillSucceeds() throws IOException {
+        byte[] content = new byte[10 * 1024 * 1024 + 1];
+        Arrays.fill(content, (byte) 1);
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setBody(new Buffer().write(content)));
+            assertArrayEquals(content, MediaUtils.readUrlAsBytes(server.url("/media").toString()));
+        }
+    }
+
+    @Test
+    void downloadEncodesHttpContentAsBase64() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setBody("fixture"));
+            assertEquals(
+                    "Zml4dHVyZQ==",
+                    MediaUtils.downloadUrlToBase64(server.url("/media").toString()));
+        }
+    }
+
+    @Test
+    void httpsDownloadPropagatesTlsFailure() throws IOException, NoSuchAlgorithmException {
+        try (MockWebServer server = new MockWebServer()) {
+            // Exercise HTTPS without external networking or relaxing TLS validation.
+            server.useHttps(SSLContext.getDefault().getSocketFactory(), false);
+            server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.FAIL_HANDSHAKE));
+            assertThrows(
+                    SSLException.class,
+                    () -> MediaUtils.downloadUrlToBase64(server.url("/media").toString()));
+        }
+    }
+
+    @Test
+    void rejectsHttpErrorsAndUnsupportedSchemes() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(404));
+            assertThrows(
+                    IOException.class,
+                    () -> MediaUtils.readUrlAsBytes(server.url("/missing").toString()));
+        }
+        for (String url :
+                List.of("ftp://example.com/media.png", "jar:file:/missing.jar!/media.png")) {
+            assertThrows(IOException.class, () -> MediaUtils.downloadUrlToBase64(url));
+        }
+    }
+
+    @Test
+    void rejectsBlankLocationsAndMalformedFileUri() {
+        assertThrows(IOException.class, () -> MediaUtils.readUrlAsBytes(null));
+        assertThrows(IOException.class, () -> MediaUtils.readUrlAsBytes(" "));
+        assertThrows(IOException.class, () -> MediaUtils.readUrlAsBytes("file:///invalid%zz.png"));
+    }
+
+    private static final class RepeatingInputStream extends InputStream {
+        private int remaining;
+        private int largestBuffer;
+
+        private RepeatingInputStream(int remaining) {
+            this.remaining = remaining;
+        }
+
+        @Override
+        public int read() {
+            if (remaining == 0) {
+                return -1;
+            }
+            remaining--;
+            return 0;
+        }
+
+        @Override
+        public int read(byte[] bytes, int offset, int length) {
+            largestBuffer = Math.max(largestBuffer, bytes.length);
+            if (length == 0) {
+                return 0;
+            }
+            if (remaining == 0) {
+                return -1;
+            }
+            int count = Math.min(length, remaining);
+            Arrays.fill(bytes, offset, offset + count, (byte) 0);
+            remaining -= count;
+            return count;
+        }
+    }
+
+    @Test
+    void downloadRejectsNonHttpSchemes() throws IOException {
+        Path file = Files.writeString(tempDir.resolve("download.txt"), "fixture");
+        assertThrows(
+                IOException.class, () -> MediaUtils.downloadUrlToBase64(file.toUri().toString()));
+    }
+
+    @Test
+    void downloadRejectsOversizedContentLengthBeforeReadingBody() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(
+                    new MockResponse()
+                            .setBody("small")
+                            .setHeader("Content-Length", 50L * 1024 * 1024 + 1)
+                            .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () -> MediaUtils.downloadUrlToBase64(server.url("/media").toString()));
+            assertTrue(failure.getMessage().contains("too large"));
+        }
+    }
+
+    @Test
+    void dataUrlSupportsFileUri() throws IOException {
+        Path file = Files.writeString(tempDir.resolve("image with spaces.png"), "fixture");
+        assertEquals(
+                MediaUtils.urlToBase64DataUrl(file.toString()),
+                MediaUtils.urlToBase64DataUrl(file.toUri().toString()));
+    }
+
     @Test
     @DisplayName("Should identify local file paths")
     void testIsLocalFile() {
@@ -63,6 +368,9 @@ class MediaUtilsTest {
         assertFalse(MediaUtils.isLocalFile("oss://example.com/image.png"));
         assertFalse(MediaUtils.isLocalFile("ftp://example.com/image.png"));
         assertFalse(MediaUtils.isLocalFile("file:///absolute/path/image.png"));
+        assertFalse(MediaUtils.isLocalFile("file:/absolute/path/image.png"));
+        assertFalse(MediaUtils.isLocalFile("HTTPS://example.com/image.png"));
+        assertFalse(MediaUtils.isLocalFile("FILE:///absolute/path/image.png"));
         assertFalse(MediaUtils.isLocalFile(null));
         assertFalse(MediaUtils.isLocalFile(""));
     }
