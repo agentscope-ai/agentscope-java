@@ -48,6 +48,7 @@ public class JwtService {
 
     public JwtService(@Value("${dataagent.jwt.secret:}") String secret) {
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        // Reject the former public default shipped by previous versions; it is publicly known.
         if (secret.isBlank()
                 || secret.equals("dataagent-default-dev-secret-change-in-production-32chars")
                 || keyBytes.length < 32) {
