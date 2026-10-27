@@ -34,6 +34,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -599,7 +600,7 @@ class WaitAsyncResultsToolTest {
     private static class MutableTaskRepository extends StubTaskRepository {
 
         MutableTaskRepository(List<BackgroundTask> tasks) {
-            super(new ArrayList<>(tasks));
+            super(new CopyOnWriteArrayList<>(tasks));
         }
 
         void add(BackgroundTask task) {

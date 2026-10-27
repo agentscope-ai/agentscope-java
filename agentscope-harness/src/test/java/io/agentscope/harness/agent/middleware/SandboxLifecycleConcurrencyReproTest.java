@@ -34,6 +34,8 @@ import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
@@ -120,6 +122,119 @@ class SandboxLifecycleConcurrencyReproTest {
                 "released A must not fall back to the still-running B sandbox");
     }
 
+    @Test
+    void latestReleaseRestoresFallbackWithoutRebindingReleasedContexts() {
+        SandboxBackedFilesystem proxy = new SandboxBackedFilesystem();
+        RecordingSandbox sandboxA = new RecordingSandbox("s1");
+        RecordingSandbox sandboxB = new RecordingSandbox("s2");
+        SandboxLifecycleMiddleware mw =
+                new SandboxLifecycleMiddleware(
+                        fakeManager(
+                                Map.of("s1", sandboxA, "s2", sandboxB),
+                                Map.of("s1", new RecordingLease(), "s2", new RecordingLease())),
+                        proxy);
+        RuntimeContext ctxA = callContext("s1");
+        RuntimeContext ctxB = callContext("s2");
+        mw.acquireForCall(ctxA);
+        mw.acquireForCall(ctxB);
+        RuntimeContext copiedB = RuntimeContext.builder(ctxB).build();
+
+        mw.releaseForCall(ctxB);
+
+        assertEquals("s1", proxy.execute(RuntimeContext.empty(), "whoami", null).output());
+        assertFalse(sandboxA.stopped);
+        assertTrue(sandboxB.stopped);
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(ctxB, "whoami", null));
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(copiedB, "whoami", null));
+
+        mw.releaseForCall(copiedB);
+        assertEquals("s1", proxy.execute(RuntimeContext.empty(), "whoami", null).output());
+
+        mw.releaseForCall(ctxA);
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(RuntimeContext.empty(), "whoami", null));
+    }
+
+    @Test
+    void failedSharedSandboxStartDoesNotRemoveActiveFallback() {
+        SandboxBackedFilesystem proxy = new SandboxBackedFilesystem();
+        RecordingSandbox shared = new RecordingSandbox("shared");
+        shared.failStartOnCall(2);
+
+        SandboxManager manager = sharedUserManagedManager(shared);
+        SandboxLifecycleMiddleware mw = new SandboxLifecycleMiddleware(manager, proxy);
+        RuntimeContext ctxA = callContext("s1");
+        RuntimeContext ctxB = callContext("s2");
+
+        mw.acquireForCall(ctxA);
+        assertThrows(RuntimeException.class, () -> mw.acquireForCall(ctxB));
+
+        assertEquals(
+                "shared",
+                proxy.execute(RuntimeContext.empty(), "whoami", null).output(),
+                "a failed start must not remove another call's active fallback binding");
+
+        mw.releaseForCall(ctxA);
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(RuntimeContext.empty(), "whoami", null));
+    }
+
+    @Test
+    void failureAfterFallbackRegistrationClearsOwnBinding() {
+        SandboxBackedFilesystem proxy = new SandboxBackedFilesystem();
+        RecordingSandbox sandbox = new RecordingSandbox("failing");
+        sandbox.failStateLookup();
+
+        SandboxManager manager = sharedUserManagedManager(sandbox);
+        SandboxLifecycleMiddleware mw = new SandboxLifecycleMiddleware(manager, proxy);
+
+        assertThrows(RuntimeException.class, () -> mw.acquireForCall(callContext("s1")));
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(RuntimeContext.empty(), "whoami", null));
+    }
+
+    @Test
+    void abandonedAcquireCannotRemainAnUnboundedFallback() {
+        SandboxBackedFilesystem proxy = new SandboxBackedFilesystem();
+        RecordingSandbox abandoned = new RecordingSandbox("abandoned");
+        RecordingSandbox active = new RecordingSandbox("active");
+        Map<String, RecordingSandbox> sandboxes = new ConcurrentHashMap<>();
+        Map<String, RecordingLease> leases = new ConcurrentHashMap<>();
+        sandboxes.put("abandoned", abandoned);
+        leases.put("abandoned", new RecordingLease());
+        SandboxLifecycleMiddleware mw =
+                new SandboxLifecycleMiddleware(fakeManager(sandboxes, leases), proxy);
+        RuntimeContext abandonedContext = callContext("abandoned");
+        mw.acquireForCall(abandonedContext);
+        // Simulate a call that loses its acquire result and cannot release its fallback.
+        abandonedContext.put(SandboxAcquireResult.class, null);
+        mw.releaseForCall(abandonedContext);
+        List<RuntimeContext> activeCalls = new ArrayList<>();
+        for (int i = 0; i < 1024; i++) {
+            String session = "active-" + i;
+            sandboxes.put(session, active);
+            leases.put(session, new RecordingLease());
+            RuntimeContext ctx = callContext(session);
+            mw.acquireForCall(ctx);
+            activeCalls.add(ctx);
+        }
+        // Eviction affects only context-free fallback, never the per-call binding.
+        assertEquals("active", proxy.execute(activeCalls.get(0), "whoami", null).output());
+        for (RuntimeContext ctx : activeCalls) {
+            mw.releaseForCall(ctx);
+        }
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> proxy.execute(RuntimeContext.empty(), "whoami", null));
+    }
+
     private static RuntimeContext callContext(String sessionId) {
         SandboxContext sandboxContext = SandboxContext.builder().build();
         return RuntimeContext.builder()
@@ -164,10 +279,25 @@ class SandboxLifecycleConcurrencyReproTest {
         };
     }
 
+    private static SandboxManager sharedUserManagedManager(RecordingSandbox shared) {
+        SandboxClient<?> client = mock(SandboxClient.class);
+        SessionSandboxStateStore stateStore = mock(SessionSandboxStateStore.class);
+        return new SandboxManager(client, stateStore, "repro-agent") {
+            @Override
+            public SandboxAcquireResult acquire(
+                    SandboxContext sandboxContext, RuntimeContext runtimeContext) {
+                return SandboxAcquireResult.userManaged(shared);
+            }
+        };
+    }
+
     /** Minimal {@link Sandbox} that records teardown and echoes its session id from exec. */
     private static final class RecordingSandbox implements Sandbox {
 
         private final String sessionId;
+        private int failStartOnCall = -1;
+        private boolean failStateLookup;
+        private int startCalls;
         volatile boolean stopped;
 
         RecordingSandbox(String sessionId) {
@@ -175,7 +305,20 @@ class SandboxLifecycleConcurrencyReproTest {
         }
 
         @Override
-        public void start() {}
+        public void start() {
+            startCalls++;
+            if (startCalls == failStartOnCall) {
+                throw new IllegalStateException("start failed");
+            }
+        }
+
+        void failStartOnCall(int call) {
+            this.failStartOnCall = call;
+        }
+
+        void failStateLookup() {
+            this.failStateLookup = true;
+        }
 
         @Override
         public void stop() {
@@ -194,6 +337,9 @@ class SandboxLifecycleConcurrencyReproTest {
 
         @Override
         public SandboxState getState() {
+            if (failStateLookup) {
+                throw new IllegalStateException("state lookup failed");
+            }
             return null;
         }
 
