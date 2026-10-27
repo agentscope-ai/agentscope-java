@@ -105,6 +105,8 @@ Sources must be read-only. Run tests and change business records through tools o
 
 The final message layout is **one System message → conversation → transient state → references**. Tool schemas travel in separate request fields and also consume the input budget.
 
+System sources are combined into one text block, with a blank line between sources. Original text within each source is preserved, and rebuilding a request replaces framework material instead of duplicating it.
+
 | Material | How to supply it | Model placement |
 | --- | --- | --- |
 | Stable instructions | `sysPrompt`, `instruction`, `AGENTS.md`, framework guidance | System |
@@ -114,6 +116,10 @@ The final message layout is **one System message → conversation → transient 
 | Supporting documents | `ContextBlock.reference`, `MEMORY.md`, knowledge files | Reference USER material |
 
 Task, runtime, and reference projections are reconstructed for the request; they are not appended as new durable conversation messages. Dynamic blocks cannot create System instructions. Reserve `instruction` for trusted application configuration. Memory-use guidance can appear in System while the contents of `MEMORY.md` remain reference material.
+
+Framework origin does not by itself make a message transient. Persisted subagent deliveries and empty-response reminders remain at their conversation position and participate in compaction. Request-only projections remain outside the durable history; overflow recovery rebuilds from the latest history without restoring notices already summarized.
+
+Persisted notifications are recognized by message ID, including after copying or deserialization. This does not make request-only content or metadata edits durable: a compacted model view replaces working history only when that view still matches the canonical conversation.
 
 Tags such as `TASK_STATE`, `RUNTIME_STATE`, and `HARNESS_CONTEXT` identify purpose and origin. They help the model interpret content, but do not authorize an action or isolate untrusted instructions. Tool schemas describe callable tools; [permissions](/v2/en/docs/building-blocks/permission-system) separately decide whether execution may proceed. Filtering tools or omitting a source from the current request does not erase information already present in conversation history.
 
