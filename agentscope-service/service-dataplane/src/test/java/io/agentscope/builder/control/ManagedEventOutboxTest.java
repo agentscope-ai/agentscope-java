@@ -80,12 +80,11 @@ class ManagedEventOutboxTest {
                 .thenAnswer(call -> Optional.ofNullable(savedEvents.get(call.getArgument(0))));
         when(events.lockById(anyString()))
                 .thenAnswer(call -> Optional.ofNullable(savedEvents.get(call.getArgument(0))));
-        when(events.saveAndFlush(any()))
+        when(events.insertIfAbsent(any()))
                 .thenAnswer(
                         call -> {
                             SessionEventOutboxEntity row = call.getArgument(0);
-                            savedEvents.put(row.eventId, row);
-                            return row;
+                            return savedEvents.computeIfAbsent(row.eventId, ignored -> row);
                         });
         when(events.save(any())).thenAnswer(call -> call.getArgument(0));
         when(events.findBySessionIdAndAttemptIdOrderByEventSeqAsc(anyString(), anyString()))

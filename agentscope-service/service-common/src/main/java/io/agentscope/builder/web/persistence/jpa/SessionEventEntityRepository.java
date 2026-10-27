@@ -24,7 +24,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 /** Spring Data repository for {@link SessionEventEntity}. */
-public interface SessionEventEntityRepository extends JpaRepository<SessionEventEntity, Long> {
+public interface SessionEventEntityRepository
+        extends JpaRepository<SessionEventEntity, Long>, SessionEventAppendOperations {
 
     List<SessionEventEntity> findBySessionIdOrderBySeqAsc(String sessionId);
 
@@ -57,6 +58,4 @@ public interface SessionEventEntityRepository extends JpaRepository<SessionEvent
     long maxCreatedAt(@Param("sid") String sessionId);
 
     boolean existsBySessionIdAndEventType(String sessionId, String eventType);
-
-    void deleteBySessionId(String sessionId);
 }

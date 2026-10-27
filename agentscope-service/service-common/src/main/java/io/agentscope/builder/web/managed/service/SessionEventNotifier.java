@@ -34,6 +34,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Wakes session-event readers without continuously polling the event table.
@@ -96,6 +97,12 @@ public class SessionEventNotifier {
         if (!postgres) {
             return;
         }
+        // Spring still holds the committed transaction's connection during afterCommit.
+        // Publish remotely after returning, so a full pool cannot block all commit callbacks.
+        Schedulers.boundedElastic().schedule(() -> publishPostgres(sessionId));
+    }
+
+    private void publishPostgres(String sessionId) {
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement =
                         connection.prepareStatement("SELECT pg_notify('" + CHANNEL + "', ?)")) {

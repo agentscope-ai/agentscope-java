@@ -61,6 +61,24 @@ Kubernetes 同样需要数据库备份与 PVC 快照；根据存储提供程序�
 
 Go 在启动时执行产品与运行状态迁移，Java 当前通过 Hibernate 更新表结构。组件镜像回退不保证旧版本可以读取新 schema。
 
+Managed Session 事件写入通过 `builder_session_event_sequence` 分配序号，通过 `builder_session_event_identity` 串行化不可变事件 ID 的写入，两者与事件在同一事务中提交。使用 `ddl-auto=update` 时 Hibernate 会自动建表；若显式管理表结构（`validate` 或 `none`），应在启动新版写入实例前，在配置的 Dataplane schema 中创建：
+
+```sql
+CREATE TABLE builder_session_event_sequence (
+    session_id VARCHAR(64) NOT NULL PRIMARY KEY,
+    next_seq BIGINT
+);
+CREATE TABLE builder_session_event_identity (
+    event_id VARCHAR(64) NOT NULL PRIMARY KEY,
+    session_id VARCHAR(64),
+    event_row_id BIGINT
+);
+CREATE INDEX ix_session_event_identity_session
+    ON builder_session_event_identity (session_id);
+```
+
+此次升级应停止所有旧版事件写入实例，不要混用 `MAX(seq) + 1` 和计数器两种分配方式。已有会话首次写入时会初始化计数器与身份映射，历史记录较多的会话首次写入可能耗时更长。备份需包含这两张表；清空对话记录会在同一事务中删除事件及身份映射、重置计数器，并保留计数器锁记录。不要脱离事件日志单独删除或重置这些记录。
+
 ## 恢复
 
 需要回退数据时，先停止应用写入。在独立空数据库中恢复备份，恢复同一批 Workspace / Artifact 快照与原 Vault 密钥，再用备份对应的组件版本启动。不要把 `pg_restore --clean` 指向仍在使用的业务数据库。

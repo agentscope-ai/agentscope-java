@@ -25,7 +25,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface SessionEventOutboxRepository
-        extends JpaRepository<SessionEventOutboxEntity, String> {
+        extends JpaRepository<SessionEventOutboxEntity, String>, SessionEventOutboxOperations {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from SessionEventOutboxEntity e where e.eventId=:id")
     Optional<SessionEventOutboxEntity> lockById(@Param("id") String id);

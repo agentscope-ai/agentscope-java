@@ -28,6 +28,7 @@ package io.agentscope.builder.web.managed.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -36,22 +37,23 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.web.managed.SessionEventDto;
+import io.agentscope.builder.web.persistence.jpa.SessionEventAppendOperations.AppendResult;
 import io.agentscope.builder.web.persistence.jpa.SessionEventEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionEventEntityRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class SessionEventLogMirrorTest {
 
     @Test
-    void concurrentImmutableEventIsReusedWithoutSequenceRetryStorm() {
+    void immutableEventWinnerIsReusedWithoutAllocatingAnotherSequence() {
         var repository = mock(SessionEventEntityRepository.class);
         var winner = new SessionEventEntity();
         winner.setSessionId("session");
@@ -59,15 +61,9 @@ class SessionEventLogMirrorTest {
         winner.setEventType("item.delta");
         winner.setPayloadJson("{\"text\":\"x\"}");
         winner.setSeq(1);
-        when(repository.findByEventId("event")).thenReturn(Optional.empty(), Optional.of(winner));
-        when(repository.saveAndFlush(any(SessionEventEntity.class)))
-                .thenThrow(new DataIntegrityViolationException("duplicate immutable event"));
-        var transactions = mock(TransactionTemplate.class);
-        when(transactions.execute(any()))
-                .thenAnswer(
-                        call ->
-                                ((TransactionCallback<?>) call.getArgument(0))
-                                        .doInTransaction(null));
+        when(repository.appendIdempotentEvent(any(SessionEventEntity.class)))
+                .thenReturn(new AppendResult(winner, false));
+        var transactions = transactions(new AtomicBoolean());
         var log =
                 new SessionEventLog(
                         repository,
@@ -81,28 +77,21 @@ class SessionEventLogMirrorTest {
                                         "session", "item.delta", Map.of("text", "x"), "event")
                                 .seq())
                 .isEqualTo(1);
-        verify(repository, times(1)).saveAndFlush(any(SessionEventEntity.class));
+        verify(repository, times(1)).appendIdempotentEvent(any(SessionEventEntity.class));
     }
 
     @Test
     void stagesMirrorBeforeSourceTransactionCompletes() {
         SessionEventEntityRepository repository = mock(SessionEventEntityRepository.class);
-        when(repository.maxSeq("session-1")).thenReturn(0L);
-        when(repository.saveAndFlush(any(SessionEventEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        AtomicBoolean insideTransaction = new AtomicBoolean();
-        TransactionTemplate transactions = mock(TransactionTemplate.class);
-        when(transactions.execute(any()))
+        when(repository.appendEvent(any(SessionEventEntity.class)))
                 .thenAnswer(
                         invocation -> {
-                            TransactionCallback<?> callback = invocation.getArgument(0);
-                            insideTransaction.set(true);
-                            try {
-                                return callback.doInTransaction(null);
-                            } finally {
-                                insideTransaction.set(false);
-                            }
+                            SessionEventEntity event = invocation.getArgument(0);
+                            event.setSeq(1);
+                            return event;
                         });
+        AtomicBoolean insideTransaction = new AtomicBoolean();
+        TransactionTemplate transactions = transactions(insideTransaction);
         List<SessionEventDto> mirrored = new ArrayList<>();
         SessionEventLog log =
                 new SessionEventLog(
@@ -127,15 +116,14 @@ class SessionEventLogMirrorTest {
     @Test
     void failedOutboxStagingAbortsAppendAndDoesNotNotifyReaders() {
         var repository = mock(SessionEventEntityRepository.class);
-        when(repository.maxSeq("session-1")).thenReturn(0L);
-        when(repository.saveAndFlush(any(SessionEventEntity.class)))
-                .thenAnswer(call -> call.getArgument(0));
-        var transactions = mock(TransactionTemplate.class);
-        when(transactions.execute(any()))
+        when(repository.appendEvent(any(SessionEventEntity.class)))
                 .thenAnswer(
-                        call ->
-                                ((TransactionCallback<?>) call.getArgument(0))
-                                        .doInTransaction(null));
+                        call -> {
+                            SessionEventEntity event = call.getArgument(0);
+                            event.setSeq(1);
+                            return event;
+                        });
+        var transactions = transactions(new AtomicBoolean());
         var notifier = mock(SessionEventNotifier.class);
         var log =
                 new SessionEventLog(
@@ -153,5 +141,35 @@ class SessionEventLogMirrorTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("outbox unavailable");
         verifyNoInteractions(notifier);
+    }
+
+    private static TransactionTemplate transactions(AtomicBoolean insideTransaction) {
+        var manager = mock(PlatformTransactionManager.class);
+        when(manager.getTransaction(any()))
+                .thenAnswer(
+                        call -> {
+                            TransactionDefinition definition = call.getArgument(0);
+                            assertThat(definition.getPropagationBehavior())
+                                    .isEqualTo(TransactionDefinition.PROPAGATION_REQUIRED);
+                            assertThat(definition.getIsolationLevel())
+                                    .isEqualTo(TransactionDefinition.ISOLATION_READ_COMMITTED);
+                            insideTransaction.set(true);
+                            return mock(TransactionStatus.class);
+                        });
+        doAnswer(
+                        call -> {
+                            insideTransaction.set(false);
+                            return null;
+                        })
+                .when(manager)
+                .commit(any());
+        doAnswer(
+                        call -> {
+                            insideTransaction.set(false);
+                            return null;
+                        })
+                .when(manager)
+                .rollback(any());
+        return new TransactionTemplate(manager);
     }
 }
