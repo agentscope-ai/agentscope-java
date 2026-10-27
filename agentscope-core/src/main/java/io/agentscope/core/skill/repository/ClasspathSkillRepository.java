@@ -178,7 +178,7 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
     @Override
     public AgentSkill getSkill(String skillName) {
         checkNotClosed();
-        return SkillFileSystemHelper.loadSkill(skillBasePath, skillName, source);
+        return SkillFileSystemHelper.loadSkillHead(skillBasePath, skillName, source);
     }
 
     /**
@@ -202,7 +202,11 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
     @Override
     public List<AgentSkill> getAllSkills() {
         checkNotClosed();
-        return SkillFileSystemHelper.getAllSkills(skillBasePath, source);
+        // Classpath skills are immutable at runtime: registration keeps metadata only
+        // (head-only), body and resources are read on demand. This applies the same
+        // "metadata-only residency" policy everywhere so future built-in skills carrying
+        // large texts cannot reintroduce the residency problem.
+        return SkillFileSystemHelper.getAllSkillHeads(skillBasePath, source);
     }
 
     @Override

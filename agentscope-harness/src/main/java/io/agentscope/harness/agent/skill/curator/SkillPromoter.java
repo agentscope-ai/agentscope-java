@@ -17,6 +17,8 @@ package io.agentscope.harness.agent.skill.curator;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.util.MarkdownSkillParser;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.security.MessageDigest;
@@ -279,6 +281,17 @@ public class SkillPromoter {
         sb.append("---\n");
         if (skill.getSkillContent() != null) {
             sb.append(skill.getSkillContent());
+        } else if (skill.getOriginDir().isPresent()) {
+            // Head-only: the body needed for the review payload is read from originDir
+            // transiently and discarded after use
+            try {
+                String full =
+                        SkillFileSystemHelper.readFullMarkdownFromDir(skill.getOriginDir().get());
+                sb.append(MarkdownSkillParser.parse(full).getContent());
+            } catch (Exception e) {
+                // If the body cannot be read, fall back to a metadata-only candidate; the
+                // review will reject it for missing content
+            }
         }
         return sb.toString();
     }

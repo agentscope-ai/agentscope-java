@@ -259,7 +259,13 @@ class SkillManageToolTest {
         assertFalse(text(r).startsWith("Error:"), text(r));
         var loaded = draftsRepo.getSkill("evolve");
         assertEquals("Updated.", loaded.getDescription());
-        assertTrue(loaded.getSkillContent().contains("Evolved"));
+        // Head-only contract: the body is verified through the resourcesFor read channel
+        assertTrue(
+                draftsRepo
+                        .resourcesFor("evolve", null)
+                        .read("SKILL.md")
+                        .orElse("")
+                        .contains("Evolved"));
     }
 
     @Test
@@ -313,7 +319,12 @@ class SkillManageToolTest {
                         .block();
         assertFalse(text(r).startsWith("Error:"), text(r));
         var loaded = draftsRepo.getSkill("patchme");
-        assertTrue(loaded.getSkillContent().contains("Body v2."));
+        assertTrue(
+                draftsRepo
+                        .resourcesFor("patchme", null)
+                        .read("SKILL.md")
+                        .orElse("")
+                        .contains("Body v2."));
     }
 
     @Test
@@ -400,7 +411,12 @@ class SkillManageToolTest {
                                                 "new_string", "# crlfpatch\nBody v2.")))
                         .block();
         assertFalse(text(r).startsWith("Error:"), text(r));
-        assertTrue(draftsRepo.getSkill("crlfpatch").getSkillContent().contains("Body v2."));
+        assertTrue(
+                draftsRepo
+                        .resourcesFor("crlfpatch", null)
+                        .read("SKILL.md")
+                        .orElse("")
+                        .contains("Body v2."));
 
         // Only the bytes the needle named were replaced. Everything outside the span keeps its
         // CRLF terminators, so the patch did not silently reflow the rest of the file — including

@@ -305,12 +305,15 @@ How the file gets fetched depends on where the skill came from:
 
 | Skill source | How `path` is resolved |
 |--------------|------------------------|
-| Project-global dir (Layer 1) | preloaded into memory at registration |
-| Marketplace — Git / MySQL / Nacos / classpath (Layer 2) | preloaded into memory by the backend |
-| `workspace/skills/` shared (Layer 3) | preloaded into memory at registration |
-| `<userId>/skills/` per-user (Layer 4) | SKILL.md preloaded; other files read on demand through `AbstractFilesystem` (per-user namespace + sandbox routing honored automatically) |
+| Project-global dir (Layer 1) | metadata at registration; body and resource files read from disk on demand |
+| Marketplace — Git / MySQL / Nacos (Layer 2) | preloaded into memory by the backend |
+| Marketplace — classpath (Layer 2) | metadata at registration; body and resource files read from disk on demand |
+| `workspace/skills/` shared (Layer 3) | metadata at registration; body and resource files read on demand through `AbstractFilesystem` |
+| `<userId>/skills/` per-user (Layer 4) | metadata only; body and other files read on demand through `AbstractFilesystem` (per-user namespace + sandbox routing honored automatically) |
 
-The agent doesn't see this difference — `load_skill_through_path` always works the same way. The fallback chain is "in-memory hit → filesystem read → error with an enumeration of every path actually available," so a wrong path returns a useful list rather than a dead end.
+Registration keeps only each skill's frontmatter metadata (name/description) resident — SKILL.md bodies and resource files are read on demand, so a large skill library (or skills carrying multi-MB template assets) no longer multiplies heap usage per agent.
+
+The agent doesn't see this difference — `load_skill_through_path` always works the same way. The fallback chain is "in-memory hit → filesystem read → error with an enumeration of every path actually available," so a wrong path returns a useful list rather than a dead end. One guard applies on the read path: resources larger than 512KB are not inlined into the conversation; the tool returns the file's absolute path and tells the agent to use `shell` / `read_file` with it instead.
 
 ### `<files-root>` and shell execution
 
