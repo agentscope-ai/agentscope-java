@@ -28,6 +28,8 @@ Save `SKILL.md` as UTF-8. A byte order mark (BOM) before the opening `---` is su
 
 Close the YAML frontmatter with an unindented line containing only `---` and optional spaces or tabs. A `---` inside a description or an indented YAML block scalar remains part of the metadata.
 
+Skill names must match `^[a-z0-9][a-z0-9-]*$` and be at most 64 characters (lowercase letters, digits, and hyphens only — no underscores or dots), following the industry naming standard for Agent Skills. Names are used verbatim as directory keys and skill identifiers, so non-conforming names are rejected when the skill is constructed or loaded.
+
 SKILL.md format:
 
 ```markdown
