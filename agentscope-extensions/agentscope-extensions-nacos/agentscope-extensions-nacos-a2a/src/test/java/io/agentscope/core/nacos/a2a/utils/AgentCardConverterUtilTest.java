@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.alibaba.nacos.api.ai.model.a2a.AgentCapabilities;
 import com.alibaba.nacos.api.ai.model.a2a.AgentCard;
+import com.alibaba.nacos.api.ai.model.a2a.AgentExtension;
 import com.alibaba.nacos.api.ai.model.a2a.AgentInterface;
 import com.alibaba.nacos.api.ai.model.a2a.AgentProvider;
 import com.alibaba.nacos.api.ai.model.a2a.AgentSkill;
@@ -126,6 +127,51 @@ class AgentCardConverterUtilTest {
     }
 
     @Test
+    @DisplayName("Should convert Nacos capability extensions to A2A")
+    void testConvertToA2aAgentCardWithCapabilityExtensions() {
+        AgentCard nacosAgentCard = createSampleNacosAgentCard();
+        AgentExtension extension = new AgentExtension();
+        extension.setUri("https://example.com/extensions/audit");
+        extension.setDescription("Audit metadata");
+        extension.setRequired(true);
+        extension.setParams(Map.of("level", "strict", "formats", List.of("json", "text")));
+        nacosAgentCard.getCapabilities().setExtensions(List.of(extension));
+
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+
+        assertEquals(
+                List.of(
+                        org.a2aproject.sdk.spec.AgentExtension.builder()
+                                .uri("https://example.com/extensions/audit")
+                                .description("Audit metadata")
+                                .required(true)
+                                .params(
+                                        Map.of(
+                                                "level",
+                                                "strict",
+                                                "formats",
+                                                List.of("json", "text")))
+                                .build()),
+                result.capabilities().extensions());
+    }
+
+    @Test
+    @DisplayName("Should treat a missing Nacos extension required flag as false")
+    void testConvertToA2aAgentCardWithNullExtensionRequired() {
+        AgentCard nacosAgentCard = createSampleNacosAgentCard();
+        AgentExtension extension = new AgentExtension();
+        extension.setUri("https://example.com/extensions/optional");
+        extension.setRequired(null);
+        nacosAgentCard.getCapabilities().setExtensions(List.of(extension));
+
+        org.a2aproject.sdk.spec.AgentCard result =
+                AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+
+        assertFalse(result.capabilities().extensions().get(0).required());
+    }
+
+    @Test
     @DisplayName("Should keep the protocol version Nacos has for the interfaces")
     void testConvertToA2aAgentCardKeepsProtocolVersion() {
         AgentCard nacosAgentCard = createSampleNacosAgentCard();
@@ -198,6 +244,36 @@ class AgentCardConverterUtilTest {
 
         // Check security schemes
         assertEquals(Map.of("type", "mutualTLS"), result.getSecuritySchemes().get("scheme1"));
+    }
+
+    @Test
+    @DisplayName("Should convert A2A capability extensions to Nacos")
+    void testConvertToNacosAgentCardWithCapabilityExtensions() {
+        org.a2aproject.sdk.spec.AgentExtension extension =
+                org.a2aproject.sdk.spec.AgentExtension.builder()
+                        .uri("https://example.com/extensions/audit")
+                        .description("Audit metadata")
+                        .required(true)
+                        .params(Map.of("level", "strict", "formats", List.of("json", "text")))
+                        .build();
+        org.a2aproject.sdk.spec.AgentCard a2aAgentCard =
+                org.a2aproject.sdk.spec.AgentCard.builder(createSampleA2aAgentCard())
+                        .capabilities(
+                                org.a2aproject.sdk.spec.AgentCapabilities.builder()
+                                        .streaming(true)
+                                        .pushNotifications(false)
+                                        .extendedAgentCard(true)
+                                        .extensions(List.of(extension))
+                                        .build())
+                        .build();
+
+        AgentCard result = AgentCardConverterUtil.convertToNacosAgentCard(a2aAgentCard);
+
+        AgentExtension converted = result.getCapabilities().getExtensions().get(0);
+        assertEquals(extension.uri(), converted.getUri());
+        assertEquals(extension.description(), converted.getDescription());
+        assertEquals(extension.required(), converted.getRequired());
+        assertEquals(extension.params(), converted.getParams());
     }
 
     @Test

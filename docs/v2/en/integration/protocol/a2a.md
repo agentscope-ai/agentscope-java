@@ -50,6 +50,8 @@ Msg result = remote.call(new UserMessage("Translate to English: 你好")).block(
 
 `streamEvents` streams the events of a call: the text and thinking the remote agent streams arrive as `TextBlockDeltaEvent` and `ThinkingBlockDeltaEvent`, then `AgentResultEvent` carries the same message `call()` returns. Tool calls and tool results are only in the result message.
 
+For completed tasks, the final result prefers output artifacts. When no artifacts are present, it uses the final status message, whether completion arrives as a full task or a streaming status update.
+
 ```java
 remote.streamEvents(new UserMessage("Translate to English: 你好"))
     .doOnNext(event -> {

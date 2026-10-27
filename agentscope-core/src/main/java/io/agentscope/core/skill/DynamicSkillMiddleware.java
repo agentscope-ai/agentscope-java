@@ -38,6 +38,7 @@ import java.util.TreeSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Dynamically composes skills from an ordered list of {@link AgentSkillRepository repositories}
@@ -156,9 +157,26 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
     }
 
     /**
-     * Agent contract: the framework invokes this hook with non-null {@code agent} and
-     * {@code ctx}; direct callers must supply a non-null agent or accept the degraded
-     * behaviour of a null one (tolerated, not contractual).
+     * Reloads the visible skill view and appends its rendered prompt to {@code currentPrompt}.
+     *
+     * <p>The reload performs blocking I/O (repository reads, file materialization), so it runs on
+     * {@link Schedulers#boundedElastic()} rather than the subscribing thread, keeping reactive
+     * event-loop threads non-blocking. Semantics are unchanged: the reload still happens on every
+     * call, and the content-addressed box cache reuses an already-materialised box whenever the
+     * visible content is unchanged. The cache-hit fast path cannot stay on the calling thread
+     * because the cache key (the content signature) is only known after the blocking repository
+     * read, so the whole reload — including cache hits — moves to boundedElastic.
+     *
+     * <p>Agent contract: the framework invokes this hook with a non-null {@code agent}; direct
+     * callers must supply one or accept the degraded behaviour of a null one (tolerated, not
+     * contractual).
+     *
+     * @param agent the agent whose toolkit, skill-filter baseline and work dir drive this pass;
+     *     may be {@code null} for direct use outside agent assembly
+     * @param ctx the per-call {@link RuntimeContext}; {@code null} is treated as an empty context
+     * @param currentPrompt the system prompt composed so far by earlier middlewares
+     * @return the prompt with this call's skill section appended, or {@code currentPrompt}
+     *     unchanged when no skill is visible for this call
      */
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
@@ -170,21 +188,33 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
             registerSkillTools(agent.getToolkit());
         }
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        SkillBox box = reloadSkills(agent, rc);
-        // Expose the current per-call SkillBox — or clear it when null — so the shared load tool
-        // resolves this call's skill view and a reused RuntimeContext never serves a stale box.
-        rc.put(SkillBox.class, box);
+        return Mono.fromCallable(
+                        () -> {
+                            SkillBox box = reloadSkills(agent, rc);
+                            // Expose the current per-call SkillBox — or clear it when null — so
+                            // the shared load tool resolves this call's skill view and a reused
+                            // RuntimeContext never serves a stale box.
+                            rc.put(SkillBox.class, box);
+                            return appendSkillPrompt(agent, box, rc, currentPrompt);
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /** Returns {@code currentPrompt} with the box's rendered skill prompt appended, or {@code
+     * currentPrompt} unchanged when {@code box} is {@code null} or renders no prompt. */
+    private String appendSkillPrompt(
+            Agent agent, SkillBox box, RuntimeContext rc, String currentPrompt) {
         if (box == null) {
-            return Mono.just(currentPrompt);
+            return currentPrompt;
         }
         SkillFilter effectiveFilter = resolveFilter(agent, rc);
         String prompt = box.getSkillPrompt(effectiveFilter);
         if (prompt == null || prompt.isEmpty()) {
-            return Mono.just(currentPrompt);
+            return currentPrompt;
         }
         String base = currentPrompt != null ? currentPrompt : "";
         String separator = base.isEmpty() || base.endsWith("\n") ? "" : "\n";
-        return Mono.just(base + separator + prompt);
+        return base + separator + prompt;
     }
 
     /**
@@ -398,9 +428,9 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
                                 ? s.getSkillContent().getBytes(StandardCharsets.UTF_8)
                                 : new byte[0]);
                 md.update((byte) 0);
-                for (String key : new TreeSet<>(s.getResources().keySet())) {
+                for (String key : new TreeSet<>(s.getResourcePaths())) {
                     md.update(key.getBytes(StandardCharsets.UTF_8));
-                    String val = s.getResources().get(key);
+                    String val = s.getResource(key);
                     if (val != null) {
                         md.update(val.getBytes(StandardCharsets.UTF_8));
                     }

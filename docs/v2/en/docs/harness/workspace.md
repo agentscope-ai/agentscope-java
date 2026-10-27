@@ -480,10 +480,12 @@ knowledge/
 
 At load time:
 
-- The full `KNOWLEDGE.md` goes into `<domain_knowledge_context>`.
+- `KNOWLEDGE.md` is collected as reference material for `HARNESS_CONTEXT`, subject to the context budget.
 - Other files under the same tree (any depth) only contribute their **path listing** to the prompt; the agent reads them on demand with `read_file` / `grep_files` / `glob_files`.
 
 This "details on disk, index in the prompt" pattern keeps token budget bounded even with a large knowledge base.
+
+Knowledge guidance follows the collected material: when both the entry content and file catalog are empty, Domain Knowledge guidance is omitted. Inline content alone does not advertise a directory; file navigation is included only when a catalog was collected, even if reference material is later omitted for context budget. A failed read alone does not establish that reference files exist.
 
 ## Safety rules for writing to the workspace
 
