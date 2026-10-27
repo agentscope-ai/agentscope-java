@@ -54,12 +54,12 @@ public final class SkillPromptBuilder {
             ## Available Skills
 
             <usage>
-            Skills provide specialized capabilities and domain knowledge. Use them when they match your current task.
+            These entries are summaries, not skill instructions. If the user names an available skill or your task clearly matches its description, load its SKILL.md before taking task actions.
 
             How to use a skill:
-            - Load: load_skill_through_path(skillId="<skill-id>", path="SKILL.md") loads its documentation with detailed instructions
-            - Other resources (scripts, assets, references) load with the same tool and other paths
-            - <files-root>, when present, gives the absolute path to that skill's files
+            - Load: load_skill_through_path(skillId="<skill-id>", path="SKILL.md"); use the exact <skill-id> listed below
+            - Follow the loaded instructions. Reuse them while the full content remains in the conversation; reload when it is missing or needs refreshing
+            - Load referenced scripts, assets, and references with the same tool only as needed for the task
             </usage>
 
             <available_skills>
@@ -72,18 +72,10 @@ public final class SkillPromptBuilder {
             ## Code Execution
 
             <code_execution>
-            You have access to the execute tool. For skills that provide a <files-root>
-            in <available_skills>, it gives the absolute path to their files.
-            Skills without <files-root> provide documentation through load_skill_through_path;
-            no shell-accessible resource directory is declared for them.
-
-            Workflow:
-            1. After loading a skill, check whether it provides <files-root> in <available_skills>
-               Continue with file listing and script execution only when that field is present
-            2. List its files:    ls <files-root>/
-            3. Run scripts:       python3 <files-root>/scripts/<script-name>
-            4. Always use absolute paths derived from <files-root>; never invent paths
-            5. If a script exists for the task, run it directly — do not rewrite its logic inline
+            You have access to the execute tool.
+            - For skills that include <files-root>, resolve script paths against that absolute root in the execution environment. Host and sandbox paths can differ. Quote paths using that environment's shell syntax.
+            - Run provided scripts according to the loaded skill, using an interpreter available in the execution environment. Check required runtimes there when unknown.
+            - For skills without <files-root>, load resources with load_skill_through_path; a shell path is not provided.
             </code_execution>
             """;
 

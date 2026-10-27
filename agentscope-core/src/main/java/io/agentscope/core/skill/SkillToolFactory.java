@@ -17,18 +17,14 @@ package io.agentscope.core.skill;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
-import java.io.IOException;
-import java.nio.charset.MalformedInputException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -291,10 +287,9 @@ class SkillToolFactory {
         // 2. Disk fallback via skill.originDir (lazy FS repos, or any FS-backed skill whose
         //    in-memory map didn't preload the requested path). Same sanitisation rules as the
         //    advertised path schema: no '..', no absolute path, no directories.
-        Optional<String> sanitized = sanitizeRelativePath(path);
-        if (sanitized.isPresent() && skill.getOriginDir().isPresent()) {
+        if (skill.getOriginDir().isPresent()) {
             Optional<String> diskContent =
-                    readFromOriginDir(skill.getOriginDir().get(), sanitized.get());
+                    SkillFileSystemHelper.readResource(skill.getOriginDir().get(), path);
             if (diskContent.isPresent()) {
                 activateSkill(skillId, tcs);
                 return buildResourceResponse(skillId, path, diskContent.get());
@@ -305,50 +300,6 @@ class SkillToolFactory {
         throw new IllegalArgumentException(
                 buildResourceNotFoundMessage(
                         skillId, path, resources, skill.getOriginDir().orElse(null)));
-    }
-
-    private static Optional<String> sanitizeRelativePath(String path) {
-        if (path == null || path.isBlank()) {
-            return Optional.empty();
-        }
-        String normalized = path.replace('\\', '/');
-        if (normalized.startsWith("/") || normalized.contains("..")) {
-            return Optional.empty();
-        }
-        if (".".equals(normalized) || "./".equals(normalized)) {
-            return Optional.empty();
-        }
-        return Optional.of(normalized);
-    }
-
-    /**
-     * Reads a single file under {@code originDir} for the disk-fallback path. Text content is
-     * returned as-is; binary content uses the {@code base64:} prefix convention that matches
-     * {@code SkillFileSystemHelper.readAndPutResource}, so the load tool's contract is identical
-     * whether the resource came from memory or disk.
-     */
-    private static Optional<String> readFromOriginDir(Path originDir, String relPath) {
-        Path target = originDir.resolve(relPath).normalize();
-        if (!target.startsWith(originDir)) {
-            return Optional.empty();
-        }
-        if (!Files.isRegularFile(target) || !Files.isReadable(target)) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(Files.readString(target, StandardCharsets.UTF_8));
-        } catch (MalformedInputException e) {
-            try {
-                byte[] bytes = Files.readAllBytes(target);
-                return Optional.of("base64:" + Base64.getEncoder().encodeToString(bytes));
-            } catch (IOException ex) {
-                logger.warn("Failed to read binary resource {}: {}", target, ex.getMessage());
-                return Optional.empty();
-            }
-        } catch (IOException e) {
-            logger.warn("Failed to read resource {}: {}", target, e.getMessage());
-            return Optional.empty();
-        }
     }
 
     /**
@@ -415,7 +366,7 @@ class SkillToolFactory {
             resourcePaths.addAll(resources.keySet());
         }
         if (originDir != null) {
-            resourcePaths.addAll(listOriginDirEntries(originDir));
+            resourcePaths.addAll(SkillFileSystemHelper.listResourcePaths(originDir));
         }
 
         message.append("Available resources:\n");
@@ -425,24 +376,6 @@ class SkillToolFactory {
         }
 
         return message.toString();
-    }
-
-    private static List<String> listOriginDirEntries(Path originDir) {
-        List<String> entries = new ArrayList<>();
-        try (var stream = Files.walk(originDir)) {
-            stream.filter(Files::isRegularFile)
-                    .forEach(
-                            p -> {
-                                String rel = originDir.relativize(p).toString().replace('\\', '/');
-                                if (!rel.isBlank() && !"SKILL.md".equals(rel)) {
-                                    entries.add(rel);
-                                }
-                            });
-        } catch (IOException e) {
-            logger.debug(
-                    "Failed to enumerate {} for not-found listing: {}", originDir, e.getMessage());
-        }
-        return entries;
     }
 
     /**
