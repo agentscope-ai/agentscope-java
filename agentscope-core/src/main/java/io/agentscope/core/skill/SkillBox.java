@@ -33,7 +33,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,7 +55,47 @@ public class SkillBox {
     private SkillFileFilter fileFilter;
     private boolean autoUploadSkill = true;
 
-    private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
+    /**
+     * Number of lock stripes guarding concurrent {@code uploadSkillFiles} writes. A fixed stripe
+     * table replaces the former per-path lock map, which accumulated one lock object per
+     * materialised path and never released them in long-lived processes. Mutual exclusion for a
+     * given path does not depend on this value (same path always maps to the same stripe); a
+     * collision only serialises one extra file write. 256 keeps worst-case stripe occupancy —
+     * storm-level materialisation bursts over digit-heavy path families, whose 31-polynomial
+     * hashes cluster more at smaller power-of-two moduli — below one waiting writer, with room
+     * for the longer write critical sections the planned temp-file-plus-rename convergence will
+     * introduce; the table costs a few KB.
+     */
+    static final int FILE_LOCK_STRIPES = 256;
+
+    private static final Object[] FILE_LOCK_TABLE = createFileLockTable();
+
+    private static Object[] createFileLockTable() {
+        Object[] table = new Object[FILE_LOCK_STRIPES];
+        for (int i = 0; i < FILE_LOCK_STRIPES; i++) {
+            table[i] = new Object();
+        }
+        return table;
+    }
+
+    /**
+     * Returns the lock stripe guarding writes to the given target path. The stripe index is
+     * {@code floorMod(pathHash, FILE_LOCK_STRIPES)}, so a given path always maps to the same
+     * stripe (mutual exclusion for that path is preserved) while the table stays fixed-size no
+     * matter how many distinct paths are written; unrelated paths colliding on a stripe are
+     * merely serialised behind each other, which does not affect correctness.
+     *
+     * <p>Callers must not hold more than one stripe at a time: acquire the stripe, finish the
+     * write, and release it before locking another path. Nested stripe acquisitions in
+     * differing orders can deadlock, and stripe collisions between unrelated paths only widen
+     * that hazard.
+     *
+     * @param path the target file path being written
+     * @return the stripe object to {@code synchronized} on for that path
+     */
+    static Object fileLockFor(Path path) {
+        return FILE_LOCK_TABLE[Math.floorMod(path.hashCode(), FILE_LOCK_STRIPES)];
+    }
 
     public SkillBox(Toolkit toolkit) {
         this(toolkit, null);
@@ -754,8 +793,7 @@ public class SkillBox {
                         Files.createDirectories(targetPath.getParent());
                     }
 
-                    Object lock =
-                            FILE_LOCKS.computeIfAbsent(targetPath.toString(), k -> new Object());
+                    Object lock = fileLockFor(targetPath);
                     synchronized (lock) {
                         if (content.startsWith(BASE64_PREFIX)) {
                             String encoded = content.substring(BASE64_PREFIX.length());
