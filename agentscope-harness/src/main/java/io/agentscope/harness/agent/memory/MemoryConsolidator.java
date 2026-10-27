@@ -152,12 +152,29 @@ public class MemoryConsolidator {
      * advances the watermark on success.
      *
      * <p>If no daily files have been touched since the last run, this is a no-op.
+     *
+     * <p>If the curated MEMORY.md is blank while a watermark exists (e.g. the file was
+     * deleted or cleared without removing {@code memory/.consolidation_state}), the
+     * watermark is ignored for that run and all daily ledgers are consolidated again —
+     * rebuilding MEMORY.md from the full ledger history instead of silently dropping
+     * every day before the watermark.
      */
     public Mono<Void> consolidate(RuntimeContext rc) {
         Instant watermark = readWatermark(rc);
         Instant runStart = Instant.now();
 
         String currentMemory = workspaceManager.readMemoryMd(rc);
+        // A blank curated MEMORY.md with an advanced watermark means the view was lost or
+        // cleared without resetting the watermark: merging only post-watermark ledgers into
+        // "(empty)" would silently drop every older day from the curated file. Rebuild from
+        // the full ledger history instead — the same input assembly as a first run.
+        if (currentMemory.isBlank() && !watermark.equals(Instant.EPOCH)) {
+            log.warn(
+                    "MEMORY.md is blank while a consolidation watermark exists ({}) — rebuilding"
+                            + " from all daily ledgers",
+                    watermark);
+            watermark = Instant.EPOCH;
+        }
         String dailyEntries = readDailyEntries(rc, watermark);
 
         if (dailyEntries.isBlank()) {
