@@ -772,11 +772,7 @@ class CapabilityGrantIntegrationTest {
                         .build();
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(
-                        List.of(new StubRepo(List.of(granted, denied, systemSkill))),
-                        new Toolkit(),
-                        null,
-                        false,
-                        null);
+                        List.of(new StubRepo(List.of(granted, denied, systemSkill))));
 
         String prompt =
                 mw.onSystemPrompt(
@@ -806,11 +802,7 @@ class CapabilityGrantIntegrationTest {
         // market copy whose skillId is "alpha__s__market".
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(
-                        List.of(new StubRepo(List.of(alphaCustom, alphaMarket))),
-                        new Toolkit(),
-                        null,
-                        false,
-                        null);
+                        List.of(new StubRepo(List.of(alphaCustom, alphaMarket))));
 
         // Qualified entry "alpha__s__market" grants exactly that copy; the same-named
         // source-less copy coexists in the catalog but stays ungranted.
@@ -854,12 +846,7 @@ class CapabilityGrantIntegrationTest {
         agent.call(userMsg("hi"), rc()).block(java.time.Duration.ofSeconds(10));
 
         DynamicSkillMiddleware mw =
-                new DynamicSkillMiddleware(
-                        List.of(new StubRepo(List.of(skill("alpha")))),
-                        new Toolkit(),
-                        null,
-                        false,
-                        null);
+                new DynamicSkillMiddleware(List.of(new StubRepo(List.of(skill("alpha")))));
         String prompt =
                 mw.onSystemPrompt(
                                 null,
@@ -893,12 +880,7 @@ class CapabilityGrantIntegrationTest {
     @DisplayName("missing surface → no skill prompt at all (fail-closed)")
     void skillFilterFailsClosedOnMissingSurface() {
         DynamicSkillMiddleware mw =
-                new DynamicSkillMiddleware(
-                        List.of(new StubRepo(List.of(skill("alpha")))),
-                        new Toolkit(),
-                        null,
-                        false,
-                        null);
+                new DynamicSkillMiddleware(List.of(new StubRepo(List.of(skill("alpha")))));
         RuntimeContext ctx = rc();
         String prompt = mw.onSystemPrompt(null, ctx, "base").block();
         assertEquals("base", prompt, "no surface → no skill prompt");
@@ -910,11 +892,7 @@ class CapabilityGrantIntegrationTest {
     void boxCacheIsolationAcrossSurfaces() {
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(
-                        List.of(new StubRepo(List.of(skill("alpha"), skill("beta")))),
-                        new Toolkit(),
-                        null,
-                        false,
-                        null);
+                        List.of(new StubRepo(List.of(skill("alpha"), skill("beta")))));
 
         RuntimeContext rc1 = rc(new CapabilitySurface(Set.of("alpha"), null, null));
         mw.onSystemPrompt(null, rc1, "base").block();
@@ -996,11 +974,8 @@ class CapabilityGrantIntegrationTest {
         Toolkit toolkit = new Toolkit();
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(
-                        List.of(new StubRepo(List.of(skill("alpha"), skill("beta")))),
-                        toolkit,
-                        null,
-                        false,
-                        null);
+                        List.of(new StubRepo(List.of(skill("alpha"), skill("beta")))));
+        mw.registerSkillTools(toolkit);
         RuntimeContext ctx = rc(new CapabilitySurface(Set.of("alpha"), null, null));
         mw.onSystemPrompt(null, ctx, "base").block();
         assertNotNull(ctx.get(SkillBox.class));
@@ -1027,8 +1002,8 @@ class CapabilityGrantIntegrationTest {
                         .system(true)
                         .build();
         DynamicSkillMiddleware mw =
-                new DynamicSkillMiddleware(
-                        List.of(new StubRepo(List.of(systemSkill))), toolkit, null, false, null);
+                new DynamicSkillMiddleware(List.of(new StubRepo(List.of(systemSkill))));
+        mw.registerSkillTools(toolkit);
         RuntimeContext ctx = rc(new CapabilitySurface(Set.of(), null, null));
         mw.onSystemPrompt(null, ctx, "base").block();
 

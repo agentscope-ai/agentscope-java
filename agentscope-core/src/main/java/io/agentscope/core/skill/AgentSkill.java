@@ -16,6 +16,7 @@
 
 package io.agentscope.core.skill;
 
+import io.agentscope.core.skill.util.SkillUtil;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashMap;
@@ -46,12 +47,12 @@ import java.util.Set;
  * <p><b>Usage examples:</b>
  * <pre>{@code
  * // From markdown with frontmatter (use SkillUtil)
- * String skillMd = "---\nname: my_skill\ndescription: Does something\n---\nContent here";
+ * String skillMd = "---\nname: my-skill\ndescription: Does something\n---\nContent here";
  * Map<String, String> resources = Map.of("file1.txt", "content1");
  * AgentSkill skill = SkillUtil.createFrom(skillMd, resources);
  *
  * // Direct construction
- * AgentSkill skill2 = new AgentSkill("my_skill", "Does something", "Content here", resources);
+ * AgentSkill skill2 = new AgentSkill("my-skill", "Does something", "Content here", resources);
  *
  * // Create modified version using builder
  * AgentSkill modified = skill.toBuilder()
@@ -157,13 +158,18 @@ public class AgentSkill {
     /**
      * Creates an AgentSkill with explicit metadata and an on-disk origin directory.
      *
+     * <p>The {@code name} must conform to the standard naming rule ({@link
+     * SkillUtil#VALID_SKILL_NAME_PATTERN}, at most {@link SkillUtil#MAX_SKILL_NAME_LENGTH}
+     * characters) because names are used verbatim as directory keys during materialization.
+     *
      * @param metadata Skill metadata including required {@code name} and {@code description}
      * @param skillContent The skill implementation or instructions (must not be null or empty)
      * @param resources Supporting resources referenced by the skill (can be null)
      * @param source Source identifier for the skill ({@code null} = no provenance)
      * @param originDir Absolute path to the skill's source directory, or {@code null} if not
      *                  filesystem-backed (e.g. classpath / remote / synthetic). Stored as-is.
-     * @throws IllegalArgumentException if metadata is invalid or skillContent is null or empty
+     * @throws IllegalArgumentException if metadata is invalid, skillContent is null or empty, or
+     *                                  the name does not conform to the standard naming rule
      */
     public AgentSkill(
             Map<String, Object> metadata,
@@ -194,6 +200,7 @@ public class AgentSkill {
             boolean system) {
         String name = getRequiredMetadataString(metadata, "name");
         String description = getRequiredMetadataString(metadata, "description");
+        SkillUtil.requireValidSkillName(name);
         if (skillContent == null || skillContent.isEmpty()) {
             throw new IllegalArgumentException("The skill must have content");
         }
@@ -408,7 +415,7 @@ public class AgentSkill {
      * <pre>{@code
      * // Create from scratch
      * AgentSkill skill = AgentSkill.builder()
-     *     .name("my_skill")
+     *     .name("my-skill")
      *     .description("Does something")
      *     .skillContent("Instructions here")
      *     .addResource("file.txt", "content")

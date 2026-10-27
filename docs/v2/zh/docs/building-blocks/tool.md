@@ -725,10 +725,32 @@ public final class PathSandboxInterceptor implements ToolCallInterceptor {
 - **按 agent 身份分发**。快照携带 `agentId`(审计关联)与 `agentName`(写规则的依据,如"planner 禁止写操作");直连无 agent 时两者为 `null`。刻意只透出标识而非 `Agent` 句柄 —— 其操作属于中间件层且带重入风险;结构性的按 agent 差异宜在构建期表达于各 agent 自己的 `ToolkitConfig`。
 - **改写发生在权限批准之后**。权限引擎判定的是模型原始输入;若安全敏感参数(路径、SQL、URL)改写后的*最终值*需要用户确认,应挂起人审而非静默改写。拦截器拒绝一个已获批准的调用属预期行为 —— 拒绝结果直接回馈模型。
 - **拒绝消息应面向模型可行动**("请使用工作区内的相对路径"),不泄露服务端信息,并带拦截器身份前缀(如 `PathSandbox:`)。在示例之外加固路径守卫:调用者可控的 id 先校验格式再用作路径组件;已存在路径(及新建文件的最近已存在祖先)用 `toRealPath()` 复检 —— `normalize()` 不消解符号链接、Windows 8.3 短名与 ADS,且 `Path#startsWith` 区分大小写;改写时避免把服务端绝对根路径回显给模型。
-- **会话记录保持真实**。`tool/dispatch` 记录位于链终点,记录的永远是实际执行的参数;被拒绝的调用不会留下 `allowed`/`dispatch` 记录。
+- **会话记录保持真实**。`tool/dispatch` 记录位于链终点,记录准备派发的参数;被拦截器拒绝的调用不会留下 `allowed`/`dispatch` 记录。
 - **超时与重试**在批处理 `callTools` 路径包裹整条链:拦截器耗时计入工具超时,重试时每次尝试都会重新走链。直连 `Toolkit#callTool` 路径保持现状 —— 无超时包装 —— 因此拦截器绝不能阻塞;阻塞 IO 用 `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())` 卸载。
 - **外部工具不会被拦截**。`externalTool=true` / `SchemaOnlyTool` 在链之前短路返回 `suspended`,校验由外部执行方负责。挂起后回填的结果属数据注入而非执行,同样不经过链。框架内部合成工具 `generate_response` 亦不经过链。
 - **传播**。`Toolkit#copy()`(Harness 子代理即经此构建)会携带拦截器;以全新 `Toolkit` 构建的子代理则没有,除非显式注册。工具体内再委托其他工具(工具在 `callAsync` 内部调用别的工具)不会被二次拦截 —— 按外层工具名分发守卫。
+
+## 工具实际派发前检查
+
+应用需要在排队工具开始前再次核验本轮状态时，可配置 `ToolkitConfig.builder().beforeToolCall(...)`，例如其他工具已报告基础设施故障：
+
+```java
+// 工具集和标记仅属于本轮运行。
+AtomicBoolean stopped = new AtomicBoolean();
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+        .beforeToolCall(param -> {
+            if (stopped.get()) {
+                throw new IllegalStateException("Run stopped: infrastructure unavailable");
+            }
+        })
+        .build());
+```
+
+检查必须同步且不阻塞，在每次订阅和重试时，前序调度、拦截器及派发日志持久化等待结束后，紧邻本地 `callAsync` 执行。检查接收最终执行参数，包含拦截器改写后的参数。外部工具虽不经过拦截器，仍会在返回挂起结果前执行此检查。拒绝派发时抛普通 `RuntimeException`；检查回调不得抛出 `ToolSuspendException`，它表示请求挂起，不能用于拒绝派发。拒绝沿既有工具错误结果路径返回，批次结果保留调用 ID 和名称。
+
+默认不配置检查。`Toolkit.copy()` 保留配置，覆盖复制后及后注册的工具；独立新建的工具集需要单独配置。跨运行共享工具集时，应从调用的 `RuntimeContext` 获取状态，避免捕获共享停止标记。已开始的调用不会被取消，Agent 循环停止与恢复决策仍由应用负责。框架内部合成工具路径及外部结果回填不经过此检查。
+
+本地检查刻意放在派发日志持久化之后，因此即使检查随后拒绝执行，已持久化的 `tool/dispatch` 仍表示派发意图，动作的最终结果会记录失败。持久化之前的参数策略、改写及审计继续使用拦截器。
 
 ## 延伸阅读
 

@@ -247,8 +247,8 @@ class SystemCapabilityMarkerTest {
         toolkit.registerMetaTool();
         assertTrue(toolkit.getTool("reset_equipped_tools").isSystem());
 
-        // The DynamicSkillMiddleware constructor registers the shared runtime load tool.
-        new DynamicSkillMiddleware(List.of(new EmptyRepo()), toolkit);
+        // Explicit manual wiring registers the shared runtime load tool as a system tool.
+        new DynamicSkillMiddleware(List.of(new EmptyRepo())).registerSkillTools(toolkit);
         assertTrue(toolkit.getTool("load_skill_through_path").isSystem());
 
         // Static skillBox registration: must stay loadable under an inherited surface (grant

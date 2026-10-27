@@ -34,6 +34,20 @@ import org.junit.jupiter.api.Test;
 class AgentSkillTest {
 
     @Test
+    @DisplayName("Should reject names outside the standard naming rule")
+    void testRejectsNonStandardNames() {
+        // Arrange / Act / Assert: every name below violates the standard naming rule and must
+        // fail construction with the same exception the contract already uses for missing fields.
+        for (String invalid :
+                new String[] {"技能A", "Uppercase", "dot.name", "/tmp/evil", "..", "with space"}) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new AgentSkill(invalid, "desc", "content", null),
+                    "name '" + invalid + "' must be rejected");
+        }
+    }
+
+    @Test
     @DisplayName("Should constructor with all parameters")
     void testConstructorWithAllParameters() {
         Map<String, String> resources = new HashMap<>();
@@ -41,15 +55,15 @@ class AgentSkillTest {
         resources.put("data.txt", "sample data");
 
         AgentSkill skill =
-                new AgentSkill("test_skill", "A test skill", "Skill content here", resources);
+                new AgentSkill("test-skill", "A test skill", "Skill content here", resources);
 
         assertNotNull(skill);
-        assertEquals("test_skill", skill.getName());
+        assertEquals("test-skill", skill.getName());
         assertEquals("A test skill", skill.getDescription());
         assertEquals("Skill content here", skill.getSkillContent());
         assertNull(skill.getSource());
-        assertEquals("test_skill", skill.getSkillId());
-        assertEquals("test_skill", skill.getMetadata().get("name"));
+        assertEquals("test-skill", skill.getSkillId());
+        assertEquals("test-skill", skill.getMetadata().get("name"));
         assertEquals("A test skill", skill.getMetadata().get("description"));
         assertEquals(2, skill.getResources().size());
         assertEquals("{\"key\": \"value\"}", skill.getResources().get("config.json"));
@@ -59,7 +73,7 @@ class AgentSkillTest {
     @DisplayName("Should constructor with explicit metadata")
     void testConstructorWithExplicitMetadata() {
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("name", "browser_skill");
+        metadata.put("name", "browser-skill");
         metadata.put("description", "Use browser automation");
         metadata.put("version", "1.0.0");
         metadata.put("tags", List.of("web", "automation"));
@@ -68,7 +82,7 @@ class AgentSkillTest {
                 new AgentSkill(
                         metadata, "Browser skill content", Map.of("file.txt", "content"), null);
 
-        assertEquals("browser_skill", skill.getName());
+        assertEquals("browser-skill", skill.getName());
         assertEquals("Use browser automation", skill.getDescription());
         assertEquals("1.0.0", skill.getMetadataValue("version"));
         assertEquals(List.of("web", "automation"), skill.getMetadataValue("tags"));
@@ -97,11 +111,11 @@ class AgentSkillTest {
 
         AgentSkill skill =
                 new AgentSkill(
-                        "github_skill", "From GitHub", "GitHub content", resources, "github");
+                        "github-skill", "From GitHub", "GitHub content", resources, "github");
 
         assertEquals("github", skill.getSource());
-        assertEquals("github_skill", skill.getName());
-        assertEquals("github_skill__s__github", skill.getSkillId());
+        assertEquals("github-skill", skill.getName());
+        assertEquals("github-skill__s__github", skill.getSkillId());
     }
 
     @Test
@@ -261,18 +275,18 @@ class AgentSkillTest {
     void testBuilderCreateFromScratch() {
         AgentSkill skill =
                 AgentSkill.builder()
-                        .name("builder_skill")
+                        .name("builder-skill")
                         .description("Built with builder")
                         .skillContent("Builder content")
                         .source("custom_source")
                         .addResource("res.txt", "resource content")
                         .build();
 
-        assertEquals("builder_skill", skill.getName());
+        assertEquals("builder-skill", skill.getName());
         assertEquals("Built with builder", skill.getDescription());
         assertEquals("Builder content", skill.getSkillContent());
         assertEquals("custom_source", skill.getSource());
-        assertEquals("builder_skill", skill.getMetadataValue("name"));
+        assertEquals("builder-skill", skill.getMetadataValue("name"));
         assertEquals("Built with builder", skill.getMetadataValue("description"));
         assertEquals(1, skill.getResources().size());
     }
@@ -284,14 +298,14 @@ class AgentSkillTest {
                 AgentSkill.builder()
                         .metadata(
                                 Map.of(
-                                        "name", "builder_skill",
+                                        "name", "builder-skill",
                                         "description", "Built with metadata",
                                         "category", "tooling"))
                         .putMetadata("version", "1.2.3")
                         .skillContent("Builder content")
                         .build();
 
-        assertEquals("builder_skill", skill.getName());
+        assertEquals("builder-skill", skill.getName());
         assertEquals("Built with metadata", skill.getDescription());
         assertEquals("tooling", skill.getMetadataValue("category"));
         assertEquals("1.2.3", skill.getMetadataValue("version"));
@@ -369,14 +383,13 @@ class AgentSkillTest {
         AgentSkill skill1 = new AgentSkill("name", "desc", longContent.toString(), null);
         assertTrue(skill1.getSkillContent().length() > 10000);
 
-        // Special characters
-        AgentSkill skill2 = new AgentSkill("skill-v1.0", "desc", "content", null);
-        assertEquals("skill-v1.0", skill2.getName());
-
-        // Unicode
-        AgentSkill skill3 = new AgentSkill("技能名称", "技能描述：测试", "技能内容\n包含中文", null, "来源");
-        assertEquals("技能名称", skill3.getName());
-        assertEquals("来源", skill3.getSource());
+        // Names outside the standard charset are rejected at construction
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new AgentSkill("skill-v1.0", "desc", "content", null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new AgentSkill("技能名称", "技能描述：测试", "技能内容\n包含中文", null, "来源"));
 
         // Many resources
         Map<String, String> manyResources = new HashMap<>();

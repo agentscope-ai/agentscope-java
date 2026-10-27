@@ -24,11 +24,15 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.filesystem.model.FileData;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -40,6 +44,101 @@ import org.junit.jupiter.api.io.TempDir;
  * "upload/download tools".
  */
 class WorkspaceContextMiddlewareSandboxPromptTest {
+
+    @Test
+    void emptyKnowledgeOmitsNavigation(@TempDir Path workspace) {
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
+            String prompt = prompt(wm, false);
+
+            assertFalse(prompt.contains("## Domain Knowledge"));
+            assertFalse(prompt.contains("knowledge file catalog"));
+            assertTrue(prompt.contains("## Memory Recall"));
+        }
+    }
+
+    @Test
+    void inlineKnowledgeDoesNotPromiseAResourceDirectory(@TempDir Path workspace) {
+        try (WorkspaceManager wm =
+                new WorkspaceManager(workspace, mockSandboxFilesystem()) {
+                    @Override
+                    public String readKnowledgeMd(RuntimeContext rc) {
+                        return "Use the action catalog for supported actions.";
+                    }
+                }) {
+            RuntimeContext rc = RuntimeContext.empty();
+            String prompt =
+                    WorkspacePromptTestSupport.render(
+                            new WorkspaceContextMiddleware(wm), rc, "BASE\n");
+
+            assertTrue(prompt.contains("## Domain Knowledge"));
+            assertTrue(
+                    knowledgeContent(rc).contains("Use the action catalog for supported actions."));
+            assertFalse(prompt.contains("Use the action catalog for supported actions."));
+            assertFalse(prompt.contains("knowledge file catalog"));
+        }
+    }
+
+    @Test
+    void remoteFileCatalogGuidesReadsWithoutInliningContents(@TempDir Path workspace) {
+        AbstractSandboxFilesystem fs = mockSandboxFilesystem();
+        when(fs.glob(any(), anyString(), anyString()))
+                .thenReturn(
+                        GlobResult.success(
+                                List.of(FileInfo.ofFile("knowledge/actions.md", 64, ""))));
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, fs)) {
+            RuntimeContext rc = RuntimeContext.empty();
+            String knowledgeFileEntry = "- " + Path.of("knowledge", "actions.md");
+            String prompt =
+                    WorkspacePromptTestSupport.render(
+                            new WorkspaceContextMiddleware(wm, 1), rc, "BASE\n");
+
+            assertNotNull(prompt);
+            assertTrue(prompt.contains("## Domain Knowledge"));
+            assertTrue(prompt.contains("knowledge file catalog"));
+            assertTrue(knowledgeContent(rc).contains(knowledgeFileEntry));
+            assertFalse(prompt.contains(knowledgeFileEntry));
+            assertFalse(prompt.contains("holds many detailed reference documents"));
+        }
+    }
+
+    @Test
+    void hostKnowledgeFallbackUsesTheSameCatalog(@TempDir Path workspace) throws Exception {
+        Files.createDirectories(workspace.resolve("knowledge"));
+        Files.writeString(workspace.resolve("knowledge/KNOWLEDGE.md"), "Supported flow actions");
+        Files.writeString(workspace.resolve("knowledge/actions.md"), "Action details");
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
+            RuntimeContext rc = RuntimeContext.empty();
+            String knowledgeFileEntry = "- " + Path.of("knowledge", "actions.md");
+            String prompt =
+                    WorkspacePromptTestSupport.render(
+                            new WorkspaceContextMiddleware(wm), rc, "BASE\n");
+
+            assertTrue(knowledgeContent(rc).contains("Supported flow actions"));
+            assertTrue(knowledgeContent(rc).contains(knowledgeFileEntry));
+            assertTrue(prompt.contains("knowledge file catalog"));
+            assertFalse(knowledgeContent(rc).contains("Action details"));
+        }
+    }
+
+    @Test
+    void failedCatalogDoesNotAdvertiseKnowledge(@TempDir Path workspace) {
+        AbstractSandboxFilesystem fs = mockSandboxFilesystem();
+        when(fs.glob(any(), anyString(), anyString())).thenReturn(GlobResult.fail("Unavailable"));
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, fs)) {
+            String prompt = prompt(wm, false);
+
+            assertFalse(prompt.contains("## Domain Knowledge"));
+            assertFalse(prompt.contains("knowledge file catalog"));
+        }
+    }
+
+    private String knowledgeContent(RuntimeContext rc) {
+        return rc.get(WorkspaceContextMaterials.class).items().stream()
+                .filter(item -> "knowledge".equals(item.kind()))
+                .findFirst()
+                .orElseThrow()
+                .content();
+    }
 
     private AbstractSandboxFilesystem mockSandboxFilesystem() {
         AbstractSandboxFilesystem fs = mock(AbstractSandboxFilesystem.class);

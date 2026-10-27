@@ -183,10 +183,27 @@ class SkillRuntimeTest {
         }
 
         @Test
+        void mixedCatalogKeepsInlineSkillWithoutPromisingItAResourceRoot() {
+            HarnessSkillEntry inline = HarnessSkillEntry.of(skill("inline", "workspace"), null);
+            HarnessSkillEntry scripted =
+                    new HarnessSkillEntry(
+                            skill("scripted", "workspace"), null, "/workspace/skills/scripted");
+
+            String out =
+                    new SkillPromptBuilder().render(SkillCatalog.of(List.of(inline, scripted)));
+
+            assertTrue(out.contains("<skill-id>inline__s__workspace</skill-id>"));
+            assertTrue(out.contains("<files-root>/workspace/skills/scripted</files-root>"));
+            assertFalse(out.contains("<files-root>/workspace/skills/inline</files-root>"));
+            assertTrue(out.contains("Skills without <files-root> provide documentation"));
+            assertFalse(out.contains("Each skill in <available_skills>"));
+        }
+
+        @Test
         void rendersEscapedFilesRootWhenPathContainsSpaces() {
             HarnessSkillEntry e =
                     new HarnessSkillEntry(
-                            skill("V2Ray 代理配置助手", "wkspace"),
+                            skill("v2ray-helper", "wkspace"),
                             null,
                             "/workspace/skills/V2Ray\\ 代理配置助手");
             String out = new SkillPromptBuilder().render(SkillCatalog.of(List.of(e)));
@@ -307,6 +324,7 @@ class SkillRuntimeTest {
             String text = textOf(res);
             assertTrue(text.contains("Successfully loaded skill: alpha__s__workspace"));
             assertTrue(text.contains("# Body line"));
+            assertFalse(text.contains("Files root:"));
         }
 
         @Test

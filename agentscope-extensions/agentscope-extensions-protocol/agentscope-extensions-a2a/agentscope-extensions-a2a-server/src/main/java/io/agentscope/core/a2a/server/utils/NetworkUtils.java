@@ -30,6 +30,19 @@ import java.util.stream.Stream;
 public class NetworkUtils {
 
     /**
+     * Formats a host for use in a URL authority, adding brackets to unbracketed IPv6 literals.
+     *
+     * @param host host name or IP address
+     * @return the host formatted for a URL authority
+     */
+    public static String formatHostForUrl(String host) {
+        if (host == null || host.indexOf(':') < 0 || (host.startsWith("[") && host.endsWith("]"))) {
+            return host;
+        }
+        return "[" + host + "]";
+    }
+
+    /**
      * Get local IP address Prefer non-loopback addresses
      *
      * @return local IP address

@@ -16,7 +16,9 @@
 
 package io.agentscope.core.skill;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -41,6 +43,57 @@ import org.junit.jupiter.api.io.TempDir;
 class SkillUtilTest {
 
     @Nested
+    @DisplayName("Skill name validation")
+    class SkillNameValidation {
+
+        @Test
+        @DisplayName("Should validate names against the standard naming rule")
+        void testValidatesNamesAgainstTheStandardRule() {
+            // Accept: lowercase letters, digits, dashes, underscores; digit start; max length.
+            assertTrue(SkillUtil.isValidSkillName("a"));
+            assertTrue(SkillUtil.isValidSkillName("data-analysis"));
+            assertTrue(SkillUtil.isValidSkillName("with_underscore"));
+            assertTrue(SkillUtil.isValidSkillName("0start"));
+            assertTrue(SkillUtil.isValidSkillName("a".repeat(SkillUtil.MAX_SKILL_NAME_LENGTH)));
+
+            // Reject: everything else, including dot/slash (path shapes), non-ASCII,
+            // uppercase, and overlong names. Underscores are valid; the reserved "__s__"
+            // separator is rejected by AgentSkill construction, not by this pattern.
+            for (String invalid :
+                    new String[] {
+                        null,
+                        "",
+                        "Uppercase",
+                        "技能",
+                        "dot.name",
+                        "with space",
+                        "colon:name",
+                        "/tmp/evil",
+                        "..",
+                        "-leading-dash",
+                        "a".repeat(SkillUtil.MAX_SKILL_NAME_LENGTH + 1)
+                    }) {
+                assertFalse(SkillUtil.isValidSkillName(invalid), "name: " + invalid);
+            }
+        }
+
+        @Test
+        @DisplayName("Should throw with a descriptive message for invalid names")
+        void testRequireValidSkillNameThrowsWithMessage() {
+            assertEquals("^[a-z0-9][a-z0-9_-]*$", SkillUtil.VALID_SKILL_NAME_PATTERN.pattern());
+            assertEquals(64, SkillUtil.MAX_SKILL_NAME_LENGTH);
+
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> SkillUtil.requireValidSkillName("Bad Name"));
+            assertTrue(e.getMessage().contains("Bad Name"));
+            assertTrue(e.getMessage().contains("^[a-z0-9][a-z0-9_-]*$"));
+            assertDoesNotThrow(() -> SkillUtil.requireValidSkillName("good-name"));
+        }
+    }
+
+    @Nested
     @DisplayName("Markdown")
     class MarkdownTests {
 
@@ -49,7 +102,7 @@ class SkillUtilTest {
         void testCreateFromMarkdownWithDefaultSource() {
             String skillMd =
                     "---\n"
-                            + "name: test_skill\n"
+                            + "name: test-skill\n"
                             + "description: A test skill for validation\n"
                             + "---\n"
                             + "# Skill Content\n"
@@ -60,7 +113,7 @@ class SkillUtilTest {
             AgentSkill skill = SkillUtil.createFrom(skillMd, resources);
 
             assertNotNull(skill);
-            assertEquals("test_skill", skill.getName());
+            assertEquals("test-skill", skill.getName());
             assertEquals("A test skill for validation", skill.getDescription());
             assertTrue(skill.getSkillContent().contains("Skill Content"));
             assertNull(skill.getSource());
@@ -72,15 +125,16 @@ class SkillUtilTest {
         void testCreateFromMarkdownWithCustomSource() {
             String skillMd =
                     "---\n"
-                            + "name: github_skill\n"
+                            + "name: github-skill\n"
                             + "description: From GitHub repository\n"
                             + "---\n"
                             + "Content here";
 
             AgentSkill skill = SkillUtil.createFrom(skillMd, null, "github");
 
-            assertEquals("github_skill", skill.getName());
+            assertEquals("github-skill", skill.getName());
             assertEquals("github", skill.getSource());
+            assertEquals("github-skill__s__github", skill.getSkillId());
         }
 
         @Test
@@ -183,22 +237,24 @@ class SkillUtilTest {
             AgentSkill skill1 = SkillUtil.createFrom(multilineSkillMd, null);
             assertTrue(skill1.getSkillContent().contains("Line 2"));
 
-            // Special characters in metadata (use quotes for values with colons)
+            // Special characters in description (use quotes for values with colons)
             String specialCharsSkillMd =
                     "---\n"
-                            + "name: skill-v1.0_test\n"
+                            + "name: skill-v1-0-test\n"
                             + "description: 'Special chars @#$%'\n"
                             + "---\n"
                             + "Content";
             AgentSkill skill2 = SkillUtil.createFrom(specialCharsSkillMd, null);
-            assertEquals("skill-v1.0_test", skill2.getName());
+            assertEquals("skill-v1-0-test", skill2.getName());
 
-            // Unicode characters
-            String unicodeSkillMd =
-                    "---\n" + "name: 测试技能\n" + "description: 这是一个测试\n" + "---\n" + "技能内容";
-            AgentSkill skill3 = SkillUtil.createFrom(unicodeSkillMd, null, "中文源");
-            assertEquals("测试技能", skill3.getName());
-            assertEquals("中文源", skill3.getSource());
+            // Names outside the standard rule are rejected at creation
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () ->
+                            SkillUtil.createFrom(
+                                    "---\nname: 测试技能\ndescription: 这是一个测试\n---\n技能内容",
+                                    null,
+                                    "中文源"));
 
             // Additional metadata fields (should be ignored)
             String extraFieldsSkillMd =
@@ -235,7 +291,7 @@ class SkillUtilTest {
         void testCreateFromZip() throws IOException {
             String skillMd =
                     "---\n"
-                            + "name: zip_skill\n"
+                            + "name: zip-skill\n"
                             + "description: From zip package\n"
                             + "---\n"
                             + "Zip skill content";
@@ -250,7 +306,7 @@ class SkillUtilTest {
 
             AgentSkill skill = SkillUtil.createFromZip(zipBytes, "zip");
 
-            assertEquals("zip_skill", skill.getName());
+            assertEquals("zip-skill", skill.getName());
             assertEquals("From zip package", skill.getDescription());
             assertEquals("zip", skill.getSource());
             assertEquals("info content", skill.getResources().get("docs/info.txt"));
@@ -262,7 +318,7 @@ class SkillUtilTest {
             Charset charset = Charset.forName("GBK");
             String skillMd =
                     "---\n"
-                            + "name: gbk_skill\n"
+                            + "name: gbk-skill\n"
                             + "description: GBK zip package\n"
                             + "---\n"
                             + "技能内容";
@@ -274,7 +330,7 @@ class SkillUtilTest {
 
             AgentSkill skill = SkillUtil.createFromZip(zipBytes, "zip", charset);
 
-            assertEquals("gbk_skill", skill.getName());
+            assertEquals("gbk-skill", skill.getName());
             assertEquals("GBK zip package", skill.getDescription());
             assertEquals("技能内容", skill.getSkillContent());
             assertEquals("资源内容", skill.getResources().get("docs/说明.txt"));
@@ -285,7 +341,7 @@ class SkillUtilTest {
         void testCreateFromZipWithRootFolder() throws IOException {
             String skillMd =
                     "---\n"
-                            + "name: folder_skill\n"
+                            + "name: folder-skill\n"
                             + "description: Root folder package\n"
                             + "---\n"
                             + "Folder content";
@@ -296,7 +352,7 @@ class SkillUtilTest {
 
             AgentSkill skill = SkillUtil.createFromZip(zipBytes);
 
-            assertEquals("folder_skill", skill.getName());
+            assertEquals("folder-skill", skill.getName());
             assertEquals("readme", skill.getResources().get("readme.txt"));
         }
 
@@ -305,7 +361,7 @@ class SkillUtilTest {
         void testCreateFromZipPath() throws IOException {
             String skillMd =
                     "---\n"
-                            + "name: path_skill\n"
+                            + "name: path-skill\n"
                             + "description: From path\n"
                             + "---\n"
                             + "Path content";
@@ -322,7 +378,7 @@ class SkillUtilTest {
 
             AgentSkill skill = SkillUtil.createFromZip(zipPath, "zip");
 
-            assertEquals("path_skill", skill.getName());
+            assertEquals("path-skill", skill.getName());
             assertEquals("From path", skill.getDescription());
             assertEquals("readme", skill.getResources().get("readme.txt"));
         }
@@ -332,7 +388,7 @@ class SkillUtilTest {
         void testCreateFromZipInputStream() throws IOException {
             String skillMd =
                     "---\n"
-                            + "name: stream_skill\n"
+                            + "name: stream-skill\n"
                             + "description: From stream\n"
                             + "---\n"
                             + "Stream content";
@@ -342,7 +398,7 @@ class SkillUtilTest {
             try (ByteArrayInputStream inputStream = new ByteArrayInputStream(zipBytes)) {
                 AgentSkill skill = SkillUtil.createFromZip(inputStream);
 
-                assertEquals("stream_skill", skill.getName());
+                assertEquals("stream-skill", skill.getName());
                 assertEquals("From stream", skill.getDescription());
             }
         }

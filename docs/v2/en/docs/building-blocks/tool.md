@@ -725,10 +725,32 @@ Semantics to keep in mind:
 - **Per-agent dispatch.** The snapshot carries `agentId` (audit correlation) and `agentName` (write rules against it, e.g. deny writes for `planner`); both are `null` on agentless direct calls. Identity only, not the `Agent` handle — its operations belong to middleware and carry re-entrancy hazards; structurally different interceptor sets per agent belong in each agent's own `ToolkitConfig` at build time.
 - **Rewrites happen after permission approval.** The permission engine judges the raw model input; if the *final* value of a security-sensitive rewrite (path, SQL, URL) needs user confirmation, suspend for human review instead of rewriting silently. An interceptor denying an already-approved call is expected — the denial simply feeds back to the model.
 - **Denial messages should be model-actionable** ("use relative paths inside your workspace"), free of server internals, and prefixed with your interceptor's identity (e.g. `PathSandbox:`). To harden a path guard beyond the example above: validate caller-controlled ids before using them as path components, re-check existing paths (and the nearest existing ancestor of new files) with `toRealPath()` — `normalize()` misses symlinks, Windows 8.3 names and ADS, and `Path#startsWith` is case-sensitive — and prefer rewrites that do not echo the server-side absolute root back to the model.
-- **Session records stay honest.** The `tool/dispatch` record sits at the end of the chain and always contains the arguments that actually executed; denied calls leave no `allowed`/`dispatch` record.
+- **Session records stay honest.** The `tool/dispatch` record sits at the end of the chain and contains the arguments selected for dispatch; calls denied by an interceptor leave no `allowed`/`dispatch` record.
 - **Timeouts and retries** on the batch `callTools` path wrap the whole chain: interceptor time counts toward the tool timeout, and retries re-run the chain on every attempt. The direct `Toolkit#callTool` path keeps today's behavior — no timeout wrapper — so interceptors must never block; offload blocking I/O with `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`.
 - **External tools are never intercepted.** `externalTool=true` / `SchemaOnlyTool` calls short-circuit to `suspended` before the chain runs; validation belongs to the external executor. Resumed results are data injection, not execution, and bypass the chain too. The framework-internal `generate_response` tool is likewise not intercepted.
 - **Propagation.** `Toolkit#copy()` (used by harness subagents) carries interceptors along; a subagent built with a brand-new `Toolkit` gets none unless you register them there. Tools a tool delegates to internally (one tool calling another inside `callAsync`) are not re-intercepted — guard by the outer tool name.
+
+## Final tool-dispatch check
+
+Use `ToolkitConfig.builder().beforeToolCall(...)` when an application must recheck run state immediately before a queued tool starts, for example after another tool reports a fatal infrastructure failure:
+
+```java
+// This toolkit and flag belong to one run.
+AtomicBoolean stopped = new AtomicBoolean();
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+        .beforeToolCall(param -> {
+            if (stopped.get()) {
+                throw new IllegalStateException("Run stopped: infrastructure unavailable");
+            }
+        })
+        .build());
+```
+
+The synchronous, non-blocking check runs on each subscription and retry, after earlier scheduling, interceptor, and dispatch-persistence waits, immediately before local `callAsync`. It receives the final execution parameters, including interceptor rewrites. It also runs before an external tool returns a suspended result, even though external tools bypass interceptors. Reject with a regular `RuntimeException`; do not throw `ToolSuspendException` from this check because it signals suspension rather than rejection. Rejections use the existing tool-error path, and batch results retain call IDs and names.
+
+The check is disabled by default. `Toolkit.copy()` retains it for copied and later-registered tools; a new independent toolkit needs its own configuration. For a toolkit shared across runs, resolve the state from the call's `RuntimeContext` instead of capturing a shared stop flag. Already-started calls are not cancelled, and the application remains responsible for stopping the agent loop and deciding recovery. Internal synthetic tool paths and injected external results do not pass through this check.
+
+The local check follows dispatch persistence deliberately, so a persisted `tool/dispatch` records intent even if the check subsequently rejects execution; the action's terminal result records the failure. Use interceptors for argument policy, rewriting, and audit before persistence.
 
 ## Further reading
 

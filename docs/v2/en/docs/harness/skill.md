@@ -28,6 +28,8 @@ Save `SKILL.md` as UTF-8. A byte order mark (BOM) before the opening `---` is su
 
 Close the YAML frontmatter with an unindented line containing only `---` and optional spaces or tabs. A `---` inside a description or an indented YAML block scalar remains part of the metadata.
 
+Skill names must match `^[a-z0-9][a-z0-9-]*$` and be at most 64 characters (lowercase letters, digits, and hyphens only — no underscores or dots), following the industry naming standard for Agent Skills. Names are used verbatim as directory keys and skill identifiers, so non-conforming names are rejected when the skill is constructed or loaded.
+
 SKILL.md format:
 
 ```markdown
@@ -323,6 +325,8 @@ When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an ab
 So the agent's shell call is always `execute("python3 <files-root>/scripts/foo.py")` — no path guessing, no per-source variations to remember.
 
 ### Where marketplace files actually live
+
+For repository skills with no materialized auxiliary resources (for example, an inline-only skill), staging reports `NONE` and no `<files-root>` is advertised. The skill remains available through `load_skill_through_path(..., path="SKILL.md")`. In a mixed catalog, only entries that provide `<files-root>` support file listing and script execution at that path.
 
 Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each call (during PreCall, in the same `onSystemPrompt` pass that builds `<available_skills>`):
 

@@ -74,13 +74,13 @@ class SkillBoxToolsTest {
         resources1.put("data.txt", "sample data");
 
         AgentSkill skill1 =
-                new AgentSkill("test_skill", "Test Skill", "# Test Content", resources1);
+                new AgentSkill("test-skill", "Test Skill", "# Test Content", resources1);
         // Register skill1 with a dummy tool to create tool group
-        AgentTool dummyTool = createDummyTool("test_skill_tool");
+        AgentTool dummyTool = createDummyTool("test-skill_tool");
         skillBox.registration().skill(skill1).agentTool(dummyTool).apply();
 
         AgentSkill skill2 =
-                new AgentSkill("empty_skill", "Empty Skill", "# Empty", new HashMap<>());
+                new AgentSkill("empty-skill", "Empty Skill", "# Empty", new HashMap<>());
         skillBox.registerSkill(skill2);
 
         // Register skill access tools
@@ -176,7 +176,7 @@ class SkillBoxToolsTest {
     void testLoadSkillMarkdownSuccessfully() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test_skill", "path", "SKILL.md");
+        Map<String, Object> input = Map.of("skillId", "test-skill", "path", "SKILL.md");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-001")
@@ -195,7 +195,7 @@ class SkillBoxToolsTest {
         assertNotNull(result);
         assertFalse(isErrorResult(result));
         String content = result.getOutput().get(0).toString();
-        assertTrue(content.contains("test_skill"));
+        assertTrue(content.contains("test-skill"));
         assertTrue(content.contains("Test Content"));
     }
 
@@ -204,7 +204,7 @@ class SkillBoxToolsTest {
     void testActivateSkillAndToolGroupWhenLoadingMarkdown() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        String skillName = "test_skill";
+        String skillName = "test-skill";
         String toolGroupName = skillName + "_skill_tools";
 
         ToolContextState toolContext = ToolContextState.builder().build();
@@ -321,7 +321,7 @@ class SkillBoxToolsTest {
     void testLoadSkillResourceSuccessfully() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test_skill", "path", "config.json");
+        Map<String, Object> input = Map.of("skillId", "test-skill", "path", "config.json");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-006")
@@ -349,7 +349,7 @@ class SkillBoxToolsTest {
     void testActivateSkillAndToolGroupWhenLoadingResource() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        String skillName = "test_skill";
+        String skillName = "test-skill";
         String toolGroupName = skillName + "_skill_tools";
 
         ToolContextState toolContext = ToolContextState.builder().build();
@@ -386,7 +386,7 @@ class SkillBoxToolsTest {
     @DisplayName("Loading without a runtime context does not mutate the shared toolkit")
     void testLoadWithoutRuntimeContextDoesNotMutateSharedToolkit() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
-        String skillName = "test_skill";
+        String skillName = "test-skill";
         String toolGroupName = skillName + "_skill_tools";
 
         Map<String, Object> input = Map.of("skillId", skillName, "path", "SKILL.md");
@@ -415,10 +415,10 @@ class SkillBoxToolsTest {
     @DisplayName("Separate sessions load different skills without cross-talk")
     void testSeparateSessionsLoadDifferentSkillsWithoutCrossTalk() {
         // Register a second tool-bearing skill.
-        AgentSkill other = new AgentSkill("other_skill", "Other Skill", "# Other", null);
-        skillBox.registration().skill(other).agentTool(createDummyTool("other_skill_tool")).apply();
-        String groupA = "test_skill_skill_tools";
-        String groupB = "other_skill_skill_tools";
+        AgentSkill other = new AgentSkill("other-skill", "Other Skill", "# Other", null);
+        skillBox.registration().skill(other).agentTool(createDummyTool("other-skill_tool")).apply();
+        String groupA = "test-skill_skill_tools";
+        String groupB = "other-skill_skill_tools";
 
         ToolContextState tcsA = ToolContextState.builder().build();
         ToolContextState tcsB = ToolContextState.builder().build();
@@ -431,8 +431,8 @@ class SkillBoxToolsTest {
                         .agentState(AgentState.builder().toolContext(tcsB).build())
                         .build();
 
-        loadSkillWithContext("test_skill", rcA);
-        loadSkillWithContext("other_skill", rcB);
+        loadSkillWithContext("test-skill", rcA);
+        loadSkillWithContext("other-skill", rcB);
 
         assertTrue(tcsA.getActivatedGroups().contains(groupA), "Session A activates its own group");
         assertFalse(
@@ -468,10 +468,10 @@ class SkillBoxToolsTest {
         int n = 8;
         List<String> groupNames = new ArrayList<>();
         for (int i = 0; i < n; i++) {
-            AgentSkill skill = new AgentSkill("parallel_" + i, "Parallel " + i, "# Content", null);
+            AgentSkill skill = new AgentSkill("parallel-" + i, "Parallel " + i, "# Content", null);
             skillBox.registration()
                     .skill(skill)
-                    .agentTool(createDummyTool("parallel_tool_" + i))
+                    .agentTool(createDummyTool("parallel-tool_" + i))
                     .apply();
             groupNames.add(skill.getName() + "_skill_tools");
         }
@@ -486,7 +486,7 @@ class SkillBoxToolsTest {
         CountDownLatch start = new CountDownLatch(1);
         List<Future<?>> futures = new ArrayList<>();
         for (int i = 0; i < n; i++) {
-            final String skillName = "parallel_" + i + "";
+            final String skillName = "parallel-" + i + "";
             futures.add(
                     pool.submit(
                             () -> {
@@ -513,7 +513,7 @@ class SkillBoxToolsTest {
     void testReturnErrorForNonExistentResource() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test_skill", "path", "non_existent.txt");
+        Map<String, Object> input = Map.of("skillId", "test-skill", "path", "non_existent.txt");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-008")
@@ -544,7 +544,7 @@ class SkillBoxToolsTest {
     void testReturnErrorForMissingPathParameter() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test_skill");
+        Map<String, Object> input = Map.of("skillId", "test-skill");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-009")
@@ -571,7 +571,7 @@ class SkillBoxToolsTest {
     void testListAllResourcePathsWithInvalidPath() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test_skill", "path", "list");
+        Map<String, Object> input = Map.of("skillId", "test-skill", "path", "list");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-010")
@@ -600,7 +600,7 @@ class SkillBoxToolsTest {
     void testListOnlySkillMdForSkillWithoutResources() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "empty_skill", "path", "invalid");
+        Map<String, Object> input = Map.of("skillId", "empty-skill", "path", "invalid");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-011")
@@ -653,7 +653,7 @@ class SkillBoxToolsTest {
     void testHandleWhitespaceInResourcePath() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test_skill", "path", "  ");
+        Map<String, Object> input = Map.of("skillId", "test-skill", "path", "  ");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-013")
@@ -677,7 +677,7 @@ class SkillBoxToolsTest {
     @DisplayName("Should handle skill with no tools gracefully")
     void testLoadSkillWithNoToolsDoesNotFail() {
         // Skill without tools - tool group won't exist
-        AgentSkill emptySkill = new AgentSkill("no_tools_skill", "No Tools", "# Empty", null);
+        AgentSkill emptySkill = new AgentSkill("no-tools-skill", "No Tools", "# Empty", null);
         skillBox.registerSkill(emptySkill);
 
         String skillName = emptySkill.getName();
@@ -712,7 +712,7 @@ class SkillBoxToolsTest {
     @DisplayName("Should not activate skill when resource path is invalid")
     void testInvalidResourcePathDoesNotActivateSkill() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
-        String skillName = "test_skill";
+        String skillName = "test-skill";
 
         Map<String, Object> input = Map.of("skillId", skillName, "path", ".");
         ToolUseBlock toolUseBlock =
