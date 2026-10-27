@@ -276,4 +276,43 @@ class DynamicSkillMiddlewareTest {
         assertTrue(mw.onSystemPrompt(null, b, "").block().contains("skill_b"));
         org.mockito.Mockito.verify(repo, org.mockito.Mockito.never()).getAllSkills();
     }
+
+    /**
+     * Golden value of {@code computeSignature} for a fixed two-skill input, captured by running
+     * the pre-refactor implementation (which copied the whole resource map per key). The refactor
+     * to per-key {@code AgentSkill#getResource(String)} access must keep the hashed bytes — and
+     * therefore this constant — bit-for-bit identical. {@code originDir} stays empty because
+     * {@code Path#toString()} is platform-dependent.
+     */
+    private static final String GOLDEN_SIGNATURE =
+            "12cf4fa8d7ce1d654ed2e5625b41b5e990bf5658db1c2deb7548413ffea1b7e3";
+
+    @Test
+    void signatureValueUnchangedAfterPerKeyResourceAccess() throws Exception {
+        java.util.LinkedHashMap<String, Object> alphaMeta = new java.util.LinkedHashMap<>();
+        alphaMeta.put("name", "alpha");
+        alphaMeta.put("description", "Alpha skill");
+        alphaMeta.put("version", "1.2.3");
+        alphaMeta.put("tags", List.of("one", "two"));
+        alphaMeta.put("nested", java.util.Map.of("k", "v"));
+        AgentSkill alpha =
+                new AgentSkill(
+                        alphaMeta,
+                        "alpha body\nsecond line",
+                        java.util.Map.of("z.txt", "zeta", "a.txt", "ada", "m/n.txt", "nu"),
+                        "repo-a");
+        AgentSkill beta =
+                new AgentSkill(
+                        "beta",
+                        "Beta skill",
+                        "# beta body",
+                        java.util.Map.of("y.md", "why", "b.md", "be"));
+
+        java.lang.reflect.Method compute =
+                DynamicSkillMiddleware.class.getDeclaredMethod("computeSignature", List.class);
+        compute.setAccessible(true);
+        String signature = (String) compute.invoke(null, List.of(beta, alpha));
+
+        assertEquals(GOLDEN_SIGNATURE, signature);
+    }
 }

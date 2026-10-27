@@ -347,9 +347,9 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
                                 ? s.getSkillContent().getBytes(StandardCharsets.UTF_8)
                                 : new byte[0]);
                 md.update((byte) 0);
-                for (String key : new TreeSet<>(s.getResources().keySet())) {
+                for (String key : new TreeSet<>(s.getResourcePaths())) {
                     md.update(key.getBytes(StandardCharsets.UTF_8));
-                    String val = s.getResources().get(key);
+                    String val = s.getResource(key);
                     if (val != null) {
                         md.update(val.getBytes(StandardCharsets.UTF_8));
                     }
