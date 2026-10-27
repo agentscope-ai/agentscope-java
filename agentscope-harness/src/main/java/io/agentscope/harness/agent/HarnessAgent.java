@@ -2594,12 +2594,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Builds a fresh runtime from this reusable configuration. Configure the builder before
          * sharing it; builds are serialized, while the resulting agents can execute concurrently.
+         * If a build fails, auto-wired state-store configuration is restored so the same builder
+         * can be corrected and reused.
          */
         public synchronized HarnessAgent build() {
             var configuredMessageBus = messageBus;
             var configuredAsyncToolRegistry = asyncToolRegistry;
+            var configuredStateStoreOverride = stateStoreOverride;
             try {
                 return buildInstance(inner.copy());
+            } catch (RuntimeException error) {
+                // A failed build must not leave auto-wired collaborators behind: a stale
+                // stateStoreOverride silently wins the "override == null" fast path on every
+                // later build, so a builder that threw once would keep the polluted store
+                // even after the caller fixes the configuration. Successful builds keep the
+                // resolved store — dynamic subagent factories read it after the parent is
+                // built (see repeatedBuildPreservesDistributedStateStoreWiring).
+                stateStoreOverride = configuredStateStoreOverride;
+                throw error;
             } finally {
                 // Workspace-derived collaborators belong to this build's filesystem, especially
                 // when sandbox bindings or workspace indexes have per-agent lifetimes.

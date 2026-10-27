@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -32,8 +33,10 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.SessionHistoryMode;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -162,6 +165,49 @@ class HarnessBuilderReuseTest {
         } finally {
             pool.shutdownNow();
             agents.forEach(HarnessAgent::close);
+        }
+    }
+
+    @Test
+    void failedBuildDoesNotLeaveAutoWiredStateStoreOverrideBehind() {
+        var pollutedStore = new InMemoryAgentStateStore();
+        var distributedStore = mock(DistributedStore.class);
+        when(distributedStore.agentStateStore()).thenReturn(pollutedStore);
+        when(distributedStore.baseStore()).thenReturn(mock(BaseStore.class));
+        var builder =
+                builder(mock(Model.class))
+                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
+                        .distributedStore(distributedStore)
+                        // LEGACY + remote filesystem + a local (non-distributed) effective
+                        // session store is rejected by design; the auto-wired override has
+                        // already been written at that point.
+                        .filesystem(new RemoteFilesystemSpec(mock(BaseStore.class)));
+        assertThrows(IllegalStateException.class, builder::build);
+        assertNull(
+                builder.stateStoreOverride,
+                "a failed build must restore the auto-wired stateStoreOverride so the"
+                        + " shared builder stays reusable");
+    }
+
+    @Test
+    void builderRemainsReusableAfterFailedBuild() {
+        var pollutedStore = new InMemoryAgentStateStore();
+        var distributedStore = mock(DistributedStore.class);
+        when(distributedStore.agentStateStore()).thenReturn(pollutedStore);
+        when(distributedStore.baseStore()).thenReturn(mock(BaseStore.class));
+        var builder =
+                builder(mock(Model.class))
+                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
+                        .distributedStore(distributedStore)
+                        .filesystem(new RemoteFilesystemSpec(mock(BaseStore.class)));
+        assertThrows(IllegalStateException.class, builder::build);
+
+        // The caller fixes the configuration on the same shared builder instance; a stale
+        // override would silently win and the agent would keep the polluted local store.
+        var fixedStore = mock(AgentStateStore.class);
+        builder.stateStore(fixedStore);
+        try (var agent = builder.build()) {
+            assertSame(fixedStore, agent.getDelegate().getStateStore());
         }
     }
 }
