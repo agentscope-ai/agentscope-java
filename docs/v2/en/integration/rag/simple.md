@@ -105,6 +105,18 @@ the Mono was created before the model was closed.
 
 Switching stores is a one-line change: pass a different `VDBStoreBase` to `SimpleKnowledge.builder().embeddingStore(...)`.
 
+### Deleting documents
+
+Every built-in store supports two deletes with the same meaning:
+
+```java
+VDBStoreBase store = knowledge.getEmbeddingStore();
+store.delete(chunk.getId());                          // one chunk, by Document#getId()
+store.deleteByDocId(chunk.getMetadata().getDocId());  // every chunk of one source document
+```
+
+Both emit `true` if something was removed and `false` if nothing matched.
+
 ## Retrieval parameters
 
 `RetrieveConfig` controls retrieval:

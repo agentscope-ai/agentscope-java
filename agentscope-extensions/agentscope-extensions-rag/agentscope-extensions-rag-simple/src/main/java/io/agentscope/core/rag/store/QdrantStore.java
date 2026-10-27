@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.rag.store;
 
+import static io.qdrant.client.ConditionFactory.matchKeyword;
+
 import com.google.common.util.concurrent.ListenableFuture;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
@@ -34,6 +36,7 @@ import io.qdrant.client.WithPayloadSelectorFactory;
 import io.qdrant.client.WithVectorsSelectorFactory;
 import io.qdrant.client.grpc.Collections.Distance;
 import io.qdrant.client.grpc.Collections.VectorParams;
+import io.qdrant.client.grpc.Common.Filter;
 import io.qdrant.client.grpc.Common.PointId;
 import io.qdrant.client.grpc.JsonWithInt;
 import io.qdrant.client.grpc.JsonWithInt.Struct;
@@ -50,6 +53,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -293,11 +297,23 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
             return Mono.error(new IllegalArgumentException("Document ID cannot be null or empty"));
         }
 
+        return deleteInQdrant(() -> deletePointInQdrant(id));
+    }
+
+    @Override
+    public Mono<Boolean> deleteByDocId(String docId) {
+        if (docId == null || docId.trim().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("Doc ID cannot be null or empty"));
+        }
+        return deleteInQdrant(() -> deleteDocChunksInQdrant(docId));
+    }
+
+    private Mono<Boolean> deleteInQdrant(Callable<Boolean> deletion) {
         return Mono.fromCallable(
                         () -> {
                             try {
                                 ensureNotClosed();
-                                return deleteDocumentsInQdrant(id);
+                                return deletion.call();
                             } catch (Exception e) {
                                 throw new VectorStoreException(
                                         "Failed to delete document in Qdrant", e);
@@ -630,12 +646,42 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
         return results;
     }
 
-    private Boolean deleteDocumentsInQdrant(String id) throws Exception {
-        ListenableFuture<Points.UpdateResult> future =
-                qdrantClient.deleteAsync(
-                        collectionName, List.of(PointIdFactory.id(UUID.fromString(id))));
-        Points.UpdateResult updateResult = future.get();
-        return updateResult.getStatus() == Points.UpdateStatus.Completed;
+    /**
+     * Deletes one point by chunk id.
+     *
+     * <p>Qdrant's delete reports only the operation status, not whether the point existed, so the
+     * point is looked up first. Point ids are UUIDs (see {@link #addDocumentsToQdrant}); an id that
+     * is not a UUID cannot name a stored point.
+     */
+    private Boolean deletePointInQdrant(String id) throws Exception {
+        PointId pointId;
+        try {
+            pointId = PointIdFactory.id(UUID.fromString(id));
+        } catch (IllegalArgumentException notAUuid) {
+            return false;
+        }
+        List<PointId> ids = List.of(pointId);
+        if (qdrantClient.retrieveAsync(collectionName, ids, false, false, null).get().isEmpty()) {
+            return false;
+        }
+        return isCompleted(qdrantClient.deleteAsync(collectionName, ids));
+    }
+
+    /**
+     * Deletes every point of a source document, matched on the {@code doc_id} payload field.
+     * Points are counted first because Qdrant's delete does not report how many it removed.
+     */
+    private Boolean deleteDocChunksInQdrant(String docId) throws Exception {
+        Filter filter = Filter.newBuilder().addMust(matchKeyword("doc_id", docId)).build();
+        if (qdrantClient.countAsync(collectionName, filter, true).get() == 0) {
+            return false;
+        }
+        return isCompleted(qdrantClient.deleteAsync(collectionName, filter));
+    }
+
+    private static boolean isCompleted(ListenableFuture<Points.UpdateResult> future)
+            throws Exception {
+        return future.get().getStatus() == Points.UpdateStatus.Completed;
     }
 
     /**

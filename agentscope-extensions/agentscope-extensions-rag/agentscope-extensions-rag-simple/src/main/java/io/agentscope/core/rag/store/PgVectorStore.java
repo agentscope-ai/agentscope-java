@@ -353,16 +353,27 @@ public class PgVectorStore implements VDBStoreBase, AutoCloseable {
     }
 
     @Override
-    public Mono<Boolean> delete(String docId) {
-        if (docId == null || docId.trim().isEmpty()) {
+    public Mono<Boolean> delete(String id) {
+        if (id == null || id.trim().isEmpty()) {
             return Mono.error(new IllegalArgumentException("Document ID cannot be null or empty"));
         }
+        return deleteWhere(COL_ID, id);
+    }
 
+    @Override
+    public Mono<Boolean> deleteByDocId(String docId) {
+        if (docId == null || docId.trim().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("Doc ID cannot be null or empty"));
+        }
+        return deleteWhere(COL_DOC_ID, docId);
+    }
+
+    private Mono<Boolean> deleteWhere(String column, String value) {
         return Mono.fromCallable(
                         () -> {
                             try {
                                 ensureNotClosed();
-                                return deleteDocumentFromPostgres(docId);
+                                return deleteRowsFromPostgres(column, value);
                             } catch (Exception e) {
                                 throw new VectorStoreException(
                                         "Failed to delete document from PostgreSQL", e);
@@ -766,18 +777,20 @@ public class PgVectorStore implements VDBStoreBase, AutoCloseable {
     }
 
     /**
-     * Deletes documents from PostgreSQL by document ID.
+     * Deletes the rows whose {@code column} equals {@code value}.
      *
-     * @param docId the document ID to delete
-     * @return true if deletion was successful
+     * @param column the column to match: {@link #COL_ID} for one chunk, {@link #COL_DOC_ID} for
+     *     every chunk of a source document
+     * @param value the value to match
+     * @return true if at least one row was deleted
      * @throws SQLException if the operation fails
      */
-    private boolean deleteDocumentFromPostgres(String docId) throws SQLException {
+    private boolean deleteRowsFromPostgres(String column, String value) throws SQLException {
         String fullTableName = getFullTableName();
-        String deleteSql = String.format("DELETE FROM %s WHERE %s = ?", fullTableName, COL_DOC_ID);
+        String deleteSql = String.format("DELETE FROM %s WHERE %s = ?", fullTableName, column);
 
         try (PreparedStatement stmt = connection.prepareStatement(deleteSql)) {
-            stmt.setString(1, docId);
+            stmt.setString(1, value);
             int deletedCount = stmt.executeUpdate();
             log.debug("Deleted {} documents from table '{}'", deletedCount, fullTableName);
             return deletedCount > 0;

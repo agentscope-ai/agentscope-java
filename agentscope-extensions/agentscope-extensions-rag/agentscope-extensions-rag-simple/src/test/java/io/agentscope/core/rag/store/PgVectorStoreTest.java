@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.pgvector.PGvector;
@@ -845,19 +846,31 @@ class PgVectorStoreTest {
 
     // ==================== Delete Method Tests ====================
 
+    /** SQL prepared by the store created by {@link #createMockStoreForDelete}. */
+    private final List<String> preparedSql = new ArrayList<>();
+
+    /** Statement handed out by the store created by {@link #createMockStoreForDelete}. */
+    private PreparedStatement deleteStatement;
+
     private PgVectorStore createMockStoreForDelete(int deletedCount) throws Exception {
         Connection mockConnection = mock(Connection.class);
         Statement mockStatement = mock(Statement.class);
         DatabaseMetaData mockMetaData = mock(DatabaseMetaData.class);
         ResultSet mockTableResultSet = mock(ResultSet.class);
         PreparedStatement mockPreparedStatement = mock(PreparedStatement.class);
+        deleteStatement = mockPreparedStatement;
 
         when(mockConnection.createStatement()).thenReturn(mockStatement);
         when(mockConnection.getMetaData()).thenReturn(mockMetaData);
         when(mockMetaData.getTables(any(), any(), anyString(), any()))
                 .thenReturn(mockTableResultSet);
         when(mockTableResultSet.next()).thenReturn(true);
-        when(mockConnection.prepareStatement(anyString())).thenReturn(mockPreparedStatement);
+        when(mockConnection.prepareStatement(anyString()))
+                .thenAnswer(
+                        invocation -> {
+                            preparedSql.add(invocation.getArgument(0));
+                            return mockPreparedStatement;
+                        });
         when(mockPreparedStatement.executeUpdate()).thenReturn(deletedCount);
 
         try (MockedStatic<DriverManager> driverManagerMock = mockStatic(DriverManager.class);
@@ -908,13 +921,18 @@ class PgVectorStoreTest {
     }
 
     @Test
-    @DisplayName("Should delete document successfully and return true")
+    @DisplayName("Should delete one chunk by primary key and return true")
     void testDeleteSuccess() throws Exception {
         store = createMockStoreForDelete(1);
 
-        StepVerifier.create(store.delete("doc-1"))
+        StepVerifier.create(store.delete("chunk-1"))
                 .assertNext(Assertions::assertTrue)
                 .verifyComplete();
+
+        assertEquals(
+                "DELETE FROM public." + TEST_TABLE + " WHERE id = ?",
+                preparedSql.get(preparedSql.size() - 1));
+        verify(deleteStatement).setString(1, "chunk-1");
     }
 
     @Test
@@ -928,13 +946,38 @@ class PgVectorStoreTest {
     }
 
     @Test
-    @DisplayName("Should delete multiple chunks with same doc ID")
-    void testDeleteMultipleChunks() throws Exception {
+    @DisplayName("deleteByDocId should delete every chunk with the doc ID")
+    void testDeleteByDocIdMultipleChunks() throws Exception {
         store = createMockStoreForDelete(5);
 
-        StepVerifier.create(store.delete("doc-with-multiple-chunks"))
+        StepVerifier.create(store.deleteByDocId("doc-with-multiple-chunks"))
                 .assertNext(Assertions::assertTrue)
                 .verifyComplete();
+
+        assertEquals(
+                "DELETE FROM public." + TEST_TABLE + " WHERE doc_id = ?",
+                preparedSql.get(preparedSql.size() - 1));
+        verify(deleteStatement).setString(1, "doc-with-multiple-chunks");
+    }
+
+    @Test
+    @DisplayName("deleteByDocId should return false when no chunk matches")
+    void testDeleteByDocIdNotFound() throws Exception {
+        store = createMockStoreForDelete(0);
+
+        StepVerifier.create(store.deleteByDocId("non-existent-doc"))
+                .assertNext(Assertions::assertFalse)
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("deleteByDocId should reject a blank doc ID")
+    void testDeleteByDocIdBlank() throws Exception {
+        store = createMockStoreForDelete(0);
+
+        StepVerifier.create(store.deleteByDocId(" "))
+                .expectError(IllegalArgumentException.class)
+                .verify();
     }
 
     @Test
