@@ -24,6 +24,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Tool calls accumulator for accumulating streaming tool call chunks.
@@ -39,6 +41,8 @@ import java.util.stream.Collectors;
  * @hidden
  */
 public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ToolCallsAccumulator.class);
 
     // Map to support multiple parallel tool calls
     // Key: tool identifier (ID, name, or index)
@@ -56,6 +60,10 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         Map<String, Object> args = new HashMap<>();
         StringBuilder rawContent = new StringBuilder();
         Map<String, Object> metadata = new HashMap<>();
+        // Name of the exception from the last failed JSON parse of rawContent, cleared on a
+        // successful parse; only used to report the failure once at finalization
+        String parseFailure;
+        boolean parseWarned;
         ToolCallState state;
 
         void merge(ToolUseBlock block) {
@@ -65,7 +73,9 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             }
 
             // Update name (ignore placeholders)
-            if (block.getName() != null && !isPlaceholder(block.getName())) {
+            if (block.getName() != null
+                    && !block.getName().isEmpty()
+                    && !isPlaceholder(block.getName())) {
                 this.name = block.getName();
             }
 
@@ -110,6 +120,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> parsed =
                             JsonUtils.getJsonCodec().fromJson(rawContentStr, Map.class);
+                    parseFailure = null;
                     if (parsed != null) {
                         for (Map.Entry<String, Object> entry : parsed.entrySet()) {
                             if (entry.getValue() == null) {
@@ -121,8 +132,13 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                             }
                         }
                     }
-                } catch (Exception ignored) {
-                    // Parsing failed, keep previously merged args
+                } catch (Exception e) {
+                    // Incomplete JSON prefixes are expected while streamed fragments are still
+                    // arriving, so build() stays silent here; buildAllToolCalls() reports the
+                    // failure once at finalization if the raw content never became valid JSON.
+                    // Only the exception name is kept: its message may quote raw arguments,
+                    // which can contain credentials or other sensitive data.
+                    parseFailure = e.getClass().getSimpleName();
                 }
             }
 
@@ -160,6 +176,34 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .metadata(finalMetadata.isEmpty() ? null : finalMetadata)
                     .state(state)
                     .build();
+        }
+
+        /**
+         * Emits at most one sanitized warning when the final accumulated arguments are marked
+         * malformed.
+         *
+         * <p>Called only from the finalization boundary ({@link #buildAllToolCalls(boolean)}),
+         * not from per-fragment builds, because incomplete JSON prefixes are normal mid-stream.
+         * The warning omits the raw arguments (they may contain credentials, PII, or user
+         * documents) and carries no stack trace.
+         */
+        private void warnIfMalformedOnce(ToolUseBlock block, boolean truncated) {
+            if (!block.hasMalformedArguments() || parseWarned) {
+                return;
+            }
+            parseWarned = true;
+            String cause =
+                    parseFailure != null
+                            ? parseFailure
+                            : (truncated ? "TruncatedEmptyArguments" : "NotAJsonObject");
+            LOG.warn(
+                    "Tool call '{}' (id '{}') has malformed arguments after the stream ended"
+                            + " (raw length: {}); the call will be rejected before execution."
+                            + " Cause: {}",
+                    name != null && !name.isEmpty() ? name : "<unnamed>",
+                    block.getId(),
+                    rawContent.length(),
+                    cause);
         }
 
         private boolean isPlaceholder(String name) {
@@ -200,8 +244,9 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      *
      * <ol>
      *   <li>Use tool ID if available (non-empty)
-     *   <li>Use tool name if available (non-placeholder)
-     *   <li>If this is a fragment (placeholder name), reuse the last tool call key
+     *   <li>Use tool name if available (non-placeholder, non-empty)
+     *   <li>If this is a fragment (placeholder or empty continuation name) and a last tool
+     *       call key exists, reuse it
      *   <li>Otherwise, use index for chunks without any identifier
      * </ol>
      */
@@ -217,14 +262,18 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         }
 
         // 2. Use tool name (non-placeholder)
-        if (block.getName() != null && !isPlaceholder(block.getName())) {
+        if (block.getName() != null
+                && !block.getName().isEmpty()
+                && !isPlaceholder(block.getName())) {
             String key = "name:" + block.getName();
             lastToolCallKey = key;
             return key;
         }
 
-        // 3. If this is a fragment (placeholder name) and we have a last key, reuse it
-        if (isPlaceholder(block.getName()) && lastToolCallKey != null) {
+        // 3. If this is a fragment (placeholder or empty continuation name) and we
+        //    have a last key, reuse it
+        boolean emptyContinuationName = block.getName() != null && block.getName().isEmpty();
+        if ((isPlaceholder(block.getName()) || emptyContinuationName) && lastToolCallKey != null) {
             return lastToolCallKey;
         }
 
@@ -272,9 +321,21 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         return buildAllToolCalls(false);
     }
 
-    /** Builds calls, rejecting ambiguous empty starts when output stopped at its token limit. */
+    /**
+     * Builds calls, rejecting ambiguous empty starts when output stopped at its token limit.
+     *
+     * <p>This is the finalization boundary: malformed calls retain the upstream marker used to
+     * reject execution, and also emit one sanitized diagnostic warning.
+     */
     public List<ToolUseBlock> buildAllToolCalls(boolean truncated) {
-        return builders.values().stream().map(b -> b.build(truncated)).collect(Collectors.toList());
+        return builders.values().stream()
+                .map(
+                        builder -> {
+                            ToolUseBlock block = builder.build(truncated);
+                            builder.warnIfMalformedOnce(block, truncated);
+                            return block;
+                        })
+                .collect(Collectors.toList());
     }
 
     /**

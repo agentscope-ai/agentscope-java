@@ -28,6 +28,8 @@ code-reviewer/
 
 使用不带缩进、仅包含 `---` 及可选空格或制表符的一行结束 YAML frontmatter。描述中的 `---` 或 YAML 缩进块标量中的 `---` 仍属于元数据。
 
+技能名必须匹配 `^[a-z0-9][a-z0-9-]*$` 且不超过 64 个字符（仅小写字母、数字和连字符，不含下划线和点），该规则遵循行业对 Agent Skills 的 name 格式规范与命名标准。名字会原样用作目录键与技能标识，不符合规范的名称会在构造或加载技能时被拒绝。
+
 SKILL.md 写法：
 
 ```markdown
@@ -323,6 +325,8 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 所以 agent 发出来的 shell 命令永远是 `execute("python3 <files-root>/scripts/foo.py")`——不用猜路径，不用记每种来源对应哪个前缀。
 
 ### 市场 skill 文件实际落在哪儿
+
+仓库技能没有实际物化的附属资源时（例如仅提供内联正文的技能），staging 返回 `NONE`，不公布 `<files-root>`；技能仍可通过 `load_skill_through_path(..., path="SKILL.md")` 加载。混合技能目录中，只有提供 `<files-root>` 的条目才支持按该路径列文件或执行脚本。
 
 市场 skill 的资源最初只在内存里。要让 shell 能跑它们，harness 在每次 call 前（PreCall 阶段，与 `<available_skills>` 同一次 `onSystemPrompt`）把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`：
 

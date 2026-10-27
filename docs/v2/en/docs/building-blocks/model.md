@@ -205,6 +205,8 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 
 If `CachePolicy.ENABLED` is used with `option(...)` or `component(...)`, the user must provide a `cacheId`.
 
+Calling `registerFactory` evicts cached instances whose model id matches the new pattern, so the next resolution of those ids uses the new factory. Evicted instances are not closed, since callers may still hold them. Concurrent first resolutions of the same cached id share one creation and receive the same instance.
+
 ### ModelProvider SPI
 
 Provider extension modules are discovered with Java SPI through `META-INF/services/io.agentscope.core.model.spi.ModelProvider`. A provider can implement `supports(String, ModelCreationContext)` and `create(String, ModelCreationContext)` to consume context values. Simple providers can keep implementing the original `supports(String)` and `create(String)` methods because the context-aware methods have compatible defaults.

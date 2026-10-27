@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -26,8 +27,10 @@ import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import reactor.test.StepVerifier;
 
 class DynamicSkillMiddlewareTest {
 
@@ -108,7 +111,7 @@ class DynamicSkillMiddlewareTest {
 
     @Test
     void repositorySkillIsExposedViaRuntimeContext() {
-        AgentSkill skill = new AgentSkill("my_skill", "My Skill", "# Content", null);
+        AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
         DynamicSkillMiddleware mw = middleware(List.of(skill));
         RuntimeContext rc = RuntimeContext.empty();
 
@@ -116,12 +119,12 @@ class DynamicSkillMiddlewareTest {
 
         assertNotNull(
                 rc.get(SkillBox.class), "the per-call SkillBox must be exposed via RuntimeContext");
-        assertTrue(prompt.contains("my_skill"), "the skill prompt must contain the skill name");
+        assertTrue(prompt.contains("my-skill"), "the skill prompt must contain the skill name");
     }
 
     @Test
     void reusedRuntimeContextClearsStaleBox() {
-        AgentSkill skill = new AgentSkill("my_skill", "My Skill", "# Content", null);
+        AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
         StubRepo repo = new StubRepo(List.of(skill));
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(repo), new Toolkit(), null, false, workDir);
@@ -267,13 +270,99 @@ class DynamicSkillMiddlewareTest {
         RuntimeContext a = RuntimeContext.builder().userId("A").sessionId("s").build();
         RuntimeContext b = RuntimeContext.builder().userId("B").sessionId("s").build();
         org.mockito.Mockito.when(repo.getAllSkills(a))
-                .thenReturn(List.of(new AgentSkill("skill_a", "A", "A", null)));
+                .thenReturn(List.of(new AgentSkill("skill-a", "A", "A", null)));
         org.mockito.Mockito.when(repo.getAllSkills(b))
-                .thenReturn(List.of(new AgentSkill("skill_b", "B", "B", null)));
+                .thenReturn(List.of(new AgentSkill("skill-b", "B", "B", null)));
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(repo), new Toolkit(), null, false, workDir);
-        assertTrue(mw.onSystemPrompt(null, a, "").block().contains("skill_a"));
-        assertTrue(mw.onSystemPrompt(null, b, "").block().contains("skill_b"));
+        assertTrue(mw.onSystemPrompt(null, a, "").block().contains("skill-a"));
+        assertTrue(mw.onSystemPrompt(null, b, "").block().contains("skill-b"));
         org.mockito.Mockito.verify(repo, org.mockito.Mockito.never()).getAllSkills();
+    }
+
+    /**
+     * Golden value of {@code computeSignature} for a fixed two-skill input, captured by running
+     * the pre-refactor implementation (which copied the whole resource map per key). The refactor
+     * to per-key {@code AgentSkill#getResource(String)} access must keep the hashed bytes — and
+     * therefore this constant — bit-for-bit identical. {@code originDir} stays empty because
+     * {@code Path#toString()} is platform-dependent.
+     */
+    private static final String GOLDEN_SIGNATURE =
+            "12cf4fa8d7ce1d654ed2e5625b41b5e990bf5658db1c2deb7548413ffea1b7e3";
+
+    @Test
+    void signatureValueUnchangedAfterPerKeyResourceAccess() throws Exception {
+        java.util.LinkedHashMap<String, Object> alphaMeta = new java.util.LinkedHashMap<>();
+        alphaMeta.put("name", "alpha");
+        alphaMeta.put("description", "Alpha skill");
+        alphaMeta.put("version", "1.2.3");
+        alphaMeta.put("tags", List.of("one", "two"));
+        alphaMeta.put("nested", java.util.Map.of("k", "v"));
+        AgentSkill alpha =
+                new AgentSkill(
+                        alphaMeta,
+                        "alpha body\nsecond line",
+                        java.util.Map.of("z.txt", "zeta", "a.txt", "ada", "m/n.txt", "nu"),
+                        "repo-a");
+        AgentSkill beta =
+                new AgentSkill(
+                        "beta",
+                        "Beta skill",
+                        "# beta body",
+                        java.util.Map.of("y.md", "why", "b.md", "be"));
+
+        java.lang.reflect.Method compute =
+                DynamicSkillMiddleware.class.getDeclaredMethod("computeSignature", List.class);
+        compute.setAccessible(true);
+        String signature = (String) compute.invoke(null, List.of(beta, alpha));
+
+        assertEquals(GOLDEN_SIGNATURE, signature);
+    }
+
+    @Test
+    void runsReloadOnBoundedElasticWhenCacheMisses() {
+        AtomicReference<String> reloadThreadName = new AtomicReference<>();
+        AgentSkillRepository repo = org.mockito.Mockito.mock(AgentSkillRepository.class);
+        org.mockito.Mockito.when(repo.getAllSkills())
+                .thenAnswer(
+                        invocation -> {
+                            reloadThreadName.set(Thread.currentThread().getName());
+                            return List.of(new AgentSkill("my-skill", "My Skill", "# C", null));
+                        });
+        DynamicSkillMiddleware mw =
+                new DynamicSkillMiddleware(List.of(repo), new Toolkit(), null, false, workDir);
+
+        StepVerifier.create(mw.onSystemPrompt(null, RuntimeContext.empty(), "base"))
+                .assertNext(prompt -> assertTrue(prompt.contains("my-skill")))
+                .verifyComplete();
+
+        assertNotNull(reloadThreadName.get(), "getAllSkills must have been invoked");
+        assertTrue(
+                reloadThreadName.get().contains("boundedElastic"),
+                "blocking reload must run on boundedElastic, but ran on " + reloadThreadName.get());
+    }
+
+    @Test
+    void keepsCacheHitPathBehaviorUnchanged() {
+        AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
+        AgentSkillRepository repo = org.mockito.Mockito.mock(AgentSkillRepository.class);
+        org.mockito.Mockito.when(repo.getAllSkills()).thenReturn(List.of(skill));
+        DynamicSkillMiddleware mw =
+                new DynamicSkillMiddleware(List.of(repo), new Toolkit(), null, false, workDir);
+        RuntimeContext rc = RuntimeContext.empty();
+
+        String first = mw.onSystemPrompt(null, rc, "base").block();
+        SkillBox firstBox = rc.get(SkillBox.class);
+        String second = mw.onSystemPrompt(null, rc, "base").block();
+        SkillBox secondBox = rc.get(SkillBox.class);
+
+        assertEquals(first, second);
+        assertSame(
+                firstBox,
+                secondBox,
+                "a cache hit with the same signature must reuse the materialised box");
+        // Per-call reload semantics are preserved: the repository is still read on every call;
+        // only the box build/upload is skipped on the cache hit.
+        org.mockito.Mockito.verify(repo, org.mockito.Mockito.times(2)).getAllSkills();
     }
 }
