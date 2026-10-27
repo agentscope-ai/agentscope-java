@@ -36,6 +36,10 @@ import java.util.Objects;
  */
 public final class WebTools {
 
+    private static final int DEFAULT_MAX_CHARS = 20_000;
+    private static final int MAX_CHARS = 100_000;
+    private static final int ERROR_BODY_MAX_CHARS = 2_000;
+
     private WebTools() {}
 
     /**
@@ -81,7 +85,10 @@ public final class WebTools {
             if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
                 return ToolResultBlock.error("only http/https URLs are allowed");
             }
-            int limit = maxChars != null && maxChars > 0 ? Math.min(maxChars, 100_000) : 20_000;
+            int limit =
+                    maxChars != null && maxChars > 0
+                            ? Math.min(maxChars, MAX_CHARS)
+                            : DEFAULT_MAX_CHARS;
             try {
                 HttpRequest request =
                         HttpRequest.newBuilder()
@@ -92,14 +99,15 @@ public final class WebTools {
                                 .build();
                 HttpResponse<String> response =
                         client.send(request, HttpResponse.BodyHandlers.ofString());
-                String body = response.body() == null ? "" : response.body();
-                if (body.length() > limit) {
-                    body = body.substring(0, limit) + "\n...[truncated]";
-                }
-                String payload = "status=" + response.statusCode() + "\n\n" + body;
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                    return ToolResultBlock.text(payload).withState(ToolResultState.ERROR);
+                    return ToolResultBlock.text(formatHttpError(response, limit))
+                            .withState(ToolResultState.ERROR);
                 }
+                String payload =
+                        "status="
+                                + response.statusCode()
+                                + "\n\n"
+                                + truncate(response.body(), limit);
                 return ToolResultBlock.success(payload);
             } catch (Exception e) {
                 if (e instanceof InterruptedException) {
@@ -108,6 +116,37 @@ public final class WebTools {
                 return ToolResultBlock.error("web_fetch failed: " + e.getMessage());
             }
         }
+
+        /**
+         * Keep server-provided diagnostics available to the model without letting an error
+         * response flood the context window.
+         *
+         * <p>The truncation bounds the text handed to the model; it does not bound what the HTTP
+         * client buffers while receiving the response. The body is also server-controlled text
+         * that may quote the offending request, so it is labelled as untrusted rather than
+         * presented as framework output.
+         */
+        private static String formatHttpError(HttpResponse<String> response, int limit) {
+            String body = truncate(response.body(), Math.min(limit, ERROR_BODY_MAX_CHARS));
+            return body.isEmpty()
+                    ? "status=" + response.statusCode()
+                    : "status=" + response.statusCode() + "\n\nresponse body (untrusted): " + body;
+        }
+    }
+
+    /**
+     * Truncates to {@code limit} characters, counted as Unicode code points so the result matches
+     * what the model is told it asked for. Counting code points also keeps a cut from landing
+     * between the halves of a surrogate pair, which would emit a lone surrogate and break JSON
+     * encoding of the tool result.
+     */
+    private static String truncate(String value, int limit) {
+        String body = value == null ? "" : value;
+        if (body.codePointCount(0, body.length()) <= limit) {
+            return body;
+        }
+        int end = body.offsetByCodePoints(0, limit);
+        return body.substring(0, end) + "\n...[truncated]";
     }
 
     public static final class WebSearchTool {

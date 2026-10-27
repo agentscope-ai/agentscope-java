@@ -44,6 +44,12 @@ Configure capabilities and use session operations as your application needs them
 | MCP integration & tool allowlist | Declarative MCP servers + allow/deny per tool | `workspace/tools.json` | [Workspace](/v2/en/docs/harness/workspace) |
 | Channel routing | Session management, per-session concurrency, multi-agent routing, streaming events | `agent.channel(...)` / `GatewayBootstrap` | [Channel](/v2/en/docs/harness/channel) |
 
+## Built-in web fetch results
+
+`web_fetch` returns the HTTP status and a text preview. `max_chars` limits the response body to 20,000 Unicode code points by default, with a maximum of 100,000; omitted or nonpositive values use the default. A truncated preview ends with `...[truncated]` without splitting a Unicode surrogate pair.
+
+Non-2xx responses retain the `ERROR` tool-result state. Their body preview is limited to the smaller of the effective `max_chars` and 2,000 code points and prefixed with `response body (untrusted):`; an empty body returns only the status. The label identifies server-provided content and does not sanitize it. These limits bound the preview sent to the model, not the HTTP client's response buffering.
+
 ## How state flows
 
 Three layers exist; the framework moves data between them automatically.
