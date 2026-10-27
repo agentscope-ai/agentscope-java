@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.jsontype.NamedType;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClient;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxState;
@@ -38,6 +39,38 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class HarnessSandboxJacksonModuleTest {
+
+    @Test
+    void roundTripsStateWithoutWorkspaceRootOverride() throws Exception {
+        ObjectMapper mapper = new ObjectMapper().registerModule(new HarnessSandboxJacksonModule());
+        mapper.registerSubtypes(new NamedType(RootlessSandboxState.class, "rootless"));
+        RootlessSandboxState original = new RootlessSandboxState();
+        original.setSessionId("rootless-session");
+        original.setWorkspaceRootReady(true);
+
+        SandboxState parsed =
+                mapper.readValue(mapper.writeValueAsString(original), SandboxState.class);
+
+        assertInstanceOf(RootlessSandboxState.class, parsed);
+        assertEquals("rootless-session", parsed.getSessionId());
+        assertTrue(parsed.isWorkspaceRootReady());
+        assertNull(parsed.getWorkspaceRoot());
+    }
+
+    @Test
+    void roundTripsDockerStateWithNonDefaultWorkspaceRoot() throws Exception {
+        ObjectMapper mapper = new ObjectMapper().registerModule(new HarnessSandboxJacksonModule());
+        DockerSandboxState original = new DockerSandboxState();
+        original.setWorkspaceRoot("/custom/docker-root");
+
+        String json = mapper.writeValueAsString(original);
+        SandboxState parsed = mapper.readValue(json, SandboxState.class);
+
+        assertEquals("/custom/docker-root", mapper.readTree(json).get("workspaceRoot").asText());
+        assertEquals("/custom/docker-root", parsed.getWorkspaceRoot());
+    }
+
+    public static final class RootlessSandboxState extends SandboxState {}
 
     @Test
     void roundTripsDockerSandboxState() throws Exception {

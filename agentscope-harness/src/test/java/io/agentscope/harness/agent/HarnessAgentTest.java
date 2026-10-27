@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -71,6 +72,7 @@ import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -334,7 +336,8 @@ class HarnessAgentTest {
     void sandboxWithArtifactDeliveryTarget_promptNamesDeliverTool() throws Exception {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");
-        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+        InMemorySandboxClient client = spy(new InMemorySandboxClient());
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec(client);
         Model model = stubModel("assistant-done");
         HarnessAgent agent =
                 HarnessAgent.builder()
@@ -351,7 +354,11 @@ class HarnessAgentTest {
         agent.call(userText("hi"), RuntimeContext.builder().sessionId("s1").build()).block();
 
         String combined = capturedPrompt(model);
-        assertTrue(combined.contains("Sandbox root: /workspace"), () -> combined);
+        ArgumentCaptor<SandboxState> stateCaptor = ArgumentCaptor.forClass(SandboxState.class);
+        verify(client, atLeast(1)).serializeState(stateCaptor.capture());
+        String sandboxRoot = stateCaptor.getValue().getWorkspaceRoot();
+        assertNotNull(sandboxRoot);
+        assertTrue(combined.contains("Sandbox root: " + sandboxRoot), () -> combined);
         assertTrue(combined.contains("call deliver_artifact"), () -> combined);
     }
 
