@@ -39,9 +39,10 @@ import reactor.core.publisher.Mono;
  * <ol>
  *   <li>{@code skill.getResources().get(path)} — in-memory map (Layer 1/3 host repositories and
  *       marketplace repositories that preload everything)
- *   <li>{@code entry.lazyResources().read(path)} — filesystem fallback for sources that
- *       implement {@link io.agentscope.harness.agent.skill.LazyResourceCapable}
- *       (e.g. {@code WorkspaceSkillRepository})
+ *   <li>{@code entry.lazyResources().read(path)} — filesystem fallback. Populated by sources
+ *       that implement {@link io.agentscope.harness.agent.skill.LazyResourceCapable} (e.g.
+ *       {@code WorkspaceSkillRepository}) or, for other repositories, by an origin-dir reader
+ *       built from {@code skill.getOriginDir()} when present
  *   <li>Not found → error with a deduped enumeration of {@code SKILL.md} + in-memory keys +
  *       lazy listing
  * </ol>
@@ -199,7 +200,7 @@ public final class SkillLoadTool implements AgentTool {
             return ToolResultBlock.text(formatResource(entry, path, mem.get(path)));
         }
 
-        // 3. Lazy fallback (WorkspaceSkillRepository and other LazyResourceCapable sources).
+        // 3. Lazy fallback (LazyResourceCapable sources, or an origin-dir reader for others).
         if (entry.lazyResources() != null) {
             Optional<String> lazy = entry.lazyResources().read(path);
             if (lazy.isPresent()) {

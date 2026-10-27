@@ -474,7 +474,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             sb.append(
                     "**Artifact Delivery**\n"
                             + "Automatically call deliver_artifact for final deliverables to export"
-                            + " them to the configured external destination. Keep temporary working"
+                            + " them to the configured external destination; do not ask whether to"
+                            + " deliver. Keep temporary working"
                             + " files and sensitive material internal. Successful deliveries are"
                             + " shown by the tool; keep your reply focused on task results. Report"
                             + " any failed delivery as incomplete. An internal path alone does not"

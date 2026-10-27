@@ -193,6 +193,7 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
 
             assertNotNull(prompt);
             assertTrue(prompt.contains("call deliver_artifact"), () -> prompt);
+            assertTrue(prompt.contains("do not ask whether to deliver"), () -> prompt);
             assertTrue(prompt.contains("Report any failed delivery as incomplete"));
             assertFalse(prompt.contains("upload/download tools"), () -> prompt);
         }
