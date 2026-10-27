@@ -20,6 +20,7 @@ import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.MessageParam.Role;
+import com.anthropic.models.messages.RedactedThinkingBlockParam;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.ThinkingBlockParam;
 import com.anthropic.models.messages.ToolResultBlockParam;
@@ -166,16 +167,27 @@ public class AnthropicMessageConverter {
                         ContentBlockParam.ofText(
                                 TextBlockParam.builder().text(hb.getHint()).build()));
             } else if (block instanceof ThinkingBlock thinkingBlock) {
-                // Anthropic supports thinking blocks natively. With the preserved signature the
-                // block is replayed as a native thinking block (required for extended-thinking
-                // tool-use turns); foreign thinking blocks without a signature fall back to text.
+                // Anthropic supports thinking blocks natively. Redacted thinking is replayed as
+                // its native opaque block; with the preserved signature the block is replayed as
+                // a native thinking block (required for extended-thinking tool-use turns);
+                // foreign thinking blocks without a signature fall back to text.
+                Object redactedData =
+                        thinkingBlock.getMetadata() != null
+                                ? thinkingBlock
+                                        .getMetadata()
+                                        .get(ThinkingBlock.METADATA_ANTHROPIC_REDACTED_DATA)
+                                : null;
                 Object signature =
                         thinkingBlock.getMetadata() != null
                                 ? thinkingBlock
                                         .getMetadata()
                                         .get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE)
                                 : null;
-                if (signature instanceof String sig && !sig.isEmpty()) {
+                if (redactedData instanceof String data && !data.isEmpty()) {
+                    contentBlocks.add(
+                            ContentBlockParam.ofRedactedThinking(
+                                    RedactedThinkingBlockParam.builder().data(data).build()));
+                } else if (signature instanceof String sig && !sig.isEmpty()) {
                     contentBlocks.add(
                             ContentBlockParam.ofThinking(
                                     ThinkingBlockParam.builder()

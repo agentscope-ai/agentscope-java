@@ -699,6 +699,35 @@ class ReasoningContextTest {
     }
 
     @Test
+    void indexedTruncationTracksAllBlocksInSingleChunk() {
+        context.processChunk(
+                ChatResponse.builder()
+                        .metadata(
+                                Map.of(
+                                        ChatResponse.METADATA_CONTENT_BLOCK_INDEX,
+                                        0,
+                                        ChatResponse.METADATA_CONTENT_BLOCK_COMPLETE,
+                                        true))
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("complete")
+                                                .name("record")
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("incomplete")
+                                                .name("record")
+                                                .build()))
+                        .finishReason("max_tokens")
+                        .build());
+
+        List<ToolUseBlock> calls = context.buildFinalMessage().getContentBlocks(ToolUseBlock.class);
+        assertEquals(2, calls.size());
+        assertFalse(calls.get(0).hasMalformedArguments());
+        assertTrue(calls.get(1).hasMalformedArguments());
+    }
+
+    @Test
     void indexedReplayKeepsThinkingWhileApplyingTextMiddleware() {
         context.processChunk(
                 ChatResponse.builder()

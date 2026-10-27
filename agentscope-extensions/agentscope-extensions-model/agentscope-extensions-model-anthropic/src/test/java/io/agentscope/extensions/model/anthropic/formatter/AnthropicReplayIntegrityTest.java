@@ -45,6 +45,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -197,6 +198,166 @@ class AnthropicReplayIntegrityTest {
             assertFalse(
                     nativeMessages.get(2).content().asBlockParams().stream()
                             .anyMatch(b -> !b.isToolResult()));
+        }
+    }
+
+    @Test
+    void maxTokensStillRejectsEmptyStartWhenStopEventArrives() throws Exception {
+        // A provider emitting content_block_stop even for the block abandoned at the output
+        // limit must not make the empty start executable: the cutoff block keeps truncation
+        // handling regardless of its stop event, while the earlier completed sibling executes.
+        Flux<ChatResponse> response =
+                parseEvents(
+                        """
+                        {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"complete","name":"record","input":{}}}
+                        """,
+                        """
+                        {"type":"content_block_stop","index":0}
+                        """,
+                        """
+                        {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"incomplete","name":"record","input":{}}}
+                        """,
+                        """
+                        {"type":"content_block_stop","index":1}
+                        """,
+                        """
+                        {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":1}}
+                        """);
+        AtomicInteger executions = new AtomicInteger();
+        List<Msg> nextRequest = new ArrayList<>();
+        try (ReActAgent agent = agent(response, executions, nextRequest)) {
+            agent.call(new UserMessage("fixture")).block(Duration.ofSeconds(5));
+            assertEquals(1, executions.get());
+            List<ToolResultBlock> results =
+                    nextRequest.stream()
+                            .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                            .toList();
+            assertEquals(2, results.size());
+            assertTrue(
+                    results.stream()
+                            .anyMatch(
+                                    r ->
+                                            r.getId().equals("incomplete")
+                                                    && r.getState() == ToolResultState.ERROR));
+            assertTrue(
+                    results.stream()
+                            .anyMatch(
+                                    r ->
+                                            r.getId().equals("complete")
+                                                    && r.getState() == ToolResultState.SUCCESS));
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"text,false", "text,true", "thinking,false", "thinking,true"})
+    void maxTokensKeepsCompletedNoArgCallBeforeEmptyBlock(String blockType, boolean stopped)
+            throws Exception {
+        String emptyBlockStart =
+                blockType.equals("text")
+                        ? """
+                        {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}
+                        """
+                        : """
+                        {"type":"content_block_start","index":1,"content_block":{"type":"thinking","thinking":"","signature":""}}
+                        """;
+        List<String> events =
+                new ArrayList<>(
+                        List.of(
+                                """
+                                {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"complete","name":"record","input":{}}}
+                                """,
+                                """
+                                {"type":"content_block_stop","index":0}
+                                """,
+                                emptyBlockStart));
+        if (stopped) {
+            events.add(
+                    """
+                    {"type":"content_block_stop","index":1}
+                    """);
+        }
+        events.add(
+                """
+                {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":1}}
+                """);
+        AtomicInteger executions = new AtomicInteger();
+        List<Msg> nextRequest = new ArrayList<>();
+        try (ReActAgent agent =
+                agent(parseEvents(events.toArray(String[]::new)), executions, nextRequest)) {
+            agent.call(new UserMessage("fixture")).block(Duration.ofSeconds(5));
+            assertEquals(1, executions.get());
+            List<ToolResultBlock> results =
+                    nextRequest.stream()
+                            .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                            .toList();
+            assertEquals(1, results.size());
+            assertEquals("complete", results.get(0).getId());
+            assertEquals(ToolResultState.SUCCESS, results.get(0).getState());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void redactedThinkingTurnReplaysNatively(boolean streaming) throws Exception {
+        Flux<ChatResponse> response;
+        if (streaming) {
+            response =
+                    parseEvents(
+                            """
+                            {"type":"content_block_start","index":0,"content_block":{"type":"redacted_thinking","data":"enc-blob"}}
+                            """,
+                            """
+                            {"type":"content_block_stop","index":0}
+                            """,
+                            """
+                            {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call","name":"record","input":{}}}
+                            """,
+                            """
+                            {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{}"}}
+                            """,
+                            """
+                            {"type":"content_block_stop","index":1}
+                            """,
+                            """
+                            {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}
+                            """);
+        } else {
+            Message message =
+                    ObjectMappers.jsonMapper()
+                            .readValue(
+                                    """
+                                    {"id":"fixture","type":"message","role":"assistant","model":"fixture",
+                                     "content":[
+                                      {"type":"redacted_thinking","data":"enc-blob"},
+                                      {"type":"tool_use","id":"call","name":"record","input":{}}],
+                                     "stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}
+                                    """,
+                                    Message.class);
+            response = Flux.just(AnthropicResponseParser.parseMessage(message, Instant.now()));
+        }
+        AtomicInteger executions = new AtomicInteger();
+        List<Msg> nextRequest = new ArrayList<>();
+        try (ReActAgent agent = agent(response, executions, nextRequest)) {
+            agent.call(new UserMessage("fixture")).block(Duration.ofSeconds(5));
+            assertEquals(1, executions.get());
+            List<MessageParam> nativeMessages =
+                    new AnthropicMessageConverter(blocks -> "result").convert(nextRequest);
+            assertEquals(3, nativeMessages.size());
+            var blocks = nativeMessages.get(1).content().asBlockParams();
+            assertEquals(2, blocks.size());
+            // Redacted thinking survives the whole chain as its native opaque block
+            assertTrue(blocks.get(0).isRedactedThinking());
+            assertEquals("enc-blob", blocks.get(0).asRedactedThinking().data());
+            assertEquals("call", blocks.get(1).asToolUse().id());
+            assertEquals(
+                    "call",
+                    nativeMessages
+                            .get(2)
+                            .content()
+                            .asBlockParams()
+                            .get(0)
+                            .asToolResult()
+                            .toolUseId());
         }
     }
 

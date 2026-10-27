@@ -59,6 +59,7 @@ public class ReasoningContext {
     // Providers that expose block indices retain native boundaries and order for history replay.
     private final Map<Integer, List<ContentBlock>> indexedChunks = new TreeMap<>();
     private final Set<Integer> completedBlocks = new HashSet<>();
+    private int lastObservedBlockIndex = -1;
     private String finishReason;
     private boolean textReplaced;
 
@@ -118,6 +119,11 @@ public class ReasoningContext {
             Object index = chunk.getMetadata().get(ChatResponse.METADATA_CONTENT_BLOCK_INDEX);
             if (index instanceof Number number) {
                 int blockIndex = number.intValue();
+                // Include metadata-only events and every block in a non-streaming response.
+                lastObservedBlockIndex =
+                        Math.max(
+                                lastObservedBlockIndex,
+                                blockIndex + Math.max(1, chunk.getContent().size()) - 1);
                 boolean complete =
                         Boolean.TRUE.equals(
                                 chunk.getMetadata()
@@ -302,7 +308,13 @@ public class ReasoningContext {
         } else if (first instanceof ToolUseBlock) {
             ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
             chunks.forEach(b -> accumulator.add((ToolUseBlock) b));
-            return accumulator.buildAllToolCalls(isTruncated() && !completedBlocks.contains(index));
+            // A stop event alone does not prove that the last native block completed before
+            // the output limit. Earlier completed blocks remain executable.
+            boolean blockTruncated =
+                    isTruncated()
+                            && (index == lastObservedBlockIndex
+                                    || !completedBlocks.contains(index));
+            return accumulator.buildAllToolCalls(blockTruncated);
         } else if (first instanceof ToolResultBlock) {
             ServerToolResultAccumulator accumulator = new ServerToolResultAccumulator();
             chunks.forEach(b -> accumulator.add((ToolResultBlock) b));

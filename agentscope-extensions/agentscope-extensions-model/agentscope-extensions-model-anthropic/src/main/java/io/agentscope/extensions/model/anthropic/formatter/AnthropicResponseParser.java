@@ -101,6 +101,21 @@ public class AnthropicResponseParser {
                                 contentBlocks.add(builder.build());
                             });
 
+            // Redacted thinking block (encrypted reasoning under enforcement policies). The
+            // payload is kept opaque so replay can restore the native block instead of
+            // silently dropping it from history.
+            block.redactedThinking()
+                    .ifPresent(
+                            redacted ->
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .metadata(
+                                                            Map.of(
+                                                                    ThinkingBlock
+                                                                            .METADATA_ANTHROPIC_REDACTED_DATA,
+                                                                    redacted.data()))
+                                                    .build()));
+
             // Server tool use block (e.g. web_search executed on Anthropic's side)
             block.serverToolUse()
                     .ifPresent(
@@ -325,6 +340,21 @@ public class AnthropicResponseParser {
                                                 .state(ToolCallState.FINISHED)
                                                 .build());
                             });
+
+            // Redacted thinking arrives complete in the start event (no deltas)
+            startEvent
+                    .contentBlock()
+                    .redactedThinking()
+                    .ifPresent(
+                            redacted ->
+                                    contentBlocks.add(
+                                            ThinkingBlock.builder()
+                                                    .metadata(
+                                                            Map.of(
+                                                                    ThinkingBlock
+                                                                            .METADATA_ANTHROPIC_REDACTED_DATA,
+                                                                    redacted.data()))
+                                                    .build()));
 
             // Server tool results arrive complete in the start event
             SERVER_TOOL_HELPER

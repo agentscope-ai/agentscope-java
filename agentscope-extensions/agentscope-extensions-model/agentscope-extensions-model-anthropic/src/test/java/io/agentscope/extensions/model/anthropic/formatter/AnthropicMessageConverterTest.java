@@ -308,6 +308,40 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testConvertRedactedThinkingBlockReplayedNatively() {
+        Msg msg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_ANTHROPIC_REDACTED_DATA,
+                                                                "enc_123"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(2, blocks.size());
+        // Redacted thinking is replayed as its native opaque block, not dropped or
+        // masqueraded as text
+        assertTrue(blocks.get(0).isRedactedThinking());
+        assertEquals("enc_123", blocks.get(0).asRedactedThinking().data());
+        assertTrue(blocks.get(1).isToolUse());
+    }
+
+    @Test
     void testConvertToolUseBlock() {
         Map<String, Object> input = Map.of("query", "test");
         Msg msg =

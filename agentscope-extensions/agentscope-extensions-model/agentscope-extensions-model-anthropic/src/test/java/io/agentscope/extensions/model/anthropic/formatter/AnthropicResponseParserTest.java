@@ -38,6 +38,7 @@ import com.anthropic.models.messages.RawContentBlockStartEvent;
 import com.anthropic.models.messages.RawMessageDeltaEvent;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
+import com.anthropic.models.messages.RedactedThinkingBlock;
 import com.anthropic.models.messages.ServerToolUseBlock;
 import com.anthropic.models.messages.Usage;
 import com.anthropic.models.messages.WebSearchResultBlock;
@@ -131,6 +132,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(contentBlock.text()).thenReturn(Optional.of(textBlock));
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
         when(contentBlock.thinking()).thenReturn(Optional.empty());
+        when(contentBlock.redactedThinking()).thenReturn(Optional.empty());
         when(textBlock.text()).thenReturn("Hello, world!");
 
         Instant startTime = Instant.now();
@@ -166,6 +168,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
         when(contentBlock.thinking()).thenReturn(Optional.empty());
+        when(contentBlock.redactedThinking()).thenReturn(Optional.empty());
 
         Instant startTime = Instant.now();
         ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
@@ -197,6 +200,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.of(toolUseBlock));
         when(contentBlock.thinking()).thenReturn(Optional.empty());
+        when(contentBlock.redactedThinking()).thenReturn(Optional.empty());
 
         when(toolUseBlock.id()).thenReturn("tool_call_123");
         when(toolUseBlock.name()).thenReturn("search");
@@ -229,6 +233,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
         when(contentBlock.thinking()).thenReturn(Optional.of(thinkingBlock));
+        when(contentBlock.redactedThinking()).thenReturn(Optional.empty());
         when(thinkingBlock.thinking()).thenReturn("Let me think about this...");
         when(thinkingBlock.signature()).thenReturn("sig_789");
 
@@ -336,6 +341,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.of(toolUseBlock));
         when(contentBlock.thinking()).thenReturn(Optional.empty());
+        when(contentBlock.redactedThinking()).thenReturn(Optional.empty());
 
         when(toolUseBlock.id()).thenReturn("tool_null");
         when(toolUseBlock.name()).thenReturn("test_tool");
@@ -456,6 +462,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
         when(contentBlock.thinking()).thenReturn(Optional.of(sdkThinkingBlock));
+        when(contentBlock.redactedThinking()).thenReturn(Optional.empty());
         when(sdkThinkingBlock.thinking()).thenReturn(thinkingText);
         when(sdkThinkingBlock.signature()).thenReturn(signature);
 
@@ -496,6 +503,52 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertEquals(
                 nonStreaming.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE),
                 streaming.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE));
+    }
+
+    @Test
+    void testParseMessageWithRedactedThinkingBlock() {
+        Message message = mock(Message.class);
+        ContentBlock contentBlock = mock(ContentBlock.class);
+        var redactedBlock = mock(RedactedThinkingBlock.class);
+
+        mockSingleBlockMessage(message, "msg_redacted", contentBlock);
+        when(contentBlock.text()).thenReturn(Optional.empty());
+        when(contentBlock.toolUse()).thenReturn(Optional.empty());
+        when(contentBlock.thinking()).thenReturn(Optional.empty());
+        when(contentBlock.redactedThinking()).thenReturn(Optional.of(redactedBlock));
+        when(redactedBlock.data()).thenReturn("enc_789");
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals(1, response.getContent().size());
+        ThinkingBlock parsedThinking =
+                assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
+        assertEquals("", parsedThinking.getThinking());
+        // The opaque payload must be preserved so replay can restore the native block
+        assertEquals(
+                "enc_789",
+                parsedThinking.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_REDACTED_DATA));
+    }
+
+    @Test
+    void testParseStreamEventRedactedThinkingStart() throws Exception {
+        RawContentBlockStartEvent startEvent =
+                RawContentBlockStartEvent.builder()
+                        .index(0)
+                        .redactedThinkingContentBlock("enc_start")
+                        .build();
+        RawMessageStreamEvent event = RawMessageStreamEvent.ofContentBlockStart(startEvent);
+
+        ChatResponse response = invokeParseStreamEvent(event, Instant.now());
+
+        assertNotNull(response);
+        assertEquals(1, response.getContent().size());
+        ThinkingBlock parsedThinking =
+                assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
+        assertEquals("", parsedThinking.getThinking());
+        assertEquals(
+                "enc_start",
+                parsedThinking.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_REDACTED_DATA));
     }
 
     @Test
