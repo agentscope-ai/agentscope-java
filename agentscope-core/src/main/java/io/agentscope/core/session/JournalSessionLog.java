@@ -322,7 +322,10 @@ public final class JournalSessionLog implements SessionLog {
     private Map<String, AtomicSessionStorage.Value> loadCommitSegments() {
         try {
             var paths = storage.listPaths(path("commits") + "/");
-            if (paths.isEmpty()) return Map.of();
+            // An empty listing cannot be distinguished from a snapshot taken while a writer was
+            // renaming segments into place, so fall back to per-segment reads rather than
+            // treating the journal as having no committed data.
+            if (paths.isEmpty()) return null;
             return storage.readAll(paths);
         } catch (UnsupportedOperationException | SessionLogException ignored) {
             // The listing also surfaces rows a concurrent writer has not yet referenced
