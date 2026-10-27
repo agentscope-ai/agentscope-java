@@ -219,6 +219,9 @@ public final class AgentState implements State {
      *
      * <p>{@code null} means the IDs were not captured (for example, state persisted by an older
      * AgentScope version). An empty list means the interrupted call had no input messages.
+     *
+     * <p>Callers retrying the same logical request must reuse the original {@link Msg} IDs;
+     * rebuilding messages with new IDs identifies a new request and will not match this checkpoint.
      */
     @JsonProperty("shutdown_input_message_ids")
     public List<String> getShutdownInputMessageIds() {

@@ -21,7 +21,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.AgentState;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class AgentStateRestorerTest {
@@ -54,6 +56,86 @@ class AgentStateRestorerTest {
         assertThat(live.getSummary()).isEqualTo("v0 summary");
         assertThat(live.getContext()).hasSize(1);
         assertThat(live.getContext().get(0).getTextContent()).isEqualTo("msg-1");
+    }
+
+    @Test
+    void restoresShutdownInputIdsAndConsumesExactRetry() {
+        Msg interruptedInput =
+                Msg.builder()
+                        .id("interrupted-input")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("request").build())
+                        .build();
+        AgentState snapshot =
+                AgentState.builder()
+                        .sessionId("sess-1")
+                        .shutdownInterrupted(true)
+                        .shutdownInputMessageIds(List.of(interruptedInput.getId()))
+                        .build();
+        AgentState live =
+                AgentState.builder()
+                        .sessionId("sess-1")
+                        .shutdownInputMessageIds(List.of("stale-live-id"))
+                        .build();
+
+        AgentStateRestorer.restore(live, snapshot.toJson());
+
+        assertThat(live.getShutdownInputMessageIds()).containsExactly(interruptedInput.getId());
+        assertThat(
+                        GracefulShutdownManager.getInstance()
+                                .checkAndClearShutdownInterruptedForState(
+                                        live, List.of(interruptedInput)))
+                .isTrue();
+        assertThat(live.isShutdownInterrupted()).isFalse();
+        assertThat(live.getShutdownInputMessageIds()).isNull();
+    }
+
+    @Test
+    void restoredShutdownInputIdsAcceptDifferentRequestAndAreConsumed() {
+        AgentState snapshot =
+                AgentState.builder()
+                        .sessionId("sess-1")
+                        .shutdownInterrupted(true)
+                        .shutdownInputMessageIds(List.of("interrupted-input"))
+                        .build();
+        AgentState live = AgentState.builder().sessionId("sess-1").build();
+        Msg newInput =
+                Msg.builder()
+                        .id("new-input")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("different request").build())
+                        .build();
+
+        AgentStateRestorer.restore(live, snapshot.toJson());
+
+        assertThat(
+                        GracefulShutdownManager.getInstance()
+                                .checkAndClearShutdownInterruptedForState(live, List.of(newInput)))
+                .isFalse();
+        assertThat(live.isShutdownInterrupted()).isFalse();
+        assertThat(live.getShutdownInputMessageIds()).isNull();
+    }
+
+    @Test
+    void restoresNullShutdownInputIdsOverStaleLiveIds() {
+        AgentState snapshot =
+                AgentState.builder().sessionId("sess-1").shutdownInterrupted(true).build();
+        AgentState live =
+                AgentState.builder()
+                        .sessionId("sess-1")
+                        .shutdownInputMessageIds(List.of("stale-live-id"))
+                        .build();
+
+        AgentStateRestorer.restore(live, snapshot.toJson());
+
+        assertThat(live.getShutdownInputMessageIds()).isNull();
+        assertThat(
+                        GracefulShutdownManager.getInstance()
+                                .checkAndClearShutdownInterruptedForState(
+                                        live, List.of(textMsg(MsgRole.USER, "user", "retry"))))
+                .isTrue();
+        assertThat(live.isShutdownInterrupted()).isFalse();
+        assertThat(live.getShutdownInputMessageIds()).isNull();
     }
 
     @Test

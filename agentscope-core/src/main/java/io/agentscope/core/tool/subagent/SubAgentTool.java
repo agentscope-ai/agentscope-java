@@ -291,6 +291,7 @@ public class SubAgentTool implements AgentTool {
         live.setReplyId(loaded.getReplyId());
         live.setCurIter(loaded.getCurIter());
         live.setShutdownInterrupted(loaded.isShutdownInterrupted());
+        live.setShutdownInputMessageIds(loaded.getShutdownInputMessageIds());
         live.getToolContext().setActivatedGroups(loaded.getToolContext().getActivatedGroups());
     }
 
