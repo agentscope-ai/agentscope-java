@@ -60,6 +60,30 @@ class RemoteFilesystemCASTest {
     }
 
     @Test
+    void edit_rejectsNullNewString_andEmptyOldString() {
+        InMemoryStore store = new InMemoryStore();
+        RemoteFilesystem fs = newFs(store);
+        assertTrue(fs.write(CTX, "/f.txt", "Hello World").isSuccess());
+
+        // null is not a deletion: pass "" instead. Uniform across filesystems.
+        EditResult nullNew = fs.edit(CTX, "/f.txt", "World", null, false);
+        assertFalse(nullNew.isSuccess());
+        assertTrue(nullNew.error().contains("must not be null"));
+        assertEquals("Hello World", fs.read(CTX, "/f.txt", 0, 0).fileData().content());
+
+        // "" is a real deletion and keeps the normal occurrence count.
+        EditResult emptyNew = fs.edit(CTX, "/f.txt", "World", "", false);
+        assertTrue(emptyNew.isSuccess(), () -> "expected success, got: " + emptyNew.error());
+        assertEquals(1, emptyNew.occurrences());
+        assertEquals("Hello ", fs.read(CTX, "/f.txt", 0, 0).fileData().content());
+
+        // An empty oldString would make the occurrence counter loop forever.
+        EditResult emptyOld = fs.edit(CTX, "/f.txt", "", "x", false);
+        assertFalse(emptyOld.isSuccess());
+        assertEquals("Hello ", fs.read(CTX, "/f.txt", 0, 0).fileData().content());
+    }
+
+    @Test
     void write_isAtomicCreateOnly() {
         InMemoryStore store = new InMemoryStore();
         RemoteFilesystem fs = newFs(store);
@@ -216,6 +240,24 @@ class RemoteFilesystemCASTest {
         var read = fs.read(CTX, "/log.md", 0, 0);
         assertTrue(read.isSuccess());
         assertEquals("iter-4", read.fileData().content());
+    }
+
+    @Test
+    void uploadFiles_nonUtf8Binary_roundTripsWithoutCorruption() {
+        InMemoryStore store = new InMemoryStore();
+        RemoteFilesystem fs = newFs(store);
+        byte[] expected = new byte[] {0, (byte) 0xff, 1, (byte) 0x80};
+
+        List<FileUploadResponse> upload =
+                fs.uploadFiles(CTX, List.of(Map.entry("/image.png", expected)));
+        assertEquals(1, upload.size());
+        assertTrue(upload.get(0).isSuccess(), () -> "upload failed: " + upload.get(0).error());
+
+        var download = fs.downloadFiles(CTX, List.of("/image.png"));
+        assertEquals(1, download.size());
+        assertTrue(
+                download.get(0).isSuccess(), () -> "download failed: " + download.get(0).error());
+        assertArrayEquals(expected, download.get(0).content());
     }
 
     @Test

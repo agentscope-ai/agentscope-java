@@ -1,4 +1,7 @@
-# Observability & Studio
+---
+title: Observability & Studio
+zh_link: /v1/zh/docs/task/observability
+---
 
 AgentScope Java provides multiple mechanisms for observing and debugging agent execution:
 
@@ -327,4 +330,4 @@ TracerRegistry.register(
 
 - **Studio Example**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
 - **Studio Repository**: https://github.com/agentscope-ai/agentscope-studio
-- **Hook Documentation**: [hook.md](./hook.md)
+- **Hook Documentation**: [hook.md](/v1/en/docs/task/hook)

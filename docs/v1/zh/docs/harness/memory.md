@@ -1,4 +1,7 @@
-# 记忆（Memory）
+---
+title: 记忆
+en_link: /v1/en/docs/harness/memory
+---
 
 ## 作用
 
@@ -18,10 +21,10 @@
 
 ### 双层记忆模型
 
-```{mermaid}
+```mermaid
 graph LR
     Conv[对话 messages] -->|超阈值| Compactor[ConversationCompactor]
-    Compactor -->|offload| Sess[sessions/&lt;id&gt;.log.jsonl]
+    Compactor -. 完整历史保留在 .-> Sess[native session journal<br/>.agentscope-runtime/]
     Compactor -->|flushMemories| Flush[MemoryFlushManager]
     Flush -->|append + index| Daily[memory/YYYY-MM-DD.md]
     Daily -. 后台二次加工 .-> Cons[MemoryConsolidator]
@@ -42,7 +45,7 @@ graph LR
 ```
 检查阈值 → 找 cutoff（不切开 ASSISTANT/TOOL 对）
         → (可选) flushMemories(prefix)
-        → (可选) offloadMessages(messages → sessions/.../<id>.jsonl)
+        → 完整历史已提交到 native session journal
         → LLM 提炼 summary
         → [summaryUserMsg] + tail 返回给 hook重装 memory
 ```
@@ -56,7 +59,6 @@ graph LR
 | `keepMessages` | `20` | 保留尾部条数 |
 | `keepTokens` | `0` | 非 0 时按 token 预算从后往前扫描，覆盖 `keepMessages` |
 | `flushBeforeCompact` | **`true`** | 压缩前提取记忆到今日流水账 |
-| `offloadBeforeCompact` | **`true`** | 压缩前将原始消息追写到会话 `.log.jsonl` |
 | `summaryPrompt` | 内置模板 | 包含 `SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS` 四段式 |
 
 ```java
@@ -146,7 +148,7 @@ List<MemoryIndex.SearchHit> hits = index.search("数据库迁移", 10);
 
 ## 相关文档
 
-- [工具](./tool.md) — `memory_search` / `memory_get` 的参数与调用例
-- [工作区](./workspace.md) — `MEMORY.md` / `memory/*.md` 在工作区的位置
-- [会话](./session.md) — `.log.jsonl` / `.jsonl` 怎么反过来被记忆提取使用
-- [架构](./architecture.md) — CompactionHook / MemoryFlushHook / ToolResultEvictionHook 在生命周期中的位置
+- [工具](/v1/zh/docs/harness/tool) — `memory_search` / `memory_get` 的参数与调用例
+- [工作区](/v1/zh/docs/harness/workspace) — `MEMORY.md` / `memory/*.md` 在工作区的位置
+- [会话](/v1/zh/docs/harness/session) — native session journal 与记忆提取的关系
+- [架构](/v1/zh/docs/harness/architecture) — CompactionHook / MemoryFlushHook / ToolResultEvictionHook 在生命周期中的位置

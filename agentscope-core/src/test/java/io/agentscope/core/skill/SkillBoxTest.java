@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.skill;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -34,13 +33,18 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Mono;
 
 /**
@@ -68,13 +72,13 @@ class SkillBoxTest {
         @Test
         @DisplayName("Should get skill by id")
         void testGetSkillById() {
-            AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+            AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
             skillBox.registerSkill(skill);
 
             AgentSkill retrieved = skillBox.getSkill(skill.getSkillId());
 
             assertNotNull(retrieved);
-            assertEquals("test_skill", retrieved.getName());
+            assertEquals("test-skill", retrieved.getName());
             assertEquals("Test Skill", retrieved.getDescription());
         }
 
@@ -87,12 +91,12 @@ class SkillBoxTest {
         @Test
         @DisplayName("Should remove skill")
         void testRemoveSkill() {
-            AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+            AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
             skillBox.registerSkill(skill);
 
-            assertTrue(skillBox.exists("test_skill_custom"));
+            assertTrue(skillBox.exists("test-skill_custom"));
 
-            skillBox.removeSkill("test_skill_custom");
+            skillBox.removeSkill("test-skill_custom");
 
             assertFalse(skillBox.exists(skill.getSkillId()));
         }
@@ -102,7 +106,7 @@ class SkillBoxTest {
         void testCheckSkillExists() {
             assertFalse(skillBox.exists("non_existent_skill"));
 
-            AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+            AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
             skillBox.registerSkill(skill);
 
             assertTrue(skillBox.exists(skill.getSkillId()));
@@ -119,7 +123,7 @@ class SkillBoxTest {
         @Test
         @DisplayName("Should create tool group when registering skill")
         void testCreateToolGroupWhenRegisteringSkill() {
-            AgentSkill skill = new AgentSkill("my_skill", "My Skill", "# Content", null);
+            AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
 
             // Before registration, the tool group should not exist
             String toolsGroupName = skill.getSkillId() + "_skill_tools";
@@ -148,7 +152,6 @@ class SkillBoxTest {
         void testThrowExceptionForNullSkillIdInOperations() {
             assertThrows(IllegalArgumentException.class, () -> skillBox.removeSkill(null));
             assertThrows(IllegalArgumentException.class, () -> skillBox.exists(null));
-            assertThrows(IllegalArgumentException.class, () -> skillBox.setSkillActive(null, true));
         }
 
         @Test
@@ -157,7 +160,7 @@ class SkillBoxTest {
             TestToolObject toolObject = new TestToolObject();
             AgentSkill skill =
                     new AgentSkill(
-                            "Tool Object Only Skill",
+                            "tool-object-only-skill",
                             "Skill with only tool object",
                             "# Tool Object",
                             null);
@@ -175,7 +178,7 @@ class SkillBoxTest {
             AgentTool agentTool = createTestTool("agent_tool_only");
             AgentSkill skill =
                     new AgentSkill(
-                            "Agent Tool Only Skill",
+                            "agent-tool-only-skill",
                             "Skill with only agent tool",
                             "# Agent Tool",
                             null);
@@ -192,14 +195,9 @@ class SkillBoxTest {
         void testSuccessfullyRegisterWhenOnlyMcpClientProvided() {
             McpClientWrapper mcpClient = mock(McpClientWrapper.class);
             McpSchema.Tool mockToolInfo =
-                    new McpSchema.Tool(
-                            "mcp_only_tool",
-                            null,
-                            "MCP only tool",
-                            new McpSchema.JsonSchema("object", null, null, null, null, null),
-                            null,
-                            null,
-                            null);
+                    McpSchema.Tool.builder("mcp_only_tool", Map.of("type", "object"))
+                            .description("MCP only tool")
+                            .build();
             when(mcpClient.listTools()).thenReturn(Mono.just(List.of(mockToolInfo)));
             when(mcpClient.isInitialized()).thenReturn(true);
             when(mcpClient.initialize()).thenReturn(Mono.empty());
@@ -207,7 +205,7 @@ class SkillBoxTest {
 
             AgentSkill skill =
                     new AgentSkill(
-                            "MCP Only Skill", "Skill with only MCP client", "# MCP Only", null);
+                            "mcp-only-skill", "Skill with only MCP client", "# MCP Only", null);
 
             // Should not throw - only one registration type
             skillBox.registration().skill(skill).mcpClient(mcpClient).apply();
@@ -229,9 +227,9 @@ class SkillBoxTest {
         @Test
         @DisplayName("Should return all skill IDs when multiple skills are registered")
         void testGetAllSkillIdsWithMultipleSkills() {
-            AgentSkill skill1 = new AgentSkill("skill_one", "Skill One", "# Content 1", null);
-            AgentSkill skill2 = new AgentSkill("skill_two", "Skill Two", "# Content 2", null);
-            AgentSkill skill3 = new AgentSkill("skill_three", "Skill Three", "# Content 3", null);
+            AgentSkill skill1 = new AgentSkill("skill-one", "Skill One", "# Content 1", null);
+            AgentSkill skill2 = new AgentSkill("skill-two", "Skill Two", "# Content 2", null);
+            AgentSkill skill3 = new AgentSkill("skill-three", "Skill Three", "# Content 3", null);
 
             skillBox.registerSkill(skill1);
             skillBox.registerSkill(skill2);
@@ -245,85 +243,73 @@ class SkillBoxTest {
             assertTrue(skillIds.contains(skill2.getSkillId()), "Should contain second skill ID");
             assertTrue(skillIds.contains(skill3.getSkillId()), "Should contain third skill ID");
         }
+    }
 
-        @Test
-        @DisplayName("Should throw exception when setting active state for non-existent skill")
-        void testThrowExceptionForNonExistentSkillInSetActive() {
-            IllegalArgumentException exception =
-                    assertThrows(
-                            IllegalArgumentException.class,
-                            () -> skillBox.setSkillActive("fake_non_existent_skill", true));
-            assertEquals(
-                    "Skill ID does not exist: fake_non_existent_skill", exception.getMessage());
+    @Nested
+    @DisplayName("SkillBox Upload Security Gate Test")
+    class SkillBoxUploadSecurityGate {
+
+        @TempDir Path tempDir;
+
+        private List<Path> filesUnder(Path root) throws IOException {
+            try (Stream<Path> walk = Files.walk(root)) {
+                return walk.filter(Files::isRegularFile).toList();
+            }
         }
 
         @Test
-        @DisplayName("Should update skill active state and automatically sync toolkit")
-        void testSetSkillActiveAutoSyncsState() {
-            AgentSkill skill =
-                    new AgentSkill("test_active_skill", "Test Active Skill", "# Content", null);
-            AgentTool testTool = createTestTool("active_test_tool");
-
-            skillBox.registration().skill(skill).agentTool(testTool).apply();
-
-            String toolsGroupName = skill.getSkillId() + "_skill_tools";
-
-            assertFalse(
-                    skillBox.isSkillActive(skill.getSkillId()),
-                    "Skill should be inactive initially");
-            assertNotNull(toolkit.getToolGroup(toolsGroupName), "ToolGroup should be created");
-            assertFalse(
-                    toolkit.getToolGroup(toolsGroupName).isActive(),
-                    "ToolGroup should be inactive initially");
-
-            skillBox.setSkillActive(skill.getSkillId(), true);
-
-            assertTrue(
-                    skillBox.isSkillActive(skill.getSkillId()),
-                    "Skill logical state should be active now");
-            assertTrue(
-                    toolkit.getToolGroup(toolsGroupName).isActive(),
-                    "ToolGroup should be AUTOMATICALLY activated without explicit sync");
-
-            skillBox.setSkillActive(skill.getSkillId(), false);
-
-            assertFalse(
-                    skillBox.isSkillActive(skill.getSkillId()),
-                    "Skill logical state should be inactive");
-            assertFalse(
-                    toolkit.getToolGroup(toolsGroupName).isActive(),
-                    "ToolGroup should be AUTOMATICALLY deactivated without explicit sync");
-        }
-
-        @Test
-        @DisplayName("Should successfully set active state for a skill without bound tools")
-        void testSetSkillActiveWithoutTools() {
-            AgentSkill purePromptSkill =
+        @DisplayName("Should normalize skillDir before containment check")
+        void testNormalizesSkillDirBeforeContainmentCheck() throws IOException {
+            // Legal name, poisoned source: the skill id "safe_../../.." resolves outside the
+            // target dir (its ".." segments cancel "safe_.." and "skills") and must be caught
+            // by the normalized startsWith(targetDir) check.
+            skillBox.setWorkDir(tempDir);
+            skillBox.registerSkill(
                     new AgentSkill(
-                            "pure_prompt_skill",
-                            "Skill without tools",
-                            "# Just a pure prompt instruction",
-                            null);
-            skillBox.registerSkill(purePromptSkill);
+                            "safe",
+                            "Poisoned source",
+                            "# Content",
+                            Map.of("scripts/run.sh", "echo hi"),
+                            "../../.."));
 
-            String toolsGroupName = purePromptSkill.getSkillId() + "_skill_tools";
-            assertNull(
-                    toolkit.getToolGroup(toolsGroupName),
-                    "ToolGroup should not exist for pure prompt skill");
+            skillBox.uploadSkillFiles();
 
-            assertDoesNotThrow(
-                    () -> skillBox.setSkillActive(purePromptSkill.getSkillId(), true),
-                    "Should not throw exception when activating a non-tool-bind skill");
+            List<Path> files = filesUnder(tempDir);
             assertTrue(
-                    skillBox.isSkillActive(purePromptSkill.getSkillId()),
-                    "Logical state should be active");
+                    files.isEmpty(),
+                    "a skill id that normalizes outside the target dir must not be"
+                            + " materialized, but found: "
+                            + files);
+        }
 
-            assertDoesNotThrow(
-                    () -> skillBox.setSkillActive(purePromptSkill.getSkillId(), false),
-                    "Should not throw exception when deactivating a non-tool-bind skill");
-            assertFalse(
-                    skillBox.isSkillActive(purePromptSkill.getSkillId()),
-                    "Logical state should be inactive");
+        @Test
+        @DisplayName(
+                "Should materialize valid resources under the skill id and block escaping ones")
+        void testMaterializesValidResourcesUnderSkillIdAndBlocksEscapingOnes() throws IOException {
+            skillBox.setWorkDir(tempDir);
+            skillBox.registerSkill(
+                    new AgentSkill(
+                            "safe",
+                            "Mixed resources",
+                            "# Content",
+                            Map.of(
+                                    "ok.txt", "fine",
+                                    "scripts/run.sh", "echo hi",
+                                    "sub/../../escaped.txt", "evil")));
+
+            skillBox.uploadSkillFiles();
+
+            // Valid resources land under skills/<skillId>/ with their content intact; the
+            // escaping resource is the only thing left out of the tree.
+            Path skillDir = tempDir.resolve("skills").resolve("safe_custom");
+            assertEquals("fine", Files.readString(skillDir.resolve("ok.txt")));
+            assertEquals(
+                    "echo hi", Files.readString(skillDir.resolve("scripts").resolve("run.sh")));
+            assertEquals(
+                    List.of(
+                            skillDir.resolve("ok.txt"),
+                            skillDir.resolve("scripts").resolve("run.sh")),
+                    filesUnder(tempDir));
         }
     }
 

@@ -32,8 +32,10 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.skill.SkillResources;
 import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -181,10 +183,27 @@ class SkillRuntimeTest {
         }
 
         @Test
+        void mixedCatalogKeepsInlineSkillWithoutPromisingItAResourceRoot() {
+            HarnessSkillEntry inline = HarnessSkillEntry.of(skill("inline", "workspace"), null);
+            HarnessSkillEntry scripted =
+                    new HarnessSkillEntry(
+                            skill("scripted", "workspace"), null, "/workspace/skills/scripted");
+
+            String out =
+                    new SkillPromptBuilder().render(SkillCatalog.of(List.of(inline, scripted)));
+
+            assertTrue(out.contains("<skill-id>inline_workspace</skill-id>"));
+            assertTrue(out.contains("<files-root>/workspace/skills/scripted</files-root>"));
+            assertFalse(out.contains("<files-root>/workspace/skills/inline</files-root>"));
+            assertTrue(out.contains("Skills without <files-root> provide documentation"));
+            assertFalse(out.contains("Each skill in <available_skills>"));
+        }
+
+        @Test
         void rendersEscapedFilesRootWhenPathContainsSpaces() {
             HarnessSkillEntry e =
                     new HarnessSkillEntry(
-                            skill("V2Ray 代理配置助手", "wkspace"),
+                            skill("v2ray-helper", "wkspace"),
                             null,
                             "/workspace/skills/V2Ray\\ 代理配置助手");
             String out = new SkillPromptBuilder().render(SkillCatalog.of(List.of(e)));
@@ -231,6 +250,57 @@ class SkillRuntimeTest {
             assertFalse(
                     out.contains("<skill-id>other-skill_filesystem-agentscope_skills</skill-id>"));
         }
+
+        @Test
+        void defaultRendersSlimViewWithinByteBudget() {
+            // Rich frontmatter as emitted by a realistic marketplace skill.
+            Map<String, Object> frontmatter = new LinkedHashMap<>();
+            frontmatter.put("name", "data-analysis");
+            frontmatter.put(
+                    "description",
+                    "Analyze CSV datasets and produce summary statistics and charts.");
+            frontmatter.put("license", "MIT");
+            frontmatter.put("version", "1.2.0");
+            frontmatter.put("allowed-tools", List.of("Read", "Grep", "Bash"));
+            AgentSkill rich = new AgentSkill(frontmatter, "# Body", null, "workspace", null);
+            HarnessSkillEntry e =
+                    new HarnessSkillEntry(rich, null, "/workspace/skills/data-analysis");
+
+            String out = new SkillPromptBuilder().render(SkillCatalog.of(List.of(e)));
+
+            // Slim view: name/description/skill-id/files-root only, no frontmatter extras.
+            assertTrue(out.contains("<name>data-analysis</name>"));
+            assertTrue(out.contains("<description>Analyze CSV datasets"));
+            assertTrue(out.contains("<skill-id>data-analysis_workspace</skill-id>"));
+            assertFalse(out.contains("<license>"));
+            assertFalse(out.contains("<version>"));
+            assertFalse(out.contains("<item>"));
+            // Rendered-bytes snapshot: ~1.2k measured; 2k budget guards against regressing to
+            // the full-metadata view (~2.2k for this skill) or header bloat.
+            assertTrue(
+                    out.getBytes(StandardCharsets.UTF_8).length < 2048,
+                    "rendered bytes: " + out.getBytes(StandardCharsets.UTF_8).length);
+        }
+
+        @Test
+        void fullMetadataOptInKeepsRenderingFrontmatter() {
+            Map<String, Object> frontmatter = new LinkedHashMap<>();
+            frontmatter.put("name", "data-analysis");
+            frontmatter.put(
+                    "description",
+                    "Analyze CSV datasets and produce summary statistics and charts.");
+            frontmatter.put("license", "MIT");
+            frontmatter.put("allowed-tools", List.of("Read", "Grep"));
+            AgentSkill rich = new AgentSkill(frontmatter, "# Body", null, "workspace", null);
+            HarnessSkillEntry e = HarnessSkillEntry.of(rich, null);
+
+            String out =
+                    new SkillPromptBuilder(null, null, true).render(SkillCatalog.of(List.of(e)));
+
+            assertTrue(out.contains("<license>MIT</license>"));
+            assertTrue(out.contains("<allowed-tools>"));
+            assertTrue(out.contains("<item>Read</item>"));
+        }
     }
 
     // =========================================================================
@@ -253,6 +323,7 @@ class SkillRuntimeTest {
             String text = textOf(res);
             assertTrue(text.contains("Successfully loaded skill: alpha_workspace"));
             assertTrue(text.contains("# Body line"));
+            assertFalse(text.contains("Files root:"));
         }
 
         @Test

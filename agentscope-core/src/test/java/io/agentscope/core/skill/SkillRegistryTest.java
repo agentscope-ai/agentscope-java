@@ -19,13 +19,19 @@ package io.agentscope.core.skill;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Unit tests for SkillRegistry, including the id-collision tripwire: underscore-free names make
+ * the {@code name_source} id split deterministic, so a same-id overwrite of a different (name,
+ * source) pair can only arrive via caller-supplied keys and is flagged rather than silent.
+ */
 class SkillRegistryTest {
 
     private SkillRegistry registry;
@@ -43,83 +49,64 @@ class SkillRegistryTest {
     @DisplayName("Should register new skill")
     void testRegisterNewSkill() {
         AgentSkill skill = createSkill("test");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
 
-        registry.registerSkill("test_custom", skill, registered);
+        registry.registerSkill("test_custom", skill);
 
         assertTrue(registry.exists("test_custom"));
         assertEquals(skill, registry.getSkill("test_custom"));
-        assertEquals(registered, registry.getRegisteredSkill("test_custom"));
     }
 
     @Test
     @DisplayName("Should register same skill id replaces existing")
     void testRegisterSameSkillIdReplacesExisting() {
         AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
+        registry.registerSkill("test_custom", skill1);
 
-        registry.registerSkill("test_custom", skill1, registered);
-
-        // Register again with same ID - should replace
         AgentSkill skill2 = createSkill("v2");
-        registry.registerSkill("test_custom", skill2, registered);
+        registry.registerSkill("test_custom", skill2);
 
-        // Skill should still exist and be replaced
         assertTrue(registry.exists("test_custom"));
         assertEquals(skill2, registry.getSkill("test_custom"));
     }
 
     @Test
-    @DisplayName("Should set skill active")
-    void testSetSkillActive() {
-        AgentSkill skill = createSkill("test");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill, registered);
+    @DisplayName("Should keep ids unambiguous by rejecting underscore names at construction")
+    void testUnderscoreNamesAreRejectedSoIdsSplitDeterministically() {
+        // Names cannot contain the id separator "_", so "name_source" always splits at the
+        // first underscore and distinct (name, source) pairs cannot share an id.
+        assertThrows(IllegalArgumentException.class, () -> createSkill("a_b"));
+        assertThrows(IllegalArgumentException.class, () -> createSkill("b-c_d"));
 
-        // Initially inactive
-        assertFalse(registered.isActive());
-
-        // Activate
-        registry.setSkillActive("test_custom", true);
-        assertTrue(registered.isActive());
-
-        // Deactivate
-        registry.setSkillActive("test_custom", false);
-        assertFalse(registered.isActive());
+        AgentSkill a = new AgentSkill("a", "desc", "content", null, "b-c");
+        assertEquals("a_b-c", a.getSkillId());
     }
 
     @Test
-    @DisplayName("Should set all skills active")
-    void testSetAllSkillsActive() {
-        AgentSkill skill1 = createSkill("test1");
-        RegisteredSkill registered1 = new RegisteredSkill("test1_custom");
-        registry.registerSkill("test1_custom", skill1, registered1);
+    @DisplayName("Should flag same-id overwrite of a different pair but not normal re-registration")
+    void testMismatchedIdOverwriteIsFlaggedButNormalReregistrationIsNot() {
+        AgentSkill first = new AgentSkill("a", "desc-1", "content-1", null, "custom");
+        AgentSkill updated = new AgentSkill("a", "desc-1", "content-2", null, "custom");
+        AgentSkill differentPair = new AgentSkill("a", "desc-2", "content-2", null, "other");
 
-        AgentSkill skill2 = createSkill("test2");
-        RegisteredSkill registered2 = new RegisteredSkill("test2_custom");
-        registry.registerSkill("test2_custom", skill2, registered2);
+        // Normal re-registration (same name + source, new content) and a free id are not
+        // collisions; only a different (name, source) pair under the same id is.
+        assertFalse(SkillRegistry.isAmbiguousIdCollision(first, updated));
+        assertFalse(SkillRegistry.isAmbiguousIdCollision(null, first));
+        assertTrue(SkillRegistry.isAmbiguousIdCollision(first, differentPair));
 
-        // Activate all
-        registry.setAllSkillsActive(true);
-        assertTrue(registered1.isActive());
-        assertTrue(registered2.isActive());
+        // Through caller-supplied keys the tripwire must still fire and the last skill wins.
+        registry.registerSkill("a_custom", first);
+        registry.registerSkill("a_custom", differentPair);
 
-        // Deactivate all
-        registry.setAllSkillsActive(false);
-        assertFalse(registered1.isActive());
-        assertFalse(registered2.isActive());
+        assertEquals(Set.of("a_custom"), registry.getSkillIds());
+        assertEquals(differentPair, registry.getSkill("a_custom"));
     }
 
     @Test
     @DisplayName("Should get skill ids")
     void testGetSkillIds() {
-        AgentSkill skill1 = createSkill("test1");
-        RegisteredSkill registered1 = new RegisteredSkill("test1_custom");
-        registry.registerSkill("test1_custom", skill1, registered1);
-
-        AgentSkill skill2 = createSkill("test2");
-        RegisteredSkill registered2 = new RegisteredSkill("test2_custom");
-        registry.registerSkill("test2_custom", skill2, registered2);
+        registry.registerSkill("test1_custom", createSkill("test1"));
+        registry.registerSkill("test2_custom", createSkill("test2"));
 
         var skillIds = registry.getSkillIds();
         assertEquals(2, skillIds.size());
@@ -128,28 +115,9 @@ class SkillRegistryTest {
     }
 
     @Test
-    @DisplayName("Should get all registered skills")
-    void testGetAllRegisteredSkills() {
-        AgentSkill skill1 = createSkill("test1");
-        RegisteredSkill registered1 = new RegisteredSkill("test1_custom");
-        registry.registerSkill("test1_custom", skill1, registered1);
-
-        AgentSkill skill2 = createSkill("test2");
-        RegisteredSkill registered2 = new RegisteredSkill("test2_custom");
-        registry.registerSkill("test2_custom", skill2, registered2);
-
-        Map<String, RegisteredSkill> allRegistered = registry.getAllRegisteredSkills();
-        assertEquals(2, allRegistered.size());
-        assertEquals(registered1, allRegistered.get("test1_custom"));
-        assertEquals(registered2, allRegistered.get("test2_custom"));
-    }
-
-    @Test
     @DisplayName("Should exists")
     void testExists() {
-        AgentSkill skill = createSkill("test");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill, registered);
+        registry.registerSkill("test_custom", createSkill("test"));
 
         assertTrue(registry.exists("test_custom"));
         assertFalse(registry.exists("non-existent"));
@@ -158,9 +126,7 @@ class SkillRegistryTest {
     @Test
     @DisplayName("Should remove skill")
     void testRemoveSkill() {
-        AgentSkill skill = createSkill("test");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill, registered);
+        registry.registerSkill("test_custom", createSkill("test"));
 
         registry.removeSkill("test_custom");
 
@@ -173,15 +139,5 @@ class SkillRegistryTest {
     void testRemoveNonExistentSkill() {
         registry.removeSkill("non-existent");
         // Should not throw exception
-    }
-
-    @Test
-    @DisplayName("Should operations on non existent skill")
-    void testOperationsOnNonExistentSkill() {
-        // These should not throw exceptions
-        registry.setSkillActive("non-existent", true);
-
-        assertNull(registry.getSkill("non-existent"));
-        assertNull(registry.getRegisteredSkill("non-existent"));
     }
 }

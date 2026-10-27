@@ -1,4 +1,7 @@
-# DeepSeek 模型
+---
+title: DeepSeek
+en_link: /v2/en/integration/model/deepseek
+---
 
 `agentscope-extensions-model-openai` 通过 OpenAI 兼容模型栈提供 DeepSeek 的一等支持。引入 OpenAI 模型扩展模块后，可以通过 `ModelRegistry` 使用 `deepseek:<model>`。
 
@@ -45,7 +48,7 @@ Model model = ModelRegistry.resolve(
 
 ## 兼容性说明
 
-DeepSeek formatter 会保留 DeepSeek 兼容的消息字段，包括 `system` 角色和支持的 `name` 字段；同时会移除历史轮次中过期的 reasoning 内容，并保留当前工具调用上下文需要的 reasoning 内容。
+DeepSeek 兼容 formatter 会保留 DeepSeek 兼容的消息字段，包括 `system` 角色和支持的 `name` 字段。它会对所有 assistant 轮次完整回传 `reasoning_content`——包括框架合成的、不含思考内容的消息，这类消息会被补齐空字符串，避免携带 `tools` 的请求被 HTTP 400 拒绝。
 
 DeepSeek 稳定端点默认不使用工具 schema 的 `strict` 字段，因此默认 formatter 会省略 `strict`，即使工具注册时开启了严格 schema 校验。结构化输出默认使用 AgentScope 的 fallback 行为；只有在你明确确认兼容端点支持 native structured output 时才需要手动开启。
 

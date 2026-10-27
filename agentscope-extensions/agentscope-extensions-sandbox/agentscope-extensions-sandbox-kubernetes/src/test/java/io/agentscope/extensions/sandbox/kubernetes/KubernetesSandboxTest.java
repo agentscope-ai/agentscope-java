@@ -17,6 +17,8 @@ package io.agentscope.extensions.sandbox.kubernetes;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -33,18 +35,23 @@ import io.agentscope.extensions.sandbox.kubernetes.client.Filesystem;
 import io.agentscope.extensions.sandbox.kubernetes.client.Sandbox;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
 import io.agentscope.harness.agent.sandbox.ExecResult;
+import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.time.Duration;
 import java.util.Base64;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 class KubernetesSandboxTest {
 
     private CommandExecutor commands;
     private Filesystem files;
+    private Sandbox sdkSandbox;
     private KubernetesSandboxState state;
     private KubernetesSandbox sandbox;
 
@@ -52,9 +59,10 @@ class KubernetesSandboxTest {
     void setUp() {
         commands = mock(CommandExecutor.class);
         files = mock(Filesystem.class);
-        Sandbox sdkSandbox = mock(Sandbox.class);
+        sdkSandbox = mock(Sandbox.class);
         when(sdkSandbox.commands()).thenReturn(commands);
         when(sdkSandbox.files()).thenReturn(files);
+        when(sdkSandbox.isActive()).thenReturn(true);
 
         state = new KubernetesSandboxState();
         state.setSessionId("session-1");
@@ -75,7 +83,41 @@ class KubernetesSandboxTest {
         assertEquals("out", result.stdout());
         ArgumentCaptor<String> cmd = ArgumentCaptor.forClass(String.class);
         verify(commands).run(cmd.capture(), eq(Duration.ofSeconds(30)));
-        assertEquals("cd '/workspace' && (echo hi)", cmd.getValue());
+        assertEquals("cd '/workspace' && (\necho hi\n)", cmd.getValue());
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"cat <<'EOF'\nhello\nEOF", "echo hi\n# comment", "echo hi \\", "echo hi"})
+    void doExecKeepsClosingParenOnItsOwnLine(String command) throws Exception {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenReturn(new ExecutionResult("done", "", 0));
+
+        ExecResult result = sandbox.doExec(null, command, 30);
+
+        assertEquals(0, result.exitCode());
+        ArgumentCaptor<String> cmd = ArgumentCaptor.forClass(String.class);
+        verify(commands).run(cmd.capture(), eq(Duration.ofSeconds(30)));
+        String wrapped = cmd.getValue();
+        assertEquals("cd '/workspace' && (\n" + command + "\n)", wrapped);
+        // Closing ')' must be on its own line, not glued to the last payload line.
+        assertTrue(wrapped.endsWith("\n)"));
+        String lastPayloadLine = command.substring(command.lastIndexOf('\n') + 1);
+        assertFalse(wrapped.contains(lastPayloadLine + ")"));
+    }
+
+    @Test
+    void doExecRejectsNullOrBlankCommand() {
+        SandboxException.ExecException nullEx =
+                assertThrows(
+                        SandboxException.ExecException.class, () -> sandbox.doExec(null, null, 30));
+        assertEquals("empty command rejected by KubernetesSandbox", nullEx.getStderr());
+
+        SandboxException.ExecException blankEx =
+                assertThrows(
+                        SandboxException.ExecException.class,
+                        () -> sandbox.doExec(null, "  \t", 30));
+        assertEquals("empty command rejected by KubernetesSandbox", blankEx.getStderr());
     }
 
     @Test
@@ -192,6 +234,50 @@ class KubernetesSandboxTest {
         when(files.read(eq("out/report.pdf"))).thenReturn(content);
 
         assertArrayEquals(content, sandbox.downloadFile("/workspace/out/report.pdf"));
+    }
+
+    @Test
+    void fileTransferFailsClearlyWhenConnectionIsClosed() {
+        when(sdkSandbox.isActive()).thenReturn(false);
+
+        SandboxException uploadFailure =
+                assertThrows(
+                        SandboxException.class,
+                        () -> sandbox.uploadFile("/workspace/src/Foo.java", new byte[] {1}));
+        SandboxException downloadFailure =
+                assertThrows(
+                        SandboxException.class,
+                        () -> sandbox.downloadFile("/workspace/src/Foo.java"));
+
+        assertEquals("Kubernetes sandbox connection has been closed", uploadFailure.getMessage());
+        assertEquals("Kubernetes sandbox connection has been closed", downloadFailure.getMessage());
+        assertEquals(SandboxErrorCode.SANDBOX_CONNECTION_CLOSED, uploadFailure.getErrorCode());
+        assertEquals(SandboxErrorCode.SANDBOX_CONNECTION_CLOSED, downloadFailure.getErrorCode());
+        verify(commands, never()).run(anyString());
+        verify(files, never()).read(anyString());
+        verify(files, never()).write(anyString(), org.mockito.ArgumentMatchers.<byte[]>any());
+    }
+
+    @Test
+    void operationalEntryPointsFailClearlyWhenConnectionIsClosed() {
+        when(sdkSandbox.isActive()).thenReturn(false);
+
+        SandboxException execFailure =
+                assertThrows(SandboxException.class, () -> sandbox.doExec(null, "echo hi", 30));
+        SandboxException persistFailure =
+                assertThrows(SandboxException.class, sandbox::doPersistWorkspace);
+        SandboxException hydrateFailure =
+                assertThrows(
+                        SandboxException.class,
+                        () -> sandbox.doHydrateWorkspace(new ByteArrayInputStream(new byte[] {1})));
+
+        assertEquals(SandboxErrorCode.SANDBOX_CONNECTION_CLOSED, execFailure.getErrorCode());
+        assertEquals(SandboxErrorCode.SANDBOX_CONNECTION_CLOSED, persistFailure.getErrorCode());
+        assertEquals(SandboxErrorCode.SANDBOX_CONNECTION_CLOSED, hydrateFailure.getErrorCode());
+        verify(commands, never()).run(anyString());
+        verify(commands, never()).run(anyString(), any(Duration.class));
+        verify(files, never()).read(anyString());
+        verify(files, never()).write(anyString(), org.mockito.ArgumentMatchers.<byte[]>any());
     }
 
     @Test

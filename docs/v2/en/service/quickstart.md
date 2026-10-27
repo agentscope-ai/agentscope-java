@@ -1,50 +1,75 @@
-# Docker quickstart
+---
+title: "Deploy AgentScope Service"
+description: "Start AgentScope Service with Docker Compose, sign in to the console, and run your first Agent."
+zh_link: /v2/zh/service/quickstart
+---
 
-Start the complete Service, sign in, then run your first Agent Session.
+Start AgentScope Service locally with Docker Compose, then create and use an Agent in your browser. This guide uses the published `2.1.0-BETA1` prerelease.
 
-## Prerequisites
+Prepare Docker Engine or Docker Desktop with Compose v2, Bash, curl, OpenSSL, and a DashScope API key. If your team already provides Service, use the address and account supplied by your administrator and start at step 3.
 
-Install Docker Engine or Docker Desktop, Compose v2 and OpenSSL. Published-image deployment does not require Maven, Go or Node.js. Model execution requires your own model credentials.
+<span id="1-start"></span>
+
+<span id="prepare"></span>
+<span id="1-initialize-deployment-and-configure-a-model"></span>
+
+## 1. Download and configure
+
+Download the Compose bundle, extract it, and generate the configuration file:
 
 ```bash
-docker info
-docker compose version
-```
-
-Download `agentscope-service-VERSION-compose.tar.gz` and `SHA256SUMS` from the selected release. Verify the archive against the published checksum. Replace `VERSION` and `REGISTRY/NAMESPACE` below with the values from that release.
-
-## 1. Initialize and start
-
-```bash
-tar -xzf agentscope-service-VERSION-compose.tar.gz
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/agentscope-service-2.1.0-BETA1-compose.tar.gz
+tar -xzf agentscope-service-2.1.0-BETA1-compose.tar.gz
 cd agentscope-service
-./init-env.sh VERSION REGISTRY/NAMESPACE
-docker compose pull
+./init-env.sh 2.1.0-BETA1 sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope
+```
+
+Edit the generated `.env` to supply your DashScope API key and enable tool execution for local evaluation:
+
+```dotenv
+DASHSCOPE_API_KEY=YOUR_DASHSCOPE_API_KEY
+BUILDER_ALLOW_LOCAL_ENVIRONMENT=true
+```
+
+Local tools run inside the Dataplane container. See [Agent configuration](/v2/en/service/managed-agent-configuration) and [Environments](/v2/en/service/environments) for other models and execution environments.
+
+<span id="2-start-and-sign-in"></span>
+
+## 2. Start Service
+
+```bash
 docker compose up -d --wait --wait-timeout 600
 ```
 
-The initializer creates database, JWT, internal-token, Vault and administrator secrets in a mode-`600` `.env` file. Running it again preserves existing configuration. Inspect this file locally and keep it out of Git.
+Compose pulls the images and starts the database and all Service components. Once the command completes successfully, open [http://localhost:18080](http://localhost:18080).
 
-## 2. Sign in and check readiness
+If startup fails, run `docker compose ps -a` to check status and `docker compose logs --tail=100` to inspect errors.
 
-```bash
-docker compose ps
-curl -fsS http://localhost:18080/actuator/health
-```
+<span id="2-sign-in"></span>
+<span id="3-configure-execution"></span>
 
-Open `http://localhost:18080`. Use `admin` and the `AISTIO_BOOTSTRAP_PASSWORD` in `.env`, then change the password in Profile. The release deployment does not create demo users. Bootstrap credentials apply only to an empty database; restarting does not reset accounts.
+## 3. Sign in and start using Service
 
-## 3. Configure execution
+On a new deployment, sign in as **`admin`** with the value of **`CONTROL_PLANE_BOOTSTRAP_PASSWORD`** from `.env`. Change your password in **Profile** after signing in.
 
-For a trusted local evaluation, set `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true` in `.env`, add model credentials such as `DASHSCOPE_API_KEY`, and repeat the startup command. Local tools execute inside the Dataplane container.
+Open **Design → Agents → New agent**, enter a name (for example, `notes-assistant`) and **Instructions**, select **AgentScope Managed** as the **Runtime**, and click **Create & open agent**. Leave **Model** empty to use the default model configured above.
 
-For other installations, keep Local disabled and configure a Sandbox or Self-hosted Environment in the console. Continue with [Your first Session](first-session.md).
+In the Agent detail page, open **Connections → Session API**, enter a **Task message** (for example, “Turn these meeting notes into action items: Li will finish the installation guide on Friday; review it next Monday”), and click **Create Session and submit**. For your first test, leave **Application API key** empty to use your signed-in identity. Wait for the Turn to complete and inspect the response to verify the model call. See the [Visual Console guide](/v2/en/service/console/index) for the full interface walkthrough.
 
-## Stop and resume
+<span id="self-hosting"></span>
+<span id="three-deployment-boundaries"></span>
+<span id="choose-a-deployment-path"></span>
+<span id="hand-over-a-usable-platform"></span>
+<span id="operate-the-platform"></span>
 
-```bash
-docker compose down
-docker compose up -d --wait --wait-timeout 600
-```
+<span id="3-prepare-api-identity-and-namespace"></span>
+<span id="4-prepare-tool-execution"></span>
+<span id="5-check-readiness"></span>
+<span id="deployment-boundaries-and-production-planning"></span>
+<span id="network-surfaces"></span>
+<span id="enable-remote-access"></span>
+<span id="persist-data"></span>
+<span id="change-configuration-or-version"></span>
+<span id="stop-resume-and-diagnose"></span>
 
-Database, workspace and artifact volumes remain available. `down -v` deletes volumes and is not a normal stop command. See [Docker deployment](docker.md) and [Operations](operations.md) for remote access and upgrades.
+Next, [run your first Managed Agent through the API](/v2/en/service/create-managed-agent) to verify file tools and prepare application integration. See [production installation](/v2/en/service/kubernetes#self-hosting) for deployment planning, networking, and remote access, and [operations](/v2/en/service/operations#compose-operations) for persistence, upgrades, and backups.

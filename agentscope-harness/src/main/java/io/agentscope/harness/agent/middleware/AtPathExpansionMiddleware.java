@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.middleware;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -30,9 +31,11 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -85,10 +88,27 @@ public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
     /** Cap the bytes pulled in per attached file so a stray {@code @log} doesn't blow context. */
     private static final int MAX_ATTACHED_LINES = 1000;
 
+    /** Closing tag of an attachment block; also the string neutralised inside attached content. */
+    private static final String ATTACHED_FILE_CLOSE_TAG = "</attached_file>";
+
+    /**
+     * Lead-in for the appended preview block; states up front that previews may be truncated so
+     * the model reads the original path when completeness matters.
+     */
+    private static final String ATTACHMENT_LEAD_IN =
+            "Attached file previews follow; previews may be truncated - read the original path"
+                    + " with file tools when complete content matters.";
+
     private final WorkspaceManager workspaceManager;
 
     public AtPathExpansionMiddleware(WorkspaceManager workspaceManager) {
         this.workspaceManager = workspaceManager;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
     }
 
     @Override
@@ -105,13 +125,14 @@ public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
 
         List<Msg> rewritten = new ArrayList<>(input.msgs().size());
+        int[] remainingChars = {64000};
         boolean changed = false;
         for (Msg msg : input.msgs()) {
             if (msg.getRole() != MsgRole.USER) {
                 rewritten.add(msg);
                 continue;
             }
-            Msg expanded = expand(msg, fs, rc);
+            Msg expanded = expand(msg, fs, rc, remainingChars);
             if (expanded != msg) {
                 changed = true;
             }
@@ -131,7 +152,7 @@ public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
         return true;
     }
 
-    private Msg expand(Msg msg, AbstractFilesystem fs, RuntimeContext rc) {
+    private Msg expand(Msg msg, AbstractFilesystem fs, RuntimeContext rc, int[] remainingChars) {
         String text = msg.getTextContent();
         if (text == null || text.indexOf('@') < 0) {
             return msg;
@@ -140,12 +161,21 @@ public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
         Matcher m = AT_PATH.matcher(text);
         Map<String, String> attached = new LinkedHashMap<>();
         while (m.find()) {
+            if (remainingChars[0] <= 0) break;
             String ref = m.group("path");
             if (attached.containsKey(ref)) {
                 continue;
             }
             String content = tryRead(fs, rc, ref);
             if (content != null) {
+                if (content.length() > remainingChars[0]) {
+                    content =
+                            content.substring(0, remainingChars[0])
+                                    + "\n"
+                                    + "[Attachment preview truncated; read the original path for"
+                                    + " more.]";
+                }
+                remainingChars[0] = Math.max(0, remainingChars[0] - content.length());
                 attached.put(ref, content);
             }
         }
@@ -153,16 +183,21 @@ public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
             return msg;
         }
 
-        StringBuilder sb = new StringBuilder(text);
+        StringBuilder sb = new StringBuilder(ATTACHMENT_LEAD_IN);
         for (Map.Entry<String, String> e : attached.entrySet()) {
+            String content = neutralizeCloseTag(e.getValue());
             sb.append("\n\n<attached_file path=\"")
                     .append(e.getKey())
                     .append("\">\n")
-                    .append(e.getValue())
-                    .append(e.getValue().endsWith("\n") ? "" : "\n")
-                    .append("</attached_file>");
+                    .append(content)
+                    .append(content.endsWith("\n") ? "" : "\n")
+                    .append(ATTACHED_FILE_CLOSE_TAG);
         }
-        return msg.withContent(List.of(TextBlock.builder().text(sb.toString()).build()));
+        // Append previews as a new block instead of replacing content: image and other non-text
+        // blocks in the original message must survive expansion.
+        List<ContentBlock> expandedContent = new ArrayList<>(msg.getContent());
+        expandedContent.add(TextBlock.builder().text(sb.toString()).build());
+        return msg.withContent(expandedContent);
     }
 
     private String tryRead(AbstractFilesystem fs, RuntimeContext rc, String ref) {
@@ -176,6 +211,13 @@ public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
                 if ("base64".equals(r.fileData().encoding())) {
                     return null;
                 }
+                if (countLines(content) >= MAX_ATTACHED_LINES && hasMoreLines(fs, rc, resolved)) {
+                    content =
+                            content
+                                    + "\n[Attachment preview limited to the first "
+                                    + MAX_ATTACHED_LINES
+                                    + " lines; read the original path for more.]";
+                }
                 return content;
             }
         } catch (SecurityException e) {
@@ -184,6 +226,32 @@ public class AtPathExpansionMiddleware implements HarnessRuntimeMiddleware {
             log.debug("@-path expansion failed for {}: {}", ref, e.getMessage());
         }
         return null;
+    }
+
+    /** Neutralises the closing tag inside attached content so previews cannot forge block ends. */
+    private static String neutralizeCloseTag(String content) {
+        return content.replace(ATTACHED_FILE_CLOSE_TAG, "<\\/attached_file>");
+    }
+
+    /**
+     * Probes two lines past the cap so a blank first omitted line cannot hide later content.
+     * An empty read at EOF (including a lone trailing newline in the local filesystem) does not
+     * count as truncated content; omitted blank lines still do.
+     */
+    private boolean hasMoreLines(AbstractFilesystem fs, RuntimeContext rc, String resolved) {
+        try {
+            ReadResult probe = fs.read(rc, resolved, MAX_ATTACHED_LINES, 2);
+            return probe.isSuccess()
+                    && probe.fileData() != null
+                    && probe.fileData().content() != null
+                    && !probe.fileData().content().isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static int countLines(String content) {
+        return content.split("\n", -1).length;
     }
 
     private static String expandHome(String ref) {

@@ -21,6 +21,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openai.dto.OpenAIChoice;
@@ -83,11 +84,70 @@ public class OpenAIResponseParser {
      * @return the cached prompt token count or 0
      */
     private long getSafeCachedTokens(OpenAIUsage usage) {
+        if (usage != null && usage.getPromptCacheHitTokens() != null) {
+            return usage.getPromptCacheHitTokens();
+        }
         if (usage == null || usage.getPromptTokensDetails() == null) {
             return 0;
         }
         Integer cachedTokens = usage.getPromptTokensDetails().getCachedTokens();
         return cachedTokens != null ? cachedTokens : 0;
+    }
+
+    /**
+     * Safely get cache-creation token count from usage, returning 0 if not reported.
+     *
+     * <p>Cache creation tokens are a subset of the prompt tokens ({@code
+     * prompt_tokens_details.cache_write_tokens}).
+     *
+     * @param usage the OpenAI usage object (may be null)
+     * @return the cache-creation token count or 0
+     */
+    private long getSafeCacheCreationTokens(OpenAIUsage usage) {
+        if (usage == null || usage.getPromptTokensDetails() == null) {
+            return 0;
+        }
+        Integer cacheWriteTokens = usage.getPromptTokensDetails().getCacheWriteTokens();
+        return cacheWriteTokens != null ? cacheWriteTokens : 0;
+    }
+
+    /**
+     * Safely get reasoning token count from usage, returning 0 if not reported.
+     *
+     * <p>Reasoning tokens are a subset of the completion tokens ({@code
+     * completion_tokens_details.reasoning_tokens}).
+     *
+     * @param usage the OpenAI usage object (may be null)
+     * @return the reasoning token count or 0
+     */
+    private long getSafeReasoningTokens(OpenAIUsage usage) {
+        if (usage == null || usage.getCompletionTokensDetails() == null) {
+            return 0;
+        }
+        Integer reasoningTokens = usage.getCompletionTokensDetails().getReasoningTokens();
+        return reasoningTokens != null ? reasoningTokens : 0;
+    }
+
+    /**
+     * Parses OpenAI usage information into AgentScope ChatUsage.
+     *
+     * @param usage the OpenAI usage object (may be null)
+     * @param startTime request start time for calculating duration
+     * @return AgentScope ChatUsage, or null when usage is absent
+     */
+    private ChatUsage parseUsage(OpenAIUsage usage, Instant startTime) {
+        if (usage == null) {
+            return null;
+        }
+
+        return ChatUsage.builder()
+                .inputTokens((int) getSafePromptTokens(usage))
+                .outputTokens((int) getSafeCompletionTokens(usage))
+                .cachedTokens((int) getSafeCachedTokens(usage))
+                .cacheCreationTokens((int) getSafeCacheCreationTokens(usage))
+                .reasoningTokens((int) getSafeReasoningTokens(usage))
+                .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
+                .build();
     }
 
     public OpenAIResponseParser() {}
@@ -121,18 +181,7 @@ public class OpenAIResponseParser {
 
         try {
             // Parse usage information
-            if (response.getUsage() != null) {
-                OpenAIUsage openAIUsage = response.getUsage();
-                usage =
-                        ChatUsage.builder()
-                                .inputTokens((int) getSafePromptTokens(openAIUsage))
-                                .outputTokens((int) getSafeCompletionTokens(openAIUsage))
-                                .cachedTokens((int) getSafeCachedTokens(openAIUsage))
-                                .time(
-                                        Duration.between(startTime, Instant.now()).toMillis()
-                                                / 1000.0)
-                                .build();
-            }
+            usage = parseUsage(response.getUsage(), startTime);
 
             // Parse response content
             OpenAIChoice choice = response.getFirstChoice();
@@ -149,15 +198,11 @@ public class OpenAIResponseParser {
                     // Parse reasoning details (OpenRouter/Gemini specific)
                     // Collect signatures and text content from reasoning_details
                     Map<String, String> reasoningSignatures = new HashMap<>();
-                    Map<String, OpenAIReasoningDetail> reasoningDetailMap = new HashMap<>();
                     List<OpenAIReasoningDetail> reasoningDetails = message.getReasoningDetails();
                     StringBuilder reasoningTextBuilder = new StringBuilder();
 
                     if (reasoningDetails != null) {
                         for (OpenAIReasoningDetail detail : reasoningDetails) {
-                            if (detail.getId() != null) {
-                                reasoningDetailMap.put(detail.getId(), detail);
-                            }
                             if ("reasoning.encrypted".equals(detail.getType())
                                     && detail.getData() != null) {
                                 // Just collect signature, don't create ToolUseBlock
@@ -226,9 +271,8 @@ public class OpenAIResponseParser {
                                         thoughtSignature = reasoningSignatures.get(toolCallId);
                                     }
 
-                                    // 防御性检查：确保必要字段不为null
-                                    if (name == null) {
-                                        log.warn("Tool call has null name, skipping");
+                                    if (!ToolValidator.requireNonBlank(
+                                            "OpenAI", name, toolCallId)) {
                                         continue;
                                     }
                                     if (toolCallId == null) {
@@ -274,13 +318,6 @@ public class OpenAIResponseParser {
                                         metadata.put(
                                                 ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
                                                 thoughtSignature);
-                                    }
-                                    // Store full reasoning detail for OpenRouter Gemini models
-                                    if (toolCallId != null
-                                            && reasoningDetailMap.containsKey(toolCallId)) {
-                                        metadata.put(
-                                                "reasoningDetail",
-                                                reasoningDetailMap.get(toolCallId));
                                     }
 
                                     contentBlocks.add(
@@ -359,24 +396,7 @@ public class OpenAIResponseParser {
 
         try {
             // Parse usage information (usually only in the last chunk)
-            if (response.getUsage() != null) {
-                OpenAIUsage openAIUsage = response.getUsage();
-                usage =
-                        ChatUsage.builder()
-                                .inputTokens(
-                                        openAIUsage.getPromptTokens() != null
-                                                ? openAIUsage.getPromptTokens()
-                                                : 0)
-                                .outputTokens(
-                                        openAIUsage.getCompletionTokens() != null
-                                                ? openAIUsage.getCompletionTokens()
-                                                : 0)
-                                .cachedTokens((int) getSafeCachedTokens(openAIUsage))
-                                .time(
-                                        Duration.between(startTime, Instant.now()).toMillis()
-                                                / 1000.0)
-                                .build();
-            }
+            usage = parseUsage(response.getUsage(), startTime);
 
             // Parse chunk content
             OpenAIChoice choice = response.getFirstChoice();
@@ -493,9 +513,6 @@ public class OpenAIResponseParser {
                                     if (toolCallId == null) {
                                         toolCallId = "streaming_" + System.currentTimeMillis();
                                     }
-                                    if (toolName == null) {
-                                        toolName = "";
-                                    }
                                     if (arguments == null) {
                                         arguments = "";
                                     }
@@ -510,7 +527,9 @@ public class OpenAIResponseParser {
 
                                     // For streaming, we get partial tool calls that need to be
                                     // accumulated
-                                    if (!toolName.isEmpty()) {
+                                    if (toolName != null
+                                            && ToolValidator.requireNonBlank(
+                                                    "OpenAI", toolName, toolCallId)) {
                                         // First chunk with complete metadata (has tool name)
                                         Map<String, Object> argsMap = new HashMap<>();
 

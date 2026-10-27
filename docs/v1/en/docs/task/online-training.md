@@ -1,4 +1,7 @@
-# AgentScope Training Extension
+---
+title: Online Training
+zh_link: /v1/zh/docs/task/online-training
+---
 
 ## Overview
 

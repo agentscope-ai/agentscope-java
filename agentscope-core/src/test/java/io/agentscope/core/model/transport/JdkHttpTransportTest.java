@@ -18,6 +18,7 @@ package io.agentscope.core.model.transport;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -73,9 +74,10 @@ class JdkHttpTransportTest {
 
         HttpTransportConfig config =
                 HttpTransportConfig.builder()
-                        .connectTimeout(Duration.ofSeconds(5))
-                        .readTimeout(Duration.ofSeconds(2)) // Global timeout for sync calls
-                        .responseTimeout(Duration.ofSeconds(2)) // First emitted chunk for streaming
+                        .connectTimeout(Duration.ofSeconds(15))
+                        .readTimeout(Duration.ofSeconds(10)) // Global timeout for sync calls
+                        .responseTimeout(
+                                Duration.ofSeconds(10)) // First emitted chunk for streaming
                         .streamIdleTimeout(Duration.ofSeconds(1)) // Inter-token gap for streaming
                         .build();
         transport = new JdkHttpTransport(config);
@@ -272,7 +274,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 500)
+                                        && Integer.valueOf(500)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode()))
                 .verify();
     }
 
@@ -711,7 +716,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 401
+                                        && Integer.valueOf(401)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode())
                                         && ((HttpTransportException) e)
                                                 .getResponseBody()
                                                 .contains("unauthorized"))
@@ -734,7 +742,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 429)
+                                        && Integer.valueOf(429)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode()))
                 .verify();
     }
 
@@ -880,7 +891,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 400
+                                        && Integer.valueOf(400)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode())
                                         && ((HttpTransportException) e)
                                                 .getResponseBody()
                                                 .contains("detailed error message")
@@ -909,7 +923,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 403
+                                        && Integer.valueOf(403)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode())
                                         && ((HttpTransportException) e)
                                                 .getResponseBody()
                                                 .contains("forbidden"))
@@ -932,7 +949,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 502
+                                        && Integer.valueOf(502)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode())
                                         && ((HttpTransportException) e)
                                                 .getResponseBody()
                                                 .contains("bad gateway"))
@@ -955,7 +975,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 503
+                                        && Integer.valueOf(503)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode())
                                         && ((HttpTransportException) e)
                                                 .getResponseBody()
                                                 .contains("service unavailable"))
@@ -977,7 +1000,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 500)
+                                        && Integer.valueOf(500)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode()))
                 .verify();
     }
 
@@ -1079,12 +1105,120 @@ class JdkHttpTransportTest {
                 HttpTransportConfig.builder().httpVersion(HttpVersion.HTTP_1_1).build();
         JdkHttpTransport jdkHttpTransport = JdkHttpTransport.builder().config(defaults).build();
         JdkHttpTransport jdkHttpTransport2 = JdkHttpTransport.builder().config(config).build();
-        assertSame(HttpVersion.HTTP_2, defaults.getHttpVersion());
-        assertEquals(HttpClient.Version.HTTP_2, defaults.getHttpVersion().toJdkHttpVersion());
+        assertNull(defaults.getHttpVersion());
         assertSame(HttpVersion.HTTP_1_1, config.getHttpVersion());
         assertEquals(HttpClient.Version.HTTP_1_1, config.getHttpVersion().toJdkHttpVersion());
+        assertEquals(HttpClient.Version.HTTP_2, HttpVersion.HTTP_2.toJdkHttpVersion());
         assertNotNull(jdkHttpTransport);
         assertNotNull(jdkHttpTransport2);
+    }
+
+    @Test
+    void testResolveRequestVersion() {
+        // auto: cleartext → HTTP/1.1 (no h2c upgrade attempt), https → null (inherit client
+        // version), missing scheme → treated as cleartext
+        assertEquals(
+                HttpClient.Version.HTTP_1_1,
+                JdkHttpTransport.resolveRequestVersion(
+                        null, URI.create("http://localhost:8080/v1/chat/completions")));
+        assertNull(
+                JdkHttpTransport.resolveRequestVersion(
+                        null, URI.create("https://api.example.com/v1/chat/completions")));
+        assertEquals(
+                HttpClient.Version.HTTP_1_1,
+                JdkHttpTransport.resolveRequestVersion(null, URI.create("localhost/v1")));
+        // explicit values win verbatim, including HTTP_2 on cleartext as an h2c opt-in
+        assertEquals(
+                HttpClient.Version.HTTP_1_1,
+                JdkHttpTransport.resolveRequestVersion(
+                        HttpVersion.HTTP_1_1, URI.create("https://api.example.com/v1")));
+        assertEquals(
+                HttpClient.Version.HTTP_1_1,
+                JdkHttpTransport.resolveRequestVersion(
+                        HttpVersion.HTTP_1_1, URI.create("http://localhost:8080/v1")));
+        assertEquals(
+                HttpClient.Version.HTTP_2,
+                JdkHttpTransport.resolveRequestVersion(
+                        HttpVersion.HTTP_2, URI.create("http://localhost:8080/v1")));
+        assertEquals(
+                HttpClient.Version.HTTP_2,
+                JdkHttpTransport.resolveRequestVersion(
+                        HttpVersion.HTTP_2, URI.create("https://api.example.com/v1")));
+    }
+
+    @Test
+    void testRequestHttpVersionAppliedPerRequest() {
+        // default config: cleartext → HTTP/1.1, https → inherit the client-level version
+        assertEquals(
+                Optional.of(HttpClient.Version.HTTP_1_1),
+                executeAndCaptureVersion(
+                        HttpTransportConfig.defaults(),
+                        "http://localhost:8080/v1/chat/completions"));
+        assertEquals(
+                Optional.empty(),
+                executeAndCaptureVersion(
+                        HttpTransportConfig.defaults(),
+                        "https://api.example.com/v1/chat/completions"));
+        // explicit HTTP_2 must win on the request even for an injected, non-reconfigurable client
+        assertEquals(
+                Optional.of(HttpClient.Version.HTTP_2),
+                executeAndCaptureVersion(
+                        HttpTransportConfig.builder().httpVersion(HttpVersion.HTTP_2).build(),
+                        "http://localhost:8080/v1/chat/completions"));
+    }
+
+    /** Executes a POST via a capturing client and returns the built request's version. */
+    private Optional<HttpClient.Version> executeAndCaptureVersion(
+            HttpTransportConfig config, String url) {
+        CapturingHttpClient capturingClient = new CapturingHttpClient();
+        JdkHttpTransport transport = new JdkHttpTransport(capturingClient, config);
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(url)
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        .body("{}")
+                        .build();
+        transport.execute(request);
+        return capturingClient.capturedRequest().version();
+    }
+
+    @Test
+    void testCleartextRequestAvoidsH2cUpgradeOnTheWire() throws Exception {
+        // #1121 regression: the default must not attempt an h2c upgrade on cleartext URLs
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"ok\":true}"));
+
+        transport.execute(
+                HttpRequest.builder()
+                        .url(mockServer.url("/v1/chat/completions").toString())
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        .body("{\"input\": \"test\"}")
+                        .build());
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertNull(recorded.getHeader("Upgrade"));
+        String connection = recorded.getHeader("Connection");
+        assertTrue(connection == null || !connection.contains("HTTP2-Settings"));
+        assertEquals("{\"input\": \"test\"}", recorded.getBody().readUtf8());
+
+        // contrast: explicit HTTP_2 does put the h2c upgrade on the wire
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"ok\":true}"));
+        JdkHttpTransport h2cTransport =
+                new JdkHttpTransport(
+                        HttpTransportConfig.builder().httpVersion(HttpVersion.HTTP_2).build());
+        try {
+            h2cTransport.execute(
+                    HttpRequest.builder()
+                            .url(mockServer.url("/v1/chat/completions").toString())
+                            .method("POST")
+                            .header("Content-Type", "application/json")
+                            .body("{}")
+                            .build());
+        } finally {
+            h2cTransport.close();
+        }
+        assertEquals("h2c", mockServer.takeRequest().getHeader("Upgrade"));
     }
 
     @Test
@@ -1131,26 +1265,34 @@ class JdkHttpTransportTest {
     void testStreamResponseTimeout() {
         // Test Timeout Strategy 1:
         // Delay headers by 3 seconds, which exceeds the configured responseTimeout (2 seconds).
-        mockServer.enqueue(
-                new MockResponse()
-                        .setResponseCode(200)
-                        .setBody("data: {\"id\":\"1\"}\n\ndata: [DONE]\n\n")
-                        .setHeader("Content-Type", "text/event-stream")
-                        .setHeadersDelay(3, TimeUnit.SECONDS));
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder().responseTimeout(Duration.ofSeconds(2)).build();
+        JdkHttpTransport customTransport = new JdkHttpTransport(customConfig);
 
-        HttpRequest request =
-                HttpRequest.builder()
-                        .url(mockServer.url("/ttft-timeout").toString())
-                        .method("POST")
-                        .body("{}")
-                        .build();
+        try {
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setBody("data: {\"id\":\"1\"}\n\ndata: [DONE]\n\n")
+                            .setHeader("Content-Type", "text/event-stream")
+                            .setHeadersDelay(3, TimeUnit.SECONDS));
 
-        StepVerifier.create(transport.stream(request))
-                .expectErrorMatches(
-                        e ->
-                                e instanceof HttpTransportException
-                                        && e.getMessage().contains("Stream timeout"))
-                .verify(Duration.ofSeconds(5));
+            HttpRequest request =
+                    HttpRequest.builder()
+                            .url(mockServer.url("/ttft-timeout").toString())
+                            .method("POST")
+                            .body("{}")
+                            .build();
+
+            StepVerifier.create(customTransport.stream(request))
+                    .expectErrorMatches(
+                            e ->
+                                    e instanceof HttpTransportException
+                                            && e.getMessage().contains("Stream timeout"))
+                    .verify(Duration.ofSeconds(5));
+        } finally {
+            customTransport.close();
+        }
     }
 
     @Test
@@ -1223,34 +1365,163 @@ class JdkHttpTransportTest {
     @Test
     void testStreamSurvivesGlobalReadTimeout() {
         // Verify that streaming requests are NOT killed by the global readTimeout.
-        // readTimeout is 2s, but we will make the stream take roughly 3s overall.
-        // We throttle 10 bytes every 500ms. Inter-token gap is < 1s, so streamIdleTimeout is
-        // respected.
-        String sseBody =
-                "data: 1\n\n"
-                        + "data: 2\n\n"
-                        + "data: 3\n\n"
-                        + "data: 4\n\n"
-                        + "data: 5\n\n"
-                        + "data: [DONE]\n\n";
-
-        mockServer.enqueue(
-                new MockResponse()
-                        .setResponseCode(200)
-                        .setHeader("Content-Type", "text/event-stream")
-                        .setBody(sseBody)
-                        .throttleBody(10, 500, TimeUnit.MILLISECONDS));
-
-        HttpRequest request =
-                HttpRequest.builder()
-                        .url(mockServer.url("/survive-timeout").toString())
-                        .method("POST")
-                        .body("{}")
+        // The custom config keeps readTimeout at 2s, but we will make the stream take roughly
+        // 3s overall. We throttle 10 bytes every 500ms. Inter-token gap is < 1s, so
+        // streamIdleTimeout is respected.
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder()
+                        .readTimeout(Duration.ofSeconds(2))
+                        .streamIdleTimeout(Duration.ofSeconds(1))
                         .build();
+        JdkHttpTransport customTransport = new JdkHttpTransport(customConfig);
 
-        StepVerifier.create(transport.stream(request))
-                .expectNextCount(5) // Should successfully receive all 5 data chunks
-                .verifyComplete();
+        try {
+            String sseBody =
+                    "data: 1\n\n"
+                            + "data: 2\n\n"
+                            + "data: 3\n\n"
+                            + "data: 4\n\n"
+                            + "data: 5\n\n"
+                            + "data: [DONE]\n\n";
+
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setHeader("Content-Type", "text/event-stream")
+                            .setBody(sseBody)
+                            .throttleBody(10, 500, TimeUnit.MILLISECONDS));
+
+            HttpRequest request =
+                    HttpRequest.builder()
+                            .url(mockServer.url("/survive-timeout").toString())
+                            .method("POST")
+                            .body("{}")
+                            .build();
+
+            StepVerifier.create(customTransport.stream(request))
+                    .expectNextCount(5) // Should successfully receive all 5 data chunks
+                    .verifyComplete();
+        } finally {
+            customTransport.close();
+        }
+    }
+
+    /** Records the built JDK request for assertions. */
+    private static class CapturingHttpClient extends HttpClient {
+        private final AtomicReference<java.net.http.HttpRequest> capturedRequest =
+                new AtomicReference<>();
+
+        java.net.http.HttpRequest capturedRequest() {
+            return capturedRequest.get();
+        }
+
+        @Override
+        public Optional<CookieHandler> cookieHandler() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<Duration> connectTimeout() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Redirect followRedirects() {
+            return Redirect.NEVER;
+        }
+
+        @Override
+        public Optional<ProxySelector> proxy() {
+            return Optional.empty();
+        }
+
+        @Override
+        public SSLContext sslContext() {
+            return null;
+        }
+
+        @Override
+        public SSLParameters sslParameters() {
+            return new SSLParameters();
+        }
+
+        @Override
+        public Optional<Authenticator> authenticator() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Version version() {
+            return Version.HTTP_2;
+        }
+
+        @Override
+        public Optional<Executor> executor() {
+            return Optional.empty();
+        }
+
+        @Override
+        public <T> java.net.http.HttpResponse<T> send(
+                java.net.http.HttpRequest request,
+                java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler) {
+            capturedRequest.set(request);
+            return new java.net.http.HttpResponse<>() {
+                @Override
+                public int statusCode() {
+                    return 200;
+                }
+
+                @Override
+                public java.net.http.HttpRequest request() {
+                    return request;
+                }
+
+                @Override
+                public Optional<java.net.http.HttpResponse<T>> previousResponse() {
+                    return Optional.empty();
+                }
+
+                @Override
+                public java.net.http.HttpHeaders headers() {
+                    return java.net.http.HttpHeaders.of(Map.of(), (name, value) -> true);
+                }
+
+                @Override
+                public T body() {
+                    return null;
+                }
+
+                @Override
+                public Optional<SSLSession> sslSession() {
+                    return Optional.empty();
+                }
+
+                @Override
+                public URI uri() {
+                    return request.uri();
+                }
+
+                @Override
+                public Version version() {
+                    return Version.HTTP_1_1;
+                }
+            };
+        }
+
+        @Override
+        public <T> CompletableFuture<java.net.http.HttpResponse<T>> sendAsync(
+                java.net.http.HttpRequest request,
+                java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler) {
+            throw new UnsupportedOperationException("sendAsync is not used in this test");
+        }
+
+        @Override
+        public <T> CompletableFuture<java.net.http.HttpResponse<T>> sendAsync(
+                java.net.http.HttpRequest request,
+                java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler,
+                java.net.http.HttpResponse.PushPromiseHandler<T> pushPromiseHandler) {
+            throw new UnsupportedOperationException("sendAsync is not used in this test");
+        }
     }
 
     private static class DeferredBodyHttpClient extends HttpClient {

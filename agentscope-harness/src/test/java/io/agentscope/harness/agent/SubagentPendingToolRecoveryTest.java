@@ -35,11 +35,15 @@ import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.session.SessionProjection;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
@@ -67,7 +71,13 @@ class SubagentPendingToolRecoveryTest {
     private static final String CALL_ID = "interrupted-call";
     private static final RuntimeContext CONTEXT =
             RuntimeContext.builder().userId("user").sessionId("child-session").build();
-    private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    // One child call serializes ~30 SQLite journal commits (connection-per-op, DELETE journal,
+    // synchronous=EXTRA). Windows CI's parallel builds plus real-time AV scans of the fresh
+    // -journal files can stall those fsyncs for tens of seconds — a 2026-10-23 run (PR #3731)
+    // blew past the former 30s guard with escalating per-iteration times (3.6s/10.1s/30.7s).
+    // 60s is ~2x the worst observed call; the healthy path stays sub-second and the guard
+    // against real hangs remains.
+    private static final Duration TIMEOUT = Duration.ofSeconds(60);
 
     @TempDir Path workspace;
 
@@ -178,7 +188,9 @@ class SubagentPendingToolRecoveryTest {
                                     }
                                 });
 
+        SessionKey childKey;
         try (HarnessAgent child = child(failingParent, declared)) {
+            childKey = child.sessionKey(CONTEXT);
             assertSame(
                     failure,
                     assertThrows(
@@ -186,12 +198,13 @@ class SubagentPendingToolRecoveryTest {
                             () -> child.call(List.of(user("start")), CONTEXT).block(TIMEOUT)));
         }
 
-        // Reopen the on-disk store and rebuild the child; an in-memory cache cannot hide the bug.
+        // Reopen the native journal and rebuild the child; a legacy state store cannot hide the
+        // bug.
         JsonFileAgentStateStore reopenedStore = new JsonFileAgentStateStore(stateDirectory);
-        AgentState persisted =
-                reopenedStore
-                        .get("user", "child-session", "agent_state", AgentState.class)
-                        .orElseThrow();
+        var reopenedLog =
+                new WorkspaceSessionLogStore(new LocalFilesystem(workspace.resolve("journal")))
+                        .open(childKey, CONTEXT);
+        AgentState persisted = SessionProjection.read(reopenedLog).restore();
         assertTrue(
                 persisted.getContext().stream()
                         .flatMap(msg -> msg.getContentBlocks(ToolUseBlock.class).stream())
@@ -237,18 +250,7 @@ class SubagentPendingToolRecoveryTest {
                     recoveryModel.getLastMessages().stream()
                             .anyMatch(msg -> "continue".equals(msg.getTextContent())));
         }
-        assertEquals(
-                1,
-                results(
-                                reopenedStore
-                                        .get(
-                                                "user",
-                                                "child-session",
-                                                "agent_state",
-                                                AgentState.class)
-                                        .orElseThrow()
-                                        .getContext())
-                        .size());
+        assertEquals(1, results(SessionProjection.read(reopenedLog).restore().getContext()).size());
     }
 
     @ParameterizedTest
@@ -294,7 +296,7 @@ class SubagentPendingToolRecoveryTest {
                                     }
                                 });
         try (HarnessAgent child = child(parent, declared)) {
-            // Establish a reusable session in the reference-backed in-memory store.
+            // Establish a reusable native session, then interrupt during acting.
             child.call(List.of(user("initialize")), CONTEXT).block(TIMEOUT);
             Disposable subscription = child.call(List.of(user("start")), CONTEXT).subscribe();
             try {
@@ -303,6 +305,16 @@ class SubagentPendingToolRecoveryTest {
                 subscription.dispose();
             }
             assertTrue(actingCancelled.await(10, TimeUnit.SECONDS));
+            // Cancellation starts asynchronous journal cleanup; wait for its committed run/end.
+            Flux.interval(Duration.ZERO, Duration.ofMillis(10))
+                    .filter(
+                            ignored ->
+                                    child.sessionLog(CONTEXT).head().owner() == null
+                                            && SessionProjection.read(child.sessionLog(CONTEXT))
+                                                    .activeRuns()
+                                                    .isEmpty())
+                    .next()
+                    .block(TIMEOUT);
             AgentState cancelledState = child.getDelegate().getAgentState("user", "child-session");
             assertTrue(results(cancelledState.getContext()).isEmpty());
             assertTrue(
@@ -326,6 +338,9 @@ class SubagentPendingToolRecoveryTest {
                 .model(model)
                 .workspace(workspace)
                 .stateStore(store)
+                .sessionLogStore(
+                        new WorkspaceSessionLogStore(
+                                new LocalFilesystem(workspace.resolve("journal"))))
                 .disableFilesystemTools()
                 .disableShellTool()
                 .disableMemoryTools()

@@ -13,6 +13,12 @@ on:
       - main
   pull_request:
 
+# Cancel superseded runs on the same PR; pushes to main run to completion
+# (separate group, and the expression is only true for pull_request events).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   license:
     name: "Check License"
@@ -43,8 +49,10 @@ jobs:
 
   build:
     runs-on: ${{ matrix.os }}
+    # Fail loudly instead of burning GitHub's 6h default when a build wedges.
+    timeout-minutes: 120
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         include:
@@ -52,20 +60,22 @@ jobs:
             repo-cache-path: '~/.m2/repository'
           - os: windows-latest
             repo-cache-path: '~\.m2\repository'
-            mvnd-cache-path: '~\.mvnd'
 
     env:
-      MVND_VERSION: '1.0.3'
       JAVA_VERSION: '17'
 
     steps:
+      - name: Enable Git long paths on Windows
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
       - uses: actions/checkout@v4
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
-          cache: 'maven'
+          # No cache: 'maven' here — the explicit actions/cache step below caches the
+          # same ~/.m2/repository path; a second copy only adds ~35s restore and ~0.86GB storage.
 
       - name: Cache Maven repository [${{ runner.os }}]
         uses: actions/cache@v4
@@ -75,53 +85,41 @@ jobs:
           restore-keys: |
             maven-${{ runner.os }}-
 
-      - name: Cache mvnd [${{ runner.os }}]
-        if: runner.os == 'Windows'
-        id: cache-mvnd
-        uses: actions/cache@v4
-        with:
-          path: ${{ matrix.mvnd-cache-path }}
-          key: mvnd-${{ env.MVND_VERSION }}-${{ runner.os }}
-
-      - name: Install mvnd [Windows]
-        if: steps.cache-mvnd.outputs.cache-hit != 'true' && runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Invoke-WebRequest `
-            -Uri "https://github.com/apache/maven-mvnd/releases/download/${{ env.MVND_VERSION }}/maven-mvnd-${{ env.MVND_VERSION }}-windows-amd64.zip" `
-            -OutFile "mvnd.zip"
-          mkdir -Path "~\.mvnd" -Force
-          Expand-Archive -Path "mvnd.zip" -DestinationPath "mvnd" -FORCE
-          Copy-Item -Path "mvnd\maven-mvnd-${{ env.MVND_VERSION }}-windows-amd64\*" -Destination "~\.mvnd\" -Recurse
-          Set-Content -Path "~\.mvnd\conf\mvnd.properties" -Value @"
-          # mvnd client timeout settings
-          mvnd.connectTimeout=120000
-          mvnd.socketConnectTimeout=30000
-          mvnd.cancelConnectTimeout=30000
-          "@ -Encoding Utf8 -Force
-          Remove-Item -Path "mvnd", "mvnd.zip" -Recurse -Force
-
       - name: Build and Test with Coverage [Linux]
         if: runner.os == 'Linux'
         shell: bash
+        env:
+          # PRs optimize for speed: skip release-only jars. Pushes to main still run
+          # javadoc (doclint) so breakage surfaces before a release. Local builds and
+          # releases are unaffected — this lives in CI config only, not the pom.
+          PR_SKIP_FLAGS: ${{ github.event_name == 'pull_request' && '-Dmaven.javadoc.skip=true -Dmaven.source.skip=true' || '' }}
         run: |
-          # -T1: single-threaded build so reactor order is respected and agentscope-core
-          # is installed before modules (e.g. subagent) that resolve it from the reactor.
-          # Use the runner's standard Maven; mvnd's embedded distribution breaks Surefire IPC.
-          mvn -B -T1 clean verify
+          # -T1C: one thread per core; Maven schedules parallel builds by the dependency
+          # graph, so reactor ordering is guaranteed in parallel mode (the old -T1
+          # rationale was an mvnd-specific spotless lock issue, not an ordering problem).
+          mvn -B -T1C $PR_SKIP_FLAGS clean verify
 
       - name: Build and Test with Coverage [Windows]
         if: runner.os == 'Windows'
         run: |
-          # -T1: single-threaded build so reactor order is respected (see Linux step).
-          # -Dmvnd.maxLostKeepAlive=120: avoid StaleAddressException on long javadoc phases (mvnd#161).
-          & "~\.mvnd\bin\mvnd.cmd" -B -T1 "-Dmvnd.maxLostKeepAlive=120" clean verify
+          # -T1C: one thread per core (see Linux step). Standard Maven, no mvnd —
+          # mvnd's parallel builds hit spotless lock contention and its embedded
+          # distribution broke Surefire IPC.
+          # Skip release-only artifacts (javadoc/source jars) and JaCoCo: coverage is only
+          # uploaded from Linux, so instrumentation on Windows is pure overhead.
+          mvn -B -T1C "-Dmaven.javadoc.skip=true" "-Dmaven.source.skip=true" "-Djacoco.skip=true" clean verify
 
       - name: Upload coverage reports to Codecov
-        if: runner.os == 'Linux'
+        # Secrets are unavailable to fork PRs, and Codecov rejects tokenless uploads to a
+        # protected branch (HTTP 400) — skipping the step beats failing the build on a run
+        # that legitimately cannot upload. fail_ci_if_error stays off so codecov-side
+        # outages never mask the actual build result.
+        if: runner.os == 'Linux' && env.CODECOV_TOKEN != ''
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         uses: codecov/codecov-action@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: true
+          token: ${{ env.CODECOV_TOKEN }}
+          fail_ci_if_error: false
           verbose: true
 

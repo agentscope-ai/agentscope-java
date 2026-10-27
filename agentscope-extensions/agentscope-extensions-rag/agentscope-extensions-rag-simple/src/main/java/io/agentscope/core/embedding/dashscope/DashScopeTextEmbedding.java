@@ -21,14 +21,19 @@ import com.alibaba.dashscope.embeddings.TextEmbeddingResult;
 import com.alibaba.dashscope.embeddings.TextEmbeddingResultItem;
 import io.agentscope.core.embedding.EmbeddingException;
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
+import io.agentscope.core.embedding.EmbeddingUsage;
 import io.agentscope.core.embedding.EmbeddingUtils;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * DashScope Text Embedding Model implementation.
@@ -85,7 +90,7 @@ public class DashScopeTextEmbedding implements EmbeddingModel {
     }
 
     @Override
-    public Mono<double[]> embed(ContentBlock block) {
+    public Mono<EmbeddingResponse> embed(ContentBlock block) {
         if (block == null) {
             return Mono.error(
                     new EmbeddingException("ContentBlock cannot be null", modelName, "dashscope"));
@@ -107,10 +112,11 @@ public class DashScopeTextEmbedding implements EmbeddingModel {
                             "TextBlock text cannot be null or empty", modelName, "dashscope"));
         }
 
-        Mono<double[]> embeddingMono =
+        Mono<EmbeddingResponse> embeddingMono =
                 Mono.fromCallable(
                                 () -> {
                                     try {
+                                        Instant startTime = Instant.now();
                                         TextEmbedding embedding =
                                                 baseUrl != null
                                                         ? new TextEmbedding(baseUrl)
@@ -172,7 +178,8 @@ public class DashScopeTextEmbedding implements EmbeddingModel {
                                                     embeddingArray.length);
                                         }
 
-                                        return embeddingArray;
+                                        EmbeddingUsage usage = extractUsage(result, startTime);
+                                        return new EmbeddingResponse(embeddingArray, usage);
                                     } catch (EmbeddingException e) {
                                         throw e;
                                     } catch (Exception e) {
@@ -183,6 +190,7 @@ public class DashScopeTextEmbedding implements EmbeddingModel {
                                                 "dashscope");
                                     }
                                 })
+                        .subscribeOn(Schedulers.boundedElastic())
                         .onErrorMap(
                                 e -> {
                                     if (e instanceof EmbeddingException) {
@@ -199,6 +207,31 @@ public class DashScopeTextEmbedding implements EmbeddingModel {
         // Apply timeout and retry
         return EmbeddingUtils.applyTimeoutAndRetry(
                 embeddingMono, defaultExecutionConfig, modelName, "dashscope", log);
+    }
+
+    /**
+     * Extracts token usage from the DashScope text embedding result.
+     *
+     * <p>DashScope reports only {@code total_tokens} for text embeddings; since embedding
+     * requests consume input tokens only, the same value is used for both fields.
+     *
+     * @param result the embedding result returned by the SDK
+     * @return usage information, or null when the provider does not report usage
+     */
+    private static EmbeddingUsage extractUsage(TextEmbeddingResult result, Instant startTime) {
+        if (result == null || result.getUsage() == null) {
+            return null;
+        }
+        Integer totalTokens = result.getUsage().getTotalTokens();
+        if (totalTokens == null) {
+            return null;
+        }
+        double elapsedSeconds = Duration.between(startTime, Instant.now()).toMillis() / 1000.0;
+        return EmbeddingUsage.builder()
+                .inputTokens(totalTokens)
+                .totalTokens(totalTokens)
+                .time(elapsedSeconds)
+                .build();
     }
 
     @Override

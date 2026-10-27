@@ -135,10 +135,15 @@ public class PostgresAgentStateStore implements AgentStateStore {
     }
 
     private void ensureVersionColumn() {
+        // DEFAULT 1 (not 0): the ALTER backfills pre-existing rows with the default, and 0 is
+        // the sentinel getVersioned() reports for "row absent". Backfilling 0 would make every
+        // pre-existing row look absent to saveIfVersion(..., 0), which takes the INSERT branch
+        // and reports a phantom CAS conflict. Both write paths start at version 1, so 1 is the
+        // correct resting value for migrated rows.
         String sql =
                 "ALTER TABLE "
                         + getFullTableName()
-                        + " ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0";
+                        + " ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1";
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.execute();
@@ -325,12 +330,37 @@ public class PostgresAgentStateStore implements AgentStateStore {
         }
     }
 
+    private long readVersion(String userId, String sessionId, String key) {
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
+        validateStateKey(key);
+
+        // Read only the version column — never deserialize state_data. Deserializing into the
+        // `State` marker interface is impossible (no concrete type to construct), so reading the
+        // version must not touch the payload.
+        String sql =
+                "SELECT version FROM "
+                        + getFullTableName()
+                        + " WHERE session_id = ? AND state_key = ? AND item_index = ?";
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, slotId);
+            stmt.setString(2, key);
+            stmt.setInt(3, SINGLE_STATE_INDEX);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() ? rs.getLong("version") : 0L;
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read version: " + key, e);
+        }
+    }
+
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
         if (expectedVersion == UNVERSIONED) {
             save(userId, sessionId, key, value);
-            return getVersioned(userId, sessionId, key, State.class).version();
+            return readVersion(userId, sessionId, key);
         }
 
         String slotId = slotId(userId, sessionId);
@@ -344,6 +374,14 @@ public class PostgresAgentStateStore implements AgentStateStore {
                     () -> {
                         if (expectedVersion == 0L) {
                             result[0] = insertIfAbsent(conn, slotId, key, value);
+                            if (result[0] == UNVERSIONED) {
+                                // The row already exists. If its stored version is still 0
+                                // (e.g. backfilled by an older ALTER TABLE migration), that
+                                // satisfies the CAS — bump 0 -> 1. If a concurrent writer
+                                // already moved it past 0 this matches nothing and correctly
+                                // reports UNVERSIONED.
+                                result[0] = updateIfVersion(conn, slotId, key, value, 0L);
+                            }
                         } else {
                             result[0] = updateIfVersion(conn, slotId, key, value, expectedVersion);
                         }
@@ -717,9 +755,10 @@ public class PostgresAgentStateStore implements AgentStateStore {
         if (sessionId == null || sessionId.trim().isEmpty()) {
             throw new IllegalArgumentException("AgentStateStore ID cannot be null or empty");
         }
-        if (sessionId.contains("/") || sessionId.contains("\\")) {
-            throw new IllegalArgumentException("AgentStateStore ID cannot contain path separators");
-        }
+        // Path separators are allowed: the slot id is only ever bound as a PreparedStatement
+        // parameter here, never used as a filesystem path, and SessionSandboxStateStore
+        // legitimately generates slash-separated slot ids ("sandbox/session/<id>") — rejecting
+        // them silently dropped all sandbox resume state (#3231).
         if (sessionId.length() > 255) {
             throw new IllegalArgumentException("AgentStateStore ID cannot exceed 255 characters");
         }

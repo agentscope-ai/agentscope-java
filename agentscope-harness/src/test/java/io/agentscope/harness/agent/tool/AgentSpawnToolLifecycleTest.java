@@ -32,6 +32,8 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
@@ -88,16 +90,26 @@ class AgentSpawnToolLifecycleTest {
 
         for (int i = 0; i < 256; i++) {
             String spawn =
-                    tool.agentSpawn(context, state, "worker", null, "reusable-label", 1, null)
-                            .block(BLOCK_TIMEOUT);
+                    textOf(
+                            tool.agentSpawn(
+                                            context,
+                                            state,
+                                            "worker",
+                                            null,
+                                            "reusable-label",
+                                            1,
+                                            null)
+                                    .block(BLOCK_TIMEOUT));
             String key = valueAfter(spawn, "agent_key: ");
 
-            assertTrue(tool.agentRelease(context, state, key, null).contains("status: released"));
+            assertTrue(
+                    textOf(tool.agentRelease(context, state, key, null))
+                            .contains("status: released"));
         }
 
         assertEquals(256, created.get());
         assertEquals(256, closed.get());
-        assertEquals("No addressable subagents.", tool.agentList(context, state));
+        assertEquals("No addressable subagents.", textOf(tool.agentList(context, state)));
         assertTrue(state.getToolContext().getSpawnRegistry().isEmpty());
         for (Agent instance : instances) {
             verify((AutoCloseable) instance, times(1)).close();
@@ -114,28 +126,33 @@ class AgentSpawnToolLifecycleTest {
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
 
         String spawn =
-                tool.agentSpawn(context, state, "worker", null, "slot", 1, null)
-                        .block(BLOCK_TIMEOUT);
+                textOf(
+                        tool.agentSpawn(context, state, "worker", null, "slot", 1, null)
+                                .block(BLOCK_TIMEOUT));
         String key = valueAfter(spawn, "agent_key: ");
 
-        assertTrue(tool.agentSend(context, state, key, null, "by key", 1).block().contains("done"));
         assertTrue(
-                tool.agentSend(context, state, null, "slot", "by label", 1)
-                        .block()
+                textOf(tool.agentSend(context, state, key, null, "by key", 1).block())
                         .contains("done"));
-        assertTrue(tool.agentRelease(context, state, null, "slot").contains("status: released"));
         assertTrue(
-                tool.agentSend(context, state, key, null, "late", 1).block().contains("Unknown"));
+                textOf(tool.agentSend(context, state, null, "slot", "by label", 1).block())
+                        .contains("done"));
         assertTrue(
-                tool.agentSend(context, state, null, "slot", "late", 1)
-                        .block()
+                textOf(tool.agentRelease(context, state, null, "slot"))
+                        .contains("status: released"));
+        assertTrue(
+                textOf(tool.agentSend(context, state, key, null, "late", 1).block())
+                        .contains("Unknown"));
+        assertTrue(
+                textOf(tool.agentSend(context, state, null, "slot", "late", 1).block())
                         .contains("Unknown"));
 
         AgentSpawnTool restoredTool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
         assertTrue(
                 restoredTool
                         .agentSend(context, state, key, null, "restore", 1)
-                        .block()
+                        .map(AgentSpawnToolLifecycleTest::textOf)
+                        .block(BLOCK_TIMEOUT)
                         .contains("Unknown"));
         assertTrue(state.getToolContext().getSpawnRegistry().isEmpty());
         assertEquals(1, closed.get());
@@ -178,17 +195,26 @@ class AgentSpawnToolLifecycleTest {
             Future<String> send =
                     caller.submit(
                             () ->
-                                    tool.agentSend(context, state, key, null, "continue", 30)
-                                            .block(BLOCK_TIMEOUT));
+                                    textOf(
+                                            tool.agentSend(
+                                                            context,
+                                                            state,
+                                                            key,
+                                                            null,
+                                                            "continue",
+                                                            30)
+                                                    .block(BLOCK_TIMEOUT)));
             assertTrue(factoryEntered.await(10, TimeUnit.SECONDS));
 
-            assertTrue(tool.agentRelease(context, state, key, null).contains("status: released"));
+            assertTrue(
+                    textOf(tool.agentRelease(context, state, key, null))
+                            .contains("status: released"));
             allowFactoryReturn.countDown();
 
             assertTrue(send.get(10, TimeUnit.SECONDS).contains("Unknown agent_key"));
             assertEquals(1, closed.get());
             assertTrue(state.getToolContext().getSpawnRegistry().isEmpty());
-            assertEquals("No addressable subagents.", tool.agentList(context, state));
+            assertEquals("No addressable subagents.", textOf(tool.agentList(context, state)));
         } finally {
             allowFactoryReturn.countDown();
             caller.shutdownNow();
@@ -224,28 +250,38 @@ class AgentSpawnToolLifecycleTest {
             Future<String> spawn =
                     caller.submit(
                             () ->
-                                    tool.agentSpawn(
-                                                    context,
-                                                    state,
-                                                    "worker",
-                                                    null,
-                                                    "initializing",
-                                                    1,
-                                                    true)
-                                            .block(BLOCK_TIMEOUT));
+                                    textOf(
+                                            tool.agentSpawn(
+                                                            context,
+                                                            state,
+                                                            "worker",
+                                                            null,
+                                                            "initializing",
+                                                            1,
+                                                            true)
+                                                    .block(BLOCK_TIMEOUT)));
             assertTrue(exposureEntered.await(10, TimeUnit.SECONDS));
 
-            assertEquals("No addressable subagents.", tool.agentList(context, state));
-            assertTrue(tool.agentRelease(context, state, null, "initializing").contains("Unknown"));
+            assertEquals("No addressable subagents.", textOf(tool.agentList(context, state)));
+            assertTrue(
+                    textOf(tool.agentRelease(context, state, null, "initializing"))
+                            .contains("Unknown"));
 
             allowExposure.countDown();
             assertTrue(spawn.get(10, TimeUnit.SECONDS).contains("status: accepted"));
             assertTrue(
-                    tool.agentSend(context, state, null, "initializing", "continue", 1)
-                            .block(BLOCK_TIMEOUT)
+                    textOf(
+                                    tool.agentSend(
+                                                    context,
+                                                    state,
+                                                    null,
+                                                    "initializing",
+                                                    "continue",
+                                                    1)
+                                            .block(BLOCK_TIMEOUT))
                             .contains("continued"));
             assertTrue(
-                    tool.agentRelease(context, state, null, "initializing")
+                    textOf(tool.agentRelease(context, state, null, "initializing"))
                             .contains("status: released"));
             verify(bridge, times(1)).revoke("public-handle");
             assertEquals(1, closed.get());
@@ -269,40 +305,53 @@ class AgentSpawnToolLifecycleTest {
         AgentState thirdState = AgentState.builder().build();
 
         String first =
-                tool.agentSpawn(firstContext, firstState, "worker", null, "shared", 1, null)
-                        .block(BLOCK_TIMEOUT);
+                textOf(
+                        tool.agentSpawn(firstContext, firstState, "worker", null, "shared", 1, null)
+                                .block(BLOCK_TIMEOUT));
         String second =
-                tool.agentSpawn(secondContext, secondState, "worker", null, "shared", 1, null)
-                        .block(BLOCK_TIMEOUT);
+                textOf(
+                        tool.agentSpawn(
+                                        secondContext,
+                                        secondState,
+                                        "worker",
+                                        null,
+                                        "shared",
+                                        1,
+                                        null)
+                                .block(BLOCK_TIMEOUT));
         String third =
-                tool.agentSpawn(thirdContext, thirdState, "worker", null, "shared", 1, null)
-                        .block(BLOCK_TIMEOUT);
+                textOf(
+                        tool.agentSpawn(thirdContext, thirdState, "worker", null, "shared", 1, null)
+                                .block(BLOCK_TIMEOUT));
         String firstKey = valueAfter(first, "agent_key: ");
         String secondKey = valueAfter(second, "agent_key: ");
         String thirdKey = valueAfter(third, "agent_key: ");
 
         assertNotEquals(firstKey, secondKey);
         assertNotEquals(firstKey, thirdKey);
-        assertTrue(tool.agentList(firstContext, firstState).contains(firstKey));
-        assertFalse(tool.agentList(firstContext, firstState).contains(secondKey));
-        assertFalse(tool.agentList(firstContext, firstState).contains(thirdKey));
-        assertTrue(tool.agentList(secondContext, secondState).contains(secondKey));
-        assertFalse(tool.agentList(secondContext, secondState).contains(firstKey));
-        assertTrue(tool.agentList(thirdContext, thirdState).contains(thirdKey));
-        assertFalse(tool.agentList(thirdContext, thirdState).contains(firstKey));
+        assertTrue(textOf(tool.agentList(firstContext, firstState)).contains(firstKey));
+        assertFalse(textOf(tool.agentList(firstContext, firstState)).contains(secondKey));
+        assertFalse(textOf(tool.agentList(firstContext, firstState)).contains(thirdKey));
+        assertTrue(textOf(tool.agentList(secondContext, secondState)).contains(secondKey));
+        assertFalse(textOf(tool.agentList(secondContext, secondState)).contains(firstKey));
+        assertTrue(textOf(tool.agentList(thirdContext, thirdState)).contains(thirdKey));
+        assertFalse(textOf(tool.agentList(thirdContext, thirdState)).contains(firstKey));
         assertTrue(
-                tool.agentRelease(firstContext, firstState, secondKey, null).contains("Unknown"));
-        assertTrue(tool.agentRelease(firstContext, firstState, thirdKey, null).contains("Unknown"));
+                textOf(tool.agentRelease(firstContext, firstState, secondKey, null))
+                        .contains("Unknown"));
         assertTrue(
-                tool.agentRelease(firstContext, firstState, null, "shared")
+                textOf(tool.agentRelease(firstContext, firstState, thirdKey, null))
+                        .contains("Unknown"));
+        assertTrue(
+                textOf(tool.agentRelease(firstContext, firstState, null, "shared"))
                         .contains("status: released"));
-        assertTrue(tool.agentList(secondContext, secondState).contains(secondKey));
+        assertTrue(textOf(tool.agentList(secondContext, secondState)).contains(secondKey));
         assertTrue(
-                tool.agentRelease(secondContext, secondState, null, "shared")
+                textOf(tool.agentRelease(secondContext, secondState, null, "shared"))
                         .contains("status: released"));
-        assertTrue(tool.agentList(thirdContext, thirdState).contains(thirdKey));
+        assertTrue(textOf(tool.agentList(thirdContext, thirdState)).contains(thirdKey));
         assertTrue(
-                tool.agentRelease(thirdContext, thirdState, null, "shared")
+                textOf(tool.agentRelease(thirdContext, thirdState, null, "shared"))
                         .contains("status: released"));
         assertEquals(3, closed.get());
     }
@@ -333,24 +382,27 @@ class AgentSpawnToolLifecycleTest {
             Future<String> spawn =
                     caller.submit(
                             () ->
-                                    tool.agentSpawn(
-                                                    context,
-                                                    state,
-                                                    "worker",
-                                                    "blocking task",
-                                                    "sync",
-                                                    30,
-                                                    null)
-                                            .block(BLOCK_TIMEOUT));
+                                    textOf(
+                                            tool.agentSpawn(
+                                                            context,
+                                                            state,
+                                                            "worker",
+                                                            "blocking task",
+                                                            "sync",
+                                                            30,
+                                                            null)
+                                                    .block(BLOCK_TIMEOUT)));
             assertTrue(entered.await(10, TimeUnit.SECONDS));
             String key = onlySpawnKey(state);
 
-            assertTrue(tool.agentRelease(context, state, key, null).contains("busy"));
+            assertTrue(textOf(tool.agentRelease(context, state, key, null)).contains("busy"));
             assertEquals(0, closed.get());
 
             completion.complete(reply("done"));
             assertTrue(spawn.get(10, TimeUnit.SECONDS).contains("status: ok"));
-            assertTrue(tool.agentRelease(context, state, key, null).contains("status: released"));
+            assertTrue(
+                    textOf(tool.agentRelease(context, state, key, null))
+                            .contains("status: released"));
             assertEquals(1, closed.get());
         } finally {
             completion.complete(reply("cleanup"));
@@ -382,18 +434,28 @@ class AgentSpawnToolLifecycleTest {
             RuntimeContext context = context("owner", "promoted-parent");
 
             String spawn =
-                    tool.agentSpawn(context, state, "worker", "blocking task", "promoted", 1, null)
-                            .block(Duration.ofSeconds(5));
+                    textOf(
+                            tool.agentSpawn(
+                                            context,
+                                            state,
+                                            "worker",
+                                            "blocking task",
+                                            "promoted",
+                                            1,
+                                            null)
+                                    .block(Duration.ofSeconds(5)));
             String key = valueAfter(spawn, "agent_key: ");
 
             assertTrue(entered.await(1, TimeUnit.SECONDS));
             assertTrue(spawn.contains("status: timeout_promoted"));
-            assertTrue(tool.agentRelease(context, state, key, null).contains("busy"));
+            assertTrue(textOf(tool.agentRelease(context, state, key, null)).contains("busy"));
             assertEquals(0, closed.get());
 
             completion.complete(reply("done"));
             repository.awaitTerminal();
-            assertTrue(tool.agentRelease(context, state, key, null).contains("status: released"));
+            assertTrue(
+                    textOf(tool.agentRelease(context, state, key, null))
+                            .contains("status: released"));
             assertEquals(1, closed.get());
         } finally {
             completion.complete(reply("cleanup"));
@@ -424,17 +486,27 @@ class AgentSpawnToolLifecycleTest {
             RuntimeContext context = context("owner", "async-parent");
 
             String spawn =
-                    tool.agentSpawn(context, state, "worker", "blocking task", "async", 0, null)
-                            .block(BLOCK_TIMEOUT);
+                    textOf(
+                            tool.agentSpawn(
+                                            context,
+                                            state,
+                                            "worker",
+                                            "blocking task",
+                                            "async",
+                                            0,
+                                            null)
+                                    .block(BLOCK_TIMEOUT));
             String key = valueAfter(spawn, "agent_key: ");
             assertTrue(entered.await(10, TimeUnit.SECONDS));
 
-            assertTrue(tool.agentRelease(context, state, key, null).contains("busy"));
+            assertTrue(textOf(tool.agentRelease(context, state, key, null)).contains("busy"));
             assertEquals(0, closed.get());
 
             completion.complete(reply("done"));
             repository.awaitTerminal();
-            assertTrue(tool.agentRelease(context, state, key, null).contains("status: released"));
+            assertTrue(
+                    textOf(tool.agentRelease(context, state, key, null))
+                            .contains("status: released"));
             assertEquals(1, closed.get());
         } finally {
             completion.complete(reply("cleanup"));
@@ -463,15 +535,16 @@ class AgentSpawnToolLifecycleTest {
                 concurrently(
                         participants,
                         () ->
-                                tool.agentSpawn(
-                                                context,
-                                                state,
-                                                "worker",
-                                                null,
-                                                "duplicate",
-                                                1,
-                                                null)
-                                        .block(BLOCK_TIMEOUT));
+                                textOf(
+                                        tool.agentSpawn(
+                                                        context,
+                                                        state,
+                                                        "worker",
+                                                        null,
+                                                        "duplicate",
+                                                        1,
+                                                        null)
+                                                .block(BLOCK_TIMEOUT)));
 
         List<String> accepted =
                 results.stream().filter(result -> result.contains("agent_key: ")).toList();
@@ -480,8 +553,9 @@ class AgentSpawnToolLifecycleTest {
         assertEquals(1, created.get() - closed.get());
         assertEquals(1, state.getToolContext().getSpawnRegistry().size());
         String key = valueAfter(accepted.get(0), "agent_key: ");
-        assertTrue(tool.agentList(context, state).contains("Addressable subagents (1):"));
-        assertTrue(tool.agentRelease(context, state, key, null).contains("status: released"));
+        assertTrue(textOf(tool.agentList(context, state)).contains("Addressable subagents (1):"));
+        assertTrue(
+                textOf(tool.agentRelease(context, state, key, null)).contains("status: released"));
         assertEquals(created.get(), closed.get());
     }
 
@@ -507,15 +581,16 @@ class AgentSpawnToolLifecycleTest {
                 concurrently(
                         participants,
                         () ->
-                                tool.agentSpawn(
-                                                context,
-                                                state,
-                                                "worker",
-                                                null,
-                                                "persistent",
-                                                1,
-                                                null)
-                                        .block(BLOCK_TIMEOUT));
+                                textOf(
+                                        tool.agentSpawn(
+                                                        context,
+                                                        state,
+                                                        "worker",
+                                                        null,
+                                                        "persistent",
+                                                        1,
+                                                        null)
+                                                .block(BLOCK_TIMEOUT)));
 
         List<String> keys =
                 results.stream()
@@ -526,9 +601,10 @@ class AgentSpawnToolLifecycleTest {
         assertTrue(created.get() >= 1);
         assertEquals(1, created.get() - closed.get());
         assertEquals(1, state.getToolContext().getSpawnRegistry().size());
-        assertTrue(tool.agentList(context, state).contains("Addressable subagents (1):"));
+        assertTrue(textOf(tool.agentList(context, state)).contains("Addressable subagents (1):"));
         assertTrue(
-                tool.agentRelease(context, state, keys.get(0), null).contains("status: released"));
+                textOf(tool.agentRelease(context, state, keys.get(0), null))
+                        .contains("status: released"));
         assertEquals(created.get(), closed.get());
     }
 
@@ -558,24 +634,34 @@ class AgentSpawnToolLifecycleTest {
         AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "send-parent");
         String spawn =
-                tool.agentSpawn(context, state, "worker", "initial", "racy", 30, null)
-                        .block(BLOCK_TIMEOUT);
+                textOf(
+                        tool.agentSpawn(context, state, "worker", "initial", "racy", 30, null)
+                                .block(BLOCK_TIMEOUT));
         String key = valueAfter(spawn, "agent_key: ");
         ExecutorService caller = Executors.newSingleThreadExecutor();
         try {
             Future<String> send =
                     caller.submit(
                             () ->
-                                    tool.agentSend(context, state, key, null, "follow-up", 30)
-                                            .block(BLOCK_TIMEOUT));
+                                    textOf(
+                                            tool.agentSend(
+                                                            context,
+                                                            state,
+                                                            key,
+                                                            null,
+                                                            "follow-up",
+                                                            30)
+                                                    .block(BLOCK_TIMEOUT)));
             assertTrue(entered.await(10, TimeUnit.SECONDS));
 
-            assertTrue(tool.agentRelease(context, state, key, null).contains("busy"));
+            assertTrue(textOf(tool.agentRelease(context, state, key, null)).contains("busy"));
             assertEquals(0, closed.get());
 
             sendCompletion.complete(reply("follow-up done"));
             assertTrue(send.get(10, TimeUnit.SECONDS).contains("follow-up done"));
-            assertTrue(tool.agentRelease(context, state, key, null).contains("status: released"));
+            assertTrue(
+                    textOf(tool.agentRelease(context, state, key, null))
+                            .contains("status: released"));
             assertEquals(1, closed.get());
         } finally {
             sendCompletion.complete(reply("cleanup"));
@@ -596,9 +682,12 @@ class AgentSpawnToolLifecycleTest {
         RuntimeContext context = context("owner", "gateway-parent");
 
         String spawn =
-                tool.agentSpawn(context, state, "worker", null, null, 1, true).block(BLOCK_TIMEOUT);
+                textOf(
+                        tool.agentSpawn(context, state, "worker", null, null, 1, true)
+                                .block(BLOCK_TIMEOUT));
         String key = valueAfter(spawn, "agent_key: ");
-        assertTrue(tool.agentRelease(context, state, key, null).contains("status: released"));
+        assertTrue(
+                textOf(tool.agentRelease(context, state, key, null)).contains("status: released"));
 
         verify(bridge, times(1)).revoke("public-handle");
         assertEquals(1, closed.get());
@@ -659,6 +748,10 @@ class AgentSpawnToolLifecycleTest {
                 .map(line -> line.substring(prefix.length()).trim())
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Missing '" + prefix + "' in: " + text));
+    }
+
+    private static String textOf(ToolResultBlock result) {
+        return ((TextBlock) result.getOutput().get(0)).getText();
     }
 
     private static <T> List<T> concurrently(int participants, Callable<T> action) throws Exception {
