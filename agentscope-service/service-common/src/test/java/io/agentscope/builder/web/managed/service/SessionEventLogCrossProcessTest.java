@@ -26,10 +26,14 @@ import io.agentscope.builder.BuilderCommonTestApp;
 import io.agentscope.builder.web.managed.SessionEventDto;
 import io.agentscope.builder.web.persistence.jpa.SessionEventEntityRepository;
 import jakarta.persistence.EntityManagerFactory;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.sql.Connection;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,6 +43,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
@@ -46,12 +52,15 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import reactor.test.StepVerifier;
 
@@ -578,6 +587,90 @@ class SessionEventLogCrossProcessTest {
 
         assertThat(deletedSessions.isDeleted(sessionId)).isFalse();
         assertThat(repository.findBySessionIdOrderBySeqAsc(sessionId)).hasSize(1);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void clearingSessionDoesNotBlockAnotherSession(boolean purge, boolean populated)
+            throws Exception {
+        String prefix = "ses_clear_concurrency_" + UUID.randomUUID() + "_";
+        String sessionId = prefix + "a";
+        String otherSession = prefix + "b";
+        if (populated) eventLog.append(sessionId, "item.delta", Map.of());
+        var beforeCommit = new CountDownLatch(1);
+        var releaseCommit = new CountDownLatch(1);
+        var heldRepository =
+                (SessionEventEntityRepository)
+                        Proxy.newProxyInstance(
+                                SessionEventEntityRepository.class.getClassLoader(),
+                                new Class<?>[] {SessionEventEntityRepository.class},
+                                (proxy, method, arguments) -> {
+                                    Object result;
+                                    try {
+                                        result = method.invoke(repository, arguments);
+                                    } catch (InvocationTargetException error) {
+                                        throw error.getCause();
+                                    }
+                                    if (method.getName().equals("deleteBySessionId")) {
+                                        assertThat(
+                                                        TransactionSynchronizationManager
+                                                                .isActualTransactionActive())
+                                                .isTrue();
+                                        var connection = DataSourceUtils.getConnection(dataSource);
+                                        try {
+                                            assertThat(connection.getTransactionIsolation())
+                                                    .isEqualTo(
+                                                            Connection.TRANSACTION_READ_COMMITTED);
+                                        } finally {
+                                            DataSourceUtils.releaseConnection(
+                                                    connection, dataSource);
+                                        }
+                                        TransactionSynchronizationManager.registerSynchronization(
+                                                new TransactionSynchronization() {
+                                                    @Override
+                                                    public void beforeCommit(boolean readOnly) {
+                                                        beforeCommit.countDown();
+                                                        try {
+                                                            assertThat(
+                                                                            releaseCommit.await(
+                                                                                    15,
+                                                                                    TimeUnit
+                                                                                            .SECONDS))
+                                                                    .isTrue();
+                                                        } catch (InterruptedException error) {
+                                                            Thread.currentThread().interrupt();
+                                                            throw new IllegalStateException(error);
+                                                        }
+                                                    }
+                                                });
+                                    }
+                                    return result;
+                                });
+        SessionEventLog clearingNode = node(heldRepository);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> clearing =
+                    pool.submit(
+                            () -> {
+                                if (purge) clearingNode.purgeDeletedSession(sessionId);
+                                else clearingNode.deleteBySessionId(sessionId);
+                            });
+            assertThat(beforeCommit.await(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(
+                            pool.submit(() -> eventLog.append(otherSession, "item.delta", Map.of()))
+                                    .get(5, TimeUnit.SECONDS)
+                                    .seq())
+                    .isEqualTo(1L);
+            releaseCommit.countDown();
+            clearing.get(10, TimeUnit.SECONDS);
+            assertThat(repository.findBySessionIdOrderBySeqAsc(sessionId)).isEmpty();
+            assertThat(repository.findBySessionIdOrderBySeqAsc(otherSession)).hasSize(1);
+            assertThat(deletedSessions.isDeleted(sessionId)).isEqualTo(purge);
+        } finally {
+            releaseCommit.countDown();
+            pool.shutdown();
+            if (!pool.awaitTermination(10, TimeUnit.SECONDS)) pool.shutdownNow();
+        }
     }
 
     @Test

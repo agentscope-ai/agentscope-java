@@ -58,7 +58,7 @@ public class SessionEventLog {
     private final SessionEventEntityRepository repository;
     private final ManagedJsonHelper jsonHelper;
     private final TransactionTemplate transactionTemplate;
-    private final TransactionTemplate appendTransactionTemplate;
+    private final TransactionTemplate writeTransactionTemplate;
     private final DeletedSessionRegistry deletedSessions;
     private final SessionEventNotifier notifier;
     private final List<SessionEventMirror> mirrors;
@@ -76,12 +76,12 @@ public class SessionEventLog {
         this.repository = repository;
         this.jsonHelper = jsonHelper;
         this.transactionTemplate = transactionTemplate;
-        this.appendTransactionTemplate =
+        this.writeTransactionTemplate =
                 new TransactionTemplate(
                         transactionTemplate.getTransactionManager(), transactionTemplate);
-        this.appendTransactionTemplate.setPropagationBehavior(
+        this.writeTransactionTemplate.setPropagationBehavior(
                 TransactionDefinition.PROPAGATION_REQUIRED);
-        this.appendTransactionTemplate.setIsolationLevel(
+        this.writeTransactionTemplate.setIsolationLevel(
                 TransactionDefinition.ISOLATION_READ_COMMITTED);
         this.deletedSessions = deletedSessions;
         this.notifier = notifier;
@@ -150,7 +150,7 @@ public class SessionEventLog {
             log.debug("Dropping {} event for deleted session {}", type, sessionId);
             return droppedEvent(sessionId, type, payload, eventId);
         }
-        return appendTransactionTemplate.execute(
+        return writeTransactionTemplate.execute(
                 status -> {
                     var event = appendOnce(sessionId, type, payload, eventId);
                     if (mirror) enqueueMirrors(event, scope);
@@ -197,32 +197,26 @@ public class SessionEventLog {
         if (deletedSessions.isDeleted(sessionId)) {
             return droppedEvent(sessionId, type, payload, eventId);
         }
-        return appendTransactionTemplate.execute(
+        return writeTransactionTemplate.execute(
                 status -> {
-                    var result =
-                            repository.appendIdempotentEvent(
-                                    newEvent(sessionId, type, payload, eventId));
-                    validateReplay(result.event(), sessionId, type, payload, eventId);
+                    var candidate = newEvent(sessionId, type, payload, eventId);
+                    var result = repository.appendIdempotentEvent(candidate);
                     var event = toDto(result.event());
+                    if (!result.inserted()) validateReplay(event, candidate);
                     if (mirror) enqueueMirrors(event, scope);
                     if (result.inserted()) notifyAfterCommit(sessionId);
                     return event;
                 });
     }
 
-    private void validateReplay(
-            SessionEventEntity existing,
-            String sessionId,
-            String type,
-            Map<String, Object> payload,
-            String eventId) {
-        if (!sessionId.equals(existing.getSessionId()) || !type.equals(existing.getEventType())) {
+    private void validateReplay(SessionEventDto existing, SessionEventEntity candidate) {
+        if (!candidate.getSessionId().equals(existing.sessionId())
+                || !candidate.getEventType().equals(existing.type())) {
             throw new IllegalStateException(
-                    "eventId already belongs to another session/event type: " + eventId);
+                    "eventId already belongs to another session/event type: "
+                            + candidate.getEventId());
         }
-        if (!Objects.equals(
-                jsonHelper.readMap(existing.getPayloadJson()),
-                jsonHelper.readMap(jsonHelper.writeJson(payload)))) {
+        if (!Objects.equals(existing.payload(), jsonHelper.readMap(candidate.getPayloadJson()))) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "eventId reused with different payload");
         }
@@ -426,9 +420,9 @@ public class SessionEventLog {
     }
 
     /** Deletes all persisted events for a session that keeps running (transcript clear). */
-    @Transactional
     public void deleteBySessionId(String sessionId) {
-        repository.deleteBySessionId(sessionId);
+        writeTransactionTemplate.executeWithoutResult(
+                status -> repository.deleteBySessionId(sessionId));
     }
 
     /**
@@ -441,7 +435,7 @@ public class SessionEventLog {
             return;
         }
         deletedSessions.markDeleted(sessionId);
-        transactionTemplate.executeWithoutResult(status -> deleteBySessionId(sessionId));
+        deleteBySessionId(sessionId);
     }
 
     /**

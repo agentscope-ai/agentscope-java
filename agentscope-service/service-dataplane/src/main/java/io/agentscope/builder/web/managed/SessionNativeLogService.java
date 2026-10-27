@@ -304,15 +304,18 @@ public class SessionNativeLogService {
         var log =
                 store.open(
                         new SessionKey(source.userId, source.agentId, source.sessionId), context);
-        export(log.inbox(), sink(source.sessionId));
-        export(log, sink(source.sessionId));
+        export(source.sessionId, log.inbox(), sink(source.sessionId));
+        export(source.sessionId, log, sink(source.sessionId));
     }
 
-    private void export(SessionLog log, SessionExportSink sink) {
-        new SessionLogExporter(log, sink).drain(this::acknowledgeAfterCommit);
+    private void export(String session, SessionLog log, SessionExportSink sink) {
+        new SessionLogExporter(log, sink)
+                .drain(
+                        acknowledgement ->
+                                acknowledgeAfterCommit(session, sink.name(), acknowledgement));
     }
 
-    private void acknowledgeAfterCommit(Runnable acknowledgement) {
+    private void acknowledgeAfterCommit(String session, String sink, Runnable acknowledgement) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
             acknowledgement.run();
             return;
@@ -323,7 +326,17 @@ public class SessionNativeLogService {
                 new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        acknowledgement.run();
+                        try {
+                            acknowledgement.run();
+                        } catch (RuntimeException error) {
+                            // SQL is already committed. Keep the cursor available for repair
+                            // without failing the command or skipping later commit callbacks.
+                            LOG.warn(
+                                    "Session {} export cursor for sink {} pending retry: {}",
+                                    session,
+                                    sink,
+                                    error.toString());
+                        }
                     }
                 });
     }

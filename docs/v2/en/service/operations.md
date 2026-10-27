@@ -79,6 +79,10 @@ CREATE INDEX ix_session_event_identity_session
 
 Stop all old event writers during this upgrade; do not mix replicas using `MAX(seq) + 1` with replicas using the counter. Existing transcripts initialize their counter and identity references on first use; large transcripts may take longer on that first write. Include both tables in backups. Transcript clearing removes its events and identity references and resets its counter in one transaction, retaining the counter lock row. Do not delete or reset these records independently of their event logs.
 
+Ordinary event appends, transcript clearing, and deleted-session purging start `READ_COMMITTED` transactions when no caller transaction exists. They join an existing transaction without changing its isolation level or rollback behavior. Command appends require an existing caller transaction. On MySQL, a caller using `REPEATABLE_READ` can still retain range locks during clearing and delay unrelated session writes; use `READ_COMMITTED` for enclosing transactions that need to avoid that contention.
+
+If a native export cursor acknowledgement fails after SQL commits, the command remains successful and the service logs the pending acknowledgement. Periodic export repair replays the immutable events and advances the cursor after storage recovers.
+
 ## Recover
 
 Stop application writes before data recovery. Restore into an independent empty database, restore matching workspace and artifact snapshots and the original Vault key, then start the component versions corresponding to the backup. Do not point `pg_restore --clean` at a live application database.

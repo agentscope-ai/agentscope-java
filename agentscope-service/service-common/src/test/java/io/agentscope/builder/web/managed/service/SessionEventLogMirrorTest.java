@@ -28,8 +28,11 @@ package io.agentscope.builder.web.managed.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -44,6 +47,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -51,6 +55,44 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class SessionEventLogMirrorTest {
+
+    @Test
+    void idempotentAppendReusesSerializedPayloadAndDecodedWinner() {
+        var repository = mock(SessionEventEntityRepository.class);
+        var saved = new AtomicReference<SessionEventEntity>();
+        when(repository.appendIdempotentEvent(any(SessionEventEntity.class)))
+                .thenAnswer(
+                        call -> {
+                            SessionEventEntity candidate = call.getArgument(0);
+                            candidate.setSeq(1);
+                            boolean inserted = saved.compareAndSet(null, candidate);
+                            return new AppendResult(saved.get(), inserted);
+                        });
+        var json = spy(new ManagedJsonHelper(new ObjectMapper()));
+        var log =
+                new SessionEventLog(
+                        repository,
+                        json,
+                        transactions(new AtomicBoolean()),
+                        new DeletedSessionRegistry(),
+                        mock(SessionEventNotifier.class),
+                        30000);
+
+        var first =
+                log.appendIdempotentLocal("session", "item.delta", Map.of("count", 1L), "event");
+
+        assertThat(first.payload()).containsEntry("count", 1);
+        verify(json, times(1)).writeJson(any());
+        verify(json, times(1)).readMap(anyString());
+        clearInvocations(json);
+
+        var replay =
+                log.appendIdempotentLocal("session", "item.delta", Map.of("count", 1), "event");
+
+        assertThat(replay).isEqualTo(first);
+        verify(json, times(1)).writeJson(any());
+        verify(json, times(2)).readMap(anyString());
+    }
 
     @Test
     void immutableEventWinnerIsReusedWithoutAllocatingAnotherSequence() {
