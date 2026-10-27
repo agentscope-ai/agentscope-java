@@ -266,6 +266,8 @@ When memory is enabled, a throttled background job also runs. The first eligible
 
 Entering maintenance does not necessarily call the model: consolidation skips the LLM request when there are no new daily ledger entries since the last successful consolidation. `FlushTrigger.never()` does not disable this maintenance path.
 
+When using a distributed store, consolidation watermarks follow the workspace's configured namespace mapping. Isolated users or sessions do not advance each other's cursors; intentionally unscoped workspaces retain a shared cursor. On upgrade, an isolated scope ignores the legacy global cursor and falls back to its own `memory/.consolidation_state` file (or processes all retained ledgers if no file exists). Custom `WorkspaceManager` instances should receive the same `NamespaceFactory` as their filesystem.
+
 All thresholds are tunable via `.memory(MemoryConfig.builder()...)`, though most projects don't need to touch them.
 
 ## Turn it off entirely
