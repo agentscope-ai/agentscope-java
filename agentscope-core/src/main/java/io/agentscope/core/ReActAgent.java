@@ -99,6 +99,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.PartialStreamContent;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.observation.ActionObservationException;
@@ -156,6 +157,7 @@ import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -171,6 +173,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -185,6 +188,7 @@ import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.context.Context;
+import reactor.util.retry.Retry;
 
 /**
  * ReAct (Reasoning and Acting) Agent implementation.
@@ -3071,21 +3075,38 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             StringBuilder transformedText = new StringBuilder();
             AtomicBoolean sawTransformedTextDelta = new AtomicBoolean(false);
+            Model model =
+                    modelForCall(rc, ModelRequestPreparer.Purpose.REASONING, this::publishEvent);
             return MiddlewareChain.build(
                             middlewaresAt(MiddlewareBase.ExtensionPoint.ON_MODEL_CALL),
                             ReActAgent.this,
                             rc,
                             MiddlewareBase::onModelCall,
                             modelCallCore)
-                    .apply(
-                            new ModelCallInput(
-                                    messages,
-                                    tools,
-                                    options,
-                                    modelForCall(
-                                            rc,
-                                            ModelRequestPreparer.Purpose.REASONING,
-                                            this::publishEvent)))
+                    .apply(new ModelCallInput(messages, tools, options, model))
+                    // A stream the provider terminated abnormally (no [DONE] sentinel and
+                    // no finish_reason chunk) is retried once with a clean slate: the
+                    // reasoning accumulators and the text-transform buffer are reset
+                    // before re-subscription, and the retried attempt re-emits
+                    // ModelCallStartEvent with attempt > 1 so downstream consumers drop
+                    // the partial content of the aborted attempt instead of duplicating
+                    // it. Blind re-subscription without these resets would concatenate
+                    // both attempts' text.
+                    .retryWhen(
+                            Retry.fixedDelay(1, Duration.ofSeconds(1))
+                                    .filter(ex -> ex instanceof PartialStreamContent)
+                                    .doBeforeRetry(
+                                            signal -> {
+                                                log.warn(
+                                                        "Model stream ended abnormally"
+                                                                + " (model={}), retrying once"
+                                                                + " with reset accumulators: {}",
+                                                        model.getModelName(),
+                                                        signal.failure().getMessage());
+                                                context.resetStreamState();
+                                                transformedText.setLength(0);
+                                                sawTransformedTextDelta.set(false);
+                                            }))
                     .doOnNext(
                             event -> {
                                 if (event instanceof TextBlockDeltaEvent textDelta) {
@@ -3107,6 +3128,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Flux<AgentEvent> modelCallStream(
                 ReasoningContext context, ModelCallInput mci, boolean withToolEvents) {
 
+            // Attempt counter incremented on every (re-)subscription: the reasoning
+            // layer's incomplete-stream retry resubscribes this flux, and each attempt
+            // gets a fresh replyId + block lifecycle (the defer below regenerates them)
+            // plus an attempt number on ModelCallStartEvent, so consumers can
+            // distinguish and discard state from an aborted attempt.
+            AtomicInteger attempt = new AtomicInteger(0);
             return Flux.defer(
                     () -> {
                         String callId = UUID.randomUUID().toString().replace("-", "");
@@ -3114,7 +3141,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 .flatMapMany(
                                         prepared ->
                                                 preparedModelCallStream(
-                                                        context, prepared, withToolEvents, callId));
+                                                        context,
+                                                        prepared,
+                                                        withToolEvents,
+                                                        callId,
+                                                        attempt.incrementAndGet()));
                     });
         }
 
@@ -3137,12 +3168,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     "Model request preparer returned no request")));
         }
 
-        private AgentEvent modelCallStart(String replyId) {
-            if (rc == null) return new ModelCallStartEvent(replyId);
+        private AgentEvent modelCallStart(String replyId, int attempt) {
+            if (rc == null) return new ModelCallStartEvent(replyId, attempt);
             String key = ModelRequestPreparer.MANIFEST_ATTRIBUTE_PREFIX + replyId;
             Object manifest = rc.get(key);
             rc.put(key, null);
-            ModelCallStartEvent event = new ModelCallStartEvent(replyId);
+            ModelCallStartEvent event = new ModelCallStartEvent(replyId, attempt);
             return manifest == null ? event : event.withMetadataEntry("contextManifest", manifest);
         }
 
@@ -3201,7 +3232,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 ReasoningContext context,
                 ModelCallInput modelCallInput,
                 boolean withToolEvents,
-                String replyId) {
+                String replyId,
+                int attempt) {
 
             ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
             ModelCallInput mci = appendTransientSoToolReminder(modelCallInput);
@@ -3250,11 +3282,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             () -> {
                                 List<AgentEvent> events = new ArrayList<>();
                                 blockLifecycle.flushAll(events);
-                                events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                                events.add(
+                                        new ModelCallEndEvent(
+                                                replyId,
+                                                context.getChatUsage(),
+                                                context.getFinishReason()));
                                 return Flux.fromIterable(events);
                             });
 
-            return Flux.concat(Flux.just(modelCallStart(replyId)), modelEvents, endEvents);
+            return Flux.concat(Flux.just(modelCallStart(replyId, attempt)), modelEvents, endEvents);
         }
 
         private void emitBlockEvents(
@@ -4738,11 +4774,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             () -> {
                                 List<AgentEvent> events = new ArrayList<>();
                                 blockLifecycle.flushAll(events);
-                                events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                                events.add(
+                                        new ModelCallEndEvent(
+                                                replyId,
+                                                context.getChatUsage(),
+                                                context.getFinishReason()));
                                 return Flux.fromIterable(events);
                             });
 
-            return Flux.concat(Flux.just(modelCallStart(replyId)), modelEvents, endEvents);
+            return Flux.concat(Flux.just(modelCallStart(replyId, 1)), modelEvents, endEvents);
         }
 
         private List<Msg> prepareSummaryMessages() {
