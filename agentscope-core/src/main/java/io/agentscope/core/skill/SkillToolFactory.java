@@ -80,6 +80,18 @@ class SkillToolFactory {
     }
 
     /**
+     * Whether a {@code load_skill_through_path} tool is already present on the given toolkit,
+     * regardless of which path registered it (dynamic middleware, static {@code SkillBox},
+     * or any caller).
+     *
+     * @param toolkit the toolkit to inspect
+     * @return {@code true} when a same-named load tool is already registered
+     */
+    static boolean isRuntimeLoadToolRegistered(Toolkit toolkit) {
+        return toolkit.getTool(LOAD_TOOL_NAME) != null;
+    }
+
+    /**
      * Registers the shared, runtime-resolving {@code load_skill_through_path} tool on the given
      * toolkit. Used by the dynamic-skill path: the tool is registered once at build time and
      * resolves the current per-call {@link SkillBox} from the {@link RuntimeContext} at invocation
@@ -88,7 +100,7 @@ class SkillToolFactory {
      * @param toolkit the shared toolkit to register the load tool on
      */
     static void registerRuntimeLoadTool(Toolkit toolkit) {
-        if (toolkit.getTool(LOAD_TOOL_NAME) != null) {
+        if (isRuntimeLoadToolRegistered(toolkit)) {
             // Already registered by another path (e.g. the static skillBox); never overwrite.
             // Mixing static and dynamic skill configuration is unsupported, so surface it.
             logger.warn(
