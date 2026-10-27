@@ -203,6 +203,8 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 
 如果 `CachePolicy.ENABLED` 搭配 `option(...)` 或 `component(...)` 使用，用户必须提供 `cacheId`。
 
+调用 `registerFactory` 会清掉 model id 与新正则匹配的缓存实例，之后再解析这些 id 就会使用新工厂。被清掉的实例不会被关闭，因为调用方可能仍在使用。同一个可缓存 id 的并发首次解析只会创建一次，所有调用方拿到同一个实例。
+
 ### ModelProvider SPI
 
 模型提供商扩展模块通过 Java SPI 暴露 `META-INF/services/io.agentscope.core.model.spi.ModelProvider`，由 `ModelRegistry` 自动发现。新的模型提供商可以实现 `supports(String, ModelCreationContext)` 和 `create(String, ModelCreationContext)` 来消费 context。简单模型提供商仍可只实现原有的 `supports(String)` 和 `create(String)`，因为 context-aware 方法提供了兼容默认实现。
