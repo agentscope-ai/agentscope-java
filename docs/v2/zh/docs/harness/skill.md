@@ -326,6 +326,8 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 ### 市场 skill 文件实际落在哪儿
 
+仓库技能没有实际物化的附属资源时（例如仅提供内联正文的技能），staging 返回 `NONE`，不公布 `<files-root>`；技能仍可通过 `load_skill_through_path(..., path="SKILL.md")` 加载。混合技能目录中，只有提供 `<files-root>` 的条目才支持按该路径列文件或执行脚本。
+
 市场 skill 的资源最初只在内存里。要让 shell 能跑它们，harness 在每次 call 前（PreCall 阶段，与 `<available_skills>` 同一次 `onSystemPrompt`）把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`：
 
 - 文件级 SHA-256 去重，只重写变化过的文件
