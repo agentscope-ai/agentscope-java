@@ -108,7 +108,7 @@ class DynamicSkillMiddlewareTest {
 
     @Test
     void repositorySkillIsExposedViaRuntimeContext() {
-        AgentSkill skill = new AgentSkill("my_skill", "My Skill", "# Content", null);
+        AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
         DynamicSkillMiddleware mw = middleware(List.of(skill));
         RuntimeContext rc = RuntimeContext.empty();
 
@@ -116,12 +116,12 @@ class DynamicSkillMiddlewareTest {
 
         assertNotNull(
                 rc.get(SkillBox.class), "the per-call SkillBox must be exposed via RuntimeContext");
-        assertTrue(prompt.contains("my_skill"), "the skill prompt must contain the skill name");
+        assertTrue(prompt.contains("my-skill"), "the skill prompt must contain the skill name");
     }
 
     @Test
     void reusedRuntimeContextClearsStaleBox() {
-        AgentSkill skill = new AgentSkill("my_skill", "My Skill", "# Content", null);
+        AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
         StubRepo repo = new StubRepo(List.of(skill));
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(repo), new Toolkit(), null, false, workDir);
@@ -267,13 +267,13 @@ class DynamicSkillMiddlewareTest {
         RuntimeContext a = RuntimeContext.builder().userId("A").sessionId("s").build();
         RuntimeContext b = RuntimeContext.builder().userId("B").sessionId("s").build();
         org.mockito.Mockito.when(repo.getAllSkills(a))
-                .thenReturn(List.of(new AgentSkill("skill_a", "A", "A", null)));
+                .thenReturn(List.of(new AgentSkill("skill-a", "A", "A", null)));
         org.mockito.Mockito.when(repo.getAllSkills(b))
-                .thenReturn(List.of(new AgentSkill("skill_b", "B", "B", null)));
+                .thenReturn(List.of(new AgentSkill("skill-b", "B", "B", null)));
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(repo), new Toolkit(), null, false, workDir);
-        assertTrue(mw.onSystemPrompt(null, a, "").block().contains("skill_a"));
-        assertTrue(mw.onSystemPrompt(null, b, "").block().contains("skill_b"));
+        assertTrue(mw.onSystemPrompt(null, a, "").block().contains("skill-a"));
+        assertTrue(mw.onSystemPrompt(null, b, "").block().contains("skill-b"));
         org.mockito.Mockito.verify(repo, org.mockito.Mockito.never()).getAllSkills();
     }
 }

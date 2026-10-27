@@ -16,6 +16,7 @@
 package io.agentscope.core.skill;
 
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
+import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
 import io.agentscope.core.tool.ToolCallParam;
@@ -30,6 +31,7 @@ import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
@@ -186,10 +188,10 @@ public class SkillBox {
      *
      * <p><b>Usage example:</b>
      * <pre>{@code
-     * AgentSkill mySkill = new AgentSkill("my_skill", "Description", "Content", null);
+     * AgentSkill mySkill = new AgentSkill("my-skill", "Description", "Content", null);
      *
      * skillBox.registerSkill(mySkill);
-     * skillBox.registerSkill(my_skill); // do nothing
+     * skillBox.registerSkill(mySkill); // do nothing
      * }</pre>
      *
      * @param skill The agent skill to register
@@ -688,6 +690,12 @@ public class SkillBox {
      *   <li>Otherwise, use workDir/skills (workDir may be a temporary directory).</li>
      * </ul>
      *
+     * <p>Security gate: the skill directory (derived from the skill id, whose source part is
+     * free-form) and every resource path must pass {@link SkillUtil#resolveContainedPath(Path,
+     * String)} — an absolute or traversal-shaped segment would otherwise resolve outside the
+     * upload directory and is skipped with a warning. Skill names themselves are already
+     * validated at construction.
+     *
      * <p>If a file already exists, it will be overwritten.
      *
      */
@@ -712,7 +720,15 @@ public class SkillBox {
                 continue;
             }
 
-            Path skillDir = targetDir.resolve(skillId);
+            Optional<Path> skillDir = SkillUtil.resolveContainedPath(targetDir, skillId);
+            if (skillDir.isEmpty()) {
+                logger.warn(
+                        "Refusing to materialize skill '{}': resolved directory escapes the"
+                                + " target directory '{}'",
+                        skillId,
+                        targetDir);
+                continue;
+            }
 
             for (String resourcePath : resourcePaths) {
                 if (!filter.accept(resourcePath)) {
@@ -725,13 +741,13 @@ public class SkillBox {
                     continue;
                 }
 
-                Path targetPath = skillDir.resolve(resourcePath).normalize();
-
-                // Security check: Prevent path traversal attacks
-                if (!targetPath.startsWith(skillDir)) {
+                Optional<Path> containedPath =
+                        SkillUtil.resolveContainedPath(skillDir.get(), resourcePath);
+                if (containedPath.isEmpty()) {
                     logger.warn("Skipping file with invalid path: {}", resourcePath);
                     continue;
                 }
+                Path targetPath = containedPath.get();
 
                 try {
                     if (targetPath.getParent() != null) {
