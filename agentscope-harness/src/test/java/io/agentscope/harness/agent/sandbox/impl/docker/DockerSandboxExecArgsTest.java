@@ -46,15 +46,29 @@ class DockerSandboxExecArgsTest {
     }
 
     @Test
-    void windowsPath_passesScriptViaStdin() {
+    void windowsPath_spoolsStdinScriptToTempFileWithDetachedStdin() {
         List<String> args = DockerSandbox.buildExecArgs(CMD, "/workspace", "container-1", true);
 
-        // -i + plain sh: the script is fed on stdin, never placed on the Windows command line.
+        // -i + a quote-free -c spool payload: the script travels on stdin, is spooled to a
+        // temp file by cat, and runs with stdin detached from /dev/null — stdin-reading
+        // commands in long scripts can no longer consume the rest of the script (#3383
+        // review). The payload contains no quotes at all, so Windows re-quoting cannot
+        // damage it.
         assertEquals(
-                List.of("docker", "exec", "-i", "-w", "/workspace", "container-1", "sh"), args);
+                List.of(
+                        "docker",
+                        "exec",
+                        "-i",
+                        "-w",
+                        "/workspace",
+                        "container-1",
+                        "sh",
+                        "-c",
+                        "f=$(mktemp) && cat >$f && sh $f </dev/null; rc=$?; rm -f $f; exit $rc"),
+                args);
         assertFalse(
-                args.contains("-c"),
-                "no -c on Windows: the script must not travel through cmd.exe");
+                String.join(" ", args).contains("\""),
+                "no double quotes anywhere on the Windows command line");
     }
 
     @Test

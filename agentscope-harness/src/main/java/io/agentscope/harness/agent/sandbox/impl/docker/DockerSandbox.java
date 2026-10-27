@@ -177,7 +177,14 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         cmd.add(containerId);
         cmd.add("sh");
         if (windows) {
-            // no "-c": sh executes the whole stdin as the script
+            // The script travels on stdin, spooled to a temp file and run with stdin detached
+            // from /dev/null. Feeding the script directly to `sh` (no -c) made every command
+            // in it inherit fd 0, so a stdin-reading command (cat, read, python -) consumed
+            // the not-yet-parsed remainder of any script longer than sh's read buffer — a
+            // silently half-executed script (#3383 review). The spool payload contains no
+            // quotes at all, so Windows' argument re-quoting cannot damage it.
+            cmd.add("-c");
+            cmd.add("f=$(mktemp) && cat >$f && sh $f </dev/null; rc=$?; rm -f $f; exit $rc");
         } else {
             cmd.add("-c");
             cmd.add(command);
@@ -219,11 +226,12 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                 drainer.submit(() -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
 
         if (windows) {
-            // The script travels via stdin (-i, no -c): write it, then close so sh runs the
-            // buffered script to completion and exits with its status (#2924). Written from
-            // the drainer pool AFTER the output drainers started, so early child output can
-            // never fill the stdout pipe and deadlock the write before waitFor() arms the
-            // timeout (#2924 review).
+            // The script travels via stdin and is spooled to a temp file by the -c payload
+            // (see buildExecArgs); write it, then close so `cat` sees EOF and the spooled
+            // script runs to completion with stdin detached (#2924, #3383 review). Written
+            // from the drainer pool AFTER the output drainers started, so early child output
+            // can never fill the stdout pipe and deadlock the write before waitFor() arms
+            // the timeout (#2924 review).
             Future<?> stdinWrite =
                     drainer.submit(
                             () -> {
