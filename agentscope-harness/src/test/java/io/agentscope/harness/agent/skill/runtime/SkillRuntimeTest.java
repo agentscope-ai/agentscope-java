@@ -186,7 +186,7 @@ class SkillRuntimeTest {
         void rendersEscapedFilesRootWhenPathContainsSpaces() {
             HarnessSkillEntry e =
                     new HarnessSkillEntry(
-                            skill("V2Ray 代理配置助手", "wkspace"),
+                            skill("v2ray-helper", "wkspace"),
                             null,
                             "/workspace/skills/V2Ray\\ 代理配置助手");
             String out = new SkillPromptBuilder().render(SkillCatalog.of(List.of(e)));
