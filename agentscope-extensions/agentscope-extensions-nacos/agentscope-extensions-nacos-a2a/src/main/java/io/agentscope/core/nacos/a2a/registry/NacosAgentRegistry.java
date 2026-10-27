@@ -24,6 +24,7 @@ import com.alibaba.nacos.common.utils.StringUtils;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
+import io.agentscope.core.a2a.server.utils.NetworkUtils;
 import io.agentscope.core.nacos.a2a.registry.constants.Constants;
 import java.util.Collection;
 import java.util.HashMap;
@@ -230,7 +231,7 @@ public class NacosAgentRegistry implements AgentRegistry {
                 String.format(
                         AGENT_INTERFACE_URL_PATTERN,
                         protocol,
-                        transportProperties.host(),
+                        NetworkUtils.formatHostForUrl(transportProperties.host()),
                         transportProperties.port());
         String path = transportProperties.path();
         if (StringUtils.isNotBlank(path)) {
