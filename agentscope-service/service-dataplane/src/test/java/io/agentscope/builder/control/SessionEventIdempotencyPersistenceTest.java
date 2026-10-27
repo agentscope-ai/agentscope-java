@@ -328,6 +328,94 @@ class SessionEventIdempotencyPersistenceTest {
         assertThat(log.append(session, "item.delta", Map.of()).seq()).isEqualTo(2L);
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void replayIgnoresCachedOutboxVersionAfterConcurrentDelivery(boolean sealed) {
+        String session = "cached-delivery";
+        String id = eventId("cached");
+        log.appendIdempotentScoped(session, "item.delta", Map.of(), id, scope);
+        if (sealed) {
+            outbox.freezeAttemptIfFinished(session, scope.attemptId(), admissions -> true);
+            outbox.sealAttempt(session, scope.attemptId());
+        }
+        var worker = Executors.newSingleThreadExecutor();
+        try {
+            new TransactionTemplate(tm)
+                    .executeWithoutResult(
+                            status -> {
+                                var cached = delivery.findById(id).orElseThrow();
+                                assertThat(cached.version).isZero();
+                                try {
+                                    worker.submit(
+                                                    () ->
+                                                            new TransactionTemplate(tm)
+                                                                    .executeWithoutResult(
+                                                                            deliveryStatus -> {
+                                                                                var row =
+                                                                                        delivery.lockById(
+                                                                                                        id)
+                                                                                                .orElseThrow();
+                                                                                row.deliveredAt =
+                                                                                        42;
+                                                                                row.attempts = 3;
+                                                                            }))
+                                            .get(5, TimeUnit.SECONDS);
+                                } catch (Exception error) {
+                                    throw new RuntimeException(error);
+                                }
+                                assertThat(cached.deliveredAt).isZero();
+                                assertThat(
+                                                log.appendIdempotentScoped(
+                                                                session,
+                                                                "item.delta",
+                                                                Map.of(),
+                                                                id,
+                                                                scope)
+                                                        .seq())
+                                        .isEqualTo(1L);
+                            });
+        } finally {
+            worker.shutdownNow();
+        }
+        var delivered = delivery.findById(id).orElseThrow();
+        assertThat(delivered.deliveredAt).isEqualTo(42);
+        assertThat(delivered.attempts).isEqualTo(3);
+        assertThat(delivered.version).isEqualTo(1);
+        assertThat(repository.findAll()).hasSize(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void replayPreservesPendingOutboxDeliveryChanges(boolean sealed) {
+        String session = "pending-delivery";
+        String id = eventId("pending");
+        log.appendIdempotentScoped(session, "item.delta", Map.of(), id, scope);
+        if (sealed) {
+            outbox.freezeAttemptIfFinished(session, scope.attemptId(), admissions -> true);
+            outbox.sealAttempt(session, scope.attemptId());
+        }
+        new TransactionTemplate(tm)
+                .executeWithoutResult(
+                        status -> {
+                            var pending = delivery.findById(id).orElseThrow();
+                            pending.deliveredAt = 42;
+                            pending.attempts = 3;
+                            assertThat(
+                                            log.appendIdempotentScoped(
+                                                            session,
+                                                            "item.delta",
+                                                            Map.of(),
+                                                            id,
+                                                            scope)
+                                                    .seq())
+                                    .isEqualTo(1L);
+                        });
+        var delivered = delivery.findById(id).orElseThrow();
+        assertThat(delivered.deliveredAt).isEqualTo(42);
+        assertThat(delivered.attempts).isEqualTo(3);
+        assertThat(repository.findAll()).hasSize(1);
+    }
+
     @Test
     void invalidInsertIsNotTreatedAsAnIdempotentReplay() {
         assertThatThrownBy(() -> log.appendIdempotent("invalid", null, Map.of(), "invalid-event"))

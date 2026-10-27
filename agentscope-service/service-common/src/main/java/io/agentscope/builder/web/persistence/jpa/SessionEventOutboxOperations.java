@@ -15,7 +15,15 @@
  */
 package io.agentscope.builder.web.persistence.jpa;
 
+import java.util.Optional;
+
 /** Immutable outbox insertion that can safely replay inside an existing transaction. */
 public interface SessionEventOutboxOperations {
-    SessionEventOutboxEntity insertIfAbsent(SessionEventOutboxEntity event);
+    /** Immutable report fields used to validate replay independently of delivery progress. */
+    record StoredReport(String sessionId, String attemptId, String reportJson) {}
+
+    StoredReport insertIfAbsent(SessionEventOutboxEntity event);
+
+    /** Locks and reads the current report without reusing a cached delivery entity. */
+    Optional<StoredReport> lockReportById(String eventId);
 }

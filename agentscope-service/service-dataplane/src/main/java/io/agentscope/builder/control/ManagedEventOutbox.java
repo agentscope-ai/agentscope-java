@@ -21,6 +21,7 @@ import io.agentscope.builder.web.managed.service.SessionEventScope;
 import io.agentscope.builder.web.persistence.jpa.SessionEventFenceEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionEventFenceRepository;
 import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxEntity;
+import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxOperations.StoredReport;
 import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxRepository;
 import io.agentscope.builder.web.persistence.jpa.SessionExecutionScopeEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionExecutionScopeRepository;
@@ -77,7 +78,7 @@ public class ManagedEventOutbox {
         if (fence.sealed || (fence.closing && !scope.nativeFact())) {
             // Closing forbids new facts but still permits replaying an already committed report.
             var existing =
-                    events.lockById(event.id())
+                    events.lockReportById(event.id())
                             .orElseThrow(
                                     () ->
                                             new IllegalStateException(
@@ -98,13 +99,10 @@ public class ManagedEventOutbox {
     }
 
     private void validateReplay(
-            SessionEventOutboxEntity existing,
-            SessionEventDto event,
-            SessionEventScope scope,
-            String report) {
-        if (!existing.sessionId.equals(event.sessionId())
-                || !existing.attemptId.equals(scope.attemptId())
-                || !tree(existing.reportJson).equals(tree(report)))
+            StoredReport existing, SessionEventDto event, SessionEventScope scope, String report) {
+        if (!existing.sessionId().equals(event.sessionId())
+                || !existing.attemptId().equals(scope.attemptId())
+                || !tree(existing.reportJson()).equals(tree(report)))
             throw new IllegalStateException(
                     "Mirror event identity or fence changed: " + event.id());
     }

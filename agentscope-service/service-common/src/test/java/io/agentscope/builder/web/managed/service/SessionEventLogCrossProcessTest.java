@@ -25,6 +25,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.builder.BuilderCommonTestApp;
 import io.agentscope.builder.web.managed.SessionEventDto;
 import io.agentscope.builder.web.persistence.jpa.SessionEventEntityRepository;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +37,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
+import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -75,6 +77,7 @@ class SessionEventLogCrossProcessTest {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired ManagedJsonHelper jsonHelper;
     @Autowired SessionEventNotifier notifier;
+    @Autowired EntityManagerFactory entityManagerFactory;
 
     @Test
     void sameSessionWaitsBeforeReadingSequenceWhileOtherSessionsProceed() throws Exception {
@@ -599,6 +602,102 @@ class SessionEventLogCrossProcessTest {
                                         sessionId, "item.delta", Map.of("text", "new"), "clear-id")
                                 .seq())
                 .isEqualTo(1L);
+    }
+
+    @Test
+    void clearingLegacyTranscriptUsesConstantStatementsWithoutBackfillingIdentities() {
+        var jdbc = new JdbcTemplate(dataSource);
+        for (int size : List.of(1, 1000)) {
+            var rows = new ArrayList<Object[]>();
+            String sessionId = "ses_legacy_clear_" + size;
+            for (int i = 1; i <= size; i++)
+                rows.add(new Object[] {sessionId, sessionId + "_event_" + i, (long) i});
+            jdbc.batchUpdate(
+                    "insert into builder_session_event (session_id, event_id, seq, event_type,"
+                            + " payload_json, created_at) values (?, ?, ?, 'item.delta', '{}', 1)",
+                    rows);
+        }
+        var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        boolean statisticsEnabled = statistics.isStatisticsEnabled();
+        statistics.setStatisticsEnabled(true);
+        try {
+            long beforeSmall = statistics.getPrepareStatementCount();
+            eventLog.deleteBySessionId("ses_legacy_clear_1");
+            long smallCount = statistics.getPrepareStatementCount() - beforeSmall;
+            long beforeLarge = statistics.getPrepareStatementCount();
+            eventLog.deleteBySessionId("ses_legacy_clear_1000");
+            long largeCount = statistics.getPrepareStatementCount() - beforeLarge;
+            assertThat(smallCount).isPositive();
+            assertThat(largeCount).isLessThanOrEqualTo(smallCount);
+        } finally {
+            statistics.setStatisticsEnabled(statisticsEnabled);
+        }
+        for (int size : List.of(1, 1000)) {
+            String sessionId = "ses_legacy_clear_" + size;
+            assertThat(repository.findBySessionIdOrderBySeqAsc(sessionId)).isEmpty();
+            assertThat(
+                            jdbc.queryForObject(
+                                    "select count(*) from builder_session_event_identity where"
+                                            + " session_id = ?",
+                                    Long.class,
+                                    sessionId))
+                    .isZero();
+            assertThat(
+                            eventLog.appendIdempotent(
+                                            sessionId,
+                                            "item.delta",
+                                            Map.of("text", "new"),
+                                            sessionId + "_event_1")
+                                    .seq())
+                    .isEqualTo(1L);
+        }
+    }
+
+    @Test
+    void rolledBackLegacyClearPreservesHistoryAndSerializesConcurrentAppend() throws Exception {
+        String sessionId = "ses_legacy_clear_rollback";
+        new JdbcTemplate(dataSource)
+                .update(
+                        "insert into builder_session_event (session_id, event_id, seq, event_type,"
+                                + " payload_json, created_at) values (?, ?, ?, ?, ?, ?)",
+                        sessionId,
+                        "legacy-clear-rollback-event",
+                        17L,
+                        "run.started",
+                        "{}",
+                        1L);
+        var pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<SessionEventDto> append;
+            var held = transactionManager.getTransaction(new DefaultTransactionDefinition());
+            try {
+                eventLog.deleteBySessionId(sessionId);
+                CountDownLatch started = new CountDownLatch(1);
+                append =
+                        pool.submit(
+                                () -> {
+                                    started.countDown();
+                                    return eventLog.append(sessionId, "item.delta", Map.of());
+                                });
+                assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThatThrownBy(() -> append.get(300, TimeUnit.MILLISECONDS))
+                        .isInstanceOf(java.util.concurrent.TimeoutException.class);
+            } finally {
+                transactionManager.rollback(held);
+            }
+            assertThat(append.get(10, TimeUnit.SECONDS).seq()).isEqualTo(18L);
+            assertThat(
+                            eventLog.appendIdempotent(
+                                            sessionId,
+                                            "run.started",
+                                            Map.of(),
+                                            "legacy-clear-rollback-event")
+                                    .seq())
+                    .isEqualTo(17L);
+            assertThat(repository.findBySessionIdOrderBySeqAsc(sessionId)).hasSize(2);
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @TestConfiguration

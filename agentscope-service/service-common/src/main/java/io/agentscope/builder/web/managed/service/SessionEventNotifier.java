@@ -24,6 +24,7 @@ import java.sql.Statement;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.sql.DataSource;
 import org.postgresql.PGConnection;
@@ -99,7 +100,12 @@ public class SessionEventNotifier {
         }
         // Spring still holds the committed transaction's connection during afterCommit.
         // Publish remotely after returning, so a full pool cannot block all commit callbacks.
-        Schedulers.boundedElastic().schedule(() -> publishPostgres(sessionId));
+        try {
+            Schedulers.boundedElastic().schedule(() -> publishPostgres(sessionId));
+        } catch (RejectedExecutionException ex) {
+            // A missed wakeup is recovered by polling; it must not interrupt commit callbacks.
+            log.debug("Failed to schedule session-event notification for {}", sessionId, ex);
+        }
     }
 
     private void publishPostgres(String sessionId) {

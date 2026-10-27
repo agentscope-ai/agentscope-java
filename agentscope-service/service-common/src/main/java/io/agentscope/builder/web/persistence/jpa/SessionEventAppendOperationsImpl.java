@@ -33,22 +33,7 @@ public class SessionEventAppendOperationsImpl implements SessionEventAppendOpera
     }
 
     private long lockNextSequence(String sessionId) {
-        JpaPrimaryKeyUpsert.execute(
-                entityManager,
-                SessionEventSequenceEntity.class,
-                "session_id",
-                "session_id",
-                sessionId);
-        // A locking read sees the current counter even in a MySQL REPEATABLE_READ caller.
-        Number next =
-                (Number)
-                        entityManager
-                                .createNativeQuery(
-                                        "select next_seq from "
-                                                + SEQUENCES
-                                                + " where session_id = :sid for update")
-                                .setParameter("sid", sessionId)
-                                .getSingleResult();
+        Number next = lockSequence(sessionId);
         if (next != null) return next.longValue();
         // Only legacy logs can contain events without identity rows. Old writers must be stopped
         // before upgrading; new writers and transcript clearing already hold this counter lock.
@@ -68,6 +53,24 @@ public class SessionEventAppendOperationsImpl implements SessionEventAppendOpera
         }
         setNextSequence(sessionId, initial);
         return initial;
+    }
+
+    private Number lockSequence(String sessionId) {
+        JpaPrimaryKeyUpsert.execute(
+                entityManager,
+                SessionEventSequenceEntity.class,
+                "session_id",
+                "session_id",
+                sessionId);
+        // A locking read sees the current counter even in a MySQL REPEATABLE_READ caller.
+        return (Number)
+                entityManager
+                        .createNativeQuery(
+                                "select next_seq from "
+                                        + SEQUENCES
+                                        + " where session_id = :sid for update")
+                        .setParameter("sid", sessionId)
+                        .getSingleResult();
     }
 
     private void setNextSequence(String sessionId, long nextSeq) {
@@ -144,7 +147,7 @@ public class SessionEventAppendOperationsImpl implements SessionEventAppendOpera
 
     @Override
     public void deleteBySessionId(String sessionId) {
-        lockNextSequence(sessionId);
+        lockSequence(sessionId);
         // Drop identities before their events so a replay holding an identity lock can still
         // resolve its event row. Both removals and the counter reset commit atomically.
         entityManager

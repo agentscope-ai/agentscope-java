@@ -16,7 +16,7 @@
 package io.agentscope.builder.web.persistence.jpa;
 
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
+import java.util.Optional;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,7 +29,7 @@ public class SessionEventOutboxOperationsImpl implements SessionEventOutboxOpera
     }
 
     @Override
-    public SessionEventOutboxEntity insertIfAbsent(SessionEventOutboxEntity event) {
+    public StoredReport insertIfAbsent(SessionEventOutboxEntity event) {
         JpaPrimaryKeyUpsert.execute(
                 entityManager,
                 SessionEventOutboxEntity.class,
@@ -47,7 +47,24 @@ public class SessionEventOutboxOperationsImpl implements SessionEventOutboxOpera
                 0L,
                 0,
                 0L);
-        return entityManager.find(
-                SessionEventOutboxEntity.class, event.eventId, LockModeType.PESSIMISTIC_WRITE);
+        return lockReportById(event.eventId).orElseThrow();
+    }
+
+    @Override
+    public Optional<StoredReport> lockReportById(String eventId) {
+        // Delivery workers may have advanced a managed entity's version since it was read.
+        // A scalar current read validates immutable content without a stale version check or
+        // refreshing away the caller's pending changes to delivery state.
+        var rows =
+                entityManager
+                        .createNativeQuery(
+                                "select session_id, attempt_id, report_json from"
+                                        + " {h-schema}builder_session_event_outbox where event_id"
+                                        + " = :id for update")
+                        .setParameter("id", eventId)
+                        .getResultList();
+        if (rows.isEmpty()) return Optional.empty();
+        Object[] row = (Object[]) rows.get(0);
+        return Optional.of(new StoredReport((String) row[0], (String) row[1], (String) row[2]));
     }
 }
