@@ -28,7 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * and retrieve tools.
  *
  * <p><b>Thread Safety:</b> This class is thread-safe, using {@link ConcurrentHashMap} for internal
- * storage to support concurrent tool registration and lookup operations.
+ * storage to support concurrent tool registration and lookup operations. Mutations share this
+ * registry's monitor so MCP batch validation and registration can exclude concurrent writers.
  *
  * <p><b>Key Responsibilities:</b>
  * <ul>
@@ -49,7 +50,8 @@ class ToolRegistry {
      * @param tool AgentTool implementation
      * @param registered RegisteredToolFunction wrapper with metadata
      */
-    void registerTool(String toolName, AgentTool tool, RegisteredToolFunction registered) {
+    synchronized void registerTool(
+            String toolName, AgentTool tool, RegisteredToolFunction registered) {
         if (toolName == null || toolName.isBlank()) {
             throw new IllegalArgumentException("Tool name cannot be null or blank");
         }
@@ -106,7 +108,7 @@ class ToolRegistry {
      *
      * @param toolName Tool name to remove
      */
-    void removeTool(String toolName) {
+    synchronized void removeTool(String toolName) {
         if (toolName == null || toolName.isBlank()) {
             throw new IllegalArgumentException("Tool name cannot be null or blank");
         }
@@ -122,7 +124,7 @@ class ToolRegistry {
      * @param expected The expected AgentTool instance (identity comparison)
      * @return true if the tool was removed, false if it was already replaced or absent
      */
-    boolean removeToolIfSame(String toolName, AgentTool expected) {
+    synchronized boolean removeToolIfSame(String toolName, AgentTool expected) {
         boolean removed = tools.remove(toolName, expected);
         if (removed) {
             registeredTools.remove(toolName);

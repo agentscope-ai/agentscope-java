@@ -29,6 +29,7 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.URLSource;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.InvocationTargetException;
@@ -470,6 +471,93 @@ class McpContentConverterTest {
     }
 
     // ==================== structuredContent handling ====================
+
+    @Test
+    void testErrorRetainsStructuredDiagnosticsAndImage() {
+        McpSchema.CallToolResult mcpResult =
+                new McpSchema.CallToolResult(
+                        List.of(
+                                McpSchema.TextContent.builder("Request timed out").build(),
+                                new McpSchema.ImageContent(null, "screenshot", "image/png")),
+                        true,
+                        Map.of("action_sent", true, "retry_safe", false),
+                        Map.of("private_token", "must-not-project"));
+
+        ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals(3, result.getOutput().size());
+        assertEquals("Error: Request timed out", ((TextBlock) result.getOutput().get(0)).getText());
+        assertTrue(result.getOutput().get(1) instanceof ImageBlock);
+        String diagnostics = ((TextBlock) result.getOutput().get(2)).getText();
+        assertTrue(diagnostics.contains("\"action_sent\":true"));
+        assertTrue(diagnostics.contains("\"retry_safe\":false"));
+        assertFalse(result.getOutput().toString().contains("must-not-project"));
+        assertTrue(result.getMetadata().isEmpty());
+    }
+
+    @Test
+    void testStructuredOnlyErrorRetainsDiagnostics() {
+        ToolResultBlock result =
+                McpContentConverter.convertCallToolResult(
+                        new McpSchema.CallToolResult(
+                                List.of(), true, Map.of("code", "RATE_LIMITED"), null));
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals(2, result.getOutput().size());
+        assertEquals("Error: Unknown error", ((TextBlock) result.getOutput().get(0)).getText());
+        assertTrue(((TextBlock) result.getOutput().get(1)).getText().contains("RATE_LIMITED"));
+    }
+
+    @Test
+    void testSuccessfulErrorLikeTextKeepsSuccessState() {
+        ToolResultBlock result =
+                McpContentConverter.convertCallToolResult(
+                        McpSchema.CallToolResult.builder()
+                                .addTextContent("Error: this is file content")
+                                .build());
+
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertEquals(
+                "Error: this is file content", ((TextBlock) result.getOutput().get(0)).getText());
+    }
+
+    @Test
+    void testResourceLinkProjectsNameUriAndDescription() {
+        McpSchema.ResourceLink link =
+                McpSchema.ResourceLink.builder()
+                        .name("report.csv")
+                        .uri("file:///reports/report.csv")
+                        .description("Full results")
+                        .build();
+
+        TextBlock block = (TextBlock) McpContentConverter.convertContent(link);
+
+        assertEquals(
+                "Resource link: report.csv (file:///reports/report.csv)\nFull results",
+                block.getText());
+    }
+
+    @Test
+    void testErrorWithResourceLinkKeepsReference() {
+        McpSchema.ResourceLink link =
+                McpSchema.ResourceLink.builder()
+                        .name("diagnostics")
+                        .uri("logs://failed-request")
+                        .build();
+        ToolResultBlock result =
+                McpContentConverter.convertCallToolResult(
+                        McpSchema.CallToolResult.builder()
+                                .content(List.of(link))
+                                .isError(true)
+                                .build());
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals("Error: Unknown error", ((TextBlock) result.getOutput().get(0)).getText());
+        assertEquals(
+                "Resource link: diagnostics (logs://failed-request)",
+                ((TextBlock) result.getOutput().get(1)).getText());
+    }
 
     @Test
     void testConvertCallToolResult_StructuredContentOnly() {

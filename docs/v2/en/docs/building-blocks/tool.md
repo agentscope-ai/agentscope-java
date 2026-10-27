@@ -352,9 +352,15 @@ Three transports are supported:
 - **STDIO** — local process via stdin/stdout
 - **SSE / Streamable HTTP** — remote HTTP long-connection
 
-MCP tools are exposed in the toolkit under the namespace `mcp__{server_name}__{tool_name}` to avoid collisions; tools marked `readOnlyHint` are auto-allowed by the permission system.
+MCP tools use their remote names by default. You can enable a server namespace such as `{server_name}__` to avoid collisions. For namespaced MCP tools, AgentScope replaces characters outside `[A-Za-z0-9_-]` and adds a stable identity suffix when normalization or the 64-character limit changes the name; calls still use the original remote name. Name conflicts reject the server registration before any of its tools are added, including when MCP clients register concurrently. Tools marked `readOnlyHint` are auto-allowed by the permission system.
+
+<Warning>
+This changes MCP registration compatibility: with or without a prefix, duplicate model-facing names now reject the client registration instead of silently replacing an existing tool. Previously registered tools are retained. If an application relied on registration order to replace tools, use distinct names, configure a prefix through `toolkit.registration().mcpClient(client).mcpToolNamePrefix("crm__").apply()`, or exclude conflicting remote tools with `enableTools` / `disableTools`. These per-server selectors still use the original remote tool names.
+</Warning>
 
 ### Registering MCP tools
+
+MCP result state follows `isError`, independently of the text. Error responses retain structured JSON and supported non-text content alongside the error message, so the model can inspect diagnostic details. Resource links expose their name, URI, and optional description without fetching the resource. Protocol `_meta` is not included in model-visible output.
 
 Use `McpClientBuilder` to build an `McpClientWrapper`, then register it on the `Toolkit`:
 

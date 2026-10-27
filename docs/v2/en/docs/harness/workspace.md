@@ -429,6 +429,7 @@ A JSON file at the workspace root, read once during `build()`:
       "transport": "stdio",
       "command": "python",
       "args": ["mcp_servers/my_server.py"],
+      "prefixToolNames": true,
       "env": {"PYTHONUNBUFFERED": "1"}
     }
   }
@@ -438,6 +439,8 @@ A JSON file at the workspace root, read once during `build()`:
 Behavior notes:
 
 - **MCP servers are registered into the toolkit once at build time**; the agent sees the tools they expose.
+- **`mcpServers.<name>.prefixToolNames` defaults to `false`.** Set it to `true` to expose tools under `{name}__{tool}`. Names already within `[A-Za-z0-9_-]` and 64 characters remain unchanged; names requiring character replacement or truncation receive a stable identity suffix. Remote calls and server-level `enableTools` / `disableTools` use the original remote names; the global `allow` / `deny` lists use model-facing names.
+- **MCP name conflicts now reject that server's registration, even with `prefixToolNames: false`; they no longer silently overwrite existing tools.** No tools from the conflicting server are added. An optional server reports a failed registration while bootstrap continues; a server with `required: true` aborts bootstrap. To migrate, enable a distinct prefix or exclude the conflicting remote tools using server-level filters. Global `allow` / `deny` run after registration and cannot resolve a registration conflict.
 - **`allow` / `deny` are applied after every tool has been registered** — including Harness built-ins (`read_file` / `memory_search` / `agent_spawn` / …). **When you use `allow` to whitelist, list the built-ins you want to keep too**, otherwise they get filtered out alongside everything else.
 - `${ENV_VAR}` syntax substitutes environment variables; missing variables warn and substitute the empty string.
 - Don't want a file? Pass `builder.toolsConfig(ToolsConfig.builder()...)` directly, or fully disable reading with `disableToolsConfig()`.

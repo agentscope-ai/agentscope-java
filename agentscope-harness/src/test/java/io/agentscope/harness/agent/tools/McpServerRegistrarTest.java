@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -28,18 +30,96 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.MockedStatic;
 import reactor.core.publisher.Mono;
 
 class McpServerRegistrarTest {
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void registerClient_appliesConfiguredNamespaceToRealToolkit(boolean prefixToolNames) {
+        McpServerConfig config = new McpServerConfig();
+        config.setPrefixToolNames(prefixToolNames);
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("crm one");
+        McpSchema.Tool search = mock(McpSchema.Tool.class);
+        when(search.name()).thenReturn("search");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(search)));
+        Toolkit toolkit = new Toolkit();
+
+        McpServerRegistrar.registerClient(toolkit, "crm one", config, wrapper);
+
+        assertEquals(
+                Set.of(prefixToolNames ? "crm_one__search_d7d327bcfa40" : "search"),
+                toolkit.getToolNames());
+        verify(wrapper, never()).close();
+        toolkit.closeMcpClients();
+        verify(wrapper).close();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void register_reportsUnprefixedConflictThroughExistingFailurePolicy(boolean required) {
+        McpServerConfig config = new McpServerConfig();
+        config.setTransport("stdio");
+        config.setCommand("test-command");
+        config.setRequired(required);
+        McpClientBuilder builder = mock(McpClientBuilder.class);
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("crm");
+        when(builder.stdioTransport("test-command", List.of(), Map.of())).thenReturn(builder);
+        when(builder.buildAsync()).thenReturn(Mono.just(wrapper));
+        McpSchema.Tool other = mock(McpSchema.Tool.class);
+        when(other.name()).thenReturn("other");
+        McpSchema.Tool search = mock(McpSchema.Tool.class);
+        when(search.name()).thenReturn("search");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(other, search)));
+        Toolkit toolkit = new Toolkit();
+        SchemaOnlyTool localSearch = new SchemaOnlyTool("search", "Local search", Map.of());
+        toolkit.registerAgentTool(localSearch);
+        List<McpServerRegistrationResult> results = new ArrayList<>();
+
+        try (MockedStatic<McpClientBuilder> builders = mockStatic(McpClientBuilder.class)) {
+            builders.when(() -> McpClientBuilder.create("crm")).thenReturn(builder);
+            if (required) {
+                assertThrows(
+                        McpConnectionException.class,
+                        () ->
+                                McpServerRegistrar.register(
+                                        toolkit, Map.of("crm", config), results::add));
+            } else {
+                assertDoesNotThrow(
+                        () ->
+                                McpServerRegistrar.register(
+                                        toolkit, Map.of("crm", config), results::add));
+            }
+        }
+
+        assertEquals(1, results.size());
+        assertEquals(McpServerRegistrationResult.Status.FAILED, results.get(0).status());
+        assertEquals("crm", results.get(0).serverName());
+        IllegalArgumentException conflict =
+                assertInstanceOf(IllegalArgumentException.class, results.get(0).cause());
+        assertEquals("MCP tool name conflict for client 'crm': search", conflict.getMessage());
+        assertEquals(Set.of("search"), toolkit.getToolNames());
+        assertSame(localSearch, toolkit.getTool("search"));
+        verify(wrapper, atLeastOnce()).close();
+    }
 
     @Test
     void legacyRegister_keepsBestEffortBehavior() {

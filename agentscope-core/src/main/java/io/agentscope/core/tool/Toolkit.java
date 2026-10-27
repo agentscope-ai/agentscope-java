@@ -1150,7 +1150,10 @@ public class Toolkit {
             return this;
         }
 
-        /** Optional namespace for model-facing MCP tool names; wire names remain unchanged. */
+        /**
+         * Optional namespace for model-facing MCP tool names; wire names remain unchanged.
+         * Namespaced names use the restricted {@code [A-Za-z0-9_-]} and 64-character profile.
+         */
         public ToolRegistration mcpToolNamePrefix(String prefix) {
             this.mcpToolNamePrefix = java.util.Objects.requireNonNull(prefix);
             return this;

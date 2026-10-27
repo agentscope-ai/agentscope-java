@@ -17,8 +17,14 @@ package io.agentscope.core.tool;
 
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.mcp.McpTool;
+import io.modelcontextprotocol.spec.McpSchema;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,7 +33,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -37,6 +42,8 @@ import reactor.core.publisher.Mono;
 class McpClientManager {
 
     private static final Logger logger = LoggerFactory.getLogger(McpClientManager.class);
+    private static final int MAX_MODEL_TOOL_NAME_LENGTH = 64;
+    private static final int TOOL_NAME_HASH_LENGTH = 12;
 
     private final Map<String, McpClientWrapper> mcpClients = new ConcurrentHashMap<>();
     private final ToolRegistry toolRegistry;
@@ -246,114 +253,124 @@ class McpClientManager {
         return mcpClientWrapper
                 .initialize()
                 .then(Mono.defer(mcpClientWrapper::listTools))
-                .flatMapMany(
+                .flatMap(
                         tools -> {
-                            // Fail loud when a per-tool propagateMeta override does not match
-                            // any tool that is actually registered from this client (unknown
-                            // name, remote rename, or filtered out by enable/disable lists).
-                            // This feature exists to keep metadata off the wire for untrusted
-                            // servers, so a silencing override must never be lost silently.
-                            if (toolPropagateMetaOverrides != null
-                                    && !toolPropagateMetaOverrides.isEmpty()) {
-                                Set<String> registeredNames =
+                            // Keep validation and registration under one registry lock so
+                            // concurrent MCP clients cannot both pass the name check.
+                            synchronized (toolRegistry) {
+                                List<McpSchema.Tool> selectedTools =
                                         tools.stream()
-                                                .map(tool -> tool.name())
                                                 .filter(
-                                                        toolName ->
+                                                        tool ->
                                                                 shouldRegisterTool(
-                                                                        toolName,
+                                                                        tool.name(),
                                                                         enableTools,
                                                                         disableTools))
-                                                .collect(Collectors.toSet());
-                                // TreeSet so the rejected names in the user-facing error
-                                // message are deterministically ordered and pasteable.
-                                Set<String> unknown =
-                                        new TreeSet<>(toolPropagateMetaOverrides.keySet());
-                                unknown.removeAll(registeredNames);
-                                if (!unknown.isEmpty()) {
-                                    return Flux.error(
-                                            new IllegalArgumentException(
-                                                    "Unknown MCP tool(s) in propagateMeta"
-                                                            + " override for client '"
-                                                            + mcpClientWrapper.getName()
-                                                            + "': "
-                                                            + unknown));
+                                                .toList();
+                                Map<String, McpSchema.Tool> modelTools =
+                                        prepareModelTools(
+                                                selectedTools,
+                                                toolNamePrefix,
+                                                mcpClientWrapper.getName());
+
+                                // Reject an override that does not match a selected remote tool.
+                                // Otherwise a metadata restriction could be silently ignored for
+                                // an unknown, renamed, or filtered-out tool.
+                                if (toolPropagateMetaOverrides != null
+                                        && !toolPropagateMetaOverrides.isEmpty()) {
+                                    Set<String> registeredNames =
+                                            selectedTools.stream()
+                                                    .map(tool -> tool.name())
+                                                    .collect(Collectors.toSet());
+                                    // TreeSet so the rejected names in the user-facing error
+                                    // message are deterministically ordered and pasteable.
+                                    Set<String> unknown =
+                                            new TreeSet<>(toolPropagateMetaOverrides.keySet());
+                                    unknown.removeAll(registeredNames);
+                                    if (!unknown.isEmpty()) {
+                                        return Mono.<Void>error(
+                                                new IllegalArgumentException(
+                                                        "Unknown MCP tool(s) in propagateMeta"
+                                                                + " override for client '"
+                                                                + mcpClientWrapper.getName()
+                                                                + "': "
+                                                                + unknown));
+                                    }
                                 }
-                            }
-                            return Flux.fromIterable(tools);
-                        })
-                .filter(tool -> shouldRegisterTool(tool.name(), enableTools, disableTools))
-                .doOnNext(
-                        mcpTool -> {
-                            logger.debug(
-                                    "Registering MCP tool: {} from client {} into group {}",
-                                    mcpTool.name(),
-                                    mcpClientWrapper.getName(),
-                                    groupName);
-
-                            // Get preset parameters for this specific tool
-                            Map<String, Object> toolPresetParams =
-                                    presetParametersMapping != null
-                                            ? presetParametersMapping.get(mcpTool.name())
-                                            : null;
-
-                            boolean readOnly =
-                                    mcpTool.annotations() != null
-                                            && Boolean.TRUE.equals(
-                                                    mcpTool.annotations().readOnlyHint());
-
-                            McpTool agentTool =
-                                    new McpTool(
-                                            toolNamePrefix + mcpTool.name(),
+                                for (var entry : modelTools.entrySet()) {
+                                    McpSchema.Tool mcpTool = entry.getValue();
+                                    logger.debug(
+                                            "Registering MCP tool: {} from client {} into group {}",
                                             mcpTool.name(),
-                                            mcpTool.description() != null
-                                                    ? mcpTool.description()
-                                                    : "",
-                                            McpTool.convertMcpSchemaToParameters(
-                                                    mcpTool.inputSchema(),
-                                                    toolPresetParams != null
-                                                            ? toolPresetParams.keySet()
-                                                            : Collections.emptySet()),
-                                            mcpTool.outputSchema() != null
-                                                    ? new ConcurrentHashMap<>(
-                                                            mcpTool.outputSchema())
-                                                    : null,
-                                            mcpClientWrapper,
-                                            /* presetArguments handled upstream by
-                                             * RegisteredToolFunction */ null,
                                             mcpClientWrapper.getName(),
-                                            readOnly,
-                                            McpTool.resolveDisplayTitle(mcpTool));
+                                            groupName);
 
-                            // Per-tool metadata propagation restriction, resolved at
-                            // registration time: per-tool override > registration default >
-                            // true. The connection-level wrapper switch is NOT captured here;
-                            // McpTool reads it live on every call (logical AND), so disabling a
-                            // connection later still stops metadata immediately.
-                            Boolean perToolOverride =
-                                    toolPropagateMetaOverrides != null
-                                            ? toolPropagateMetaOverrides.get(mcpTool.name())
-                                            : null;
-                            boolean propagateMeta =
-                                    perToolOverride != null
-                                            ? perToolOverride
-                                            : propagateMetaOverride != null
-                                                    ? propagateMetaOverride
-                                                    : true;
-                            agentTool.setPropagateMeta(propagateMeta);
+                                    // Get preset parameters for this specific tool
+                                    Map<String, Object> toolPresetParams =
+                                            presetParametersMapping != null
+                                                    ? presetParametersMapping.get(mcpTool.name())
+                                                    : null;
 
-                            // Register with group, MCP client name, and preset parameters via
-                            // callback
-                            registrationCallback.registerAgentToolWithMcpClient(
-                                    agentTool,
-                                    groupName,
-                                    mcpClientWrapper.getName(),
-                                    toolPresetParams);
+                                    boolean readOnly =
+                                            mcpTool.annotations() != null
+                                                    && Boolean.TRUE.equals(
+                                                            mcpTool.annotations().readOnlyHint());
+
+                                    // The callback wraps this tool in RegisteredToolFunction,
+                                    // where preset arguments are applied.
+                                    McpTool agentTool =
+                                            new McpTool(
+                                                    entry.getKey(),
+                                                    mcpTool.name(),
+                                                    mcpTool.description() != null
+                                                            ? mcpTool.description()
+                                                            : "",
+                                                    McpTool.convertMcpSchemaToParameters(
+                                                            mcpTool.inputSchema(),
+                                                            toolPresetParams != null
+                                                                    ? toolPresetParams.keySet()
+                                                                    : Collections.emptySet()),
+                                                    mcpTool.outputSchema() != null
+                                                            ? new ConcurrentHashMap<>(
+                                                                    mcpTool.outputSchema())
+                                                            : null,
+                                                    mcpClientWrapper,
+                                                    null,
+                                                    mcpClientWrapper.getName(),
+                                                    readOnly,
+                                                    McpTool.resolveDisplayTitle(mcpTool));
+
+                                    // Resolve metadata propagation at registration time: a
+                                    // per-tool override takes precedence over the registration
+                                    // default, which falls back to true. McpTool still reads the
+                                    // wrapper's connection-level switch on every call, so
+                                    // disabling the connection later suppresses metadata.
+                                    Boolean perToolOverride =
+                                            toolPropagateMetaOverrides != null
+                                                    ? toolPropagateMetaOverrides.get(mcpTool.name())
+                                                    : null;
+                                    boolean propagateMeta =
+                                            perToolOverride != null
+                                                    ? perToolOverride
+                                                    : propagateMetaOverride != null
+                                                            ? propagateMetaOverride
+                                                            : true;
+                                    agentTool.setPropagateMeta(propagateMeta);
+
+                                    // Register the tool with its group, client association, and
+                                    // preset parameters.
+                                    registrationCallback.registerAgentToolWithMcpClient(
+                                            agentTool,
+                                            groupName,
+                                            mcpClientWrapper.getName(),
+                                            toolPresetParams);
+                                }
+                                mcpClients.put(mcpClientWrapper.getName(), mcpClientWrapper);
+                            }
+                            return Mono.<Void>empty();
                         })
-                .then()
                 .doOnSuccess(
                         v -> {
-                            mcpClients.put(mcpClientWrapper.getName(), mcpClientWrapper);
                             logger.info(
                                     "MCP client '{}' registered successfully",
                                     mcpClientWrapper.getName());
@@ -380,6 +397,49 @@ class McpClientManager {
                                         cleanupEx);
                             }
                         });
+    }
+
+    private static String modelToolName(
+            String toolNamePrefix, String serverName, String remoteToolName) {
+        String prefix = toolNamePrefix != null ? toolNamePrefix : "";
+        String name = prefix + remoteToolName;
+        if (prefix.isEmpty()) {
+            return name;
+        }
+
+        String normalized = name.replaceAll("[^A-Za-z0-9_-]", "_");
+        if (normalized.equals(name) && normalized.length() <= MAX_MODEL_TOOL_NAME_LENGTH) {
+            return normalized;
+        }
+
+        String identity = serverName + '\0' + remoteToolName;
+        byte[] digest;
+        try {
+            digest =
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(identity.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+        String hash = HexFormat.of().formatHex(digest, 0, TOOL_NAME_HASH_LENGTH / 2);
+        int namePrefixLength = MAX_MODEL_TOOL_NAME_LENGTH - TOOL_NAME_HASH_LENGTH - 1;
+        return normalized.substring(0, Math.min(normalized.length(), namePrefixLength))
+                + "_"
+                + hash;
+    }
+
+    private Map<String, McpSchema.Tool> prepareModelTools(
+            List<McpSchema.Tool> tools, String toolNamePrefix, String serverName) {
+        Map<String, McpSchema.Tool> modelTools = new LinkedHashMap<>();
+        for (McpSchema.Tool tool : tools) {
+            String modelName = modelToolName(toolNamePrefix, serverName, tool.name());
+            if (modelTools.putIfAbsent(modelName, tool) != null
+                    || toolRegistry.getRegisteredTool(modelName) != null) {
+                throw new IllegalArgumentException(
+                        "MCP tool name conflict for client '" + serverName + "': " + modelName);
+            }
+        }
+        return modelTools;
     }
 
     /**
