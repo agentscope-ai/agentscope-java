@@ -4353,6 +4353,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .firePostActing(toolUse, updatedResult, toolkit, toolMsg)
                     .doOnNext(
                             e -> {
+                                if (e.getToolResult() != updatedResult
+                                        && e.getToolResultMsg() == toolMsg) {
+                                    e.setToolResultMsg(
+                                            ToolResultMessageBuilder.buildToolResultMsg(
+                                                    e.getToolResult(), toolUse, getName()));
+                                }
                                 if (soTool != null
                                         && STRUCTURED_OUTPUT_TOOL_NAME.equals(toolUse.getName())
                                         && result.getMetadata() != null

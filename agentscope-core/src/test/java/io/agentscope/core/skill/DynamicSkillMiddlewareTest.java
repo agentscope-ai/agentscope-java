@@ -288,13 +288,13 @@ class DynamicSkillMiddlewareTest {
                 .thenAnswer(
                         invocation -> {
                             reloadThreadName.set(Thread.currentThread().getName());
-                            return List.of(new AgentSkill("my_skill", "My Skill", "# C", null));
+                            return List.of(new AgentSkill("my-skill", "My Skill", "# C", null));
                         });
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(repo), new Toolkit(), null, false, workDir);
 
         StepVerifier.create(mw.onSystemPrompt(null, RuntimeContext.empty(), "base"))
-                .assertNext(prompt -> assertTrue(prompt.contains("my_skill")))
+                .assertNext(prompt -> assertTrue(prompt.contains("my-skill")))
                 .verifyComplete();
 
         assertNotNull(reloadThreadName.get(), "getAllSkills must have been invoked");
@@ -305,7 +305,7 @@ class DynamicSkillMiddlewareTest {
 
     @Test
     void keepsCacheHitPathBehaviorUnchanged() {
-        AgentSkill skill = new AgentSkill("my_skill", "My Skill", "# Content", null);
+        AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
         AgentSkillRepository repo = org.mockito.Mockito.mock(AgentSkillRepository.class);
         org.mockito.Mockito.when(repo.getAllSkills()).thenReturn(List.of(skill));
         DynamicSkillMiddleware mw =

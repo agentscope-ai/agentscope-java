@@ -398,11 +398,15 @@ public class AnthropicMessageConverter {
         }
 
         // Create tool result block
-        ToolResultBlockParam toolResultParam =
+        var resultBuilder =
                 ToolResultBlockParam.builder()
                         .toolUseId(toolResult.getId())
-                        .content(ToolResultBlockParam.Content.ofBlocks(blocks))
-                        .build();
+                        .content(ToolResultBlockParam.Content.ofBlocks(blocks));
+        switch (toolResult.getState()) {
+            case ERROR, DENIED, INTERRUPTED -> resultBuilder.isError(true);
+            default -> {}
+        }
+        ToolResultBlockParam toolResultParam = resultBuilder.build();
 
         // Wrap in user message
         return MessageParam.builder()

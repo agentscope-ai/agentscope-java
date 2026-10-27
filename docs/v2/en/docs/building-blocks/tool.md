@@ -124,7 +124,11 @@ Common `@Tool` attributes:
 
 #### Explicit result states
 
+With the default converter, annotated tools returning `void` or `Void`, including successful `Mono<Void>` and `CompletableFuture<Void>` completion, return `(completed with no output)` to the model, so a silent success is never mistaken for a missing tool result. An ordinary `null` return remains `null`; errors and cancellation do not produce this success acknowledgement.
+
 Return `ToolResultBlock.success(text)` for a successful call and `ToolResultBlock.error(message)` for a failure. Both are supported directly and inside `Mono<ToolResultBlock>`. Do not infer failure from text prefixes. `ToolResultBlock.text(text)` defaults to `RUNNING`; use `withState(...)` to set a terminal state when preserving an existing JSON or multiline output.
+
+For ordinary client tools, the Anthropic formatter maps `ERROR`, `DENIED`, and `INTERRUPTED` to `is_error: true`, preserving the tool-call ID and output blocks. `SUCCESS`, `RUNNING`, and `SUSPENDED` are not classified as errors by the formatter. Provider-executed server-tool payloads retain their separate conversion path.
 
 Built-in tools now return structured results. Direct callers should inspect `getState()` and read the text blocks from `getOutput()`; `Toolkit` registration is unchanged.
 
