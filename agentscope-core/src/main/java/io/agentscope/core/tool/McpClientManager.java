@@ -255,8 +255,8 @@ class McpClientManager {
                 .then(Mono.defer(mcpClientWrapper::listTools))
                 .flatMap(
                         tools -> {
-                            // Keep validation and registration under one registry lock so
-                            // concurrent MCP clients cannot both pass the name check.
+                            // Keep validation and registration under one registry lock
+                            // so concurrent MCP clients cannot both pass the name check.
                             synchronized (toolRegistry) {
                                 List<McpSchema.Tool> selectedTools =
                                         tools.stream()
@@ -274,8 +274,8 @@ class McpClientManager {
                                                 mcpClientWrapper.getName());
 
                                 // Reject an override that does not match a selected remote tool.
-                                // Otherwise a metadata restriction could be silently ignored for
-                                // an unknown, renamed, or filtered-out tool.
+                                // Otherwise a metadata restriction could be silently ignored
+                                // for an unknown, renamed, or filtered-out tool.
                                 if (toolPropagateMetaOverrides != null
                                         && !toolPropagateMetaOverrides.isEmpty()) {
                                     Set<String> registeredNames =
@@ -340,11 +340,11 @@ class McpClientManager {
                                                     readOnly,
                                                     McpTool.resolveDisplayTitle(mcpTool));
 
-                                    // Resolve metadata propagation at registration time: a
-                                    // per-tool override takes precedence over the registration
-                                    // default, which falls back to true. McpTool still reads the
-                                    // wrapper's connection-level switch on every call, so
-                                    // disabling the connection later suppresses metadata.
+                                    // Resolve metadata propagation at registration time:
+                                    // per-tool override > registration default > true.
+                                    // McpTool still reads the wrapper's connection-level
+                                    // switch on every call, so disabling the connection
+                                    // later suppresses metadata.
                                     Boolean perToolOverride =
                                             toolPropagateMetaOverrides != null
                                                     ? toolPropagateMetaOverrides.get(mcpTool.name())
@@ -357,8 +357,8 @@ class McpClientManager {
                                                             : true;
                                     agentTool.setPropagateMeta(propagateMeta);
 
-                                    // Register the tool with its group, client association, and
-                                    // preset parameters.
+                                    // Register the tool with its group, client association,
+                                    // and preset parameters.
                                     registrationCallback.registerAgentToolWithMcpClient(
                                             agentTool,
                                             groupName,
@@ -399,6 +399,15 @@ class McpClientManager {
                         });
     }
 
+    /**
+     * Derives the model-facing name for a remote MCP tool.
+     *
+     * <p>Without a prefix the remote name is returned unchanged. With a prefix, characters
+     * outside {@code [A-Za-z0-9_-]} are replaced and the name is capped at {@value
+     * #MAX_MODEL_TOOL_NAME_LENGTH} characters; whenever either step changes the name, a stable
+     * hash of {@code serverName + remoteToolName} is appended so the identity survives
+     * re-registrations.
+     */
     private static String modelToolName(
             String toolNamePrefix, String serverName, String remoteToolName) {
         String prefix = toolNamePrefix != null ? toolNamePrefix : "";
@@ -428,6 +437,13 @@ class McpClientManager {
                 + hash;
     }
 
+    /**
+     * Maps every selected remote tool to its model-facing name and rejects the whole batch when
+     * two tools collide or a name is already registered, so a failing client registers no tools.
+     *
+     * @param tools tools selected by the server-level enable/disable filters
+     * @return model-facing name to remote tool, in server listing order
+     */
     private Map<String, McpSchema.Tool> prepareModelTools(
             List<McpSchema.Tool> tools, String toolNamePrefix, String serverName) {
         Map<String, McpSchema.Tool> modelTools = new LinkedHashMap<>();
