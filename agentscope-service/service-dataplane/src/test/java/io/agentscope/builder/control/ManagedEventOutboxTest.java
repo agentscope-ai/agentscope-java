@@ -77,8 +77,6 @@ class ManagedEventOutboxTest {
                             savedFences.put(row.attemptId, row);
                             return row;
                         });
-        when(events.findById(anyString()))
-                .thenAnswer(call -> Optional.ofNullable(savedEvents.get(call.getArgument(0))));
         when(events.lockById(anyString()))
                 .thenAnswer(call -> Optional.ofNullable(savedEvents.get(call.getArgument(0))));
         when(events.lockReportById(anyString()))

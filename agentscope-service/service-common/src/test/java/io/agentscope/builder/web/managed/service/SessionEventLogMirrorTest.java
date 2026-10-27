@@ -14,15 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * Copyright 2024-2026 the original author or authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- */
 package io.agentscope.builder.web.managed.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -81,6 +72,7 @@ class SessionEventLogMirrorTest {
         var first =
                 log.appendIdempotentLocal("session", "item.delta", Map.of("count", 1L), "event");
 
+        assertThat(first.seq()).isEqualTo(1);
         assertThat(first.payload()).containsEntry("count", 1);
         verify(json, times(1)).writeJson(any());
         verify(json, times(1)).readMap(anyString());
@@ -92,34 +84,7 @@ class SessionEventLogMirrorTest {
         assertThat(replay).isEqualTo(first);
         verify(json, times(1)).writeJson(any());
         verify(json, times(2)).readMap(anyString());
-    }
-
-    @Test
-    void immutableEventWinnerIsReusedWithoutAllocatingAnotherSequence() {
-        var repository = mock(SessionEventEntityRepository.class);
-        var winner = new SessionEventEntity();
-        winner.setSessionId("session");
-        winner.setEventId("event");
-        winner.setEventType("item.delta");
-        winner.setPayloadJson("{\"text\":\"x\"}");
-        winner.setSeq(1);
-        when(repository.appendIdempotentEvent(any(SessionEventEntity.class)))
-                .thenReturn(new AppendResult(winner, false));
-        var transactions = transactions(new AtomicBoolean());
-        var log =
-                new SessionEventLog(
-                        repository,
-                        new ManagedJsonHelper(new ObjectMapper()),
-                        transactions,
-                        new DeletedSessionRegistry(),
-                        mock(SessionEventNotifier.class),
-                        30000);
-        assertThat(
-                        log.appendIdempotentLocal(
-                                        "session", "item.delta", Map.of("text", "x"), "event")
-                                .seq())
-                .isEqualTo(1);
-        verify(repository, times(1)).appendIdempotentEvent(any(SessionEventEntity.class));
+        verify(repository, times(2)).appendIdempotentEvent(any(SessionEventEntity.class));
     }
 
     @Test
