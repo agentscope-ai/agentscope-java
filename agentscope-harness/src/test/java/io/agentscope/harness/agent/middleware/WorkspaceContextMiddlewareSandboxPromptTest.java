@@ -87,6 +87,7 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
                                 List.of(FileInfo.ofFile("knowledge/actions.md", 64, ""))));
         try (WorkspaceManager wm = new WorkspaceManager(workspace, fs)) {
             RuntimeContext rc = RuntimeContext.empty();
+            String knowledgeFileEntry = "- " + Path.of("knowledge", "actions.md");
             String prompt =
                     WorkspacePromptTestSupport.render(
                             new WorkspaceContextMiddleware(wm, 1), rc, "BASE\n");
@@ -94,8 +95,8 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
             assertNotNull(prompt);
             assertTrue(prompt.contains("## Domain Knowledge"));
             assertTrue(prompt.contains("knowledge file catalog"));
-            assertTrue(knowledgeContent(rc).contains("- knowledge/actions.md"));
-            assertFalse(prompt.contains("- knowledge/actions.md"));
+            assertTrue(knowledgeContent(rc).contains(knowledgeFileEntry));
+            assertFalse(prompt.contains(knowledgeFileEntry));
             assertFalse(prompt.contains("holds many detailed reference documents"));
         }
     }
@@ -107,12 +108,13 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
         Files.writeString(workspace.resolve("knowledge/actions.md"), "Action details");
         try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
             RuntimeContext rc = RuntimeContext.empty();
+            String knowledgeFileEntry = "- " + Path.of("knowledge", "actions.md");
             String prompt =
                     WorkspacePromptTestSupport.render(
                             new WorkspaceContextMiddleware(wm), rc, "BASE\n");
 
             assertTrue(knowledgeContent(rc).contains("Supported flow actions"));
-            assertTrue(knowledgeContent(rc).contains("- knowledge/actions.md"));
+            assertTrue(knowledgeContent(rc).contains(knowledgeFileEntry));
             assertTrue(prompt.contains("knowledge file catalog"));
             assertFalse(knowledgeContent(rc).contains("Action details"));
         }
