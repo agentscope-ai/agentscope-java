@@ -60,6 +60,7 @@ public final class GracefulShutdownManager {
 
     private final ConcurrentHashMap<String, ShutdownStateSaver> stateSavers =
             new ConcurrentHashMap<>();
+    private final java.util.Set<Object> pendingCleanups = ConcurrentHashMap.newKeySet();
     private final AtomicReference<Instant> shutdownStartedAt = new AtomicReference<>(null);
     private final AtomicBoolean monitorStarted = new AtomicBoolean(false);
     private final ScheduledExecutorService monitor =
@@ -205,6 +206,24 @@ public final class GracefulShutdownManager {
         getActiveRequest(requestId).ifPresent(ctx -> ctx.bindState(state));
     }
 
+    /**
+     * Registers resource cleanup before a request starts. The returned idempotent callback must
+     * run after cleanup, including scheduling failures, so shutdown cannot outlive queued closes.
+     *
+     * @return callback that releases this cleanup registration
+     */
+    public Runnable registerCleanup() {
+        Object token = new Object();
+        synchronized (terminationLock) {
+            ensureAcceptingRequests();
+            pendingCleanups.add(token);
+        }
+        return () -> {
+            pendingCleanups.remove(token);
+            updateTerminatedIfNoRequests();
+        };
+    }
+
     public void unregisterRequest(String requestId) {
         if (requestId == null || requestId.isEmpty()) {
             return;
@@ -308,17 +327,18 @@ public final class GracefulShutdownManager {
     }
 
     private void updateTerminatedIfNoRequests() {
-        if (getState() == ShutdownState.SHUTTING_DOWN && activeRequestsById.isEmpty()) {
-            if (state.compareAndSet(ShutdownState.SHUTTING_DOWN, ShutdownState.TERMINATED)) {
-                synchronized (terminationLock) {
-                    terminationLock.notifyAll();
-                }
+        synchronized (terminationLock) {
+            if (getState() == ShutdownState.SHUTTING_DOWN
+                    && activeRequestsById.isEmpty()
+                    && pendingCleanups.isEmpty()
+                    && state.compareAndSet(ShutdownState.SHUTTING_DOWN, ShutdownState.TERMINATED)) {
+                terminationLock.notifyAll();
             }
         }
     }
 
     /**
-     * Block until the shutdown state reaches TERMINATED or the given timeout elapses.
+     * Block until active requests and registered cleanup finish and shutdown reaches TERMINATED or the given timeout elapses.
      *
      * @param timeout maximum time to wait; {@code null} means wait indefinitely
      * @return true if TERMINATED was reached, false if timed out
@@ -355,6 +375,7 @@ public final class GracefulShutdownManager {
         state.set(ShutdownState.RUNNING);
         activeRequestsById.clear();
         stateSavers.clear();
+        pendingCleanups.clear();
         shutdownStartedAt.set(null);
         monitorStarted.set(false);
         shutdownTimeoutSignal.set(Sinks.empty());

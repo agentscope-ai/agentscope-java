@@ -16,8 +16,10 @@
 package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.message.Msg;
@@ -37,12 +39,14 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 /**
  * Verifies that memory maintenance started on the agent stream's completion signal inherits the
@@ -144,6 +148,56 @@ class MemoryBackgroundContextPropagationTest {
                 "background maintenance must finish");
         assertEquals(
                 "session-1", seen.get(), "consolidation model must see the turn's Reactor context");
+    }
+
+    @Test
+    void maintenanceTracksItsOwnerWhileReplayingTurnContext() throws Exception {
+        AtomicReference<String> seen = new AtomicReference<>();
+        CountDownLatch started = new CountDownLatch(1);
+        Sinks.Empty<Void> release = Sinks.empty();
+        WorkspaceManager workspaceManager = new WorkspaceManager(workspace);
+        MemoryConsolidator consolidator =
+                new MemoryConsolidator(workspaceManager, stubModel()) {
+                    @Override
+                    public Mono<Void> consolidate(RuntimeContext rc) {
+                        return Mono.deferContextual(
+                                context -> {
+                                    seen.set(context.getOrDefault(CONTEXT_KEY, "missing"));
+                                    started.countDown();
+                                    return release.asMono();
+                                });
+                    }
+                };
+        MemoryMaintenanceMiddleware middleware =
+                new MemoryMaintenanceMiddleware(
+                        workspaceManager,
+                        consolidator,
+                        90,
+                        Duration.ofMinutes(30),
+                        IsolationScope.USER,
+                        (name, minGap) -> true);
+        RuntimeContext rc = RuntimeContext.builder().userId("alice").sessionId("session-1").build();
+        try (ReActAgent agent = ReActAgent.builder().name("owner").model(stubModel()).build()) {
+            try {
+                middleware
+                        .onAgent(
+                                agent,
+                                rc,
+                                new AgentInput(List.of()),
+                                input -> Flux.just(new AgentEndEvent("reply-1")))
+                        .contextWrite(context -> context.put(CONTEXT_KEY, "session-1"))
+                        .blockLast(Duration.ofSeconds(2));
+
+                assertTrue(started.await(5, TimeUnit.SECONDS));
+                assertEquals("session-1", seen.get());
+                assertFalse(
+                        MemoryBackgroundTasks.awaitQuiescence(agent, 0, TimeUnit.SECONDS),
+                        "The owner must wait while its maintenance is still running");
+            } finally {
+                release.tryEmitEmpty();
+                assertTrue(MemoryBackgroundTasks.awaitQuiescence(5, TimeUnit.SECONDS));
+            }
+        }
     }
 
     private static ChatResponse response(String text) {

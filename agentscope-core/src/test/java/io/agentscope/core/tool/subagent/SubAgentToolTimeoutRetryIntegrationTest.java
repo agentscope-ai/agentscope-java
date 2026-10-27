@@ -151,7 +151,7 @@ class SubAgentToolTimeoutRetryIntegrationTest {
         SubAgentProvider<ReActAgent> provider =
                 () -> {
                     int i = idx[0]++;
-                    if (i == 0) return fastSpy;
+                    if (i == 0) return ReActAgent.builder().name("sample_sub").build();
                     if (i == 1) return slowSpy;
                     return fastSpy;
                 };
