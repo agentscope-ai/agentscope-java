@@ -20,16 +20,22 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
+import io.agentscope.harness.agent.context.ContextItem;
+import io.agentscope.harness.agent.middleware.ContextConventionsMiddleware;
 import io.agentscope.harness.agent.skill.SkillResources;
 import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
 import java.nio.charset.StandardCharsets;
@@ -39,6 +45,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -324,6 +331,7 @@ class SkillRuntimeTest {
             assertTrue(text.contains("Successfully loaded skill: alpha_workspace"));
             assertTrue(text.contains("# Body line"));
             assertFalse(text.contains("Files root:"));
+            assertTrue(SkillRuntime.loadedBodies(ctx).isEmpty());
         }
 
         @Test
@@ -396,6 +404,164 @@ class SkillRuntimeTest {
                                                     .build())
                                     .block());
             assertTrue(err1.contains("skillId"));
+        }
+
+        @Test
+        void loadedBodyUsesExactReplyAndStableSourceWithoutChangingOtherMaterials() {
+            SkillRuntime runtime = new SkillRuntime();
+            RuntimeContext context = RuntimeContext.empty();
+            SkillRuntime.resetLoadedBodies(context);
+            HarnessSkillEntry first =
+                    new HarnessSkillEntry(
+                            skillWith(
+                                    "alpha",
+                                    "description",
+                                    "first body",
+                                    Map.of("ref.md", "reference")),
+                            null,
+                            "/first/root");
+            runtime.install(SkillCatalog.of(List.of(first)), context, null);
+            String reply = textOf(invoke(runtime, context, "alpha_workspace", "SKILL.md"));
+            List<ContextItem> snapshot = SkillRuntime.loadedBodies(context);
+            ContextItem item = snapshot.get(0);
+            assertEquals("harness:loaded_skill:alpha_workspace:SKILL.md", item.sourceId());
+            assertEquals(ContextItem.Placement.RUNTIME, item.placement());
+            assertTrue(item.required());
+            assertTrue(item.content().endsWith(reply));
+            assertTrue(item.content().contains("/first/root"));
+            assertThrows(UnsupportedOperationException.class, () -> snapshot.clear());
+            invoke(runtime, context, "alpha_workspace", "ref.md");
+            invoke(runtime, context, "alpha_workspace", "missing.md");
+            invoke(runtime, context, "hidden_workspace", "SKILL.md");
+            assertSame(snapshot, SkillRuntime.loadedBodies(context));
+            HarnessSkillEntry replacement =
+                    new HarnessSkillEntry(
+                            skillWith("alpha", "description", "second body", null),
+                            null,
+                            "/second/root");
+            runtime.install(SkillCatalog.of(List.of(replacement)), context, null);
+            invoke(runtime, context, "alpha_workspace", "SKILL.md");
+            assertEquals(1, SkillRuntime.loadedBodies(context).size());
+            ContextItem latest = SkillRuntime.loadedBodies(context).get(0);
+            assertEquals(item.sourceId(), latest.sourceId());
+            assertTrue(latest.content().contains("second body"));
+            assertFalse(latest.content().contains("first body"));
+            assertTrue(item.content().contains("first body"));
+        }
+
+        @Test
+        void realToolkitCopiesShareLoadedBodiesForSingleAndParallelCalls() throws Exception {
+            SkillRuntime runtime = new SkillRuntime();
+            RuntimeContext context = RuntimeContext.empty();
+            SkillRuntime.resetLoadedBodies(context);
+            Toolkit toolkit =
+                    new Toolkit(
+                            ToolkitConfig.builder()
+                                    .defaultContext(
+                                            ToolExecutionContext.builder()
+                                                    .register("default", "value")
+                                                    .build())
+                                    .build());
+            runtime.install(
+                    SkillCatalog.of(
+                            List.of(
+                                    HarnessSkillEntry.of(skill("alpha", "src"), null),
+                                    HarnessSkillEntry.of(skill("beta", "src"), null))),
+                    context,
+                    toolkit);
+            toolkit.callTool(toolParam(context, "alpha_src")).block();
+            assertEquals(1, SkillRuntime.loadedBodies(context).size());
+            ExecutorService executor = Executors.newFixedThreadPool(3);
+            CyclicBarrier start = new CyclicBarrier(3);
+            try {
+                List<Future<ToolResultBlock>> results =
+                        List.of("alpha_src", "beta_src", "hidden_src").stream()
+                                .map(
+                                        id ->
+                                                executor.submit(
+                                                        () -> {
+                                                            start.await(5, TimeUnit.SECONDS);
+                                                            return toolkit.callTool(
+                                                                            toolParam(context, id))
+                                                                    .block();
+                                                        }))
+                                .toList();
+                for (Future<ToolResultBlock> result : results)
+                    assertNotNull(result.get(10, TimeUnit.SECONDS));
+                assertEquals(
+                        List.of(
+                                "harness:loaded_skill:alpha_src:SKILL.md",
+                                "harness:loaded_skill:beta_src:SKILL.md"),
+                        SkillRuntime.loadedBodies(context).stream()
+                                .map(ContextItem::sourceId)
+                                .toList());
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+
+        @Test
+        void parallelSameSourceKeepsOneCompleteCandidateAndOtherSources() throws Exception {
+            RuntimeContext context = RuntimeContext.empty();
+            SkillRuntime.resetLoadedBodies(context);
+            SkillRuntime.registerLoadedBody(context, "other_src", "other");
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+            CyclicBarrier start = new CyclicBarrier(2);
+            try {
+                List<? extends Future<?>> results =
+                        List.of("candidate one", "candidate two").stream()
+                                .map(
+                                        body ->
+                                                executor.submit(
+                                                        () -> {
+                                                            start.await(5, TimeUnit.SECONDS);
+                                                            SkillRuntime.registerLoadedBody(
+                                                                    RuntimeContext.builder(context)
+                                                                            .build(),
+                                                                    "same_src",
+                                                                    body);
+                                                            return null;
+                                                        }))
+                                .toList();
+                for (Future<?> result : results) result.get(10, TimeUnit.SECONDS);
+                List<ContextItem> bodies = SkillRuntime.loadedBodies(context);
+                assertEquals(2, bodies.size());
+                assertTrue(bodies.get(0).content().endsWith("other"));
+                assertTrue(
+                        bodies.get(1).content().endsWith("candidate one")
+                                || bodies.get(1).content().endsWith("candidate two"));
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+
+        @Test
+        void freshCallAndChildWithoutSkillProviderDoNotInheritBodiesOrOldUpdates() {
+            RuntimeContext parent = RuntimeContext.empty();
+            SkillRuntime.resetLoadedBodies(parent);
+            SkillRuntime.registerLoadedBody(parent, "parent_src", "parent body");
+            RuntimeContext oldTool = RuntimeContext.builder(parent).build();
+            RuntimeContext child = RuntimeContext.builder(parent).build();
+            new ContextConventionsMiddleware().onSystemPrompt(null, child, "").block();
+            assertTrue(SkillRuntime.loadedBodies(child).isEmpty());
+            assertEquals(1, SkillRuntime.loadedBodies(parent).size());
+            new ContextConventionsMiddleware().onSystemPrompt(null, parent, "").block();
+            SkillRuntime.registerLoadedBody(oldTool, "late_src", "late old update");
+            assertTrue(SkillRuntime.loadedBodies(parent).isEmpty());
+            assertTrue(SkillRuntime.loadedBodies(child).isEmpty());
+            assertEquals(2, SkillRuntime.loadedBodies(oldTool).size());
+        }
+
+        private ToolCallParam toolParam(RuntimeContext context, String skillId) {
+            return ToolCallParam.builder()
+                    .runtimeContext(context)
+                    .toolUseBlock(
+                            ToolUseBlock.builder()
+                                    .id(skillId)
+                                    .name(SkillLoadTool.TOOL_NAME)
+                                    .input(Map.of("skillId", skillId, "path", "SKILL.md"))
+                                    .build())
+                    .build();
         }
 
         private ToolResultBlock invoke(
@@ -505,6 +671,8 @@ class SkillRuntimeTest {
 
                 assertTrue(first.get(5, TimeUnit.SECONDS));
                 assertTrue(second.get(5, TimeUnit.SECONDS));
+                assertTrue(SkillRuntime.loadedBodies(firstCtx).isEmpty());
+                assertTrue(SkillRuntime.loadedBodies(secondCtx).isEmpty());
             } finally {
                 executor.shutdownNow();
             }

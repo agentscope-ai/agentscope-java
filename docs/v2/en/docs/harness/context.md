@@ -183,6 +183,8 @@ At the final reasoning boundary, Harness first offloads oversized tool results. 
 
 System instructions and `required()` materials are not directly evicted. If the resulting request still exceeds the allowance, preparation raises `ContextBudgetExceededException`. Reducing history cannot solve a request whose instructions, schemas, or required materials already fill the available space.
 
+Successfully loaded `SKILL.md` bodies are required runtime material for the current Harness call. They survive reduction of the original tool receipts and count toward this same budget, with possible duplicate tokens while receipts remain. See [Skill](/v2/en/docs/harness/skill#keep-loaded-instructions-available-within-a-call) for call boundaries and the maximum-iteration summary exception.
+
 <span id="2-large-tool-result-eviction-toolresultevictionmiddleware" />
 
 ### Offload a large tool result

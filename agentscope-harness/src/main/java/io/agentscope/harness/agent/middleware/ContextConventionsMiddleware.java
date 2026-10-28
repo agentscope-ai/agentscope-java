@@ -19,12 +19,16 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.context.ContextItem;
 import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
+import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import reactor.core.publisher.Mono;
 
-/** Framework-owned, domain-neutral context instructions, loaded once from a versioned resource. */
+/**
+ * Framework-owned, domain-neutral context instructions and per-call material initialization,
+ * including loaded skill bodies. Instructions are loaded once from a versioned resource.
+ */
 public final class ContextConventionsMiddleware implements HarnessRuntimeMiddleware {
     private static final String INSTRUCTIONS = load();
 
@@ -48,6 +52,7 @@ public final class ContextConventionsMiddleware implements HarnessRuntimeMiddlew
                     // fresh snapshot, even when the caller reuses a RuntimeContext or a child
                     // inherits one. Disabled providers must not retain a previous agent's data.
                     RuntimeContext rc = context == null ? RuntimeContext.empty() : context;
+                    SkillRuntime.resetLoadedBodies(rc);
                     rc.put(
                             WorkspaceContextMaterials.class,
                             new WorkspaceContextMaterials(

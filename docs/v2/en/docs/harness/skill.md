@@ -60,6 +60,14 @@ HarnessAgent agent = HarnessAgent.builder()
 
 During reasoning, the agent sees skills from the repo and calls `load_skill_through_path` for whichever one it needs.
 
+## Keep loaded instructions available within a call
+
+After a successful `load_skill_through_path(skillId, "SKILL.md")` in a normal Harness call, Harness keeps the complete formatted reply as required runtime material. Subsequent reasoning requests, including a normal final answer, receive that snapshot even if conversation compaction, pruning, or tool-result offloading shortens the original receipt. Loading the same skill again replaces its snapshot; loading another skill adds its body. Reference files and scripts remain available on demand.
+
+This guarantee lasts for one subscribed `call()` or `streamEvents()` execution. A new call, a new subscription, and a child agent start with independent loaded bodies. The next turn must load the skill again when needed. The recovery projection is not saved in conversation history or sent to the compactor; the original tool receipt and its summaries still follow normal history rules. The special summary after the maximum iteration count is reached does not receive this additional projection.
+
+Complete bodies consume input tokens on every reasoning request. While the original receipt is still in history, both copies may consume tokens. Large bodies or several loaded skills can exceed the model budget even after history reduction; Harness raises `ContextBudgetExceededException` instead of truncating required instructions. Keep `SKILL.md` focused and place supporting material in references. Runtime material adds no authorization or system-level priority. Standalone loader calls outside the Harness lifecycle retain their existing output without creating recovery state.
+
 ## Marketplace stores
 
 `skillRepository(...)` is the unified entry point — pass any store.

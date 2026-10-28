@@ -60,6 +60,14 @@ HarnessAgent agent = HarnessAgent.builder()
 
 后续推理时 agent 看得到这个仓库里的 skill，需要哪个就调 `load_skill_through_path` 加载详情。
 
+## 在当前调用内保留已加载规程
+
+正常 Harness 调用成功执行 `load_skill_through_path(skillId, "SKILL.md")` 后，Harness 将完整格式化回执保存为 required 运行时材料。后续推理请求（含正常最终回答）持续取得这份快照，即使对话压缩、裁剪或工具结果卸载缩短了原回执。再次加载同一技能会替换快照；加载其他技能会增加其正文。参考文件与脚本仍按需读取。
+
+保障以一次 `call()` 或 `streamEvents()` 的订阅执行为边界。新调用、重新订阅和子代理各自建立独立正文状态，下一轮需要技能时须重新加载。恢复投影不写入对话历史，也不进入压缩摘要输入；原工具回执及其摘要仍沿用历史规则。达到最大迭代次数后的特殊收尾总结不增加这份恢复投影。
+
+完整正文在每次推理请求中占用输入 token；原回执仍在历史时，两份内容可能重复占用。正文过大或同时加载多个技能，可能在减少历史后仍超过模型预算，此时 Harness 抛出 `ContextBudgetExceededException`，不会截断必需规程。建议让 `SKILL.md` 保持精简，将辅助资料放入 references。运行时材料不会增加授权或获得 system 指令优先级。脱离 Harness 生命周期的独立加载调用保留原输出，不创建恢复状态。
+
 ## 接技能市场
 
 `skillRepository(...)` 是统一入口，传什么后端都可以。

@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,7 +41,9 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.builtin.TodoTools;
 import io.agentscope.core.tool.builtin.TodoTools.TodoItem;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -51,6 +54,9 @@ import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import io.agentscope.harness.agent.middleware.ContextConventionsMiddleware;
 import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
+import io.agentscope.harness.agent.skill.runtime.HarnessSkillEntry;
+import io.agentscope.harness.agent.skill.runtime.SkillCatalog;
+import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -61,9 +67,252 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 class ContextPipelineV2Test {
+    @Test
+    void loadedBodySurvivesRepeatedCompactionButIsExcludedFromSummaryAndHistory() {
+        String body =
+                "head\n"
+                        + "padding ".repeat(800)
+                        + "MIDDLE_EXACT_COMMAND --typed 1\n"
+                        + "tail ".repeat(800);
+        AgentState state = AgentState.builder().context(history()).build();
+        RuntimeContext rc = RuntimeContext.builder().agentState(state).build();
+        new ContextConventionsMiddleware().onSystemPrompt(null, rc, "").block();
+        String reply = loadBody(rc, body);
+        Model summary =
+                new Model() {
+                    public String getModelName() {
+                        return "summary";
+                    }
+
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        assertTrue(
+                                messages.stream()
+                                        .noneMatch(
+                                                m ->
+                                                        m.getTextContent()
+                                                                .contains("MIDDLE_EXACT_COMMAND")));
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("Earlier work")
+                                                                .build()))
+                                        .build());
+                    }
+                };
+        CompactionMiddleware compaction =
+                new CompactionMiddleware(
+                        null,
+                        summary,
+                        CompactionConfig.builder()
+                                .triggerMessages(2)
+                                .keepMessages(1)
+                                .keepTokens(0)
+                                .flushBeforeCompact(false)
+                                .build());
+        List<ContextManifest> manifests = new ArrayList<>();
+        HarnessContextBuilder builder =
+                new HarnessContextBuilder(
+                        new ContextPolicy(
+                                8000, 20, 1, ContextTokenEstimator.approximate(), manifests::add),
+                        compaction,
+                        null);
+        for (int iteration = 0; iteration < 2; iteration++) {
+            ModelCallInput input =
+                    new ModelCallInput(
+                            List.copyOf(state.contextMutable()), List.of(), null, model(12000));
+            ModelCallInput prepared =
+                    builder.prepare(
+                                    mock(Agent.class),
+                                    rc,
+                                    input,
+                                    "reasoning-" + iteration,
+                                    Purpose.REASONING)
+                            .block();
+            Msg projection =
+                    prepared.messages().stream()
+                            .filter(m -> m.getTextContent().contains(reply))
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals(MsgRole.USER, projection.getRole());
+            assertTrue(Boolean.TRUE.equals(projection.getMetadata().get(Msg.METADATA_SYNTHETIC)));
+            assertTrue(
+                    projection
+                            .getTextContent()
+                            .contains("not a new user request or authorization"));
+            assertTrue(
+                    state.contextMutable().stream()
+                            .noneMatch(m -> m.getTextContent().contains("MIDDLE_EXACT_COMMAND")));
+            if (iteration == 0) state.contextMutable().addAll(history());
+        }
+        assertTrue(manifests.stream().allMatch(m -> m.transforms().contains("history_compaction")));
+        ModelCallInput summaryInput =
+                builder.prepare(
+                                mock(Agent.class),
+                                rc,
+                                new ModelCallInput(
+                                        List.copyOf(state.contextMutable()),
+                                        List.of(),
+                                        null,
+                                        model(12000)),
+                                "summary",
+                                Purpose.SUMMARY)
+                        .block();
+        assertTrue(
+                summaryInput.messages().stream()
+                        .noneMatch(m -> m.getTextContent().contains("MIDDLE_EXACT_COMMAND")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void historyReductionKeepsFullLoadedBodyProjection(boolean offload) {
+        RuntimeContext rc =
+                RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        new ContextConventionsMiddleware().onSystemPrompt(null, rc, "").block();
+        String reply =
+                loadBody(rc, "head ".repeat(300) + "EXACT_MIDDLE_CONTRACT" + " tail".repeat(300));
+        List<Msg> history =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        ToolUseBlock.builder()
+                                                .id("load")
+                                                .name("load_skill_through_path")
+                                                .input(Map.of())
+                                                .build())
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.TOOL)
+                                .content(
+                                        ToolResultBlock.of(
+                                                "load",
+                                                "load_skill_through_path",
+                                                TextBlock.builder().text(reply).build()))
+                                .build());
+        rc.getAgentState().contextMutable().addAll(history);
+        AbstractFilesystem fs = mock(AbstractFilesystem.class);
+        when(fs.write(any(RuntimeContext.class), anyString(), anyString()))
+                .thenReturn(WriteResult.ok("stored"));
+        Agent agent = mock(Agent.class);
+        when(agent.getName()).thenReturn("test");
+        Model summary = model(12000);
+        CompactionMiddleware lightweight =
+                offload
+                        ? null
+                        : new CompactionMiddleware(
+                                null,
+                                summary,
+                                CompactionConfig.builder()
+                                        .triggerTokens(1)
+                                        .keepTokens(1_000_000)
+                                        .keepMessages(0)
+                                        .flushBeforeCompact(false)
+                                        .truncateArgs(null)
+                                        .prune(
+                                                CompactionConfig.PruneConfig.builder()
+                                                        .protectTokens(0)
+                                                        .minimumTokens(1)
+                                                        .maxOutputChars(20)
+                                                        .build())
+                                        .build());
+        HarnessContextBuilder builder =
+                new HarnessContextBuilder(
+                        ContextPolicy.defaults(),
+                        lightweight,
+                        offload
+                                ? new ToolResultEvictionMiddleware(
+                                        fs,
+                                        ToolResultEvictionConfig.builder()
+                                                .maxResultChars(20)
+                                                .previewChars(4)
+                                                .build())
+                                : null);
+        ModelCallInput prepared =
+                builder.prepare(
+                                agent,
+                                rc,
+                                new ModelCallInput(history, List.of(), null, model(12000)),
+                                "offload",
+                                Purpose.REASONING)
+                        .block();
+        Msg projection =
+                prepared.messages().stream()
+                        .filter(m -> m.getTextContent().contains(reply))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(MsgRole.USER, projection.getRole());
+        assertTrue(projection.getContent().stream().allMatch(TextBlock.class::isInstance));
+        assertTrue(
+                rc.getAgentState().contextMutable().stream()
+                        .noneMatch(m -> m.getTextContent().contains("EXACT_MIDDLE_CONTRACT")));
+        if (offload) verify(fs).write(any(RuntimeContext.class), anyString(), anyString());
+        else verify(summary, never()).stream(any(), any(), any());
+    }
+
+    @Test
+    void requiredLoadedBodyRejectsBudgetWithoutCommittingCandidateHistory() {
+        List<Msg> original = history();
+        AgentState state = AgentState.builder().context(original).build();
+        RuntimeContext rc = RuntimeContext.builder().agentState(state).build();
+        new ContextConventionsMiddleware().onSystemPrompt(null, rc, "").block();
+        loadBody(rc, "required-contract ".repeat(1000));
+        AtomicInteger summaries = new AtomicInteger();
+        HarnessContextBuilder builder =
+                new HarnessContextBuilder(
+                        new ContextPolicy(
+                                100, 1, 1, ContextTokenEstimator.approximate(), ignored -> {}),
+                        compactor(summaries, () -> {}),
+                        null);
+        assertThrows(
+                ContextBudgetExceededException.class,
+                () ->
+                        builder.prepare(
+                                        mock(Agent.class),
+                                        rc,
+                                        new ModelCallInput(original, List.of(), null, model(10000)),
+                                        "reject-body",
+                                        Purpose.REASONING)
+                                .block());
+        assertEquals(original, state.contextMutable());
+        assertEquals(1, summaries.get());
+        assertEquals(1, SkillRuntime.loadedBodies(rc).size());
+    }
+
+    private static String loadBody(RuntimeContext rc, String body) {
+        SkillRuntime runtime = new SkillRuntime();
+        runtime.install(
+                SkillCatalog.of(
+                        List.of(
+                                new HarnessSkillEntry(
+                                        new AgentSkill(
+                                                "audit", "Audit skill", body, null, "workspace"),
+                                        null,
+                                        "/skills/audit"))),
+                rc,
+                null);
+        return runtime
+                .loadTool()
+                .callAsync(
+                        ToolCallParam.builder()
+                                .runtimeContext(rc)
+                                .input(Map.of("skillId", "audit_workspace", "path", "SKILL.md"))
+                                .build())
+                .block()
+                .getOutput()
+                .stream()
+                .map(TextBlock.class::cast)
+                .map(TextBlock::getText)
+                .collect(java.util.stream.Collectors.joining());
+    }
+
     @Test
     void singleSystemPreservesOpaqueInputsAndReplacesFrameworkSourcesOnRebuild() {
         var rc = RuntimeContext.empty();

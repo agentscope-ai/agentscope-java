@@ -32,6 +32,7 @@ import io.agentscope.core.state.TaskContextState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
+import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -167,6 +168,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         WorkspaceContextMaterials materials = rc.get(WorkspaceContextMaterials.class);
         List<ContextItem> workspace =
                 materials == null ? List.of() : List.copyOf(materials.items());
+        List<ContextItem> loadedSkills = SkillRuntime.loadedBodies(rc);
         var readContext =
                 new ContextRequest(
                         agent == null ? null : agent.getAgentId(),
@@ -178,6 +180,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 .flatMap(
                         collected -> {
                             var selected = new ArrayList<>(workspace);
+                            selected.addAll(loadedSkills);
                             selected.addAll(collected.items());
                             Set<String> sourceIds = new HashSet<>();
                             for (ContextItem item : selected) {
