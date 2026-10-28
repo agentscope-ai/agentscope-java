@@ -16,9 +16,11 @@
 package io.agentscope.core.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.model.ChatUsage;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -204,5 +206,64 @@ class MsgTest {
         assertEquals("Hello World", msg.getTextContent());
         assertTrue(msg.getFirstContentBlock() instanceof TextBlock);
         assertEquals("Hello World", ((TextBlock) msg.getFirstContentBlock()).getText());
+    }
+
+    @Test
+    void messagesBuiltFromSeparateObjectsCompareEqual() {
+        Msg first = message("m-user-1", "hello");
+        Msg second = message("m-user-1", "hello");
+
+        assertEquals(first, second);
+        assertEquals(first.hashCode(), second.hashCode());
+    }
+
+    @Test
+    void binaryMetadataIsComparedByContentRatherThanArrayIdentity() {
+        byte[] signature = {1, 2, 3};
+        Msg first = signedMessage(signature.clone());
+        Msg second = signedMessage(signature.clone());
+
+        assertEquals(first, second);
+        assertEquals(first.hashCode(), second.hashCode());
+    }
+
+    @Test
+    void tokenUsageTakesPartInEquality() {
+        Msg withoutUsage = message("m-assistant-1", "hello");
+        Msg withUsage =
+                Msg.builder()
+                        .id("m-assistant-1")
+                        .timestamp("2026-05-08 14:00:00.000")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("hello").build())
+                        .usage(new ChatUsage(11, 7, 0.5))
+                        .build();
+
+        assertNotEquals(withoutUsage, withUsage);
+    }
+
+    private static Msg message(String id, String text) {
+        return Msg.builder()
+                .id(id)
+                .timestamp("2026-05-08 14:00:00.000")
+                .role(MsgRole.USER)
+                .content(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    private static Msg signedMessage(byte[] signature) {
+        return Msg.builder()
+                .id("m-tool-1")
+                .timestamp("2026-05-08 14:00:00.000")
+                .role(MsgRole.ASSISTANT)
+                .content(
+                        ToolUseBlock.builder()
+                                .id("call-1")
+                                .name("search")
+                                .input(Map.of("query", "weather"))
+                                .metadata(
+                                        Map.of(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, signature))
+                                .build())
+                .build();
     }
 }
