@@ -31,12 +31,15 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /** Unit tests for AnthropicMessageConverter. */
 class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
@@ -370,6 +373,51 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         // Note: input validation happens during API calls, not during conversion
     }
 
+    @ParameterizedTest
+    @EnumSource(ToolResultState.class)
+    void toolResultFailureStatesReachProviderWithOriginalContent(ToolResultState state) {
+        var output =
+                List.<ContentBlock>of(
+                        TextBlock.builder().text("diagnostic").build(),
+                        ImageBlock.builder()
+                                .source(
+                                        Base64Source.builder()
+                                                .mediaType("image/png")
+                                                .data("aGVsbG8=")
+                                                .build())
+                                .build());
+        var msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_state")
+                                        .name("search")
+                                        .state(state)
+                                        .output(output)
+                                        .build())
+                        .build();
+        var converted =
+                converter
+                        .convert(List.of(msg))
+                        .get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asToolResult();
+        boolean failed =
+                state == ToolResultState.ERROR
+                        || state == ToolResultState.DENIED
+                        || state == ToolResultState.INTERRUPTED;
+        assertEquals(failed, converted.isError().orElse(false));
+        assertEquals(failed, converted.isError().isPresent());
+        assertEquals("call_state", converted.toolUseId());
+        var blocks = converted.content().orElseThrow().asBlocks();
+        assertEquals(2, blocks.size());
+        assertEquals("diagnostic", blocks.get(0).asText().text());
+        assertTrue(blocks.get(1).isImage());
+    }
+
     @Test
     void testConvertToolResultBlockString() {
         Msg msg =
@@ -552,6 +600,52 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals("call_1", resultBlocks.get(0).asToolResult().toolUseId());
         assertTrue(resultBlocks.get(1).isToolResult());
         assertEquals("call_2", resultBlocks.get(1).asToolResult().toolUseId());
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = ToolResultState.class,
+            names = {"ERROR", "DENIED", "INTERRUPTED"})
+    void testParallelToolResultBatchPreservesFailureStates(ToolResultState failureState) {
+        Msg success =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_success")
+                                        .name("search")
+                                        .output(TextBlock.builder().text("found").build())
+                                        .build())
+                        .build();
+        Msg failure =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_failure")
+                                        .name("search")
+                                        .state(failureState)
+                                        .output(TextBlock.builder().text("diagnostic").build())
+                                        .build())
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(success, failure));
+
+        assertEquals(1, result.size());
+        assertEquals(MessageParam.Role.USER, result.get(0).role());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(2, blocks.size());
+        var successResult = blocks.get(0).asToolResult();
+        assertEquals("call_success", successResult.toolUseId());
+        assertTrue(successResult.isError().isEmpty());
+        assertEquals(
+                "found", successResult.content().orElseThrow().asBlocks().get(0).asText().text());
+        var failureResult = blocks.get(1).asToolResult();
+        assertEquals("call_failure", failureResult.toolUseId());
+        assertTrue(failureResult.isError().orElse(false));
+        assertEquals(
+                "diagnostic",
+                failureResult.content().orElseThrow().asBlocks().get(0).asText().text());
     }
 
     @Test

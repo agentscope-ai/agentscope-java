@@ -337,10 +337,15 @@ public class AnthropicMessageConverter {
         }
 
         // Create tool result block
-        return ToolResultBlockParam.builder()
-                .toolUseId(toolResult.getId())
-                .content(ToolResultBlockParam.Content.ofBlocks(blocks))
-                .build();
+        var resultBuilder =
+                ToolResultBlockParam.builder()
+                        .toolUseId(toolResult.getId())
+                        .content(ToolResultBlockParam.Content.ofBlocks(blocks));
+        switch (toolResult.getState()) {
+            case ERROR, DENIED, INTERRUPTED -> resultBuilder.isError(true);
+            default -> {}
+        }
+        return resultBuilder.build();
     }
 
     /**

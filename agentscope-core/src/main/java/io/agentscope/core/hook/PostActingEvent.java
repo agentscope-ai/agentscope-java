@@ -82,6 +82,11 @@ public final class PostActingEvent extends ActingEvent {
     /**
      * Modify the tool execution result.
      *
+     * <p>The replacement is written to conversation history for the next model call unless a
+     * hook also replaces {@link #setToolResultMsg(Msg) the complete result message}; an explicitly
+     * replaced message takes precedence. A successful {@code returnDirect} batch still returns the
+     * original tool output. Already-emitted tool-result deltas are not rewritten.
+     *
      * @param toolResult The new tool result
      */
     public void setToolResult(ToolResultBlock toolResult) {

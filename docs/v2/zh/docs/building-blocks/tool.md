@@ -124,7 +124,11 @@ toolkit.registerTool(new SimpleTools());
 
 #### 显式返回执行状态
 
+使用默认 converter 时，注解工具的 `void` 或 `Void` 返回值，以及成功完成的 `Mono<Void>`、`CompletableFuture<Void>`，会向模型返回 `(completed with no output)`，避免静默成功被误认为缺失的工具结果。普通 `null` 返回值仍为 `null`；错误和取消不会生成这条成功确认。
+
 工具调用成功时返回 `ToolResultBlock.success(text)`，失败时返回 `ToolResultBlock.error(message)`；两者既可直接返回，也可包装在 `Mono<ToolResultBlock>` 中。不要通过文本前缀判断失败。`ToolResultBlock.text(text)` 默认是 `RUNNING`；如需保留既有 JSON 或多行输出，请用 `withState(...)` 明确终态。
+
+对于普通客户端工具，Anthropic formatter 将 `ERROR`、`DENIED`、`INTERRUPTED` 映射为 `is_error: true`，同时保留调用 ID 和输出内容块。`SUCCESS`、`RUNNING`、`SUSPENDED` 不会被 formatter 判为错误。供应商执行的 server tool 仍使用独立的转换路径。
 
 内置工具已改为结构化结果。直接调用时用 `getState()` 判断状态，用 `getOutput()` 读取文本；`Toolkit` 注册方式不变。
 
