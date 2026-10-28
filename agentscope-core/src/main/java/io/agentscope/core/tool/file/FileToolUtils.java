@@ -18,6 +18,7 @@ package io.agentscope.core.tool.file;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -66,16 +67,31 @@ public class FileToolUtils {
         // If baseDir is specified, ensure the path is within it
         if (baseDir != null) {
             Path normalizedBaseDir = baseDir.toAbsolutePath().normalize();
-            if (!path.startsWith(normalizedBaseDir)) {
+            Path resolvedBaseDir = resolveExistingAncestor(normalizedBaseDir);
+            Path resolvedPath = resolveExistingAncestor(path);
+            if (!path.startsWith(normalizedBaseDir) || !resolvedPath.startsWith(resolvedBaseDir)) {
                 throw new IOException(
                         String.format(
                                 "Access denied: The file path '%s' is outside the allowed base"
                                         + " directory '%s'.",
                                 filePath, normalizedBaseDir));
             }
+            return resolvedPath;
         }
 
         return path;
+    }
+
+    private static Path resolveExistingAncestor(Path path) throws IOException {
+        Path existing = path;
+        while (existing != null && !Files.exists(existing, LinkOption.NOFOLLOW_LINKS)) {
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            throw new IOException("Cannot resolve an existing ancestor of " + path);
+        }
+        // Missing descendants must still be checked against a symlinked/junction parent.
+        return existing.toRealPath().resolve(existing.relativize(path)).normalize();
     }
 
     /**
