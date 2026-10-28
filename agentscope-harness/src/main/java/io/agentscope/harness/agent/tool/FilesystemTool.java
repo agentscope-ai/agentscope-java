@@ -201,8 +201,10 @@ public class FilesystemTool {
             name = "grep_files",
             readOnly = true,
             description =
-                    "Search file contents for a literal text pattern. Returns at most 100 matches"
-                            + " by default to keep tool output bounded.")
+                    "Search file contents for literal text, not a regular expression. Returns"
+                            + " path:line:text matches, at most 100 by default. Use glob_files for"
+                            + " file path/name patterns and read_file on a matched file for"
+                            + " surrounding context.")
     public ToolResultBlock grepFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Literal text pattern to search for")
