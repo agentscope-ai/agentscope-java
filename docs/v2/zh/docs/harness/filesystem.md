@@ -104,6 +104,12 @@ HarnessAgent agent = HarnessAgent.builder()
 | `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
 | `InMemoryStore` | 内存实现，适合测试 | `agentscope-harness` |
 
+使用 `InMemoryStore` 或两种 `JdbcStore` 实现（JDBC 模块及旧 MySQL 模块）时，
+`RemoteFilesystem.exists()` 通过精确键和子路径键前缀判断是否存在，不读取文件正文。
+`BaseStore.containsKey()` 只检查精确命名空间；`hasKeyPrefix()` 沿用 `search()` 包含子命名空间的范围，
+对键前缀按字面量、区分大小写匹配。其他存储通过默认方法保持兼容，回退实现仍可能逐页读取正文。
+自定义后端可以覆盖这两个方法，使用只查询元数据的实现。
+
 ---
 
 ### 模式 2：沙箱（`SandboxFilesystemSpec` 系列）

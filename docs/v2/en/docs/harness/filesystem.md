@@ -105,6 +105,13 @@ This mode **does not provide shell** — on purpose: for shell, use mode 2 (sand
 | `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
 | `InMemoryStore` | In-memory, for testing | `agentscope-harness` |
 
+`RemoteFilesystem.exists()` checks exact keys and child-key prefixes without loading file contents
+when backed by `InMemoryStore` or either `JdbcStore` implementation (the JDBC module and the legacy
+MySQL module). `BaseStore.containsKey()` checks the exact namespace; `hasKeyPrefix()` follows the
+recursive namespace scope of `search()` and matches literal, case-sensitive key prefixes.
+Other stores remain compatible through default methods that may still read values, one page at a
+time. Custom backends can override these methods with metadata-only queries.
+
 ---
 
 ### Mode 2: sandbox (`SandboxFilesystemSpec` family)

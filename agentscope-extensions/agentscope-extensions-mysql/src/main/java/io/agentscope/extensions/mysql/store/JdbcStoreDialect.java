@@ -106,6 +106,25 @@ public interface JdbcStoreDialect {
         return "SELECT value_json, version FROM %s WHERE namespace_path = ? AND item_key = ?";
     }
 
+    /** Existence check in an exact namespace. Bind parameters: (namespace_path, item_key). */
+    default String getContainsKeySql() {
+        return "SELECT 1 FROM %s WHERE namespace_path = ? AND item_key = ?";
+    }
+
+    /**
+     * Key-only prefix search. Bind parameters: (namespace_like_pattern, key_like_pattern).
+     * Callers confirm the returned keys with a case-sensitive prefix check because LIKE
+     * may use a case-insensitive database collation.
+     */
+    default String getHasKeyPrefixSql() {
+        char escape = getLikeEscapeChar();
+        return "SELECT item_key FROM %s WHERE namespace_path LIKE ? ESCAPE '"
+                + escape
+                + "' AND item_key LIKE ? ESCAPE '"
+                + escape
+                + "'";
+    }
+
     /**
      * Returns the SQL to delete a single item.
      *
