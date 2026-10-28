@@ -55,6 +55,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
@@ -91,8 +92,27 @@ public class HarnessAgentBuildService {
     /** Prefix for locally-built data-plane agent instance ids. */
     private static final String DP_AGENT_PREFIX = "dpa-";
 
+    /** Characters outside the agent-id charset accepted by {@code AgentBase#normalizeAgentId}. */
+    private static final Pattern INVALID_AGENT_ID_CHARS = Pattern.compile("[^A-Za-z0-9._-]");
+
+    /**
+     * Builds the agent id the session's native log is keyed by.
+     *
+     * <p>Namespace-scoped agents have an owner id like {@code namespace:default:default}, which is
+     * not a valid agent id, so invalid characters are replaced instead of handed to the agent
+     * builder as-is. The session id suffix keeps the result unique even when two owner ids sanitize
+     * to the same text.
+     */
     public static String sessionLogAgentId(ManagedSessionDto session) {
-        return DP_AGENT_PREFIX + session.ownerId() + "-" + session.agentId() + "-" + session.id();
+        return INVALID_AGENT_ID_CHARS
+                .matcher(
+                        DP_AGENT_PREFIX
+                                + session.ownerId()
+                                + "-"
+                                + session.agentId()
+                                + "-"
+                                + session.id())
+                .replaceAll("_");
     }
 
     private static final String COLLABORATION_MCP_NAME = "controlplane-collaboration";
