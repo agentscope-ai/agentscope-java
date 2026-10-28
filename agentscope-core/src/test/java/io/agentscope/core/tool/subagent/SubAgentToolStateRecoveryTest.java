@@ -17,6 +17,7 @@ package io.agentscope.core.tool.subagent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,6 +26,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -32,10 +34,17 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 class SubAgentToolStateRecoveryTest {
@@ -72,6 +81,181 @@ class SubAgentToolStateRecoveryTest {
                 "the newly identified request must be saved");
         assertFalse(saved.isShutdownInterrupted());
         assertNull(saved.getShutdownInputMessageIds());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void exactToolCallRetryDoesNotAppendTheSubAgentInputTwice(boolean forwardEvents) {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CapturingModel model = new CapturingModel();
+        SubAgentTool tool = tool(store, model, null, forwardEvents);
+        ToolCallParam call = continuedCall("same request", "parent-tool-call-1");
+
+        tool.callAsync(call).block(Duration.ofSeconds(5));
+        Msg firstInput = inputWithText(savedState(store), "same request");
+        saveInterruptedState(store, SESSION_ID, firstInput);
+
+        tool.callAsync(call).block(Duration.ofSeconds(5));
+
+        assertEquals(
+                1,
+                model.receivedMessages.stream()
+                        .filter(msg -> "same request".equals(msg.getTextContent()))
+                        .count(),
+                "retrying the same parent tool call must not duplicate its sub-agent input");
+        AgentState saved = savedState(store);
+        assertFalse(saved.isShutdownInterrupted());
+        assertNull(saved.getShutdownInputMessageIds());
+    }
+
+    @Test
+    void differentToolCallWithSameTextIsAcceptedAfterInterruptedStateIsLoaded() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CapturingModel model = new CapturingModel();
+        SubAgentTool tool = tool(store, model, null);
+
+        tool.callAsync(continuedCall("same request", "parent-tool-call-1"))
+                .block(Duration.ofSeconds(5));
+        Msg firstInput = inputWithText(savedState(store), "same request");
+        saveInterruptedState(store, SESSION_ID, firstInput);
+
+        tool.callAsync(continuedCall("same request", "parent-tool-call-2"))
+                .block(Duration.ofSeconds(5));
+
+        List<Msg> matching = inputsWithText(model.receivedMessages, "same request");
+        assertEquals(2, matching.size());
+        assertNotEquals(matching.get(0).getId(), matching.get(1).getId());
+    }
+
+    @Test
+    void sameToolCallWithChangedEffectiveMessageIsAccepted() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CapturingModel model = new CapturingModel();
+        SubAgentTool tool = tool(store, model, null);
+
+        tool.callAsync(continuedCall("first request", "parent-tool-call-1"))
+                .block(Duration.ofSeconds(5));
+        Msg firstInput = inputWithText(savedState(store), "first request");
+        saveInterruptedState(store, SESSION_ID, firstInput);
+
+        tool.callAsync(continuedCall("changed request", "parent-tool-call-1"))
+                .block(Duration.ofSeconds(5));
+
+        Msg changed = inputWithText(model.receivedMessages, "changed request");
+        assertNotEquals(firstInput.getId(), changed.getId());
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", " "})
+    void unusableToolCallIdKeepsRandomMessageIdentity(String toolCallId) {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CapturingModel model = new CapturingModel();
+        SubAgentTool tool = tool(store, model, null);
+        ToolCallParam call = continuedCall("uncorrelated request", toolCallId);
+
+        tool.callAsync(call).block(Duration.ofSeconds(5));
+        tool.callAsync(call).block(Duration.ofSeconds(5));
+
+        List<Msg> matching = inputsWithText(savedState(store).getContext(), "uncorrelated request");
+        assertEquals(2, matching.size());
+        assertNotEquals(matching.get(0).getId(), matching.get(1).getId());
+    }
+
+    @Test
+    void missingToolUseBlockKeepsRandomMessageIdentity() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CapturingModel model = new CapturingModel();
+        SubAgentTool tool = tool(store, model, null);
+        ToolCallParam call = continuedCall("uncorrelated request");
+
+        tool.callAsync(call).block(Duration.ofSeconds(5));
+        tool.callAsync(call).block(Duration.ofSeconds(5));
+
+        List<Msg> matching = inputsWithText(savedState(store).getContext(), "uncorrelated request");
+        assertEquals(2, matching.size());
+        assertNotEquals(matching.get(0).getId(), matching.get(1).getId());
+    }
+
+    @Test
+    void sameToolCallInDifferentSubAgentSessionsHasDifferentMessageIdentity() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CapturingModel model = new CapturingModel();
+        SubAgentTool tool = tool(store, model, null);
+
+        tool.callAsync(continuedCall("session-a", "same request", "parent-tool-call-1"))
+                .block(Duration.ofSeconds(5));
+        tool.callAsync(continuedCall("session-b", "same request", "parent-tool-call-1"))
+                .block(Duration.ofSeconds(5));
+
+        Msg sessionA = inputWithText(savedState(store, "session-a"), "same request");
+        Msg sessionB = inputWithText(savedState(store, "session-b"), "same request");
+        assertNotEquals(sessionA.getId(), sessionB.getId());
+    }
+
+    @Test
+    void presetAndInterceptorChangesParticipateInEffectiveInputIdentity() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CapturingModel model = new CapturingModel();
+        SubAgentTool tool = tool(store, model, null);
+        AtomicReference<String> rewrittenMessage = new AtomicReference<>("effective request 1");
+        Toolkit toolkit =
+                new Toolkit(
+                        ToolkitConfig.builder()
+                                .parallel(false)
+                                .interceptor(
+                                        (invocation, next) -> {
+                                            Map<String, Object> input =
+                                                    new HashMap<>(invocation.input());
+                                            input.put("message", rewrittenMessage.get());
+                                            return next.apply(invocation.withInput(input));
+                                        })
+                                .build());
+        toolkit.registration()
+                .agentTool(tool)
+                .presetParameters(Map.of(tool.getName(), Map.of("session_id", SESSION_ID)))
+                .apply();
+        ToolUseBlock parentCall =
+                ToolUseBlock.builder()
+                        .id("parent-tool-call-1")
+                        .name(tool.getName())
+                        .input(Map.of("message", "original request"))
+                        .build();
+
+        toolkit.callTool(ToolCallParam.builder().toolUseBlock(parentCall).build())
+                .block(Duration.ofSeconds(5));
+        Msg first = inputWithText(savedState(store), "effective request 1");
+        saveInterruptedState(store, SESSION_ID, first);
+
+        toolkit.callTool(ToolCallParam.builder().toolUseBlock(parentCall).build())
+                .block(Duration.ofSeconds(5));
+        assertEquals(1, inputsWithText(model.receivedMessages, "effective request 1").size());
+
+        rewrittenMessage.set("effective request 2");
+        toolkit.callTool(ToolCallParam.builder().toolUseBlock(parentCall).build())
+                .block(Duration.ofSeconds(5));
+
+        Msg second = inputWithText(savedState(store), "effective request 2");
+        assertNotEquals(first.getId(), second.getId());
+    }
+
+    @Test
+    void legacyRandomMessageIdCannotBeCorrelatedToTheDerivedRetryId() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        Msg legacyInput = userMsg("legacy-random-id", "same request");
+        saveInterruptedState(store, SESSION_ID, legacyInput);
+        CapturingModel model = new CapturingModel();
+        SubAgentTool tool = tool(store, model, null);
+
+        tool.callAsync(continuedCall("same request", "parent-tool-call-1"))
+                .block(Duration.ofSeconds(5));
+
+        List<Msg> matching = inputsWithText(model.receivedMessages, "same request");
+        assertEquals(
+                2,
+                matching.size(),
+                "a pre-fix random message id cannot be safely inferred from the parent call");
+        assertNotEquals(matching.get(0).getId(), matching.get(1).getId());
     }
 
     @Test
@@ -124,6 +308,14 @@ class SubAgentToolStateRecoveryTest {
 
     private static SubAgentTool tool(
             InMemoryAgentStateStore store, CapturingModel model, List<String> liveInputIds) {
+        return tool(store, model, liveInputIds, false);
+    }
+
+    private static SubAgentTool tool(
+            InMemoryAgentStateStore store,
+            CapturingModel model,
+            List<String> liveInputIds,
+            boolean forwardEvents) {
         SubAgentProvider<ReActAgent> provider =
                 () -> {
                     ReActAgent agent =
@@ -136,7 +328,8 @@ class SubAgentToolStateRecoveryTest {
                     return agent;
                 };
         return new SubAgentTool(
-                provider, SubAgentConfig.builder().forwardEvents(false).stateStore(store).build());
+                provider,
+                SubAgentConfig.builder().forwardEvents(forwardEvents).stateStore(store).build());
     }
 
     private static ToolCallParam continuedCall(String message) {
@@ -145,8 +338,59 @@ class SubAgentToolStateRecoveryTest {
                 .build();
     }
 
+    private static ToolCallParam continuedCall(String message, String toolCallId) {
+        return continuedCall(SESSION_ID, message, toolCallId);
+    }
+
+    private static ToolCallParam continuedCall(
+            String sessionId, String message, String toolCallId) {
+        Map<String, Object> input = Map.of("session_id", sessionId, "message", message);
+        return ToolCallParam.builder()
+                .toolUseBlock(
+                        ToolUseBlock.builder()
+                                .id(toolCallId)
+                                .name("call_state_recovery_sub_agent")
+                                .input(input)
+                                .build())
+                .input(input)
+                .build();
+    }
+
     private static AgentState savedState(InMemoryAgentStateStore store) {
-        return store.get(null, SESSION_ID, "agent_state", AgentState.class).orElseThrow();
+        return savedState(store, SESSION_ID);
+    }
+
+    private static AgentState savedState(InMemoryAgentStateStore store, String sessionId) {
+        return store.get(null, sessionId, "agent_state", AgentState.class).orElseThrow();
+    }
+
+    private static void saveInterruptedState(
+            InMemoryAgentStateStore store, String sessionId, Msg input) {
+        store.save(
+                null,
+                sessionId,
+                "agent_state",
+                AgentState.builder()
+                        .sessionId(sessionId)
+                        .addMessage(input)
+                        .shutdownInterrupted(true)
+                        .shutdownInputMessageIds(List.of(input.getId()))
+                        .build());
+    }
+
+    private static Msg inputWithText(AgentState state, String text) {
+        return inputWithText(state.getContext(), text);
+    }
+
+    private static Msg inputWithText(List<Msg> messages, String text) {
+        return messages.stream()
+                .filter(msg -> text.equals(msg.getTextContent()))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static List<Msg> inputsWithText(List<Msg> messages, String text) {
+        return messages.stream().filter(msg -> text.equals(msg.getTextContent())).toList();
     }
 
     private static Msg userMsg(String id, String text) {

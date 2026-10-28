@@ -51,6 +51,11 @@ import reactor.core.publisher.SignalType;
  * <p>Thread safety is ensured by using {@link SubAgentProvider} to create a fresh agent instance
  * for each new session.
  *
+ * <p>When retrying an interrupted parent tool call, callers must reuse its non-blank
+ * {@link io.agentscope.core.message.ToolUseBlock} id. The id, tool name, and effective sub-agent
+ * session/message then reproduce the same input identity; calls without that correlation metadata
+ * remain independent.
+ *
  * <p>The tool exposes two parameters:
  *
  * <ul>
@@ -156,8 +161,10 @@ public class SubAgentTool implements AgentTool {
                         }
 
                         // Build user message
+                        String messageId = inputMessageId(param, sessionId, message);
                         Msg userMsg =
                                 Msg.builder()
+                                        .id(messageId)
                                         .role(MsgRole.USER)
                                         .content(TextBlock.builder().text(message).build())
                                         .build();
@@ -218,6 +225,36 @@ public class SubAgentTool implements AgentTool {
                                         "AgentStateStore setup failed: " + e.getMessage()));
                     }
                 });
+    }
+
+    /**
+     * Resolves the sub-agent input identity from the effective tool invocation.
+     *
+     * <p>Tool presets and interceptors have already produced {@link ToolCallParam#getInput()} when
+     * this tool is called. The session and message read from that map are therefore the complete
+     * effective input for {@code SubAgentTool}. Reusing a non-blank parent tool-call id with those
+     * same values identifies an exact retry; changing the call, session, or message produces a new
+     * id. Calls without a usable parent id retain the historical random-id behavior because they
+     * cannot be correlated safely.
+     */
+    private static String inputMessageId(ToolCallParam param, String sessionId, String message) {
+        var toolCall = param.getToolUseBlock();
+        if (toolCall == null || toolCall.getId() == null || toolCall.getId().isBlank()) {
+            return UUID.randomUUID().toString();
+        }
+
+        StringBuilder identity = new StringBuilder("subagent-input-v1");
+        appendIdentityPart(identity, toolCall.getName());
+        appendIdentityPart(identity, toolCall.getId());
+        appendIdentityPart(identity, sessionId);
+        appendIdentityPart(identity, message);
+        return UUID.nameUUIDFromBytes(identity.toString().getBytes(StandardCharsets.UTF_8))
+                .toString();
+    }
+
+    private static void appendIdentityPart(StringBuilder identity, String value) {
+        String nonNullValue = value == null ? "" : value;
+        identity.append('|').append(nonNullValue.length()).append(':').append(nonNullValue);
     }
 
     /**
