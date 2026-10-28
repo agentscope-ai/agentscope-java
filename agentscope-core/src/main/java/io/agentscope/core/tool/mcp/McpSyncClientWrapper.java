@@ -187,14 +187,25 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      *
      * <p>This method attempts to close the client gracefully, falling back to forceful closure if
      * graceful closure fails. This method is idempotent and can be called multiple times safely.
+     *
+     * <p>The underlying {@code McpSyncClient#closeGracefully()} bounds its own wait and reports
+     * failure by returning {@code false} instead of throwing. That result must not be discarded:
+     * an unresponsive server otherwise leaves the transport open with nothing in the log.
      */
     @Override
     public void close() {
         if (client != null) {
             logger.info("Closing MCP sync client: {}", name);
             try {
-                client.closeGracefully();
-                logger.debug("MCP client '{}' closed", name);
+                if (client.closeGracefully()) {
+                    logger.debug("MCP client '{}' closed", name);
+                } else {
+                    logger.warn(
+                            "MCP sync client '{}' did not close within the SDK's graceful"
+                                    + " timeout; forcing closure",
+                            name);
+                    client.close();
+                }
             } catch (Exception e) {
                 logger.error("Exception during MCP client close", e);
                 client.close();

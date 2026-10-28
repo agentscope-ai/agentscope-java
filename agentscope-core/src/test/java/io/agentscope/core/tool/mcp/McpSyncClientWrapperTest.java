@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -253,11 +254,33 @@ class McpSyncClientWrapperTest {
         assertTrue(wrapper.isInitialized());
         assertFalse(wrapper.cachedTools.isEmpty());
 
+        // The SDK reports a completed graceful close by returning true; a mock's default false must
+        // not be mistaken for success, otherwise this case would silently stop covering anything.
+        when(mockClient.closeGracefully()).thenReturn(true);
+
         wrapper.close();
 
         assertFalse(wrapper.isInitialized());
         assertTrue(wrapper.cachedTools.isEmpty());
         verify(mockClient, times(1)).closeGracefully();
+        verify(mockClient, never()).close();
+    }
+
+    @Test
+    void testClose_GracefulCloseReturnsFalseForcesClosure() {
+        // closeGracefully() bounds its own wait and signals failure through its return value
+        // rather than an exception. Discarding that value leaves the transport open in silence.
+        setupSuccessfulInitialization();
+        wrapper.initialize().block();
+
+        when(mockClient.closeGracefully()).thenReturn(false);
+
+        wrapper.close();
+
+        assertFalse(wrapper.isInitialized());
+        assertTrue(wrapper.cachedTools.isEmpty());
+        verify(mockClient, times(1)).closeGracefully();
+        verify(mockClient, times(1)).close();
     }
 
     @Test
