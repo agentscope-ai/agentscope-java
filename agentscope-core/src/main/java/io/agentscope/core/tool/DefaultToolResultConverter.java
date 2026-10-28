@@ -30,7 +30,7 @@ import org.slf4j.LoggerFactory;
  * <p>This converter:
  * <ul>
  *   <li>Converts null results to "null" text</li>
- *   <li>Converts void results to "Done" text</li>
+ *   <li>Converts void results to "(completed with no output)" text</li>
  *   <li>Passes through ToolResultBlock instances unchanged</li>
  *   <li>Serializes objects to JSON with schema information</li>
  *   <li>Falls back to toString() if serialization fails</li>
@@ -42,12 +42,12 @@ public class DefaultToolResultConverter implements ToolResultConverter {
 
     @Override
     public ToolResultBlock convert(Object result, Type returnType) {
-        if (result == null) {
-            return handleNull();
+        if (returnType == Void.TYPE || returnType == Void.class) {
+            return handleVoid();
         }
 
-        if (returnType != null && returnType == Void.TYPE) {
-            return handleVoid();
+        if (result == null) {
+            return handleNull();
         }
 
         // If result is already a ToolResultBlock, return it directly
@@ -68,12 +68,14 @@ public class DefaultToolResultConverter implements ToolResultConverter {
     }
 
     /**
-     * Handle void return type.
+     * Handle void return type. The acknowledgement states that the tool completed and had no
+     * output, so a successful no-return call is never mistaken for a missing tool result.
      *
-     * @return ToolResultBlock with "Done" text
+     * @return ToolResultBlock with "(completed with no output)" text
      */
     protected ToolResultBlock handleVoid() {
-        return ToolResultBlock.of(List.of(TextBlock.builder().text("Done").build()));
+        return ToolResultBlock.of(
+                List.of(TextBlock.builder().text("(completed with no output)").build()));
     }
 
     /**
