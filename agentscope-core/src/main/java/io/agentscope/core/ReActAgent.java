@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RunControl;
 import io.agentscope.core.agent.RuntimeContext;
@@ -238,7 +239,7 @@ import reactor.util.context.Context;
  * context accessor. Custom tools, hooks, and middlewares must also be safe for concurrent use.
  */
 @SuppressWarnings("deprecation")
-public class ReActAgent extends AgentBase implements AutoCloseable {
+public class ReActAgent extends AgentBase implements EventStreamingAgent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
     private static final GracefulShutdownManager shutdownManager =
@@ -1191,6 +1192,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      *
      * @param ctx the runtime context identifying the session to interrupt
      */
+    @Override
     public void interrupt(RuntimeContext ctx) {
         interrupt(ctx, null);
     }
@@ -1202,6 +1204,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param ctx the runtime context identifying the session to interrupt
      * @param msg optional user message to attach to the interrupt signal
      */
+    @Override
     public void interrupt(RuntimeContext ctx, Msg msg) {
         String uid = ctx != null ? ctx.getUserId() : null;
         String sid = ctx != null ? ctx.getSessionId() : null;
@@ -1217,6 +1220,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param userId the user id ({@code null} = anonymous / single-tenant)
      * @param sessionId the session id
      */
+    @Override
     public void interrupt(String userId, String sessionId) {
         interrupt(userId, sessionId, null);
     }
@@ -1225,6 +1229,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session with an
      * associated user message.
      */
+    @Override
     public void interrupt(String userId, String sessionId, Msg msg) {
         interruptRunning(slotKey(userId, sessionId), InterruptSource.USER, msg);
     }
@@ -1449,6 +1454,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param msgs input messages
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
         return streamEvents(msgs, (RuntimeContext) null);
     }
@@ -1459,6 +1465,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param msg input message
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(Msg msg) {
         return streamEvents(List.of(msg));
     }
@@ -1471,9 +1478,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * lifecycle execution.
      *
      * @param msgs input messages
-     * @param context runtime context to propagate into the call
+     * @param context runtime context to propagate into the call; {@code null} is tolerated by the
+     *     built-in pipeline (middlewares that do not guard must still treat null carefully)
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
         return buildAgentStream(msgs, context, this::doCall);
     }
@@ -1486,6 +1495,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param context runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext context) {
         return streamEvents(List.of(msg), context);
     }
@@ -1496,6 +1506,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param text input text (wrapped into a {@link UserMessage})
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(String text) {
         return streamEvents(new UserMessage(text));
     }
@@ -1508,6 +1519,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param context runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(String text, RuntimeContext context) {
         return streamEvents(new UserMessage(text), context);
     }
@@ -5263,6 +5275,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param ctx the runtime context (uses {@code getUserId()} and {@code getSessionId()})
      * @return the agent state for the identified session
      */
+    @Override
     public AgentState getAgentState(RuntimeContext ctx) {
         if (SessionRecorder.from(ctx) != null && ctx.getAgentState() != null)
             return ctx.getAgentState();
@@ -5281,6 +5294,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * {@link #updateAgentState(RuntimeContext, String, Consumer)} for administrative mutations.
      * Standalone agents without a native log retain the state-store cache behavior.
      */
+    @Override
     public AgentState getAgentState(String userId, String sessionId) {
         if (sessionLogEnabled()) return nativeWorkingCopy(stateContext(userId, sessionId));
         String slot = slotKey(userId, sessionId);
