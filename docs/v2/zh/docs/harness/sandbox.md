@@ -66,6 +66,8 @@ agent.call(msg, RuntimeContext.builder()
 - 没快照 → 按 `WorkspaceSpec` 全量初始化（冷启动）
 - 快照读取或恢复失败 → 本次 `call()` 报错，可重试；不会静默丢弃快照状态
 
+恢复时已经打开的快照归档流，即使工作区初始化失败也会关闭。
+
 快照存到哪里取决于你配的 `snapshotSpec`：
 
 | 选项 | 适合 |
