@@ -45,16 +45,31 @@ public final class WebTools {
      * (e.g. {@code HTTP/1.1 header parser received no bytes}, see issue #3101), inject an
      * HTTP/1.1-only client via the {@code WebFetchTool(HttpClient)} / {@code WebSearchTool(HttpClient)}
      * constructors or {@code HarnessAgent.Builder#webHttpClient(HttpClient)}.
+     *
+     * <p>Shared across all default-constructed instances: every {@code new WebFetchTool()} /
+     * {@code new WebSearchTool()} used to allocate its own {@link HttpClient}, and on Java
+     * 17&ndash;20 those clients cannot be closed (no {@code close()} until 21) — repeated agent
+     * builds therefore accumulated live clients with their selector/executor threads, which
+     * surfaced as the long-running-process memory leak in #3771's MAT report and #3714. One
+     * process-wide client makes repeated builds idempotent; its lifecycle intentionally matches
+     * the process. Caller-supplied clients are untouched.
      */
+    private static final HttpClient SHARED_DEFAULT_CLIENT = createDefaultHttpClient();
+
     static HttpClient createDefaultHttpClient() {
         return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+    }
+
+    /** The shared default client (see {@link #SHARED_DEFAULT_CLIENT}). */
+    static HttpClient sharedDefaultHttpClient() {
+        return SHARED_DEFAULT_CLIENT;
     }
 
     public static final class WebFetchTool {
         private final HttpClient client;
 
         public WebFetchTool() {
-            this(createDefaultHttpClient());
+            this(sharedDefaultHttpClient());
         }
 
         /** Creates a tool that uses a caller-supplied client (custom proxy, SSL, HTTP version, ...). */
@@ -116,7 +131,7 @@ public final class WebTools {
         private final HttpClient client;
 
         public WebSearchTool() {
-            this(createDefaultHttpClient());
+            this(sharedDefaultHttpClient());
         }
 
         /** Creates a tool that uses a caller-supplied client (custom proxy, SSL, HTTP version, ...). */
