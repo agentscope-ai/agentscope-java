@@ -269,6 +269,30 @@ The 1.0 `Memory` interface (`InMemoryMemory` / `LongTermMemory`, etc.) is `@Depr
 
 </Note>
 
+### Deleting a session
+
+`deleteSession` removes a native session's entire persisted journal — events, state checkpoints,
+writer seals and the inbox — for data-retention and privacy-compliance use cases. It is
+irreversible and distinct from `clearContext`: clearing resets the model-visible context and keeps
+the journal, deletion removes it. Deletion granularity is per session (the journal is a
+hash-chained append-only log, so single event removal would break chain semantics); other sessions
+are unaffected.
+
+```java
+agent.deleteSession("alice", "session-001");
+
+// Or use the same RuntimeContext used by calls.
+agent.deleteSession(RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("session-001")
+    .build());
+```
+
+An active execution holds the writer lease and rejects the deletion, so call it after the
+session's current request has completed. Requires EVENT_LOG mode with a session log store.
+Retention (automatic age- or count-based cleanup) is not part of this API; build it on top of
+`deleteSession` when a real cleanup schedule is known.
+
 
 ### Per-session interrupt
 
