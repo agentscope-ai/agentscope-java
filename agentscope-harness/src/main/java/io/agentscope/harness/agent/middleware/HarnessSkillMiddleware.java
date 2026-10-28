@@ -21,6 +21,7 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.RuntimeContextSkillRepository;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.context.ContextItem;
@@ -35,6 +36,7 @@ import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.skill.runtime.SkillCatalog;
 import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -42,6 +44,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -309,6 +312,8 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
                             bound.skill().getName(),
                             e.getMessage());
                 }
+            } else if (bound.skill().getOriginDir().isPresent()) {
+                lazy = originResources(bound.skill().getOriginDir().get());
             }
             StageResult stage = staged.getOrDefault(bound.skill().getName(), StageResult.NONE);
             String filesRoot = shellPathPolicy.resolve(bound.skill().getName(), stage);
@@ -337,6 +342,25 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
     // ---------------------------------------------------------------------
     //  Internals
     // ---------------------------------------------------------------------
+
+    private static SkillResources originResources(Path originDir) {
+        return new SkillResources() {
+            @Override
+            public Optional<String> read(String relativePath) {
+                return SkillFileSystemHelper.readResource(originDir, relativePath);
+            }
+
+            @Override
+            public Optional<byte[]> readBinary(String relativePath) {
+                return SkillFileSystemHelper.readResourceBinary(originDir, relativePath);
+            }
+
+            @Override
+            public List<String> list() {
+                return SkillFileSystemHelper.listResourcePaths(originDir);
+            }
+        };
+    }
 
     private Map<String, RepoBound> skillsForCall(RuntimeContext ctx) {
         return frozenSkills != null ? frozenSkills : mergeRepositories(ctx);
