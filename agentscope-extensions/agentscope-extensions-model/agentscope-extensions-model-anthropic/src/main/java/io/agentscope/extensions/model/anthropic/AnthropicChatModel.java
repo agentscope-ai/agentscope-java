@@ -31,6 +31,7 @@ import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.tool.search.ToolSearchMode;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicBaseFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicChatFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicResponseParser;
@@ -385,6 +386,11 @@ public class AnthropicChatModel extends ChatModelBase {
     @Override
     public String getModelName() {
         return modelName;
+    }
+
+    @Override
+    public ToolSearchMode getToolSearchMode() {
+        return ToolSearchMode.DEFERRED;
     }
 
     /**
