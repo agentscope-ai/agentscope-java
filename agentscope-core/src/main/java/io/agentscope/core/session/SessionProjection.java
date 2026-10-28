@@ -31,15 +31,23 @@ import java.util.Set;
 public record SessionProjection(
         long asOfSeq, String stateJson, Set<String> uncertainToolCalls, Set<String> activeRuns) {
     public static SessionProjection read(SessionLog log) {
-        long cursor = 0;
-        String state = null;
-        var uncertain = new LinkedHashSet<String>();
-        var runs = new LinkedHashSet<String>();
-        var results = new LinkedHashMap<String, ToolResultBlock>();
-        var verifications = new ArrayList<io.agentscope.core.state.TaskVerification>();
-        var extensions = new ArrayList<SessionEvent>();
-        long upper = log.head().seq();
-        for (var event : log.scan(0, upper)) {
+        var builder = new Builder();
+        for (var event : log.scan(0, log.head().seq())) builder.accept(event);
+        return builder.build();
+    }
+
+    /** Accumulates the recovery view from a single event pass shared with the other views. */
+    static final class Builder {
+        private long cursor;
+        private String state;
+        private final Set<String> uncertain = new LinkedHashSet<>();
+        private final Set<String> runs = new LinkedHashSet<>();
+        private final Map<String, ToolResultBlock> results = new LinkedHashMap<>();
+        private final List<io.agentscope.core.state.TaskVerification> verifications =
+                new ArrayList<>();
+        private final List<SessionEvent> extensions = new ArrayList<>();
+
+        void accept(SessionEvent event) {
             SessionEventTypes.validate(event);
             var data = event.data();
             switch (event.type()) {
@@ -86,30 +94,33 @@ public record SessionProjection(
             }
             cursor = event.seq();
         }
-        if (state != null
-                && (!results.isEmpty() || !verifications.isEmpty() || !extensions.isEmpty())) {
-            AgentState restored = AgentState.fromJsonString(state);
-            var existing = new HashSet<String>();
-            for (var message : restored.getContext())
-                for (var result : message.getContentBlocks(ToolResultBlock.class))
-                    existing.add(result.getId());
-            for (var entry : results.entrySet())
-                if (!existing.contains(entry.getKey()) && !entry.getValue().isSuspended())
-                    restored.contextMutable()
-                            .add(
-                                    ToolResultMessage.builder()
-                                            .id("recovered_" + entry.getKey())
-                                            .result(entry.getValue())
-                                            .build());
-            for (var report : verifications)
-                restored.getTasksContext()
-                        .recordVerification(
-                                report, restored.getTasksContext().snapshot().getRevision());
-            for (var extension : extensions)
-                SessionEventCodecRegistry.defaultRegistry().applyExtension(restored, extension);
-            state = restored.toJson();
+
+        SessionProjection build() {
+            if (state != null
+                    && (!results.isEmpty() || !verifications.isEmpty() || !extensions.isEmpty())) {
+                AgentState restored = AgentState.fromJsonString(state);
+                var existing = new HashSet<String>();
+                for (var message : restored.getContext())
+                    for (var result : message.getContentBlocks(ToolResultBlock.class))
+                        existing.add(result.getId());
+                for (var entry : results.entrySet())
+                    if (!existing.contains(entry.getKey()) && !entry.getValue().isSuspended())
+                        restored.contextMutable()
+                                .add(
+                                        ToolResultMessage.builder()
+                                                .id("recovered_" + entry.getKey())
+                                                .result(entry.getValue())
+                                                .build());
+                for (var report : verifications)
+                    restored.getTasksContext()
+                            .recordVerification(
+                                    report, restored.getTasksContext().snapshot().getRevision());
+                for (var extension : extensions)
+                    SessionEventCodecRegistry.defaultRegistry().applyExtension(restored, extension);
+                state = restored.toJson();
+            }
+            return new SessionProjection(cursor, state, Set.copyOf(uncertain), Set.copyOf(runs));
         }
-        return new SessionProjection(cursor, state, Set.copyOf(uncertain), Set.copyOf(runs));
     }
 
     public AgentState restore() {

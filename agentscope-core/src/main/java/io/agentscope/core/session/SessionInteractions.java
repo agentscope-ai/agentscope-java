@@ -44,14 +44,24 @@ public final class SessionInteractions {
     }
 
     public static Map<String, SessionEvent> pending(SessionLog log) {
-        long upper = log.head().seq();
-        var result = new LinkedHashMap<String, SessionEvent>();
-        for (var event : log.scan(0, upper)) {
+        var builder = new Builder();
+        for (var event : log.scan(0, log.head().seq())) builder.accept(event);
+        return builder.build();
+    }
+
+    /** Accumulates pending requests from a single event pass shared with the other views. */
+    static final class Builder {
+        private final Map<String, SessionEvent> pending = new LinkedHashMap<>();
+
+        void accept(SessionEvent event) {
             if (event.type().equals("interaction/requested"))
-                result.put(String.valueOf(event.data().get("requestId")), event);
+                pending.put(String.valueOf(event.data().get("requestId")), event);
             if (event.type().equals("interaction/resolved"))
-                result.remove(String.valueOf(event.data().get("requestId")));
+                pending.remove(String.valueOf(event.data().get("requestId")));
         }
-        return Collections.unmodifiableMap(result);
+
+        Map<String, SessionEvent> build() {
+            return Collections.unmodifiableMap(new LinkedHashMap<>(pending));
+        }
     }
 }
