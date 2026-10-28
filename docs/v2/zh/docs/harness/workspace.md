@@ -184,7 +184,9 @@ env:
 MEMORY.md 在记忆工具和 Hooks 都关闭时不加载。
 知识目录只加载入口和索引，其余文件由模型按需读取。
 
-AGENTS.md 不需要 XML 标签。注入时适用说明位于规则正文首行；超过 100 KiB 的文件
+环境说明将宿主 workspace 和 JVM 临时目录明确标为宿主信息，不能据此推断远程工具的工作目录。沙箱根目录只取自本次调用仍有效的沙箱 workspace 元数据，不会从文件系统代理 ID 猜测容器 ID 或未知根目录。本地执行明确给出宿主 shell（Windows 为 `cmd.exe /c`，其他为 `sh -c`）；沙箱命令使用执行后端的 shell、已安装运行时和临时路径。路由后端区分 shell 的主后端和挂载文件路径。每次 `execute` 都启动新 shell，`working_directory` 相对本次 shell 的起始目录，仅影响本次调用。配置产物交付时，指引要求导出最终文件，并将交付失败报告为未完成。会话 ID 和日期仍在调用入口采样，作为运行时事实提供。
+
+AGENTS.md 不需要 XML 标签。注入时适用说明位于规则正文首行，明确项目规则不覆盖 system、developer 或直接用户指令。超过 100 KiB 的文件
 按 UTF-8 码点边界从头部截断并标记 `[File truncated: AGENTS.md]`。
 同一次 call 内文件变化不自动刷新；
 下一次 call 重新加载。消息示例、动态业务来源及预算设置见
@@ -293,7 +295,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 - **如何加载**：所有文件直接从 `<workspace>/` 下读，没有 overlay。`<userId>/skills/` 这种用户覆盖按目录前缀切。
 - **路径安全**：默认 `ROOTED` 模式，绝对路径只允许 `workspace` 和 `project`（shell cwd）这两个根之下；`..` 路径会被路径策略拦掉。
-- **最佳实践**：单进程 / 本机开发 / 单元测试 / 信任环境。生产不要直接用这个模式跑不可信代码——`execute` 是宿主 `sh -c`。
+- **最佳实践**：单进程 / 本机开发 / 单元测试 / 信任环境。生产不要直接用这个模式跑不可信代码——`execute` 在宿主执行（Windows 为 `cmd.exe /c`，其他为 `sh -c`）。
 
 ## 运行时数据与 Memory 怎么存
 
@@ -474,10 +476,12 @@ knowledge/
 
 加载时：
 
-- `KNOWLEDGE.md` 全文进 `<domain_knowledge_context>`；
+- `KNOWLEDGE.md` 作为 `HARNESS_CONTEXT` 的参考材料收集，是否完整纳入取决于上下文预算；
 - 同目录下其它文件（任意深度）只列**路径清单**进 prompt，让 agent 用 `read_file` / `grep_files` / `glob_files` 按需读取。
 
 这种"目录里全是细节，prompt 里只放索引"的模式，避免把整个知识库塞进 token 预算。
+
+知识指导随收集到的材料生成：入口正文和文件清单均为空时，省略 Domain Knowledge 指导；仅有内联正文时不承诺目录存在。收集到文件清单时才给出文件导航，即使参考材料随后因上下文预算被省略，也保留检索入口。单次读取失败不代表已有参考文件。
 
 ## 写入工作区的安全规则
 

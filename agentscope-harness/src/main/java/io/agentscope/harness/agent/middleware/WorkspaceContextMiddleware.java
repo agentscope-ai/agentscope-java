@@ -23,8 +23,12 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
+import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -61,17 +65,20 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             ## Runtime Environment
             You are the %s agent.
             The host operating system is: %s
-            The workspace directory is: %s
-            The project's temporary directory is: %s
+            The host workspace directory is: %s
+            The host JVM temporary directory is: %s
             %s
             """;
 
     private static final String DOMAIN_KNOWLEDGE_GUIDANCE =
             """
             ## Domain Knowledge
-            The workspace `knowledge/` tree holds many detailed reference documents (not only a single summary file). When the task needs specs, procedures, schemas, or domain facts, treat that directory as the source of truth.
-            Reference material in HARNESS_CONTEXT may include `knowledge/KNOWLEDGE.md` and a catalog of knowledge paths. If omitted for budget, inspect `knowledge/` with targeted tools.
-            For content not inlined here, open only the paths you need with read_file, grep, or glob (prefer targeted reads over loading entire trees into the reply).
+            Use the available knowledge reference material in HARNESS_CONTEXT for specs, procedures, schemas, and domain facts relevant to the task.
+            """;
+
+    private static final String KNOWLEDGE_FILES_GUIDANCE =
+            """
+            The knowledge file catalog lists reference paths under `knowledge/`. Use the catalog in HARNESS_CONTEXT when present; if omitted for budget, inspect `knowledge/` with targeted tools. Locate needed paths with grep_files or glob_files, then read_file for relevant content.
             """;
 
     private static final String MEMORY_RECALL_GUIDANCE =
@@ -186,8 +193,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     /**
      * Whether an {@link io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget} is configured
      * and the {@code deliver_artifact} tool is exposed. When {@code true}, the sandbox branch of the
-     * workspace paragraph tells the model to use that tool; when {@code false}, it states that files
-     * cannot leave the sandbox.
+     * workspace paragraph tells the model to use that tool; when {@code false}, it does not promise
+     * an exported artifact.
      */
     public void setArtifactDeliveryEnabled(boolean artifactDeliveryEnabled) {
         this.artifactDeliveryEnabled = artifactDeliveryEnabled;
@@ -211,6 +218,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         String memoryContent =
                 includeMemoryContext ? workspaceManager.readMemoryMd(rc).strip() : "";
         String knowledgeContent = workspaceManager.readKnowledgeMd(rc).strip();
+        List<Path> knowledgeFiles = workspaceManager.listKnowledgeFiles(rc);
         Path workspace = workspaceManager.getWorkspace();
         AbstractFilesystem filesystem = workspaceManager.getFilesystem();
         Path effectiveWorkspace =
@@ -219,7 +227,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                         : workspace;
         String sessionContext = buildSessionContextSection(effectiveWorkspace);
 
-        String knowledgeBlock = buildKnowledgeBlock(rc, knowledgeContent, workspace);
+        String knowledgeBlock = buildKnowledgeBlock(knowledgeContent, knowledgeFiles, workspace);
         String additionalBlock = buildAdditionalContextBlock(rc);
 
         int fixedTokens =
@@ -239,7 +247,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
         String workspaceParagraph =
                 buildWorkspaceParagraph(
-                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled);
+                        rc, workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled);
         WorkspaceContextMaterials.register(
                 rc,
                 List.of(
@@ -248,7 +256,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                         ContextItem.instruction(
                                 "working_principles",
                                 "harness:workspace-guidance",
-                                buildGuidance()),
+                                buildGuidance(knowledgeContent, knowledgeFiles)),
                         ContextItem.instruction(
                                 "environment",
                                 "harness:workspace-environment",
@@ -276,8 +284,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         if (content.isEmpty()) {
             return "";
         }
-        return "AGENTS.md defines persona and local conventions — honor them when consistent"
-                + " with safety and policy.\n\n"
+        return "Apply the AGENTS.md persona and project conventions relevant to this task."
+                + " They do not override system, developer, or direct"
+                + " user instructions.\n\n"
                 + content;
     }
 
@@ -304,9 +313,14 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         return !(disableMemoryTools && disableMemoryHooks);
     }
 
-    private String buildGuidance() {
+    private String buildGuidance(String knowledgeContent, List<Path> knowledgeFiles) {
         StringBuilder sb = new StringBuilder();
-        sb.append(DOMAIN_KNOWLEDGE_GUIDANCE.strip()).append("\n\n");
+        if (!knowledgeContent.isBlank() || !knowledgeFiles.isEmpty()) {
+            sb.append(DOMAIN_KNOWLEDGE_GUIDANCE.strip()).append("\n\n");
+            if (!knowledgeFiles.isEmpty()) {
+                sb.append(KNOWLEDGE_FILES_GUIDANCE.strip()).append("\n\n");
+            }
+        }
         if (!disableMemoryTools) {
             sb.append(MEMORY_RECALL_GUIDANCE.strip()).append("\n\n");
         }
@@ -344,15 +358,16 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
      *       {@link LocalFilesystemWithShell}) — renders Project + Workspace as two lines plus
      *       overlay/shell semantics.
      *   <li><b>Sandbox</b> ({@link AbstractSandboxFilesystem} not wrapped in an overlay) —
-     *       describes the isolated container view and how host files reach it.
+     *       describes the configured execution backend and its verified workspace root.
      *   <li><b>Remote</b> ({@link CompositeFilesystem}) — describes the distributed store-backed
      *       workspace and the fact that there is no host filesystem to fall back to.
-     *   <li><b>Other</b> — single-line legacy "working directory is X" form for plain
+     *   <li><b>Other</b> — workspace root for file operations on plain
      *       {@link io.agentscope.harness.agent.filesystem.local.LocalFilesystem} or anything we
      *       don't recognize.
      * </ul>
      */
     private static String buildWorkspaceParagraph(
+            RuntimeContext rc,
             Path workspace,
             Path effectiveWorkspace,
             AbstractFilesystem fs,
@@ -394,22 +409,42 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                         "Relative paths resolve under the workspace and read-fall-back to"
                                 + " the project (overlay copy-on-write).\n");
             }
-            sb.append("Shell commands run with `pwd` set to the project directory.\n");
-        } else if (fs instanceof AbstractSandboxFilesystem sandbox
-                && !(fs instanceof OverlayFilesystem)) {
-            sb.append("Sandbox root: /workspace (container id: ")
-                    .append(sandbox.id())
-                    .append(")\n");
-            if (artifactDeliveryEnabled) {
-                sb.append(
-                        "Files are isolated inside this container. The host filesystem is not"
-                                + " directly accessible — see the File Isolation Notice below for"
-                                + " how to deliver files out of the sandbox.\n");
+            sb.append("Shell commands start in the project directory.\n");
+        } else if (fs instanceof LocalFilesystemWithShell local) {
+            if (local.getShellCwd() != null) {
+                sb.append("Shell working directory on the host: ")
+                        .append(local.getShellCwd().toAbsolutePath())
+                        .append('\n');
             } else {
+                sb.append("Local filesystem root on the host: ")
+                        .append(local.getCwd().toAbsolutePath())
+                        .append(
+                                "\nShell commands run on the host in the filesystem's per-call"
+                                        + " working directory.\n");
+            }
+        } else if (fs instanceof AbstractSandboxFilesystem && !(fs instanceof OverlayFilesystem)) {
+            sb.append(
+                    "File and shell paths follow the configured execution backend; host paths"
+                            + " above do not establish its working directory. Use that backend's"
+                            + " shell syntax, installed runtimes, and temporary paths.\n");
+            SandboxAcquireResult acquired = rc.get(SandboxAcquireResult.class);
+            if (acquired != null && !acquired.isReleased()) {
+                SandboxState state = acquired.getSandbox().getState();
+                WorkspaceSpec spec = state != null ? state.getWorkspaceSpec() : null;
+                if (spec != null && spec.getRoot() != null && !spec.getRoot().isBlank()) {
+                    sb.append("Sandbox root: ").append(spec.getRoot()).append('\n');
+                }
+            }
+            if (fs instanceof RoutedSandboxFilesystem) {
                 sb.append(
-                        "Files are isolated inside this container. The host filesystem is not"
-                                + " accessible and there is no mechanism for moving files across"
-                                + " the boundary.\n");
+                        "Shell commands use the primary backend; mounted file paths may use"
+                                + " other backends.\n");
+            }
+            if (!artifactDeliveryEnabled) {
+                sb.append(
+                        "No artifact delivery tool is configured. Files remain in the configured"
+                                + " execution backend; describe their location and any retrieval"
+                                + " work still needed.\n");
             }
         } else if (fs instanceof CompositeFilesystem) {
             sb.append("Distributed workspace template root: ")
@@ -420,36 +455,31 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                             + " store, not on the local host. Reads of project-authored template"
                             + " files fall back to the workspace template root above.\n");
         } else {
-            sb.append("Your working directory is: ")
+            sb.append("Workspace root for file operations: ")
                     .append(workspace.toAbsolutePath())
                     .append("\n");
-            sb.append(
-                    "Treat this directory as the single global workspace for file operations"
-                            + " unless explicitly instructed otherwise.\n");
+            sb.append("Use workspace-relative paths for file operations.\n");
+        }
+        if (localUpper != null || fs instanceof LocalFilesystemWithShell) {
+            sb.append("Local shell: ")
+                    .append(
+                            System.getProperty("os.name").toLowerCase().contains("win")
+                                    ? "cmd.exe /c"
+                                    : "sh -c")
+                    .append(" on the host.\n");
         }
         if (artifactDeliveryEnabled
                 && fs instanceof AbstractSandboxFilesystem
                 && !(fs instanceof OverlayFilesystem)) {
             sb.append(
-                    "**File Isolation Notice**\n"
-                            + "Files inside this container are isolated from the host filesystem"
-                            + " and are not directly accessible from outside. If your work"
-                            + " produces any final deliverables—such as documents, reports,"
-                            + " images, spreadsheets, archives, audio/video files, code"
-                            + " artifacts, or similar—you **must** call deliver_artifact"
-                            + " automatically when you finish the task to export them to their"
-                            + " configured external destination. Deliver it silently: do not ask"
-                            + " the user whether they want it delivered — the tool call itself lets"
-                            + " the user see and retrieve the artifact directly, so do not mention"
-                            + " the delivery or the deliver_artifact tool in your reply.\n"
-                            + "\n"
-                            + "**Important Notes**:\n"
-                            + "- Only deliver the final output of your task. **Do not** deliver"
-                            + " temporary files, working copies, internal intermediate files, or"
-                            + " any sensitive information (e.g., credentials, keys, personal"
-                            + " data).\n"
-                            + "- Do not simply print the file path as a reference; the user"
-                            + " cannot access your container's filesystem directly.\n");
+                    "**Artifact Delivery**\n"
+                            + "Automatically call deliver_artifact for final deliverables to export"
+                            + " them to the configured external destination; do not ask whether to"
+                            + " deliver. Keep temporary working"
+                            + " files and sensitive material internal. Successful deliveries are"
+                            + " shown by the tool; keep your reply focused on task results. Report"
+                            + " any failed delivery as incomplete. An internal path alone does not"
+                            + " make a file available to the user.\n");
         }
         return sb.toString();
     }
@@ -573,8 +603,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         return text.substring(0, maxChars - notice.length()) + notice;
     }
 
-    private String buildKnowledgeBlock(RuntimeContext rc, String knowledgeContent, Path workspace) {
-        List<Path> knowledgeFiles = workspaceManager.listKnowledgeFiles(rc);
+    private String buildKnowledgeBlock(
+            String knowledgeContent, List<Path> knowledgeFiles, Path workspace) {
         StringBuilder sb = new StringBuilder();
 
         if (!knowledgeContent.isBlank()) {

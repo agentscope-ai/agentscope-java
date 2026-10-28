@@ -28,6 +28,8 @@ Save `SKILL.md` as UTF-8. A byte order mark (BOM) before the opening `---` is su
 
 Close the YAML frontmatter with an unindented line containing only `---` and optional spaces or tabs. A `---` inside a description or an indented YAML block scalar remains part of the metadata.
 
+Skill names must match `^[a-z0-9][a-z0-9-]*$` and be at most 64 characters (lowercase letters, digits, and hyphens only — no underscores or dots), following the industry naming standard for Agent Skills. Names are used verbatim as directory keys and skill identifiers, so non-conforming names are rejected when the skill is constructed or loaded.
+
 SKILL.md format:
 
 ```markdown
@@ -292,11 +294,13 @@ On each call, harness builds an `<available_skills>` block listing every skill c
 
 Each entry carries just enough metadata for the agent to decide whether to load it. `<files-root>`, when present, is the absolute path the agent uses for shell execution (see below).
 
+The directory contains summaries, not the skill instructions. When the user names a skill or the task clearly matches its description, the agent is instructed to load `SKILL.md` using the exact `<skill-id>` before acting. It can reuse the full instructions while they remain in the conversation and load supporting files only as needed. For entries without `<files-root>`, it uses the loader rather than inventing a shell path, even if another entry has one.
+
 ### Reading SKILL.md and resources
 
 To activate a skill the agent calls a built-in tool — `load_skill_through_path`:
 
-- `load_skill_through_path(skillId, path="SKILL.md")` returns the markdown body
+- `load_skill_through_path(skillId, path="SKILL.md")` returns YAML frontmatter and the markdown body; a content-aware fence preserves embedded code blocks
 - `load_skill_through_path(skillId, path="references/style-guide.md")` returns any other file under the skill directory
 
 How the file gets fetched depends on where the skill came from:
@@ -308,7 +312,7 @@ How the file gets fetched depends on where the skill came from:
 | `workspace/skills/` shared (Layer 3) | preloaded into memory at registration |
 | `<userId>/skills/` per-user (Layer 4) | SKILL.md preloaded; other files read on demand through `AbstractFilesystem` (per-user namespace + sandbox routing honored automatically) |
 
-The agent doesn't see this difference — `load_skill_through_path` always works the same way. The fallback chain is "in-memory hit → filesystem read → error with an enumeration of every path actually available," so a wrong path returns a useful list rather than a dead end.
+The agent doesn't see this difference — `load_skill_through_path` always works the same way. The fallback chain is "in-memory hit → source-provided resource reader → error with an enumeration of available paths." Filesystem-backed skills that only preload `SKILL.md` can read supporting files on demand from their origin directory. A repository's own lazy reader takes precedence; the origin-directory fallback does not bypass it or grant a shell path.
 
 ### `<files-root>` and shell execution
 
@@ -320,9 +324,11 @@ When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an ab
 | Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
 | Local without shell / Composite | (not rendered — no shell tool registered) | (not rendered) |
 
-So the agent's shell call is always `execute("python3 <files-root>/scripts/foo.py")` — no path guessing, no per-source variations to remember.
+`<files-root>` is a raw absolute path in the execution environment, including any spaces. The agent resolves script paths against it and quotes them for that environment's shell. Local Windows execution uses `cmd.exe`; local POSIX execution uses `sh`; Docker and Kubernetes execute in their sandbox. The host JVM's OS, paths, and installed runtimes do not describe the sandbox. Follow the loaded skill's script instructions and use an interpreter available where the command runs, rather than assuming `ls` or `python3` exists. The execution guidance appears only when at least one visible skill has `<files-root>`.
 
 ### Where marketplace files actually live
+
+For repository skills with no materialized auxiliary resources (for example, an inline-only skill), staging reports `NONE` and no `<files-root>` is advertised. The skill remains available through `load_skill_through_path(..., path="SKILL.md")`. In a mixed catalog, only entries that provide `<files-root>` support file listing and script execution at that path.
 
 Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each call (during PreCall, in the same `onSystemPrompt` pass that builds `<available_skills>`):
 
@@ -383,10 +389,10 @@ In sandbox mode, each skill's `<files-root>` in the `<available_skills>` block i
 | Workspace skill | `/workspace/skills/<name>` |
 | Marketplace skill | `/workspace/.skills-cache/<source>/<name>` |
 
-So the agent simply issues:
+For the default `/workspace` root and a sandbox with `sh`, the agent can call `execute` with:
 
-```
-execute("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <target>")
+```json
+{"command": "sh '/workspace/skills/code-reviewer/scripts/run-checks.sh' '<target>'"}
 ```
 
 That command runs in the container and reads exactly the file that was projected in. The agent doesn't need to know which layer a skill came from — the framework computes the prefix.

@@ -264,7 +264,17 @@ class ToolExecutor {
         // without preset injection or local invocation. SchemaOnlyTool and any
         // @Tool(externalTool=true) method end up here.
         if (tool instanceof ToolBase tb && tb.isExternalTool()) {
-            return Mono.just(ToolResultBlock.suspended(toolCall));
+            if (config.getBeforeToolCall() == null) {
+                return Mono.just(ToolResultBlock.suspended(toolCall));
+            }
+            return applyResultErrorMapping(
+                            Mono.fromSupplier(
+                                    () -> {
+                                        config.getBeforeToolCall().accept(param);
+                                        return ToolResultBlock.suspended(toolCall);
+                                    }),
+                            toolCall)
+                    .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()));
         }
 
         // Merge runtime context: param-level > toolkit default
@@ -330,16 +340,17 @@ class ToolExecutor {
 
         SessionRecorder recorder = SessionRecorder.from(runtimeContext);
 
-        // Zero interceptors: existing execution path, zero behavior change.
+        // Without interceptors, retain the dispatch path with an optional final check.
         if (interceptors.isEmpty()) {
             return applyResultErrorMapping(
                     dispatchRecord(recorder, executionParam, toolCall, mergedInput)
-                            .then(Mono.defer(() -> tool.callAsync(executionParam))),
+                            .then(Mono.defer(() -> invokeTool(tool, executionParam))),
                     toolCall);
         }
 
         // The interceptor chain wraps dispatch logging + real execution: the dispatch record
-        // captures the post-interception arguments, and denied calls produce no allowed/dispatch
+        // captures the post-interception arguments, and interceptor denials produce no
+        // allowed/dispatch
         // records. Agent identity travels as agentId/agentName only, null on agentless calls.
         Agent callingAgent = param.getAgent();
         String agentId = callingAgent != null ? callingAgent.getAgentId() : null;
@@ -350,7 +361,8 @@ class ToolExecutor {
                                 .then(
                                         Mono.defer(
                                                 () ->
-                                                        tool.callAsync(
+                                                        invokeTool(
+                                                                tool,
                                                                 ToolCallParam.builder(
                                                                                 executionParam)
                                                                         .input(iv.input())
@@ -377,6 +389,13 @@ class ToolExecutor {
                                 result.getId() == null
                                         ? result.withIdAndName(toolCall.getId(), toolCall.getName())
                                         : result);
+    }
+
+    private Mono<ToolResultBlock> invokeTool(AgentTool tool, ToolCallParam param) {
+        if (config.getBeforeToolCall() != null) {
+            config.getBeforeToolCall().accept(param);
+        }
+        return tool.callAsync(param);
     }
 
     /**

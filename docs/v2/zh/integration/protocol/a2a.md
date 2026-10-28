@@ -50,6 +50,8 @@ Msg result = remote.call(new UserMessage("Translate to English: 你好")).block(
 
 `streamEvents` 按事件流式返回一次调用：远端流式返回的文本和思考分别是 `TextBlockDeltaEvent`、`ThinkingBlockDeltaEvent`，最后的 `AgentResultEvent` 带着和 `call()` 相同的结果消息。工具调用和工具结果只在结果消息里。
 
+任务完成时，最终结果优先使用输出 artifacts。没有 artifacts 时，使用最终状态消息；通过完整任务或流式状态更新完成时均遵循此规则。
+
 ```java
 remote.streamEvents(new UserMessage("Translate to English: 你好"))
     .doOnNext(event -> {

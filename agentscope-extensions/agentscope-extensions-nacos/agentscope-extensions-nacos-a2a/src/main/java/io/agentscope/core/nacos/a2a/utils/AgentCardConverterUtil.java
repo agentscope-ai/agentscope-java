@@ -18,6 +18,7 @@ package io.agentscope.core.nacos.a2a.utils;
 
 import com.alibaba.nacos.api.ai.model.a2a.AgentCapabilities;
 import com.alibaba.nacos.api.ai.model.a2a.AgentCard;
+import com.alibaba.nacos.api.ai.model.a2a.AgentExtension;
 import com.alibaba.nacos.api.ai.model.a2a.AgentInterface;
 import com.alibaba.nacos.api.ai.model.a2a.AgentProvider;
 import com.alibaba.nacos.api.ai.model.a2a.AgentSkill;
@@ -39,6 +40,7 @@ import org.a2aproject.sdk.spec.SecurityRequirement;
  *     <li>The A2A security requirements are the Nacos security.</li>
  *     <li>The A2A {@code capabilities.extendedAgentCard} is the Nacos
  *     {@code supportsAuthenticatedExtendedCard}.</li>
+ *     <li>Capability extensions keep their URI, description, required flag, and parameters.</li>
  *     <li>A2A security schemes are stored in Nacos as maps in the A2A 0.3 format, see
  *     {@code SecuritySchemeConverterUtil}.</li>
  * </ul>
@@ -130,8 +132,24 @@ public class AgentCardConverterUtil {
             builder.streaming(Boolean.TRUE.equals(nacosCapabilities.getStreaming()))
                     .pushNotifications(
                             Boolean.TRUE.equals(nacosCapabilities.getPushNotifications()));
+            if (nacosCapabilities.getExtensions() != null) {
+                builder.extensions(
+                        mapList(
+                                nacosCapabilities.getExtensions(),
+                                AgentCardConverterUtil::convertToA2aAgentExtension));
+            }
         }
         return builder.build();
+    }
+
+    private static org.a2aproject.sdk.spec.AgentExtension convertToA2aAgentExtension(
+            AgentExtension extension) {
+        return org.a2aproject.sdk.spec.AgentExtension.builder()
+                .uri(extension.getUri())
+                .description(extension.getDescription())
+                .required(Boolean.TRUE.equals(extension.getRequired()))
+                .params(extension.getParams())
+                .build();
     }
 
     private static org.a2aproject.sdk.spec.AgentSkill convertToA2aAgentSkill(
@@ -198,7 +216,23 @@ public class AgentCardConverterUtil {
         nacosCapabilities.setPushNotifications(capabilities.pushNotifications());
         // Not part of A2A 1.0.
         nacosCapabilities.setStateTransitionHistory(false);
+        if (capabilities.extensions() != null) {
+            nacosCapabilities.setExtensions(
+                    mapList(
+                            capabilities.extensions(),
+                            AgentCardConverterUtil::convertToNacosAgentExtension));
+        }
         return nacosCapabilities;
+    }
+
+    private static AgentExtension convertToNacosAgentExtension(
+            org.a2aproject.sdk.spec.AgentExtension extension) {
+        AgentExtension nacosExtension = new AgentExtension();
+        nacosExtension.setUri(extension.uri());
+        nacosExtension.setDescription(extension.description());
+        nacosExtension.setRequired(extension.required());
+        nacosExtension.setParams(extension.params());
+        return nacosExtension;
     }
 
     private static AgentSkill convertToNacosAgentSkill(

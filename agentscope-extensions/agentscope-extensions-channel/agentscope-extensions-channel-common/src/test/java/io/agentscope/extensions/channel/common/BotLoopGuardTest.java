@@ -80,14 +80,18 @@ class BotLoopGuardTest {
 
     @Test
     void activePeersSurviveEvictionOfIdleOnes() throws InterruptedException {
-        // The idle peer sits far past the threshold (a sleep overshoot only helps) and the
-        // active peer far inside it, so a multi-hundred-ms runner stall cannot flip either
-        // side of the check.
-        BotLoopGuard guard = new BotLoopGuard(5, 500L, 500L); // idle threshold: 1000ms
+        // allow() piggybacks a sweep on the same windowMillis + cooldownMillis threshold that
+        // idle eviction uses, so a stall between the two allows can let that sweep evict the
+        // idle peer before the explicit evictIdlePeers() call. Each phase keeps a 400ms margin
+        // against a multi-hundred-ms runner stall: the first allow sits 600ms inside the 1000ms
+        // sweep threshold, the active peer is 600ms inside its idle threshold at both eviction
+        // points, and the explicit eviction only relies on Thread.sleep never returning early
+        // (1200ms slept vs the 1000ms threshold).
+        BotLoopGuard guard = new BotLoopGuard(5, 500L, 500L); // sweep/idle threshold: 1000ms
         assertTrue(guard.allow("idle-peer"));
-        Thread.sleep(900);
+        Thread.sleep(600);
         assertTrue(guard.allow("active-peer"));
-        Thread.sleep(150); // idle-peer idle ~1050ms; active-peer idle ~150ms
+        Thread.sleep(600); // idle-peer idle ~1200ms; active-peer idle ~600ms
         assertEquals(1, guard.evictIdlePeers());
         assertTrue(guard.allow("active-peer"));
         assertEquals(1, guard.trackedPeers());
