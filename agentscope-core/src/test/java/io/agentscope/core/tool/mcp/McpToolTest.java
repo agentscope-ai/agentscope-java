@@ -1206,15 +1206,40 @@ class McpToolTest {
     }
 
     @Test
-    void isFromSameWrapperComparesClientWrapperIdentity() {
+    void isFromSameSourceComparesWrapperAndRemoteTarget() {
         McpTool first = new McpTool("same-wrapper", "desc", parameters, mockClientWrapper);
         McpTool refresh = new McpTool("same-wrapper", "desc", parameters, mockClientWrapper);
-        assertTrue(first.isFromSameWrapper(refresh), "one wrapper instance serves both tools");
+        assertTrue(first.isFromSameSource(refresh), "one wrapper instance serves both tools");
+        McpTool renamed =
+                new McpTool(
+                        "prefixed-name",
+                        "same-wrapper",
+                        "desc",
+                        parameters,
+                        null,
+                        mockClientWrapper,
+                        null,
+                        "test-client",
+                        false);
+        assertTrue(first.isFromSameSource(renamed), "local names do not change the remote source");
 
         McpClientWrapper distinctWrapper =
                 McpClientWrapperTestSupport.mockWrapper("same-name-other-wrapper", true);
         McpTool rival = new McpTool("same-wrapper", "desc", parameters, distinctWrapper);
-        assertFalse(first.isFromSameWrapper(rival), "distinct wrappers never match");
-        assertFalse(first.isFromSameWrapper(null), "null is never the same wrapper");
+        assertFalse(first.isFromSameSource(rival), "distinct wrappers never match");
+        McpTool differentRemote =
+                new McpTool(
+                        "same-wrapper",
+                        "other-remote",
+                        "desc",
+                        parameters,
+                        null,
+                        mockClientWrapper,
+                        null,
+                        "test-client",
+                        false);
+        assertFalse(
+                first.isFromSameSource(differentRemote), "different remote targets never match");
+        assertFalse(first.isFromSameSource(null), "null is never the same wrapper");
     }
 }

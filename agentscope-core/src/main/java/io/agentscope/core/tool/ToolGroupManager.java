@@ -499,15 +499,7 @@ class ToolGroupManager {
         }
     }
 
-    /**
-     * Remove a tool from <em>every</em> group it belongs to. Use this when the tool itself is
-     * deregistered (MCP client removal, or a failed MCP registration rolled back): leaving the
-     * group membership behind would make {@link #isGroupedTool(String)} still report it grouped,
-     * so a later tool re-declared under the same name without a group gets silently filtered as
-     * belonging to an inactive group.
-     *
-     * @param toolName Tool whose group bindings should be dropped
-     */
+    /** Removes a deregistered tool from both group indexes. */
     public void removeToolFromAllGroups(String toolName) {
         Set<String> groupNames = tools.remove(toolName);
         if (groupNames == null) {
@@ -515,10 +507,7 @@ class ToolGroupManager {
         }
         for (String groupName : groupNames) {
             ToolGroup group = toolGroups.get(groupName);
-            // Defensive null guard mirroring removeToolGroups: a bound group is always present
-            // unless a concurrent removeToolGroups races this sweep. Skipping (rather than
-            // resurrecting a half-removed group) keeps the two indexes consistent; the branch is
-            // not reachable from a deterministic unit test.
+            // A concurrent group removal may have already removed this entry.
             if (group != null) {
                 group.removeTool(toolName);
             }

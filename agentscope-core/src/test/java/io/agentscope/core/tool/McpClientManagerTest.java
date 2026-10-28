@@ -34,16 +34,25 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.mcp.McpTool;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -752,8 +761,7 @@ class McpClientManagerTest {
         when(first.initialize()).thenReturn(Mono.empty());
         when(first.listTools()).thenReturn(Mono.just(Collections.emptyList()));
 
-        // Build the registration Mono but NEVER subscribe: admission runs at subscription time,
-        // so an abandoned attempt must strand neither the name nor a connection.
+        // An unsubscribed registration must not reserve a name or open a connection.
         manager.registerMcpClient(first);
 
         McpClientWrapper second = mock(McpClientWrapper.class);
@@ -764,6 +772,31 @@ class McpClientManagerTest {
 
         assertSame(second, manager.getMcpClient("slot-client"));
         verify(first, never()).initialize();
+    }
+
+    @Test
+    void testRegisterMcpClient_FailedClaimIsReleasedBeforeFallback() {
+        McpClientWrapper failing = mock(McpClientWrapper.class);
+        when(failing.getName()).thenReturn("fallback-client");
+        when(failing.initialize()).thenReturn(Mono.error(new IllegalStateException("init failed")));
+
+        McpClientWrapper healthy = mock(McpClientWrapper.class);
+        when(healthy.getName()).thenReturn("fallback-client");
+        when(healthy.initialize()).thenReturn(Mono.empty());
+        when(healthy.listTools()).thenReturn(Mono.just(List.of()));
+
+        manager.registerMcpClient(failing)
+                .onErrorResume(
+                        error -> {
+                            assertNull(manager.getMcpClient("fallback-client"));
+                            verify(failing).close();
+                            return manager.registerMcpClient(healthy);
+                        })
+                .block();
+
+        assertSame(healthy, manager.getMcpClient("fallback-client"));
+        verify(failing, times(1)).close();
+        verify(healthy, never()).close();
     }
 
     @Test
@@ -807,8 +840,7 @@ class McpClientManagerTest {
 
         // Attempt A (first registration) claims the name and stalls inside initialize().
         manager.registerMcpClient(wrapper).subscribe(value -> {}, error -> {});
-        // Attempt B is a concurrent refresh of the same wrapper; it completes and re-points the
-        // claim to its own admission token.
+        // A successful concurrent refresh keeps the shared claim alive.
         manager.registerMcpClient(wrapper).block();
 
         // A now fails. Its release is a CAS against its own token: it must neither untrack the
@@ -830,7 +862,7 @@ class McpClientManagerTest {
         when(failing.initialize()).thenReturn(Mono.error(original));
         doThrow(new RuntimeException("close failure")).when(failing).close();
 
-        // The best-effort close throwing must surface the ORIGINAL error, not the cleanup one.
+        // Cleanup failure must preserve the registration error.
         assertSame(
                 original,
                 assertThrows(
@@ -865,9 +897,7 @@ class McpClientManagerTest {
         when(throwing.getName()).thenReturn("slot-client");
         when(throwing.initialize()).thenThrow(new RuntimeException("synchronous boom"));
 
-        // initialize() throwing SYNCHRONOUSLY (external wrapper subclasses may) must still
-        // surface as an onError signal so the claim is released and the wrapper closed —
-        // otherwise the name would strand after the throw escaped the pipeline.
+        // Synchronous initialization errors must release the claim and close the wrapper.
         RuntimeException thrown =
                 assertThrows(
                         RuntimeException.class, () -> manager.registerMcpClient(throwing).block());
@@ -1100,9 +1130,7 @@ class McpClientManagerTest {
                                     tool.getName(),
                                     tool,
                                     new RegisteredToolFunction(tool, null, mcpClientName));
-                            // The client is removed mid-registration, right after the first
-                            // tool landed: the second tool write must fail loud instead of
-                            // orphaning onto the closing connection.
+                            // Removal after the first write must prevent the second registration.
                             holder.get().removeMcpClient("mid-client").block();
                         });
         holder.set(midManager);
@@ -1181,9 +1209,7 @@ class McpClientManagerTest {
                                     tool.getName(),
                                     tool,
                                     new RegisteredToolFunction(tool, null, mcpClientName));
-                            // Removal happens after the LAST tool write, before completion:
-                            // the attempt finishes as a stale success and must not resurrect
-                            // the tracking entry nor mark a foreign claim.
+                            // Completion after removal must not restore the old claim.
                             holder.get().removeMcpClient("stale-client").block();
                         });
         holder.set(staleManager);
@@ -1239,6 +1265,266 @@ class McpClientManagerTest {
         when(tool.description()).thenReturn("remote " + name);
         when(tool.inputSchema()).thenReturn(Map.of("type", "object", "properties", Map.of()));
         return tool;
+    }
+
+    @Test
+    void testRegisterMcpClient_RepeatedRefreshDoesNotRetainSupersededTools() throws Exception {
+        ToolRegistry registry = new ToolRegistry();
+        McpClientManager refreshingManager =
+                new McpClientManager(
+                        registry,
+                        new ToolGroupManager(),
+                        (tool, groupName, clientName, presetParams) ->
+                                registry.registerTool(
+                                        tool.getName(),
+                                        tool,
+                                        new RegisteredToolFunction(tool, null, clientName)));
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("refresh-client");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        McpSchema.Tool search = remoteToolMock("search");
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(search)));
+
+        for (int i = 0; i < 50; i++) {
+            refreshingManager.registerMcpClient(wrapper).block();
+        }
+
+        List<?> retainedTools = retainedClaimTools(refreshingManager, "refresh-client");
+        assertEquals(1, retainedTools.size(), "refresh must not keep historical tool instances");
+        assertSame(registry.getTool("search"), retainedTools.get(0));
+        verify(wrapper, never()).close();
+    }
+
+    @Test
+    void testRegisterMcpClient_FailedRefreshDoesNotRetainSupersededTools() throws Exception {
+        ToolRegistry registry = new ToolRegistry();
+        McpClientManager refreshingManager =
+                new McpClientManager(
+                        registry,
+                        new ToolGroupManager(),
+                        (tool, groupName, clientName, presetParams) ->
+                                registry.registerTool(
+                                        tool.getName(),
+                                        tool,
+                                        new RegisteredToolFunction(tool, null, clientName)));
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("refresh-client");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        McpSchema.Tool search = remoteToolMock("search");
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(search)));
+        refreshingManager.registerMcpClient(wrapper).block();
+        AgentTool local = new SchemaOnlyTool("local", "Local tool", Map.of());
+        registry.registerTool("local", local, new RegisteredToolFunction(local, null, null));
+        McpSchema.Tool conflicting = remoteToolMock("local");
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(search, conflicting)));
+
+        for (int i = 0; i < 10; i++) {
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> refreshingManager.registerMcpClient(wrapper).block());
+        }
+
+        List<?> retainedTools = retainedClaimTools(refreshingManager, "refresh-client");
+        assertEquals(1, retainedTools.size(), "failed refreshes must also release old instances");
+        assertSame(registry.getTool("search"), retainedTools.get(0));
+        assertSame(local, registry.getTool("local"));
+        assertSame(wrapper, refreshingManager.getMcpClient("refresh-client"));
+        verify(wrapper, never()).close();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void testRegisterMcpClient_CancelDuringPublicationRollsBackTools(boolean writeBeforeCancel)
+            throws Exception {
+        ToolRegistry registry = new ToolRegistry();
+        ToolGroupManager groups = new ToolGroupManager();
+        groups.createToolGroup("mcp-group", "MCP tools", true);
+        CountDownLatch callbackEntered = new CountDownLatch(1);
+        CountDownLatch callbackRelease = new CountDownLatch(1);
+        McpClientManager cancellingManager =
+                new McpClientManager(
+                        registry,
+                        groups,
+                        (tool, groupName, clientName, presetParams) -> {
+                            if (writeBeforeCancel) {
+                                registry.registerTool(
+                                        tool.getName(),
+                                        tool,
+                                        new RegisteredToolFunction(tool, null, clientName));
+                                groups.addToolToGroup(groupName, tool.getName());
+                            }
+                            callbackEntered.countDown();
+                            awaitCallbackRelease(callbackRelease);
+                            if (!writeBeforeCancel) {
+                                registry.registerTool(
+                                        tool.getName(),
+                                        tool,
+                                        new RegisteredToolFunction(tool, null, clientName));
+                                groups.addToolToGroup(groupName, tool.getName());
+                            }
+                        });
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("cancel-client");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        Sinks.One<List<McpSchema.Tool>> tools = Sinks.one();
+        when(wrapper.listTools()).thenReturn(tools.asMono());
+        Disposable subscription =
+                cancellingManager
+                        .registerMcpClient(wrapper, null, null, "mcp-group", null)
+                        .subscribe();
+        McpSchema.Tool remote = remoteToolMock("search");
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<?> publication = executor.submit(() -> tools.tryEmitValue(List.of(remote)));
+        try {
+            assertTrue(callbackEntered.await(10, TimeUnit.SECONDS));
+            subscription.dispose();
+            assertFalse(cancellingManager.getMcpClientNames().contains("cancel-client"));
+            verify(wrapper, times(1)).close();
+        } finally {
+            callbackRelease.countDown();
+            try {
+                publication.get(10, TimeUnit.SECONDS);
+            } finally {
+                subscription.dispose();
+                executor.shutdownNow();
+            }
+        }
+        assertNull(registry.getTool("search"));
+        assertFalse(groups.isGroupedTool("search"));
+        verify(wrapper, times(1)).close();
+    }
+
+    @Test
+    void testRegisterMcpClient_CallbackFailureAfterPublicationRollsBackTools() {
+        ToolRegistry registry = new ToolRegistry();
+        ToolGroupManager groups = new ToolGroupManager();
+        groups.createToolGroup("mcp-group", "MCP tools", true);
+        IllegalStateException failure = new IllegalStateException("callback failed after write");
+        McpClientManager failingManager =
+                new McpClientManager(
+                        registry,
+                        groups,
+                        (tool, groupName, clientName, presetParams) -> {
+                            registry.registerTool(
+                                    tool.getName(),
+                                    tool,
+                                    new RegisteredToolFunction(tool, null, clientName));
+                            groups.addToolToGroup(groupName, tool.getName());
+                            throw failure;
+                        });
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("failing-client");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        McpSchema.Tool search = remoteToolMock("search");
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(search)));
+
+        assertSame(
+                failure,
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                failingManager
+                                        .registerMcpClient(wrapper, null, null, "mcp-group", null)
+                                        .block()));
+        assertNull(registry.getTool("search"));
+        assertFalse(groups.isGroupedTool("search"));
+        assertFalse(failingManager.getMcpClientNames().contains("failing-client"));
+        verify(wrapper, times(1)).close();
+    }
+
+    @Test
+    void testRegisterMcpClient_RollbackPreservesConcurrentReplacementGroup() throws Exception {
+        ToolRegistry registry = new ToolRegistry();
+        AgentTool replacement = new SchemaOnlyTool("search", "Replacement", Map.of());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        AtomicReference<Future<?>> replacementFuture = new AtomicReference<>();
+        ToolGroupManager groups =
+                new ToolGroupManager() {
+                    @Override
+                    public void removeToolFromAllGroups(String toolName) {
+                        CountDownLatch replacing = new CountDownLatch(1);
+                        Future<?> future =
+                                executor.submit(
+                                        () -> {
+                                            replacing.countDown();
+                                            registry.registerTool(
+                                                    "search",
+                                                    replacement,
+                                                    new RegisteredToolFunction(
+                                                            replacement, null, null));
+                                            addToolToGroup("inactive", "search");
+                                        });
+                        replacementFuture.set(future);
+                        try {
+                            assertTrue(replacing.await(10, TimeUnit.SECONDS));
+                            // Reusing the name must wait until the old group cleanup finishes.
+                            try {
+                                future.get(250, TimeUnit.MILLISECONDS);
+                            } catch (TimeoutException expected) {
+                                // The registry keeps the name reserved during cleanup.
+                            }
+                        } catch (Exception e) {
+                            throw new AssertionError(e);
+                        }
+                        super.removeToolFromAllGroups(toolName);
+                    }
+                };
+        groups.createToolGroup("mcp-group", "MCP tools", true);
+        groups.createToolGroup("inactive", "Replacement tools", false);
+        McpClientManager failingManager =
+                new McpClientManager(
+                        registry,
+                        groups,
+                        (tool, groupName, clientName, presetParams) -> {
+                            registry.registerTool(
+                                    tool.getName(),
+                                    tool,
+                                    new RegisteredToolFunction(tool, null, clientName));
+                            groups.addToolToGroup(groupName, tool.getName());
+                        });
+        AgentTool local = new SchemaOnlyTool("local", "Local", Map.of());
+        registry.registerTool("local", local, new RegisteredToolFunction(local, null, null));
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        when(wrapper.getName()).thenReturn("rollback-client");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        McpSchema.Tool search = remoteToolMock("search");
+        McpSchema.Tool conflicting = remoteToolMock("local");
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(search, conflicting)));
+
+        try {
+            assertThrows(
+                    IllegalStateException.class,
+                    () ->
+                            failingManager
+                                    .registerMcpClient(wrapper, null, null, "mcp-group", null)
+                                    .block());
+            replacementFuture.get().get(10, TimeUnit.SECONDS);
+            assertSame(replacement, registry.getTool("search"));
+            assertTrue(groups.isGroupedTool("search"));
+            assertTrue(groups.getToolGroup("inactive").getTools().contains("search"));
+            assertFalse(groups.getToolGroup("mcp-group").getTools().contains("search"));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static void awaitCallbackRelease(CountDownLatch release) {
+        try {
+            assertTrue(release.await(10, TimeUnit.SECONDS));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(e);
+        }
+    }
+
+    private static List<?> retainedClaimTools(McpClientManager manager, String clientName)
+            throws Exception {
+        Field clientsField = McpClientManager.class.getDeclaredField("mcpClients");
+        clientsField.setAccessible(true);
+        Object claim = ((Map<?, ?>) clientsField.get(manager)).get(clientName);
+        Field toolsField = claim.getClass().getDeclaredField("registeredTools");
+        toolsField.setAccessible(true);
+        return (List<?>) toolsField.get(claim);
     }
 
     // ==================== Tests for the display title delivered at registration

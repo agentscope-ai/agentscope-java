@@ -248,6 +248,12 @@ toolkit.replaceAgentTool(newFallbackTool); // 替换掉已有的 "dup" 绑定
 
 `replaceAgentTool` 是唯一的有意替换入口；其余所有注册路径（`registerTool`、`registerAgentTool`、`registerSchema`、sub-agent 与 MCP 注册）都经过 fail-fast 校验。
 
+注解工具通过 `getTool` 取得后，再用 `registerAgentTool` 或 `registerTool` 直接注册，也按源对象实例与 Java 方法判断同源；刷新会安装传入工具的注册配置。MCP 刷新要求 wrapper 实例和远端工具名同时相同；不同前缀映射得到相同本地名称，不代表远端目标同源。
+
+`HarnessAgent.Builder.fromAgent(source)` 会重建源 Harness 创建的工具，包括非活跃分组中的工具，并保留用户工具及显式替换的实现。如果保留的用户工具与 Harness 能力重名，可在新 builder 上禁用该能力，或使用不同的工具名。
+
+构建时需要重新绑定工具时，`Toolkit.copyExcludingTools(instances)` 仅排除指定的实例；同名工具已被替换为新实例时，会保留新绑定。副本保留工具分组关系及 Toolkit 配置，包括 `allowToolDeletion(false)`，源 Toolkit 不受影响。
+
 ## 接收 Context
 
 每次 `agent.call(msgs, runtimeContext)` 传入的 [`RuntimeContext`](/v2/zh/docs/building-blocks/agent#runtimecontext-per-call-上下文) 会自动透传到所在 reply 内每一次工具调用。Tool 可以用两种方式拿到它：注解式 tool 走自动注入，`ToolBase.callAsync` 走 `ToolCallParam`。

@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -39,14 +40,11 @@ import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
 import io.modelcontextprotocol.spec.McpSchema;
-import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Predicate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -346,51 +344,57 @@ class ToolkitTest {
     }
 
     @Test
-    @DisplayName("sameSourceRefreshPredicate gates on deliberate replace and source identity")
-    void sameSourceRefreshPredicateBranches() throws Exception {
-        Method sourceMethod =
-                TestToolObject.class.getDeclaredMethod("testToolMethod", String.class);
-        AtomicBoolean flag = new AtomicBoolean(false);
+    @DisplayName("Build-time exclusions preserve deletion policy and group bindings")
+    void copyExcludingTools_preservesPolicyAndGroupsForRebinding() {
+        Toolkit source = new Toolkit(ToolkitConfig.builder().allowToolDeletion(false).build());
+        AgentTool original = new SchemaOnlyTool("original", "Original", Map.of());
+        AgentTool custom = new SchemaOnlyTool("custom", "Custom", Map.of());
+        source.createToolGroup("inactive", "Inactive tools", false);
+        source.registration().agentTool(original).group("inactive").apply();
+        source.registerAgentTool(custom);
 
-        // A deliberate replacement is never a refresh, whatever the source pair says.
-        assertNull(
-                Toolkit.sameSourceRefreshPredicate(true, new TestToolObject(), sourceMethod, flag));
-        // Direct instance / MCP / schema registrations carry no annotated source at all.
-        assertNull(Toolkit.sameSourceRefreshPredicate(false, null, null, flag));
-        // The defensive half-set pair (annotated scanning always sets both together).
-        assertNull(Toolkit.sameSourceRefreshPredicate(false, new TestToolObject(), null, flag));
+        Toolkit copy = source.copyExcludingTools(List.of(original));
+        assertNull(copy.getTool("original"));
+        assertSame(original, source.getTool("original"));
+        assertSame(custom, copy.getTool("custom"));
+        assertNotSame(source.getToolGroup("inactive"), copy.getToolGroup("inactive"));
 
-        TestToolObject source = new TestToolObject();
-        Toolkit refreshToolkit = new Toolkit();
-        refreshToolkit.registerTool(source);
-        AgentTool bound = refreshToolkit.getTool("test_tool_method");
-        assertTrue(bound instanceof ReflectiveFunctionTool);
+        AgentTool rebuilt = new SchemaOnlyTool("original", "Rebuilt", Map.of());
+        copy.registerAgentTool(rebuilt);
+        assertTrue(
+                copy.getToolSchemas().stream()
+                        .noneMatch(schema -> schema.getName().equals("original")));
+        copy.removeTool("custom");
+        assertSame(custom, copy.getTool("custom"));
+        assertSame(original, source.getTool("original"));
+    }
 
-        Predicate<AgentTool> refreshPredicate =
-                Toolkit.sameSourceRefreshPredicate(false, source, sourceMethod, flag);
-        assertNotNull(refreshPredicate);
-        assertTrue(refreshPredicate.test(bound), "same source object + method is a refresh");
-        assertTrue(flag.get());
+    @Test
+    void copyExcludingTools_preservesNewerBindingAndItsMetadata() {
+        AgentTool original = new SchemaOnlyTool("sample", "Original", Map.of());
+        AgentTool replacement = new SchemaOnlyTool("sample", "Replacement", Map.of());
+        toolkit.registerAgentTool(original);
+        toolkit.replaceAgentTool(replacement);
+        toolkit.createToolGroup("inactive", "Inactive tools", false);
+        toolkit.addToolToGroup("inactive", "sample");
 
-        AtomicBoolean otherFlag = new AtomicBoolean(false);
-        Predicate<AgentTool> otherPredicate =
-                Toolkit.sameSourceRefreshPredicate(
-                        false, new TestToolObject(), sourceMethod, otherFlag);
-        assertFalse(otherPredicate.test(bound), "a different source object is a conflict");
-        assertFalse(otherFlag.get());
+        Toolkit copy = toolkit.copyExcludingTools(List.of(original));
+        assertSame(replacement, copy.getTool("sample"));
+        assertSame(replacement, toolkit.getTool("sample"));
+        assertTrue(copy.getToolSchemas().isEmpty());
+        copy.updateToolGroups(List.of("inactive"), true);
+        assertEquals("Replacement", copy.getToolSchemas().get(0).getDescription());
+        assertTrue(toolkit.getToolSchemas().isEmpty());
+    }
 
-        AtomicBoolean plainFlag = new AtomicBoolean(false);
-        Predicate<AgentTool> plainPredicate =
-                Toolkit.sameSourceRefreshPredicate(false, source, sourceMethod, plainFlag);
-        assertFalse(
-                plainPredicate.test(mock(AgentTool.class)),
-                "a non-reflective binding never matches");
-        assertFalse(plainFlag.get());
-
-        // The per-call flag is a required capture target, guarded fail-loud at build time.
-        assertThrows(
-                NullPointerException.class,
-                () -> Toolkit.sameSourceRefreshPredicate(false, source, sourceMethod, null));
+    @Test
+    void copyExcludingTools_doesNotRecreateExcludedMetaTool() {
+        toolkit.registerMetaTool();
+        AgentTool metaTool = toolkit.getTool("reset_equipped_tools");
+        assertNotNull(metaTool);
+        assertNull(toolkit.copyExcludingTools(List.of(metaTool)).getTool("reset_equipped_tools"));
+        assertSame(metaTool, toolkit.getTool("reset_equipped_tools"));
+        assertNotSame(metaTool, toolkit.copy().getTool("reset_equipped_tools"));
     }
 
     @Test

@@ -156,6 +156,77 @@ class DuplicateToolRegistrationTest {
     }
 
     @Test
+    void sameReflectiveSourceRefreshesThroughDirectRegistration() {
+        LocalTools source = new LocalTools();
+        Toolkit other = new Toolkit();
+        toolkit.registerTool(source);
+        other.registerTool(source);
+        AgentTool incoming = other.getTool("dup");
+        assertNotSame(toolkit.getTool("dup"), incoming);
+
+        toolkit.registerAgentTool(incoming);
+        assertSame(incoming, toolkit.getTool("dup"));
+        toolkit.registerTool(source);
+        toolkit.registerTool((Object) incoming);
+        assertSame(incoming, toolkit.getTool("dup"));
+    }
+
+    @Test
+    void sourceQueryReturnsOnlyCurrentBindingsOfTheExactClass() {
+        toolkit.registerTool(new LocalTools());
+        AgentTool annotated = toolkit.getTool("dup");
+        assertEquals(List.of(annotated), toolkit.getToolsFromSource(LocalTools.class));
+        assertTrue(toolkit.getToolsFromSource(Object.class).isEmpty());
+        toolkit.replaceAgentTool(simpleTool("dup", "replacement"));
+        assertTrue(toolkit.getToolsFromSource(LocalTools.class).isEmpty());
+    }
+
+    @Test
+    void prefixCollisionWithinOneMcpWrapperPreservesOriginalTool() {
+        McpClientWrapper wrapper = mcpWrapperServing("prefix-client", "x_a");
+        toolkit.registration().mcpClient(wrapper).apply();
+        AgentTool original = toolkit.getTool("x_a");
+        Map<String, Object> schema = original.getParameters();
+        McpSchema.Tool incoming = mock(McpSchema.Tool.class);
+        when(incoming.name()).thenReturn("a");
+        when(incoming.inputSchema())
+                .thenReturn(
+                        Map.of(
+                                "type",
+                                "object",
+                                "properties",
+                                Map.of("incoming", Map.of("type", "string"))));
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(incoming)));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> toolkit.registration().mcpClient(wrapper).mcpToolNamePrefix("x_").apply());
+        assertSame(original, toolkit.getTool("x_a"));
+        assertEquals(schema, toolkit.getTool("x_a").getParameters());
+        when(wrapper.callTool(
+                        org.mockito.ArgumentMatchers.eq("x_a"),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenReturn(
+                        Mono.just(
+                                McpSchema.CallToolResult.builder()
+                                        .content(List.of())
+                                        .isError(false)
+                                        .build()));
+        toolkit.getTool("x_a").callAsync(ToolCallParam.builder().input(Map.of()).build()).block();
+        verify(wrapper)
+                .callTool(
+                        org.mockito.ArgumentMatchers.eq("x_a"),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+        verify(wrapper, never())
+                .callTool(
+                        org.mockito.ArgumentMatchers.eq("a"),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     @DisplayName("Registering the same AgentTool instance twice is allowed")
     void sameInstanceTwiceAllowed() {
         AgentTool tool = simpleTool("dup", "only one");
@@ -463,8 +534,7 @@ class DuplicateToolRegistrationTest {
                                     try {
                                         roundToolkit.registerTool(source);
                                     } catch (IllegalStateException expected) {
-                                        // Losing the name to the replacement must fail loud,
-                                        // never land on top of it.
+                                        // A stale refresh must preserve the explicit replacement.
                                     }
                                     return null;
                                 });

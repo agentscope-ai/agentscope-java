@@ -31,17 +31,71 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
 class ToolRegistryTest {
+
+    @Test
+    void removalWaitsForRegistrationGroupUpdate() throws Exception {
+        ToolRegistry registry = new ToolRegistry();
+        ToolGroupManager groups = new ToolGroupManager();
+        groups.createToolGroup("inactive", "Inactive tools", false);
+        AgentTool tool = new SchemaOnlyTool("search", "Search", Map.of());
+        CountDownLatch updateEntered = new CountDownLatch(1);
+        CountDownLatch updateRelease = new CountDownLatch(1);
+        CountDownLatch removalStarted = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        Future<?> registration =
+                executor.submit(
+                        () ->
+                                registry.registerTool(
+                                        "search",
+                                        tool,
+                                        new RegisteredToolFunction(tool, null, null),
+                                        false,
+                                        () -> {
+                                            updateEntered.countDown();
+                                            try {
+                                                assertTrue(
+                                                        updateRelease.await(10, TimeUnit.SECONDS));
+                                            } catch (InterruptedException e) {
+                                                Thread.currentThread().interrupt();
+                                                throw new AssertionError(e);
+                                            }
+                                            groups.addToolToGroup("inactive", "search");
+                                        }));
+        try {
+            assertTrue(updateEntered.await(10, TimeUnit.SECONDS));
+            Future<?> removal =
+                    executor.submit(
+                            () -> {
+                                removalStarted.countDown();
+                                return registry.removeToolIfSame(
+                                        "search",
+                                        tool,
+                                        () -> groups.removeToolFromAllGroups("search"));
+                            });
+            assertTrue(removalStarted.await(10, TimeUnit.SECONDS));
+            assertThrows(TimeoutException.class, () -> removal.get(250, TimeUnit.MILLISECONDS));
+            updateRelease.countDown();
+            registration.get(10, TimeUnit.SECONDS);
+            assertEquals(true, removal.get(10, TimeUnit.SECONDS));
+            assertNull(registry.getTool("search"));
+            assertFalse(groups.isGroupedTool("search"));
+        } finally {
+            updateRelease.countDown();
+            executor.shutdownNow();
+        }
+    }
 
     private ToolRegistry registry;
     private AgentTool mockTool1;
@@ -284,44 +338,27 @@ class ToolRegistryTest {
     }
 
     @Test
-    @DisplayName("The same-source refresh predicate sees the binding being replaced")
-    void testRefreshPredicateEvaluatedInsideTheAtomicBind() {
-        // The refresh decision must be taken against the CURRENT binding (under the per-name
-        // lock), never against a snapshot inspected before it. Otherwise a registration that
-        // merely re-declares an old source could silently overwrite an explicit replacement
-        // that landed in between.
-        AgentTool stale = createMockTool("race", "stale-source");
-        registry.registerTool("race", stale, new RegisteredToolFunction(stale, null, null));
-
-        // An explicit replacement lands first (deterministic stand-in for the racing thread).
-        AgentTool replacement = createMockTool("race", "explicit-replacement");
+    void oldReflectiveSourceCannotRefreshAnExplicitReplacement() {
+        DuplicateToolRegistrationTest.LocalTools source =
+                new DuplicateToolRegistrationTest.LocalTools();
+        Toolkit first = new Toolkit();
+        Toolkit second = new Toolkit();
+        first.registerTool(source);
+        second.registerTool(source);
+        AgentTool stale = first.getTool("dup");
+        AgentTool incoming = second.getTool("dup");
+        registry.registerTool("dup", stale, new RegisteredToolFunction(stale, null, null));
+        AgentTool replacement = createMockTool("dup", "explicit-replacement");
         registry.registerTool(
-                "race", replacement, new RegisteredToolFunction(replacement, null, null), true);
+                "dup", replacement, new RegisteredToolFunction(replacement, null, null), true);
 
-        AgentTool incomingRefresh = createMockTool("race", "same-source-refresh");
-        AtomicBoolean predicateRan = new AtomicBoolean(false);
-        // A refresh that would only accept the STALE binding must conflict against the current
-        // one — the predicate is evaluated inside the atomic bind, where it observes the
-        // replacement.
         assertThrows(
                 IllegalStateException.class,
                 () ->
                         registry.registerTool(
-                                "race",
-                                incomingRefresh,
-                                new RegisteredToolFunction(incomingRefresh, null, null),
-                                false,
-                                existing -> {
-                                    predicateRan.set(true);
-                                    return existing == stale;
-                                }));
-
-        assertTrue(predicateRan.get(), "the predicate must be consulted inside the bind");
-        assertSame(replacement, registry.getTool("race"), "the explicit replacement survives");
-        assertSame(
-                replacement,
-                registry.getRegisteredTool("race").getTool(),
-                "metadata stays with the surviving binding");
+                                "dup", incoming, new RegisteredToolFunction(incoming, null, null)));
+        assertSame(replacement, registry.getTool("dup"));
+        assertSame(replacement, registry.getRegisteredTool("dup").getTool());
     }
 
     @Test

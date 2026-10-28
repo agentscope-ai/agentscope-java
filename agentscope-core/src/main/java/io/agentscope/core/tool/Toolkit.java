@@ -34,9 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
-import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -227,7 +225,7 @@ public class Toolkit {
      * @param tool the AgentTool to register, replacing any existing tool with the same name
      */
     public void replaceAgentTool(AgentTool tool) {
-        registerAgentTool(tool, null, null, null, null, null, null, true);
+        registerAgentTool(tool, null, null, null, null, true);
     }
 
     /**
@@ -239,28 +237,16 @@ public class Toolkit {
             ExtendedModel extendedModel,
             String mcpClientName,
             Map<String, Object> presetParameters) {
-        registerAgentTool(
-                tool, groupName, extendedModel, mcpClientName, presetParameters, null, null, false);
+        registerAgentTool(tool, groupName, extendedModel, mcpClientName, presetParameters, false);
     }
 
-    /**
-     * Full registration funnel shared by every public registration path (annotated-object
-     * scanning, direct {@link AgentTool} instances, MCP tools and sub-agent tools).
-     *
-     * <p>A name already bound to a different tool is rejected by {@link ToolRegistry} unless the
-     * caller passes {@code allowReplace}, or the currently bound tool is classified — atomically,
-     * against the binding this registration actually replaces — as the very tool being refreshed:
-     * the same {@code @Tool} source object and method, an MCP client wrapper re-registering its
-     * own tools, or a {@code SchemaOnlyTool} re-declared with an identical schema.
-     */
+    /** Shared registration path for annotated tools, direct tools, schemas, MCP and subagents. */
     private void registerAgentTool(
             AgentTool tool,
             String groupName,
             ExtendedModel extendedModel,
             String mcpClientName,
             Map<String, Object> presetParameters,
-            Object sourceObject,
-            Method sourceMethod,
             boolean allowReplace) {
         if (tool == null) {
             throw new IllegalArgumentException("AgentTool cannot be null");
@@ -277,29 +263,16 @@ public class Toolkit {
         RegisteredToolFunction registered =
                 new RegisteredToolFunction(tool, extendedModel, mcpClientName, presetParameters);
 
-        // The same-source refresh decision must be taken INSIDE the registry's atomic per-name
-        // operation. A boolean computed here (outside the lock) and then passed as replacement
-        // permission would be stale against a concurrent replaceAgentTool(): the refresh would
-        // silently overwrite the explicit replacement. The flag below records the atomic outcome
-        // for the debug log — capturing into caller-local state is the only side effect the
-        // predicate contract in ToolRegistry#registerTool allows.
-        AtomicBoolean refreshedSameSource = new AtomicBoolean();
-        Predicate<AgentTool> sameSourceRefresh =
-                sameSourceRefreshPredicate(
-                        allowReplace, sourceObject, sourceMethod, refreshedSameSource);
-
-        // Register in toolRegistry
-        toolRegistry.registerTool(toolName, tool, registered, allowReplace, sameSourceRefresh);
-
-        if (refreshedSameSource.get()) {
-            logger.debug(
-                    "Refreshed registration of tool '{}' from the same source method", toolName);
-        }
-
-        // Add to group if specified
-        if (groupName != null) {
-            groupManager.addToolToGroup(groupName, toolName);
-        }
+        toolRegistry.registerTool(
+                toolName,
+                tool,
+                registered,
+                allowReplace,
+                () -> {
+                    if (groupName != null) {
+                        groupManager.addToolToGroup(groupName, toolName);
+                    }
+                });
 
         logger.info(
                 "Registered tool '{}' in group '{}'",
@@ -307,49 +280,15 @@ public class Toolkit {
                 groupName != null ? groupName : "ungrouped");
     }
 
-    /**
-     * Builds the same-source refresh predicate for one registration, or {@code null} when there
-     * is nothing to refresh: a deliberate {@code allowReplace} carries no source identity, and
-     * direct {@link AgentTool} / MCP / schema registrations never have one. Package-private and
-     * small on purpose — it is the single decision point exercised directly by unit tests,
-     * including the defensive {@code sourceObject}/{@code sourceMethod} pairing that the
-     * annotated-scanning path always guarantees together in production.
-     *
-     * @param refreshedFlag per-call capture of whether the atomic bind accepted this
-     *     registration as a refresh (drives the debug log); never {@code null}
-     * @throws NullPointerException if {@code refreshedFlag} is null
-     */
-    static Predicate<AgentTool> sameSourceRefreshPredicate(
-            boolean allowReplace,
-            Object sourceObject,
-            Method sourceMethod,
-            AtomicBoolean refreshedFlag) {
-        Objects.requireNonNull(refreshedFlag, "refreshedFlag");
-        if (allowReplace || sourceObject == null || sourceMethod == null) {
-            return null;
-        }
-        return existing -> {
-            boolean same = isSameReflectiveSource(existing, sourceObject, sourceMethod);
-            if (same) {
-                refreshedFlag.set(true);
-            }
-            return same;
-        };
-    }
-
-    /**
-     * True when {@code existing} is a {@link ReflectiveFunctionTool} created from the exact same
-     * source object and method as the incoming registration. Re-registering a tool object is then
-     * an idempotent refresh, while a same-named tool coming from anywhere else — including a
-     * deliberate {@link #replaceAgentTool(AgentTool)} — remains a hard conflict. Evaluated by
-     * {@link ToolRegistry} under its per-name lock, so the decision always reflects the binding
-     * this registration actually replaces; must stay side-effect free.
-     */
-    private static boolean isSameReflectiveSource(
-            AgentTool existing, Object sourceObject, Method sourceMethod) {
-        return existing instanceof ReflectiveFunctionTool reflective
-                && reflective.getToolObject() == sourceObject
-                && reflective.getMethod().equals(sourceMethod);
+    /** Returns current bindings backed by an annotated object of exactly the given class. */
+    public List<AgentTool> getToolsFromSource(Class<?> sourceType) {
+        return toolRegistry.getAllRegisteredTools().values().stream()
+                .map(RegisteredToolFunction::getTool)
+                .filter(
+                        tool ->
+                                tool instanceof ReflectiveFunctionTool reflective
+                                        && reflective.getToolObject().getClass() == sourceType)
+                .toList();
     }
 
     /**
@@ -581,8 +520,7 @@ public class Toolkit {
                         customConverter,
                         presetParamNames);
 
-        registerAgentTool(
-                tool, groupName, extendedModel, null, presetParameters, toolObject, method, false);
+        registerAgentTool(tool, groupName, extendedModel, null, presetParameters, false);
     }
 
     /**
@@ -1085,33 +1023,46 @@ public class Toolkit {
     // ==================== Build-time Isolation Copy ====================
 
     /**
-     * Creates a build-time isolation copy of this toolkit.
+     * Creates an isolated registry for agent construction, sharing user tool instances.
      *
-     * <p><b>Build-time only — do NOT use per-call.</b> User tools are shared by reference and must support concurrent use; the framework meta
-     * tool is rebound to the copied registry. Tool groups and activation flags
-     * are deep-copied so the copy has an isolated group manager. The user chunk callback is
-     * preserved.
+     * <p>Groups are copied, the framework meta tool is rebound, and configuration and chunk
+     * callbacks are retained. Shared user tools must support concurrent calls. Use
+     * {@link ToolRequestConfig} for per-call visibility instead of copying the toolkit.
      *
-     * <p>Per-call tool-surface variation is instead expressed via {@link ToolRequestConfig}
-     * composition ({@link #getTool(String, ToolRequestConfig)} / {@link
-     * #getToolSchemas(java.util.Collection, ToolRequestConfig)}), never by copying a toolkit. This
-     * method exists for agent-construction isolation (e.g. the harness sub-agent factories), where
-     * a fresh registry is needed to register workspace-bound tools without polluting the source.
-     *
-     * @return A new Toolkit instance whose registry shares the same tool instances
+     * @return an isolated toolkit sharing the registered tool instances
      */
     public Toolkit copy() {
+        return copyExcludingTools(List.of());
+    }
+
+    /**
+     * Creates a build-time copy without the specified tool instances.
+     *
+     * <p>Exclusions use instance identity, so a newer binding under the same name is preserved.
+     * Group memberships remain associated with their names for tools rebuilt on the copy.
+     * The source and its deletion policy are unchanged; exclusions also apply when runtime
+     * tool deletion is disabled.
+     *
+     * @param excludedTools tool instances to omit before rebuilding framework bindings
+     * @return an isolated toolkit sharing the remaining tool instances
+     * @see #copy()
+     */
+    public Toolkit copyExcludingTools(Collection<? extends AgentTool> excludedTools) {
+        Objects.requireNonNull(excludedTools, "excludedTools");
         Toolkit copy = new Toolkit(this.config);
 
         // Share tool instances (stateless/thread-safe); copy registry metadata into the target.
         this.toolRegistry.copyTo(copy.toolRegistry);
+        for (AgentTool tool : excludedTools) {
+            copy.toolRegistry.removeToolIfSame(tool.getName(), tool);
+        }
 
         // Deep-copy tool groups and activation flags for isolated group state.
         this.groupManager.copyTo(copy.groupManager);
 
         // The framework meta tool captures its owner's group manager; bind it to the copy.
         if (registeredMetaTool != null
-                && toolRegistry.getTool(registeredMetaTool.getName()) == registeredMetaTool) {
+                && copy.toolRegistry.getTool(registeredMetaTool.getName()) == registeredMetaTool) {
             copy.registerMetaTool();
             RegisteredToolFunction metadata =
                     toolRegistry.getRegisteredTool(registeredMetaTool.getName());
