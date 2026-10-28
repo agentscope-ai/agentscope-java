@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -74,7 +75,18 @@ class LazyFileSystemSkillLoadingTest {
                             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                         int round = rounds.getAndIncrement();
                         if (round == 1) {
-                            assertTrue(toolText(messages).contains("Read references/guide.md"));
+                            assertTrue(
+                                    toolText(messages)
+                                            .contains("harness:loaded_skill:alpha_audit:SKILL.md"));
+                            assertFalse(toolText(messages).contains("Read references/guide.md"));
+                            assertTrue(
+                                    messages.stream()
+                                            .filter(message -> message.getRole() == MsgRole.USER)
+                                            .anyMatch(
+                                                    message ->
+                                                            message.getTextContent()
+                                                                    .contains(
+                                                                            "Read references/guide.md")));
                         }
                         if (round < 2) {
                             String path = round == 0 ? "SKILL.md" : "references/guide.md";

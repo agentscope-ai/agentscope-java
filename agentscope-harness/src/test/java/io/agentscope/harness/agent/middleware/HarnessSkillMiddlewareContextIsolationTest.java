@@ -29,10 +29,15 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.ModelCallInput;
@@ -48,6 +53,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.ToolkitConfig;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.context.ContextBudgetExceededException;
 import io.agentscope.harness.agent.context.ContextItem;
@@ -73,12 +79,14 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 class HarnessSkillMiddlewareContextIsolationTest {
 
@@ -207,6 +215,279 @@ class HarnessSkillMiddlewareContextIsolationTest {
                 assertFalse(projection(next).contains("harness:loaded_skill:"));
             }
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void realExecutionSendsOneBodyAndPreservesFullHistoricalToolOutput(boolean stream)
+            throws Exception {
+        String marker = "SINGLE_BODY_MIDDLE_COMMAND --typed 3";
+        writeSkill("shared", "alpha", "Alpha description", marker);
+        List<List<Msg>> requests = new CopyOnWriteArrayList<>();
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("offline");
+        when(model.stream(anyList(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            requests.add(List.copyOf(invocation.getArgument(0)));
+                            return Flux.just(
+                                    requests.size() == 1
+                                            ? loadResponse("load", "alpha_workspace")
+                                            : reply("done"));
+                        });
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        try (HarnessAgent agent =
+                testBuilder(model)
+                        .stateStore(store)
+                        .skillRepository(repository("shared"))
+                        .build()) {
+            RuntimeContext context =
+                    RuntimeContext.builder().userId("alice").sessionId("dedup").build();
+            if (stream)
+                agent.streamEvents(new UserMessage("start"), context)
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+            else agent.call(new UserMessage("start"), context).block(Duration.ofSeconds(10));
+            assertEquals(2, requests.size());
+            List<Msg> prepared = requests.get(1);
+            ToolResultBlock receipt =
+                    prepared.stream()
+                            .filter(m -> m.getRole() == MsgRole.TOOL)
+                            .flatMap(m -> m.getContent().stream())
+                            .filter(ToolResultBlock.class::isInstance)
+                            .map(ToolResultBlock.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals(ToolResultState.SUCCESS, receipt.getState());
+            assertTrue(
+                    ((TextBlock) receipt.getOutput().get(0))
+                            .getText()
+                            .contains("harness:loaded_skill:alpha_workspace:SKILL.md"));
+            assertEquals(1, occurrences(JsonUtils.getJsonCodec().toJson(prepared), marker));
+            AgentState saved =
+                    store.get("alice", "dedup", "agent_state", AgentState.class).orElseThrow();
+            ToolResultBlock original =
+                    saved.getContext().stream()
+                            .flatMap(m -> m.getContent().stream())
+                            .filter(ToolResultBlock.class::isInstance)
+                            .map(ToolResultBlock.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            String full = ((TextBlock) original.getOutput().get(0)).getText();
+            assertTrue(full.contains("Successfully loaded skill: alpha_workspace"));
+            assertTrue(full.contains(marker));
+            assertTrue(projection(prepared).contains(full));
+            Msg restored =
+                    JsonUtils.getJsonCodec()
+                            .fromJson(
+                                    JsonUtils.getJsonCodec()
+                                            .toJson(
+                                                    prepared.stream()
+                                                            .filter(
+                                                                    m ->
+                                                                            m.getRole()
+                                                                                    == MsgRole.TOOL)
+                                                            .findFirst()
+                                                            .orElseThrow()),
+                                    Msg.class);
+            assertEquals(MsgRole.TOOL, restored.getRole());
+            assertEquals(receipt.getId(), ((ToolResultBlock) restored.getContent().get(0)).getId());
+
+            agent.call(new UserMessage("continue"), context).block(Duration.ofSeconds(10));
+            List<Msg> next = requests.get(2);
+            assertFalse(projection(next).contains("harness:loaded_skill:"));
+            assertTrue(JsonUtils.getJsonCodec().toJson(next).contains(marker));
+            assertFalse(
+                    JsonUtils.getJsonCodec()
+                            .toJson(next)
+                            .contains("Skill instructions are available in this request"));
+        }
+    }
+
+    @Test
+    void providerOverflowRetryRebuildsSkillReceiptsOnTheRealExecutionChain() throws Exception {
+        String marker = "OVERFLOW_BODY_MIDDLE --typed 4";
+        writeSkill("shared", "alpha", "Alpha description", marker);
+        List<List<Msg>> requests = new CopyOnWriteArrayList<>();
+        AtomicInteger summaries = new AtomicInteger();
+        AtomicReference<String> fullReply = new AtomicReference<>();
+        Hook captureReply =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostActingEvent acting) {
+                            fullReply.set(
+                                    ((TextBlock) acting.getToolResult().getOutput().get(0))
+                                            .getText());
+                        }
+                        return Mono.just(event);
+                    }
+                };
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("overflow-offline");
+        when(model.stream(anyList(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            requests.add(List.copyOf(invocation.getArgument(0)));
+                            return switch (requests.size()) {
+                                case 1 -> Flux.just(loadResponse("load", "alpha_workspace"));
+                                case 2 ->
+                                        Flux.error(
+                                                new IllegalStateException(
+                                                        "context_length_exceeded"));
+                                default -> Flux.just(reply("done"));
+                            };
+                        });
+        Model summary = mock(Model.class);
+        when(summary.getModelName()).thenReturn("summary-offline");
+        when(summary.stream(anyList(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            summaries.incrementAndGet();
+                            return Flux.just(reply("earlier progress"));
+                        });
+        try (HarnessAgent agent =
+                testBuilder(model)
+                        .sessionHistoryMode(SessionHistoryMode.EVENT_LOG)
+                        .skillRepository(repository("shared"))
+                        .hook(captureReply)
+                        .compaction(
+                                CompactionConfig.builder()
+                                        .model(summary)
+                                        .triggerMessages(1000)
+                                        .keepMessages(1000)
+                                        .keepTokens(100000)
+                                        .flushBeforeCompact(false)
+                                        .build())
+                        .build()) {
+            agent.streamEvents(
+                            new UserMessage("old request"),
+                            RuntimeContext.builder()
+                                    .userId("alice")
+                                    .sessionId("overflow-dedup")
+                                    .build())
+                    .collectList()
+                    .block(Duration.ofSeconds(20));
+            assertEquals(3, requests.size());
+            assertEquals(1, summaries.get());
+            assertNotNull(fullReply.get());
+            for (List<Msg> request : requests.subList(1, 3)) {
+                assertEquals(1, occurrences(JsonUtils.getJsonCodec().toJson(request), marker));
+                assertTrue(loadedSkillMaterial(request).contains(fullReply.get()));
+                List<ToolResultBlock> results =
+                        request.stream()
+                                .filter(m -> m.getRole() == MsgRole.TOOL)
+                                .flatMap(m -> m.getContent().stream())
+                                .filter(ToolResultBlock.class::isInstance)
+                                .map(ToolResultBlock.class::cast)
+                                .filter(
+                                        result ->
+                                                "load_skill_through_path".equals(result.getName()))
+                                .toList();
+                assertFalse(results.isEmpty());
+                for (ToolResultBlock result : results) {
+                    assertTrue(
+                            ((TextBlock) result.getOutput().get(0))
+                                    .getText()
+                                    .contains("harness:loaded_skill:alpha_workspace:SKILL.md"));
+                }
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void postActingChangesArePreservedAndOnlyExactBodiesAreShortened(boolean editBody)
+            throws Exception {
+        String marker = "HOOK_BODY_MIDDLE --typed 5";
+        writeSkill("shared", "alpha", "Alpha description", marker);
+        List<List<Msg>> requests = new CopyOnWriteArrayList<>();
+        AtomicReference<String> fullReply = new AtomicReference<>();
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("hook-offline");
+        when(model.stream(anyList(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            requests.add(List.copyOf(invocation.getArgument(0)));
+                            return Flux.just(
+                                    requests.size() == 1
+                                            ? loadResponse("load", "alpha_workspace")
+                                            : reply("done"));
+                        });
+        Hook hook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostActingEvent acting) {
+                            Msg original = acting.getToolResultMsg();
+                            ToolResultBlock result = acting.getToolResult();
+                            List<ContentBlock> output = result.getOutput();
+                            fullReply.set(((TextBlock) output.get(0)).getText());
+                            if (editBody) {
+                                output =
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text(
+                                                                ((TextBlock) output.get(0))
+                                                                                .getText()
+                                                                        + "\nHook edited body.")
+                                                        .build());
+                            }
+                            ToolResultBlock rewritten =
+                                    new ToolResultBlock(
+                                            result.getId(),
+                                            result.getName(),
+                                            output,
+                                            Map.of("hook", "result"),
+                                            result.getState(),
+                                            result.getExecutionDetails());
+                            acting.setToolResult(rewritten);
+                            acting.setToolResultMsg(
+                                    original.withContent(List.of(rewritten))
+                                            .withMetadata(Map.of("hook", "message")));
+                        }
+                        return Mono.just(event);
+                    }
+                };
+        try (HarnessAgent agent =
+                testBuilder(model).skillRepository(repository("shared")).hook(hook).build()) {
+            agent.call(new UserMessage("start"), RuntimeContext.empty())
+                    .block(Duration.ofSeconds(10));
+            assertEquals(2, requests.size());
+            Msg message =
+                    requests.get(1).stream()
+                            .filter(msg -> msg.getRole() == MsgRole.TOOL)
+                            .findFirst()
+                            .orElseThrow();
+            ToolResultBlock result = (ToolResultBlock) message.getContent().get(0);
+            String output = ((TextBlock) result.getOutput().get(0)).getText();
+            assertEquals("message", message.getMetadata().get("hook"));
+            assertEquals("result", result.getMetadata().get("hook"));
+            assertEquals(editBody, output.contains(marker));
+            assertEquals(editBody, output.contains("Hook edited body."));
+            assertEquals(
+                    !editBody, output.contains("harness:loaded_skill:alpha_workspace:SKILL.md"));
+            assertNotNull(fullReply.get());
+            assertTrue(loadedSkillMaterial(requests.get(1)).contains(fullReply.get()));
+        }
+    }
+
+    private static String loadedSkillMaterial(List<Msg> messages) {
+        return messages.stream()
+                .filter(msg -> msg.getRole() == MsgRole.USER)
+                .filter(msg -> Boolean.TRUE.equals(msg.getMetadata().get(Msg.METADATA_SYNTHETIC)))
+                .filter(
+                        msg ->
+                                "runtime_materials"
+                                        .equals(msg.getMetadata().get(Msg.METADATA_REMINDER_KIND)))
+                .map(Msg::getTextContent)
+                .filter(text -> text.contains("harness:loaded_skill:alpha_workspace:SKILL.md"))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static int occurrences(String text, String marker) {
+        return text.split(java.util.regex.Pattern.quote(marker), -1).length - 1;
     }
 
     @Test

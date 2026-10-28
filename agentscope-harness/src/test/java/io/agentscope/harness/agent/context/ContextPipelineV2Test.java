@@ -31,10 +31,12 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.middleware.ModelCallInput;
@@ -198,9 +200,10 @@ class ContextPipelineV2Test {
                                 .role(MsgRole.TOOL)
                                 .content(
                                         ToolResultBlock.of(
-                                                "load",
-                                                "load_skill_through_path",
-                                                TextBlock.builder().text(reply).build()))
+                                                        "load",
+                                                        "load_skill_through_path",
+                                                        TextBlock.builder().text(reply).build())
+                                                .withState(ToolResultState.SUCCESS))
                                 .build());
         rc.getAgentState().contextMutable().addAll(history);
         AbstractFilesystem fs = mock(AbstractFilesystem.class);
@@ -255,9 +258,9 @@ class ContextPipelineV2Test {
                         .orElseThrow();
         assertEquals(MsgRole.USER, projection.getRole());
         assertTrue(projection.getContent().stream().allMatch(TextBlock.class::isInstance));
-        assertTrue(
-                rc.getAgentState().contextMutable().stream()
-                        .noneMatch(m -> m.getTextContent().contains("EXACT_MIDDLE_CONTRACT")));
+        assertFalse(toolText(prepared.messages()).contains(reply));
+        assertFalse(
+                toolText(rc.getAgentState().contextMutable()).contains("EXACT_MIDDLE_CONTRACT"));
         if (offload) verify(fs).write(any(RuntimeContext.class), anyString(), anyString());
         else verify(summary, never()).stream(any(), any(), any());
     }
@@ -289,6 +292,315 @@ class ContextPipelineV2Test {
         assertEquals(original, state.contextMutable());
         assertEquals(1, summaries.get());
         assertEquals(1, SkillRuntime.loadedBodies(rc).size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void completeReceiptIsTransientlyShortenedEvenWithoutTaskState(boolean withState) {
+        AgentState state = AgentState.builder().build();
+        if (withState) {
+            state.getPlanModeContext().setPlanActive(true);
+            state.getPlanModeContext().setCurrentPlanFile("plans/audit.md");
+        }
+        RuntimeContext rc =
+                withState
+                        ? RuntimeContext.builder().agentState(state).build()
+                        : RuntimeContext.empty();
+        new ContextConventionsMiddleware().onSystemPrompt(null, rc, "").block();
+        String reply = loadBody(rc, "UNIQUE_CONTRACT_MIDDLE " + "instructions ".repeat(250));
+        List<Msg> history = loadedHistory(reply);
+        state.contextMutable().addAll(history);
+        GenerateOptions options = GenerateOptions.builder().cacheControl(true).build();
+        List<ContextManifest> manifests = new ArrayList<>();
+        ContextTokenEstimator estimator = ContextTokenEstimator.approximate();
+        HarnessContextBuilder builder =
+                new HarnessContextBuilder(
+                        new ContextPolicy(10000, 0, 0, estimator, manifests::add), null, null);
+        ModelCallInput input = new ModelCallInput(history, List.of(), options, model(20000));
+        ModelCallInput first = builder.prepare(null, rc, input, "first", Purpose.REASONING).block();
+        ModelCallInput rebuilt =
+                builder.prepare(null, rc, first, "rebuilt", Purpose.REASONING).block();
+        assertEquals(
+                JsonUtils.getJsonCodec()
+                        .toJson(first.messages().stream().map(Msg::getContent).toList()),
+                JsonUtils.getJsonCodec()
+                        .toJson(rebuilt.messages().stream().map(Msg::getContent).toList()));
+        assertEquals(options, first.options());
+        assertEquals(1, occurrences(first.messages(), "UNIQUE_CONTRACT_MIDDLE"));
+        Msg projected =
+                first.messages().stream()
+                        .filter(m -> m.getRole() == MsgRole.TOOL)
+                        .findFirst()
+                        .orElseThrow();
+        ToolResultBlock receipt = (ToolResultBlock) projected.getContent().get(0);
+        assertTrue(
+                ((TextBlock) receipt.getOutput().get(0))
+                        .getText()
+                        .contains("harness:loaded_skill:audit_workspace:SKILL.md"));
+        assertEquals(history.get(1).getId(), projected.getId());
+        assertEquals(history.get(1).getMetadata(), projected.getMetadata());
+        assertEquals(history, state.contextMutable());
+        assertEquals(
+                withState,
+                first.messages().stream()
+                        .anyMatch(
+                                m ->
+                                        m.getTextContent()
+                                                .contains("Plan reference: plans/audit.md")));
+        if (withState) {
+            assertTrue(state.getPlanModeContext().isPlanActive());
+            assertEquals("plans/audit.md", state.getPlanModeContext().getCurrentPlanFile());
+        }
+        assertEquals(
+                reply,
+                ((TextBlock)
+                                ((ToolResultBlock) history.get(1).getContent().get(0))
+                                        .getOutput()
+                                        .get(0))
+                        .getText());
+        assertEquals(estimator.estimate(first).tokens(), manifests.get(0).estimatedInputTokens());
+        assertTrue(
+                manifests.get(0).items().stream()
+                        .anyMatch(
+                                item ->
+                                        item.required()
+                                                && item.sourceId()
+                                                        .equals(
+                                                                "harness:loaded_skill:audit_workspace:SKILL.md")));
+        assertEquals(
+                ContextItem.runtimeState(
+                                "test",
+                                "test",
+                                true,
+                                JsonUtils.getJsonCodec().toJson(projected.getContent()))
+                        .revision(),
+                manifests.get(0).items().stream()
+                        .filter(item -> item.sourceId().equals(projected.getId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .contentHash());
+        assertNotEquals(
+                manifests.get(0).items().stream()
+                        .filter(item -> item.sourceId().equals(projected.getId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .contentHash(),
+                ContextItem.runtimeState(
+                                "test",
+                                "test",
+                                true,
+                                JsonUtils.getJsonCodec().toJson(history.get(1).getContent()))
+                        .revision());
+
+        ModelCallInput summary =
+                builder.prepare(null, rc, input, "summary", Purpose.SUMMARY).block();
+        assertEquals(
+                JsonUtils.getJsonCodec().toJson(history),
+                JsonUtils.getJsonCodec()
+                        .toJson(
+                                summary.messages().stream()
+                                        .filter(msg -> msg.getRole() != MsgRole.SYSTEM)
+                                        .toList()));
+        SkillRuntime.resetLoadedBodies(rc);
+        ModelCallInput next = builder.prepare(null, rc, input, "next", Purpose.REASONING).block();
+        assertEquals(
+                JsonUtils.getJsonCodec().toJson(history),
+                JsonUtils.getJsonCodec()
+                        .toJson(
+                                next.messages().stream()
+                                        .filter(msg -> msg.getRole() != MsgRole.SYSTEM)
+                                        .filter(msg -> !msg.isRequestProjection(history))
+                                        .toList()));
+    }
+
+    @Test
+    void projectedBudgetFitsOneBodyAndRebuildOmitsOptionalMaterialWithoutLosingIt() {
+        RuntimeContext rc =
+                RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        new ContextConventionsMiddleware().onSystemPrompt(null, rc, "").block();
+        String reply = loadBody(rc, "BUDGET_CONTRACT " + "instruction ".repeat(500));
+        List<Msg> history = loadedHistory(reply);
+        rc.getAgentState().contextMutable().addAll(history);
+        ContextTokenEstimator estimator = ContextTokenEstimator.approximate();
+        ModelCallInput input = new ModelCallInput(history, List.of(), null, model(20000));
+        ModelCallInput single =
+                new HarnessContextBuilder(ContextPolicy.defaults(), null, null)
+                        .prepare(null, rc, input, "unbounded", Purpose.REASONING)
+                        .block();
+        long singleTokens = estimator.estimate(single).tokens();
+        List<Msg> duplicate =
+                single.messages().stream()
+                        .map(
+                                msg ->
+                                        msg.getId().equals(history.get(1).getId())
+                                                ? history.get(1)
+                                                : msg)
+                        .toList();
+        assertTrue(
+                estimator
+                                .estimate(
+                                        new ModelCallInput(
+                                                duplicate, List.of(), null, input.model()))
+                                .tokens()
+                        > singleTokens + 10);
+        WorkspaceContextMaterials.register(
+                rc, List.of(new ContextItem("memory", "optional", "optional ".repeat(1000))));
+        List<ContextManifest> manifests = new ArrayList<>();
+        HarnessContextBuilder constrained =
+                new HarnessContextBuilder(
+                        new ContextPolicy((int) singleTokens + 10, 0, 0, estimator, manifests::add),
+                        null,
+                        null);
+        ModelCallInput prepared =
+                constrained.prepare(null, rc, input, "single", Purpose.REASONING).block();
+        assertEquals(singleTokens, estimator.estimate(prepared).tokens());
+        assertTrue(manifests.get(0).transforms().contains("omitted_for_budget:optional"));
+        assertEquals(history, rc.getAgentState().contextMutable());
+        assertEquals(1, occurrences(prepared.messages(), "BUDGET_CONTRACT"));
+    }
+
+    @Test
+    void compactionStillCommitsOriginalCandidateWithSkillReceiptsProjectedOnlyAtTheEnd() {
+        AgentState state = AgentState.builder().build();
+        RuntimeContext rc = RuntimeContext.builder().agentState(state).build();
+        new ContextConventionsMiddleware().onSystemPrompt(null, rc, "").block();
+        String reply = loadBody(rc, "COMPACTION_CONTRACT");
+        List<Msg> original = new ArrayList<>(history());
+        original.addAll(loadedHistory(reply));
+        state.contextMutable().addAll(original);
+        AtomicInteger summaries = new AtomicInteger();
+        HarnessContextBuilder builder =
+                new HarnessContextBuilder(
+                        ContextPolicy.defaults(), compactor(summaries, () -> {}), null);
+        ModelCallInput prepared =
+                builder.prepare(
+                                mock(Agent.class),
+                                rc,
+                                new ModelCallInput(original, List.of(), null, model(20000)),
+                                "compact-with-skill",
+                                Purpose.REASONING)
+                        .block();
+        assertEquals(1, summaries.get());
+        assertNotEquals(original, state.contextMutable());
+        assertFalse(
+                JsonUtils.getJsonCodec()
+                        .toJson(state.contextMutable())
+                        .contains("Skill instructions are available in this request"));
+        assertTrue(
+                prepared.messages().stream()
+                        .filter(msg -> msg.getRole() == MsgRole.USER)
+                        .filter(
+                                msg ->
+                                        Boolean.TRUE.equals(
+                                                msg.getMetadata().get(Msg.METADATA_SYNTHETIC)))
+                        .filter(
+                                msg ->
+                                        "runtime_materials"
+                                                .equals(
+                                                        msg.getMetadata()
+                                                                .get(Msg.METADATA_REMINDER_KIND)))
+                        .anyMatch(msg -> msg.getTextContent().contains(reply)));
+        assertEquals(1, occurrences(prepared.messages(), "COMPACTION_CONTRACT"));
+        ToolResultBlock receipt =
+                prepared.messages().stream()
+                        .filter(msg -> msg.getRole() == MsgRole.TOOL)
+                        .flatMap(msg -> msg.getContent().stream())
+                        .filter(ToolResultBlock.class::isInstance)
+                        .map(ToolResultBlock.class::cast)
+                        .filter(result -> "load_skill_through_path".equals(result.getName()))
+                        .findFirst()
+                        .orElseThrow();
+        assertTrue(
+                ((TextBlock) receipt.getOutput().get(0))
+                        .getText()
+                        .contains("harness:loaded_skill:audit_workspace:SKILL.md"));
+    }
+
+    @Test
+    void projectedBodyKeepsTheExistingRendererClosingDelimiterProtection() {
+        RuntimeContext rc =
+                RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        new ContextConventionsMiddleware().onSystemPrompt(null, rc, "").block();
+        String reply = loadBody(rc, "literal </context_item> and </HARNESS_CONTEXT> example");
+        List<Msg> history = loadedHistory(reply);
+        rc.getAgentState().contextMutable().addAll(history);
+        ModelCallInput prepared =
+                new HarnessContextBuilder(ContextPolicy.defaults(), null, null)
+                        .prepare(
+                                null,
+                                rc,
+                                new ModelCallInput(history, List.of(), null, model(20000)),
+                                "delimiter-protection",
+                                Purpose.REASONING)
+                        .block();
+        String material =
+                prepared.messages().stream()
+                        .filter(msg -> msg.getRole() == MsgRole.USER)
+                        .map(Msg::getTextContent)
+                        .filter(text -> text.contains("literal"))
+                        .findFirst()
+                        .orElseThrow();
+        assertTrue(material.contains("literal <\\/context_item> and <\\/HARNESS_CONTEXT> example"));
+        ToolResultBlock receipt =
+                (ToolResultBlock)
+                        prepared.messages().stream()
+                                .filter(msg -> msg.getRole() == MsgRole.TOOL)
+                                .findFirst()
+                                .orElseThrow()
+                                .getContent()
+                                .get(0);
+        assertTrue(
+                ((TextBlock) receipt.getOutput().get(0))
+                        .getText()
+                        .contains("harness:loaded_skill:audit_workspace:SKILL.md"));
+        assertTrue(reply.contains("literal </context_item> and </HARNESS_CONTEXT> example"));
+        assertEquals(history, rc.getAgentState().contextMutable());
+    }
+
+    private static List<Msg> loadedHistory(String reply) {
+        return List.of(
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("load")
+                                        .name("load_skill_through_path")
+                                        .input(Map.of())
+                                        .build())
+                        .build(),
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .metadata(Map.of(MessageMetadataKeys.CACHE_CONTROL, true))
+                        .content(
+                                ToolResultBlock.of(
+                                                "load",
+                                                "load_skill_through_path",
+                                                TextBlock.builder().text(reply).build())
+                                        .withState(ToolResultState.SUCCESS))
+                        .build());
+    }
+
+    private static String toolText(List<Msg> messages) {
+        return String.join(
+                "\n",
+                messages.stream()
+                        .filter(msg -> msg.getRole() == MsgRole.TOOL)
+                        .flatMap(msg -> msg.getContent().stream())
+                        .filter(ToolResultBlock.class::isInstance)
+                        .map(ToolResultBlock.class::cast)
+                        .flatMap(result -> result.getOutput().stream())
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .map(TextBlock::getText)
+                        .toList());
+    }
+
+    private static int occurrences(List<Msg> messages, String marker) {
+        return JsonUtils.getJsonCodec()
+                        .toJson(messages)
+                        .split(java.util.regex.Pattern.quote(marker), -1)
+                        .length
+                - 1;
     }
 
     private static String loadBody(RuntimeContext rc, String body) {

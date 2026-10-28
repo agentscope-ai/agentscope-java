@@ -25,8 +25,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolExecutionDetails;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
@@ -34,6 +39,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.ToolkitConfig;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.context.ContextItem;
 import io.agentscope.harness.agent.middleware.ContextConventionsMiddleware;
 import io.agentscope.harness.agent.skill.SkillResources;
@@ -593,16 +599,6 @@ class SkillRuntimeTest {
                                     .build())
                     .build();
         }
-
-        private ToolResultBlock invoke(
-                SkillRuntime r, RuntimeContext ctx, String skillId, String path) {
-            ToolCallParam p =
-                    ToolCallParam.builder()
-                            .runtimeContext(ctx)
-                            .input(Map.of("skillId", skillId, "path", path))
-                            .build();
-            return r.loadTool().callAsync(p).block();
-        }
     }
 
     // =========================================================================
@@ -746,22 +742,242 @@ class SkillRuntimeTest {
             assertTrue(textOf(contextFree).contains("Successfully loaded skill"));
             assertTrue(errorOf(contextScoped).contains("not found"));
         }
-
-        private ToolResultBlock invoke(
-                SkillRuntime r, RuntimeContext ctx, String skillId, String path) {
-            return r.loadTool()
-                    .callAsync(
-                            ToolCallParam.builder()
-                                    .runtimeContext(ctx)
-                                    .input(Map.of("skillId", skillId, "path", path))
-                                    .build())
-                    .block();
-        }
     }
 
     // =========================================================================
     //  Helpers
     // =========================================================================
+
+    @Nested
+    class LoadedBodyReceiptTests {
+        @Test
+        void projectsAllExactResultsWithoutChangingOutputHistoryOrMessageAttributes() {
+            RuntimeContext context = RuntimeContext.empty();
+            SkillRuntime.resetLoadedBodies(context);
+            SkillRuntime runtime = new SkillRuntime();
+            runtime.install(
+                    SkillCatalog.of(List.of(HarnessSkillEntry.of(skill("alpha", "src"), null))),
+                    context,
+                    null);
+            ToolResultBlock original = invoke(runtime, context, "alpha_src", "SKILL.md");
+            String full = textOf(original);
+            ToolExecutionDetails details =
+                    new ToolExecutionDetails(
+                            "loader", ToolExecutionDetails.Outcome.SUCCEEDED, null, false);
+            ToolResultBlock first =
+                    new ToolResultBlock(
+                            "first",
+                            SkillLoadTool.TOOL_NAME,
+                            original.getOutput(),
+                            Map.of("hook", "kept"),
+                            ToolResultState.SUCCESS,
+                            details);
+            ToolResultBlock second = first.withIdAndName("second", SkillLoadTool.TOOL_NAME);
+            TextBlock sibling = TextBlock.builder().text("unrelated sibling").build();
+            Msg message =
+                    Msg.builder()
+                            .id("stable-message")
+                            .name("loader")
+                            .role(MsgRole.TOOL)
+                            .metadata(
+                                    Map.of(
+                                            MessageMetadataKeys.CACHE_CONTROL,
+                                            true,
+                                            "hook",
+                                            "outer"))
+                            .content(List.of(first, sibling, second))
+                            .build();
+            List<Msg> history = List.of(message);
+            List<ContextItem> snapshot = SkillRuntime.loadedBodies(context);
+
+            List<Msg> projected = SkillRuntime.projectLoadedBodyReceipts(history, snapshot);
+
+            Msg receipt = projected.get(0);
+            assertEquals(message.getId(), receipt.getId());
+            assertEquals(message.getName(), receipt.getName());
+            assertEquals(message.getRole(), receipt.getRole());
+            assertEquals(message.getMetadata(), receipt.getMetadata());
+            assertEquals(message.getTimestamp(), receipt.getTimestamp());
+            assertEquals(message.getUsage(), receipt.getUsage());
+            assertSame(sibling, receipt.getContent().get(1));
+            for (int index : List.of(0, 2)) {
+                ToolResultBlock before = (ToolResultBlock) message.getContent().get(index);
+                ToolResultBlock after = (ToolResultBlock) receipt.getContent().get(index);
+                assertEquals(before.getId(), after.getId());
+                assertEquals(before.getName(), after.getName());
+                assertEquals(before.getMetadata(), after.getMetadata());
+                assertEquals(before.getState(), after.getState());
+                assertEquals(details, after.getExecutionDetails());
+                assertTrue(textOf(after).contains(snapshot.get(0).sourceId()));
+                assertFalse(textOf(after).contains(full));
+            }
+            assertEquals(full, textOf(original));
+            assertEquals(full, textOf((ToolResultBlock) history.get(0).getContent().get(0)));
+            assertTrue(snapshot.get(0).content().contains(full));
+            assertEquals(
+                    JsonUtils.getJsonCodec().toJson(projected),
+                    JsonUtils.getJsonCodec()
+                            .toJson(SkillRuntime.projectLoadedBodyReceipts(projected, snapshot)));
+        }
+
+        @Test
+        void preservesUnconfirmedStatesRolesTextAndOutputShapes() {
+            RuntimeContext context = RuntimeContext.empty();
+            SkillRuntime.resetLoadedBodies(context);
+            String full = "exact formatted skill reply";
+            SkillRuntime.registerLoadedBody(context, "alpha_src", full);
+            List<ContentBlock> output = List.of(TextBlock.builder().text(full).build());
+            List<ToolResultBlock> excluded = new java.util.ArrayList<>();
+            for (ToolResultState state : ToolResultState.values()) {
+                if (state != ToolResultState.SUCCESS)
+                    excluded.add(
+                            new ToolResultBlock(
+                                    "load", SkillLoadTool.TOOL_NAME, output, Map.of(), state));
+            }
+            excluded.add(new ToolResultBlock("load", SkillLoadTool.TOOL_NAME, output, Map.of()));
+            excluded.add(
+                    new ToolResultBlock(
+                            "load", "another_tool", output, Map.of(), ToolResultState.SUCCESS));
+            excluded.add(
+                    new ToolResultBlock(
+                            "load",
+                            SkillLoadTool.TOOL_NAME,
+                            output,
+                            Map.of(ToolResultBlock.METADATA_SUSPENDED, true),
+                            ToolResultState.SUCCESS));
+            excluded.add(
+                    new ToolResultBlock(
+                            "load",
+                            SkillLoadTool.TOOL_NAME,
+                            output,
+                            Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true),
+                            ToolResultState.SUCCESS));
+            excluded.add(
+                    new ToolResultBlock(
+                            "load",
+                            SkillLoadTool.TOOL_NAME,
+                            List.of(output.get(0), output.get(0)),
+                            Map.of(),
+                            ToolResultState.SUCCESS));
+            for (String changed : List.of(full + " hook edit", "preview", full.substring(0, 8))) {
+                excluded.add(
+                        new ToolResultBlock(
+                                "load",
+                                SkillLoadTool.TOOL_NAME,
+                                List.of(TextBlock.builder().text(changed).build()),
+                                Map.of(),
+                                ToolResultState.SUCCESS));
+            }
+            List<ContextItem> snapshot = SkillRuntime.loadedBodies(context);
+            for (ToolResultBlock result : excluded) {
+                Msg message = Msg.builder().role(MsgRole.TOOL).content(result).build();
+                assertSame(
+                        message,
+                        SkillRuntime.projectLoadedBodyReceipts(List.of(message), snapshot).get(0));
+            }
+            ToolResultBlock success =
+                    new ToolResultBlock(
+                            "load",
+                            SkillLoadTool.TOOL_NAME,
+                            output,
+                            Map.of(),
+                            ToolResultState.SUCCESS);
+            for (MsgRole role : List.of(MsgRole.USER, MsgRole.ASSISTANT)) {
+                Msg message =
+                        Msg.builder()
+                                .role(role)
+                                .content(
+                                        role == MsgRole.USER
+                                                ? TextBlock.builder().text(full).build()
+                                                : success)
+                                .build();
+                assertSame(
+                        message,
+                        SkillRuntime.projectLoadedBodyReceipts(List.of(message), snapshot).get(0));
+            }
+            Msg quotation = Msg.builder().role(MsgRole.TOOL).textContent(full).build();
+            assertSame(
+                    quotation,
+                    SkillRuntime.projectLoadedBodyReceipts(List.of(quotation), snapshot).get(0));
+        }
+
+        @Test
+        void matchesCompleteIdentityAndUsesOnlyTheSuppliedSnapshot() {
+            RuntimeContext context = RuntimeContext.empty();
+            SkillRuntime.resetLoadedBodies(context);
+            SkillRuntime runtime = new SkillRuntime();
+            AgentSkill alpha = skillWith("alpha", "Same description", "same body", null);
+            AgentSkill beta = skillWith("beta", "Same description", "same body", null);
+            runtime.install(
+                    SkillCatalog.of(
+                            List.of(
+                                    new HarnessSkillEntry(alpha, null, "/skills/alpha"),
+                                    new HarnessSkillEntry(beta, null, "/skills/beta"))),
+                    context,
+                    null);
+            ToolResultBlock a =
+                    invoke(runtime, context, "alpha_workspace", "SKILL.md")
+                            .withIdAndName("alpha", SkillLoadTool.TOOL_NAME)
+                            .withState(ToolResultState.SUCCESS);
+            List<ContextItem> alphaSnapshot = SkillRuntime.loadedBodies(context);
+            ToolResultBlock b =
+                    invoke(runtime, context, "beta_workspace", "SKILL.md")
+                            .withIdAndName("beta", SkillLoadTool.TOOL_NAME)
+                            .withState(ToolResultState.SUCCESS);
+            Msg message = Msg.builder().role(MsgRole.TOOL).content(List.of(a, b)).build();
+            List<Msg> onlyAlpha =
+                    SkillRuntime.projectLoadedBodyReceipts(List.of(message), alphaSnapshot);
+            assertTrue(
+                    textOf((ToolResultBlock) onlyAlpha.get(0).getContent().get(0))
+                            .contains("harness:loaded_skill:alpha_workspace:SKILL.md"));
+            assertSame(b, onlyAlpha.get(0).getContent().get(1));
+            List<Msg> both =
+                    SkillRuntime.projectLoadedBodyReceipts(
+                            List.of(message), SkillRuntime.loadedBodies(context));
+            assertTrue(
+                    textOf((ToolResultBlock) both.get(0).getContent().get(1))
+                            .contains("harness:loaded_skill:beta_workspace:SKILL.md"));
+
+            runtime.install(
+                    SkillCatalog.of(List.of(new HarnessSkillEntry(alpha, null, "/changed/alpha"))),
+                    context,
+                    null);
+            invoke(runtime, context, "alpha_workspace", "SKILL.md");
+            assertSame(
+                    a,
+                    SkillRuntime.projectLoadedBodyReceipts(
+                                    List.of(message), SkillRuntime.loadedBodies(context))
+                            .get(0)
+                            .getContent()
+                            .get(0));
+            assertFalse(
+                    textOf(
+                                    (ToolResultBlock)
+                                            SkillRuntime.projectLoadedBodyReceipts(
+                                                            List.of(message), alphaSnapshot)
+                                                    .get(0)
+                                                    .getContent()
+                                                    .get(0))
+                            .contains(textOf(a)));
+            SkillRuntime.resetLoadedBodies(context);
+            assertSame(
+                    message,
+                    SkillRuntime.projectLoadedBodyReceipts(
+                                    List.of(message), SkillRuntime.loadedBodies(context))
+                            .get(0));
+        }
+    }
+
+    private static ToolResultBlock invoke(
+            SkillRuntime runtime, RuntimeContext context, String skillId, String path) {
+        return runtime.loadTool()
+                .callAsync(
+                        ToolCallParam.builder()
+                                .runtimeContext(context)
+                                .input(Map.of("skillId", skillId, "path", path))
+                                .build())
+                .block();
+    }
 
     private static AgentSkill skill(String name, String source) {
         return new AgentSkill(

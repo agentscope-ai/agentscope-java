@@ -194,6 +194,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                     purpose,
                                     state,
                                     snapshot,
+                                    loadedSkills,
                                     original,
                                     selected,
                                     new ArrayList<>(collected.transforms()));
@@ -208,6 +209,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
             Purpose purpose,
             AgentState state,
             ProjectionSnapshot snapshot,
+            List<ContextItem> loadedSkills,
             List<Msg> original,
             List<ContextItem> selected,
             List<String> transforms) {
@@ -244,8 +246,8 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                     throw new IllegalArgumentException("Invalid context omission candidate: " + id);
             }
             for (String id : order) {
-                if (policy.estimator().estimate(project(current, snapshot)).tokens() <= limit)
-                    break;
+                if (policy.estimator().estimate(project(current, snapshot, loadedSkills)).tokens()
+                        <= limit) break;
                 selected.remove(byId.get(id));
                 transforms.add("omitted_for_budget:" + id);
                 current = withMaterials(current, selected, history);
@@ -253,7 +255,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         }
         List<Msg> canonical = history;
         List<Msg> fixed =
-                (purpose == Purpose.REASONING ? project(current, snapshot) : current)
+                (purpose == Purpose.REASONING ? project(current, snapshot, loadedSkills) : current)
                         .messages().stream()
                                 .filter(
                                         msg ->
@@ -277,7 +279,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                     ModelCallInput prepared =
                             layout(
                                     purpose == Purpose.REASONING
-                                            ? project(result, snapshot)
+                                            ? project(result, snapshot, loadedSkills)
                                             : result,
                                     candidate.history());
                     var estimate = policy.estimator().estimate(prepared);
@@ -513,11 +515,14 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         return copy(input, List.copyOf(ordered));
     }
 
-    private ModelCallInput project(ModelCallInput input, ProjectionSnapshot state) {
-        if (state == null) return input;
+    private ModelCallInput project(
+            ModelCallInput input, ProjectionSnapshot state, List<ContextItem> loadedSkills) {
+        ModelCallInput projected =
+                copy(input, SkillRuntime.projectLoadedBodyReceipts(input.messages(), loadedSkills));
+        if (state == null) return projected;
         List<Msg> messages =
                 TaskContextProjection.project(
-                        input.messages(),
+                        projected.messages(),
                         state.tasks(),
                         sources.taskContext().requirements(),
                         sources.taskContext().verificationResults());
