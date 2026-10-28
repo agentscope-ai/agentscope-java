@@ -3541,19 +3541,48 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // collected.
                                 RequestStopEvent rs = actingStopRequested.get();
                                 if (rs != null) {
-                                    if (rs.getGenerateReason()
-                                            == GenerateReason.PERMISSION_ASKING) {
-                                        Msg lastAssistant =
-                                                MessageUtils.lastAssistantMessage(
-                                                        state.contextMutable());
-                                        if (lastAssistant != null) {
-                                            return Mono.just(
-                                                    lastAssistant.withGenerateReason(
-                                                            GenerateReason.PERMISSION_ASKING));
-                                        }
-                                    }
-                                    Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
-                                    return Mono.just(stopMsg);
+                                    // Persist the results that already ran before honouring the
+                                    // stop, exactly like the normal path below:
+                                    // notifyPostActingHook
+                                    // is the only place a tool_result reaches the context, so
+                                    // skipping it leaves the assistant turn with a dangling
+                                    // tool_use and the next model call malformed.
+                                    List<Map.Entry<ToolUseBlock, ToolResultBlock>> executed =
+                                            results == null
+                                                    ? List.of()
+                                                    : results.stream()
+                                                            .filter(
+                                                                    e ->
+                                                                            !e.getValue()
+                                                                                    .isSuspended())
+                                                            .toList();
+                                    return Flux.fromIterable(executed)
+                                            .concatMap(e -> notifyPostActingHook(e, false))
+                                            .then(
+                                                    Mono.defer(
+                                                            () -> {
+                                                                if (rs.getGenerateReason()
+                                                                        == GenerateReason
+                                                                                .PERMISSION_ASKING) {
+                                                                    Msg lastAssistant =
+                                                                            MessageUtils
+                                                                                    .lastAssistantMessage(
+                                                                                            state
+                                                                                                    .contextMutable());
+                                                                    if (lastAssistant != null) {
+                                                                        return Mono.just(
+                                                                                lastAssistant
+                                                                                        .withGenerateReason(
+                                                                                                GenerateReason
+                                                                                                        .PERMISSION_ASKING));
+                                                                    }
+                                                                }
+                                                                return Mono.just(
+                                                                        buildStopMsg(
+                                                                                results,
+                                                                                rs
+                                                                                        .getGenerateReason()));
+                                                            }));
                                 }
                                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
                                         results.stream()

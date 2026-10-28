@@ -120,6 +120,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions A2UI -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-a2ui</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Chat Completions Web -->
             <dependency>
                 <groupId>io.agentscope</groupId>
