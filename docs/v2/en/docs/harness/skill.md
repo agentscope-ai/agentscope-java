@@ -326,6 +326,8 @@ So the agent's shell call is always `execute("python3 <files-root>/scripts/foo.p
 
 ### Where marketplace files actually live
 
+For repository skills with no materialized auxiliary resources (for example, an inline-only skill), staging reports `NONE` and no `<files-root>` is advertised. The skill remains available through `load_skill_through_path(..., path="SKILL.md")`. In a mixed catalog, only entries that provide `<files-root>` support file listing and script execution at that path.
+
 Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each call (during PreCall, in the same `onSystemPrompt` pass that builds `<available_skills>`):
 
 - Per-file SHA-256 dedup — only changed files are rewritten

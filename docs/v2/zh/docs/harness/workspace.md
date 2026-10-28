@@ -474,10 +474,12 @@ knowledge/
 
 加载时：
 
-- `KNOWLEDGE.md` 全文进 `<domain_knowledge_context>`；
+- `KNOWLEDGE.md` 作为 `HARNESS_CONTEXT` 的参考材料收集，是否完整纳入取决于上下文预算；
 - 同目录下其它文件（任意深度）只列**路径清单**进 prompt，让 agent 用 `read_file` / `grep_files` / `glob_files` 按需读取。
 
 这种"目录里全是细节，prompt 里只放索引"的模式，避免把整个知识库塞进 token 预算。
+
+知识指导随收集到的材料生成：入口正文和文件清单均为空时，省略 Domain Knowledge 指导；仅有内联正文时不承诺目录存在。收集到文件清单时才给出文件导航，即使参考材料随后因上下文预算被省略，也保留检索入口。单次读取失败不代表已有参考文件。
 
 ## 写入工作区的安全规则
 

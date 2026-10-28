@@ -21,12 +21,16 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Pattern;
@@ -48,8 +52,19 @@ public final class ModelRegistry {
     private static final ConcurrentHashMap<String, Model> namedModels = new ConcurrentHashMap<>();
     private static final CopyOnWriteArrayList<ProviderEntry> userFactories =
             new CopyOnWriteArrayList<>();
-    private static final ConcurrentHashMap<ModelCacheKey, Model> resolvedCache =
+
+    /**
+     * Factory-created instances. Each entry is published before creation starts, so concurrent
+     * first resolutions of the same key wait for one creation instead of each creating (and
+     * orphaning) their own instance.
+     */
+    private static final ConcurrentHashMap<ModelCacheKey, CompletableFuture<Model>> resolvedCache =
             new ConcurrentHashMap<>();
+
+    /** Cache keys the current thread is creating, to fail fast on recursive self-resolution. */
+    private static final ThreadLocal<Set<ModelCacheKey>> CREATING =
+            ThreadLocal.withInitial(HashSet::new);
+
     private static volatile List<ModelProvider> serviceProviders;
 
     private ModelRegistry() {}
@@ -84,6 +99,10 @@ public final class ModelRegistry {
      * {@link Pattern#matches}. Newly registered factories are consulted before older user
      * registrations and before SPI providers.
      *
+     * <p>Cached instances whose model id matches the new pattern are evicted, so the next
+     * {@link #resolve} of such an id is served by this factory. Evicted instances are not closed:
+     * the registry does not own them, and callers that already hold one may still be using it.
+     *
      * @param modelNameRegex regex with semantics of Pattern#matches(CharSequence) on the
      *     full model id
      * @param factory creates a {@link Model} from the full model id and creation context
@@ -92,7 +111,11 @@ public final class ModelRegistry {
         Objects.requireNonNull(modelNameRegex, "modelNameRegex");
         Objects.requireNonNull(factory, "factory");
         Pattern pattern = Pattern.compile(modelNameRegex);
+        // Add first, then evict: resolve() publishes its cache entry before it looks up a
+        // factory, so a resolution that raced past the add and picked an older factory has
+        // already published its entry by the time we evict, and that entry is removed here.
         userFactories.add(0, new ProviderEntry(pattern, factory));
+        resolvedCache.keySet().removeIf(key -> pattern.matcher(key.modelId()).matches());
     }
 
     /**
@@ -112,6 +135,9 @@ public final class ModelRegistry {
      * <p>Non-empty context resolution is not cached unless the context uses
      * {@link CachePolicy#ENABLED}.
      *
+     * <p>For cached resolutions, concurrent first calls with the same key share a single creation
+     * and receive the same instance. A failed creation is not cached.
+     *
      * @throws IllegalArgumentException if the id cannot be resolved, the context cannot be safely
      * cached, or creation fails
      */
@@ -129,13 +155,50 @@ public final class ModelRegistry {
         }
 
         ModelCacheKey cacheKey = cacheKey(trimmed, context);
-        if (cacheKey != null) {
-            Model cached = resolvedCache.get(cacheKey);
-            if (cached != null) {
-                return cached;
-            }
+        if (cacheKey == null) {
+            return create(trimmed, context);
         }
+        CompletableFuture<Model> pending = new CompletableFuture<>();
+        CompletableFuture<Model> existing = resolvedCache.putIfAbsent(cacheKey, pending);
+        if (existing != null) {
+            if (!existing.isDone() && CREATING.get().contains(cacheKey)) {
+                // A factory resolving its own id would otherwise wait on itself forever.
+                throw new IllegalStateException(
+                        "Recursive resolution of model id while it is being created: " + trimmed);
+            }
+            return awaitCached(existing);
+        }
+        Set<ModelCacheKey> creating = CREATING.get();
+        creating.add(cacheKey);
+        try {
+            Model created = create(trimmed, context);
+            pending.complete(created);
+            return created;
+        } catch (RuntimeException | Error e) {
+            // Do not cache failures: waiters see this error, later callers retry creation.
+            resolvedCache.remove(cacheKey, pending);
+            pending.completeExceptionally(e);
+            throw e;
+        } finally {
+            creating.remove(cacheKey);
+        }
+    }
 
+    private static Model awaitCached(CompletableFuture<Model> future) {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof RuntimeException cause) {
+                throw cause;
+            }
+            if (e.getCause() instanceof Error cause) {
+                throw cause;
+            }
+            throw e;
+        }
+    }
+
+    private static Model create(String trimmed, ModelCreationContext context) {
         ProviderEntry entry = findMatchingUserEntry(trimmed);
         ModelProvider provider = entry == null ? findServiceProvider(trimmed, context) : null;
         if (entry == null && provider == null) {
@@ -155,9 +218,6 @@ public final class ModelRegistry {
                                 + provider.providerId()
                                 + " returned null for: "
                                 + trimmed);
-            }
-            if (cacheKey != null) {
-                resolvedCache.put(cacheKey, created);
             }
             return created;
         } catch (RuntimeException e) {
