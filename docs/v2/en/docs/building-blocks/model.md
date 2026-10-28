@@ -205,6 +205,8 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 
 If `CachePolicy.ENABLED` is used with `option(...)` or `component(...)`, the user must provide a `cacheId`.
 
+Calling `registerFactory` evicts cached instances whose model id matches the new pattern, so the next resolution of those ids uses the new factory. Evicted instances are not closed, since callers may still hold them. Concurrent first resolutions of the same cached id share one creation and receive the same instance.
+
 ### ModelProvider SPI
 
 Provider extension modules are discovered with Java SPI through `META-INF/services/io.agentscope.core.model.spi.ModelProvider`. A provider can implement `supports(String, ModelCreationContext)` and `create(String, ModelCreationContext)` to consume context values. Simple providers can keep implementing the original `supports(String)` and `create(String)` methods because the context-aware methods have compatible defaults.
@@ -371,7 +373,7 @@ Msg msg =
 WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
-How it works: the framework builds the output schema from the target class, routes the request through the native or fallback path below, parses the native JSON response or validates the fallback tool input against the schema, and writes the result into `Msg.metadata` under the `_structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
+How it works: the framework builds the output schema from the target class, routes the request through the native or fallback path below, parses and validates the native JSON response against the schema or validates the fallback tool input, and writes the result into `Msg.metadata` under the `_structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
 
 #### Structured output path selection
 
@@ -382,7 +384,9 @@ The framework provides two structured output paths:
 | **Native** | `supportsNativeStructuredOutput() = true` | Uses `response_format` + `json_schema` for direct JSON output |
 | **Fallback** (default) | `supportsNativeStructuredOutput() = false` | Injects a `generate_response` synthetic tool; model returns structured data via tool call |
 
-If the native path fails (e.g. model returns HTTP 400), the framework **automatically falls back** to the synthetic tool path — no user intervention needed.
+If the native path fails (for example, the provider rejects the request, or the output is empty, invalid JSON, or schema-invalid), the framework **automatically falls back** to the synthetic tool path — no user intervention needed. The rejected native response is not kept in the conversation context.
+
+Native response validation is enabled by default. Use `ReActAgent.builder().validateStructuredOutput(false)` when a provider already guarantees schema conformance and you want to avoid the client-side check and its fallback behavior.
 
 Native structured output does not force a schema to strict mode. OpenAI and OpenAI Official
 manufacturer can enable it explicitly with `strictJsonSchema(true)`; a schema-level `strict` value

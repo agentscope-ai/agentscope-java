@@ -468,7 +468,8 @@ class McpClientManager {
                                                         /* presetArguments handled upstream by
                                                          * RegisteredToolFunction */ null,
                                                         mcpClientWrapper.getName(),
-                                                        readOnly);
+                                                        readOnly,
+                                                        McpTool.resolveDisplayTitle(mcpTool));
 
                                         // Per-tool metadata propagation restriction, resolved at
                                         // registration time: per-tool override > registration

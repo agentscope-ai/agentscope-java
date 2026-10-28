@@ -23,13 +23,13 @@ import com.alibaba.nacos.api.ai.listener.NacosAgentCardEvent;
 import com.alibaba.nacos.api.ai.model.a2a.AgentCardDetailInfo;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.exception.runtime.NacosRuntimeException;
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.a2a.agent.card.AgentCardResolver;
 import io.agentscope.core.nacos.a2a.utils.AgentCardConverterUtil;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
+import org.a2aproject.sdk.spec.AgentCard;
 
 /**
  * Agent Card Producer from Nacos A2A Registry.

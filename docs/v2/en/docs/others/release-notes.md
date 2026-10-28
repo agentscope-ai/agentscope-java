@@ -80,6 +80,8 @@ AgentScope Java 2.0.4 adds OpenAI Responses API support, a redesigned AgentScope
 - Propagate WeCom send rejections as stream errors ([#3173](https://github.com/agentscope-ai/agentscope-java/pull/3173)).
 - Use modular core and AG-UI dependencies in Spring Boot starters ([#3156](https://github.com/agentscope-ai/agentscope-java/pull/3156)).
 - Normalize Milvus L2 retrieval scores and escape WordReader Markdown table cells ([#3070](https://github.com/agentscope-ai/agentscope-java/pull/3070), [#3169](https://github.com/agentscope-ai/agentscope-java/pull/3169)).
+- Make E2B exec timeouts deterministic: disable the idle read timeout, kill the remote process via `Connect-Timeout-Ms`, treat `timeoutSeconds = 0` as no deadline, and rethrow external cancellations instead of reporting a timeout ([#2976](https://github.com/agentscope-ai/agentscope-java/pull/2976)).
+- Stop `ExecTimeoutException` messages from echoing the command text, for both E2B and Docker sandboxes ([#2976](https://github.com/agentscope-ai/agentscope-java/pull/2976)).
 
 ### Documentation
 

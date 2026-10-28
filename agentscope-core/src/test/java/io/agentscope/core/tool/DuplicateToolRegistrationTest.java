@@ -121,9 +121,7 @@ class DuplicateToolRegistrationTest {
         McpSchema.Tool mcpTool = mock(McpSchema.Tool.class);
         when(mcpTool.name()).thenReturn(toolName);
         when(mcpTool.description()).thenReturn("mcp " + toolName);
-        when(mcpTool.inputSchema())
-                .thenReturn(
-                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(mcpTool.inputSchema()).thenReturn(Map.of("type", "object", "properties", Map.of()));
         when(wrapper.listTools()).thenReturn(Mono.just(List.of(mcpTool)));
         return wrapper;
     }

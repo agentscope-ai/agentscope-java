@@ -18,31 +18,32 @@ package io.agentscope.core.nacos.a2a.utils;
 
 import com.alibaba.nacos.api.ai.model.a2a.AgentCapabilities;
 import com.alibaba.nacos.api.ai.model.a2a.AgentCard;
+import com.alibaba.nacos.api.ai.model.a2a.AgentExtension;
 import com.alibaba.nacos.api.ai.model.a2a.AgentInterface;
 import com.alibaba.nacos.api.ai.model.a2a.AgentProvider;
 import com.alibaba.nacos.api.ai.model.a2a.AgentSkill;
-import com.alibaba.nacos.api.ai.model.a2a.SecurityScheme;
-import com.alibaba.nacos.common.utils.JacksonUtils;
-import com.fasterxml.jackson.core.type.TypeReference;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
+import java.util.function.Function;
+import org.a2aproject.sdk.spec.SecurityRequirement;
 
 /**
- * AgentCard Converter between Nacos {@link AgentCard} and A2A specification {@link io.a2a.spec.AgentCard}.
+ * AgentCard Converter between Nacos {@link AgentCard} and A2A specification {@link org.a2aproject.sdk.spec.AgentCard}.
  *
- * <p>This utility also converts sub-specifications when converting AgentCard:
+ * <p>The Nacos model follows the A2A 0.3 agent card, the A2A SDK model the A2A 1.0 one:
  * <ul>
- *     <li>Nacos {@link AgentInterface} and A2A {@link io.a2a.spec.AgentInterface}.</li>
- *     <li>Nacos {@link AgentProvider} and A2A {@link io.a2a.spec.AgentProvider}.</li>
- *     <li>Nacos {@link AgentCapabilities} and A2A {@link io.a2a.spec.AgentCapabilities}.</li>
- *     <li>Nacos {@link AgentSkill} and A2A {@link io.a2a.spec.AgentSkill}.</li>
+ *     <li>The A2A supported interfaces are the Nacos url and preferred transport, which come
+ *     first, and the Nacos additional interfaces. The Nacos protocol version is the version of
+ *     these interfaces.</li>
+ *     <li>The A2A security requirements are the Nacos security.</li>
+ *     <li>The A2A {@code capabilities.extendedAgentCard} is the Nacos
+ *     {@code supportsAuthenticatedExtendedCard}.</li>
+ *     <li>Capability extensions keep their URI, description, required flag, and parameters.</li>
+ *     <li>A2A security schemes are stored in Nacos as maps in the A2A 0.3 format, see
+ *     {@code SecuritySchemeConverterUtil}.</li>
  * </ul>
- *
- * <p>Unlike the sub-specifications listed above, {@link SecurityScheme} is handled differently.
- * All types of A2A {@link io.a2a.spec.SecurityScheme} are serialized and stored as a generic {@link Map}
- * representation, and Nacos does not retain or expose the concrete subtype of {@link io.a2a.spec.SecurityScheme}.
  */
 public class AgentCardConverterUtil {
 
@@ -52,94 +53,108 @@ public class AgentCardConverterUtil {
      * @param agentCard the Nacos AgentCard object
      * @return the converted A2A specification AgentCard object, or null if input is null
      */
-    public static io.a2a.spec.AgentCard convertToA2aAgentCard(AgentCard agentCard) {
+    public static org.a2aproject.sdk.spec.AgentCard convertToA2aAgentCard(AgentCard agentCard) {
         if (agentCard == null) {
             return null;
         }
-
-        // Build A2A specification AgentCard object using Builder pattern, setting properties one by
-        // one
-        return new io.a2a.spec.AgentCard.Builder()
-                .protocolVersion(agentCard.getProtocolVersion())
+        return org.a2aproject.sdk.spec.AgentCard.builder()
                 .name(agentCard.getName())
                 .description(agentCard.getDescription())
                 .version(agentCard.getVersion())
                 .iconUrl(agentCard.getIconUrl())
-                .capabilities(convertToA2aAgentCapabilities(agentCard.getCapabilities()))
-                .skills(convertToA2aAgentSkills(agentCard.getSkills()))
-                .url(agentCard.getUrl())
-                .preferredTransport(agentCard.getPreferredTransport())
-                .additionalInterfaces(
-                        convertToA2aAgentInterfaces(agentCard.getAdditionalInterfaces()))
+                .capabilities(
+                        convertToA2aAgentCapabilities(
+                                agentCard.getCapabilities(),
+                                agentCard.getSupportsAuthenticatedExtendedCard()))
+                .skills(
+                        mapList(
+                                agentCard.getSkills(),
+                                AgentCardConverterUtil::convertToA2aAgentSkill))
+                .supportedInterfaces(convertToA2aAgentInterfaces(agentCard))
                 .provider(convertToA2aAgentProvider(agentCard.getProvider()))
                 .documentationUrl(agentCard.getDocumentationUrl())
-                .securitySchemes(convertToA2aAgentSecuritySchemes(agentCard.getSecuritySchemes()))
-                .security(agentCard.getSecurity())
+                .securitySchemes(
+                        SecuritySchemeConverterUtil.convertToA2aSecuritySchemes(
+                                agentCard.getSecuritySchemes()))
+                .securityRequirements(convertToA2aSecurityRequirements(agentCard.getSecurity()))
                 .defaultInputModes(agentCard.getDefaultInputModes())
                 .defaultOutputModes(agentCard.getDefaultOutputModes())
-                .supportsAuthenticatedExtendedCard(agentCard.getSupportsAuthenticatedExtendedCard())
                 .build();
     }
 
-    private static Map<String, io.a2a.spec.SecurityScheme> convertToA2aAgentSecuritySchemes(
-            Map<String, SecurityScheme> securitySchemes) {
-        if (null == securitySchemes) {
-            return null;
-        }
-        String securitySchemesJson = JacksonUtils.toJson(securitySchemes);
-        return JacksonUtils.toObj(securitySchemesJson, new TypeReference<>() {});
-    }
-
-    private static io.a2a.spec.AgentProvider convertToA2aAgentProvider(AgentProvider provider) {
+    private static org.a2aproject.sdk.spec.AgentProvider convertToA2aAgentProvider(
+            AgentProvider provider) {
         if (null == provider) {
             return null;
         }
-        return new io.a2a.spec.AgentProvider(provider.getOrganization(), provider.getUrl());
+        return new org.a2aproject.sdk.spec.AgentProvider(
+                provider.getOrganization(), provider.getUrl());
     }
 
-    private static List<io.a2a.spec.AgentInterface> convertToA2aAgentInterfaces(
-            List<AgentInterface> nacosInterfaces) {
-        if (nacosInterfaces == null || nacosInterfaces.isEmpty()) {
-            return List.of();
+    private static List<org.a2aproject.sdk.spec.AgentInterface> convertToA2aAgentInterfaces(
+            AgentCard agentCard) {
+        String protocolVersion =
+                null != agentCard.getProtocolVersion()
+                        ? agentCard.getProtocolVersion()
+                        : org.a2aproject.sdk.spec.AgentInterface.CURRENT_PROTOCOL_VERSION;
+        List<org.a2aproject.sdk.spec.AgentInterface> result = new ArrayList<>();
+        if (null != agentCard.getUrl()) {
+            String transport =
+                    null != agentCard.getPreferredTransport()
+                            ? agentCard.getPreferredTransport()
+                            : "JSONRPC";
+            result.add(
+                    new org.a2aproject.sdk.spec.AgentInterface(
+                            transport, agentCard.getUrl(), null, protocolVersion));
         }
-        return nacosInterfaces.stream()
-                .filter(Objects::nonNull)
-                .map(AgentCardConverterUtil::convertToA2aAgentInterface)
-                .collect(Collectors.toList());
-    }
-
-    private static io.a2a.spec.AgentInterface convertToA2aAgentInterface(
-            AgentInterface agentInterface) {
-        return new io.a2a.spec.AgentInterface(
-                agentInterface.getTransport(), agentInterface.getUrl());
-    }
-
-    private static io.a2a.spec.AgentCapabilities convertToA2aAgentCapabilities(
-            AgentCapabilities nacosCapabilities) {
-        if (nacosCapabilities == null) {
-            return new io.a2a.spec.AgentCapabilities.Builder().build();
+        if (null != agentCard.getAdditionalInterfaces()) {
+            agentCard.getAdditionalInterfaces().stream()
+                    .filter(Objects::nonNull)
+                    .map(
+                            each ->
+                                    new org.a2aproject.sdk.spec.AgentInterface(
+                                            each.getTransport(),
+                                            each.getUrl(),
+                                            null,
+                                            protocolVersion))
+                    .filter(each -> !result.contains(each))
+                    .forEach(result::add);
         }
+        return result;
+    }
 
-        return new io.a2a.spec.AgentCapabilities.Builder()
-                .streaming(nacosCapabilities.getStreaming())
-                .pushNotifications(nacosCapabilities.getPushNotifications())
-                .stateTransitionHistory(nacosCapabilities.getStateTransitionHistory())
+    private static org.a2aproject.sdk.spec.AgentCapabilities convertToA2aAgentCapabilities(
+            AgentCapabilities nacosCapabilities, Boolean extendedAgentCard) {
+        org.a2aproject.sdk.spec.AgentCapabilities.Builder builder =
+                org.a2aproject.sdk.spec.AgentCapabilities.builder()
+                        .extendedAgentCard(Boolean.TRUE.equals(extendedAgentCard));
+        if (nacosCapabilities != null) {
+            builder.streaming(Boolean.TRUE.equals(nacosCapabilities.getStreaming()))
+                    .pushNotifications(
+                            Boolean.TRUE.equals(nacosCapabilities.getPushNotifications()));
+            if (nacosCapabilities.getExtensions() != null) {
+                builder.extensions(
+                        mapList(
+                                nacosCapabilities.getExtensions(),
+                                AgentCardConverterUtil::convertToA2aAgentExtension));
+            }
+        }
+        return builder.build();
+    }
+
+    private static org.a2aproject.sdk.spec.AgentExtension convertToA2aAgentExtension(
+            AgentExtension extension) {
+        return org.a2aproject.sdk.spec.AgentExtension.builder()
+                .uri(extension.getUri())
+                .description(extension.getDescription())
+                .required(Boolean.TRUE.equals(extension.getRequired()))
+                .params(extension.getParams())
                 .build();
     }
 
-    private static List<io.a2a.spec.AgentSkill> convertToA2aAgentSkills(
-            List<AgentSkill> nacosSkills) {
-        if (nacosSkills == null || nacosSkills.isEmpty()) {
-            return List.of();
-        }
-
-        return nacosSkills.stream()
-                .map(AgentCardConverterUtil::convertToA2aAgentSkill)
-                .collect(Collectors.toList());
-    }
-
-    private static io.a2a.spec.AgentSkill convertToA2aAgentSkill(AgentSkill nacosSkill) {
-        return new io.a2a.spec.AgentSkill.Builder()
+    private static org.a2aproject.sdk.spec.AgentSkill convertToA2aAgentSkill(
+            AgentSkill nacosSkill) {
+        return org.a2aproject.sdk.spec.AgentSkill.builder()
                 .id(nacosSkill.getId())
                 .tags(nacosSkill.getTags())
                 .examples(nacosSkill.getExamples())
@@ -150,48 +165,78 @@ public class AgentCardConverterUtil {
                 .build();
     }
 
+    private static List<SecurityRequirement> convertToA2aSecurityRequirements(
+            List<Map<String, List<String>>> security) {
+        return null == security ? null : mapList(security, SecurityRequirement::new);
+    }
+
     /**
      * Converts A2A specification AgentCard object to Nacos AgentCard object.
      *
      * @param agentCard the A2A specification AgentCard object
      * @return the converted Nacos AgentCard object
      */
-    public static AgentCard convertToNacosAgentCard(io.a2a.spec.AgentCard agentCard) {
+    public static AgentCard convertToNacosAgentCard(org.a2aproject.sdk.spec.AgentCard agentCard) {
         AgentCard card = new AgentCard();
-        card.setProtocolVersion(agentCard.protocolVersion());
+        List<org.a2aproject.sdk.spec.AgentInterface> interfaces = agentCard.supportedInterfaces();
+        if (!interfaces.isEmpty()) {
+            org.a2aproject.sdk.spec.AgentInterface preferred = interfaces.get(0);
+            card.setProtocolVersion(preferred.protocolVersion());
+            card.setUrl(preferred.url());
+            card.setPreferredTransport(preferred.protocolBinding());
+        }
+        card.setAdditionalInterfaces(
+                mapList(interfaces, AgentCardConverterUtil::convertToNacosAgentInterface));
         card.setName(agentCard.name());
         card.setDescription(agentCard.description());
         card.setVersion(agentCard.version());
         card.setIconUrl(agentCard.iconUrl());
         card.setCapabilities(convertToNacosAgentCapabilities(agentCard.capabilities()));
         card.setSkills(
-                agentCard.skills().stream()
-                        .map(AgentCardConverterUtil::convertToNacosAgentSkill)
-                        .toList());
-        card.setUrl(agentCard.url());
-        card.setPreferredTransport(agentCard.preferredTransport());
-        card.setAdditionalInterfaces(
-                convertToNacosAgentInterfaces(agentCard.additionalInterfaces()));
+                mapList(agentCard.skills(), AgentCardConverterUtil::convertToNacosAgentSkill));
         card.setProvider(convertToNacosAgentProvider(agentCard.provider()));
         card.setDocumentationUrl(agentCard.documentationUrl());
-        card.setSecuritySchemes(convertToNacosSecuritySchemes(agentCard.securitySchemes()));
-        card.setSecurity(agentCard.security());
+        card.setSecuritySchemes(
+                SecuritySchemeConverterUtil.convertToNacosSecuritySchemes(
+                        agentCard.securitySchemes()));
+        card.setSecurity(
+                null == agentCard.securityRequirements()
+                        ? null
+                        : mapList(agentCard.securityRequirements(), SecurityRequirement::schemes));
         card.setDefaultInputModes(agentCard.defaultInputModes());
         card.setDefaultOutputModes(agentCard.defaultOutputModes());
-        card.setSupportsAuthenticatedExtendedCard(agentCard.supportsAuthenticatedExtendedCard());
+        card.setSupportsAuthenticatedExtendedCard(agentCard.capabilities().extendedAgentCard());
         return card;
     }
 
     private static AgentCapabilities convertToNacosAgentCapabilities(
-            io.a2a.spec.AgentCapabilities capabilities) {
+            org.a2aproject.sdk.spec.AgentCapabilities capabilities) {
         AgentCapabilities nacosCapabilities = new AgentCapabilities();
         nacosCapabilities.setStreaming(capabilities.streaming());
         nacosCapabilities.setPushNotifications(capabilities.pushNotifications());
-        nacosCapabilities.setStateTransitionHistory(capabilities.stateTransitionHistory());
+        // Not part of A2A 1.0.
+        nacosCapabilities.setStateTransitionHistory(false);
+        if (capabilities.extensions() != null) {
+            nacosCapabilities.setExtensions(
+                    mapList(
+                            capabilities.extensions(),
+                            AgentCardConverterUtil::convertToNacosAgentExtension));
+        }
         return nacosCapabilities;
     }
 
-    private static AgentSkill convertToNacosAgentSkill(io.a2a.spec.AgentSkill agentSkill) {
+    private static AgentExtension convertToNacosAgentExtension(
+            org.a2aproject.sdk.spec.AgentExtension extension) {
+        AgentExtension nacosExtension = new AgentExtension();
+        nacosExtension.setUri(extension.uri());
+        nacosExtension.setDescription(extension.description());
+        nacosExtension.setRequired(extension.required());
+        nacosExtension.setParams(extension.params());
+        return nacosExtension;
+    }
+
+    private static AgentSkill convertToNacosAgentSkill(
+            org.a2aproject.sdk.spec.AgentSkill agentSkill) {
         AgentSkill skill = new AgentSkill();
         skill.setId(agentSkill.id());
         skill.setName(agentSkill.name());
@@ -203,26 +248,16 @@ public class AgentCardConverterUtil {
         return skill;
     }
 
-    private static List<AgentInterface> convertToNacosAgentInterfaces(
-            List<io.a2a.spec.AgentInterface> agentInterfaces) {
-        if (agentInterfaces == null) {
-            return List.of();
-        }
-        return agentInterfaces.stream()
-                .map(AgentCardConverterUtil::convertToNacosAgentInterface)
-                .collect(Collectors.toList());
-    }
-
     private static AgentInterface convertToNacosAgentInterface(
-            io.a2a.spec.AgentInterface agentInterface) {
+            org.a2aproject.sdk.spec.AgentInterface agentInterface) {
         AgentInterface nacosAgentInterface = new AgentInterface();
         nacosAgentInterface.setUrl(agentInterface.url());
-        nacosAgentInterface.setTransport(agentInterface.transport());
+        nacosAgentInterface.setTransport(agentInterface.protocolBinding());
         return nacosAgentInterface;
     }
 
     private static AgentProvider convertToNacosAgentProvider(
-            io.a2a.spec.AgentProvider agentProvider) {
+            org.a2aproject.sdk.spec.AgentProvider agentProvider) {
         if (null == agentProvider) {
             return null;
         }
@@ -232,12 +267,10 @@ public class AgentCardConverterUtil {
         return nacosAgentProvider;
     }
 
-    private static Map<String, SecurityScheme> convertToNacosSecuritySchemes(
-            Map<String, io.a2a.spec.SecurityScheme> securitySchemes) {
-        if (securitySchemes == null) {
-            return null;
+    private static <T, R> List<R> mapList(List<T> values, Function<T, R> mapper) {
+        if (values == null) {
+            return List.of();
         }
-        String originalJson = JacksonUtils.toJson(securitySchemes);
-        return JacksonUtils.toObj(originalJson, new TypeReference<>() {});
+        return values.stream().filter(Objects::nonNull).map(mapper).toList();
     }
 }

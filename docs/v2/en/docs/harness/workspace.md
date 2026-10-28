@@ -164,7 +164,7 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 | `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips memory material in `HARNESS_CONTEXT` (`MEMORY.md`) injection |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt |
 | `disableSubagents()` | the entire subagent subsystem |
-| `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
+| `disableDynamicSkills()` | per-call skill re-merge; falls back to one-shot merge at build time |
 | `disableToolsConfig()` | reading `tools.json` |
 | `disableSessionPersistence()` | Compatibility no-op; does not disable native history. See session history modes |
 
@@ -179,7 +179,7 @@ and reference data separately rather than appending all files to System.
 
 | Material | Model placement | Budget behavior |
 | --- | --- | --- |
-| AGENTS.md | System / `project_rules` | Not directly evicted; included in final budget |
+| AGENTS.md | System / `project_rules` | Not directly evicted; head-truncated at 100 KiB (UTF-8-safe) with a truncation marker |
 | Guidance and environment | System / `working_principles`, `environment` | Included in final budget |
 | MEMORY.md | USER reference / `HARNESS_CONTEXT`, kind=memory | May be truncated during preparation or omitted for final budget |
 | Knowledge entry and path index | USER reference / `HARNESS_CONTEXT`, kind=knowledge | May be omitted for final budget |
@@ -190,7 +190,12 @@ The final budget also includes System, history, state and tool schemas; unresolv
 the request. MEMORY.md is excluded when both memory tools and hooks are disabled.
 Knowledge loads the entry and index; other files are read on demand.
 
-Write ordinary Markdown in AGENTS.md. Files are not automatically refreshed within a call;
+Environment guidance labels the host workspace and JVM temporary directory as host facts; these paths do not establish a remote tool's working directory. A sandbox root is shown only when the current call's active sandbox supplies workspace metadata. Unknown roots and container IDs are not inferred from filesystem proxy IDs. Local execution identifies the host shell (`cmd.exe /c` on Windows, `sh -c` otherwise); sandbox commands use the backend's shell, installed runtimes, and temporary paths. Routed backends distinguish the primary shell backend from mounted file routes. Each `execute` call starts a fresh shell, and `working_directory` is relative to that shell's starting directory for that call. Artifact guidance exports final deliverables when delivery is configured and reports failed delivery as incomplete. Session ID and date remain runtime facts sampled at call entry.
+
+Write ordinary Markdown in AGENTS.md. An applicability note rides the first line of the
+injected body and states that project rules do not override system, developer, or direct user instructions.
+A file larger than 100 KiB is head-truncated at a UTF-8 code-point boundary and
+marked `[File truncated: AGENTS.md]`. Files are not automatically refreshed within a call;
 the next call reloads them. See [Context management](/v2/en/docs/harness/context)
 for message examples, dynamic sources and budgeting.
 
@@ -297,7 +302,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 - **How it loads**: all files are read directly from `<workspace>/`; no overlay. Per-user overrides like `<userId>/skills/` are simple directory-prefix switching.
 - **Path safety**: default `ROOTED` mode — absolute paths are only allowed under the `workspace` and `project` (shell `cwd`) roots; `..` traversal is rejected by the path policy.
-- **Best practice**: single process / local dev / unit tests / trusted env. Do **not** run untrusted code here in production — `execute` is host `sh -c`.
+- **Best practice**: single process / local dev / unit tests / trusted env. Do **not** run untrusted code here in production — `execute` runs on the host (`cmd.exe /c` on Windows, `sh -c` otherwise).
 
 ## How runtime data and memory are stored
 
@@ -386,7 +391,7 @@ There are four registration layers (low → high priority):
 3. `workspace/skills/` — workspace shared
 4. `<userId>/skills/` — per-user (overrides all above)
 
-Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each turn, `DynamicSkillMiddleware` re-merges and renders an `<available_skills>` block (name + description only) into the system prompt. The agent calls `load_skill_through_path` to pull full details when relevant. Full mechanics in [Skills](/v2/en/docs/harness/skill).
+Unique skills at a lower layer remain visible; same-name skills are shadowed by the higher layer. Each call, `HarnessSkillMiddleware` re-merges and renders an `<available_skills>` block (name + description only) as a per-call runtime material placed after the conversation. The agent calls `load_skill_through_path` to pull full details when relevant. Full mechanics in [Skills](/v2/en/docs/harness/skill).
 
 ### `subagents/`
 
@@ -478,10 +483,12 @@ knowledge/
 
 At load time:
 
-- The full `KNOWLEDGE.md` goes into `<domain_knowledge_context>`.
+- `KNOWLEDGE.md` is collected as reference material for `HARNESS_CONTEXT`, subject to the context budget.
 - Other files under the same tree (any depth) only contribute their **path listing** to the prompt; the agent reads them on demand with `read_file` / `grep_files` / `glob_files`.
 
 This "details on disk, index in the prompt" pattern keeps token budget bounded even with a large knowledge base.
+
+Knowledge guidance follows the collected material: when both the entry content and file catalog are empty, Domain Knowledge guidance is omitted. Inline content alone does not advertise a directory; file navigation is included only when a catalog was collected, even if reference material is later omitted for context budget. A failed read alone does not establish that reference files exist.
 
 ## Safety rules for writing to the workspace
 

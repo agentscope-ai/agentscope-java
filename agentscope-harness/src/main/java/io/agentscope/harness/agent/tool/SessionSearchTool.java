@@ -34,6 +34,13 @@ import java.util.function.Predicate;
 
 /** Read-only session discovery and full conversation views from the authoritative native log. */
 public class SessionSearchTool {
+    /**
+     * Hard ceiling for model-supplied result limits. The tool is excluded from
+     * {@code ToolResultEvictionConfig} on the "bounded results" rationale, so nothing
+     * downstream trims an oversized result — the clamp has to happen here (#3270).
+     */
+    private static final int MAX_RESULTS_CEILING = 100;
+
     private final SessionLogStore store;
 
     public SessionSearchTool(WorkspaceManager workspace) {
@@ -76,7 +83,7 @@ public class SessionSearchTool {
                     String agentId,
             @ToolParam(
                             name = "maxResults",
-                            description = "Maximum number of results (default: 10)",
+                            description = "Maximum number of results (default: 10, capped at 100)",
                             required = false)
                     Integer maxResults,
             @ToolParam(
@@ -157,7 +164,7 @@ public class SessionSearchTool {
             @ToolParam(name = "sessionId", description = "Session ID") String sessionId,
             @ToolParam(
                             name = "lastN",
-                            description = "Number of recent messages (default: 20)",
+                            description = "Number of recent messages (default: 20, capped at 100)",
                             required = false)
                     Integer lastN) {
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
@@ -207,6 +214,6 @@ public class SessionSearchTool {
     }
 
     private static int positiveLimit(Integer value, int fallback) {
-        return value == null || value <= 0 ? fallback : value;
+        return value == null || value <= 0 ? fallback : Math.min(value, MAX_RESULTS_CEILING);
     }
 }

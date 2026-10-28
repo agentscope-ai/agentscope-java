@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
 import io.agentscope.core.embedding.dashscope.DashScopeMultiModalEmbedding;
 import io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding;
 import io.agentscope.core.message.Msg;
@@ -464,8 +465,8 @@ class RAGInMemoryE2ETest {
             DocumentMetadata metadata =
                     new DocumentMetadata(textBlock, "test", String.valueOf(index++));
             Document doc = new Document(metadata);
-            double[] embedding = embeddingModel.embed(textBlock).block();
-            doc.setEmbedding(embedding);
+            EmbeddingResponse response = embeddingModel.embed(textBlock).block();
+            doc.setEmbedding(response.getEmbedding());
             docs.add(doc);
         }
 
@@ -475,7 +476,7 @@ class RAGInMemoryE2ETest {
 
         String queryText = "What are qubits in quantum computing?";
         TextBlock queryBlock = TextBlock.builder().text(queryText).build();
-        double[] queryEmbedding = embeddingModel.embed(queryBlock).block();
+        double[] queryEmbedding = embeddingModel.embed(queryBlock).block().getEmbedding();
 
         List<Document> results =
                 store.search(
@@ -540,9 +541,9 @@ class RAGInMemoryE2ETest {
         TextBlock block2 = TextBlock.builder().text(text2).build();
         TextBlock block3 = TextBlock.builder().text(text3).build();
 
-        double[] emb1 = embeddingModel.embed(block1).block();
-        double[] emb2 = embeddingModel.embed(block2).block();
-        double[] emb3 = embeddingModel.embed(block3).block();
+        double[] emb1 = embeddingModel.embed(block1).block().getEmbedding();
+        double[] emb2 = embeddingModel.embed(block2).block().getEmbedding();
+        double[] emb3 = embeddingModel.embed(block3).block().getEmbedding();
 
         double sim12 = cosineSimilarity(emb1, emb2);
         double sim13 = cosineSimilarity(emb1, emb3);
@@ -771,15 +772,15 @@ class RAGInMemoryE2ETest {
             DocumentMetadata metadata =
                     new DocumentMetadata(textBlock, "test", String.valueOf(index++));
             Document doc = new Document(metadata);
-            double[] embedding = embeddingModel.embed(textBlock).block();
-            doc.setEmbedding(embedding);
+            EmbeddingResponse response = embeddingModel.embed(textBlock).block();
+            doc.setEmbedding(response.getEmbedding());
             docs.add(doc);
         }
         store.add(docs).block();
 
         String queryText = "What is deep learning?";
         TextBlock queryBlock = TextBlock.builder().text(queryText).build();
-        double[] queryEmbedding = embeddingModel.embed(queryBlock).block();
+        double[] queryEmbedding = embeddingModel.embed(queryBlock).block().getEmbedding();
 
         List<Document> resultsLowThreshold =
                 store.search(

@@ -96,6 +96,8 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -378,9 +380,7 @@ class HarnessAgentTest {
         agent.call(userText("hi"), RuntimeContext.builder().sessionId("s1").build()).block();
 
         String combined = capturedPrompt(model);
-        assertTrue(
-                combined.contains("no mechanism for moving files across the boundary"),
-                () -> combined);
+        assertTrue(combined.contains("No artifact delivery tool is configured"), () -> combined);
         assertFalse(combined.contains("deliver_artifact"), () -> combined);
     }
 
@@ -501,37 +501,67 @@ class HarnessAgentTest {
                 "AGENTS.md should not be injected when context hook is disabled");
     }
 
-    @Test
-    void workspaceAgentsMd_injectedIntoMessagesSeenByModel() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void workspaceAgentsMdAndApplicabilityReachModelForCallAndStream(boolean streaming)
+            throws Exception {
         Files.createDirectories(workspace);
         String marker = "injected-via-workspace-context-99";
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), marker);
 
         Model model = stubModel("assistant-done");
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build();
+                        .build()) {
+            var context = RuntimeContext.builder().sessionId("rules-applicability").build();
+            Msg request = userText("Follow my direct instructions.");
+            if (streaming) {
+                assertNotNull(
+                        agent.streamEvents(request, context).blockLast(Duration.ofSeconds(10)));
+            } else {
+                assertNotNull(agent.call(request, context).block(Duration.ofSeconds(10)));
+            }
 
-        agent.call(userText("hi"), RuntimeContext.builder().sessionId("s1").build()).block();
-
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
-        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
-        String combined =
-                captor.getAllValues().stream()
-                        .map(HarnessAgentTest::joinAllText)
-                        .filter(s -> s.contains("<project_rules "))
-                        .findFirst()
-                        .orElse("");
-        assertTrue(
-                combined.contains("<project_rules "),
-                "expected context builder to wrap AGENTS.md in project_rules");
-        assertTrue(
-                combined.contains(marker), "model should see AGENTS.md body in injected context");
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+            verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+            // Memory extraction may call the same model after the main request.
+            List<Msg> messages =
+                    captor.getAllValues().stream()
+                            .filter(
+                                    input ->
+                                            input.stream()
+                                                    .anyMatch(
+                                                            msg ->
+                                                                    msg.getRole() == MsgRole.USER
+                                                                            && msg.getTextContent()
+                                                                                    .equals(
+                                                                                            request
+                                                                                                    .getTextContent())))
+                            .findFirst()
+                            .orElseThrow();
+            List<Msg> systems =
+                    messages.stream().filter(msg -> msg.getRole() == MsgRole.SYSTEM).toList();
+            assertEquals(1, systems.size());
+            String system = systems.get(0).getTextContent();
+            String note = "They do not override system, developer, or direct user instructions.";
+            int open = system.indexOf("<project_rules ");
+            int noteAt = system.indexOf(note, open);
+            int body = system.indexOf(marker, open);
+            int close = system.indexOf("</project_rules>", open);
+            assertTrue(open >= 0 && open < noteAt && noteAt < body && body < close, system);
+            assertTrue(
+                    messages.stream()
+                            .anyMatch(
+                                    msg ->
+                                            msg.getRole() == MsgRole.USER
+                                                    && msg.getTextContent()
+                                                            .equals(request.getTextContent())));
+        }
     }
 
     @Test
@@ -1525,6 +1555,101 @@ class HarnessAgentTest {
                 modelExec,
                 delegate.getModelExecutionConfig(),
                 "declared subagent must inherit parent modelExecutionConfig");
+    }
+
+    @Test
+    void declaredSubagent_explicitCompactionOverridesDisabledParent() throws Exception {
+        Files.createDirectories(workspace);
+        CompactionConfig subagentCompaction = CompactionConfig.builder().triggerMessages(5).build();
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("compact-worker")
+                        .description("worker with independent compaction")
+                        .inlineAgentsBody("You are a worker subagent.")
+                        .compaction(subagentCompaction)
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .disableCompaction()
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "compact-worker".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        assertSame(subagentCompaction, decl.getCompactionConfig());
+        assertNotNull(
+                child.getCompactionHook(),
+                "declaration-level compaction must override the disabled parent");
+    }
+
+    @Test
+    void declaredSubagent_withoutCompactionOverrideInheritsDisabledParent() throws Exception {
+        Files.createDirectories(workspace);
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("non-compacting-worker")
+                        .description("worker inheriting disabled compaction")
+                        .inlineAgentsBody("You are a worker subagent.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .disableCompaction()
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "non-compacting-worker".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        assertNull(decl.getCompactionConfig());
+        assertNull(
+                child.getCompactionHook(),
+                "subagent without an override must inherit disabled compaction");
+    }
+
+    @Test
+    void declaredSubagent_yamlCanDisableCompactionWithEnabledParent() throws Exception {
+        Files.createDirectories(workspace);
+        SubagentDeclaration declaration =
+                io.agentscope.harness.agent.subagent.AgentSpecLoader.parse(
+                        "---\ndescription: Non-compacting worker\ncompaction: false\n---\nWorker",
+                        "worker",
+                        workspace);
+        assertNotNull(declaration);
+        var entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .compaction(CompactionConfig.builder().triggerMessages(5).build())
+                        .subagent(declaration)
+                        .buildSubagentEntries(workspace);
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(entry -> "worker".equals(entry.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+        assertNull(child.getCompactionHook());
     }
 
     @Test
