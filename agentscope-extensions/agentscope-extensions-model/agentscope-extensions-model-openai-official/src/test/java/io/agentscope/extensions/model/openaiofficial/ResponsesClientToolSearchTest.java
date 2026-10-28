@@ -47,6 +47,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.search.ToolSearchMiddleware;
 import io.agentscope.core.tool.search.ToolSearchTool;
+import io.agentscope.extensions.model.openaiofficial.tool.ResponsesToolHelper;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,7 +69,7 @@ class ResponsesClientToolSearchTest {
     }
 
     private static ToolUseBlock decoded() {
-        return ResponsesToolSearchHelper.decode(searchCall());
+        return ResponsesToolHelper.decodeClientToolSearch(searchCall());
     }
 
     @Test
@@ -77,6 +78,9 @@ class ResponsesClientToolSearchTest {
         assertFalse(use.isServerTool());
         assertEquals("search_call", use.getId());
         assertEquals(Map.of("query", "order"), use.getInput());
+        assertEquals(
+                Map.of(ResponsesToolHelper.CLIENT_TOOL_SEARCH_CALL_METADATA, true),
+                use.getMetadata());
         ToolResultBlock result =
                 ToolResultBlock.builder()
                         .id(use.getId())
@@ -143,6 +147,11 @@ class ResponsesClientToolSearchTest {
         var history = ResponsesRequestMapper.mapHistory(messages);
         assertTrue(history.get(0).isToolSearchCall());
         assertTrue(history.get(1).isToolSearchOutput());
+        var restoredCall = history.get(0).asToolSearchCall();
+        assertEquals("search_call", restoredCall.callId().orElseThrow());
+        assertEquals("client", restoredCall.execution().orElseThrow().asString());
+        assertEquals("completed", restoredCall.status().orElseThrow().asString());
+        assertEquals(JsonValue.from(Map.of("query", "order")), restoredCall._arguments());
         var output = history.get(1).asToolSearchOutput();
         assertEquals("search_call", output.callId().orElseThrow());
         assertEquals("get_order", output.tools().get(0).asFunction().name());

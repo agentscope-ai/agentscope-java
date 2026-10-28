@@ -18,6 +18,7 @@ package io.agentscope.core.tool.search;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -182,6 +183,16 @@ class ToolSearchTest {
     }
 
     @Test
+    void clearDiscoveredToolsResetsSessionDiscoveries() {
+        ToolContextState state = ToolContextState.builder().build();
+        state.addDiscoveredTools(List.of("one", "one", "two"));
+
+        assertEquals(List.of("one", "two"), state.getDiscoveredTools());
+        state.clearDiscoveredTools();
+        assertTrue(state.getDiscoveredTools().isEmpty());
+    }
+
+    @Test
     void nativeModesKeepStableDeclarationsAndGenericFallbackIsAvailable() {
         Toolkit toolkit = new Toolkit();
         toolkit.registerSchema(schema("get_order", "orders"));
@@ -279,6 +290,40 @@ class ToolSearchTest {
                 expose(middleware, toolkit, ctx, ToolSearchMode.FUNCTION, null).stream()
                         .map(ToolSchema::getName)
                         .toList());
+    }
+
+    @Test
+    void inactiveRequestsWithoutSearchHistoryAreNotRefreshed() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerSchema(schema("get_order", "orders"));
+        var middleware = new ToolSearchMiddleware(toolkit);
+        RuntimeContext ctx = context();
+        ToolResultBlock result = ToolResultBlock.success("Found order");
+        Msg history = ToolResultMessage.builder().content(result).build();
+        List<Msg> inputMessages = List.of(history);
+        ctx.getAgentState().contextMutable().add(history);
+        ctx.setToolRequestConfig(
+                new ToolRequestConfig(
+                        Map.of("external", new SchemaOnlyTool(schema("external", "client"))),
+                        ToolMergeMode.EXTERNAL_ONLY));
+        Model model = mock(Model.class);
+        List<List<Msg>> actual = new ArrayList<>();
+        middleware
+                .onModelCall(
+                        null,
+                        ctx,
+                        new ModelCallInput(
+                                inputMessages,
+                                toolkit.getToolSchemas(List.of(), ctx.getToolRequestConfig()),
+                                null,
+                                model),
+                        input -> {
+                            actual.add(input.messages());
+                            return Flux.empty();
+                        })
+                .blockLast();
+        assertEquals(1, actual.size());
+        assertSame(inputMessages, actual.get(0));
     }
 
     @Test

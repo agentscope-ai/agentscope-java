@@ -61,6 +61,7 @@ import io.agentscope.core.tool.search.ToolSearchTool;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
 import io.agentscope.extensions.model.openaiofficial.tool.ResponsesServerToolHelper;
+import io.agentscope.extensions.model.openaiofficial.tool.ResponsesToolHelper;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -583,9 +584,9 @@ final class ResponsesRequestMapper {
         Objects.requireNonNull(
                 tb.getName(), "ToolUseBlock.name must not be null for history replay");
 
-        Object clientSearch = tb.getMetadata().get(ResponsesToolSearchHelper.CALL_METADATA);
-        if (clientSearch instanceof String json) {
-            items.add(ResponsesToolSearchHelper.restore(json));
+        if (Boolean.TRUE.equals(
+                tb.getMetadata().get(ResponsesToolHelper.CLIENT_TOOL_SEARCH_CALL_METADATA))) {
+            items.add(ResponsesToolHelper.restoreClientToolSearch(tb));
             return;
         }
         if (tb.isServerTool()) {

@@ -91,25 +91,44 @@ public final class ToolSearchMiddleware implements MiddlewareBase {
                                 new IllegalStateException(
                                         "Tool search requires call-scoped agent state"));
                     }
-                    List<Msg> messages = refreshSearchResults(input.messages(), input.tools());
-                    if (toolkit.getTool(ToolSearchTool.NAME, ctx.getToolRequestConfig()) != tool
-                            || input.tools().stream()
-                                    .noneMatch(
-                                            schema ->
-                                                    ToolSearchTool.NAME.equals(schema.getName()))) {
+                    boolean active =
+                            toolkit.getTool(ToolSearchTool.NAME, ctx.getToolRequestConfig()) == tool
+                                    && input.tools().stream()
+                                            .anyMatch(
+                                                    schema ->
+                                                            ToolSearchTool.NAME.equals(
+                                                                    schema.getName()));
+                    boolean hasHistory = hasSearchHistory(input.messages());
+                    if (!active) {
                         ctx.put(ToolSearchTool.SearchContext.class, null);
+                        if (!hasHistory) return next.apply(input);
+                        ToolSearchMode inactiveMode =
+                                nativeLoading
+                                        ? input.model().getToolSearchMode()
+                                        : ToolSearchMode.FUNCTION;
+                        SearchHistory history =
+                                refreshSearchResults(input.messages(), input.tools(), inactiveMode);
+                        if (history.messages() == input.messages()) return next.apply(input);
                         return next.apply(
                                 new ModelCallInput(
-                                        messages, input.tools(), input.options(), input.model()));
+                                        history.messages(),
+                                        input.tools(),
+                                        input.options(),
+                                        input.model()));
                     }
                     ToolSearchMode mode =
                             nativeLoading
                                     ? input.model().getToolSearchMode()
                                     : ToolSearchMode.FUNCTION;
+                    SearchHistory history =
+                            hasHistory
+                                    ? refreshSearchResults(input.messages(), input.tools(), mode)
+                                    : new SearchHistory(input.messages(), Set.of());
+                    List<Msg> messages = history.messages();
                     Set<String> visible = new HashSet<>(alwaysVisible);
                     visible.add(ToolSearchTool.NAME);
                     visible.add("generate_response");
-                    Set<String> loaded = loadedInHistory(messages, mode);
+                    Set<String> loaded = history.loadedTools();
                     for (String name : ctx.getAgentState().getToolContext().getDiscoveredTools()) {
                         // Restore visibility after history compaction or a model/protocol change.
                         if (mode == ToolSearchMode.FUNCTION || !loaded.contains(name))
@@ -156,12 +175,16 @@ public final class ToolSearchMiddleware implements MiddlewareBase {
     }
 
     /** Revalidate native history against the current catalog without changing stored messages. */
-    private static List<Msg> refreshSearchResults(List<Msg> messages, List<ToolSchema> tools) {
+    private static SearchHistory refreshSearchResults(
+            List<Msg> messages, List<ToolSchema> tools, ToolSearchMode mode) {
         Map<String, ToolSchema> eligible = new LinkedHashMap<>();
         tools.forEach(tool -> eligible.put(tool.getName(), tool));
         List<Msg> refreshed = new ArrayList<>();
+        Set<String> loaded = new HashSet<>();
+        boolean historyChanged = false;
         for (Msg message : messages) {
             List<ContentBlock> content = new ArrayList<>();
+            boolean messageChanged = false;
             for (ContentBlock block : message.getContent()) {
                 if (block instanceof ToolResultBlock result
                         && result.getMetadata().get(ToolSearchTool.METADATA_TOOLS)
@@ -184,33 +207,40 @@ public final class ToolSearchMiddleware implements MiddlewareBase {
                                         metadata,
                                         result.getState(),
                                         result.getExecutionDetails());
+                        messageChanged = true;
+                    }
+                    if (result.getState() == ToolResultState.SUCCESS
+                            && mode.name()
+                                    .equals(
+                                            result.getMetadata()
+                                                    .get(ToolSearchTool.METADATA_MODE))) {
+                        current.forEach(
+                                match -> {
+                                    if (match.get("name") instanceof String name) loaded.add(name);
+                                });
                     }
                 }
                 content.add(block);
             }
-            refreshed.add(
-                    content.equals(message.getContent()) ? message : message.withContent(content));
+            refreshed.add(messageChanged ? message.withContent(content) : message);
+            historyChanged |= messageChanged;
         }
-        return List.copyOf(refreshed);
+        return new SearchHistory(
+                historyChanged ? List.copyOf(refreshed) : messages, Set.copyOf(loaded));
     }
 
-    private static Set<String> loadedInHistory(List<Msg> messages, ToolSearchMode mode) {
-        Set<String> loaded = new HashSet<>();
+    private record SearchHistory(List<Msg> messages, Set<String> loadedTools) {}
+
+    private static boolean hasSearchHistory(List<Msg> messages) {
         for (Msg message : messages) {
-            for (ToolResultBlock result : message.getContentBlocks(ToolResultBlock.class)) {
-                if (result.getState() != ToolResultState.SUCCESS
-                        || !mode.name()
-                                .equals(result.getMetadata().get(ToolSearchTool.METADATA_MODE)))
-                    continue;
-                Object tools = result.getMetadata().get(ToolSearchTool.METADATA_TOOLS);
-                if (tools instanceof List<?> list) {
-                    for (Object tool : list) {
-                        if (tool instanceof Map<?, ?> schema
-                                && schema.get("name") instanceof String name) loaded.add(name);
-                    }
+            for (ContentBlock block : message.getContent()) {
+                if (block instanceof ToolResultBlock result
+                        && result.getMetadata().get(ToolSearchTool.METADATA_TOOLS)
+                                instanceof List) {
+                    return true;
                 }
             }
         }
-        return loaded;
+        return false;
     }
 }

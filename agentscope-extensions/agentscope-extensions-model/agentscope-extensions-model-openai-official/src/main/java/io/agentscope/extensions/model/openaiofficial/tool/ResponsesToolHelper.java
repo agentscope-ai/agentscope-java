@@ -13,8 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.extensions.model.openaiofficial;
+package io.agentscope.extensions.model.openaiofficial.tool;
 
+import com.openai.core.JsonValue;
 import com.openai.core.ObjectMappers;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
@@ -22,21 +23,23 @@ import com.openai.models.responses.ResponseToolSearchCall;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.search.ToolSearchTool;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.model.openaiofficial.OpenAIOfficialModelException;
 import java.util.Map;
 
-/** Client search calls execute locally; their native history must not become function calls. */
-final class ResponsesToolSearchHelper {
-    static final String CALL_METADATA = "openai.clientToolSearchCall";
+/** Client-executed Responses tool calls are decoded locally and replayed as native items. */
+public final class ResponsesToolHelper {
+    /** Metadata key marking a decoded client-executed tool search call. */
+    public static final String CLIENT_TOOL_SEARCH_CALL_METADATA = "openai.clientToolSearchCall";
 
-    private ResponsesToolSearchHelper() {}
+    private ResponsesToolHelper() {}
 
-    static boolean isClientSearch(ResponseOutputItem item) {
+    public static boolean isClientToolSearch(ResponseOutputItem item) {
         return item.isToolSearchCall()
                 && ResponseToolSearchCall.Execution.CLIENT.equals(
                         item.asToolSearchCall().execution());
     }
 
-    static ToolUseBlock decode(ResponseOutputItem item) {
+    public static ToolUseBlock decodeClientToolSearch(ResponseOutputItem item) {
         var call = item.asToolSearchCall();
         try {
             String arguments = ObjectMappers.jsonMapper().writeValueAsString(call._arguments());
@@ -47,10 +50,7 @@ final class ResponsesToolSearchHelper {
                     .name(ToolSearchTool.NAME)
                     .input(input)
                     .content(arguments)
-                    .metadata(
-                            Map.of(
-                                    CALL_METADATA,
-                                    ObjectMappers.jsonMapper().writeValueAsString(item)))
+                    .metadata(Map.of(CLIENT_TOOL_SEARCH_CALL_METADATA, true))
                     .build();
         } catch (Exception e) {
             throw new OpenAIOfficialModelException(
@@ -58,9 +58,19 @@ final class ResponsesToolSearchHelper {
         }
     }
 
-    static ResponseInputItem restore(String json) {
+    public static ResponseInputItem restoreClientToolSearch(ToolUseBlock toolUse) {
         try {
-            return ObjectMappers.jsonMapper().readValue(json, ResponseInputItem.class);
+            Object arguments =
+                    toolUse.getInput() != null
+                            ? toolUse.getInput()
+                            : JsonUtils.getJsonCodec().fromJson(toolUse.getContent(), Map.class);
+            return ResponseInputItem.ofToolSearchCall(
+                    ResponseInputItem.ToolSearchCall.builder()
+                            .callId(toolUse.getId())
+                            .arguments(JsonValue.from(arguments != null ? arguments : Map.of()))
+                            .execution(ResponseInputItem.ToolSearchCall.Execution.CLIENT)
+                            .status(ResponseInputItem.ToolSearchCall.Status.COMPLETED)
+                            .build());
         } catch (Exception e) {
             throw new OpenAIOfficialModelException(
                     "Cannot restore client tool search call", e, null);

@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -61,7 +62,7 @@ public final class ToolContextState {
     private final double maxCacheBytes;
     private final List<ReadCacheEntry> readFileCache = new ArrayList<>();
     private final List<String> activatedGroups;
-    private final List<String> discoveredTools = new ArrayList<>();
+    private final LinkedHashSet<String> discoveredTools = new LinkedHashSet<>();
     private final Map<String, SpawnEntry> spawnRegistry;
 
     private ToolContextState(Builder builder) {
@@ -210,9 +211,14 @@ public final class ToolContextState {
     public synchronized void addDiscoveredTools(List<String> tools) {
         if (tools != null) {
             for (String tool : tools) {
-                if (tool != null && !discoveredTools.contains(tool)) discoveredTools.add(tool);
+                if (tool != null) discoveredTools.add(tool);
             }
         }
+    }
+
+    /** Clear tools discovered in this session. */
+    public synchronized void clearDiscoveredTools() {
+        discoveredTools.clear();
     }
 
     @JsonProperty("spawn_registry")
