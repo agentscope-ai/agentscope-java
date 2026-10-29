@@ -387,3 +387,25 @@ The default native Session Log stores this as `context/build`. Decode the record
 <span id="related-pages" />
 
 See [Workspace](/v2/en/docs/harness/workspace) for material loading, [Memory](/v2/en/docs/harness/memory) for durable knowledge, and [Plan mode](/v2/en/docs/harness/plan-mode) for planning state and tools.
+
+### Oversized tool outputs
+
+The final request preparer applies a deterministic tool-result budget guard before reasoning
+or summarization when the request exceeds its input allowance. Unlike normal result eviction,
+this guard has no tool-name exclusions and still runs when result eviction is disabled.
+It progressively reduces output previews, preserving tool-call IDs, states, and metadata.
+The manifest records `tool_result_budget_reduction`; canonical history is updated only after
+final validation succeeds, so later requests reuse the bounded history.
+
+When storage is available, the complete output blocks are saved as JSON and the preview gives
+an artifact reference. If storage fails or is disabled, the preview explicitly reports that
+omitted content is unavailable. This fallback trades completeness for a bounded request; it
+is not lossless compression. Retrieve selected portions of archived output rather than loading
+the entire artifact back into context.
+
+If a provider rejects a request because its real window is smaller than the configured or
+estimated budget, overflow recovery tries a smaller tool-output view and retries once. This
+works for native session logs and legacy state stores. When history must instead be summarized,
+the current user turn and its tool exchanges are retained. Fixed prompts, user input, schemas,
+and irreducible metadata can still exceed the budget and produce an explicit error. This guard
+does not bound memory allocated inside tools or guarantee recovery from arbitrary provider errors.

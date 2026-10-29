@@ -33,9 +33,12 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.context.ContextTokenEstimator;
+import io.agentscope.harness.agent.context.ToolResultBudgetGuard;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
+import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -48,6 +51,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Middleware that performs conversation compaction before each LLM reasoning call.
@@ -136,80 +140,103 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     RuntimeContext ctx,
                     ReasoningInput input,
                     Function<ReasoningInput, Flux<AgentEvent>> next) {
-                if (!(agent instanceof ReActAgent react) || !react.sessionLogEnabled())
-                    return next.apply(input);
+                if (!(agent instanceof ReActAgent react)) return next.apply(input);
                 AgentState initialState = RuntimeContext.resolveAgentState(ctx, agent);
                 List<Msg> initialHistory =
                         initialState == null ? List.of() : List.copyOf(initialState.getContext());
                 return next.apply(input)
                         .onErrorResume(
-                                error -> {
-                                    if (ExceptionUtils.containsInterruptedException(error)
-                                            || SessionLogException.causedBy(error)
-                                            || !isContextOverflowError(error))
-                                        return Flux.error(error);
-                                    AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
-                                    if (state == null || state.getContext().isEmpty())
-                                        return Flux.error(error);
-                                    List<Msg> before = List.copyOf(state.getContext());
-                                    // The final request preparer may already have compacted state
-                                    // before the provider rejected the request. Retry from that
-                                    // latest history.
-                                    var retryMessages = new ArrayList<Msg>();
-                                    input.messages().stream()
-                                            .filter(
-                                                    message ->
-                                                            message.getRole() == MsgRole.SYSTEM
-                                                                    || (message.isRequestProjection(
-                                                                                    initialHistory)
-                                                                            && message
-                                                                                    .isRequestProjection(
-                                                                                            before)))
-                                            .forEach(retryMessages::add);
-                                    retryMessages.addAll(before);
-                                    var forced =
-                                            new CompactionMiddleware(
-                                                    workspaceManager,
-                                                    model,
-                                                    CompactionConfig.builder()
-                                                            .triggerMessages(1)
-                                                            .keepMessages(1)
-                                                            .keepTokens(0)
-                                                            .flushBeforeCompact(
-                                                                    config.isFlushBeforeCompact())
-                                                            .build());
-                                    return forced.prepareCandidate(
-                                                    agent,
-                                                    ctx,
-                                                    new ModelCallInput(
-                                                            retryMessages,
-                                                            input.tools(),
-                                                            input.options(),
-                                                            react.getModel()),
-                                                    CompactionConfig.FALLBACK_TRIGGER_TOKENS,
-                                                    before)
-                                            .flatMapMany(
-                                                    candidate -> {
-                                                        if (candidate.history().equals(before)
-                                                                || !state.getContext()
-                                                                        .equals(before))
-                                                            return Flux.error(error);
-                                                        applyToContext(state, candidate.history());
-                                                        // next creates a new model call; the turn,
-                                                        // execution and writer stay unchanged.
-                                                        return next.apply(
-                                                                new ReasoningInput(
-                                                                        candidate
-                                                                                .input()
-                                                                                .messages(),
-                                                                        candidate.input().tools(),
-                                                                        candidate
-                                                                                .input()
-                                                                                .options()));
-                                                    });
-                                });
+                                error ->
+                                        Flux.defer(
+                                                        () ->
+                                                                recoverOverflow(
+                                                                        react,
+                                                                        ctx,
+                                                                        input,
+                                                                        initialHistory,
+                                                                        next,
+                                                                        error))
+                                                .subscribeOn(Schedulers.boundedElastic()));
             }
         };
+    }
+
+    private Flux<AgentEvent> recoverOverflow(
+            ReActAgent agent,
+            RuntimeContext ctx,
+            ReasoningInput input,
+            List<Msg> initialHistory,
+            Function<ReasoningInput, Flux<AgentEvent>> next,
+            Throwable error) {
+        if (ExceptionUtils.containsInterruptedException(error)
+                || SessionLogException.causedBy(error)
+                || !isContextOverflowError(error)) return Flux.error(error);
+        AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
+        if (state == null || state.getContext().isEmpty()) return Flux.error(error);
+        List<Msg> before = List.copyOf(state.getContext());
+        // The final preparer may have compacted state before the provider rejected the request.
+        var retryMessages = new ArrayList<Msg>();
+        input.messages().stream()
+                .filter(
+                        message ->
+                                message.getRole() == MsgRole.SYSTEM
+                                        || (message.isRequestProjection(initialHistory)
+                                                && message.isRequestProjection(before)))
+                .forEach(retryMessages::add);
+        retryMessages.addAll(before);
+        var retryInput =
+                new ModelCallInput(retryMessages, input.tools(), input.options(), agent.getModel());
+        // Unknown windows and optimistic estimates require a deterministic reduction before a
+        // summary model can safely inspect the evidence. Retry only once inside this boundary.
+        var estimator = ContextTokenEstimator.approximate();
+        long retryBudget = Math.max(1, estimator.estimate(retryInput).tokens() / 2);
+        var bounded =
+                ToolResultBudgetGuard.prepare(
+                        agent,
+                        ctx,
+                        retryInput,
+                        before,
+                        workspaceManager == null || workspaceManager.getFilesystem() == null
+                                ? null
+                                : new ToolResultEvictionMiddleware(
+                                        workspaceManager.getFilesystem(),
+                                        ToolResultEvictionConfig.defaults()),
+                        request -> estimator.estimate(request).tokens() <= retryBudget);
+        if (!bounded.history().equals(before) && state.getContext().equals(before)) {
+            applyToContext(state, bounded.history());
+            return next.apply(
+                    new ReasoningInput(bounded.input().messages(), input.tools(), input.options()));
+        }
+        int currentTurnMessages = 1;
+        for (int i = before.size() - 1; i >= 0; i--) {
+            if (before.get(i).getRole() == MsgRole.USER) {
+                currentTurnMessages = before.size() - i;
+                break;
+            }
+        }
+        var forced =
+                new CompactionMiddleware(
+                        workspaceManager,
+                        model,
+                        CompactionConfig.builder()
+                                .triggerMessages(1)
+                                .keepMessages(currentTurnMessages)
+                                .keepTokens(0)
+                                .flushBeforeCompact(config.isFlushBeforeCompact())
+                                .build());
+        return forced.prepareCandidate(
+                        agent, ctx, retryInput, CompactionConfig.FALLBACK_TRIGGER_TOKENS, before)
+                .flatMapMany(
+                        candidate -> {
+                            if (candidate.history().equals(before)
+                                    || !state.getContext().equals(before)) return Flux.error(error);
+                            applyToContext(state, candidate.history());
+                            return next.apply(
+                                    new ReasoningInput(
+                                            candidate.input().messages(),
+                                            candidate.input().tools(),
+                                            candidate.input().options()));
+                        });
     }
 
     public static boolean isContextOverflowError(Throwable error) {

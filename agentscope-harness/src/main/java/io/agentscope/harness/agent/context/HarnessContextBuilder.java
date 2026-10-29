@@ -248,6 +248,25 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 current = withMaterials(current, selected, history);
             }
         }
+        var guarded =
+                ToolResultBudgetGuard.prepare(
+                        agent,
+                        rc,
+                        current,
+                        history,
+                        eviction,
+                        request ->
+                                policy.estimator()
+                                                .estimate(
+                                                        purpose == Purpose.REASONING
+                                                                ? project(request, snapshot)
+                                                                : request)
+                                                .tokens()
+                                        <= inputLimit(request));
+        if (!guarded.input().messages().equals(current.messages()))
+            transforms.add("tool_result_budget_reduction");
+        current = guarded.input();
+        if (purpose == Purpose.REASONING) history = guarded.history();
         List<Msg> canonical = history;
         List<Msg> fixed =
                 (purpose == Purpose.REASONING ? project(current, snapshot) : current)

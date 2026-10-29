@@ -24,6 +24,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
@@ -111,6 +112,31 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
     public record Candidate(ReasoningInput input, List<Msg> history) {
         public Candidate {
             history = List.copyOf(history);
+        }
+    }
+
+    /**
+     * Archive an entire tool output for the final request budget guard, including excluded tools.
+     * Returns null when storage is unavailable; callers must disclose any lossy fallback.
+     */
+    public String archiveForBudget(Agent agent, RuntimeContext rc, ToolResultBlock result) {
+        String content = JsonUtils.getJsonCodec().toJson(result.getOutput());
+        String path = buildEvictionPath(agent.getName(), result.getId(), content) + ".json";
+        try {
+            WriteResult written = filesystem.write(rc, path, content);
+            if (written.isSuccess()) return path;
+            // A deterministic archive may already exist after a failed request. Verify it before
+            // advertising the reference; never assume an arbitrary existing file is our output.
+            var existing = filesystem.read(rc, path, 0, 0);
+            if (existing.isSuccess()
+                    && existing.fileData() != null
+                    && content.equals(existing.fileData().content())) return path;
+            return null;
+        } catch (RuntimeException error) {
+            if (io.agentscope.core.util.ExceptionUtils.containsInterruptedException(error))
+                throw error;
+            log.warn("Tool result budget archive failed: {}", error.getClass().getSimpleName());
+            return null;
         }
     }
 

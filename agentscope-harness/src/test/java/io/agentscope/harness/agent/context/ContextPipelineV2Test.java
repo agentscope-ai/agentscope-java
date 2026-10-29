@@ -230,7 +230,9 @@ class ContextPipelineV2Test {
                                         "reject",
                                         Purpose.REASONING)
                                 .block());
-        verify(fs).write(any(RuntimeContext.class), anyString(), anyString());
+        // Normal eviction and the final budget guard each archive their candidate view.
+        verify(fs, org.mockito.Mockito.times(2))
+                .write(any(RuntimeContext.class), anyString(), anyString());
         assertEquals(history, state.contextMutable());
     }
 
