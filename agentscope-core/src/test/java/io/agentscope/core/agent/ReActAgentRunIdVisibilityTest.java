@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
@@ -27,6 +28,9 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.session.SessionEvent;
+import io.agentscope.core.session.SessionKey;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
@@ -40,7 +44,9 @@ import reactor.core.publisher.Mono;
 /**
  * Verifies that the per-call {@link RuntimeContext#getRunId()} is readable from middleware
  * callbacks on every invocation path (plain {@code call()} and {@code prepareCall()} handles),
- * stays stable across the callbacks of one call, and differs between concurrent calls.
+ * stays stable across the callbacks of one call, and differs between concurrent calls. It also
+ * verifies that {@code streamEvents()} adopts the caller's runId for the emitted events and the
+ * recorded session facts.
  */
 @DisplayName("ReActAgent runId visibility in middleware callbacks")
 class ReActAgentRunIdVisibilityTest {
@@ -148,6 +154,93 @@ class ReActAgentRunIdVisibilityTest {
             assertNotNull(run.stream().single().block(TIMEOUT));
             assertEquals(1, recorder.observed("sess-handle").size());
             assertEquals(run.runId(), recorder.observed("sess-handle").iterator().next());
+        }
+    }
+
+    @Test
+    @DisplayName("streamEvents(): emitted events carry the RuntimeContext runId")
+    void streamEventsAdoptsRuntimeContextRunId() {
+        try (ReActAgent agent =
+                ReActAgent.builder().name("runid-stream").model(new MockModel("done")).build()) {
+            String runId = "caller-run-id";
+            RuntimeContext ctx =
+                    RuntimeContext.builder()
+                            .userId("u")
+                            .sessionId("sess-stream")
+                            .runId(runId)
+                            .build();
+
+            List<AgentEvent> events =
+                    agent.streamEvents(List.of(new UserMessage("hello")), ctx)
+                            .collectList()
+                            .block(TIMEOUT);
+
+            assertNotNull(events);
+            assertFalse(events.isEmpty(), "streamEvents must emit events");
+            for (AgentEvent event : events) {
+                assertNotNull(event.getExecution(), "event must carry an execution identity");
+                assertEquals(runId, event.getExecution().runId());
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("call() and streamEvents() share the RuntimeContext runId")
+    void callAndStreamEventsShareRuntimeContextRunId() {
+        RunIdRecorder recorder = new RunIdRecorder();
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("runid-both")
+                        .model(new MockModel("done"))
+                        .middlewares(List.of(recorder))
+                        .build()) {
+            String runId = "shared-run-id";
+            RuntimeContext ctx =
+                    RuntimeContext.builder()
+                            .userId("u")
+                            .sessionId("sess-both")
+                            .runId(runId)
+                            .build();
+
+            assertNotNull(agent.call(List.of(new UserMessage("hello")), ctx).block(TIMEOUT));
+            List<AgentEvent> events =
+                    agent.streamEvents(List.of(new UserMessage("hello")), ctx)
+                            .collectList()
+                            .block(TIMEOUT);
+
+            assertEquals(Set.of(runId), recorder.observed("sess-both"));
+            assertNotNull(events);
+            assertFalse(events.isEmpty(), "streamEvents must emit events");
+            for (AgentEvent event : events) {
+                assertNotNull(event.getExecution(), "event must carry an execution identity");
+                assertEquals(runId, event.getExecution().runId());
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("streamEvents(): session log records the RuntimeContext runId")
+    void streamEventsRecordsSessionFactsWithRuntimeContextRunId() {
+        InMemorySessionLogStore store = new InMemorySessionLogStore();
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("runid-log")
+                        .model(new MockModel("done"))
+                        .sessionLogStore(store)
+                        .build()) {
+            String runId = "session-log-run-id";
+            RuntimeContext ctx =
+                    RuntimeContext.builder().userId("u").sessionId("sess-log").runId(runId).build();
+
+            agent.streamEvents(List.of(new UserMessage("hello")), ctx).blockLast(TIMEOUT);
+
+            List<SessionEvent> events =
+                    store.open(new SessionKey("u", "runid-log", "sess-log"), ctx)
+                            .readAfter(0, 1000);
+            assertFalse(events.isEmpty(), "session log must record events");
+            for (SessionEvent event : events) {
+                assertEquals(runId, event.executionRunId());
+            }
         }
     }
 }

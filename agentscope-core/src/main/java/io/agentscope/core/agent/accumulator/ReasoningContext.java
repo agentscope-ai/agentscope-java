@@ -25,6 +25,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.FinishReasons;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -254,20 +255,7 @@ public class ReasoningContext {
     }
 
     private boolean isTruncated() {
-        // OpenAI Chat Completions and DashScope report "length"; Anthropic and Gemini report
-        // "max_tokens" or "MAX_TOKENS".
-        return "length".equalsIgnoreCase(finishReason)
-                || "max_tokens".equalsIgnoreCase(finishReason)
-                || isOpenAiResponsesOutputLimit();
-    }
-
-    private boolean isOpenAiResponsesOutputLimit() {
-        if (!"incomplete".equalsIgnoreCase(finishReason)) {
-            return false;
-        }
-        String incompleteReason =
-                Objects.toString(responseMetadata.get("openai.response.incomplete_reason"), null);
-        return "max_output_tokens".equalsIgnoreCase(incompleteReason);
+        return FinishReasons.indicatesOutputLimit(finishReason, responseMetadata);
     }
 
     private List<ContentBlock> buildIndexedContent() {

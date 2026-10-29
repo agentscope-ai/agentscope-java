@@ -55,7 +55,13 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryResult;
+import io.agentscope.harness.agent.context.ContextPolicy;
+import io.agentscope.harness.agent.context.ContextSelectionPolicy;
+import io.agentscope.harness.agent.context.ContextSources;
+import io.agentscope.harness.agent.context.HarnessContextBuilder;
+import io.agentscope.harness.agent.context.TaskContextOptions;
 import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -97,6 +103,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
@@ -1240,6 +1247,331 @@ class HarnessAgentTest {
                 ConflictPolicy.APPEND_MERGE,
                 wrapped.getDelegate().getConflictPolicy(),
                 "a conflict policy set on the source agent must survive being wrapped");
+    }
+
+    @Test
+    void fromAgent_rebuildsHarnessPlatformToolsWithoutCollision() {
+        // A HarnessAgent-built source carries harness platform tool instances in its toolkit.
+        // fromAgent().build() must strip those and let buildInstance() re-register fresh ones:
+        // Toolkit's fail-fast duplicate-name rule rejects inherited instances otherwise
+        // (regression: "Tool name already registered" for agent_spawn / memory_search / ...).
+        // Subagent-orchestration, session-search, memory, filesystem and web tools are asserted
+        // below; shell and wait-async tools are covered by the FROM_AGENT_RESET_TOOL_NAMES
+        // constant because they need a sandbox filesystem / message bus to register.
+        try (HarnessAgent source =
+                        HarnessAgent.builder()
+                                .name("from-agent-collision")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build();
+                HarnessAgent copied =
+                        HarnessAgent.Builder.fromAgent(source.getDelegate())
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build()) {
+            Toolkit sourceToolkit = source.getToolkit();
+            Toolkit copiedToolkit = copied.getToolkit();
+            List<String> names =
+                    List.of(
+                            "agent_spawn",
+                            "agent_send",
+                            "agent_list",
+                            "memory_search",
+                            "memory_get",
+                            "memory_save",
+                            "session_search",
+                            "read_file",
+                            "write_file",
+                            "edit_file",
+                            "web_fetch",
+                            "web_search");
+            for (String name : names) {
+                AgentTool inherited = sourceToolkit.getTool(name);
+                AgentTool rebuilt = copiedToolkit.getTool(name);
+                assertNotNull(rebuilt, name + " should be re-registered on the copy");
+                assertNotSame(
+                        inherited,
+                        rebuilt,
+                        name + " must be a fresh instance, not the inherited one");
+            }
+        }
+    }
+
+    @Test
+    void fromAgent_preservesUserToolWithHarnessName() {
+        AgentTool customRead = mockAgentTool("read_file");
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(customRead);
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("custom-reader")
+                        .model(stubModel("done"))
+                        .toolkit(toolkit)
+                        .build();
+
+        try (HarnessAgent copied =
+                HarnessAgent.Builder.fromAgent(source)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableFilesystemTools()
+                        .build()) {
+            assertSame(customRead, copied.getToolkit().getTool("read_file"));
+            assertSame(customRead, source.getToolkit().getTool("read_file"));
+        }
+    }
+
+    @Test
+    void fromAgent_doesNotSilentlyReplaceUserToolWithHarnessName() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(mockAgentTool("read_file"));
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("custom-reader")
+                        .model(stubModel("done"))
+                        .toolkit(toolkit)
+                        .build();
+
+        assertThrows(
+                IllegalStateException.class,
+                () ->
+                        HarnessAgent.Builder.fromAgent(source)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build());
+    }
+
+    @Test
+    void fromAgent_preservesUserReplacementOfHarnessTool() {
+        try (HarnessAgent source =
+                HarnessAgent.builder()
+                        .name("replaced-reader")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            AgentTool replacement = mockAgentTool("read_file");
+            source.getToolkit().replaceAgentTool(replacement);
+
+            try (HarnessAgent copied =
+                    HarnessAgent.Builder.fromAgent(source.getDelegate())
+                            .workspace(workspace)
+                            .abstractFilesystem(new LocalFilesystem(workspace))
+                            .disableFilesystemTools()
+                            .build()) {
+                assertSame(replacement, copied.getToolkit().getTool("read_file"));
+                assertSame(replacement, source.getToolkit().getTool("read_file"));
+            }
+        }
+    }
+
+    @Test
+    void fromAgent_rebuildsHarnessToolInInactiveGroup() {
+        try (HarnessAgent source =
+                HarnessAgent.builder()
+                        .name("inactive-reader")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            Toolkit sourceToolkit = source.getToolkit();
+            AgentTool original = sourceToolkit.getTool("read_file");
+            sourceToolkit.createToolGroup("inactive-files", "Hidden filesystem", false);
+            sourceToolkit.addToolToGroup("inactive-files", "read_file");
+            assertTrue(
+                    sourceToolkit.getToolSchemas().stream()
+                            .noneMatch(schema -> schema.getName().equals("read_file")));
+
+            try (HarnessAgent copied =
+                    HarnessAgent.Builder.fromAgent(source.getDelegate())
+                            .workspace(workspace)
+                            .abstractFilesystem(new LocalFilesystem(workspace))
+                            .build()) {
+                assertNotNull(copied.getToolkit().getTool("read_file"));
+                assertNotSame(original, copied.getToolkit().getTool("read_file"));
+                assertSame(original, sourceToolkit.getTool("read_file"));
+            }
+        }
+    }
+
+    @Test
+    void fromAgent_rebuildsHarnessToolsWhenDeletionIsDisabled() {
+        Toolkit toolkit = new Toolkit(ToolkitConfig.builder().allowToolDeletion(false).build());
+        AgentTool custom = mockAgentTool("custom");
+        toolkit.registerAgentTool(custom);
+
+        try (HarnessAgent source =
+                        HarnessAgent.builder()
+                                .name("protected-reader")
+                                .model(stubModel("done"))
+                                .toolkit(toolkit)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build();
+                HarnessAgent copied =
+                        HarnessAgent.Builder.fromAgent(source.getDelegate())
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build()) {
+            AgentTool rebuilt = copied.getToolkit().getTool("read_file");
+            assertNotNull(rebuilt);
+            assertNotSame(source.getToolkit().getTool("read_file"), rebuilt);
+            assertSame(custom, copied.getToolkit().getTool("custom"));
+            copied.getToolkit().removeTool("read_file");
+            assertSame(rebuilt, copied.getToolkit().getTool("read_file"));
+            copied.getToolkit().removeTool("custom");
+            assertSame(custom, copied.getToolkit().getTool("custom"));
+        }
+    }
+
+    @Test
+    void fromAgent_preservesAndRebindsMetaTool() {
+        try (HarnessAgent source =
+                        HarnessAgent.builder()
+                                .name("meta-tools")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .enableMetaTool(true)
+                                .build();
+                HarnessAgent copied =
+                        HarnessAgent.Builder.fromAgent(source.getDelegate())
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build()) {
+            AgentTool original = source.getToolkit().getTool("reset_equipped_tools");
+            AgentTool rebuilt = copied.getToolkit().getTool("reset_equipped_tools");
+            assertNotNull(original);
+            assertNotNull(rebuilt);
+            assertNotSame(original, rebuilt);
+            copied.getToolkit().createToolGroup("copy-only", "Copy tools", false);
+            assertTrue(rebuilt.getParameters().toString().contains("copy-only"));
+            assertFalse(original.getParameters().toString().contains("copy-only"));
+        }
+    }
+
+    @Test
+    void fromAgent_preservesUserReplacementOfRequirementTool() {
+        try (HarnessAgent source =
+                HarnessAgent.builder()
+                        .name("custom-requirement")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .taskContext(
+                                TaskContextOptions.builder().allowRequirementProposals().build())
+                        .build()) {
+            AgentTool replacement = mockAgentTool("task_requirement_propose");
+            source.getToolkit().replaceAgentTool(replacement);
+            try (HarnessAgent copied =
+                    HarnessAgent.Builder.fromAgent(source.getDelegate())
+                            .workspace(workspace)
+                            .abstractFilesystem(new LocalFilesystem(workspace))
+                            .taskContext(TaskContextOptions.disabled())
+                            .build()) {
+                assertSame(replacement, copied.getToolkit().getTool("task_requirement_propose"));
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void fromAgent_rebuildsCoreTaskTools(boolean deletionAllowed, boolean proposalsEnabled) {
+        Toolkit toolkit =
+                new Toolkit(ToolkitConfig.builder().allowToolDeletion(deletionAllowed).build());
+        TaskContextOptions taskOptions =
+                proposalsEnabled
+                        ? TaskContextOptions.builder().allowRequirementProposals().build()
+                        : TaskContextOptions.disabled();
+        try (HarnessAgent source =
+                        HarnessAgent.builder()
+                                .name("task-tools")
+                                .model(stubModel("done"))
+                                .toolkit(toolkit)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .taskContext(taskOptions)
+                                .enableTaskList()
+                                .build();
+                HarnessAgent copied =
+                        HarnessAgent.Builder.fromAgent(source.getDelegate())
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build()) {
+            assertNotNull(copied.getToolkit().getTool("todo_write"));
+            assertNotSame(
+                    source.getToolkit().getTool("todo_write"),
+                    copied.getToolkit().getTool("todo_write"));
+            if (proposalsEnabled) {
+                assertNotNull(copied.getToolkit().getTool("task_requirement_propose"));
+                assertNotSame(
+                        source.getToolkit().getTool("task_requirement_propose"),
+                        copied.getToolkit().getTool("task_requirement_propose"));
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void fromPlainAgent_rebuildsRequirementTools(
+            boolean deletionAllowed, boolean proposalsEnabled) {
+        ReActAgent source = plainAgentWithRequirements(deletionAllowed);
+        AgentTool original = source.getToolkit().getTool("task_requirement_propose");
+        HarnessAgent.Builder builder =
+                HarnessAgent.Builder.fromAgent(source)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace));
+        if (!proposalsEnabled) {
+            builder.taskContext(TaskContextOptions.disabled());
+        }
+        try (HarnessAgent copied = builder.build()) {
+            if (proposalsEnabled) {
+                assertNotNull(copied.getToolkit().getTool("task_requirement_propose"));
+                assertNotSame(original, copied.getToolkit().getTool("task_requirement_propose"));
+            } else {
+                assertNull(copied.getToolkit().getTool("task_requirement_propose"));
+            }
+            assertSame(original, source.getToolkit().getTool("task_requirement_propose"));
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false", "true"})
+    void fromPlainAgent_preservesRequirementReplacement(boolean deletionAllowed) {
+        ReActAgent source = plainAgentWithRequirements(deletionAllowed);
+        AgentTool replacement = mockAgentTool("task_requirement_propose");
+        source.getToolkit().replaceAgentTool(replacement);
+        try (HarnessAgent copied =
+                HarnessAgent.Builder.fromAgent(source)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .taskContext(TaskContextOptions.disabled())
+                        .build()) {
+            assertSame(replacement, copied.getToolkit().getTool("task_requirement_propose"));
+            assertSame(replacement, source.getToolkit().getTool("task_requirement_propose"));
+        }
+    }
+
+    private ReActAgent plainAgentWithRequirements(boolean deletionAllowed) {
+        return ReActAgent.builder()
+                .name("plain-requirements")
+                .model(stubModel("done"))
+                .toolkit(
+                        new Toolkit(
+                                ToolkitConfig.builder().allowToolDeletion(deletionAllowed).build()))
+                .enableTaskRequirements(true)
+                .modelRequestPreparer(
+                        new HarnessContextBuilder(
+                                ContextPolicy.defaults(),
+                                null,
+                                null,
+                                ContextSources.empty()
+                                        .withTaskContext(
+                                                TaskContextOptions.builder()
+                                                        .allowRequirementProposals()
+                                                        .build()),
+                                ContextSelectionPolicy.defaults()))
+                .build();
     }
 
     @Test

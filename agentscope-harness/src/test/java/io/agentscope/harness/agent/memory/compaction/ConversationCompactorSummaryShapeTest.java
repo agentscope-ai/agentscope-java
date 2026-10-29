@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.memory.compaction;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -40,6 +41,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 /**
@@ -74,6 +77,21 @@ class ConversationCompactorSummaryShapeTest {
         assertTrue(formatted.contains("HEAD_MARKER"), "result preview must keep the head");
         assertTrue(formatted.contains("TAIL_MARKER"), "result preview must keep the tail");
         assertTrue(formatted.contains("chars pruned"), "elision must be marked");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {599, 600, 601})
+    void formatMessagesForSummaryPreservesTextPreviewBoundary(int length) {
+        String text = "H".repeat(300) + "T".repeat(length - 300);
+        String formatted =
+                ConversationCompactor.formatMessagesForSummary(
+                        List.of(toolResult("execute", text, ToolResultState.SUCCESS)));
+
+        String expected =
+                length <= 600
+                        ? text
+                        : "H".repeat(300) + "\n\n...(1 chars pruned)...\n\n" + "T".repeat(300);
+        assertEquals("Tool: [tool_result: execute] " + expected, formatted);
     }
 
     @Test
@@ -249,8 +267,8 @@ class ConversationCompactorSummaryShapeTest {
                 .compactIfNeeded(
                         rc,
                         List.of(
-                                message(MsgRole.USER, "M1"),
-                                message(MsgRole.USER, "M2"),
+                                message(MsgRole.USER, "M1" + PAD),
+                                message(MsgRole.USER, "M2" + PAD),
                                 message(MsgRole.USER, "TAIL_1"),
                                 message(MsgRole.USER, "TAIL_2")),
                         config,
@@ -259,6 +277,9 @@ class ConversationCompactorSummaryShapeTest {
                 .block()
                 .orElseThrow();
     }
+
+    /** Padding that keeps prefix fixtures above the fixed summary-wrapper cost. */
+    private static final String PAD = " earlier conversation detail".repeat(40);
 
     private static Msg message(MsgRole role, String text) {
         return Msg.builder().role(role).content(TextBlock.builder().text(text).build()).build();
