@@ -44,10 +44,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.function.Function;
 import java.util.function.ToLongFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -200,18 +202,55 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                         // next creates a new model call; the turn,
                                                         // execution and writer stay unchanged.
                                                         return next.apply(
-                                                                new ReasoningInput(
-                                                                        candidate
-                                                                                .input()
-                                                                                .messages(),
-                                                                        candidate.input().tools(),
-                                                                        candidate
-                                                                                .input()
-                                                                                .options()));
+                                                                        new ReasoningInput(
+                                                                                candidate
+                                                                                        .input()
+                                                                                        .messages(),
+                                                                                candidate
+                                                                                        .input()
+                                                                                        .tools(),
+                                                                                candidate
+                                                                                        .input()
+                                                                                        .options()))
+                                                                .onErrorResume(
+                                                                        retryError ->
+                                                                                Flux.error(
+                                                                                        associateFirstOverflow(
+                                                                                                error,
+                                                                                                retryError)));
                                                     });
                                 });
             }
         };
+    }
+
+    /**
+     * Keeps the first provider overflow associated with a failed single retry without replacing the
+     * retry's own error: as the primary cause when the cause slot is free, otherwise as a
+     * suppressed exception. Cancellations, fatal errors and interruptions are never rewritten so
+     * Reactor cancellation semantics survive.
+     */
+    private static Throwable associateFirstOverflow(Throwable first, Throwable retryError) {
+        if (retryError == first
+                || retryError.getCause() == first
+                || retryError instanceof CancellationException
+                || Exceptions.isCancel(retryError)
+                || Exceptions.isFatal(retryError)
+                || ExceptionUtils.containsInterruptedException(retryError)) return retryError;
+        for (Throwable suppressed : retryError.getSuppressed()) {
+            if (suppressed == first) return retryError;
+        }
+        if (retryError.getCause() == null) {
+            try {
+                retryError.initCause(first);
+                return retryError;
+            } catch (IllegalStateException alreadyInitialized) {
+                // Providers build errors with an explicit null cause; that slot rejects
+                // initCause(), so fall through and attach the overflow as suppressed.
+            }
+        }
+        retryError.addSuppressed(first);
+        return retryError;
     }
 
     public static boolean isContextOverflowError(Throwable error) {

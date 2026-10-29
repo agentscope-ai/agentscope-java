@@ -260,6 +260,8 @@ The catalog below helps locate the facts needed for a timeline, diagnosis or app
 
 Events cover adapter-visible requests and output, not provider internals or backups of referenced files. Keep raw requests, tool results and checkpoints in an authorized diagnostic interface; filter what you expose to a browser.
 
+The `request/prepared` payload records the model input, but media blocks (image, audio, video and data, including media nested in tool results) are replaced by a `redacted` placeholder. Binary data, URLs and file paths never enter the log, while the model still receives the real payload.
+
 The `compaction/end` payload includes `compactionId`, `status`, `beforeMsgCount`, and
 `beforeTokenCount`. When `status` is `completed`, it also includes `afterMsgCount` and
 `afterTokenCount`, calculated from the effective post-compaction conversation. Failed or cancelled
