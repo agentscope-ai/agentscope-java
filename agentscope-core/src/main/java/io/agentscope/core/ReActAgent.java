@@ -2632,6 +2632,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @param pendingIds The set of pending tool use IDs
          * @throws IllegalStateException if validation fails
          */
+        private List<ToolUseBlock> pendingToolCallsFor(Set<String> pendingIds) {
+            return MessageUtils.extractPendingToolCalls(state.contextMutable(), getName()).stream()
+                    .filter(tc -> pendingIds.contains(tc.getId()))
+                    .toList();
+        }
+
         private void validateAndAddToolResults(
                 List<Msg> msgs, List<Msg> msgsToPersist, Set<String> pendingIds) {
             if (msgs == null || msgs.isEmpty()) {
@@ -2658,15 +2664,49 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             }
 
-            // Check all provided IDs match pending IDs
+            // Stale/replayed tool results: transcript-replaying AG-UI clients resend results
+            // from earlier rounds alongside a new user message; failing the whole run here
+            // wedged the session permanently because the stale result never leaves the client
+            // transcript (#3043). Drop the stale blocks and continue; duplicate IDs and other
+            // protocol errors below still fail fast.
             Set<String> invalidIds =
                     providedIds.stream()
                             .filter(id -> !pendingIds.contains(id))
                             .collect(Collectors.toSet());
+            List<ToolResultBlock> validResults =
+                    invalidIds.isEmpty()
+                            ? results
+                            : results.stream()
+                                    .filter(r -> !invalidIds.contains(r.getId()))
+                                    .toList();
             if (!invalidIds.isEmpty()) {
-                throw new IllegalStateException(
-                        "Invalid tool result IDs: " + invalidIds + ". Expected: " + pendingIds);
+                log.warn(
+                        "Dropping stale tool result IDs {} (pending: {});"
+                                + " continuing with the remaining valid results",
+                        invalidIds,
+                        pendingIds);
             }
+
+            // Everything the client sent was stale: cancel the pending round with synthetic
+            // error results so the run can proceed instead of dying (and re-dying on every
+            // subsequent replay) — mirrors the enablePendingToolRecovery patching shape (#3043).
+            if (validResults.isEmpty()) {
+                for (ToolUseBlock pendingCall : pendingToolCallsFor(pendingIds)) {
+                    ToolResultBlock cancelled =
+                            ToolResultBlock.error(
+                                    pendingCall.getId(),
+                                    "Tool execution cancelled: the client replayed stale tool"
+                                            + " results without a valid one for this call"
+                                            + " (#3043)");
+                    state.contextMutable()
+                            .add(
+                                    ToolResultMessageBuilder.buildToolResultMsg(
+                                            cancelled, pendingCall, getName()));
+                }
+                return;
+            }
+            results = validResults;
+            providedIds.removeIf(id -> invalidIds.contains(id));
 
             // Check for non-ToolResultBlock content
             boolean hasTextContent =
