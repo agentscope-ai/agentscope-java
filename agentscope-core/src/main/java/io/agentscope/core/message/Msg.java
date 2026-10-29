@@ -212,6 +212,29 @@ public class Msg implements State {
         }
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof Msg other)) {
+            return false;
+        }
+        return Objects.equals(id, other.id)
+                && Objects.equals(name, other.name)
+                && role == other.role
+                && Objects.equals(content, other.content)
+                && ValueEquality.equal(metadata, other.metadata)
+                && Objects.equals(timestamp, other.timestamp)
+                && Objects.equals(usage, other.usage);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                id, name, role, content, ValueEquality.hash(metadata), timestamp, usage);
+    }
+
     /**
      * Creates a new message builder with a randomly generated ID.
      *
