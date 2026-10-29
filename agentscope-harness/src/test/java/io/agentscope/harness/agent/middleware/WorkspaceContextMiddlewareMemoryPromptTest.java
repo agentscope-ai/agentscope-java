@@ -93,7 +93,7 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
 
         assertNotNull(promptWithoutBase);
         assertFalse(promptWithoutBase.startsWith("null"));
-        assertTrue(promptWithoutBase.contains("## Domain Knowledge"));
+        assertFalse(promptWithoutBase.contains("## Domain Knowledge"));
         assertNotNull(promptWithBase);
         assertTrue(promptWithBase.startsWith("BASE\n"));
     }
@@ -107,7 +107,7 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         RuntimeContext rc = RuntimeContext.empty();
         String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
-        assertTrue(prompt.contains("## Domain Knowledge"));
+        assertFalse(prompt.contains("## Domain Knowledge"));
         assertTrue(prompt.contains("## Memory Recall"));
         assertTrue(prompt.contains("memory_search"));
         assertTrue(prompt.contains("## Memory Persistence"));
@@ -144,7 +144,7 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         RuntimeContext rc = RuntimeContext.empty();
         String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
-        assertTrue(prompt.contains("## Domain Knowledge"));
+        assertFalse(prompt.contains("## Domain Knowledge"));
         assertFalse(prompt.contains("## Memory Recall"));
         assertFalse(prompt.contains("memory_search"));
         assertFalse(prompt.contains("memory_get"));
@@ -184,7 +184,7 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         RuntimeContext rc = RuntimeContext.empty();
         String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
         assertNotNull(prompt);
-        assertTrue(prompt.contains("## Domain Knowledge"));
+        assertFalse(prompt.contains("## Domain Knowledge"));
         assertFalse(prompt.contains("## Memory Recall"));
         assertFalse(prompt.contains("## Memory Persistence"));
         assertFalse(prompt.contains("memory_search"));
@@ -192,7 +192,7 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         assertFalse(prompt.contains("automatically extracted"));
         assertFalse(prompt.contains("<memory_context>"));
         assertFalse(prompt.contains("should not appear in prompt"));
-        assertTrue(prompt.contains("<working_principles "));
+        assertFalse(prompt.contains("<working_principles "));
         assertFalse(prompt.contains("<domain_knowledge_context>"));
     }
 }

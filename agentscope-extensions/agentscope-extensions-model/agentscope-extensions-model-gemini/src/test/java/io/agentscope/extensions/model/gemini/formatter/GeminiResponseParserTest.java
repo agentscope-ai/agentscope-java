@@ -20,12 +20,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.Candidate;
 import com.google.genai.types.CodeExecutionResult;
 import com.google.genai.types.Content;
 import com.google.genai.types.ExecutableCode;
+import com.google.genai.types.FinishReason;
 import com.google.genai.types.FunctionCall;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.GenerateContentResponseUsageMetadata;
@@ -88,6 +90,36 @@ class GeminiResponseParserTest {
         ContentBlock block = chatResponse.getContent().get(0);
         assertInstanceOf(TextBlock.class, block);
         assertEquals("Hello, how can I help you?", ((TextBlock) block).getText());
+    }
+
+    @Test
+    void testParseFinishReasonUsesTheFinishReasonCode() {
+        Part textPart = Part.builder().text("Cut off").build();
+        Content content = Content.builder().role("model").parts(List.of(textPart)).build();
+        Candidate candidate =
+                Candidate.builder()
+                        .content(content)
+                        .finishReason(FinishReason.Known.MAX_TOKENS)
+                        .finishMessage("The maximum number of tokens was reached.")
+                        .build();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().candidates(List.of(candidate)).build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertEquals("MAX_TOKENS", chatResponse.getFinishReason());
+    }
+
+    @Test
+    void testParseFinishReasonIsNullWhenTheCandidateHasNone() {
+        Part textPart = Part.builder().text("Hello").build();
+        Content content = Content.builder().role("model").parts(List.of(textPart)).build();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .candidates(List.of(Candidate.builder().content(content).build()))
+                        .build();
+
+        assertNull(parser.parseResponse(response, startTime).getFinishReason());
     }
 
     @Test

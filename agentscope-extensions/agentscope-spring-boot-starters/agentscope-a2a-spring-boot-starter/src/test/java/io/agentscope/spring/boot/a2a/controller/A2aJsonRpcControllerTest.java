@@ -16,6 +16,7 @@
 package io.agentscope.spring.boot.a2a.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -23,14 +24,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.A2A;
-import io.a2a.spec.Message;
-import io.a2a.spec.SendStreamingMessageResponse;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,8 +37,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for {@link A2aJsonRpcController}.
@@ -84,7 +85,7 @@ class A2aJsonRpcControllerTest {
 
             Object result = controller.handleRequest(requestBody, headers);
 
-            assertEquals(responseBody, result);
+            assertEquals(responseBody, jsonBody(result));
 
             // Verify interactions
             verify(agentScopeA2aServer)
@@ -102,27 +103,24 @@ class A2aJsonRpcControllerTest {
         }
 
         @Test
-        @DisplayName("Should handle JSON-RPC request and return Flux with JSONRPCResponse")
-        void shouldHandleJsonRpcRequestAndReturnFluxWithJsonRpcResponse() {
+        @DisplayName("Should send each streamed JSON-RPC response as an SSE event")
+        void shouldSendEachStreamedResponseAsSseEvent() {
             String requestBody = "{\"method\": \"test\"}";
-
-            Message message = A2A.toAgentMessage("test");
-            SendStreamingMessageResponse response = new SendStreamingMessageResponse(1, message);
+            String first = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"kind\":\"task\"}}";
+            String second = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"kind\":\"message\"}}";
 
             when(jsonRpcTransportWrapper.handleRequest(anyString(), anyMap(), anyMap()))
-                    .thenReturn(Flux.just(response));
+                    .thenReturn(Flux.just(first, second));
 
             Object result = controller.handleRequest(requestBody, headers);
 
             assertTrue(result instanceof Flux);
-
             @SuppressWarnings("unchecked")
-            Flux<Object> fluxResult = (Flux<Object>) result;
-
-            // Collect and verify the flux result
-            Mono<Long> countMono = fluxResult.count();
-            Long count = countMono.block();
-            assertEquals(1L, count);
+            List<ServerSentEvent<String>> events =
+                    ((Flux<ServerSentEvent<String>>) result).collectList().block();
+            assertEquals(
+                    List.of(first, second), events.stream().map(ServerSentEvent::data).toList());
+            assertTrue(events.stream().allMatch(event -> "jsonrpc".equals(event.event())));
 
             // Verify interactions
             verify(agentScopeA2aServer)
@@ -146,7 +144,7 @@ class A2aJsonRpcControllerTest {
 
             Object result = controller.handleRequest(requestBody, header);
 
-            assertEquals(responseBody, result);
+            assertEquals(responseBody, jsonBody(result));
 
             // Verify interactions
             ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
@@ -222,11 +220,11 @@ class A2aJsonRpcControllerTest {
 
             // First call should initialize the handler
             Object result1 = controller.handleRequest(requestBody, headers);
-            assertEquals(responseBody, result1);
+            assertEquals(responseBody, jsonBody(result1));
 
             // Second call should reuse the same handler
             Object result2 = controller.handleRequest(requestBody, headers);
-            assertEquals(responseBody, result2);
+            assertEquals(responseBody, jsonBody(result2));
 
             // Should only fetch the transport wrapper once
             verify(agentScopeA2aServer)
@@ -234,5 +232,12 @@ class A2aJsonRpcControllerTest {
                             eq(TransportProtocol.JSONRPC.asString()),
                             eq(JsonRpcTransportWrapper.class));
         }
+    }
+
+    /** Returns the body of a non-streaming response, which must be sent as JSON. */
+    private static Object jsonBody(Object result) {
+        ResponseEntity<?> response = assertInstanceOf(ResponseEntity.class, result);
+        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
+        return response.getBody();
     }
 }

@@ -32,7 +32,9 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.search.ToolSearchTool;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -397,12 +399,29 @@ public class AnthropicMessageConverter {
                             TextBlockParam.builder().text(outputStr).build()));
         }
 
+        if ("DEFERRED".equals(toolResult.getMetadata().get(ToolSearchTool.METADATA_MODE))
+                && toolResult.getState() != ToolResultState.ERROR) {
+            Object matches = toolResult.getMetadata().get(ToolSearchTool.METADATA_TOOLS);
+            if (matches instanceof List<?> list) {
+                for (Object match : list) {
+                    if (match instanceof Map<?, ?> schema
+                            && schema.get("name") instanceof String name) {
+                        blocks.add(ToolResultBlockParam.Content.Block.ofToolReference(name));
+                    }
+                }
+            }
+        }
+
         // Create tool result block
-        ToolResultBlockParam toolResultParam =
+        var resultBuilder =
                 ToolResultBlockParam.builder()
                         .toolUseId(toolResult.getId())
-                        .content(ToolResultBlockParam.Content.ofBlocks(blocks))
-                        .build();
+                        .content(ToolResultBlockParam.Content.ofBlocks(blocks));
+        switch (toolResult.getState()) {
+            case ERROR, DENIED, INTERRUPTED -> resultBuilder.isError(true);
+            default -> {}
+        }
+        ToolResultBlockParam toolResultParam = resultBuilder.build();
 
         // Wrap in user message
         return MessageParam.builder()

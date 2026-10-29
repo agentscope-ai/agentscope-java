@@ -51,6 +51,10 @@ import org.slf4j.LoggerFactory;
  * }
  * }</pre>
  *
+ * <p>The top-level {@code query} field is a bare string on Dify Cloud
+ * ({@code "query": "..."}) and an object on self-hosted Dify; see
+ * {@link io.agentscope.core.rag.integration.dify.model.DifyQueryDeserializer}.
+ *
  * <p>Example usage:
  * <pre>{@code
  * DifyResponse response = difyClient.retrieve(...).block();

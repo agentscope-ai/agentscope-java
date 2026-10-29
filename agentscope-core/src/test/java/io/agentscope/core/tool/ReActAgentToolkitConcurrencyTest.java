@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ToolProgressEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -319,16 +321,20 @@ class ReActAgentToolkitConcurrencyTest {
         RuntimeContext rcA = RuntimeContext.builder().userId("uA").sessionId("sA").build();
         RuntimeContext rcB = RuntimeContext.builder().userId("uB").sessionId("sB").build();
 
-        Flux<AgentEvent> streamA = agent.streamEvents(List.of(userMsg("prompt-A")), rcA);
-        Flux<AgentEvent> streamB = agent.streamEvents(List.of(userMsg("prompt-B")), rcB);
+        List<AgentEvent> eventsA = new ArrayList<>();
+        List<AgentEvent> eventsB = new ArrayList<>();
+        Flux<AgentEvent> streamA =
+                agent.streamEvents(List.of(userMsg("prompt-A")), rcA).doOnNext(eventsA::add);
+        Flux<AgentEvent> streamB =
+                agent.streamEvents(List.of(userMsg("prompt-B")), rcB).doOnNext(eventsB::add);
 
         Mono<List<String>> deltasA =
-                streamA.ofType(ToolResultTextDeltaEvent.class)
-                        .map(ToolResultTextDeltaEvent::getDelta)
+                streamA.ofType(ToolProgressEvent.class)
+                        .map(ToolProgressEvent::getText)
                         .collectList();
         Mono<List<String>> deltasB =
-                streamB.ofType(ToolResultTextDeltaEvent.class)
-                        .map(ToolResultTextDeltaEvent::getDelta)
+                streamB.ofType(ToolProgressEvent.class)
+                        .map(ToolProgressEvent::getText)
                         .collectList();
 
         var tuple = Mono.zip(deltasA, deltasB).block(TIMEOUT);
@@ -344,6 +350,23 @@ class ReActAgentToolkitConcurrencyTest {
         assertTrue(
                 b.stream().allMatch(s -> s.contains("B")),
                 "session B chunks must all belong to B, got: " + b);
+        for (var entry : Map.of("A", eventsA, "B", eventsB).entrySet()) {
+            var deltas =
+                    entry.getValue().stream()
+                            .filter(ToolResultTextDeltaEvent.class::isInstance)
+                            .map(ToolResultTextDeltaEvent.class::cast)
+                            .toList();
+            var ends =
+                    entry.getValue().stream()
+                            .filter(ToolResultEndEvent.class::isInstance)
+                            .map(ToolResultEndEvent.class::cast)
+                            .toList();
+            assertEquals(1, deltas.size());
+            assertEquals("done-" + entry.getKey(), deltas.get(0).getDelta());
+            assertEquals(1, ends.size());
+            assertEquals("stream-" + entry.getKey(), ends.get(0).getToolCallId());
+            assertEquals(deltas.get(0).getReplyId(), ends.get(0).getReplyId());
+        }
     }
 
     // ==================== Helpers ====================

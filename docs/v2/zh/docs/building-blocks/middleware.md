@@ -316,6 +316,8 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 
 需要替换流入下一层的字段时，构造一个新的 input record 后再调用 `next.apply(...)`。
 
+`onModelCall` 中的修改只影响该次模型请求，不会自动改写已保存的对话历史。对于旧版 `PostActingEvent`，`setToolResult(...)` 会更新下一轮推理读取的工具消息；显式替换的 `Msg` 优先，原始工具调用标识保持一致。`returnDirect` 仍按原有方式直接返回；替换结果不会改写已经发出的流式 delta。
+
 完整可运行示例：`agentscope-examples/documentation/.../middleware/CustomizedMiddlewareExample.java`、`middleware/ModelCallMiddlewareExample.java`、`middleware/SystemPromptMiddlewareExample.java`。
 
 ### 状态就绪通知
@@ -440,6 +442,10 @@ onAgent
         │     └── onModelCall
         └── onActing（本轮每个工具调用一次）
 ```
+
+### 何时用 `onActing`,何时用工具调用拦截器?
+
+需要操纵事件流、门控整批工具调用、处理回合级输出 → `onActing`。需要对单次调用的最终参数做校验/改写/拒绝,且要求在不经过 agent 循环的路径(`Toolkit#callTool` 直连、子代理 Toolkit)同样生效 → [工具调用拦截器](/v2/zh/docs/building-blocks/tool#工具调用拦截器)。两者可同时使用。
 
 ### 扩展点参与声明（`activePoints()`）
 
