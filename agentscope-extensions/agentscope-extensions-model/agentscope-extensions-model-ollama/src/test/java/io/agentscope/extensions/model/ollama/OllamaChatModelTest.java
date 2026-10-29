@@ -41,6 +41,8 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.LoggingHttpTransport;
+import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.core.util.JacksonJsonCodec;
 import io.agentscope.core.util.JsonUtils;
@@ -1144,6 +1146,28 @@ class OllamaChatModelTest {
 
         assertNotNull(model);
         assertEquals("llama3", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should decorate the proxy-only transport with sanitized request logging")
+    void testProxyTransportIsDecoratedWithLogging() {
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+        OllamaChatModel.Builder builder =
+                OllamaChatModel.builder()
+                        .modelName("llama3")
+                        .baseUrl("http://localhost:11434")
+                        .proxy(proxy);
+
+        HttpTransport transport = builder.resolveTransport();
+
+        assertTrue(
+                transport instanceof LoggingHttpTransport,
+                "Expected LoggingHttpTransport but got " + transport.getClass().getName());
+        HttpTransport delegate = ((LoggingHttpTransport) transport).getDelegate();
+        assertTrue(
+                delegate instanceof OkHttpTransport,
+                "Expected OkHttpTransport but got " + delegate.getClass().getName());
+        assertEquals(proxy, ((OkHttpTransport) delegate).getConfig().getProxyConfig());
     }
 
     @Test
