@@ -232,16 +232,25 @@ class HarnessSkillMiddlewareContextIsolationTest {
             } else {
                 call.block(Duration.ofSeconds(10));
             }
-            RuntimeContext streamContext = RuntimeContext.builder(source).runId(null).build();
+            RuntimeContext streamContext =
+                    mode == SessionHistoryMode.EVENT_LOG
+                            ? RuntimeContext.builder(source).runId(null).build()
+                            : source;
             var events = agent.streamEvents(new UserMessage("continue"), streamContext);
-            events.collectList().block(Duration.ofSeconds(10));
+            List<AgentEvent> firstStreamEvents = events.collectList().block(Duration.ofSeconds(10));
             if (mode == SessionHistoryMode.EVENT_LOG) {
                 RuntimeContext nextStreamContext =
                         RuntimeContext.builder(source).runId(null).build();
                 assertNotEquals(streamContext.getRunId(), nextStreamContext.getRunId());
-                agent.streamEvents(new UserMessage("continue"), nextStreamContext)
-                        .collectList()
-                        .block(Duration.ofSeconds(10));
+                List<AgentEvent> nextStreamEvents =
+                        agent.streamEvents(new UserMessage("continue"), nextStreamContext)
+                                .collectList()
+                                .block(Duration.ofSeconds(10));
+                assertNotNull(firstStreamEvents);
+                assertNotNull(nextStreamEvents);
+                assertNotEquals(
+                        firstStreamEvents.get(0).getExecution().runId(),
+                        nextStreamEvents.get(0).getExecution().runId());
             } else {
                 events.collectList().block(Duration.ofSeconds(10));
             }
