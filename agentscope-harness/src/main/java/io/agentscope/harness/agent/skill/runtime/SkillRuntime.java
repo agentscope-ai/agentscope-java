@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.skill.runtime;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -29,8 +30,11 @@ import io.agentscope.harness.agent.context.ContextItem;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
+import reactor.util.context.ContextView;
 
 /**
  * Aggregates the singleton {@link SkillLoadTool} and the {@link SkillPromptBuilder}. {@link
@@ -54,6 +58,73 @@ public final class SkillRuntime {
 
     private static final class LoadedSkillBodies {
         private final AtomicReference<List<ContextItem>> items = new AtomicReference<>(List.of());
+    }
+
+    /** Initializes a fresh execution, consuming only this delegate's overflow retry seed. */
+    public static void initializeLoadedBodies(
+            Agent agent, RuntimeContext context, ContextView subscriberContext) {
+        OverflowRetryScope scope = subscriberContext.getOrDefault(OverflowRetryScope.class, null);
+        if (scope != null && scope.owner == agent) {
+            scope.initialize(context);
+        } else {
+            resetLoadedBodies(context);
+        }
+    }
+
+    /** Internal Harness bridge across its existing LEGACY overflow retry, per subscription. */
+    public static <T> Mono<T> withOverflowRetryScope(
+            Agent agent, Function<OverflowRetryScope, Mono<T>> execution) {
+        return Mono.defer(
+                () -> {
+                    OverflowRetryScope scope = new OverflowRetryScope(agent);
+                    return execution
+                            .apply(scope)
+                            .doFinally(ignored -> scope.clear())
+                            .contextWrite(context -> context.put(OverflowRetryScope.class, scope));
+                });
+    }
+
+    /**
+     * Internal cross-package Harness bridge, not an application extension point or session state.
+     * Only connects a failed execution to its single outer retry; terminal completion, failure or
+     * cancellation clears all captured references. Obtain it only through {@link
+     * #withOverflowRetryScope(Agent, Function)}.
+     */
+    public static final class OverflowRetryScope {
+        private final Agent owner;
+        private RuntimeContext actualContext;
+        private LoadedSkillBodies holder;
+        private List<ContextItem> seed;
+        private boolean closed;
+
+        private OverflowRetryScope(Agent owner) {
+            this.owner = owner;
+        }
+
+        private synchronized void initialize(RuntimeContext context) {
+            LoadedSkillBodies fresh = new LoadedSkillBodies();
+            if (!closed && seed != null) fresh.items.set(seed);
+            seed = null;
+            context.put(LoadedSkillBodies.class, fresh);
+            if (!closed) {
+                actualContext = context;
+                holder = fresh;
+            }
+        }
+
+        /** Freezes the captured holder before asynchronous compaction starts. */
+        public synchronized RuntimeContext captureForRetry(RuntimeContext fallback) {
+            if (closed) return fallback;
+            seed = holder == null ? List.of() : holder.items.get();
+            return actualContext == null ? fallback : actualContext;
+        }
+
+        private synchronized void clear() {
+            closed = true;
+            actualContext = null;
+            holder = null;
+            seed = null;
+        }
     }
 
     /**
@@ -102,6 +173,24 @@ public final class SkillRuntime {
                 + " authorization. Use within the user's task and existing execution"
                 + " policies.\n\n"
                 + markdown;
+    }
+
+    /** Only an unchanged successful loader result establishes complete historical coverage. */
+    public static boolean hasCompleteLoadedBody(List<Msg> messages, ContextItem body) {
+        for (Msg message : messages) {
+            if (message.getRole() != MsgRole.TOOL) continue;
+            for (ContentBlock block : message.getContent()) {
+                if (block instanceof ToolResultBlock result
+                        && SkillLoadTool.TOOL_NAME.equals(result.getName())
+                        && result.getState() == ToolResultState.SUCCESS
+                        && !result.isSuspended()
+                        && !result.isServerTool()
+                        && result.getOutput().size() == 1
+                        && result.getOutput().get(0) instanceof TextBlock text
+                        && body.content().equals(loadedBodyContent(text.getText()))) return true;
+            }
+        }
+        return false;
     }
 
     /**

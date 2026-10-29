@@ -75,11 +75,11 @@ class LazyFileSystemSkillLoadingTest {
                             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                         int round = rounds.getAndIncrement();
                         if (round == 1) {
-                            assertTrue(
+                            assertFalse(
                                     toolText(messages)
                                             .contains("harness:loaded_skill:alpha_audit:SKILL.md"));
-                            assertFalse(toolText(messages).contains("Read references/guide.md"));
-                            assertTrue(
+                            assertTrue(toolText(messages).contains("Read references/guide.md"));
+                            assertFalse(
                                     messages.stream()
                                             .filter(message -> message.getRole() == MsgRole.USER)
                                             .anyMatch(

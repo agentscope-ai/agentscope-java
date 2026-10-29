@@ -52,6 +52,14 @@ import reactor.core.scheduler.Schedulers;
 public final class HarnessContextBuilder implements ModelRequestPreparer {
     private static final String ORIGINAL_SYSTEM_INPUTS =
             "agentscope.context.original_system_inputs";
+    private static final Set<String> PROJECTION_MESSAGE_IDS =
+            Set.of(
+                    "harness:system",
+                    "harness:harness_instructions",
+                    "harness:runtime_materials",
+                    "harness:workspace_materials",
+                    "harness:todo_state",
+                    "harness:plan_state");
     private static final Logger log = LoggerFactory.getLogger(HarnessContextBuilder.class);
     private final ContextPolicy policy;
     private final CompactionMiddleware compaction;
@@ -178,10 +186,14 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 .flatMap(
                         collected -> {
                             var selected = new ArrayList<>(workspace);
-                            selected.addAll(loadedSkills);
                             selected.addAll(collected.items());
                             Set<String> sourceIds = new HashSet<>();
                             for (ContextItem item : selected) {
+                                if (!sourceIds.add(item.sourceId()))
+                                    throw new IllegalArgumentException(
+                                            "Duplicate context source: " + item.sourceId());
+                            }
+                            for (ContextItem item : loadedSkills) {
                                 if (!sourceIds.add(item.sourceId()))
                                     throw new IllegalArgumentException(
                                             "Duplicate context source: " + item.sourceId());
@@ -246,8 +258,8 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                     throw new IllegalArgumentException("Invalid context omission candidate: " + id);
             }
             for (String id : order) {
-                if (policy.estimator().estimate(project(current, snapshot, loadedSkills)).tokens()
-                        <= limit) break;
+                if (policy.estimator().estimate(project(current, snapshot)).tokens() <= limit)
+                    break;
                 selected.remove(byId.get(id));
                 transforms.add("omitted_for_budget:" + id);
                 current = withMaterials(current, selected, history);
@@ -255,7 +267,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         }
         List<Msg> canonical = history;
         List<Msg> fixed =
-                (purpose == Purpose.REASONING ? project(current, snapshot, loadedSkills) : current)
+                (purpose == Purpose.REASONING ? project(current, snapshot) : current)
                         .messages().stream()
                                 .filter(
                                         msg ->
@@ -279,7 +291,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                     ModelCallInput prepared =
                             layout(
                                     purpose == Purpose.REASONING
-                                            ? project(result, snapshot, loadedSkills)
+                                            ? project(result, snapshot)
                                             : result,
                                     candidate.history());
                     var estimate = policy.estimator().estimate(prepared);
@@ -296,6 +308,35 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                         validationError =
                                 new ContextBudgetExceededException(estimate.tokens(), finalLimit);
                         validation = "budget_exceeded";
+                    }
+                    // Recovery uses only the space left by the normal pipeline. Keep the
+                    // accepted request itself so rendering and final accounting cannot diverge.
+                    if (validationError == null && purpose == Purpose.REASONING) {
+                        for (ContextItem body : loadedSkills) {
+                            if (SkillRuntime.hasCompleteLoadedBody(prepared.messages(), body))
+                                continue;
+                            List<ContextItem> trialItems = new ArrayList<>(selected);
+                            trialItems.add(body);
+                            ModelCallInput trial =
+                                    withMaterials(prepared, trialItems, candidate.history());
+                            var trialEstimate = policy.estimator().estimate(trial);
+                            if (trialEstimate.tokens() <= finalLimit) {
+                                selected.add(body);
+                                prepared = trial;
+                                estimate = trialEstimate;
+                            } else {
+                                transforms.add(
+                                        "skill_recovery_skipped_for_budget:" + body.sourceId());
+                            }
+                        }
+                    }
+                    if (validationError == null) {
+                        try {
+                            validateToolPairs(prepared.messages());
+                        } catch (IllegalArgumentException error) {
+                            validationError = error;
+                            validation = "invalid_tool_pairs";
+                        }
                     }
                     List<ContextManifest.Item> items = new ArrayList<>();
                     for (Msg msg : prepared.messages()) {
@@ -389,6 +430,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
 
     private static ModelCallInput withMaterials(
             ModelCallInput input, List<ContextItem> items, List<Msg> canonical) {
+        validateProjectionIds(input.messages(), canonical);
         List<Msg> expanded = new ArrayList<>();
         for (Msg msg : input.messages()) {
             if (synthetic(msg)
@@ -460,8 +502,26 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         return layout(copy(input, List.copyOf(messages)), canonical);
     }
 
+    private static void validateProjectionIds(List<Msg> messages, List<Msg> canonical) {
+        for (Msg message : canonical) {
+            String id = message.getId();
+            if (id != null && PROJECTION_MESSAGE_IDS.contains(id))
+                throw new IllegalArgumentException(
+                        "Canonical message uses reserved projection ID: " + id);
+        }
+        for (Msg message : messages) {
+            String id = message.getId();
+            if (id != null
+                    && PROJECTION_MESSAGE_IDS.contains(id)
+                    && !message.isRequestProjection(canonical))
+                throw new IllegalArgumentException(
+                        "Input message uses reserved projection ID: " + id);
+        }
+    }
+
     /** Stable layout independent of compaction: System, conversation, state, reference material. */
     private static ModelCallInput layout(ModelCallInput input, List<Msg> canonical) {
+        validateProjectionIds(input.messages(), canonical);
         List<Msg> ordered = new ArrayList<>();
         List<Msg> systems =
                 input.messages().stream().filter(msg -> msg.getRole() == MsgRole.SYSTEM).toList();
@@ -515,14 +575,11 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         return copy(input, List.copyOf(ordered));
     }
 
-    private ModelCallInput project(
-            ModelCallInput input, ProjectionSnapshot state, List<ContextItem> loadedSkills) {
-        ModelCallInput projected =
-                copy(input, SkillRuntime.projectLoadedBodyReceipts(input.messages(), loadedSkills));
-        if (state == null) return projected;
+    private ModelCallInput project(ModelCallInput input, ProjectionSnapshot state) {
+        if (state == null) return input;
         List<Msg> messages =
                 TaskContextProjection.project(
-                        projected.messages(),
+                        input.messages(),
                         state.tasks(),
                         sources.taskContext().requirements(),
                         sources.taskContext().verificationResults());

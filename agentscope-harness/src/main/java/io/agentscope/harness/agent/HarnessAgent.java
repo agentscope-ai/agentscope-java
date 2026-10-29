@@ -119,6 +119,7 @@ import io.agentscope.harness.agent.skill.curator.SkillPromotionGate;
 import io.agentscope.harness.agent.skill.curator.SkillUsageStore;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
+import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -1025,13 +1026,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             }
                         });
         if (compactionHook != null && !delegate.sessionLogEnabled()) {
-            return base.onErrorResume(
-                    e -> {
-                        if (CompactionMiddleware.isContextOverflowError(e)) {
-                            return recoverFromOverflow(msgs, effective);
-                        }
-                        return Mono.error(e);
-                    });
+            return SkillRuntime.withOverflowRetryScope(
+                    delegate,
+                    scope ->
+                            base.onErrorResume(
+                                    e -> {
+                                        if (CompactionMiddleware.isContextOverflowError(e)) {
+                                            return recoverFromOverflow(
+                                                    msgs, scope.captureForRetry(effective));
+                                        }
+                                        return Mono.error(e);
+                                    }));
         }
         return base;
     }
@@ -1180,7 +1185,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                                                         .addAll(compacted);
                                                             }))
                                     .subscribeOn(Schedulers.boundedElastic())
-                                    .then(Mono.defer(() -> delegate.call(retryInput, ctx)));
+                                    .then(
+                                            Mono.defer(
+                                                    () ->
+                                                            delegate.call(
+                                                                    retryInput,
+                                                                    RuntimeContext.builder(ctx)
+                                                                            .build())));
                         });
     }
 

@@ -40,12 +40,14 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.session.SessionHistoryMode;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
@@ -55,7 +57,6 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.context.ContextBudgetExceededException;
 import io.agentscope.harness.agent.context.ContextItem;
 import io.agentscope.harness.agent.context.ContextManifest;
 import io.agentscope.harness.agent.context.ContextPolicy;
@@ -66,6 +67,7 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
+import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -75,18 +77,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 class HarnessSkillMiddlewareContextIsolationTest {
 
@@ -94,17 +100,20 @@ class HarnessSkillMiddlewareContextIsolationTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void oversizedLoadedBodyStopsBeforeAnotherProviderRequest(boolean stream) throws Exception {
+    void oversizedOffloadedBodySkipsRecoveryAndContinues(boolean stream) throws Exception {
         writeSkill("shared", "alpha", "Alpha description", "required-instruction ".repeat(10_000));
         AtomicInteger requests = new AtomicInteger();
+        List<ContextManifest> manifests = new CopyOnWriteArrayList<>();
         List<AgentEvent> events = new CopyOnWriteArrayList<>();
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("offline");
         when(model.stream(anyList(), any(), any()))
                 .thenAnswer(
                         invocation -> {
-                            requests.incrementAndGet();
-                            return Flux.just(loadResponse("load", "alpha_workspace"));
+                            return Flux.just(
+                                    requests.incrementAndGet() == 1
+                                            ? loadResponse("load", "alpha_workspace")
+                                            : reply("done"));
                         });
         try (HarnessAgent agent =
                 testBuilder(model)
@@ -115,25 +124,27 @@ class HarnessSkillMiddlewareContextIsolationTest {
                                         100,
                                         1,
                                         ContextTokenEstimator.approximate(),
-                                        ignored -> {}))
+                                        manifests::add))
                         .build()) {
             RuntimeContext context =
                     RuntimeContext.builder().userId("alice").sessionId("oversized").build();
             UserMessage message = new UserMessage("start");
-            assertThrows(
-                    ContextBudgetExceededException.class,
-                    () -> {
-                        if (stream) {
-                            agent.streamEvents(message, context)
-                                    .doOnNext(events::add)
-                                    .collectList()
-                                    .block(Duration.ofSeconds(10));
-                        } else {
-                            agent.call(message, context).block(Duration.ofSeconds(10));
-                        }
-                    });
-            assertEquals(1, requests.get(), "required-body overflow must not retry the provider");
-            assertFalse(events.stream().anyMatch(AgentEndEvent.class::isInstance));
+            if (stream) {
+                agent.streamEvents(message, context)
+                        .doOnNext(events::add)
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+            } else {
+                agent.call(message, context).block(Duration.ofSeconds(10));
+            }
+            assertEquals(2, requests.get());
+            assertEquals(stream, events.stream().anyMatch(AgentEndEvent.class::isInstance));
+            assertTrue(
+                    manifests
+                            .get(manifests.size() - 1)
+                            .transforms()
+                            .contains(
+                                    "skill_recovery_skipped_for_budget:harness:loaded_skill:alpha_workspace:SKILL.md"));
         }
     }
 
@@ -203,9 +214,15 @@ class HarnessSkillMiddlewareContextIsolationTest {
             assertFalse(projection(requests.get(0)).contains("exact-alpha-command"));
             assertTrue(summaries.get() >= 2, "both follow-up requests must exercise compaction");
             for (List<Msg> request : requests.subList(1, 3)) {
-                assertTrue(projection(request).contains(body));
-                assertTrue(projection(request).contains("exact-beta-command --typed 2"));
+                assertTrue(requestText(request).contains(body));
+                assertTrue(requestText(request).contains("exact-beta-command --typed 2"));
             }
+            List<Msg> lastToolMessages =
+                    requests.get(2).stream()
+                            .filter(message -> message.getRole() == MsgRole.TOOL)
+                            .toList();
+            assertFalse(requestText(lastToolMessages).contains("exact-beta-command --typed 2"));
+            assertTrue(projection(requests.get(2)).contains("exact-beta-command --typed 2"));
             call.block(Duration.ofSeconds(10));
             var events = agent.streamEvents(new UserMessage("continue"), source);
             events.collectList().block(Duration.ofSeconds(10));
@@ -214,6 +231,64 @@ class HarnessSkillMiddlewareContextIsolationTest {
             for (List<Msg> next : requests.subList(3, 6)) {
                 assertFalse(projection(next).contains("harness:loaded_skill:"));
             }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @SuppressWarnings("deprecation")
+    void legacyStreamingOverflowKeepsItsOriginalErrorWithoutOuterRetry(boolean events)
+            throws Exception {
+        writeSkill("shared", "alpha", "Alpha description", "loaded before overflow");
+        AtomicInteger requests = new AtomicInteger();
+        AtomicInteger summaries = new AtomicInteger();
+        AtomicInteger initializations = new AtomicInteger();
+        IllegalStateException overflow = new IllegalStateException("context_length_exceeded");
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("legacy-stream-overflow");
+        when(model.stream(anyList(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            List<ToolSchema> tools = invocation.getArgument(1);
+                            if (tools == null || tools.isEmpty()) {
+                                summaries.incrementAndGet();
+                                return Flux.just(reply("summary"));
+                            }
+                            return requests.incrementAndGet() == 1
+                                    ? Flux.just(loadResponse("load", "alpha_workspace"))
+                                    : Flux.error(overflow);
+                        });
+        try (HarnessAgent agent =
+                testBuilder(model)
+                        .skillRepository(repository("shared"))
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent owner, RuntimeContext rc, String prompt) {
+                                        initializations.incrementAndGet();
+                                        return Mono.just(prompt);
+                                    }
+                                })
+                        .compaction(
+                                CompactionConfig.builder()
+                                        .triggerMessages(1000)
+                                        .keepMessages(1000)
+                                        .flushBeforeCompact(false)
+                                        .build())
+                        .build()) {
+            RuntimeContext source =
+                    RuntimeContext.builder().userId("alice").sessionId("stream-overflow").build();
+            List<Msg> input = List.of(new UserMessage("start"));
+            Flux<?> stream =
+                    events ? agent.streamEvents(input, source) : agent.stream(input, source);
+            StepVerifier.create(stream)
+                    .thenConsumeWhile(ignored -> true)
+                    .expectErrorMatches(error -> error == overflow)
+                    .verify(Duration.ofSeconds(15));
+            assertEquals(2, requests.get());
+            assertEquals(0, summaries.get());
+            assertEquals(1, initializations.get());
         }
     }
 
@@ -259,10 +334,7 @@ class HarnessSkillMiddlewareContextIsolationTest {
                             .findFirst()
                             .orElseThrow();
             assertEquals(ToolResultState.SUCCESS, receipt.getState());
-            assertTrue(
-                    ((TextBlock) receipt.getOutput().get(0))
-                            .getText()
-                            .contains("harness:loaded_skill:alpha_workspace:SKILL.md"));
+            assertTrue(((TextBlock) receipt.getOutput().get(0)).getText().contains(marker));
             assertEquals(1, occurrences(JsonUtils.getJsonCodec().toJson(prepared), marker));
             AgentState saved =
                     store.get("alice", "dedup", "agent_state", AgentState.class).orElseThrow();
@@ -276,7 +348,8 @@ class HarnessSkillMiddlewareContextIsolationTest {
             String full = ((TextBlock) original.getOutput().get(0)).getText();
             assertTrue(full.contains("Successfully loaded skill: alpha_workspace"));
             assertTrue(full.contains(marker));
-            assertTrue(projection(prepared).contains(full));
+            assertFalse(projection(prepared).contains(full));
+            assertEquals(full, ((TextBlock) receipt.getOutput().get(0)).getText());
             Msg restored =
                     JsonUtils.getJsonCodec()
                             .fromJson(
@@ -305,7 +378,7 @@ class HarnessSkillMiddlewareContextIsolationTest {
     }
 
     @Test
-    void providerOverflowRetryRebuildsSkillReceiptsOnTheRealExecutionChain() throws Exception {
+    void providerOverflowRetryKeepsFullRecentSkillReceipt() throws Exception {
         String marker = "OVERFLOW_BODY_MIDDLE --typed 4";
         writeSkill("shared", "alpha", "Alpha description", marker);
         List<List<Msg>> requests = new CopyOnWriteArrayList<>();
@@ -373,7 +446,7 @@ class HarnessSkillMiddlewareContextIsolationTest {
             assertNotNull(fullReply.get());
             for (List<Msg> request : requests.subList(1, 3)) {
                 assertEquals(1, occurrences(JsonUtils.getJsonCodec().toJson(request), marker));
-                assertTrue(loadedSkillMaterial(request).contains(fullReply.get()));
+                assertFalse(projection(request).contains("harness:loaded_skill:"));
                 List<ToolResultBlock> results =
                         request.stream()
                                 .filter(m -> m.getRole() == MsgRole.TOOL)
@@ -386,18 +459,206 @@ class HarnessSkillMiddlewareContextIsolationTest {
                                 .toList();
                 assertFalse(results.isEmpty());
                 for (ToolResultBlock result : results) {
-                    assertTrue(
-                            ((TextBlock) result.getOutput().get(0))
-                                    .getText()
-                                    .contains("harness:loaded_skill:alpha_workspace:SKILL.md"));
+                    assertEquals(
+                            fullReply.get(), ((TextBlock) result.getOutput().get(0)).getText());
                 }
             }
         }
     }
 
     @ParameterizedTest
+    @CsvSource({
+        "true,true,success,LEGACY",
+        "true,false,success,LEGACY",
+        "false,true,success,LEGACY",
+        "false,false,success,LEGACY",
+        "true,true,retry-failure,LEGACY",
+        "true,true,cancel,LEGACY",
+        "true,true,success,EVENT_LOG",
+        "true,false,success,EVENT_LOG"
+    })
+    @SuppressWarnings("deprecation")
+    void overflowRecoveryKeepsBodiesWithinTheExecution(
+            boolean explicitContext, boolean enoughBudget, String outcome, SessionHistoryMode mode)
+            throws Exception {
+        String marker = "LEGACY_RECOVERY_FULL_BODY";
+        writeSkill("shared", "alpha", "Alpha description", marker);
+        Path reference = workspace.resolve("tenants/shared/skills/alpha/references/progress.md");
+        Files.createDirectories(reference.getParent());
+        Files.writeString(reference, "progress");
+        List<List<Msg>> requests = new CopyOnWriteArrayList<>();
+        List<RuntimeContext> actualContexts = new CopyOnWriteArrayList<>();
+        List<ContextManifest> manifests = new CopyOnWriteArrayList<>();
+        AtomicInteger summaries = new AtomicInteger();
+        AtomicBoolean room = new AtomicBoolean(enoughBudget);
+        AtomicBoolean nextCall = new AtomicBoolean();
+        CountDownLatch summaryStarted = new CountDownLatch(1);
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("legacy-overflow");
+        when(model.stream(anyList(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            List<ToolSchema> tools = invocation.getArgument(1);
+                            if (tools == null || tools.isEmpty()) {
+                                summaries.incrementAndGet();
+                                summaryStarted.countDown();
+                                if ("cancel".equals(outcome)) return Flux.never();
+                                return Flux.just(reply("earlier progress"));
+                            }
+                            List<Msg> messages = List.copyOf(invocation.getArgument(0));
+                            requests.add(messages);
+                            int round = requests.size();
+                            if (nextCall.get()) return Flux.just(reply("next-call"));
+                            if (round == 1)
+                                return Flux.just(loadResponse("load", "alpha_workspace"));
+                            if (round == 15)
+                                return Flux.error(
+                                        new IllegalStateException("context_length_exceeded"));
+                            if (round == 16) {
+                                assertEquals(
+                                        1,
+                                        SkillRuntime.loadedBodies(
+                                                        actualContexts.get(
+                                                                actualContexts.size() - 1))
+                                                .size());
+                                assertEquals(enoughBudget, projection(messages).contains(marker));
+                                room.set(true);
+                                if ("retry-failure".equals(outcome))
+                                    return Flux.error(
+                                            new IllegalStateException(
+                                                    "context_length_exceeded on retry"));
+                            }
+                            return Flux.just(
+                                    round < 17
+                                            ? toolResponse(
+                                                    "progress-" + round,
+                                                    "load_skill_through_path",
+                                                    Map.of(
+                                                            "skillId",
+                                                            "alpha_workspace",
+                                                            "path",
+                                                            "references/progress.md"))
+                                            : reply("done"));
+                        });
+        ContextTokenEstimator approximate = ContextTokenEstimator.approximate();
+        ContextTokenEstimator controlled =
+                input -> {
+                    if (!room.get() && projection(input.messages()).contains(marker))
+                        return new ContextTokenEstimator.Estimate(
+                                1_000_000, "controlled-recovery-budget", true);
+                    return approximate.estimate(input);
+                };
+        InMemorySessionLogStore logStore = new InMemorySessionLogStore();
+        try (HarnessAgent agent =
+                testBuilder(model)
+                        .sessionHistoryMode(mode)
+                        .sessionLogStore(logStore)
+                        .skillRepository(repository("shared"))
+                        .maxIters(25)
+                        .disableToolResultEviction()
+                        .contextPolicy(new ContextPolicy(100000, 1, 1, controlled, manifests::add))
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent owner, RuntimeContext rc, String prompt) {
+                                        if (nextCall.get())
+                                            rc.getAgentState().contextMutable().clear();
+                                        actualContexts.add(rc);
+                                        return Mono.just(prompt);
+                                    }
+                                })
+                        .compaction(
+                                CompactionConfig.builder()
+                                        .triggerMessages(1000)
+                                        .keepMessages(1000)
+                                        .keepTokens(0)
+                                        .flushBeforeCompact(false)
+                                        .build())
+                        .build()) {
+            RuntimeContext source =
+                    RuntimeContext.builder().userId("alice").sessionId("legacy-skill").build();
+            UserMessage message = new UserMessage("start");
+            Mono<Msg> call =
+                    explicitContext ? agent.call(message, source) : agent.call(List.of(message));
+            if (!"success".equals(outcome)) {
+                if ("cancel".equals(outcome)) {
+                    StepVerifier.create(call)
+                            .then(
+                                    () -> {
+                                        try {
+                                            assertTrue(summaryStarted.await(10, TimeUnit.SECONDS));
+                                        } catch (InterruptedException error) {
+                                            Thread.currentThread().interrupt();
+                                            throw new AssertionError(error);
+                                        }
+                                    })
+                            .thenCancel()
+                            .verify(Duration.ofSeconds(15));
+                    assertEquals(
+                            15, requests.size(), "cancelling compaction must not start the retry");
+                } else {
+                    IllegalStateException error =
+                            assertThrows(
+                                    IllegalStateException.class,
+                                    () -> call.block(Duration.ofSeconds(30)));
+                    assertEquals("context_length_exceeded on retry", error.getMessage());
+                    assertEquals(
+                            16, requests.size(), "the existing single retry limit stays unchanged");
+                }
+                nextCall.set(true);
+                call.block(Duration.ofSeconds(15));
+                assertFalse(projection(requests.get(requests.size() - 1)).contains(marker));
+                return;
+            }
+            assertNotNull(call.block(Duration.ofSeconds(30)));
+            assertEquals(17, requests.size());
+            assertEquals(mode == SessionHistoryMode.LEGACY ? 2 : 1, actualContexts.size());
+            assertTrue(summaries.get() > 0);
+            List<Msg> retry = requests.get(15);
+            assertFalse(
+                    retry.stream()
+                            .flatMap(msg -> msg.getContent().stream())
+                            .filter(ToolResultBlock.class::isInstance)
+                            .map(ToolResultBlock.class::cast)
+                            .anyMatch(result -> "load".equals(result.getId())),
+                    "the failed attempt's full TOOL was actually compacted away");
+            assertTrue(
+                    projection(requests.get(16)).contains(marker),
+                    "a skipped body can fit on a later prepare");
+            assertEquals(1, occurrences(JsonUtils.getJsonCodec().toJson(requests.get(16)), marker));
+            assertFalse(
+                    JsonUtils.getJsonCodec()
+                            .toJson(
+                                    actualContexts
+                                            .get(actualContexts.size() - 1)
+                                            .getAgentState()
+                                            .getContext())
+                            .contains(marker),
+                    "recovery must remain outside canonical history");
+            assertEquals(
+                    enoughBudget ? 0 : 1,
+                    manifests.stream()
+                            .flatMap(m -> m.transforms().stream())
+                            .filter(
+                                    t ->
+                                            t.equals(
+                                                    "skill_recovery_skipped_for_budget:harness:loaded_skill:alpha_workspace:SKILL.md"))
+                            .count());
+            assertEquals(
+                    mode == SessionHistoryMode.LEGACY,
+                    logStore.list(source).isEmpty(),
+                    "only EVENT_LOG activates native logging");
+            call.block(Duration.ofSeconds(15));
+            assertFalse(
+                    projection(requests.get(17)).contains(marker),
+                    "resubscription must not inherit recovery");
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void postActingChangesArePreservedAndOnlyExactBodiesAreShortened(boolean editBody)
+    void postActingChangesArePreservedWithoutRewritingHistoricalResults(boolean editBody)
             throws Exception {
         String marker = "HOOK_BODY_MIDDLE --typed 5";
         writeSkill("shared", "alpha", "Alpha description", marker);
@@ -463,12 +724,14 @@ class HarnessSkillMiddlewareContextIsolationTest {
             String output = ((TextBlock) result.getOutput().get(0)).getText();
             assertEquals("message", message.getMetadata().get("hook"));
             assertEquals("result", result.getMetadata().get("hook"));
-            assertEquals(editBody, output.contains(marker));
+            assertTrue(output.contains(marker));
             assertEquals(editBody, output.contains("Hook edited body."));
-            assertEquals(
-                    !editBody, output.contains("harness:loaded_skill:alpha_workspace:SKILL.md"));
+            assertFalse(output.contains("harness:loaded_skill:alpha_workspace:SKILL.md"));
             assertNotNull(fullReply.get());
-            assertTrue(loadedSkillMaterial(requests.get(1)).contains(fullReply.get()));
+            // Active content rewrites retain the PR's existing recovery behavior (Q12).
+            if (editBody)
+                assertTrue(loadedSkillMaterial(requests.get(1)).contains(fullReply.get()));
+            else assertFalse(projection(requests.get(1)).contains(fullReply.get()));
         }
     }
 
@@ -520,7 +783,7 @@ class HarnessSkillMiddlewareContextIsolationTest {
                                 return Flux.just(
                                         loadResponse("load-" + skill, skill + "_workspace"));
                             bothLoaded.await(10, TimeUnit.SECONDS);
-                            projections.put(skill, projection(messages));
+                            projections.put(skill, JsonUtils.getJsonCodec().toJson(messages));
                             return Flux.just(reply("reply-" + skill));
                         });
         var pool = Executors.newFixedThreadPool(2);
@@ -620,11 +883,11 @@ class HarnessSkillMiddlewareContextIsolationTest {
             assertEquals(childHasSkills ? 2 : 1, childRequests.size());
             assertFalse(projection(childRequests.get(0)).contains("harness:loaded_skill:"));
             for (List<Msg> request : childRequests) {
-                assertFalse(projection(request).contains("parent-only-body"));
+                assertFalse(requestText(request).contains("parent-only-body"));
             }
             if (childHasSkills)
-                assertTrue(projection(childRequests.get(1)).contains("child-only-body"));
-            assertTrue(projection(parentRequests.get(2)).contains("parent-only-body"));
+                assertTrue(requestText(childRequests.get(1)).contains("child-only-body"));
+            assertTrue(requestText(parentRequests.get(2)).contains("parent-only-body"));
             assertFalse(projection(parentRequests.get(2)).contains("child-only-body"));
         }
     }
@@ -658,6 +921,20 @@ class HarnessSkillMiddlewareContextIsolationTest {
                 "skills",
                 "workspace",
                 false);
+    }
+
+    private static String requestText(List<Msg> messages) {
+        return messages.stream()
+                .flatMap(msg -> msg.getContent().stream())
+                .flatMap(
+                        block ->
+                                block instanceof ToolResultBlock result
+                                        ? result.getOutput().stream()
+                                        : java.util.stream.Stream.of(block))
+                .filter(TextBlock.class::isInstance)
+                .map(TextBlock.class::cast)
+                .map(TextBlock::getText)
+                .collect(java.util.stream.Collectors.joining("\n"));
     }
 
     private static String projection(List<Msg> messages) {
