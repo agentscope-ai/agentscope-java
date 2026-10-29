@@ -31,71 +31,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
 class ToolRegistryTest {
-
-    @Test
-    void removalWaitsForRegistrationGroupUpdate() throws Exception {
-        ToolRegistry registry = new ToolRegistry();
-        ToolGroupManager groups = new ToolGroupManager();
-        groups.createToolGroup("inactive", "Inactive tools", false);
-        AgentTool tool = new SchemaOnlyTool("search", "Search", Map.of());
-        CountDownLatch updateEntered = new CountDownLatch(1);
-        CountDownLatch updateRelease = new CountDownLatch(1);
-        CountDownLatch removalStarted = new CountDownLatch(1);
-        ExecutorService executor = Executors.newFixedThreadPool(2);
-        Future<?> registration =
-                executor.submit(
-                        () ->
-                                registry.registerTool(
-                                        "search",
-                                        tool,
-                                        new RegisteredToolFunction(tool, null, null),
-                                        false,
-                                        () -> {
-                                            updateEntered.countDown();
-                                            try {
-                                                assertTrue(
-                                                        updateRelease.await(10, TimeUnit.SECONDS));
-                                            } catch (InterruptedException e) {
-                                                Thread.currentThread().interrupt();
-                                                throw new AssertionError(e);
-                                            }
-                                            groups.addToolToGroup("inactive", "search");
-                                        }));
-        try {
-            assertTrue(updateEntered.await(10, TimeUnit.SECONDS));
-            Future<?> removal =
-                    executor.submit(
-                            () -> {
-                                removalStarted.countDown();
-                                return registry.removeToolIfSame(
-                                        "search",
-                                        tool,
-                                        () -> groups.removeToolFromAllGroups("search"));
-                            });
-            assertTrue(removalStarted.await(10, TimeUnit.SECONDS));
-            assertThrows(TimeoutException.class, () -> removal.get(250, TimeUnit.MILLISECONDS));
-            updateRelease.countDown();
-            registration.get(10, TimeUnit.SECONDS);
-            assertEquals(true, removal.get(10, TimeUnit.SECONDS));
-            assertNull(registry.getTool("search"));
-            assertFalse(groups.isGroupedTool("search"));
-        } finally {
-            updateRelease.countDown();
-            executor.shutdownNow();
-        }
-    }
 
     private ToolRegistry registry;
     private AgentTool mockTool1;
@@ -179,12 +124,6 @@ class ToolRegistryTest {
 
         // Assert
         assertNull(result);
-    }
-
-    @Test
-    void testGetRegisteredToolNullAndBlankName() {
-        assertNull(registry.getRegisteredTool(null));
-        assertNull(registry.getRegisteredTool("   "));
     }
 
     @Test

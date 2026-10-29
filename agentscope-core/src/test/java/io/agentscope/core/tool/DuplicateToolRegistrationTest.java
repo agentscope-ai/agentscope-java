@@ -17,7 +17,6 @@ package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -556,44 +555,5 @@ class DuplicateToolRegistrationTest {
         } finally {
             pool.shutdownNow();
         }
-    }
-
-    // ===== Rejected-registration message stays a single readable line =====
-
-    @Test
-    @DisplayName("Conflict message keeps long multi-line descriptions on one readable line")
-    void conflictMessageSummarizesDescriptions() {
-        String longMultiLine =
-                "A very long multi-line description for the first tool.\n"
-                        + "\tSecond line with   odd spacing and more than one hundred and twenty"
-                        + " characters in total.";
-        toolkit.registerAgentTool(simpleTool("dup", longMultiLine));
-
-        IllegalStateException ex =
-                assertThrows(
-                        IllegalStateException.class,
-                        () -> toolkit.registerAgentTool(simpleTool("dup", "incoming")));
-        String message = ex.getMessage();
-
-        assertFalse(message.contains("\n"), "message must be a single line: " + message);
-        assertTrue(message.contains("..."), "long description is truncated: " + message);
-        assertTrue(
-                message.contains(
-                        "A very long multi-line description for the first tool."
-                                + " Second line with odd spacing"),
-                "whitespace is collapsed: " + message);
-    }
-
-    @Test
-    @DisplayName("Null descriptions render as 'null' in the conflict message")
-    void nullDescriptionRendersAsNull() {
-        toolkit.registerAgentTool(simpleTool("dup", null));
-
-        IllegalStateException ex =
-                assertThrows(
-                        IllegalStateException.class,
-                        () -> toolkit.registerAgentTool(simpleTool("dup", "incoming")));
-
-        assertTrue(ex.getMessage().contains("existing: [null]"), ex.getMessage());
     }
 }

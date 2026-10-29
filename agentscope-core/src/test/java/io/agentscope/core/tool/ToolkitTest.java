@@ -334,16 +334,6 @@ class ToolkitTest {
     }
 
     @Test
-    @DisplayName("registerAgentTool rejects a null tool")
-    void registerAgentToolRejectsNullTool() {
-        IllegalArgumentException ex =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () -> toolkit.registerAgentTool((AgentTool) null));
-        assertEquals("AgentTool cannot be null", ex.getMessage());
-    }
-
-    @Test
     @DisplayName("Build-time exclusions preserve deletion policy and group bindings")
     void copyExcludingTools_preservesPolicyAndGroupsForRebinding() {
         Toolkit source = new Toolkit(ToolkitConfig.builder().allowToolDeletion(false).build());

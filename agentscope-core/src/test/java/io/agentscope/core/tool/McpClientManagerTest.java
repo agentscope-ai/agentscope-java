@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.tool;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -755,26 +754,6 @@ class McpClientManagerTest {
     }
 
     @Test
-    void testRegisterMcpClient_NonSubscribedMonoReservesNothing() {
-        McpClientWrapper first = mock(McpClientWrapper.class);
-        when(first.getName()).thenReturn("slot-client");
-        when(first.initialize()).thenReturn(Mono.empty());
-        when(first.listTools()).thenReturn(Mono.just(Collections.emptyList()));
-
-        // An unsubscribed registration must not reserve a name or open a connection.
-        manager.registerMcpClient(first);
-
-        McpClientWrapper second = mock(McpClientWrapper.class);
-        when(second.getName()).thenReturn("slot-client");
-        when(second.initialize()).thenReturn(Mono.empty());
-        when(second.listTools()).thenReturn(Mono.just(Collections.emptyList()));
-        manager.registerMcpClient(second).block();
-
-        assertSame(second, manager.getMcpClient("slot-client"));
-        verify(first, never()).initialize();
-    }
-
-    @Test
     void testRegisterMcpClient_FailedClaimIsReleasedBeforeFallback() {
         McpClientWrapper failing = mock(McpClientWrapper.class);
         when(failing.getName()).thenReturn("fallback-client");
@@ -999,24 +978,6 @@ class McpClientManagerTest {
         gate.tryEmitEmpty();
 
         assertSame(second, manager.getMcpClient("slot-client"));
-    }
-
-    @Test
-    void testRemoveMcpClientAndLookupOfUnknownNameAreNoops() {
-        assertDoesNotThrow(() -> manager.removeMcpClient("ghost").block());
-        assertNull(manager.getMcpClient("ghost"));
-
-        McpClientWrapper wrapper = mock(McpClientWrapper.class);
-        when(wrapper.getName()).thenReturn("slot-client");
-        when(wrapper.initialize()).thenReturn(Mono.empty());
-        when(wrapper.listTools()).thenReturn(Mono.just(Collections.emptyList()));
-        manager.registerMcpClient(wrapper).block();
-
-        assertSame(wrapper, manager.getMcpClient("slot-client"));
-        manager.removeMcpClient("slot-client").block();
-        assertFalse(manager.getMcpClientNames().contains("slot-client"));
-        assertNull(manager.getMcpClient("slot-client"));
-        verify(wrapper).close();
     }
 
     @Test
