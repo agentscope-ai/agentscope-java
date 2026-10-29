@@ -115,7 +115,7 @@ class McpNamespacedToolTest {
                 .thenReturn(Mono.just(java.util.List.of(otherTool, conflictingTool)));
 
         Assertions.assertThrows(
-                IllegalArgumentException.class,
+                IllegalStateException.class,
                 () -> toolkit.registration().mcpClient(client).mcpToolNamePrefix(prefix).apply());
 
         Assertions.assertEquals(java.util.Set.of(prefix + "search"), toolkit.getToolNames());
@@ -143,7 +143,7 @@ class McpNamespacedToolTest {
         Mockito.when(second.listTools()).thenReturn(Mono.just(java.util.List.of(other, search)));
 
         Assertions.assertThrows(
-                IllegalArgumentException.class,
+                IllegalStateException.class,
                 () -> toolkit.registration().mcpClient(second).mcpToolNamePrefix(prefix).apply());
 
         Assertions.assertEquals(java.util.Set.of(prefix + "search"), toolkit.getToolNames());
@@ -215,7 +215,7 @@ class McpNamespacedToolTest {
                     Assertions.assertThrows(
                             ExecutionException.class,
                             () -> secondRegistration.get(5, TimeUnit.SECONDS));
-            Assertions.assertInstanceOf(IllegalArgumentException.class, rejected.getCause());
+            Assertions.assertInstanceOf(IllegalStateException.class, rejected.getCause());
             Assertions.assertEquals(
                     java.util.Set.of("first_only", "search"), toolkit.getToolNames());
             Mockito.verify(first, Mockito.never()).close();

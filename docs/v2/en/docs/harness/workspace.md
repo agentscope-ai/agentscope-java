@@ -190,8 +190,11 @@ The final budget also includes System, history, state and tool schemas; unresolv
 the request. MEMORY.md is excluded when both memory tools and hooks are disabled.
 Knowledge loads the entry and index; other files are read on demand.
 
+Environment guidance labels the host workspace and JVM temporary directory as host facts; these paths do not establish a remote tool's working directory. A sandbox root is shown only when the current call's active sandbox supplies workspace metadata. Unknown roots and container IDs are not inferred from filesystem proxy IDs. Local execution identifies the host shell (`cmd.exe /c` on Windows, `sh -c` otherwise); sandbox commands use the backend's shell, installed runtimes, and temporary paths. Routed backends distinguish the primary shell backend from mounted file routes. Each `execute` call starts a fresh shell, and `working_directory` is relative to that shell's starting directory for that call. Artifact guidance exports final deliverables when delivery is configured and reports failed delivery as incomplete. Session ID and date remain runtime facts sampled at call entry.
+
 Write ordinary Markdown in AGENTS.md. An applicability note rides the first line of the
-injected body; a file larger than 100 KiB is head-truncated at a UTF-8 code-point boundary and
+injected body and states that project rules do not override system, developer, or direct user instructions.
+A file larger than 100 KiB is head-truncated at a UTF-8 code-point boundary and
 marked `[File truncated: AGENTS.md]`. Files are not automatically refreshed within a call;
 the next call reloads them. See [Context management](/v2/en/docs/harness/context)
 for message examples, dynamic sources and budgeting.
@@ -299,7 +302,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 - **How it loads**: all files are read directly from `<workspace>/`; no overlay. Per-user overrides like `<userId>/skills/` are simple directory-prefix switching.
 - **Path safety**: default `ROOTED` mode — absolute paths are only allowed under the `workspace` and `project` (shell `cwd`) roots; `..` traversal is rejected by the path policy.
-- **Best practice**: single process / local dev / unit tests / trusted env. Do **not** run untrusted code here in production — `execute` is host `sh -c`.
+- **Best practice**: single process / local dev / unit tests / trusted env. Do **not** run untrusted code here in production — `execute` runs on the host (`cmd.exe /c` on Windows, `sh -c` otherwise).
 
 ## How runtime data and memory are stored
 

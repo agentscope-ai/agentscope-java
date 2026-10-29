@@ -41,6 +41,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,10 +71,35 @@ public class ConversationCompactor {
 
     private final Model model;
     private final MemoryFlushManager flushManager;
+    private final ToLongFunction<List<Msg>> tokenCounter;
+    private final ToLongFunction<Msg> toolResultTokenCounter;
 
     public ConversationCompactor(Model model, MemoryFlushManager flushManager) {
+        this(
+                model,
+                flushManager,
+                TokenCounterUtil::calculateToken,
+                message -> TokenCounterUtil.calculateToken(List.of(message)));
+    }
+
+    /**
+     * Uses the caller's counters with the same estimation rules but distinct counting scopes.
+     *
+     * @param tokenCounter nonnegative candidate conversation cost for triggers, retention and
+     *                     metrics; excludes already-budgeted fixed inputs and may include
+     *                     dynamic projections, so it need not be additive or monotonic
+     * @param toolResultTokenCounter nonnegative cost of one tool-result message for pruning;
+     *                               excludes unrelated projections and fixed request overhead
+     */
+    public ConversationCompactor(
+            Model model,
+            MemoryFlushManager flushManager,
+            ToLongFunction<List<Msg>> tokenCounter,
+            ToLongFunction<Msg> toolResultTokenCounter) {
         this.model = model;
         this.flushManager = flushManager;
+        this.tokenCounter = tokenCounter;
+        this.toolResultTokenCounter = toolResultTokenCounter;
     }
 
     // -------------------------------------------------------------------------
@@ -103,7 +129,7 @@ public class ConversationCompactor {
             String sessionId) {
         var recorder = SessionRecorder.from(rc);
         int beforeMsgCount = conversationMessages == null ? 0 : conversationMessages.size();
-        int beforeTokenCount = TokenCounterUtil.calculateToken(conversationMessages);
+        long beforeTokenCount = tokenCounter.applyAsLong(conversationMessages);
         boolean triggered =
                 conversationMessages != null
                         && !conversationMessages.isEmpty()
@@ -163,20 +189,20 @@ public class ConversationCompactor {
         }
     }
 
-    private static Map<String, Object> completedCompactionEndPayload(
+    private Map<String, Object> completedCompactionEndPayload(
             String compactionId,
             int beforeMsgCount,
-            int beforeTokenCount,
+            long beforeTokenCount,
             List<Msg> afterMessages) {
         Map<String, Object> payload =
                 compactionEndPayload(compactionId, "completed", beforeMsgCount, beforeTokenCount);
         payload.put("afterMsgCount", afterMessages.size());
-        payload.put("afterTokenCount", TokenCounterUtil.calculateToken(afterMessages));
+        payload.put("afterTokenCount", tokenCounter.applyAsLong(afterMessages));
         return payload;
     }
 
     private static Map<String, Object> compactionEndPayload(
-            String compactionId, String status, int beforeMsgCount, int beforeTokenCount) {
+            String compactionId, String status, int beforeMsgCount, long beforeTokenCount) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("compactionId", compactionId);
         payload.put("status", status);
@@ -199,7 +225,7 @@ public class ConversationCompactor {
         if (config.getStrategy() != null
                 && shouldCompact(
                         conversationMessages,
-                        TokenCounterUtil.calculateToken(conversationMessages),
+                        tokenCounter.applyAsLong(conversationMessages),
                         config)) {
             return Mono.defer(
                             () ->
@@ -242,7 +268,7 @@ public class ConversationCompactor {
                         truncateArgs(conversationMessages, config.getTruncateArgsConfig()),
                         config.getPruneConfig());
 
-        int totalTokens = TokenCounterUtil.calculateToken(messages);
+        long totalTokens = tokenCounter.applyAsLong(messages);
         if (!shouldCompact(messages, totalTokens, config)) {
             return Mono.just(
                     messages.equals(conversationMessages)
@@ -337,7 +363,7 @@ public class ConversationCompactor {
     // -------------------------------------------------------------------------
 
     private static boolean shouldCompact(
-            List<Msg> messages, int totalTokens, CompactionConfig config) {
+            List<Msg> messages, long totalTokens, CompactionConfig config) {
         if (config.getTriggerMessages() > 0 && messages.size() >= config.getTriggerMessages()) {
             log.debug(
                     "Compaction trigger: message count {} >= {}",
@@ -364,11 +390,14 @@ public class ConversationCompactor {
      *
      * <p>The cutoff is adjusted so that ASSISTANT/TOOL pairs are never split.
      */
-    private static int determineCutoffIndex(
-            List<Msg> messages, int totalTokens, CompactionConfig config) {
+    private int determineCutoffIndex(
+            List<Msg> messages, long totalTokens, CompactionConfig config) {
         int rawCutoff;
         if (config.getKeepTokens() > 0) {
-            rawCutoff = findTokenBasedCutoff(messages, totalTokens, config.getKeepTokens());
+            rawCutoff =
+                    Math.min(
+                            findTokenBasedCutoff(messages, totalTokens, config.getKeepTokens()),
+                            messages.size() - 1);
         } else {
             rawCutoff = findMessageBasedCutoff(messages, config.getKeepMessages());
         }
@@ -376,27 +405,17 @@ public class ConversationCompactor {
     }
 
     /** Returns the earliest index such that {@code messages[index:]} fits within the token budget. */
-    private static int findTokenBasedCutoff(List<Msg> messages, int totalTokens, int keepTokens) {
+    private int findTokenBasedCutoff(List<Msg> messages, long totalTokens, int keepTokens) {
         if (totalTokens <= keepTokens) {
             return 0;
         }
-        // Binary search for the earliest index where the suffix token count <= keepTokens
-        int left = 0;
-        int right = messages.size();
-        int candidate = messages.size();
-        int maxIter = Integer.SIZE - Integer.numberOfLeadingZeros(messages.size()) + 1;
-        for (int i = 0; i < maxIter && left < right; i++) {
-            int mid = (left + right) / 2;
-            if (TokenCounterUtil.calculateToken(messages.subList(mid, messages.size()))
-                    <= keepTokens) {
-                candidate = mid;
-                right = mid;
-            } else {
-                left = mid + 1;
+        // Dropping a task receipt can expand its state projection; suffix costs need not decrease.
+        for (int index = 1; index < messages.size(); index++) {
+            if (tokenCounter.applyAsLong(messages.subList(index, messages.size())) <= keepTokens) {
+                return index;
             }
         }
-        // Clamp so at least 1 message is always kept
-        return Math.min(candidate, messages.size() - 1);
+        return messages.size();
     }
 
     /** Returns the cutoff that keeps the last {@code keepMessages} messages verbatim. */
@@ -664,8 +683,8 @@ public class ConversationCompactor {
         int maxChars = pruneConfig.getMaxOutputChars();
         Set<String> excluded = pruneConfig.getExcludedTools();
 
-        int protectedTokens = 0;
-        int prunableTokens = 0;
+        long protectedTokens = 0;
+        long prunableTokens = 0;
         List<int[]> toPrune = new ArrayList<>();
 
         for (int i = messages.size() - 1; i >= 0; i--) {
@@ -684,17 +703,17 @@ public class ConversationCompactor {
                 if (tr.getName() != null && excluded.contains(tr.getName())) {
                     continue;
                 }
-                String text = extractToolResultText(tr);
-                if (text.isBlank()) {
+                if (tr.getOutput().stream()
+                        .noneMatch(b -> b instanceof TextBlock text && !text.getText().isBlank())) {
                     continue;
                 }
                 // Charge this result only, not every sibling in a batched tool message.
-                int tokens = TokenCounterUtil.calculateToken(List.of(msg.withContent(List.of(tr))));
+                long tokens = toolResultTokenCounter.applyAsLong(msg.withContent(List.of(tr)));
                 if (protectedTokens < protectBudget) {
                     protectedTokens += tokens;
                     continue;
                 }
-                if (text.length() > maxChars) {
+                if (ToolResultPreview.textLength(tr.getOutput()) > maxChars) {
                     prunableTokens += tokens;
                     toPrune.add(new int[] {i, j});
                 }
@@ -712,15 +731,14 @@ public class ConversationCompactor {
             Msg msg = result.get(msgIdx);
             List<ContentBlock> newBlocks = new ArrayList<>(msg.getContent());
             ToolResultBlock tr = (ToolResultBlock) newBlocks.get(blockIdx);
-            String text = extractToolResultText(tr);
-            String preview = buildPrunePreview(text, maxChars);
             ToolResultBlock pruned =
                     ToolResultBlock.builder()
                             .id(tr.getId())
                             .name(tr.getName())
-                            .output(List.of(TextBlock.builder().text(preview).build()))
+                            .output(buildPrunePreview(tr.getOutput(), maxChars))
                             .metadata(tr.getMetadata())
                             .state(tr.getState())
+                            .executionDetails(tr.getExecutionDetails())
                             .build();
             newBlocks.set(blockIdx, pruned);
             result.set(
@@ -740,16 +758,21 @@ public class ConversationCompactor {
         return result;
     }
 
-    private static String buildPrunePreview(String text, int maxChars) {
+    private static List<ContentBlock> buildPrunePreview(List<ContentBlock> blocks, int maxChars) {
         int half = maxChars / 2;
-        String head = text.substring(0, Math.min(half, text.length()));
-        String tail =
-                text.length() > half ? text.substring(Math.max(text.length() - half, half)) : "";
-        int removed = text.length() - head.length() - tail.length();
-        if (removed <= 0) {
+        int removed = ToolResultPreview.textLength(blocks) - 2 * half;
+        return ToolResultPreview.create(
+                blocks, half, "", "\n\n...(" + removed + " chars pruned)...\n\n");
+    }
+
+    private static String buildPrunePreview(String text, int maxChars) {
+        if (text.length() <= (maxChars / 2) * 2) {
             return text;
         }
-        return head + "\n\n...(" + removed + " chars pruned)...\n\n" + tail;
+        return ((TextBlock)
+                        buildPrunePreview(List.of(TextBlock.builder().text(text).build()), maxChars)
+                                .get(0))
+                .getText();
     }
 
     /**
@@ -766,12 +789,12 @@ public class ConversationCompactor {
             return messages;
         }
 
-        int totalTokens = TokenCounterUtil.calculateToken(messages);
+        long totalTokens = tokenCounter.applyAsLong(messages);
         if (!shouldTruncateArgs(messages, totalTokens, truncateConfig)) {
             return messages;
         }
 
-        int cutoff = determineTruncateCutoff(messages, truncateConfig);
+        int cutoff = determineTruncateCutoff(messages, totalTokens, truncateConfig);
         if (cutoff >= messages.size()) {
             return messages; // Nothing in the truncation window
         }
@@ -798,25 +821,17 @@ public class ConversationCompactor {
     }
 
     private static boolean shouldTruncateArgs(
-            List<Msg> messages, int totalTokens, TruncateArgsConfig cfg) {
+            List<Msg> messages, long totalTokens, TruncateArgsConfig cfg) {
         if (cfg.getTriggerMessages() > 0 && messages.size() >= cfg.getTriggerMessages()) {
             return true;
         }
         return cfg.getTriggerTokens() > 0 && totalTokens >= cfg.getTriggerTokens();
     }
 
-    private static int determineTruncateCutoff(List<Msg> messages, TruncateArgsConfig cfg) {
+    private int determineTruncateCutoff(
+            List<Msg> messages, long totalTokens, TruncateArgsConfig cfg) {
         if (cfg.getKeepTokens() > 0) {
-            // Token-budget-based keep window: scan from the end
-            int tokensKept = 0;
-            for (int i = messages.size() - 1; i >= 0; i--) {
-                int msgTokens = TokenCounterUtil.calculateToken(List.of(messages.get(i)));
-                if (tokensKept + msgTokens > cfg.getKeepTokens()) {
-                    return i + 1;
-                }
-                tokensKept += msgTokens;
-            }
-            return 0;
+            return findTokenBasedCutoff(messages, totalTokens, cfg.getKeepTokens());
         }
         // Message-count keep window
         int keep = cfg.getKeepMessages();

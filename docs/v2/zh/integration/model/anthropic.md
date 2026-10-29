@@ -79,6 +79,15 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 `IllegalArgumentException`。
 这些鉴权请求头由 SDK 管理，请通过 builder 配置，不要通过 `GenerateOptions.additionalHeaders` 添加。
 
+## 客户端工具搜索
+
+在 agent 上注册 `ToolSearchMiddleware`，即可使用自定义客户端搜索策略和原生加载。
+适配层将候选工具标记为 `defer_loading: true`，搜索工具和始终可见的工具不延迟加载。
+搜索结果包含 `tool_reference`，Anthropic 根据请求 `tools` 数组中的完整定义展开引用。
+延迟定义仍需每次发送，但只在加载后进入模型上下文。提示缓存标记放在最后一个不延迟
+加载的客户端工具上，不会放在延迟工具上。请使用支持该协议的模型，或选择普通函数
+调用回退方式。详见[按需搜索工具](/v2/zh/docs/building-blocks/tool#按需搜索工具)。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 Anthropic starter：

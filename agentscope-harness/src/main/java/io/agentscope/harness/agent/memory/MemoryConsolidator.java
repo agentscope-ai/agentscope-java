@@ -22,7 +22,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
-import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -232,13 +231,17 @@ public class MemoryConsolidator {
             return "";
         }
 
-        GlobResult glob = fs.glob(rc, "*.md", "memory");
-        if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
+        // Listing delegates to the WorkspaceManager's single-home memory listing: under a
+        // sandbox-backed filesystem it enumerates the host-side authoritative copies (the
+        // sandbox glob would throw once the lease is released; routed configurations are
+        // resolved by the unified probe there, not a bare instanceof here).
+        List<FileInfo> matches = workspaceManager.listMemoryFileInfos(rc);
+        if (matches.isEmpty()) {
             return "";
         }
 
         List<FileInfo> eligible = new ArrayList<>();
-        for (FileInfo fi : glob.matches()) {
+        for (FileInfo fi : matches) {
             if (fi.isDirectory()) {
                 continue;
             }
@@ -255,7 +258,7 @@ public class MemoryConsolidator {
         StringBuilder sb = new StringBuilder();
         for (FileInfo fi : eligible) {
             String rel = toRelative(fi.path());
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, rel);
+            String content = workspaceManager.readMemoryFileUtf8(rc, rel);
             if (content != null && !content.isBlank()) {
                 sb.append("### ").append(fileName(fi.path())).append("\n");
                 sb.append(content.strip()).append("\n\n");
@@ -289,7 +292,7 @@ public class MemoryConsolidator {
     /**
      * Converts an absolute filesystem path (e.g. {@code /memory/2025-01-01.md}) to a
      * workspace-relative path ({@code memory/2025-01-01.md}) for use with
-     * {@link WorkspaceManager#readManagedWorkspaceFileUtf8}.
+     * {@link WorkspaceManager#readMemoryFileUtf8}.
      */
     private static String toRelative(String path) {
         if (path == null) {
@@ -299,7 +302,7 @@ public class MemoryConsolidator {
     }
 
     private void writeConsolidatedMemory(RuntimeContext rc, String content) {
-        workspaceManager.writeUtf8WorkspaceRelative(rc, "MEMORY.md", content);
+        workspaceManager.writeMemoryFileUtf8(rc, "MEMORY.md", content);
     }
 
     static final String STATE_REL_PATH = "memory/" + STATE_FILE;
@@ -328,7 +331,7 @@ public class MemoryConsolidator {
 
     private Instant readWatermarkFromFile(RuntimeContext rc) {
         try {
-            String value = workspaceManager.readManagedWorkspaceFileUtf8(rc, STATE_REL_PATH);
+            String value = workspaceManager.readMemoryFileUtf8(rc, STATE_REL_PATH);
             if (value == null || value.isBlank()) {
                 return Instant.EPOCH;
             }
@@ -347,7 +350,7 @@ public class MemoryConsolidator {
             writeWatermarkToStore(ts);
         }
         try {
-            workspaceManager.writeUtf8WorkspaceRelative(rc, STATE_REL_PATH, ts.toString());
+            workspaceManager.writeMemoryFileUtf8(rc, STATE_REL_PATH, ts.toString());
         } catch (Exception e) {
             log.warn(
                     "Failed to write consolidation watermark at {}: {}",

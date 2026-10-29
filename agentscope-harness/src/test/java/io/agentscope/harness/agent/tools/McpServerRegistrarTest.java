@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -113,9 +114,10 @@ class McpServerRegistrarTest {
         assertEquals(1, results.size());
         assertEquals(McpServerRegistrationResult.Status.FAILED, results.get(0).status());
         assertEquals("crm", results.get(0).serverName());
-        IllegalArgumentException conflict =
-                assertInstanceOf(IllegalArgumentException.class, results.get(0).cause());
-        assertEquals("MCP tool name conflict for client 'crm': search", conflict.getMessage());
+        IllegalStateException conflict =
+                assertInstanceOf(IllegalStateException.class, results.get(0).cause());
+        assertTrue(conflict.getMessage().contains("Tool 'search' is already registered"));
+        assertTrue(conflict.getMessage().contains("MCP tool from client 'crm'"));
         assertEquals(Set.of("search"), toolkit.getToolNames());
         assertSame(localSearch, toolkit.getTool("search"));
         verify(wrapper, atLeastOnce()).close();

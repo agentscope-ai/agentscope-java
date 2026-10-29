@@ -54,6 +54,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -85,6 +86,9 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
+import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
@@ -934,6 +938,72 @@ class AgentScopeAgentExecutorTest {
         }
 
         @Test
+        @DisplayName("Should keep a restarted task subscription when the old stream completes")
+        void testOldStreamCleanupDoesNotRemoveRestartedSubscription() throws Exception {
+            String taskId = doMockForContext(false, true, false);
+            ControlledEventPublisher firstPublisher = new ControlledEventPublisher();
+            ControlledEventPublisher secondPublisher = new ControlledEventPublisher();
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(firstPublisher.flux(), secondPublisher.flux());
+
+            Thread firstTask = new Thread(() -> executor.execute(mockContext, emitter()));
+            Thread secondTask = new Thread(() -> executor.execute(mockContext, emitter()));
+            try {
+                firstTask.start();
+                firstPublisher.awaitSubscribed();
+                secondTask.start();
+                secondPublisher.awaitSubscribed();
+
+                firstPublisher.complete();
+                firstTask.join(TimeUnit.SECONDS.toMillis(5));
+                executor.cancel(mockContext, emitter());
+
+                assertTrue(secondPublisher.isCancelled());
+            } finally {
+                firstPublisher.complete();
+                secondPublisher.complete();
+                firstTask.interrupt();
+                secondTask.interrupt();
+            }
+        }
+
+        @Test
+        @DisplayName("Should not cancel a replacement subscription created while stopping")
+        void testCancelDoesNotTargetReplacementSubscription() throws Exception {
+            String taskId = doMockForContext(false, true, false);
+            ControlledEventPublisher firstPublisher = new ControlledEventPublisher();
+            ControlledEventPublisher secondPublisher = new ControlledEventPublisher();
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(firstPublisher.flux(), secondPublisher.flux());
+
+            Thread firstTask = new Thread(() -> executor.execute(mockContext, emitter()));
+            Thread secondTask = new Thread(() -> executor.execute(mockContext, emitter()));
+            doAnswer(
+                            invocation -> {
+                                secondTask.start();
+                                secondPublisher.awaitSubscribed();
+                                return null;
+                            })
+                    .when(mockAgentRunner)
+                    .stop(taskId);
+
+            try {
+                firstTask.start();
+                firstPublisher.awaitSubscribed();
+
+                executor.cancel(mockContext, emitter());
+
+                assertTrue(firstPublisher.isCancelled());
+                assertFalse(secondPublisher.isCancelled());
+            } finally {
+                firstPublisher.complete();
+                secondPublisher.complete();
+                firstTask.interrupt();
+                secondTask.interrupt();
+            }
+        }
+
+        @Test
         @DisplayName("Should handle exception during task cancellation")
         void testHandleExceptionDuringTaskCancellation() throws A2AError {
             // Given
@@ -985,5 +1055,48 @@ class AgentScopeAgentExecutorTest {
                             Msg.builder().textContent("streaming result 1 2").build()));
         }
         return Flux.fromIterable(mockEvents).delayElements(Duration.ofMillis(10));
+    }
+
+    private static final class ControlledEventPublisher implements Publisher<AgentEvent> {
+
+        private final CountDownLatch subscribed = new CountDownLatch(1);
+        private final AtomicBoolean cancelled = new AtomicBoolean();
+        private final AtomicReference<Subscriber<? super AgentEvent>> subscriber =
+                new AtomicReference<>();
+
+        private Flux<AgentEvent> flux() {
+            return Flux.from(this);
+        }
+
+        private void awaitSubscribed() throws InterruptedException {
+            assertTrue(subscribed.await(5, TimeUnit.SECONDS));
+        }
+
+        private boolean isCancelled() {
+            return cancelled.get();
+        }
+
+        private void complete() {
+            Subscriber<? super AgentEvent> current = subscriber.get();
+            if (current != null) {
+                current.onComplete();
+            }
+        }
+
+        @Override
+        public void subscribe(Subscriber<? super AgentEvent> subscriber) {
+            this.subscriber.set(subscriber);
+            subscriber.onSubscribe(
+                    new Subscription() {
+                        @Override
+                        public void request(long n) {}
+
+                        @Override
+                        public void cancel() {
+                            cancelled.set(true);
+                        }
+                    });
+            subscribed.countDown();
+        }
     }
 }

@@ -29,11 +29,13 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ModelRequestPreparer.Purpose;
 import io.agentscope.core.model.ChatResponse;
@@ -43,6 +45,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.builtin.TodoTools;
 import io.agentscope.core.tool.builtin.TodoTools.TodoItem;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
@@ -52,6 +55,7 @@ import io.agentscope.harness.agent.middleware.ContextConventionsMiddleware;
 import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -61,9 +65,74 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 class ContextPipelineV2Test {
+    @Test
+    void systemSourcesUseOneTextBlockWithExactlyOneBlankLineBetweenSources() {
+        var builder = new HarnessContextBuilder(ContextPolicy.defaults(), null, null);
+        var input =
+                new ModelCallInput(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder().text("first").build(),
+                                                        TextBlock.builder().text("second").build()))
+                                        .build(),
+                                message(MsgRole.SYSTEM, ""),
+                                message(MsgRole.SYSTEM, "third"),
+                                message(MsgRole.USER, "hello")),
+                        List.of(),
+                        null,
+                        model(10000));
+        var first =
+                builder.prepare(
+                                mock(Agent.class),
+                                RuntimeContext.empty(),
+                                input,
+                                "one",
+                                Purpose.REASONING)
+                        .block();
+        var rebuilt =
+                builder.prepare(
+                                mock(Agent.class),
+                                RuntimeContext.empty(),
+                                first,
+                                "two",
+                                Purpose.REASONING)
+                        .block();
+        assertEquals(1, first.messages().get(0).getContent().size());
+        assertEquals("first\nsecond\n\nthird", first.messages().get(0).getTextContent());
+        assertEquals(
+                first.messages().get(0).getTextContent(),
+                rebuilt.messages().get(0).getTextContent());
+    }
+
+    @Test
+    void systemSourcesMayOnlyContainTextBlocks() {
+        // Msg rejects non-text content in the SYSTEM role at construction, so the joined
+        // text block is the complete content and no non-text block can be dropped.
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .content(
+                                        List.of(
+                                                TextBlock.builder().text("rules").build(),
+                                                ImageBlock.builder()
+                                                        .source(
+                                                                new URLSource(
+                                                                        "https://example.com/pic.png"))
+                                                        .build()))
+                                .build());
+    }
+
     @Test
     void singleSystemPreservesOpaqueInputsAndReplacesFrameworkSourcesOnRebuild() {
         var rc = RuntimeContext.empty();
@@ -294,6 +363,202 @@ class ContextPipelineV2Test {
                 .filter(msg -> Boolean.TRUE.equals(msg.getMetadata().get(Msg.METADATA_SYNTHETIC)))
                 .map(msg -> String.valueOf(msg.getMetadata().get(Msg.METADATA_REMINDER_KIND)))
                 .toList();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "task_delivery, original",
+        "task_delivery, copy",
+        "task_delivery, json",
+        "empty_response, original",
+        "empty_response, copy",
+        "empty_response, json",
+        "custom_persisted_notice, original",
+        "custom_persisted_notice, copy",
+        "custom_persisted_notice, json"
+    })
+    void persistedSyntheticMessagesKeepTheirPositionAndCanBeCompacted(
+            String kind, String representation) {
+        Msg notice =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .textContent("A persisted notification")
+                        .metadata(
+                                Map.of(
+                                        Msg.METADATA_SYNTHETIC,
+                                        true,
+                                        Msg.METADATA_REMINDER_KIND,
+                                        kind,
+                                        "long-value",
+                                        1L,
+                                        "decimal-value",
+                                        new BigDecimal("1.25")))
+                        .build();
+        Msg projection =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .textContent("Current runtime state")
+                        .metadata(
+                                Map.of(
+                                        Msg.METADATA_SYNTHETIC,
+                                        true,
+                                        Msg.METADATA_REMINDER_KIND,
+                                        "subagent_state"))
+                        .build();
+        var original = new ArrayList<>(history());
+        original.add(1, notice);
+        var state = AgentState.builder().context(original).build();
+        var rc = RuntimeContext.builder().agentState(state).build();
+        var messages = new ArrayList<>(original);
+        if (representation.equals("copy")) {
+            messages.set(1, notice.withMetadata(notice.getMetadata()));
+        } else if (representation.equals("json")) {
+            var codec = JsonUtils.getJsonCodec();
+            messages.set(1, codec.fromJson(codec.toJson(notice), Msg.class));
+        }
+        messages.add(projection);
+        var input = new ModelCallInput(messages, List.of(), null, model(10000));
+        var plain =
+                new HarnessContextBuilder(ContextPolicy.defaults(), null, null)
+                        .prepare(mock(Agent.class), rc, input, "plain", Purpose.REASONING)
+                        .block();
+        assertEquals(messages, plain.messages());
+        var calls = new AtomicInteger();
+        var prepared =
+                new HarnessContextBuilder(
+                                ContextPolicy.defaults(), compactor(calls, () -> {}), null)
+                        .prepare(mock(Agent.class), rc, input, "compact", Purpose.REASONING)
+                        .block();
+        assertEquals(1, calls.get());
+        assertNotEquals(original, state.contextMutable());
+        assertTrue(
+                ((List<?>)
+                                state.contextMutable()
+                                        .get(0)
+                                        .getMetadata()
+                                        .get("context.covered_messages"))
+                        .contains(notice.getId()));
+        assertFalse(state.contextMutable().contains(projection));
+        assertEquals(projection, prepared.messages().get(prepared.messages().size() - 1));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"content", "metadata", "numeric-metadata"})
+    void sameMessageIdDoesNotMakeAnEditedModelViewDurable(String editedField) {
+        var original = new ArrayList<>(history());
+        original.set(
+                0,
+                original.get(0)
+                        .withMetadata(Map.of("value", new BigDecimal("1.0000000000000000001"))));
+        var state = AgentState.builder().context(original).build();
+        var messages = new ArrayList<>(original);
+        Msg first = messages.get(0);
+        messages.set(
+                0,
+                editedField.equals("content")
+                        ? first.withContent(
+                                List.of(TextBlock.builder().text("Request-only edit").build()))
+                        : first.withMetadata(
+                                editedField.equals("metadata")
+                                        ? Map.of("request-only", true)
+                                        : Map.of(
+                                                "value", new BigDecimal("1.0000000000000000002"))));
+        var calls = new AtomicInteger();
+        var prepared =
+                new HarnessContextBuilder(
+                                ContextPolicy.defaults(), compactor(calls, () -> {}), null)
+                        .prepare(
+                                mock(Agent.class),
+                                RuntimeContext.builder().agentState(state).build(),
+                                new ModelCallInput(messages, List.of(), null, model(10000)),
+                                "edited-view",
+                                Purpose.REASONING)
+                        .block();
+
+        assertEquals(1, calls.get());
+        assertEquals(original, state.contextMutable());
+        assertNotEquals(messages, prepared.messages());
+    }
+
+    @Test
+    void scaleOnlyDecimalMetadataEditStaysValueEqualAndCommittable() {
+        var original = new ArrayList<>(history());
+        original.set(0, original.get(0).withMetadata(Map.of("value", new BigDecimal("1.1"))));
+        var state = AgentState.builder().context(original).build();
+        var messages = new ArrayList<>(original);
+        messages.set(0, messages.get(0).withMetadata(Map.of("value", new BigDecimal("1.10"))));
+        var calls = new AtomicInteger();
+        var prepared =
+                new HarnessContextBuilder(
+                                ContextPolicy.defaults(), compactor(calls, () -> {}), null)
+                        .prepare(
+                                mock(Agent.class),
+                                RuntimeContext.builder().agentState(state).build(),
+                                new ModelCallInput(messages, List.of(), null, model(10000)),
+                                "scale-edit",
+                                Purpose.REASONING)
+                        .block();
+
+        // Histories compare by exact numeric value: a scale-only edit (1.1 -> 1.10) is not a
+        // content edit, so the writeback stays eligible. The 17-digit guard in
+        // sameMessageIdDoesNotMakeAnEditedModelViewDurable covers value-changing edits.
+        assertEquals(1, calls.get());
+        assertNotEquals(original, state.contextMutable());
+        assertNotEquals(messages, prepared.messages());
+    }
+
+    @Test
+    void editedViewWithUnserializableMetadataSkipsWritebackInsteadOfFailing() {
+        var original = new ArrayList<>(history());
+        original.set(0, original.get(0).withMetadata(Map.of("value", new Object())));
+        var state = AgentState.builder().context(original).build();
+        // The view the compactor sees carries an edit and cannot be serialized to prove otherwise.
+        var messages = new ArrayList<>(original);
+        messages.set(
+                2,
+                messages.get(2)
+                        .withContent(List.of(TextBlock.builder().text("continue now").build())));
+        var calls = new AtomicInteger();
+        var prepared =
+                new HarnessContextBuilder(
+                                ContextPolicy.defaults(), compactor(calls, () -> {}), null)
+                        .prepare(
+                                mock(Agent.class),
+                                RuntimeContext.builder().agentState(state).build(),
+                                new ModelCallInput(messages, List.of(), null, model(10000)),
+                                "unserializable",
+                                Purpose.REASONING)
+                        .block();
+
+        assertEquals(1, calls.get());
+        assertEquals(original, state.contextMutable());
+        assertNotEquals(messages, prepared.messages());
+    }
+
+    @Test
+    void unchangedViewWithUnserializableMetadataIsStillCommitted() {
+        var original = new ArrayList<>(history());
+        original.set(0, original.get(0).withMetadata(Map.of("value", new Object())));
+        var state = AgentState.builder().context(original).build();
+        var messages = new ArrayList<>(original);
+        messages.set(0, messages.get(0).withMetadata(original.get(0).getMetadata()));
+        var calls = new AtomicInteger();
+        var prepared =
+                new HarnessContextBuilder(
+                                ContextPolicy.defaults(), compactor(calls, () -> {}), null)
+                        .prepare(
+                                mock(Agent.class),
+                                RuntimeContext.builder().agentState(state).build(),
+                                new ModelCallInput(messages, List.of(), null, model(10000)),
+                                "unserializable-unchanged",
+                                Purpose.REASONING)
+                        .block();
+
+        // Content decides whether the view is unchanged, so metadata that cannot be serialized no
+        // longer blocks a writeback it does not affect.
+        assertEquals(1, calls.get());
+        assertNotEquals(original, state.contextMutable());
+        assertNotEquals(messages, prepared.messages());
     }
 
     @Test

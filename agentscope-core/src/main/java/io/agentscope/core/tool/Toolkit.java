@@ -32,6 +32,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import org.slf4j.Logger;
@@ -210,6 +211,24 @@ public class Toolkit {
     }
 
     /**
+     * Replace an existing registration for {@code tool.getName()} intentionally, or register it
+     * when the name is free.
+     *
+     * <p>This is the explicit counterpart to the fail-fast duplicate protection in
+     * {@link #registerAgentTool(AgentTool)}: use it when overriding a same-named tool (local or
+     * MCP) is deliberate.
+     *
+     * <p>Group membership is keyed by tool name and left untouched by this method, so the
+     * replacement inherits the group bindings of the name it replaces (it is registered ungrouped
+     * itself); adjust the groups afterwards if the inherited membership is not wanted.
+     *
+     * @param tool the AgentTool to register, replacing any existing tool with the same name
+     */
+    public void replaceAgentTool(AgentTool tool) {
+        registerAgentTool(tool, null, null, null, null, true);
+    }
+
+    /**
      * Internal method to register AgentTool with full metadata including preset parameters.
      */
     private void registerAgentTool(
@@ -218,6 +237,17 @@ public class Toolkit {
             ExtendedModel extendedModel,
             String mcpClientName,
             Map<String, Object> presetParameters) {
+        registerAgentTool(tool, groupName, extendedModel, mcpClientName, presetParameters, false);
+    }
+
+    /** Shared registration path for annotated tools, direct tools, schemas, MCP and subagents. */
+    private void registerAgentTool(
+            AgentTool tool,
+            String groupName,
+            ExtendedModel extendedModel,
+            String mcpClientName,
+            Map<String, Object> presetParameters,
+            boolean allowReplace) {
         if (tool == null) {
             throw new IllegalArgumentException("AgentTool cannot be null");
         }
@@ -233,18 +263,32 @@ public class Toolkit {
         RegisteredToolFunction registered =
                 new RegisteredToolFunction(tool, extendedModel, mcpClientName, presetParameters);
 
-        // Register in toolRegistry
-        toolRegistry.registerTool(toolName, tool, registered);
-
-        // Add to group if specified
-        if (groupName != null) {
-            groupManager.addToolToGroup(groupName, toolName);
-        }
+        toolRegistry.registerTool(
+                toolName,
+                tool,
+                registered,
+                allowReplace,
+                () -> {
+                    if (groupName != null) {
+                        groupManager.addToolToGroup(groupName, toolName);
+                    }
+                });
 
         logger.info(
                 "Registered tool '{}' in group '{}'",
                 toolName,
                 groupName != null ? groupName : "ungrouped");
+    }
+
+    /** Returns current bindings backed by an annotated object of exactly the given class. */
+    public List<AgentTool> getToolsFromSource(Class<?> sourceType) {
+        return toolRegistry.getAllRegisteredTools().values().stream()
+                .map(RegisteredToolFunction::getTool)
+                .filter(
+                        tool ->
+                                tool instanceof ReflectiveFunctionTool reflective
+                                        && reflective.getToolObject().getClass() == sourceType)
+                .toList();
     }
 
     /**
@@ -476,7 +520,7 @@ public class Toolkit {
                         customConverter,
                         presetParamNames);
 
-        registerAgentTool(tool, groupName, extendedModel, null, presetParameters);
+        registerAgentTool(tool, groupName, extendedModel, null, presetParameters, false);
     }
 
     /**
@@ -947,8 +991,10 @@ public class Toolkit {
         AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
         registeredMetaTool = metaTool;
 
-        // Register without group (meta tool is always available)
-        registerAgentTool(metaTool, null, null, null, null);
+        // Register without group (meta tool is always available). Replacement is intentional:
+        // Toolkit.copy() shares tool instances, then rebinds a fresh meta tool (bound to the
+        // copy's group manager) under this same name.
+        replaceAgentTool(metaTool);
 
         logger.info("Registered meta tool: reset_equipped_tools");
     }
@@ -977,33 +1023,46 @@ public class Toolkit {
     // ==================== Build-time Isolation Copy ====================
 
     /**
-     * Creates a build-time isolation copy of this toolkit.
+     * Creates an isolated registry for agent construction, sharing user tool instances.
      *
-     * <p><b>Build-time only — do NOT use per-call.</b> User tools are shared by reference and must support concurrent use; the framework meta
-     * tool is rebound to the copied registry. Tool groups and activation flags
-     * are deep-copied so the copy has an isolated group manager. The user chunk callback is
-     * preserved.
+     * <p>Groups are copied, the framework meta tool is rebound, and configuration and chunk
+     * callbacks are retained. Shared user tools must support concurrent calls. Use
+     * {@link ToolRequestConfig} for per-call visibility instead of copying the toolkit.
      *
-     * <p>Per-call tool-surface variation is instead expressed via {@link ToolRequestConfig}
-     * composition ({@link #getTool(String, ToolRequestConfig)} / {@link
-     * #getToolSchemas(java.util.Collection, ToolRequestConfig)}), never by copying a toolkit. This
-     * method exists for agent-construction isolation (e.g. the harness sub-agent factories), where
-     * a fresh registry is needed to register workspace-bound tools without polluting the source.
-     *
-     * @return A new Toolkit instance whose registry shares the same tool instances
+     * @return an isolated toolkit sharing the registered tool instances
      */
     public Toolkit copy() {
+        return copyExcludingTools(List.of());
+    }
+
+    /**
+     * Creates a build-time copy without the specified tool instances.
+     *
+     * <p>Exclusions use instance identity, so a newer binding under the same name is preserved.
+     * Group memberships remain associated with their names for tools rebuilt on the copy.
+     * The source and its deletion policy are unchanged; exclusions also apply when runtime
+     * tool deletion is disabled.
+     *
+     * @param excludedTools tool instances to omit before rebuilding framework bindings
+     * @return an isolated toolkit sharing the remaining tool instances
+     * @see #copy()
+     */
+    public Toolkit copyExcludingTools(Collection<? extends AgentTool> excludedTools) {
+        Objects.requireNonNull(excludedTools, "excludedTools");
         Toolkit copy = new Toolkit(this.config);
 
         // Share tool instances (stateless/thread-safe); copy registry metadata into the target.
         this.toolRegistry.copyTo(copy.toolRegistry);
+        for (AgentTool tool : excludedTools) {
+            copy.toolRegistry.removeToolIfSame(tool.getName(), tool);
+        }
 
         // Deep-copy tool groups and activation flags for isolated group state.
         this.groupManager.copyTo(copy.groupManager);
 
         // The framework meta tool captures its owner's group manager; bind it to the copy.
         if (registeredMetaTool != null
-                && toolRegistry.getTool(registeredMetaTool.getName()) == registeredMetaTool) {
+                && copy.toolRegistry.getTool(registeredMetaTool.getName()) == registeredMetaTool) {
             copy.registerMetaTool();
             RegisteredToolFunction metadata =
                     toolRegistry.getRegisteredTool(registeredMetaTool.getName());
