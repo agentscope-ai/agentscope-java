@@ -389,6 +389,11 @@ public class AnthropicChatModel extends ChatModelBase {
     }
 
     @Override
+    public GenerateOptions getDefaultOptions() {
+        return defaultOptions;
+    }
+
+    @Override
     public ToolSearchMode getToolSearchMode() {
         return ToolSearchMode.DEFERRED;
     }
