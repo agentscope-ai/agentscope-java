@@ -17,6 +17,9 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -39,9 +42,11 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -50,6 +55,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Signal;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
@@ -243,6 +249,209 @@ class CompactionMiddlewareTest {
         assertEquals(1, facts.stream().filter(e -> e.type().equals("run/end")).count());
         assertTrue(facts.stream().allMatch(e -> run.runId().equals(e.executionRunId())));
         assertTrue(facts.stream().filter(e -> e.type().equals("model/end")).count() >= 2);
+    }
+
+    /**
+     * A second provider failure must not erase the first overflow: the retry error stays terminal
+     * while the first overflow is attached as its primary cause, with no extra retry.
+     */
+    @Test
+    void secondOverflowKeepsTheFirstOverflowAsPrimaryCause() {
+        AtomicInteger calls = new AtomicInteger();
+        List<IllegalStateException> overflows = new ArrayList<>();
+        ChatModelBase model =
+                new ChatModelBase() {
+                    public String getModelName() {
+                        return "overflow-capture";
+                    }
+
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        calls.incrementAndGet();
+                        var error = new IllegalStateException("context_length_exceeded");
+                        overflows.add(error);
+                        return Flux.error(error);
+                    }
+                };
+        var recovery =
+                new CompactionMiddleware(null, new SuccessfulSummaryModel(), noCompactionConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("overflow-cause-test")
+                        .model(model)
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        List<Signal<AgentEvent>> signals =
+                agent.streamEvents(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                context("user", "overflow-cause-session"))
+                        .materialize()
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(signals);
+        Signal<AgentEvent> terminal = signals.get(signals.size() - 1);
+        assertTrue(terminal.isOnError(), "the retry failure must terminate the stream");
+        assertEquals(2, overflows.size(), "exactly one retry is attempted");
+        assertSame(overflows.get(1), terminal.getThrowable(), "the retry error stays terminal");
+        assertSame(
+                overflows.get(0),
+                terminal.getThrowable().getCause(),
+                "the first overflow must remain the primary cause");
+    }
+
+    /**
+     * Provider errors built with an explicit null cause reject {@code initCause()}: the first
+     * overflow must fall back to suppressed and the retry error must stay terminal instead of being
+     * replaced by the resulting IllegalStateException.
+     */
+    @Test
+    void nullCauseRetryErrorKeepsFirstOverflowAsSuppressed() {
+        AtomicInteger calls = new AtomicInteger();
+        List<Throwable> errors = new ArrayList<>();
+        ChatModelBase model =
+                new ChatModelBase() {
+                    public String getModelName() {
+                        return "overflow-null-cause";
+                    }
+
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        Throwable error =
+                                calls.getAndIncrement() == 0
+                                        ? new IllegalStateException("context_length_exceeded")
+                                        : new IllegalStateException("retry failed", null);
+                        errors.add(error);
+                        return Flux.error(error);
+                    }
+                };
+        var recovery =
+                new CompactionMiddleware(null, new SuccessfulSummaryModel(), noCompactionConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("overflow-null-cause-test")
+                        .model(model)
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        List<Signal<AgentEvent>> signals =
+                agent.streamEvents(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                context("user", "overflow-null-cause-session"))
+                        .materialize()
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(signals);
+        Signal<AgentEvent> terminal = signals.get(signals.size() - 1);
+        assertTrue(terminal.isOnError(), "the retry failure must terminate the stream");
+        assertEquals(2, errors.size(), "exactly one retry is attempted");
+        assertSame(errors.get(1), terminal.getThrowable(), "the retry error stays terminal");
+        assertNull(
+                terminal.getThrowable().getCause(),
+                "the pre-initialized null cause cannot be replaced");
+        assertEquals(1, terminal.getThrowable().getSuppressed().length);
+        assertSame(
+                errors.get(0),
+                terminal.getThrowable().getSuppressed()[0],
+                "the first overflow must be attached as suppressed");
+    }
+
+    /** A cancelled retry must keep Reactor cancellation semantics and never be rewritten. */
+    @Test
+    void cancelledRetryKeepsCancellationUntouched() {
+        AtomicInteger calls = new AtomicInteger();
+        List<Throwable> errors = new ArrayList<>();
+        ChatModelBase model =
+                new ChatModelBase() {
+                    public String getModelName() {
+                        return "overflow-then-cancel";
+                    }
+
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        Throwable error =
+                                calls.getAndIncrement() == 0
+                                        ? new IllegalStateException("context_length_exceeded")
+                                        : new CancellationException("user cancelled");
+                        errors.add(error);
+                        return Flux.error(error);
+                    }
+                };
+        var recovery =
+                new CompactionMiddleware(null, new SuccessfulSummaryModel(), noCompactionConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("overflow-cancel-test")
+                        .model(model)
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        List<Signal<AgentEvent>> signals =
+                agent.streamEvents(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                context("user", "overflow-cancel-session"))
+                        .materialize()
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(signals);
+        Signal<AgentEvent> terminal = signals.get(signals.size() - 1);
+        assertTrue(terminal.isOnError(), "the cancellation must surface as the terminal signal");
+        assertEquals(2, errors.size());
+        assertSame(errors.get(1), terminal.getThrowable());
+        assertNull(
+                terminal.getThrowable().getCause(),
+                "a cancelled retry must not be rewritten with the first overflow");
+    }
+
+    /**
+     * When the emergency summarization itself fails, the first overflow must still be the
+     * reported error and no provider retry may run.
+     */
+    @Test
+    void failedEmergencySummaryStillReportsTheFirstOverflow() {
+        AtomicInteger calls = new AtomicInteger();
+        List<Throwable> errors = new ArrayList<>();
+        ChatModelBase model =
+                new ChatModelBase() {
+                    public String getModelName() {
+                        return "overflow-no-retry";
+                    }
+
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        calls.incrementAndGet();
+                        Throwable error = new IllegalStateException("context_length_exceeded");
+                        errors.add(error);
+                        return Flux.error(error);
+                    }
+                };
+        var recovery =
+                new CompactionMiddleware(
+                        null,
+                        new FailingSummaryModel(new IllegalStateException("summary unavailable")),
+                        noCompactionConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("overflow-summary-failure-test")
+                        .model(model)
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        List<Signal<AgentEvent>> signals =
+                agent.streamEvents(
+                                List.of(userMessage("old context"), userMessage("latest request")),
+                                context("user", "overflow-summary-failure-session"))
+                        .materialize()
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(signals);
+        Signal<AgentEvent> terminal = signals.get(signals.size() - 1);
+        assertTrue(terminal.isOnError());
+        assertSame(
+                errors.get(0),
+                terminal.getThrowable(),
+                "the first overflow stays the reported error when summarization fails");
+        assertEquals(1, calls.get(), "no provider retry may run after a failed emergency summary");
     }
 
     /** An ordinary compaction failure skips compaction and invokes original reasoning once. */
