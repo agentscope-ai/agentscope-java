@@ -66,6 +66,9 @@ class HarnessAgentOverflowRecoveryTest {
     /** Enough prior turns that the forced compaction (keepMessages = 20) has a prefix to fold. */
     private static final int PRIOR_TURNS = 12;
 
+    /** Padding that keeps prior turns above the fixed summary-wrapper cost after folding. */
+    private static final String PAD = " earlier conversation detail".repeat(40);
+
     @TempDir Path workspace;
 
     @TempDir Path stateDir;
@@ -95,7 +98,7 @@ class HarnessAgentOverflowRecoveryTest {
         List<Msg> retryInput = model.lastMainInput();
         assertEquals(1, count(retryInput, input), "retry must send the input to the model once");
         assertTrue(
-                retryInput.stream().noneMatch(m -> "turn 0".equals(m.getTextContent())),
+                retryInput.stream().noneMatch(m -> priorTurn(0).equals(m.getTextContent())),
                 "retry must run on the compacted context, not the reloaded original");
     }
 
@@ -143,9 +146,14 @@ class HarnessAgentOverflowRecoveryTest {
     private static RuntimeContext runPriorTurns(HarnessAgent agent) {
         RuntimeContext ctx = RuntimeContext.builder().sessionId(SESSION_ID).build();
         for (int i = 0; i < PRIOR_TURNS; i++) {
-            assertNotNull(agent.call(userMsg("turn " + i), ctx).block(Duration.ofSeconds(30)));
+            assertNotNull(agent.call(userMsg(priorTurn(i)), ctx).block(Duration.ofSeconds(30)));
         }
         return ctx;
+    }
+
+    /** Creates the padded text of one prior turn so folded turns stay identifiable. */
+    private static String priorTurn(int i) {
+        return "turn " + i + PAD;
     }
 
     private static List<Msg> persistedContext(AgentStateStore store) {
