@@ -39,6 +39,26 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## Per-call execution configuration
+
+Timeout and retry for a single call are set through `GenerateOptions.executionConfig` and reach the Ollama HTTP call after the options conversion. Explicit fields override the model defaults; fields you leave unset fall back to the defaults (5-minute timeout, 3 attempts), and the configuration is applied client-side, never sent to the Ollama server:
+
+```java
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.model.GenerateOptions;
+import java.time.Duration;
+
+model.stream(messages, /* tools = */ List.of(),
+        GenerateOptions.builder()
+                .executionConfig(ExecutionConfig.builder()
+                        .timeout(Duration.ofSeconds(30))
+                        .maxAttempts(2)
+                        .build())
+                .build());
+```
+
+Cancelling the subscription still propagates to the underlying HTTP call, and a request is not retried after user-visible content has already been emitted.
+
 ## Spring Boot
 
 Spring Boot applications can use the Ollama starter:

@@ -39,6 +39,26 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## 单次调用执行配置
+
+单次调用的超时与重试通过 `GenerateOptions.executionConfig` 设置，经选项转换后实际约束本次 Ollama HTTP 调用。显式设置的字段覆盖模型默认值；未设置的字段回退默认（5 分钟超时、3 次尝试）。该配置仅在客户端生效，不会发送给 Ollama 服务端：
+
+```java
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.model.GenerateOptions;
+import java.time.Duration;
+
+model.stream(messages, /* tools = */ List.of(),
+        GenerateOptions.builder()
+                .executionConfig(ExecutionConfig.builder()
+                        .timeout(Duration.ofSeconds(30))
+                        .maxAttempts(2)
+                        .build())
+                .build());
+```
+
+取消订阅仍会传播到底层 HTTP 调用；已发出用户可见内容后不会重试请求。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 Ollama starter：
