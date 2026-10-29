@@ -240,6 +240,8 @@ agentBuilder.compaction(CompactionConfig.builder()
 
 The standard summary records session intent, decisions, artifacts, and next steps. The working conversation becomes the summary plus recent messages; exact tail boundaries can expand to keep tool exchanges intact. Summarization and truncation are lossy. Keep critical requirements in explicit state, store important artifacts, and retrieve original evidence when needed.
 
+A summary replaces the conversation only when it is complete and actually smaller. Output stopped at a provider token limit, tool-call output, or empty text is rejected; a missing finish reason is accepted so providers that do not report one keep working. The complete candidate — the summary wrapper, merged prior summaries, and the kept tail — is measured with the same configured estimator as the final request check, and a candidate that is not strictly smaller keeps the current conversation. A rejected summary leaves the already-applied lightweight reductions in place; model errors and cancellation still propagate unchanged.
+
 <span id="coordination-with-memory" />
 
 With `flushBeforeCompact(true)`, the compactor also attempts to extract useful facts into long-term memory before summarizing. This is best-effort extraction, not a guarantee that every detail survives. It is separate from native conversation history and from the current task projection. See [Memory](/v2/en/docs/harness/memory) for memory extraction and maintenance.
