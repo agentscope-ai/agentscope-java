@@ -21,6 +21,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.ChannelRuntimeContextResolver;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import java.util.ArrayList;
@@ -132,9 +133,18 @@ public final class GatewayBootstrap {
      * the {@code expose_to_user} parameter on {@code agent_spawn}.
      */
     public SubagentGatewayBridge gatewayBridge() {
-        return (agentId, sessionId, agent, replyTo) -> {
-            String subagentId = gateway.exposeSubagent(agentId, sessionId, agent, replyTo);
-            return new SubagentGatewayBridge.ExposeResult(subagentId);
+        return new SubagentGatewayBridge() {
+            @Override
+            public ExposeResult expose(
+                    String agentId, String sessionId, Agent agent, OutboundAddress replyTo) {
+                String subagentId = gateway.exposeSubagent(agentId, sessionId, agent, replyTo);
+                return new ExposeResult(subagentId);
+            }
+
+            @Override
+            public void revoke(String subagentId) {
+                gateway.revokeSubagent(subagentId);
+            }
         };
     }
 

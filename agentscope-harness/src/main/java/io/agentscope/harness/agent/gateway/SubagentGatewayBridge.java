@@ -47,4 +47,15 @@ public interface SubagentGatewayBridge {
      * @return the expose result containing the subagentId handle
      */
     ExposeResult expose(String agentId, String sessionId, Agent agent, OutboundAddress replyTo);
+
+    /**
+     * Revokes a previously exposed subagent handle.
+     *
+     * <p>The default no-op preserves compatibility with existing expose-only bridge
+     * implementations. Gateway-backed bridges should override this method so releasing a
+     * subagent also makes its public handle unaddressable.
+     *
+     * @param subagentId the user-visible handle returned by {@link #expose}
+     */
+    default void revoke(String subagentId) {}
 }
