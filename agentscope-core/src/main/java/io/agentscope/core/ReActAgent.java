@@ -1037,15 +1037,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<MiddlewareBase> middlewares) {
         Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> grouped =
                 new EnumMap<>(MiddlewareBase.ExtensionPoint.class);
-        // Sort by MiddlewareBase.order() (stable, ascending) before grouping: framework
-        // providers declare low orders so their context reset runs before user middlewares
+        // Sort by MiddlewareBase.order() (stable, DESCENDING — higher order is outermost,
+        // matching the interceptor convention) before grouping: framework
+        // providers declare high orders so their context reset runs before user middlewares
         // register materials — without the sort, registration order alone decided, and user
         // middlewares always preceded the build()-installed framework providers, so their
         // WorkspaceContextMaterials registrations were silently wiped by the per-call reset
         // (#3829).
         List<MiddlewareBase> ordered =
                 middlewares.stream()
-                        .sorted(Comparator.comparingInt(MiddlewareBase::order))
+                        .sorted(Comparator.comparingInt(MiddlewareBase::order).reversed())
                         .toList();
         for (MiddlewareBase mw : ordered) {
             Set<MiddlewareBase.ExtensionPoint> active =

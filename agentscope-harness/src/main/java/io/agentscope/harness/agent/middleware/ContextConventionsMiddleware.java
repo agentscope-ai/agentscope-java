@@ -52,7 +52,7 @@ public final class ContextConventionsMiddleware implements HarnessRuntimeMiddlew
      */
     @Override
     public int order() {
-        return Integer.MIN_VALUE + 1000;
+        return Integer.MAX_VALUE - 1000;
     }
 
     @Override
