@@ -499,6 +499,21 @@ class ToolGroupManager {
         }
     }
 
+    /** Removes a deregistered tool from both group indexes. */
+    public void removeToolFromAllGroups(String toolName) {
+        Set<String> groupNames = tools.remove(toolName);
+        if (groupNames == null) {
+            return;
+        }
+        for (String groupName : groupNames) {
+            ToolGroup group = toolGroups.get(groupName);
+            // A concurrent group removal may have already removed this entry.
+            if (group != null) {
+                group.removeTool(toolName);
+            }
+        }
+    }
+
     /**
      * Get all tool group names.
      *
