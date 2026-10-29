@@ -21,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Represents a tool use request within a message.
@@ -230,6 +231,28 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof ToolUseBlock other)) {
+            return false;
+        }
+        return Objects.equals(id, other.id)
+                && Objects.equals(name, other.name)
+                && ValueEquality.equal(input, other.input)
+                && Objects.equals(content, other.content)
+                && ValueEquality.equal(metadata, other.metadata)
+                && state == other.state;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                id, name, ValueEquality.hash(input), content, ValueEquality.hash(metadata), state);
     }
 
     /**
