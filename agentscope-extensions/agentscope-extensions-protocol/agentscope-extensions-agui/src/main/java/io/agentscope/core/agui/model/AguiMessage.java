@@ -50,6 +50,7 @@ public class AguiMessage {
     private final List<AguiToolCall> toolCalls;
     private final String toolCallId;
     private final String error;
+    private final String status;
 
     /**
      * Creates a new AguiMessage without an error payload.
@@ -66,7 +67,29 @@ public class AguiMessage {
             MessageContent content,
             List<AguiToolCall> toolCalls,
             String toolCallId) {
-        this(id, role, content, toolCalls, toolCallId, null);
+        this(id, role, content, toolCalls, toolCallId, null, null);
+    }
+
+    /**
+     * Creates a message with the legacy six-argument extension. Recognized tool-result state
+     * values are retained as {@code status}; other values are retained as {@code error} for
+     * compatibility with the AG-UI error extension.
+     */
+    public AguiMessage(
+            String id,
+            String role,
+            MessageContent content,
+            List<AguiToolCall> toolCalls,
+            String toolCallId,
+            String extension) {
+        this(
+                id,
+                role,
+                content,
+                toolCalls,
+                toolCallId,
+                isToolResultStatus(extension) ? null : extension,
+                isToolResultStatus(extension) ? extension : null);
     }
 
     /**
@@ -79,6 +102,7 @@ public class AguiMessage {
      * @param toolCallId Tool call ID for tool messages (optional)
      * @param error The error a frontend tool reported, per the AG-UI protocol's {@code error}
      *     field on tool messages; may be null
+     * @param status Optional tool-result status extension; may be null
      */
     @JsonCreator
     public AguiMessage(
@@ -87,7 +111,8 @@ public class AguiMessage {
             @JsonProperty("content") MessageContent content,
             @JsonProperty("toolCalls") List<AguiToolCall> toolCalls,
             @JsonProperty("toolCallId") String toolCallId,
-            @JsonProperty("error") String error) {
+            @JsonProperty("error") String error,
+            @JsonProperty("status") String status) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.role = Objects.requireNonNull(role, "role cannot be null");
         this.content = content;
@@ -97,6 +122,7 @@ public class AguiMessage {
                         : Collections.emptyList();
         this.toolCallId = toolCallId;
         this.error = error;
+        this.status = status;
     }
 
     /**
@@ -166,7 +192,7 @@ public class AguiMessage {
      */
     public static AguiMessage toolMessage(
             String id, String toolCallId, String content, String error) {
-        return new AguiMessage(id, "tool", wrapText(content), null, toolCallId, error);
+        return new AguiMessage(id, "tool", wrapText(content), null, toolCallId, error, null);
     }
 
     /**
@@ -224,6 +250,16 @@ public class AguiMessage {
      */
     private static MessageContent wrapText(String text) {
         return text != null ? new MessageContent.Text(text) : null;
+    }
+
+    private static boolean isToolResultStatus(String value) {
+        if (value == null) {
+            return false;
+        }
+        return switch (value.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "success", "error", "interrupted", "denied", "running", "suspended" -> true;
+            default -> false;
+        };
     }
 
     /**
@@ -309,6 +345,12 @@ public class AguiMessage {
         return error;
     }
 
+    /** @return optional tool-result status, or null when omitted by the client */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public String getStatus() {
+        return status;
+    }
+
     /**
      * Check if this is a user message.
      *
@@ -382,6 +424,8 @@ public class AguiMessage {
                 + toolCallId
                 + "', error='"
                 + error
+                + "', status='"
+                + status
                 + "'}";
     }
 
@@ -395,11 +439,12 @@ public class AguiMessage {
                 && Objects.equals(content, that.content)
                 && Objects.equals(toolCalls, that.toolCalls)
                 && Objects.equals(toolCallId, that.toolCallId)
-                && Objects.equals(error, that.error);
+                && Objects.equals(error, that.error)
+                && Objects.equals(status, that.status);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, role, content, toolCalls, toolCallId, error);
+        return Objects.hash(id, role, content, toolCalls, toolCallId, error, status);
     }
 }

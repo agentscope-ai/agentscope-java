@@ -24,10 +24,11 @@ import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.internal.stream.ReplyLifecycleTracker;
+import io.agentscope.core.internal.stream.ReplyLifecycleTracker.Observation;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
@@ -74,37 +75,37 @@ public class FinalAnswerFilterMiddleware implements MiddlewareBase {
 
     private static final class RoundState {
         private final List<AgentEvent> bufferedTextEvents = new ArrayList<>();
-        private String replyId;
-        private boolean toolCallSeen;
+        private final ReplyLifecycleTracker tracker = new ReplyLifecycleTracker();
 
         private Flux<AgentEvent> handle(AgentEvent event) {
-            if (event instanceof ModelCallStartEvent start) {
-                replyId = start.getReplyId();
-                toolCallSeen = false;
+            if (!tracker.sourceKey(event).isTopLevel()) {
+                return Flux.just(event);
+            }
+            Observation observation = tracker.observe(event);
+
+            if (event instanceof ModelCallStartEvent) {
                 bufferedTextEvents.clear();
                 return Flux.just(event);
             }
 
             if (isTextBlockEvent(event)) {
-                if (isCurrentReply(event) && !toolCallSeen) {
+                if (observation.currentReplyEvent() && !observation.after().toolCallSeen()) {
                     bufferedTextEvents.add(event);
                     return Flux.empty();
                 }
-                if (isCurrentReply(event)) {
+                if (observation.currentReplyEvent()) {
                     return Flux.empty();
                 }
                 return Flux.just(event);
             }
 
-            if (event instanceof ToolCallStartEvent toolCall
-                    && Objects.equals(replyId, toolCall.getReplyId())) {
-                toolCallSeen = true;
+            if (event instanceof ToolCallStartEvent && observation.currentReplyEvent()) {
                 bufferedTextEvents.clear();
                 return Flux.just(event);
             }
 
-            if (event instanceof ModelCallEndEvent end && isCurrentReply(end)) {
-                if (toolCallSeen) {
+            if (event instanceof ModelCallEndEvent && observation.currentReplyEvent()) {
+                if (observation.after().toolCallSeen()) {
                     clear();
                     return Flux.just(event);
                 }
@@ -118,31 +119,9 @@ public class FinalAnswerFilterMiddleware implements MiddlewareBase {
             return Flux.just(event);
         }
 
-        private boolean isCurrentReply(AgentEvent event) {
-            String eventReplyId = getReplyId(event);
-            return replyId != null && Objects.equals(replyId, eventReplyId);
-        }
-
-        private static String getReplyId(AgentEvent event) {
-            if (event instanceof TextBlockStartEvent textStart) {
-                return textStart.getReplyId();
-            }
-            if (event instanceof TextBlockDeltaEvent textDelta) {
-                return textDelta.getReplyId();
-            }
-            if (event instanceof TextBlockEndEvent textEnd) {
-                return textEnd.getReplyId();
-            }
-            if (event instanceof ModelCallEndEvent modelEnd) {
-                return modelEnd.getReplyId();
-            }
-            return null;
-        }
-
         private void clear() {
             bufferedTextEvents.clear();
-            replyId = null;
-            toolCallSeen = false;
+            tracker.clear();
         }
     }
 }

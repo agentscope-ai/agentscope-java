@@ -35,8 +35,9 @@ public enum RemoteEventType {
 
     /**
      * Carries an {@link io.agentscope.core.event.AgentEvent} that has no dedicated wire type, fully
-     * serialized in {@link RemoteAgentEvent#getPayload()}. Emitted only at {@code detail=verbose};
-     * clients that predate this type skip it.
+     * serialized as a JSON string in {@link RemoteAgentEvent#getPayload()}. At {@code detail=full},
+     * {@code TEXT_OUTPUT_DISPOSITION} and {@code AGENT_RESULT} are included; other subtypes require
+     * {@code detail=verbose}. Clients that predate this type may ignore it.
      */
     AGENT_EVENT
 }

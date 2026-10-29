@@ -25,6 +25,7 @@ import io.agentscope.core.agent.SubagentEventBus;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.Msg;
@@ -72,6 +73,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
@@ -800,7 +802,8 @@ public class AgentSpawnTool {
             String userId,
             String prompt,
             SpawnedAgent spawned,
-            RuntimeContext parentCtx) {
+            RuntimeContext parentCtx,
+            String taskId) {
         return Mono.deferContextual(
                         ctxView -> {
                             DefaultAgentManager manager = managerFor(parentCtx);
@@ -812,22 +815,33 @@ public class AgentSpawnTool {
                                 String sourcePath = buildSourcePath(spawned, parentCtx);
                                 String replyId = UUID.randomUUID().toString().replace("-", "");
                                 AgentEventEmitter taggedEmitter =
-                                        event -> parentEmitter.emit(event.withSource(sourcePath));
+                                        event ->
+                                                parentEmitter.emit(
+                                                        tagForwardedEvent(
+                                                                event, sourcePath, taskId));
 
                                 parentEmitter.emit(
-                                        new AgentStartEvent(
+                                        tagForwardedEvent(
+                                                new AgentStartEvent(
                                                         spawned.sessionId(),
                                                         replyId,
-                                                        spawned.agentId())
-                                                .withSource(sourcePath));
+                                                        spawned.agentId()),
+                                                sourcePath,
+                                                taskId));
 
                                 AtomicBoolean endEmitted = new AtomicBoolean();
-                                Runnable emitEnd =
-                                        () -> {
+                                Consumer<String> emitEnd =
+                                        outcome -> {
                                             if (endEmitted.compareAndSet(false, true)) {
                                                 parentEmitter.emit(
-                                                        new AgentEndEvent(replyId)
-                                                                .withSource(sourcePath));
+                                                        tagForwardedEvent(
+                                                                new AgentEndEvent(replyId)
+                                                                        .withMetadataEntry(
+                                                                                AgentEndEvent
+                                                                                        .METADATA_INVOCATION_OUTCOME,
+                                                                                outcome),
+                                                                sourcePath,
+                                                                taskId));
                                             }
                                         };
 
@@ -842,15 +856,26 @@ public class AgentSpawnTool {
                                         // Emit before success or error reaches the parent, which
                                         // may
                                         // otherwise complete its event sink before doFinally runs.
-                                        .doOnSuccess(ignored -> emitEnd.run())
-                                        .doOnError(ignored -> emitEnd.run())
+                                        .doOnSuccess(
+                                                result -> {
+                                                    if (result != null) {
+                                                        parentEmitter.emit(
+                                                                tagForwardedEvent(
+                                                                        new AgentResultEvent(
+                                                                                result),
+                                                                        sourcePath,
+                                                                        taskId));
+                                                    }
+                                                    emitEnd.accept("success");
+                                                })
+                                        .doOnError(ignored -> emitEnd.accept("error"))
                                         // Preserve best-effort cancellation signaling without
                                         // emitting a
                                         // duplicate if cancellation races with normal termination.
                                         .doFinally(
                                                 signal -> {
                                                     if (signal == SignalType.CANCEL) {
-                                                        emitEnd.run();
+                                                        emitEnd.accept("cancelled");
                                                     }
                                                 });
                             }
@@ -953,6 +978,7 @@ public class AgentSpawnTool {
                         Mono.<ToolResultBlock>create(
                                 sink -> {
                                     CompletableFuture<Msg> bridge = new CompletableFuture<>();
+                                    String taskId = "task_" + UUID.randomUUID();
 
                                     Mono<Msg> inner =
                                             execLocalSync(
@@ -961,7 +987,8 @@ public class AgentSpawnTool {
                                                             userId,
                                                             task,
                                                             spawned,
-                                                            runtimeContext)
+                                                            runtimeContext,
+                                                            taskId)
                                                     .contextWrite(
                                                             c ->
                                                                     reactor.util.context.Context.of(
@@ -1012,6 +1039,7 @@ public class AgentSpawnTool {
                                                             header,
                                                             timeoutMs,
                                                             agentId,
+                                                            taskId,
                                                             sink,
                                                             forceSync,
                                                             innerSub);
@@ -1066,6 +1094,7 @@ public class AgentSpawnTool {
             String header,
             long timeoutMs,
             String agentId,
+            String taskId,
             reactor.core.publisher.MonoSink<ToolResultBlock> sink,
             boolean forceSync,
             Disposable innerSub) {
@@ -1087,7 +1116,6 @@ public class AgentSpawnTool {
                                 .withState(ToolResultState.ERROR));
                 return;
             }
-            String taskId = "task_" + UUID.randomUUID();
             String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
             CompletableFuture<String> textFuture = bridge.thenApply(AgentSpawnTool::textOf);
             taskRepository.putTask(
@@ -1254,6 +1282,17 @@ public class AgentSpawnTool {
                 parentSessionId != null && !parentSessionId.isBlank() ? parentSessionId : "main";
         String child = agentId != null && !agentId.isBlank() ? agentId : "remote";
         return parent + "/" + child;
+    }
+
+    static AgentEvent tagForwardedEvent(AgentEvent event, String sourcePath, String taskId) {
+        if (event == null) {
+            return null;
+        }
+        event.withSource(sourcePath);
+        if (taskId != null && !taskId.isBlank()) {
+            event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, taskId);
+        }
+        return event;
     }
 
     /**
