@@ -27,6 +27,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -143,8 +144,25 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     }
 
     @Override
+    protected boolean probeWorkspaceRootForPreservedResume() {
+        if (e2bState.isWorkspaceOnVolume()) {
+            // Files live on a persistent volume — the directory is durable across sandbox
+            // recreations, so treat it as preserved without probing.
+            return true;
+        }
+        return super.probeWorkspaceRootForPreservedResume();
+    }
+
+    @Override
     protected InputStream doPersistWorkspace() throws Exception {
         if (e2bState.getPersistenceMode() == E2bPersistenceMode.NATIVE_SNAPSHOT) {
+            // Native snapshots preserve the software environment (installed deps, system state);
+            // volume bytes stay durable via the volume itself and mounts are re-attached on
+            // restore. Keep the snapshot call even when the workspace sits on a volume.
+            // Verified live
+            // (E2bVolumeMountLiveTest#nestedMountContentSurvivesNativeSnapshotRestoreUnchanged):
+            // platform snapshots do not capture mounted volume bytes, so a nested mount under a
+            // non-volume workspace root is unaffected by snapshot restore.
             JsonNode snap = platform.createSandboxSnapshot(e2bState.getSandboxId(), snapshotName());
             String id = snap.path("snapshotID").asText("");
             if (id.isBlank()) {
@@ -155,6 +173,13 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
             lastCreatedSnapshotId = id;
             e2bState.getSnapshotIds().add(id);
             return new ByteArrayInputStream(E2bSnapshotRefs.encodeSnapshotId(id));
+        }
+        if (e2bState.isWorkspaceOnVolume()) {
+            // Workspace bytes are durable via the volume — nothing to archive. The empty stream
+            // doubles as the no-op marker read back by doHydrateWorkspace: a session flipping
+            // between volume-backed and plain persistence replaces a real archive with this
+            // empty one, meaning "hydrate nothing, the volume already holds the files".
+            return InputStream.nullInputStream();
         }
         String root = e2bState.getWorkspaceRoot();
         String tarPath = newTempTarPath();
@@ -171,7 +196,7 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     @Override
     protected Optional<InputStream> openSnapshotArchive(SandboxSnapshot snapshot) throws Exception {
         NativeSnapshotPlan plan = nativeSnapshotPlan;
-        if (plan.isUnavailable()) {
+        if (plan.isAbsent()) {
             return Optional.empty();
         }
         if (plan.isRestored()) {
@@ -183,6 +208,12 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     @Override
     protected void doHydrateWorkspace(InputStream archive) throws Exception {
         byte[] all = archive.readAllBytes();
+        if (all.length == 0) {
+            // Volume-backed workspaces persist nothing to hydrate (see doPersistWorkspace); the
+            // empty archive is an intentional no-op marker, not an error, and must not overwrite
+            // what a previous non-volume archive contained.
+            return;
+        }
         String nativeId = E2bSnapshotRefs.decodeSnapshotIdIfPresent(all);
         if (nativeId != null && !nativeId.isBlank()) {
             restoreSandboxFromSnapshotTemplate(nativeId, all);
@@ -201,24 +232,23 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
 
     @Override
     protected void doSetupWorkspace() throws Exception {
+        // mkdir's own cwd must already exist: a workspace root on a freshly mounted volume
+        // (e.g. /mnt/data/ws) typically does not exist yet, so run from / instead. The
+        // mkdir target is absolute and unaffected by the cwd.
         envd().runShell(
                         e2bState,
-                        getWorkspaceRoot(),
+                        "/",
                         "mkdir -p " + shellSingleQuote(e2bState.getWorkspaceRoot()),
                         30);
     }
 
     @Override
     protected void doDestroyWorkspace() throws Exception {
-        try {
-            envd().runShell(
-                            e2bState,
-                            getWorkspaceRoot(),
-                            "rm -rf " + shellSingleQuote(e2bState.getWorkspaceRoot()),
-                            30);
-        } catch (Exception e) {
-            log.debug("[sandbox-e2b] destroy workspace best-effort: {}", e.getMessage());
-        }
+        // No-op by contract. An E2B workspace's lifetime is bounded by the sandbox itself, so
+        // destruction is delegated to sandbox teardown; running "rm -rf" here beforehand would
+        // stretch a deletion through any nested volume mount into shared, persistent data
+        // without ever having an observable effect (the disk vanishes with the sandbox).
+        log.debug("[sandbox-e2b] workspace destruction is a no-op; sandbox teardown releases it");
     }
 
     @Override
@@ -265,9 +295,9 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
                 nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
             } catch (Exception e) {
                 log.warn("[sandbox-e2b] connect failed, recreating sandbox: {}", e.getMessage());
+                sandbox = createSandboxForRestore();
                 e2bState.setWorkspaceRootReady(false);
                 e2bState.setWorkspaceProjectionHash(null);
-                sandbox = createSandboxForRestore();
             }
         }
         platform.applySandboxFields(e2bState, sandbox);
@@ -297,37 +327,88 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     /**
      * Creates the sandbox from the cheapest usable source: a restorable native snapshot when one is
      * present, the configured original template otherwise.
+     *
+     * <p>A sandbox created from the template cannot hold the workspace this session had, so every
+     * template-created path clears the workspace-ready flags; only a sandbox created from the
+     * native snapshot keeps them, which lets {@code start()} apply ephemeral entries alone.
      */
     private JsonNode createSandboxForRestore() throws IOException {
         NativeSnapshotPeek peek = peekNativeSnapshot();
-        if (peek.unavailable()) {
-            nativeSnapshotPlan = NativeSnapshotPlan.UNAVAILABLE;
-            return platform.createSandbox(
-                    e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
+        if (peek.missing()) {
+            nativeSnapshotPlan = NativeSnapshotPlan.ABSENT;
+            log.warn(
+                    "[sandbox-e2b] snapshot record {} is not restorable; creating an empty"
+                            + " workspace from the template",
+                    e2bState.getSnapshot() != null ? e2bState.getSnapshot().getId() : "unknown");
+            JsonNode created =
+                    platform.createSandbox(
+                            e2bState.getTemplateId(),
+                            opt.getSandboxTimeoutSeconds(),
+                            e2bState.getVolumeMounts(),
+                            resolveEnvVars());
+            markWorkspaceUnready();
+            return created;
         }
         String snapshotId = peek.snapshotId();
         if (snapshotId != null) {
             try {
                 return createFromSnapshot(snapshotId, peek.archive());
-            } catch (Exception e) {
+            } catch (E2bPlatformHttp.PlatformHttpException e) {
+                if (e.statusCode() != 404) {
+                    throw snapshotRestoreFailure(
+                            "Failed to create sandbox from native snapshot " + snapshotId, e);
+                }
                 log.warn(
-                        "[sandbox-e2b] create from snapshot {} failed, creating from template: {}",
-                        snapshotId,
-                        e.getMessage());
-                nativeSnapshotPlan = NativeSnapshotPlan.UNAVAILABLE;
-                return platform.createSandbox(
-                        e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
+                        "[sandbox-e2b] native snapshot {} no longer exists (HTTP 404); creating an"
+                                + " empty workspace from the template",
+                        snapshotId);
+                nativeSnapshotPlan = NativeSnapshotPlan.ABSENT;
+                JsonNode created =
+                        platform.createSandbox(
+                                e2bState.getTemplateId(),
+                                opt.getSandboxTimeoutSeconds(),
+                                e2bState.getVolumeMounts(),
+                                resolveEnvVars());
+                markWorkspaceUnready();
+                return created;
+            } catch (SandboxException e) {
+                throw e;
+            } catch (Exception e) {
+                throw snapshotRestoreFailure(
+                        "Failed to create sandbox from native snapshot " + snapshotId, e);
             }
         }
         nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
-        return platform.createSandbox(
-                e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds(), resolveEnvVars());
+        JsonNode created =
+                platform.createSandbox(
+                        e2bState.getTemplateId(),
+                        opt.getSandboxTimeoutSeconds(),
+                        e2bState.getVolumeMounts(),
+                        resolveEnvVars());
+        markWorkspaceUnready();
+        return created;
+    }
+
+    private SandboxException.SandboxRuntimeException snapshotRestoreFailure(
+            String message, Exception cause) {
+        return new SandboxException.SandboxRuntimeException(
+                SandboxErrorCode.SNAPSHOT_RESTORE_ERROR,
+                message + ": " + cause.getMessage(),
+                cause);
+    }
+
+    private void markWorkspaceUnready() {
+        e2bState.setWorkspaceRootReady(false);
+        e2bState.setWorkspaceProjectionHash(null);
     }
 
     private JsonNode createFromSnapshot(String snapshotId, byte[] archive) throws IOException {
         JsonNode created =
                 platform.createSandbox(
-                        snapshotId, opt.getSandboxTimeoutSeconds(), resolveEnvVars());
+                        snapshotId,
+                        opt.getSandboxTimeoutSeconds(),
+                        e2bState.getVolumeMounts(),
+                        resolveEnvVars());
         nativeSnapshotPlan = NativeSnapshotPlan.restored(snapshotId, archive);
         return created;
     }
@@ -342,20 +423,14 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         }
         try {
             if (!snapshot.isRestorable()) {
-                return NativeSnapshotPeek.FAILED;
+                return NativeSnapshotPeek.MISSING;
             }
             try (InputStream in = snapshot.restore()) {
                 E2bSnapshotRefs.SnapshotIdRef ref = E2bSnapshotRefs.peekSnapshotId(in);
-                if (ref == null) {
-                    return NativeSnapshotPeek.NOT_NATIVE;
-                }
                 return new NativeSnapshotPeek(ref.snapshotId(), ref.archive(), false);
             }
         } catch (Exception e) {
-            log.debug(
-                    "[sandbox-e2b] native snapshot peek failed, using template: {}",
-                    e.getMessage());
-            return NativeSnapshotPeek.FAILED;
+            throw snapshotRestoreFailure("Failed to read native snapshot " + snapshot.getId(), e);
         }
     }
 
@@ -410,7 +485,7 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     private enum NativeSnapshotPlanStatus {
         DEFAULT,
         RESTORED,
-        UNAVAILABLE
+        ABSENT
     }
 
     private record NativeSnapshotPlan(
@@ -419,8 +494,8 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         private static final NativeSnapshotPlan DEFAULT =
                 new NativeSnapshotPlan(NativeSnapshotPlanStatus.DEFAULT, null, null);
 
-        private static final NativeSnapshotPlan UNAVAILABLE =
-                new NativeSnapshotPlan(NativeSnapshotPlanStatus.UNAVAILABLE, null, null);
+        private static final NativeSnapshotPlan ABSENT =
+                new NativeSnapshotPlan(NativeSnapshotPlanStatus.ABSENT, null, null);
 
         private static NativeSnapshotPlan restored(String snapshotId, byte[] archive) {
             return new NativeSnapshotPlan(NativeSnapshotPlanStatus.RESTORED, snapshotId, archive);
@@ -430,17 +505,17 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
             return status == NativeSnapshotPlanStatus.RESTORED;
         }
 
-        private boolean isUnavailable() {
-            return status == NativeSnapshotPlanStatus.UNAVAILABLE;
+        private boolean isAbsent() {
+            return status == NativeSnapshotPlanStatus.ABSENT;
         }
     }
 
-    private record NativeSnapshotPeek(String snapshotId, byte[] archive, boolean unavailable) {
+    private record NativeSnapshotPeek(String snapshotId, byte[] archive, boolean missing) {
 
         private static final NativeSnapshotPeek NOT_NATIVE =
                 new NativeSnapshotPeek(null, null, false);
 
-        private static final NativeSnapshotPeek FAILED = new NativeSnapshotPeek(null, null, true);
+        private static final NativeSnapshotPeek MISSING = new NativeSnapshotPeek(null, null, true);
     }
 
     /**
@@ -454,6 +529,23 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
     private static String snapshotName() {
         String shortId = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
         return "agentscope-" + shortId + "-" + System.currentTimeMillis();
+    }
+
+    /**
+     * {@code tar --exclude} args for volume mounts nested strictly beneath the workspace root.
+     * A mount covering the root needs no exclusion (persistence is a no-op in that case).
+     */
+    private List<String> volumeTarExcludeArgs() {
+        List<E2bVolumeMount> mounts = e2bState.getVolumeMounts();
+        if (mounts.isEmpty()) {
+            return List.of();
+        }
+        List<String> paths = new ArrayList<>(mounts.size());
+        for (E2bVolumeMount m : mounts) {
+            paths.add(m.getPath());
+        }
+        return WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(
+                e2bState.getWorkspaceRoot(), paths);
     }
 
     private E2bEnvdProcessClient envd() throws Exception {
@@ -485,7 +577,16 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         StringBuilder script = new StringBuilder("tar ");
         for (String ex :
                 WorkspaceMountSupport.tarExcludeArgsForBindMounts(e2bState.getWorkspaceSpec())) {
-            script.append(ex).append(' ');
+            // Quote: exclude args derive from user-configured paths and may contain spaces.
+            script.append(shellSingleQuote(ex)).append(' ');
+        }
+        // Apply volume-mount excludes on both branches. The create branch must not re-duplicate
+        // volume bytes into the archive; the extract branch must not let archive entries that
+        // predate the current mount configuration (e.g. a NATIVE_SNAPSHOT archive written before
+        // the volume was mounted under the workspace root) write through the mount point into
+        // the shared volume.
+        for (String ex : volumeTarExcludeArgs()) {
+            script.append(shellSingleQuote(ex)).append(' ');
         }
         script.append(create ? "-cf " : "-xf ")
                 .append(tarPath)
@@ -514,10 +615,7 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         if (root == null || root.isBlank() || !root.startsWith("/")) {
             return null;
         }
-        String normalizedRoot = root.replace('\\', '/');
-        while (normalizedRoot.length() > 1 && normalizedRoot.endsWith("/")) {
-            normalizedRoot = normalizedRoot.substring(0, normalizedRoot.length() - 1);
-        }
+        String normalizedRoot = WorkspaceMountSupport.normalizeVirtualPath(root);
         String rootPrefix = "/".equals(normalizedRoot) ? "/" : normalizedRoot + "/";
         if (!path.startsWith(rootPrefix)) {
             return null;

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.examples.documentation2.jev;
+package io.agentscope.examples.documentation2.judge;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
@@ -47,13 +47,13 @@ import reactor.core.publisher.Mono;
  *
  * <p>Before running this manual test, add a model-provider dependency such as agentscope-extensions-model-openai.
  */
-public final class JevToolSelectionMiddlewareTest {
+public final class JevToolSelectionMiddlewareExample {
 
     private static final String DASHSCOPE_COMPATIBLE_BASE_URL =
             "https://dashscope.aliyuncs.com/compatible-mode/v1";
     private static final Duration MODEL_CALL_TIMEOUT = Duration.ofSeconds(60);
 
-    private JevToolSelectionMiddlewareTest() {}
+    private JevToolSelectionMiddlewareExample() {}
 
     public static void main(String[] args) {
         String jevApiKey = firstNonBlankEnv("TYPESAFE_API_KEY", "JEV_API_KEY");
