@@ -16,13 +16,17 @@
 package io.agentscope.harness.agent.memory.compaction;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.session.SessionRecorder;
@@ -388,7 +392,8 @@ public class ConversationCompactor {
     /**
      * Determines the cutoff index separating the prefix-to-summarize from the tail-to-keep.
      *
-     * <p>The cutoff is adjusted so that ASSISTANT/TOOL pairs are never split.
+     * <p>The cutoff is adjusted so that ASSISTANT/TOOL pairs are never split and so that messages
+     * carrying raw media are never deleted by summarization.
      */
     private int determineCutoffIndex(
             List<Msg> messages, long totalTokens, CompactionConfig config) {
@@ -401,7 +406,72 @@ public class ConversationCompactor {
         } else {
             rawCutoff = findMessageBasedCutoff(messages, config.getKeepMessages());
         }
-        return findSafeCutoffPoint(messages, rawCutoff);
+        int cutoff = findSafeCutoffPoint(messages, rawCutoff);
+        return findRetentionSafeCutoff(messages, cutoff);
+    }
+
+    /**
+     * Moves the cutoff before the earliest retention-protected message so raw media blocks are not
+     * removed from the working history by summarization.
+     *
+     * <p>When the tool-group rule cannot keep the protected message without splitting its pair,
+     * the cutoff collapses to 0 and the caller falls back to the lightweight non-summarizing
+     * result: media is never sacrificed to satisfy the budget.
+     */
+    private static int findRetentionSafeCutoff(List<Msg> messages, int cutoffIndex) {
+        if (cutoffIndex <= 0) {
+            return cutoffIndex;
+        }
+        int protectedIndex = -1;
+        for (int i = 0; i < cutoffIndex; i++) {
+            if (isRetentionProtected(messages.get(i))) {
+                protectedIndex = i;
+                break;
+            }
+        }
+        if (protectedIndex < 0) {
+            return cutoffIndex;
+        }
+        int adjusted = findSafeCutoffPoint(messages, protectedIndex);
+        if (adjusted > protectedIndex) {
+            // Orphaned tool results would push the protected message back into the prefix.
+            return 0;
+        }
+        return adjusted;
+    }
+
+    /** Returns true when deleting this message via summarization would drop media. */
+    private static boolean isRetentionProtected(Msg msg) {
+        if (msg == null) {
+            return false;
+        }
+        List<ContentBlock> blocks = msg.getContent();
+        if (blocks == null) {
+            return false;
+        }
+        for (ContentBlock block : blocks) {
+            if (containsMediaBlock(block)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsMediaBlock(ContentBlock block) {
+        if (block instanceof ImageBlock
+                || block instanceof AudioBlock
+                || block instanceof VideoBlock
+                || block instanceof DataBlock) {
+            return true;
+        }
+        if (block instanceof ToolResultBlock tr && tr.getOutput() != null) {
+            for (ContentBlock child : tr.getOutput()) {
+                if (containsMediaBlock(child)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** Returns the earliest index such that {@code messages[index:]} fits within the token budget. */
@@ -521,19 +591,23 @@ public class ConversationCompactor {
      * Formats a list of messages as a human-readable text block for the summarization LLM.
      *
      * <p>Tool calls retain their names and argument previews; tool results retain their names,
-     * error state, and head+tail previews. Omitted content is marked explicitly.
+     * error state, and head+tail previews. Omitted content is marked explicitly. Image, audio,
+     * video and data blocks — including media nested in tool results — render as stable
+     * placeholders so the summary keeps the fact that media existed without leaking binary data,
+     * URLs or file paths.
      */
     static String formatMessagesForSummary(List<Msg> messages) {
+        CompactionMediaRenderer mediaRenderer = new CompactionMediaRenderer();
         return messages.stream()
                 .filter(m -> m.getRole() != null && m.getRole() != MsgRole.SYSTEM)
-                .map(ConversationCompactor::renderMessageForSummary)
+                .map(m -> renderMessageForSummary(m, mediaRenderer))
                 .filter(s -> !s.isBlank())
                 .collect(Collectors.joining("\n\n"));
     }
 
     private static final int SUMMARY_PREVIEW_CHARS = 600;
 
-    private static String renderMessageForSummary(Msg msg) {
+    private static String renderMessageForSummary(Msg msg, CompactionMediaRenderer mediaRenderer) {
         String roleLabel =
                 switch (msg.getRole()) {
                     case USER -> "Human";
@@ -544,6 +618,7 @@ public class ConversationCompactor {
 
         StringBuilder sb = new StringBuilder(roleLabel).append(": ");
         boolean first = true;
+        int ordinal = 0;
         for (ContentBlock block : msg.getContent()) {
             if (!first) sb.append(" ");
             first = false;
@@ -562,9 +637,42 @@ public class ConversationCompactor {
                 }
                 sb.append("] ");
                 sb.append(buildPrunePreview(extractToolResultText(tr), SUMMARY_PREVIEW_CHARS));
+                appendToolMediaPlaceholders(sb, tr, mediaRenderer, msg.getId(), ordinal);
+            } else {
+                sb.append(
+                        mediaRenderer.renderBlock(
+                                block,
+                                new CompactionMediaRenderer.RenderContext(msg.getId(), ordinal)));
             }
+            ordinal++;
         }
         return sb.toString().strip();
+    }
+
+    /** Renders placeholders for non-text output nested in a tool result so it is not dropped. */
+    private static void appendToolMediaPlaceholders(
+            StringBuilder sb,
+            ToolResultBlock tr,
+            CompactionMediaRenderer mediaRenderer,
+            String messageId,
+            int blockOrdinal) {
+        List<ContentBlock> output = tr.getOutput();
+        if (output == null || output.isEmpty()) {
+            return;
+        }
+        String parentId = (messageId == null ? "msg" : messageId) + "." + blockOrdinal;
+        for (int i = 0; i < output.size(); i++) {
+            ContentBlock child = output.get(i);
+            if (child instanceof TextBlock) {
+                continue;
+            }
+            String rendered =
+                    mediaRenderer.renderBlock(
+                            child, new CompactionMediaRenderer.RenderContext(parentId, i));
+            if (!rendered.isBlank()) {
+                sb.append(" ").append(rendered);
+            }
+        }
     }
 
     /** Keep every argument name and short value; abbreviate large values individually. */

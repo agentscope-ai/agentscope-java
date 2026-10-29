@@ -263,6 +263,8 @@ builder.compaction(CompactionConfig.builder()
 
 `keepMessages` 仅在 `keepTokens(0)` 时生效。压缩还会维护工具调用与结果的配对，保留范围不能把一次工具交互随意切开。摘要默认使用 Agent 主模型，也可以通过 `CompactionConfig.builder().model(summaryModel)` 指定辅助模型；自定义 `summaryPrompt` 时需保留 `{messages}` 占位符。
 
+摘要不会删除携带原始媒体（图片、音频、视频、数据块）的消息：安全切点必须落在这些消息之前；无法做到时，本次压缩不会执行摘要，不会为了满足预算而牺牲媒体。交给摘要模型的内容里，媒体以占位符形式出现，不会重复传输原始数据。
+
 <span id="4-预压缩参数截断-可选" />
 
 <Accordion title="进一步减少旧工具参数和结果的开销">

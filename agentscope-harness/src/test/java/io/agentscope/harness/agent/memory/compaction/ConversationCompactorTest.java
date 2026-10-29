@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.memory.compaction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -24,10 +25,20 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolExecutionDetails;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -38,6 +49,7 @@ import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -321,6 +333,157 @@ class ConversationCompactorTest {
         }
     }
 
+    /**
+     * Verifies that a message carrying top-level media is kept out of the summarization prefix and
+     * survives as the original block in the working history, while its data never reaches the
+     * summary prompt.
+     */
+    @Test
+    void compactIfNeeded_keepsTopLevelMediaMessageOutOfSummaryPrefix() {
+        Fixture fixture = new Fixture(false);
+        String imageData =
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        Msg media = messageWithImage("look at this", imageData);
+
+        List<Msg> compacted =
+                fixture.compact(
+                        List.of(message("M1"), media, message("TAIL_1"), message("TAIL_2")));
+
+        String prompt = fixture.model.prompt(0);
+        assertTrue(prompt.contains("M1"));
+        assertFalse(prompt.contains("look at this"));
+        assertFalse(prompt.contains(imageData));
+        assertEquals(4, compacted.size());
+        assertSame(media, compacted.get(1));
+        assertTrue(compacted.get(1).getContent().get(1) instanceof ImageBlock);
+        assertEquals(List.of("TAIL_1", "TAIL_2"), texts(compacted.subList(2, compacted.size())));
+    }
+
+    /**
+     * Verifies that media nested in a tool result pulls its whole ASSISTANT/TOOL group into the
+     * kept tail instead of being summarized away.
+     */
+    @Test
+    void compactIfNeeded_keepsNestedToolMediaGroupOutOfSummaryPrefix() {
+        Fixture fixture = new Fixture(false);
+        Msg assistant = assistantToolCall("call:img", "screenshot");
+        Msg tool =
+                toolMessage(
+                        toolResult(
+                                "call:img",
+                                "screenshot",
+                                List.of(
+                                        TextBlock.builder().text("captured").build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType("image/png")
+                                                                .data("iVBORw0KGgo=")
+                                                                .build())
+                                                .build()),
+                                Map.of(),
+                                ToolResultState.SUCCESS,
+                                null));
+
+        List<Msg> compacted =
+                fixture.compact(
+                        List.of(
+                                message("M1"),
+                                assistant,
+                                tool,
+                                message("TAIL_1"),
+                                message("TAIL_2")));
+
+        String prompt = fixture.model.prompt(0);
+        assertTrue(prompt.contains("M1"));
+        assertFalse(prompt.contains("captured"));
+        assertEquals(5, compacted.size());
+        assertSame(assistant, compacted.get(1));
+        assertSame(tool, compacted.get(2));
+        ToolResultBlock kept = compacted.get(2).getContentBlocks(ToolResultBlock.class).get(0);
+        assertTrue(kept.getOutput().stream().anyMatch(block -> block instanceof ImageBlock));
+    }
+
+    /**
+     * Verifies that when a protected message sits at the history head, summarization is refused
+     * entirely — no LLM call happens and the history stays untouched.
+     */
+    @Test
+    void compactIfNeeded_refusesSummarizationWhenProtectedMessageCannotBeExcluded() {
+        Fixture fixture = new Fixture(false);
+        Msg media = messageWithImage("head image", "AAAA");
+
+        Optional<List<Msg>> result =
+                fixture.compactor
+                        .compactIfNeeded(
+                                fixture.runtimeContext,
+                                List.of(media, message("M2"), message("TAIL_1"), message("TAIL_2")),
+                                fixture.config,
+                                "agent-id",
+                                "session-id")
+                        .block();
+
+        assertTrue(result.isEmpty());
+        assertTrue(fixture.model.inputs.isEmpty());
+        assertTrue(fixture.flushInputs.isEmpty());
+    }
+
+    /**
+     * Verifies every media kind renders as a safe placeholder in the summary input, including
+     * media nested in a tool result, without leaking payloads, URLs or tokens.
+     */
+    @Test
+    void formatMessagesForSummaryRendersAllMediaKindsAsPlaceholders() {
+        String audioData = "YXVkaW8tcHJvbXB0";
+        String videoUrl = "https://example.com/prompt-video.mp4?sig=prompt-secret";
+        String dataPayload = "cGRmLXByb21wdA==";
+        Msg audio = messageWithMedia("audio note", audioBlock(audioData));
+        Msg video =
+                messageWithMedia(
+                        "video note",
+                        VideoBlock.builder()
+                                .source(
+                                        URLSource.builder()
+                                                .url(videoUrl)
+                                                .mimeType("video/mp4")
+                                                .build())
+                                .build());
+        Msg data =
+                messageWithMedia("data note", dataBlock("doc-prompt", "prompt.pdf", dataPayload));
+        Msg tool =
+                toolMessage(
+                        toolResult(
+                                "call:media",
+                                "fetch",
+                                List.of(
+                                        TextBlock.builder().text("tool text").build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType("image/png")
+                                                                .data("iVBORw0KGgo=")
+                                                                .build())
+                                                .build()),
+                                Map.of(),
+                                ToolResultState.SUCCESS,
+                                null));
+
+        String formatted =
+                ConversationCompactor.formatMessagesForSummary(List.of(audio, video, data, tool));
+
+        assertTrue(formatted.contains("kind=audio"));
+        assertTrue(formatted.contains("kind=video"));
+        assertTrue(formatted.contains("kind=data"));
+        assertTrue(formatted.contains("kind=image"));
+        assertTrue(formatted.contains("protocol=https"));
+        assertTrue(formatted.contains("tool text"));
+        assertFalse(formatted.contains(audioData));
+        assertFalse(formatted.contains(videoUrl));
+        assertFalse(formatted.contains("prompt-secret"));
+        assertFalse(formatted.contains(dataPayload));
+        assertFalse(formatted.contains("iVBORw0KGgo="));
+    }
+
     /** Creates a regular user message. */
     private static Msg message(String text) {
         return Msg.builder()
@@ -339,6 +502,71 @@ class ConversationCompactorTest {
                                 .name(name)
                                 .output(TextBlock.builder().text(output).build())
                                 .build())
+                .build();
+    }
+
+    /** Creates a user message containing text and a base64 image. */
+    private static Msg messageWithImage(String text, String imageData) {
+        return messageWithMedia(
+                text,
+                ImageBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data(imageData)
+                                        .build())
+                        .build());
+    }
+
+    /** Creates a user message containing text and the given media blocks. */
+    private static Msg messageWithMedia(String text, ContentBlock... media) {
+        List<ContentBlock> content = new ArrayList<>();
+        content.add(TextBlock.builder().text(text).build());
+        content.addAll(List.of(media));
+        return Msg.builder().id("msg-with-media").role(MsgRole.USER).content(content).build();
+    }
+
+    private static AudioBlock audioBlock(String data) {
+        return AudioBlock.builder()
+                .source(Base64Source.builder().mediaType("audio/mp3").data(data).build())
+                .build();
+    }
+
+    private static DataBlock dataBlock(String id, String name, String data) {
+        return DataBlock.builder()
+                .source(Base64Source.builder().mediaType("application/pdf").data(data).build())
+                .id(id)
+                .name(name)
+                .build();
+    }
+
+    /** Creates a TOOL message wrapping the given result. */
+    private static Msg toolMessage(ToolResultBlock result) {
+        return Msg.builderForRole(MsgRole.TOOL).id("msg-" + result.getId()).content(result).build();
+    }
+
+    /** Builds a {@link ToolResultBlock} with full metadata for preservation checks. */
+    private static ToolResultBlock toolResult(
+            String id,
+            String name,
+            List<ContentBlock> output,
+            Map<String, Object> metadata,
+            ToolResultState state,
+            ToolExecutionDetails details) {
+        return ToolResultBlock.builder()
+                .id(id)
+                .name(name)
+                .output(output)
+                .metadata(metadata)
+                .state(state)
+                .executionDetails(details)
+                .build();
+    }
+
+    /** Creates an ASSISTANT message issuing a single tool call. */
+    private static Msg assistantToolCall(String callId, String name) {
+        return Msg.builderForRole(MsgRole.ASSISTANT)
+                .content(ToolUseBlock.builder().id(callId).name(name).input(Map.of()).build())
                 .build();
     }
 
