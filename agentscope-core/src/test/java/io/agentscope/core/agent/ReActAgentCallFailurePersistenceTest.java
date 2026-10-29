@@ -27,6 +27,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
@@ -35,9 +36,12 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.State;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -189,6 +193,60 @@ class ReActAgentCallFailurePersistenceTest {
                         .orElseThrow();
         assertTrue(textContents(persisted.getContext()).contains("structured question"));
         assertFalse(textContents(persisted.getContext()).contains("incomplete answer"));
+    }
+
+    @Test
+    @DisplayName("native structured failure after a business tool preserves state without replay")
+    void nativeStructuredFailureAfterToolDoesNotReplayTool() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeException modelFailure = new RuntimeException("final model round failed");
+        FailAfterBusinessToolModel model = new FailAfterBusinessToolModel(modelFailure);
+        CountingBusinessTools businessTools = new CountingBusinessTools();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(businessTools);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("system prompt")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        RuntimeException thrown =
+                assertThrows(
+                        RuntimeException.class,
+                        () ->
+                                agent.call(
+                                                List.of(userMsg("structured weather request")),
+                                                StructuredReply.class,
+                                                CONTEXT)
+                                        .block());
+
+        assertSame(modelFailure, thrown);
+        assertEquals(1, businessTools.calls.get(), "business tool must not be replayed");
+        assertEquals(2, model.calls.get(), "native failure must not trigger a synthetic retry");
+        assertTrue(
+                model.requestedTools.stream()
+                        .flatMap(List::stream)
+                        .noneMatch(tool -> "generate_response".equals(tool.getName())));
+
+        AgentState persisted =
+                store.get("u1", "session-1", "agent_state", AgentState.class).orElseThrow();
+        assertTrue(
+                persisted.getContext().stream()
+                        .flatMap(message -> message.getContent().stream())
+                        .anyMatch(
+                                block ->
+                                        block instanceof ToolUseBlock toolUse
+                                                && "recordWeather".equals(toolUse.getName())));
+        assertTrue(
+                persisted.getContext().stream()
+                        .flatMap(message -> message.getContent().stream())
+                        .anyMatch(
+                                block ->
+                                        block instanceof ToolResultBlock toolResult
+                                                && "recordWeather".equals(toolResult.getName())));
     }
 
     @Test
@@ -378,6 +436,52 @@ class ReActAgentCallFailurePersistenceTest {
         protected Flux<ChatResponse> doStream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             return Flux.just(ChatResponse.builder().content(List.of()).build());
+        }
+    }
+
+    private static final class CountingBusinessTools {
+        private final AtomicInteger calls = new AtomicInteger();
+
+        @Tool(name = "recordWeather", description = "Record the current weather")
+        public String recordWeather() {
+            calls.incrementAndGet();
+            return "sunny";
+        }
+    }
+
+    private static final class FailAfterBusinessToolModel extends ChatModelBase {
+        private final RuntimeException failure;
+        private final AtomicInteger calls = new AtomicInteger();
+        private final List<List<ToolSchema>> requestedTools = new ArrayList<>();
+
+        private FailAfterBusinessToolModel(RuntimeException failure) {
+            this.failure = failure;
+            setNativeStructuredOutput(true);
+            setNativeStructuredOutputWithTools(true);
+        }
+
+        @Override
+        public String getModelName() {
+            return "fail-after-business-tool";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            requestedTools.add(tools == null ? List.of() : List.copyOf(tools));
+            if (calls.incrementAndGet() == 1) {
+                return Flux.just(
+                        ChatResponse.builder()
+                                .content(
+                                        List.of(
+                                                ToolUseBlock.builder()
+                                                        .id("weather-call")
+                                                        .name("recordWeather")
+                                                        .input(Map.of())
+                                                        .build()))
+                                .build());
+            }
+            return Flux.error(failure);
         }
     }
 
