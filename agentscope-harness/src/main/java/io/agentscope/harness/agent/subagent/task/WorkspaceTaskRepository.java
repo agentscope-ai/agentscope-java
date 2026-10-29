@@ -524,16 +524,23 @@ public class WorkspaceTaskRepository implements TaskRepository {
 
     @Override
     public BackgroundTask getTask(RuntimeContext rc, String sessionId, String taskId) {
+        RuntimeContext effectiveRc = rc != null ? rc : RuntimeContext.empty();
         BackgroundTask local = localTasks.get(localKey(sessionId, taskId));
-        if (local != null) {
+        Optional<TaskRecord> record =
+                workspaceManager.readTaskRecord(effectiveRc, parentAgentId, sessionId, taskId);
+        // A terminal durable status wins over the local handle, exactly as in listTasks(): a
+        // cancellation that arrives after completion must not make one read path report CANCELLED
+        // while the other reports COMPLETED for the same task.
+        if (local != null && !isTerminal(record)) {
             return local;
         }
-        // Fall back to workspace record — construct a synthetic completed/failed BackgroundTask
-        Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord(
-                        rc != null ? rc : RuntimeContext.empty(), parentAgentId, sessionId, taskId);
-        return record.map(r -> syntheticTask(rc != null ? rc : RuntimeContext.empty(), r))
-                .orElse(null);
+        return record.map(r -> syntheticTask(effectiveRc, r)).orElse(local);
+    }
+
+    private static boolean isTerminal(Optional<TaskRecord> record) {
+        return record.isPresent()
+                && record.get().getStatus() != null
+                && record.get().getStatus().isTerminal();
     }
 
     @Override
@@ -574,14 +581,17 @@ public class WorkspaceTaskRepository implements TaskRepository {
         }
 
         // Always write cancelRequested flag to workspace for cross-node coordination
-        Optional<TaskRecord> existing = persistCancellation(effRc, sessionId, taskId);
+        Cancellation cancellation = persistCancellation(effRc, sessionId, taskId);
+        Optional<TaskRecord> existing = cancellation.record();
         if (existing.isPresent()) {
             TaskRecord snapshot = existing.get();
             boolean agentProtocol =
                     snapshot.isAgentProtocolTransport() && snapshot.getRemoteBaseUrl() != null;
 
             // Completion listeners must observe durable cancellation, never a still-running record.
-            if (local != null) local.cancel(true);
+            // A record that already reached a terminal state is left alone: the task finished
+            // before the request arrived, so flipping the handle would report CANCELLED for it.
+            if (local != null && !cancellation.alreadyTerminal()) local.cancel(true);
 
             if (agentProtocol) {
                 try {
@@ -839,17 +849,21 @@ public class WorkspaceTaskRepository implements TaskRepository {
 
     // Serialize local status changes with cancellation. Otherwise a worker starting between
     // cancellation's read and write can restore RUNNING before completion listeners run.
-    private synchronized Optional<TaskRecord> persistCancellation(
+    /** Outcome of stamping a cancellation, including whether the task had already finished. */
+    private record Cancellation(Optional<TaskRecord> record, boolean alreadyTerminal) {}
+
+    private synchronized Cancellation persistCancellation(
             RuntimeContext rc, String sessionId, String taskId) {
         Optional<TaskRecord> existing =
                 workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
+        boolean alreadyTerminal = isTerminal(existing);
         existing.ifPresent(
                 record -> {
                     record.setCancelRequested(true);
                     if (!record.getStatus().isTerminal()) record.setStatus(TaskStatus.CANCELLED);
                     persistRecord(rc, sessionId, record);
                 });
-        return existing;
+        return new Cancellation(existing, alreadyTerminal);
     }
 
     private synchronized void updateStatus(
