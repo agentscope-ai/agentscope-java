@@ -58,6 +58,7 @@ public final class SessionRecorder {
     public static final String CONTEXT_KEY = "agentscope.session.recorder";
     public static final String PARENT_KEY = "agentscope.session.parent";
     private final AtomicBoolean exporting = new AtomicBoolean();
+    private final AtomicBoolean exportPending = new AtomicBoolean();
     public static final String TURN_ID_KEY = "agentscope.session.turnId";
     private static final Duration LEASE = Duration.ofMinutes(2);
     private final SessionLog log;
@@ -270,20 +271,27 @@ public final class SessionRecorder {
 
     private void exportCommitted() {
         if (exporter == null) return;
+        // Record the request before checking the drain: a commit that lands while one is running is
+        // then exported by that drain rather than waiting for the next heartbeat or retry.
+        exportPending.set(true);
         if (!exporting.compareAndSet(false, true)) return;
-        Schedulers.boundedElastic()
-                .schedule(
-                        () -> {
-                            try {
-                                exporter.drain();
-                            } catch (RuntimeException error) {
-                                LOGGER.warn(
-                                        "Committed session export pending retry: {}",
-                                        error.toString());
-                            } finally {
-                                exporting.set(false);
-                            }
-                        });
+        scheduleExport();
+    }
+
+    private void scheduleExport() {
+        Schedulers.boundedElastic().schedule(this::drainExports);
+    }
+
+    private void drainExports() {
+        try {
+            while (exportPending.compareAndSet(true, false)) exporter.drain();
+        } catch (RuntimeException error) {
+            LOGGER.warn("Committed session export pending retry: {}", error.toString());
+        } finally {
+            exporting.set(false);
+            // A commit may have landed between the last check and clearing the flag above.
+            if (exportPending.get() && exporting.compareAndSet(false, true)) scheduleExport();
+        }
     }
 
     /** Explicit acknowledged boundary for existing synchronous domain mutation code. */
