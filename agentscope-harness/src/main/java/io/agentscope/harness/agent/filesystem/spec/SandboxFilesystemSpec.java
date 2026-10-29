@@ -42,6 +42,7 @@ public abstract class SandboxFilesystemSpec {
             List.of("AGENTS.md", "skills", "subagents", "knowledge", ".skills-cache");
 
     private IsolationScope isolationScope;
+    private boolean lazyInitialization;
     private SandboxSnapshotSpec snapshotSpecOverride;
     private SandboxExecutionGuard executionGuard;
     private boolean workspaceProjectionEnabled = true;
@@ -58,6 +59,20 @@ public abstract class SandboxFilesystemSpec {
     public SandboxFilesystemSpec isolationScope(IsolationScope scope) {
         this.isolationScope = scope;
         return this;
+    }
+
+    /**
+     * Defers sandbox acquisition until the first sandbox filesystem operation in a call.
+     * Defaults to {@code false}. Workspace context, memory and session storage also count as
+     * filesystem access when backed by the sandbox; this option does not relocate their data.
+     */
+    public SandboxFilesystemSpec lazyInitialization(boolean enabled) {
+        this.lazyInitialization = enabled;
+        return this;
+    }
+
+    public boolean isLazyInitialization() {
+        return lazyInitialization;
     }
 
     public IsolationScope getIsolationScope() {
@@ -117,6 +132,7 @@ public abstract class SandboxFilesystemSpec {
                 .snapshotSpec(snapshotSpecOverride != null ? snapshotSpecOverride : snapshotSpec())
                 .workspaceSpec(withProjection)
                 .isolationScope(isolationScope)
+                .lazyInitialization(lazyInitialization)
                 .build();
     }
 

@@ -21,6 +21,7 @@ import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
+import io.agentscope.harness.agent.sandbox.LazySandboxBinding;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxAware;
@@ -239,7 +240,9 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     private Sandbox requireSandbox(RuntimeContext runtimeContext) {
         Sandbox s = null;
         if (runtimeContext != null) {
-            SandboxAcquireResult bound = runtimeContext.get(SandboxAcquireResult.class);
+            LazySandboxBinding lazy = runtimeContext.get(LazySandboxBinding.class);
+            SandboxAcquireResult bound =
+                    lazy != null ? lazy.get() : runtimeContext.get(SandboxAcquireResult.class);
             if (bound != null) {
                 if (bound.isReleased()) {
                     throw new SandboxException.SandboxConfigurationException(
