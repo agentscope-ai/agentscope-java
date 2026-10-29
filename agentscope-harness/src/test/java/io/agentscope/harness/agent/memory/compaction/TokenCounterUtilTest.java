@@ -17,11 +17,17 @@ package io.agentscope.harness.agent.memory.compaction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.harness.agent.context.ContextTokenEstimator;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class TokenCounterUtilTest {
@@ -34,7 +40,7 @@ class TokenCounterUtilTest {
                         .content(ThinkingBlock.builder().thinking("x".repeat(1_000)).build())
                         .build();
 
-        assertEquals(409, TokenCounterUtil.calculateToken(List.of(message)));
+        assertEquals(412, TokenCounterUtil.calculateToken(List.of(message)));
     }
 
     @Test
@@ -53,6 +59,55 @@ class TokenCounterUtilTest {
                                         .build())
                         .build();
 
-        assertEquals(421, TokenCounterUtil.calculateToken(List.of(message)));
+        assertEquals(430, TokenCounterUtil.calculateToken(List.of(message)));
+    }
+
+    @Test
+    void calculateToken_countsMediaInsideToolResults() {
+        Msg message =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call-1")
+                                        .name("read")
+                                        .output(
+                                                ImageBlock.builder()
+                                                        .source(
+                                                                new URLSource(
+                                                                        "https://example.com/image.png"))
+                                                        .build())
+                                        .build())
+                        .build();
+
+        assertEquals(2077, TokenCounterUtil.calculateToken(List.of(message)));
+    }
+
+    @Test
+    void calculateToken_usesFinalInputRulesForChineseAndNestedArguments() {
+        List<Msg> messages =
+                List.of(
+                        Msg.builder().role(MsgRole.USER).textContent("请查询昨天的订单").build(),
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        ToolUseBlock.builder()
+                                                .id("call-1")
+                                                .name("search")
+                                                .input(
+                                                        Map.of(
+                                                                "filter",
+                                                                Map.of(
+                                                                        "status",
+                                                                        List.of("已完成", "退款"))))
+                                                .build())
+                                .build());
+
+        long finalEstimate =
+                ContextTokenEstimator.approximate()
+                        .estimate(new ModelCallInput(messages, List.of(), null, null))
+                        .tokens();
+
+        assertEquals(finalEstimate, TokenCounterUtil.calculateToken(messages));
     }
 }

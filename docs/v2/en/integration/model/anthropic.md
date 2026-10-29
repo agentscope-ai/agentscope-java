@@ -82,6 +82,18 @@ construction to fail with an `IllegalArgumentException`.
 Configure authentication through the builder rather than `GenerateOptions.additionalHeaders`,
 because the SDK owns these authentication headers.
 
+## Client-side tool search
+
+Register `ToolSearchMiddleware` on the agent to use a custom client-side search
+strategy with native loading. The adapter sends the eligible tools with
+`defer_loading: true`, while search and always-visible tools stay non-deferred.
+Search results include `tool_reference` blocks, which Anthropic expands using the
+full definitions in the request's `tools` array. Deferred definitions are still
+sent on every request, but enter model context only when loaded. Prompt-cache
+markers are placed on the last non-deferred client tool, never on deferred tools.
+Use a model supporting this protocol, or select the ordinary-function fallback.
+See [on-demand tool search](/v2/en/docs/building-blocks/tool#on-demand-tool-search).
+
 ## Spring Boot
 
 Spring Boot applications can use the Anthropic starter:

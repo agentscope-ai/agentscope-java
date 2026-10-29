@@ -278,11 +278,47 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         int conversationBudget =
                 (int) Math.min(Integer.MAX_VALUE, Math.max(1, limit - fixedTokens));
         ModelCallInput before = current;
-        Mono<CompactionMiddleware.Candidate> compiled =
-                purpose == Purpose.REASONING && compaction != null
-                        ? compaction.prepareCandidate(
-                                agent, rc, current, conversationBudget, history)
-                        : Mono.just(new CompactionMiddleware.Candidate(current, history));
+        List<Msg> prefix =
+                current.messages().stream()
+                        .filter(
+                                msg ->
+                                        msg.getRole() == MsgRole.SYSTEM
+                                                || msg.isRequestProjection(canonical))
+                        .toList();
+        Mono<CompactionMiddleware.Candidate> compiled;
+        if (purpose == Purpose.REASONING && compaction != null) {
+            long requestOverhead = policy.estimator().estimate(copy(current, List.of())).tokens();
+            compiled =
+                    compaction.prepareCandidate(
+                            agent,
+                            rc,
+                            current,
+                            conversationBudget,
+                            history,
+                            messages -> {
+                                List<Msg> assembled = new ArrayList<>(prefix);
+                                assembled.addAll(messages);
+                                ModelCallInput request =
+                                        layout(
+                                                project(copy(before, assembled), snapshot),
+                                                canonical);
+                                // Measure the complete candidate, charging fixed inputs once.
+                                return Math.max(
+                                        0,
+                                        policy.estimator().estimate(request).tokens()
+                                                - fixedTokens);
+                            },
+                            message ->
+                                    Math.max(
+                                            0,
+                                            policy.estimator()
+                                                            .estimate(
+                                                                    copy(before, List.of(message)))
+                                                            .tokens()
+                                                    - requestOverhead));
+        } else {
+            compiled = Mono.just(new CompactionMiddleware.Candidate(current, history));
+        }
         return compiled.map(
                 candidate -> {
                     ModelCallInput result = candidate.input();

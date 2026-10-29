@@ -18,9 +18,11 @@ package io.agentscope.harness.agent.session;
 import io.agentscope.core.session.AtomicSessionStorage;
 import io.agentscope.core.session.SessionLogException;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
@@ -35,6 +37,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * open directories for fsync. Both backends acknowledge writes only after synchronous commit.
  */
 public final class LocalSessionStorage implements AtomicSessionStorage {
+    /** Suffix of the atomic-write temp file, and of the lock file guarding a target. */
+    private static final String TEMP_SUFFIX = ".tmp";
+
+    private static final String LOCK_SUFFIX = ".lock";
     private static final ConcurrentHashMap<Path, ReentrantLock> LOCKS = new ConcurrentHashMap<>();
     private final Path root;
     private final AtomicSessionStorage transactionalStorage;
@@ -72,12 +78,26 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
         try (var paths = Files.walk(directory)) {
             return paths.filter(Files::isRegularFile)
                     .filter(file -> !Files.isSymbolicLink(file))
+                    .filter(LocalSessionStorage::isCommittedObject)
                     .map(file -> root.relativize(file).toString().replace('\\', '/'))
                     .sorted()
                     .toList();
+        } catch (UncheckedIOException raced) {
+            // Files.walk reads each entry's attributes while it iterates, so an entry that a
+            // concurrent writer renames away surfaces as an UncheckedIOException wrapping
+            // NoSuchFileException rather than as a checked one. Discovery is a best-effort
+            // snapshot; callers fall back to per-object reads when it comes back empty.
+            if (raced.getCause() instanceof NoSuchFileException) return List.of();
+            throw new SessionLogException("Journal discovery failed: " + directory, raced);
         } catch (IOException error) {
             throw new SessionLogException("Journal discovery failed: " + directory, error);
         }
+    }
+
+    /** Atomic-write temps and lock files live beside their targets but are not journal objects. */
+    private static boolean isCommittedObject(Path file) {
+        String name = file.getFileName().toString();
+        return !name.endsWith(TEMP_SUFFIX) && !name.endsWith(LOCK_SUFFIX);
     }
 
     @Override
@@ -85,7 +105,6 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
         Path file = path(key);
         if (transactionalStorage != null) return transactionalStorage.read(key);
         try {
-            if (!Files.exists(file)) return null;
             byte[] bytes = Files.readAllBytes(file);
             if (bytes.length < 8) throw new SessionLogException("Truncated journal object");
             ByteBuffer buffer = ByteBuffer.wrap(bytes);
@@ -94,6 +113,9 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
             byte[] payload = new byte[buffer.remaining()];
             buffer.get(payload);
             return new Value(version, payload);
+        } catch (NoSuchFileException absent) {
+            // Missing is null: the entry can be renamed away between a listing and this read.
+            return null;
         } catch (IOException e) {
             throw new SessionLogException("Journal read failed: " + file, e);
         }
@@ -104,7 +126,7 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
         Path target = path(key);
         if (transactionalStorage != null)
             return transactionalStorage.compareAndSet(key, expected, bytes);
-        Path lockPath = target.resolveSibling(target.getFileName() + ".lock");
+        Path lockPath = target.resolveSibling(target.getFileName() + LOCK_SUFFIX);
         ReentrantLock local = LOCKS.computeIfAbsent(lockPath, ignored -> new ReentrantLock());
         local.lock();
         try {
@@ -129,7 +151,7 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
                     var lock = channel.lock()) {
                 var current = read(key);
                 if ((current == null ? 0 : current.version()) != expected) return false;
-                Path temp = Files.createTempFile(target.getParent(), "journal-", ".tmp");
+                Path temp = Files.createTempFile(target.getParent(), "journal-", TEMP_SUFFIX);
                 try {
                     try (var output = FileChannel.open(temp, StandardOpenOption.WRITE)) {
                         ByteBuffer buffer =
