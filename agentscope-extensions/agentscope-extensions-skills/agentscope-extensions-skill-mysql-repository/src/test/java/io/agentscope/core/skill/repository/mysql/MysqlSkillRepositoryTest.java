@@ -43,6 +43,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -542,6 +543,138 @@ public class MysqlSkillRepositoryTest {
                             .build();
 
             assertEquals(maxLengthName, repo.getDatabaseName());
+        }
+    }
+
+    // ==================== Identifier Escaping Tests ====================
+
+    @Nested
+    @DisplayName("Identifier Escaping Tests")
+    class IdentifierEscapingTests {
+
+        /** Collect every statement the repository prepared during construction. */
+        private List<String> preparedSql() throws SQLException {
+            ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+            verify(mockConnection, atLeast(1)).prepareStatement(captor.capture());
+            return captor.getAllValues();
+        }
+
+        @Test
+        @DisplayName("Should accept database name with hyphen, matching MysqlAgentStateStore")
+        void testAcceptsDatabaseNameWithHyphen() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+
+            MysqlSkillRepository repo =
+                    MysqlSkillRepository.builder(mockDataSource)
+                            .databaseName("my-database")
+                            .skillsTableName("my-skills")
+                            .resourcesTableName("my-resources")
+                            .createIfNotExist(true)
+                            .build();
+
+            assertEquals("my-database", repo.getDatabaseName());
+            assertEquals("my-skills", repo.getSkillsTableName());
+            assertEquals("my-resources", repo.getResourcesTableName());
+        }
+
+        @Test
+        @DisplayName("Should backtick-escape a hyphenated database name in CREATE DATABASE")
+        void testQuotesHyphenatedDatabaseNameInCreateDatabase() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+
+            MysqlSkillRepository.builder(mockDataSource)
+                    .databaseName("my-database")
+                    .createIfNotExist(true)
+                    .build();
+
+            assertTrue(
+                    preparedSql().stream()
+                            .anyMatch(
+                                    sql ->
+                                            sql.startsWith("CREATE DATABASE IF NOT EXISTS")
+                                                    && sql.contains("`my-database`")),
+                    "CREATE DATABASE must backtick-escape the database name");
+        }
+
+        @Test
+        @DisplayName("Should backtick-escape qualified table names in CREATE TABLE")
+        void testQuotesQualifiedTableNamesInCreateTable() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+
+            MysqlSkillRepository.builder(mockDataSource)
+                    .databaseName("my-database")
+                    .skillsTableName("my-skills")
+                    .resourcesTableName("my-resources")
+                    .createIfNotExist(true)
+                    .build();
+
+            List<String> sql = preparedSql();
+            assertTrue(
+                    sql.stream().anyMatch(s -> s.contains("`my-database`.`my-skills`")),
+                    "skills DDL must use `database`.`table`");
+            assertTrue(
+                    sql.stream().anyMatch(s -> s.contains("`my-database`.`my-resources`")),
+                    "resources DDL must use `database`.`table`");
+        }
+
+        @Test
+        @DisplayName("Should backtick-escape a reserved-word database name")
+        void testQuotesReservedWordDatabaseName() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+
+            // `rank` is reserved since MySQL 8.0; unquoted it is a syntax error.
+            MysqlSkillRepository.builder(mockDataSource)
+                    .databaseName("rank")
+                    .createIfNotExist(true)
+                    .build();
+
+            assertTrue(
+                    preparedSql().stream().anyMatch(sql -> sql.contains("`rank`")),
+                    "reserved-word identifiers must be backtick-escaped");
+        }
+
+        @Test
+        @DisplayName("Should backtick-escape identifiers in DML")
+        void testQuotesIdentifiersInDml() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+
+            MysqlSkillRepository repo =
+                    MysqlSkillRepository.builder(mockDataSource)
+                            .databaseName("my-database")
+                            .skillsTableName("my-skills")
+                            .createIfNotExist(true)
+                            .build();
+
+            repo.getAllSkillNames();
+
+            assertTrue(
+                    preparedSql().stream()
+                            .anyMatch(
+                                    sql ->
+                                            sql.startsWith("SELECT name FROM")
+                                                    && sql.contains("`my-database`.`my-skills`")),
+                    "SELECT must use backtick-escaped `database`.`table`");
+        }
+
+        @Test
+        @DisplayName("Should still reject a database name containing a backtick")
+        void testRejectsDatabaseNameWithBacktick() {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () ->
+                            MysqlSkillRepository.builder(mockDataSource)
+                                    .databaseName("db`; DROP DATABASE mysql; --")
+                                    .build(),
+                    "Database name contains invalid characters");
+        }
+
+        @Test
+        @DisplayName("Should still reject a database name starting with a hyphen")
+        void testRejectsDatabaseNameStartingWithHyphen() {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> MysqlSkillRepository.builder(mockDataSource).databaseName("-db").build(),
+                    "Database name contains invalid characters");
         }
     }
 
