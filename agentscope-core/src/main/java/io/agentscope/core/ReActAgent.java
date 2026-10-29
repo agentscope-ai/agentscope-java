@@ -3127,7 +3127,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return Flux.defer(
                     () -> {
                         String callId = UUID.randomUUID().toString().replace("-", "");
-                        return prepareRequest(mci, callId, ModelRequestPreparer.Purpose.REASONING)
+                        return prepareRequest(
+                                        appendTransientSoToolReminder(mci),
+                                        callId,
+                                        ModelRequestPreparer.Purpose.REASONING)
                                 .flatMapMany(
                                         prepared ->
                                                 preparedModelCallStream(
@@ -3176,6 +3179,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Appends the structured-output reminder to a request-local copy of the model input. The
          * reminder never enters {@code state.contextMutable()}, so hooks, middleware, session
          * persistence, and subsequent calls observe only the caller's real messages.
+         * With final preparation enabled, keep the reminder separate so canonical history remains
+         * unchanged for compaction's history comparison.
          */
         private ModelCallInput appendTransientSoToolReminder(ModelCallInput input) {
             if (soTool == null) {
@@ -3185,13 +3190,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<Msg> messages = new ArrayList<>(input.messages());
             TextBlock reminder = TextBlock.builder().text(soToolReminderText()).build();
             int lastIndex = messages.size() - 1;
-            if (lastIndex >= 0 && messages.get(lastIndex).getRole() == MsgRole.USER) {
+            if (modelRequestPreparer == null
+                    && lastIndex >= 0
+                    && messages.get(lastIndex).getRole() == MsgRole.USER) {
                 Msg last = messages.get(lastIndex);
                 List<ContentBlock> content = new ArrayList<>(last.getContent());
                 content.add(reminder);
                 messages.set(lastIndex, last.withContent(List.copyOf(content)));
             } else {
-                messages.add(UserMessage.builder().name("user").content(List.of(reminder)).build());
+                UserMessage.Builder reminderBuilder =
+                        UserMessage.builder().name("user").content(List.of(reminder));
+                if (modelRequestPreparer != null) {
+                    reminderBuilder.metadata(
+                            Map.of(
+                                    Msg.METADATA_SYNTHETIC,
+                                    true,
+                                    Msg.METADATA_REMINDER_KIND,
+                                    "structured_output"));
+                }
+                messages.add(reminderBuilder.build());
             }
 
             List<ToolSchema> tools = input.tools();
@@ -3216,12 +3233,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         private Flux<AgentEvent> preparedModelCallStream(
                 ReasoningContext context,
-                ModelCallInput modelCallInput,
+                ModelCallInput mci,
                 boolean withToolEvents,
                 String replyId) {
 
             ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
-            ModelCallInput mci = appendTransientSoToolReminder(modelCallInput);
 
             Flux<AgentEvent> modelEvents =
                     Flux.defer(

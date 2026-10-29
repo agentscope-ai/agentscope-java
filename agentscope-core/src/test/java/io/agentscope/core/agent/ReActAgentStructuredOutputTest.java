@@ -854,6 +854,7 @@ class ReActAgentStructuredOutputTest {
         assertEquals(MsgRole.TOOL, requestMessages.get(requestMessages.size() - 2).getRole());
         Msg reminderMessage = requestMessages.get(requestMessages.size() - 1);
         assertEquals(MsgRole.USER, reminderMessage.getRole());
+        assertTrue(reminderMessage.getMetadata().isEmpty());
         assertTrue(
                 reminderMessage.getTextContent().contains("You MUST call the `generate_response`"));
         assertEquals(
