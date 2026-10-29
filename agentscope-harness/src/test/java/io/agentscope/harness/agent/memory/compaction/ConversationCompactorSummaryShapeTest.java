@@ -267,8 +267,8 @@ class ConversationCompactorSummaryShapeTest {
                 .compactIfNeeded(
                         rc,
                         List.of(
-                                message(MsgRole.USER, "M1"),
-                                message(MsgRole.USER, "M2"),
+                                message(MsgRole.USER, "M1" + PAD),
+                                message(MsgRole.USER, "M2" + PAD),
                                 message(MsgRole.USER, "TAIL_1"),
                                 message(MsgRole.USER, "TAIL_2")),
                         config,
@@ -277,6 +277,9 @@ class ConversationCompactorSummaryShapeTest {
                 .block()
                 .orElseThrow();
     }
+
+    /** Padding that keeps prefix fixtures above the fixed summary-wrapper cost. */
+    private static final String PAD = " earlier conversation detail".repeat(40);
 
     private static Msg message(MsgRole role, String text) {
         return Msg.builder().role(role).content(TextBlock.builder().text(text).build()).build();
