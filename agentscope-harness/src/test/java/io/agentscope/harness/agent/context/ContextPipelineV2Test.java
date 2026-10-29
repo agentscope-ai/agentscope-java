@@ -457,7 +457,10 @@ class ContextPipelineV2Test {
                 0,
                 editedField.equals("content")
                         ? first.withContent(
-                                List.of(TextBlock.builder().text("Request-only edit").build()))
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("Request-only edit ".repeat(120))
+                                                .build()))
                         : first.withMetadata(
                                 editedField.equals("metadata")
                                         ? Map.of("request-only", true)
