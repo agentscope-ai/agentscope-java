@@ -684,8 +684,8 @@ public class ConversationCompactor {
                 if (tr.getName() != null && excluded.contains(tr.getName())) {
                     continue;
                 }
-                String text = extractToolResultText(tr);
-                if (text.isBlank()) {
+                if (tr.getOutput().stream()
+                        .noneMatch(b -> b instanceof TextBlock text && !text.getText().isBlank())) {
                     continue;
                 }
                 // Charge this result only, not every sibling in a batched tool message.
@@ -694,7 +694,7 @@ public class ConversationCompactor {
                     protectedTokens += tokens;
                     continue;
                 }
-                if (text.length() > maxChars) {
+                if (ToolResultPreview.textLength(tr.getOutput()) > maxChars) {
                     prunableTokens += tokens;
                     toPrune.add(new int[] {i, j});
                 }
@@ -712,15 +712,14 @@ public class ConversationCompactor {
             Msg msg = result.get(msgIdx);
             List<ContentBlock> newBlocks = new ArrayList<>(msg.getContent());
             ToolResultBlock tr = (ToolResultBlock) newBlocks.get(blockIdx);
-            String text = extractToolResultText(tr);
-            String preview = buildPrunePreview(text, maxChars);
             ToolResultBlock pruned =
                     ToolResultBlock.builder()
                             .id(tr.getId())
                             .name(tr.getName())
-                            .output(List.of(TextBlock.builder().text(preview).build()))
+                            .output(buildPrunePreview(tr.getOutput(), maxChars))
                             .metadata(tr.getMetadata())
                             .state(tr.getState())
+                            .executionDetails(tr.getExecutionDetails())
                             .build();
             newBlocks.set(blockIdx, pruned);
             result.set(
@@ -740,16 +739,21 @@ public class ConversationCompactor {
         return result;
     }
 
-    private static String buildPrunePreview(String text, int maxChars) {
+    private static List<ContentBlock> buildPrunePreview(List<ContentBlock> blocks, int maxChars) {
         int half = maxChars / 2;
-        String head = text.substring(0, Math.min(half, text.length()));
-        String tail =
-                text.length() > half ? text.substring(Math.max(text.length() - half, half)) : "";
-        int removed = text.length() - head.length() - tail.length();
-        if (removed <= 0) {
+        int removed = ToolResultPreview.textLength(blocks) - 2 * half;
+        return ToolResultPreview.create(
+                blocks, half, "", "\n\n...(" + removed + " chars pruned)...\n\n");
+    }
+
+    private static String buildPrunePreview(String text, int maxChars) {
+        if (text.length() <= (maxChars / 2) * 2) {
             return text;
         }
-        return head + "\n\n...(" + removed + " chars pruned)...\n\n" + tail;
+        return ((TextBlock)
+                        buildPrunePreview(List.of(TextBlock.builder().text(text).build()), maxChars)
+                                .get(0))
+                .getText();
     }
 
     /**
