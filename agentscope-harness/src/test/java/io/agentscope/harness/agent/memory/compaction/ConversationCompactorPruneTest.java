@@ -46,6 +46,39 @@ class ConversationCompactorPruneTest {
     private final ConversationCompactor compactor =
             new ConversationCompactor(mock(Model.class), mock(MemoryFlushManager.class));
 
+    @Test
+    void pruneToolResults_usesConfiguredCounterForProtectionAndMinimum() {
+        ConversationCompactor custom =
+                new ConversationCompactor(
+                        null, null, messages -> 1000L * messages.size(), message -> 1000L);
+        Msg older =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.of(
+                                        "older",
+                                        "read",
+                                        TextBlock.builder().text("x".repeat(1000)).build()))
+                        .build();
+        Msg recent =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.of(
+                                        "recent",
+                                        "read",
+                                        TextBlock.builder().text("y".repeat(1000)).build()))
+                        .build();
+
+        List<Msg> result =
+                custom.pruneToolResults(
+                        List.of(older, recent), pruneConfig(100, 800, 1000, Set.of()));
+
+        ToolResultBlock pruned = (ToolResultBlock) result.get(0).getContent().get(0);
+        assertTrue(((TextBlock) pruned.getOutput().get(0)).getText().contains("chars pruned"));
+        assertSame(recent, result.get(1));
+    }
+
     /**
      * Verifies a pruned tool result keeps metadata markers (eviction, suspension), the execution
      * state, and the carrying message keeps its id/usage/timestamp.

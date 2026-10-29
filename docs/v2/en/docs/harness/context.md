@@ -187,6 +187,10 @@ agentBuilder.contextPolicy(new ContextPolicy(
 
 At the final reasoning boundary, Harness first offloads oversized tool results. If the request is still too large, it removes optional memory material, then optional knowledge, then other optional sources. It computes the remaining conversation allowance after fixed material and tool schemas, runs conversation reduction, and projects current task/plan state into the result. It finally validates tool-call/result pairing and the complete request budget.
 
+The estimator configured in `ContextPolicy` also governs compaction triggers, token-based retention, and lightweight reductions. Each candidate is measured with its request materials, tools, model, and options; fixed costs are deducted once from the available input space. Images therefore participate in the compaction decision under the same estimation rules as the final check, including when you supply a custom estimator. These remain estimates rather than provider-reported usage.
+
+Tool-output protection and pruning thresholds count the individual result, excluding unrelated task projections and fixed request overhead. Keeping fewer messages can require projecting task state again, so retained suffixes are checked after projection.
+
 System instructions and `required()` materials are not directly evicted. If the resulting request still exceeds the allowance, preparation raises `ContextBudgetExceededException`. Reducing history cannot solve a request whose instructions, schemas, or required materials already fill the available space.
 
 <span id="2-large-tool-result-eviction-toolresultevictionmiddleware" />
