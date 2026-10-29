@@ -31,6 +31,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ChatSessionsTest {
+    // Queued turns stream and synchronously persist hundreds of events. Allow for slower
+    // Windows CI storage; these tests verify session behavior, not a 15-second latency limit.
+    private static final Duration AWAIT_TIMEOUT = Duration.ofSeconds(30);
+
     @TempDir Path workspace;
 
     @Test
@@ -285,7 +289,7 @@ class ChatSessionsTest {
 
     private ChatHistory.Snapshot await(ChatSessions sessions, Predicate<ChatHistory.Snapshot> ready)
             throws Exception {
-        return await(sessions, ready, Duration.ofSeconds(15));
+        return await(sessions, ready, AWAIT_TIMEOUT);
     }
 
     private ChatHistory.Snapshot await(
