@@ -195,6 +195,8 @@ System instructions and `required()` materials are not directly evicted. If the 
 
 An export diagnostic may produce a huge log in a single tool result. Harness's default offloading pass runs **before the next model reasoning call**. It writes oversized text to workspace storage, then replaces it in working context with a head/tail preview and a path the Agent can read on demand. A failed write does not replace the original with a broken pointer.
 
+Only text is offloaded. Images, audio, and other non-text blocks stay in the tool result in their original order, with retained text on the same side of each block. The preview allowance applies across all text blocks in that result; the saved file contains the complete text. Storage still uses the configured Workspace Filesystem, including remote backends.
+
 ```java
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 
@@ -213,6 +215,8 @@ These are the defaults: results exceeding 80,000 characters are eligible, and th
 ### Shorten accumulated conversation
 
 Conversation compaction addresses repeated rounds of work. Its lightweight passes first truncate old tool arguments when configured and prune sufficiently large aggregates of older tool output. If the remaining history meets the message or token trigger, it summarizes a prefix and keeps a recent tail, preserving tool-call/result boundaries.
+
+Tool-result pruning also shortens only text, keeping non-text blocks and retained text in their original order. Each result shares one head/tail text allowance and keeps its tool-call ID, tool name, metadata, state, and execution details. Pruning does not create a recovery file for each result; use Session Log to retrieve the original evidence when enabled. Retained media still counts toward the final request budget.
 
 Argument truncation preserves message IDs, timestamps, metadata and usage, as well as tool-call metadata and execution state. When formatting requests, raw argument JSON is regenerated from the truncated input. Provider server-tool calls are left unchanged because their provider-owned replay metadata may be authoritative.
 
