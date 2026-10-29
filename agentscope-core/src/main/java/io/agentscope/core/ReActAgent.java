@@ -897,12 +897,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         SessionRecorder recorder = SessionRecorder.from(context);
         try {
             SessionExecution execution = SessionExecution.from(context);
-            if (execution != null) execution.close(recorder);
+            // Legacy-history mode attaches a SessionExecution without a SessionRecorder; the
+            // journal bookkeeping is simply absent there (#3771).
+            if (execution != null && recorder != null) execution.close(recorder);
         } catch (Throwable cleanup) {
             error.addSuppressed(cleanup);
         }
         try {
-            recorder.close();
+            if (recorder != null) recorder.close();
         } catch (Throwable cleanup) {
             error.addSuppressed(cleanup);
         }
@@ -1035,7 +1037,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<MiddlewareBase> middlewares) {
         Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> grouped =
                 new EnumMap<>(MiddlewareBase.ExtensionPoint.class);
-        for (MiddlewareBase mw : middlewares) {
+        // Sort by MiddlewareBase.order() (stable, ascending) before grouping: framework
+        // providers declare low orders so their context reset runs before user middlewares
+        // register materials — without the sort, registration order alone decided, and user
+        // middlewares always preceded the build()-installed framework providers, so their
+        // WorkspaceContextMaterials registrations were silently wiped by the per-call reset
+        // (#3829).
+        List<MiddlewareBase> ordered =
+                middlewares.stream()
+                        .sorted(Comparator.comparingInt(MiddlewareBase::order))
+                        .toList();
+        for (MiddlewareBase mw : ordered) {
             Set<MiddlewareBase.ExtensionPoint> active =
                     Objects.requireNonNullElse(
                             mw.activePoints(), EnumSet.allOf(MiddlewareBase.ExtensionPoint.class));
@@ -2777,11 +2789,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return work.flatMap(
                     result -> {
                         SessionExecution execution = SessionExecution.from(rc);
+                        SessionRecorder recorder = SessionRecorder.from(rc);
+                        // Legacy-history mode attaches a SessionExecution without a
+                        // SessionRecorder; there is no journal to continue or close (#3771).
                         if (execution == null
+                                || recorder == null
                                 || !SessionRecorder.outcome(result.getGenerateReason())
                                         .equals("completed")) return Mono.just(result);
-                        return Mono.fromCallable(
-                                        () -> execution.continueOrClose(SessionRecorder.from(rc)))
+                        return Mono.fromCallable(() -> execution.continueOrClose(recorder))
                                 .subscribeOn(Schedulers.boundedElastic())
                                 .flatMap(
                                         again ->
@@ -2825,7 +2840,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             () -> {
                                                 SessionExecution execution =
                                                         SessionExecution.from(rc);
-                                                if (execution != null)
+                                                // Legacy-history mode attaches a
+                                                // SessionExecution without a SessionRecorder;
+                                                // beforeStep's journal bookkeeping needs one
+                                                // (#3771).
+                                                if (execution != null && recorder != null)
                                                     execution.beforeStep(recorder, state);
                                             })
                                     .subscribeOn(Schedulers.boundedElastic()))
