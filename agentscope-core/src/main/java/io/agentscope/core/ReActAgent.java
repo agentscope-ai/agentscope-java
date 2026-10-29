@@ -1305,13 +1305,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return Flux.deferContextual(
                 view -> {
                     RunControl inherited = RunControl.current(view, getAgentId());
-                    RunControl control =
-                            inherited != null ? inherited : new RunControl(getAgentId());
                     RuntimeContext source =
                             context != null
                                     ? context
                                     : view.getOrDefault(
                                             RUNTIME_CONTEXT_KEY, RuntimeContext.empty());
+                    RunControl control =
+                            inherited != null
+                                    ? inherited
+                                    : new RunControl(
+                                            getAgentId(),
+                                            source == null ? null : source.getRunId());
                     RuntimeContext effective = RuntimeContext.builder(source).build();
                     SessionKey key = sessionKey(effective);
                     String turnId = (String) effective.get(SessionRecorder.TURN_ID_KEY);
