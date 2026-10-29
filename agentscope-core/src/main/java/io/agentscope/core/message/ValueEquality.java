@@ -16,6 +16,8 @@
 package io.agentscope.core.message;
 
 import java.lang.reflect.Array;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -31,6 +33,12 @@ import java.util.Map;
  * <p>The helpers recurse into arrays, maps and lists so equality is decided by content. Scalars
  * keep their own {@code equals} and {@code hashCode}, which keeps the result consistent with the
  * contract of the surrounding map.
+ *
+ * <p>Binary payloads survive a JSON persistence round-trip: Jackson serialises {@code byte[]} as
+ * a Base64 {@code String}, and on deserialization into {@code Map<String, Object>} the value comes
+ * back as a {@code String} rather than a {@code byte[]}. The helpers bridge that gap by treating
+ * a {@code byte[]} and its Base64 {@code String} encoding as equal, so a message rebuilt from
+ * storage compares equal to the message that was originally saved.
  */
 final class ValueEquality {
 
@@ -57,6 +65,14 @@ final class ValueEquality {
                 }
             }
             return true;
+        }
+        // Jackson serialises byte[] as a Base64 String; after a JSON round-trip the value
+        // comes back as a String, so bridge the two forms here.
+        if (left instanceof byte[] leftBytes && right instanceof String rightStr) {
+            return bytesEqualBase64String(leftBytes, rightStr);
+        }
+        if (left instanceof String leftStr && right instanceof byte[] rightBytes) {
+            return bytesEqualBase64String(rightBytes, leftStr);
         }
         if (left instanceof Map<?, ?> leftMap && right instanceof Map<?, ?> rightMap) {
             return mapsEqual(leftMap, rightMap);
@@ -91,6 +107,11 @@ final class ValueEquality {
     static int hash(Object value) {
         if (value == null) {
             return 0;
+        }
+        if (value instanceof byte[] bytes) {
+            // Hash through the Base64 String form so a byte[] and its serialised
+            // String counterpart produce the same hash.
+            return Base64.getEncoder().encodeToString(bytes).hashCode();
         }
         if (value.getClass().isArray()) {
             int result = 1;
@@ -128,5 +149,16 @@ final class ValueEquality {
             }
         }
         return true;
+    }
+
+    /** Decodes the string as Base64 and compares the result to the byte array. */
+    private static boolean bytesEqualBase64String(byte[] bytes, String str) {
+        byte[] decoded;
+        try {
+            decoded = Base64.getDecoder().decode(str);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+        return Arrays.equals(bytes, decoded);
     }
 }

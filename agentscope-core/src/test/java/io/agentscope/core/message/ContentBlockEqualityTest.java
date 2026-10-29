@@ -74,6 +74,15 @@ class ContentBlockEqualityTest {
                         .name("search")
                         .input(Map.of("query", "weather"))
                         .build(),
+                ToolUseBlock.builder()
+                        .id("call-2")
+                        .name("search")
+                        .input(Map.of("query", "weather"))
+                        .metadata(
+                                Map.of(
+                                        ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                        new byte[] {1, 2, 3}))
+                        .build(),
                 ToolResultBlock.builder()
                         .id("call-1")
                         .name("search")

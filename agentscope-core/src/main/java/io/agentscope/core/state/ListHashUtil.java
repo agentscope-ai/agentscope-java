@@ -24,12 +24,13 @@ import java.util.List;
  * The hash is used to detect if a list has been modified (not just appended) since the last save
  * operation.
  *
- * <p>The hash covers every element. It used to sample a handful of positions to avoid iterating
- * large lists, but a sample cannot answer the question it is asked: an element replaced outside the
- * sampled positions leaves the hash unchanged, so {@link #needsFullRewrite} reports "nothing
- * changed", the store skips the write, and the edit is lost. Iterating is also the cheaper choice
- * in practice — a save serializes the whole list to JSON and commits it to storage, which costs
+ * <p>The hash covers every element so that replacing any element changes it. Full iteration is
+ * both necessary and cheap: a sample of positions would miss edits outside the sampled indices,
+ * and a save already serializes the whole list to JSON and commits it to storage, which costs
  * orders of magnitude more than reading one {@code hashCode()} per element.
+ *
+ * <p>Stability of the hash depends on the elements comparing by content, which {@link State}
+ * requires of implementations stored in lists.
  *
  * <p>Usage in AgentStateStore implementations:
  *

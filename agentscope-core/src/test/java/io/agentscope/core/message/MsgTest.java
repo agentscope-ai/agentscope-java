@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.model.ChatUsage;
+import java.util.Base64;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -228,6 +229,20 @@ class MsgTest {
     }
 
     @Test
+    void binaryMetadataSurvivesBase64StringRoundTrip() {
+        byte[] signature = {1, 2, 3};
+        String base64Form = Base64.getEncoder().encodeToString(signature);
+
+        // Jackson serialises byte[] as a Base64 String and deserialises it back as a String,
+        // so a message rebuilt from storage carries a String where the original had a byte[].
+        Msg withBytes = signedMessage(signature);
+        Msg withString = signedMessageWithString(base64Form);
+
+        assertEquals(withBytes, withString);
+        assertEquals(withBytes.hashCode(), withString.hashCode());
+    }
+
+    @Test
     void tokenUsageTakesPartInEquality() {
         Msg withoutUsage = message("m-assistant-1", "hello");
         Msg withUsage =
@@ -252,6 +267,22 @@ class MsgTest {
     }
 
     private static Msg signedMessage(byte[] signature) {
+        return Msg.builder()
+                .id("m-tool-1")
+                .timestamp("2026-05-08 14:00:00.000")
+                .role(MsgRole.ASSISTANT)
+                .content(
+                        ToolUseBlock.builder()
+                                .id("call-1")
+                                .name("search")
+                                .input(Map.of("query", "weather"))
+                                .metadata(
+                                        Map.of(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, signature))
+                                .build())
+                .build();
+    }
+
+    private static Msg signedMessageWithString(String signature) {
         return Msg.builder()
                 .id("m-tool-1")
                 .timestamp("2026-05-08 14:00:00.000")
