@@ -16,6 +16,7 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.tool.search.ToolSearchMode;
 import java.util.List;
 import reactor.core.publisher.Flux;
 
@@ -38,6 +39,11 @@ public interface Model {
      * @return model name
      */
     String getModelName();
+
+    /** Native client-side tool loading protocol; ordinary function calling is the default. */
+    default ToolSearchMode getToolSearchMode() {
+        return ToolSearchMode.FUNCTION;
+    }
 
     /**
      * Whether this model supports native structured output ({@code response_format} with

@@ -32,8 +32,11 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.skill.SkillResources;
 import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
-import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -44,6 +47,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 @SuppressWarnings("deprecation")
 class SkillRuntimeTest {
@@ -90,40 +94,41 @@ class SkillRuntimeTest {
     class ShellPathPolicyTests {
 
         @Test
-        void escapeSpacesReplacesWithBackslashSpace() {
-            assertEquals("hello", ShellPathPolicy.escapeSpaces("hello"));
-            assertEquals("hello\\ world", ShellPathPolicy.escapeSpaces("hello world"));
-            assertEquals("V2Ray\\ 代理配置助手", ShellPathPolicy.escapeSpaces("V2Ray 代理配置助手"));
-            assertEquals("a\\ b\\ c", ShellPathPolicy.escapeSpaces("a b c"));
-        }
-
-        @Test
-        void sandboxResolveEscapesSpacesInSkillName() {
+        void sandboxResolvePreservesSpacesInSkillName() {
             ShellPathPolicy policy = ShellPathPolicy.sandbox();
             String result = policy.resolve("V2Ray 代理配置助手", new StageResult.WorkspaceNative());
-            assertEquals("/workspace/skills/V2Ray\\ 代理配置助手", result);
+            assertEquals("/workspace/skills/V2Ray 代理配置助手", result);
         }
 
         @Test
-        void sandboxResolveEscapesSpacesInCachedSkill() {
+        void sandboxResolvePreservesSpacesInCachedSkill() {
             ShellPathPolicy policy = ShellPathPolicy.sandbox();
             String result =
                     policy.resolve("ignored", new StageResult.Cached("alice", "ns", "my skill"));
-            assertEquals("/workspace/.skills-cache/alice/ns/my\\ skill", result);
+            assertEquals("/workspace/.skills-cache/alice/ns/my skill", result);
         }
 
         @Test
-        void localWithShellResolveEscapesSpaces() {
-            ShellPathPolicy policy = ShellPathPolicy.localWithShell(Paths.get("/tmp/my workspace"));
+        void localWithShellResolvePreservesNativePath(@TempDir Path temp) throws Exception {
+            Path workspace = temp.resolve("my workspace");
+            Path script =
+                    Files.createDirectories(workspace.resolve("skills/my skill/scripts"))
+                            .resolve("run.py");
+            Files.writeString(script, "print('ok')");
+            ShellPathPolicy policy = ShellPathPolicy.localWithShell(workspace);
             String result = policy.resolve("my skill", new StageResult.WorkspaceNative());
-            String expected =
-                    Paths.get("/tmp/my workspace")
-                            .resolve("skills")
-                            .resolve("my skill")
-                            .toAbsolutePath()
-                            .toString()
-                            .replace(" ", "\\ ");
-            assertEquals(expected, result);
+            assertTrue(Files.isSameFile(script, Path.of(result).resolve("scripts/run.py")));
+        }
+
+        @Test
+        void sandboxResolveUsesConfiguredRootInsteadOfHostPath() {
+            ShellPathPolicy policy = ShellPathPolicy.sandbox("/mnt/pod workspace");
+            assertEquals(
+                    "/mnt/pod workspace/skills/my skill",
+                    policy.resolve("my skill", new StageResult.WorkspaceNative()));
+            assertEquals(
+                    "/mnt/pod workspace/.skills-cache/alice/ns/my skill",
+                    policy.resolve("ignored", new StageResult.Cached("alice", "ns", "my skill")));
         }
 
         @Test
@@ -181,14 +186,58 @@ class SkillRuntimeTest {
         }
 
         @Test
-        void rendersEscapedFilesRootWhenPathContainsSpaces() {
+        void mixedCatalogKeepsInlineSkillWithoutPromisingItAResourceRoot() {
+            HarnessSkillEntry inline = HarnessSkillEntry.of(skill("inline", "workspace"), null);
+            HarnessSkillEntry scripted =
+                    new HarnessSkillEntry(
+                            skill("scripted", "workspace"), null, "/workspace/skills/scripted");
+
+            String out =
+                    new SkillPromptBuilder().render(SkillCatalog.of(List.of(inline, scripted)));
+
+            assertTrue(out.contains("<skill-id>inline_workspace</skill-id>"));
+            assertTrue(out.contains("<files-root>/workspace/skills/scripted</files-root>"));
+            assertFalse(out.contains("<files-root>/workspace/skills/inline</files-root>"));
+            assertEquals(1, out.split("</files-root>", -1).length - 1);
+            assertTrue(out.contains("For skills that include <files-root>"));
+            assertTrue(out.contains("For skills without <files-root>"));
+            assertTrue(out.contains("load resources with load_skill_through_path"));
+            assertFalse(out.contains("Each skill in <available_skills>"));
+        }
+
+        @Test
+        void requiresLoadingInstructionsBeforeTaskActionsAndAllowsVisibleContentReuse() {
+            String out =
+                    new SkillPromptBuilder()
+                            .render(
+                                    SkillCatalog.of(
+                                            List.of(
+                                                    HarnessSkillEntry.of(
+                                                            skill("alpha", "src"), null))));
+
+            assertTrue(out.contains("summaries, not skill instructions"));
+            assertTrue(out.contains("user names an available skill"));
+            assertTrue(out.contains("task clearly matches its description"));
+            assertTrue(out.contains("load its SKILL.md before taking task actions"));
+            assertTrue(out.contains("use the exact <skill-id> listed below"));
+            assertTrue(out.contains("while the full content remains in the conversation"));
+            assertTrue(out.contains("reload when it is missing or needs refreshing"));
+        }
+
+        @Test
+        void rendersRawFilesRootWithBackendIndependentExecutionGuidance() {
             HarnessSkillEntry e =
                     new HarnessSkillEntry(
-                            skill("V2Ray 代理配置助手", "wkspace"),
+                            skill("v2ray-helper", "wkspace"),
                             null,
-                            "/workspace/skills/V2Ray\\ 代理配置助手");
+                            "/workspace/skills/V2Ray 代理配置助手");
             String out = new SkillPromptBuilder().render(SkillCatalog.of(List.of(e)));
-            assertTrue(out.contains("<files-root>/workspace/skills/V2Ray\\ 代理配置助手</files-root>"));
+            assertTrue(out.contains("<files-root>/workspace/skills/V2Ray 代理配置助手</files-root>"));
+            assertTrue(out.contains("Host and sandbox paths can differ"));
+            assertTrue(out.contains("Quote paths using that environment's shell syntax"));
+            assertTrue(out.contains("interpreter available in the execution environment"));
+            assertFalse(out.contains("ls <files-root>"));
+            assertFalse(out.contains("python3 <files-root>"));
         }
 
         @Test
@@ -231,6 +280,57 @@ class SkillRuntimeTest {
             assertFalse(
                     out.contains("<skill-id>other-skill_filesystem-agentscope_skills</skill-id>"));
         }
+
+        @Test
+        void defaultRendersSlimViewWithinByteBudget() {
+            // Rich frontmatter as emitted by a realistic marketplace skill.
+            Map<String, Object> frontmatter = new LinkedHashMap<>();
+            frontmatter.put("name", "data-analysis");
+            frontmatter.put(
+                    "description",
+                    "Analyze CSV datasets and produce summary statistics and charts.");
+            frontmatter.put("license", "MIT");
+            frontmatter.put("version", "1.2.0");
+            frontmatter.put("allowed-tools", List.of("Read", "Grep", "Bash"));
+            AgentSkill rich = new AgentSkill(frontmatter, "# Body", null, "workspace", null);
+            HarnessSkillEntry e =
+                    new HarnessSkillEntry(rich, null, "/workspace/skills/data-analysis");
+
+            String out = new SkillPromptBuilder().render(SkillCatalog.of(List.of(e)));
+
+            // Slim view: name/description/skill-id/files-root only, no frontmatter extras.
+            assertTrue(out.contains("<name>data-analysis</name>"));
+            assertTrue(out.contains("<description>Analyze CSV datasets"));
+            assertTrue(out.contains("<skill-id>data-analysis_workspace</skill-id>"));
+            assertFalse(out.contains("<license>"));
+            assertFalse(out.contains("<version>"));
+            assertFalse(out.contains("<item>"));
+            // Rendered-bytes snapshot: ~1.2k measured; 2k budget guards against regressing to
+            // the full-metadata view (~2.2k for this skill) or header bloat.
+            assertTrue(
+                    out.getBytes(StandardCharsets.UTF_8).length < 2048,
+                    "rendered bytes: " + out.getBytes(StandardCharsets.UTF_8).length);
+        }
+
+        @Test
+        void fullMetadataOptInKeepsRenderingFrontmatter() {
+            Map<String, Object> frontmatter = new LinkedHashMap<>();
+            frontmatter.put("name", "data-analysis");
+            frontmatter.put(
+                    "description",
+                    "Analyze CSV datasets and produce summary statistics and charts.");
+            frontmatter.put("license", "MIT");
+            frontmatter.put("allowed-tools", List.of("Read", "Grep"));
+            AgentSkill rich = new AgentSkill(frontmatter, "# Body", null, "workspace", null);
+            HarnessSkillEntry e = HarnessSkillEntry.of(rich, null);
+
+            String out =
+                    new SkillPromptBuilder(null, null, true).render(SkillCatalog.of(List.of(e)));
+
+            assertTrue(out.contains("<license>MIT</license>"));
+            assertTrue(out.contains("<allowed-tools>"));
+            assertTrue(out.contains("<item>Read</item>"));
+        }
     }
 
     // =========================================================================
@@ -253,6 +353,7 @@ class SkillRuntimeTest {
             String text = textOf(res);
             assertTrue(text.contains("Successfully loaded skill: alpha_workspace"));
             assertTrue(text.contains("# Body line"));
+            assertFalse(text.contains("Files root:"));
         }
 
         @Test

@@ -19,6 +19,7 @@ package io.agentscope.core.a2a.server.executor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -46,16 +47,20 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatUsage;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 import org.a2aproject.sdk.server.ServerCallContext;
 import org.a2aproject.sdk.server.agentexecution.RequestContext;
 import org.a2aproject.sdk.server.events.EventQueue;
@@ -65,6 +70,7 @@ import org.a2aproject.sdk.spec.Artifact;
 import org.a2aproject.sdk.spec.DataPart;
 import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.MessageSendConfiguration;
+import org.a2aproject.sdk.spec.MessageSendParams;
 import org.a2aproject.sdk.spec.StreamingEventKind;
 import org.a2aproject.sdk.spec.Task;
 import org.a2aproject.sdk.spec.TaskArtifactUpdateEvent;
@@ -75,7 +81,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
+import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
@@ -132,6 +145,106 @@ class AgentScopeAgentExecutorTest {
      */
     private AgentEmitter emitter() {
         return new AgentEmitter(mockContext, mockEventQueue);
+    }
+
+    static Stream<Arguments> sessionIdCases() {
+        return Stream.of(false, true)
+                .flatMap(
+                        streaming ->
+                                Stream.of(
+                                        Arguments.of(streaming, "context-1", null, "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("userId", "alice"),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", ""),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", " \t"),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Collections.singletonMap("sessionId", null),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", "legacy-session"),
+                                                "legacy-session"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", "context-1"),
+                                                "context-1"),
+                                        Arguments.of(
+                                                streaming,
+                                                null,
+                                                Map.of("sessionId", "legacy-session"),
+                                                "legacy-session"),
+                                        Arguments.of(
+                                                streaming,
+                                                "context-1",
+                                                Map.of("sessionId", 42),
+                                                "42"),
+                                        Arguments.of(streaming, null, null, null)));
+    }
+
+    @ParameterizedTest(name = "streaming={0}, contextId={1}, metadata={2}, sessionId={3}")
+    @MethodSource("sessionIdCases")
+    void testResolveRunnerSessionId(
+            boolean streaming,
+            String contextId,
+            Map<String, Object> metadata,
+            String expectedSessionId)
+            throws A2AError {
+        Message message =
+                Message.builder()
+                        .role(Message.Role.ROLE_USER)
+                        .parts(new TextPart("hello"))
+                        .contextId(contextId)
+                        .metadata(metadata)
+                        .build();
+        ServerCallContext callContext =
+                new ServerCallContext(
+                        null,
+                        Map.of(A2aServerConstants.ContextKeys.IS_STREAM_KEY, streaming),
+                        Set.of());
+        RequestContext context =
+                new RequestContext.Builder()
+                        .setParams(MessageSendParams.builder().message(message).build())
+                        .setServerCallContext(callContext)
+                        .build();
+        when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                .thenReturn(Flux.empty());
+
+        executor.execute(context, new AgentEmitter(context, mockEventQueue));
+
+        ArgumentCaptor<AgentRequestOptions> options =
+                ArgumentCaptor.forClass(AgentRequestOptions.class);
+        verify(mockAgentRunner).streamEvents(anyList(), options.capture());
+        assertEquals(
+                expectedSessionId == null ? context.getContextId() : expectedSessionId,
+                options.getValue().getSessionId());
+        assertEquals(context.getTaskId(), options.getValue().getTaskId());
+        assertEquals(
+                metadata != null && metadata.containsKey("userId") ? "alice" : "",
+                options.getValue().getUserId());
+        assertEquals(context.getContextId(), context.getMessage().contextId());
+        if (contextId == null) {
+            assertFalse(context.getContextId().isBlank());
+            if (metadata != null) {
+                assertNotEquals(expectedSessionId, context.getContextId());
+            }
+        } else {
+            assertEquals(contextId, context.getContextId());
+        }
     }
 
     @Nested
@@ -825,6 +938,72 @@ class AgentScopeAgentExecutorTest {
         }
 
         @Test
+        @DisplayName("Should keep a restarted task subscription when the old stream completes")
+        void testOldStreamCleanupDoesNotRemoveRestartedSubscription() throws Exception {
+            String taskId = doMockForContext(false, true, false);
+            ControlledEventPublisher firstPublisher = new ControlledEventPublisher();
+            ControlledEventPublisher secondPublisher = new ControlledEventPublisher();
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(firstPublisher.flux(), secondPublisher.flux());
+
+            Thread firstTask = new Thread(() -> executor.execute(mockContext, emitter()));
+            Thread secondTask = new Thread(() -> executor.execute(mockContext, emitter()));
+            try {
+                firstTask.start();
+                firstPublisher.awaitSubscribed();
+                secondTask.start();
+                secondPublisher.awaitSubscribed();
+
+                firstPublisher.complete();
+                firstTask.join(TimeUnit.SECONDS.toMillis(5));
+                executor.cancel(mockContext, emitter());
+
+                assertTrue(secondPublisher.isCancelled());
+            } finally {
+                firstPublisher.complete();
+                secondPublisher.complete();
+                firstTask.interrupt();
+                secondTask.interrupt();
+            }
+        }
+
+        @Test
+        @DisplayName("Should not cancel a replacement subscription created while stopping")
+        void testCancelDoesNotTargetReplacementSubscription() throws Exception {
+            String taskId = doMockForContext(false, true, false);
+            ControlledEventPublisher firstPublisher = new ControlledEventPublisher();
+            ControlledEventPublisher secondPublisher = new ControlledEventPublisher();
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(firstPublisher.flux(), secondPublisher.flux());
+
+            Thread firstTask = new Thread(() -> executor.execute(mockContext, emitter()));
+            Thread secondTask = new Thread(() -> executor.execute(mockContext, emitter()));
+            doAnswer(
+                            invocation -> {
+                                secondTask.start();
+                                secondPublisher.awaitSubscribed();
+                                return null;
+                            })
+                    .when(mockAgentRunner)
+                    .stop(taskId);
+
+            try {
+                firstTask.start();
+                firstPublisher.awaitSubscribed();
+
+                executor.cancel(mockContext, emitter());
+
+                assertTrue(firstPublisher.isCancelled());
+                assertFalse(secondPublisher.isCancelled());
+            } finally {
+                firstPublisher.complete();
+                secondPublisher.complete();
+                firstTask.interrupt();
+                secondTask.interrupt();
+            }
+        }
+
+        @Test
         @DisplayName("Should handle exception during task cancellation")
         void testHandleExceptionDuringTaskCancellation() throws A2AError {
             // Given
@@ -876,5 +1055,48 @@ class AgentScopeAgentExecutorTest {
                             Msg.builder().textContent("streaming result 1 2").build()));
         }
         return Flux.fromIterable(mockEvents).delayElements(Duration.ofMillis(10));
+    }
+
+    private static final class ControlledEventPublisher implements Publisher<AgentEvent> {
+
+        private final CountDownLatch subscribed = new CountDownLatch(1);
+        private final AtomicBoolean cancelled = new AtomicBoolean();
+        private final AtomicReference<Subscriber<? super AgentEvent>> subscriber =
+                new AtomicReference<>();
+
+        private Flux<AgentEvent> flux() {
+            return Flux.from(this);
+        }
+
+        private void awaitSubscribed() throws InterruptedException {
+            assertTrue(subscribed.await(5, TimeUnit.SECONDS));
+        }
+
+        private boolean isCancelled() {
+            return cancelled.get();
+        }
+
+        private void complete() {
+            Subscriber<? super AgentEvent> current = subscriber.get();
+            if (current != null) {
+                current.onComplete();
+            }
+        }
+
+        @Override
+        public void subscribe(Subscriber<? super AgentEvent> subscriber) {
+            this.subscriber.set(subscriber);
+            subscriber.onSubscribe(
+                    new Subscription() {
+                        @Override
+                        public void request(long n) {}
+
+                        @Override
+                        public void cancel() {
+                            cancelled.set(true);
+                        }
+                    });
+            subscribed.countDown();
+        }
     }
 }

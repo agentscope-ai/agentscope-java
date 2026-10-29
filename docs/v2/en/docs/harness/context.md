@@ -24,6 +24,10 @@ flowchart TD
 
 At call entry, the Agent restores the session's committed working state and accepts the new input. The conversation can contain earlier user and assistant messages, tool calls, tool results, and a summary from an earlier compaction. New tool results join this working context before the next reasoning step. A single `call()` can therefore prepare many model requests.
 
+Background notifications reach the next model request as separate user-role context messages in inbox order. Each message identifies the automated source and carries the original notification ID and source in metadata; receiving a notification does not grant user approval. File references such as `@./README.md` append a preview alongside the original message's text and images. Line or character limits are marked so the agent can read the original path for the rest.
+
+When a model stops at its output limit, incomplete tool-call starts receive error results instead of executing with empty arguments. Complete calls in the same batch remain executable, and malformed JSON is rejected even when it begins with a valid object. Output-limit errors ask the model to split large work or shorten the arguments rather than repeat the same call.
+
 Configure a shared Builder at application startup. Build and close an Agent for each direct request, keeping the same identity and storage configuration when continuing a conversation:
 
 ```java
@@ -101,6 +105,8 @@ Sources must be read-only. Run tests and change business records through tools o
 
 The final message layout is **one System message → conversation → transient state → references**. Tool schemas travel in separate request fields and also consume the input budget.
 
+System sources are combined into one text block, with a blank line between sources. Original text within each source is preserved, and rebuilding a request replaces framework material instead of duplicating it.
+
 | Material | How to supply it | Model placement |
 | --- | --- | --- |
 | Stable instructions | `sysPrompt`, `instruction`, `AGENTS.md`, framework guidance | System |
@@ -110,6 +116,10 @@ The final message layout is **one System message → conversation → transient 
 | Supporting documents | `ContextBlock.reference`, `MEMORY.md`, knowledge files | Reference USER material |
 
 Task, runtime, and reference projections are reconstructed for the request; they are not appended as new durable conversation messages. Dynamic blocks cannot create System instructions. Reserve `instruction` for trusted application configuration. Memory-use guidance can appear in System while the contents of `MEMORY.md` remain reference material.
+
+Framework origin does not by itself make a message transient. Persisted subagent deliveries and empty-response reminders remain at their conversation position and participate in compaction. Request-only projections remain outside the durable history; overflow recovery rebuilds from the latest history without restoring notices already summarized.
+
+Persisted notifications are recognized by message ID, including after copying or deserialization. This does not make request-only content or metadata edits durable: a compacted model view replaces working history only when that view still matches the canonical conversation.
 
 Tags such as `TASK_STATE`, `RUNTIME_STATE`, and `HARNESS_CONTEXT` identify purpose and origin. They help the model interpret content, but do not authorize an action or isolate untrusted instructions. Tool schemas describe callable tools; [permissions](/v2/en/docs/building-blocks/permission-system) separately decide whether execution may proceed. Filtering tools or omitting a source from the current request does not erase information already present in conversation history.
 
@@ -177,6 +187,10 @@ agentBuilder.contextPolicy(new ContextPolicy(
 
 At the final reasoning boundary, Harness first offloads oversized tool results. If the request is still too large, it removes optional memory material, then optional knowledge, then other optional sources. It computes the remaining conversation allowance after fixed material and tool schemas, runs conversation reduction, and projects current task/plan state into the result. It finally validates tool-call/result pairing and the complete request budget.
 
+The estimator configured in `ContextPolicy` also governs compaction triggers, token-based retention, and lightweight reductions. Each candidate is measured with its request materials, tools, model, and options; fixed costs are deducted once from the available input space. Images therefore participate in the compaction decision under the same estimation rules as the final check, including when you supply a custom estimator. These remain estimates rather than provider-reported usage.
+
+Tool-output protection and pruning thresholds count the individual result, excluding unrelated task projections and fixed request overhead. Keeping fewer messages can require projecting task state again, so retained suffixes are checked after projection.
+
 System instructions and `required()` materials are not directly evicted. If the resulting request still exceeds the allowance, preparation raises `ContextBudgetExceededException`. Reducing history cannot solve a request whose instructions, schemas, or required materials already fill the available space.
 
 <span id="2-large-tool-result-eviction-toolresultevictionmiddleware" />
@@ -184,6 +198,8 @@ System instructions and `required()` materials are not directly evicted. If the 
 ### Offload a large tool result
 
 An export diagnostic may produce a huge log in a single tool result. Harness's default offloading pass runs **before the next model reasoning call**. It writes oversized text to workspace storage, then replaces it in working context with a head/tail preview and a path the Agent can read on demand. A failed write does not replace the original with a broken pointer.
+
+Only text is offloaded. Images, audio, and other non-text blocks stay in the tool result in their original order, with retained text on the same side of each block. The preview allowance applies across all text blocks in that result; the saved file contains the complete text. Storage still uses the configured Workspace Filesystem, including remote backends.
 
 ```java
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
@@ -203,6 +219,8 @@ These are the defaults: results exceeding 80,000 characters are eligible, and th
 ### Shorten accumulated conversation
 
 Conversation compaction addresses repeated rounds of work. Its lightweight passes first truncate old tool arguments when configured and prune sufficiently large aggregates of older tool output. If the remaining history meets the message or token trigger, it summarizes a prefix and keeps a recent tail, preserving tool-call/result boundaries.
+
+Tool-result pruning also shortens only text, keeping non-text blocks and retained text in their original order. Each result shares one head/tail text allowance and keeps its tool-call ID, tool name, metadata, state, and execution details. Pruning does not create a recovery file for each result; use Session Log to retrieve the original evidence when enabled. Retained media still counts toward the final request budget.
 
 Argument truncation preserves message IDs, timestamps, metadata and usage, as well as tool-call metadata and execution state. When formatting requests, raw argument JSON is regenerated from the truncated input. Provider server-tool calls are left unchanged because their provider-owned replay metadata may be authoritative.
 
