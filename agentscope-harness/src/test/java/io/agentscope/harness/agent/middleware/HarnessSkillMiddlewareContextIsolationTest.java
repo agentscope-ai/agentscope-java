@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -223,10 +224,27 @@ class HarnessSkillMiddlewareContextIsolationTest {
                             .toList();
             assertFalse(requestText(lastToolMessages).contains("exact-beta-command --typed 2"));
             assertTrue(projection(requests.get(2)).contains("exact-beta-command --typed 2"));
-            call.block(Duration.ofSeconds(10));
-            var events = agent.streamEvents(new UserMessage("continue"), source);
+            // Event-log executions adopt the context's run ID, so a new run needs a fresh one.
+            if (mode == SessionHistoryMode.EVENT_LOG) {
+                RuntimeContext nextCallContext = RuntimeContext.builder(source).runId(null).build();
+                assertNotEquals(source.getRunId(), nextCallContext.getRunId());
+                agent.call(new UserMessage("start"), nextCallContext).block(Duration.ofSeconds(10));
+            } else {
+                call.block(Duration.ofSeconds(10));
+            }
+            RuntimeContext streamContext = RuntimeContext.builder(source).runId(null).build();
+            var events = agent.streamEvents(new UserMessage("continue"), streamContext);
             events.collectList().block(Duration.ofSeconds(10));
-            events.collectList().block(Duration.ofSeconds(10));
+            if (mode == SessionHistoryMode.EVENT_LOG) {
+                RuntimeContext nextStreamContext =
+                        RuntimeContext.builder(source).runId(null).build();
+                assertNotEquals(streamContext.getRunId(), nextStreamContext.getRunId());
+                agent.streamEvents(new UserMessage("continue"), nextStreamContext)
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+            } else {
+                events.collectList().block(Duration.ofSeconds(10));
+            }
             assertEquals(6, requests.size());
             for (List<Msg> next : requests.subList(3, 6)) {
                 assertFalse(projection(next).contains("harness:loaded_skill:"));
@@ -649,10 +667,18 @@ class HarnessSkillMiddlewareContextIsolationTest {
                     mode == SessionHistoryMode.LEGACY,
                     logStore.list(source).isEmpty(),
                     "only EVENT_LOG activates native logging");
-            call.block(Duration.ofSeconds(15));
+            Mono<Msg> nextExecution =
+                    mode == SessionHistoryMode.EVENT_LOG
+                            ? agent.call(
+                                    message, RuntimeContext.builder(source).runId(null).build())
+                            : call;
+            nextExecution.block(Duration.ofSeconds(15));
             assertFalse(
                     projection(requests.get(17)).contains(marker),
-                    "resubscription must not inherit recovery");
+                    "a new execution must not inherit recovery");
+            if (mode == SessionHistoryMode.EVENT_LOG) {
+                assertNotEquals(actualContexts.get(0).getRunId(), actualContexts.get(1).getRunId());
+            }
         }
     }
 
