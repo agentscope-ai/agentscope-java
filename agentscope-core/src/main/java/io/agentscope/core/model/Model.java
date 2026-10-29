@@ -107,4 +107,30 @@ public interface Model {
     default int getContextWindowSize() {
         return 0;
     }
+
+    /**
+     * Returns the generation options this model applies when a request does not override them, or
+     * {@code null} if unknown. Used by {@link #resolveOptions} as the provider-agnostic baseline.
+     *
+     * @return default generation options, or {@code null} when the model has none
+     */
+    default GenerateOptions getDefaultOptions() {
+        return null;
+    }
+
+    /**
+     * Resolves the generation options a request will effectively be sent with, applying the
+     * model's defaults the same way the provider does before issuing the call. The harness-layer
+     * budget check consults this so provider-specific mappings (for example a native structured
+     * output field) cannot make the effective request diverge from what was accounted.
+     *
+     * @param requestOptions request-level options, possibly {@code null}
+     * @return effective options for the request
+     */
+    default GenerateOptions resolveOptions(GenerateOptions requestOptions) {
+        GenerateOptions defaults = getDefaultOptions();
+        return defaults == null
+                ? requestOptions
+                : GenerateOptions.mergeOptions(requestOptions, defaults);
+    }
 }
