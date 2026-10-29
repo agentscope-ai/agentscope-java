@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,15 +20,15 @@ import java.util.List;
 /**
  * Utility class for computing hash values of state lists.
  *
- * <p>This class provides hash computation for change detection in AgentStateStore implementations. The hash
- * is used to detect if a list has been modified (not just appended) since the last save operation.
+ * <p>This class provides hash computation for change detection in AgentStateStore implementations.
+ * The hash is used to detect if a list has been modified (not just appended) since the last save
+ * operation.
  *
- * <p>The hash computation uses a sampling strategy to avoid iterating over large lists:
- *
- * <ul>
- *   <li>For small lists (≤5 elements): all elements are included
- *   <li>For large lists: samples at positions 0, 1/4, 1/2, 3/4, and last
- * </ul>
+ * <p>The hash covers every element of the list. Sampling a fixed set of positions cannot answer the
+ * question the hash exists to answer: an edit anywhere else leaves the hash unchanged, and a store
+ * that then sees an unchanged length skips the write while reporting success. Folding all elements
+ * keeps the answer exact, and for the in-memory {@link State} implementations this only reads the
+ * element {@code hashCode} the list already provides.
  *
  * <p>Usage in AgentStateStore implementations:
  *
@@ -50,9 +50,6 @@ public final class ListHashUtil {
     /** Empty list hash constant. */
     private static final String EMPTY_HASH = "empty:0";
 
-    /** Threshold for using sampling strategy. */
-    private static final int SAMPLING_THRESHOLD = 5;
-
     private ListHashUtil() {
         // Utility class, prevent instantiation
     }
@@ -60,15 +57,8 @@ public final class ListHashUtil {
     /**
      * Compute a hash value for a list of state objects.
      *
-     * <p>The hash includes:
-     *
-     * <ul>
-     *   <li>List size
-     *   <li>Hash codes of sampled elements
-     * </ul>
-     *
-     * <p>This method is designed to be lightweight and fast, using sampling for large lists to
-     * avoid O(n) iteration.
+     * <p>The hash includes the list size and the hash code of every element, so any change to the
+     * content moves it, wherever in the list that change happened.
      *
      * @param values the list of state objects to hash
      * @return a hex string hash representing the list content
@@ -78,47 +68,13 @@ public final class ListHashUtil {
             return EMPTY_HASH;
         }
 
-        int size = values.size();
-        StringBuilder sb = new StringBuilder();
-        sb.append("size:").append(size).append(";");
-
-        // Get sample indices based on list size
-        int[] sampleIndices = getSampleIndices(size);
-
-        for (int idx : sampleIndices) {
-            State item = values.get(idx);
-            int itemHash = item != null ? item.hashCode() : 0;
-            sb.append(idx).append(":").append(itemHash).append(",");
+        int hash = 1;
+        for (State item : values) {
+            hash = 31 * hash + (item != null ? item.hashCode() : 0);
         }
+        hash = 31 * hash + values.size();
 
-        return Integer.toHexString(sb.toString().hashCode());
-    }
-
-    /**
-     * Get the indices to sample from a list of given size.
-     *
-     * <p>Sampling strategy:
-     *
-     * <ul>
-     *   <li>For size ≤ 5: returns all indices [0, 1, 2, ..., size-1]
-     *   <li>For size > 5: returns [0, size/4, size/2, size*3/4, size-1]
-     * </ul>
-     *
-     * @param size the size of the list
-     * @return array of indices to sample
-     */
-    private static int[] getSampleIndices(int size) {
-        if (size <= SAMPLING_THRESHOLD) {
-            // Small list: sample all elements
-            int[] indices = new int[size];
-            for (int i = 0; i < size; i++) {
-                indices[i] = i;
-            }
-            return indices;
-        }
-
-        // Large list: sample at key positions
-        return new int[] {0, size / 4, size / 2, size * 3 / 4, size - 1};
+        return Integer.toHexString(hash);
     }
 
     /**

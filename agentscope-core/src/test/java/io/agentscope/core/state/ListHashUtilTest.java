@@ -194,6 +194,26 @@ class ListHashUtilTest {
         assertTrue(ListHashUtil.needsFullRewrite(list, null, 5));
     }
 
+    @Test
+    void testComputeHashEditOutsideSampledPositionsChangesHash() {
+        List<Msg> list = createMsgList(10);
+        String hashBefore = ListHashUtil.computeHash(list);
+
+        // For ten elements a sampled hash reads only 0, 2, 5, 7 and 9; the edit below is invisible
+        // to it, and the list did not grow either, so the store would skip the write entirely.
+        list.set(
+                3,
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("edited content").build())
+                        .build());
+
+        assertNotEquals(hashBefore, ListHashUtil.computeHash(list));
+        assertTrue(
+                ListHashUtil.needsFullRewrite(list, hashBefore, list.size()),
+                "an edit outside the sampled positions must still force a rewrite");
+    }
+
     private List<Msg> createMsgList(int size) {
         List<Msg> list = new ArrayList<>();
         for (int i = 0; i < size; i++) {
