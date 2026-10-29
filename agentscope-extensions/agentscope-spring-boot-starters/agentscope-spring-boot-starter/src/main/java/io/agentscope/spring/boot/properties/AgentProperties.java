@@ -51,6 +51,24 @@ public class AgentProperties {
      */
     private int maxIters = 10;
 
+    /**
+     * Whether every {@code MiddlewareBase} bean is auto-injected into the agent builder.
+     *
+     * <p>Default {@code true}. Auto-assembly does not de-duplicate: a middleware an application
+     * already attaches itself via {@code builder.middleware(...)} would be registered twice. Set
+     * this to {@code false} to opt out and wire middleware yourself.
+     */
+    private boolean autoAssembleMiddleware = true;
+
+    /**
+     * Whether every {@code Hook} bean is auto-attached to the agent builder.
+     *
+     * <p>Default {@code false}. {@code Hook} is deprecated for removal, so auto-attach is opt-in;
+     * when enabled it does not de-duplicate against hooks the application attaches itself. Set
+     * this to {@code true} to opt in.
+     */
+    private boolean autoAssembleHooks = false;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -81,5 +99,21 @@ public class AgentProperties {
 
     public void setMaxIters(int maxIters) {
         this.maxIters = maxIters;
+    }
+
+    public boolean isAutoAssembleMiddleware() {
+        return autoAssembleMiddleware;
+    }
+
+    public void setAutoAssembleMiddleware(boolean autoAssembleMiddleware) {
+        this.autoAssembleMiddleware = autoAssembleMiddleware;
+    }
+
+    public boolean isAutoAssembleHooks() {
+        return autoAssembleHooks;
+    }
+
+    public void setAutoAssembleHooks(boolean autoAssembleHooks) {
+        this.autoAssembleHooks = autoAssembleHooks;
     }
 }

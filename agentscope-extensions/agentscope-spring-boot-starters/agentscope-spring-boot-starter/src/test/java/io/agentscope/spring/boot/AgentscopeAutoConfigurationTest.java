@@ -21,10 +21,13 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -100,6 +103,139 @@ class AgentscopeAutoConfigurationTest {
                         });
     }
 
+    // ------------------------------------------------------------------
+    // AgentBuilderCustomizer tests
+    // ------------------------------------------------------------------
+
+    @Test
+    void shouldApplyAgentBuilderCustomizer() {
+        contextRunner
+                .withUserConfiguration(
+                        CustomModelConfiguration.class, MaxItersCustomizerConfiguration.class)
+                .run(
+                        context -> {
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getMaxIters()).isEqualTo(99);
+                        });
+    }
+
+    // ------------------------------------------------------------------
+    // Middleware auto-assembly tests
+    // ------------------------------------------------------------------
+
+    @Test
+    void shouldAutoInjectMiddlewareBeans() {
+        contextRunner
+                .withUserConfiguration(
+                        CustomModelConfiguration.class, MiddlewareConfiguration.class)
+                .run(
+                        context -> {
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getMiddlewares())
+                                    .anyMatch(mw -> mw instanceof TestMiddleware);
+                        });
+    }
+
+    @Test
+    void shouldSkipMiddlewareAutoAssemblyWhenDisabled() {
+        contextRunner
+                .withUserConfiguration(
+                        CustomModelConfiguration.class, MiddlewareConfiguration.class)
+                .withPropertyValues("agentscope.agent.auto-assemble-middleware=false")
+                .run(
+                        context -> {
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getMiddlewares())
+                                    .noneMatch(mw -> mw instanceof TestMiddleware);
+                        });
+    }
+
+    @Test
+    void userCustomizerShouldRunAfterAutoMiddlewareCustomizer() {
+        contextRunner
+                .withUserConfiguration(
+                        CustomModelConfiguration.class,
+                        MiddlewareConfiguration.class,
+                        UserMiddlewareCustomizerConfiguration.class)
+                .run(
+                        context -> {
+                            List<MiddlewareBase> middlewares =
+                                    context.getBean(ReActAgent.class).getMiddlewares();
+                            int autoIndex = indexOf(middlewares, TestMiddleware.class);
+                            int userIndex = indexOf(middlewares, UserMiddleware.class);
+                            assertThat(autoIndex).isGreaterThanOrEqualTo(0);
+                            assertThat(userIndex).isGreaterThan(autoIndex);
+                        });
+    }
+
+    // ------------------------------------------------------------------
+    // PermissionContextState auto-injection tests
+    // ------------------------------------------------------------------
+
+    @Test
+    void shouldAutoInjectPermissionContextStateWhenBeanExists() {
+        contextRunner
+                .withUserConfiguration(
+                        CustomModelConfiguration.class, PermissionConfiguration.class)
+                .run(
+                        context -> {
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getAgentState().getPermissionContext().getMode())
+                                    .isEqualTo(PermissionMode.ACCEPT_EDITS);
+                        });
+    }
+
+    @Test
+    void shouldNotRequirePermissionContextStateBean() {
+        contextRunner
+                .withUserConfiguration(CustomModelConfiguration.class)
+                .run(
+                        context -> {
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getAgentState().getPermissionContext().getMode())
+                                    .isEqualTo(PermissionMode.DEFAULT);
+                        });
+    }
+
+    @Test
+    void shouldNotFailWhenMultiplePermissionContextStateBeans() {
+        contextRunner
+                .withUserConfiguration(
+                        CustomModelConfiguration.class,
+                        PermissionConfiguration.class,
+                        SecondPermissionConfiguration.class)
+                .run(
+                        context -> {
+                            // Two PermissionContextState beans make the context ambiguous, so
+                            // the customizer refuses to inject: no exception, no auto-injection
+                            // (the mode stays at the default) and a warning is logged.
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getAgentState().getPermissionContext().getMode())
+                                    .isEqualTo(PermissionMode.DEFAULT);
+                        });
+    }
+
+    @Test
+    void userCustomizerShouldOverrideAutoInjectedPermissionContext() {
+        contextRunner
+                .withUserConfiguration(
+                        CustomModelConfiguration.class,
+                        PermissionConfiguration.class,
+                        UserPermissionOverrideConfiguration.class)
+                .run(
+                        context -> {
+                            // Auto customizer injects ACCEPT_EDITS first; the user customizer
+                            // runs afterwards and overwrites it with BYPASS.
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getAgentState().getPermissionContext().getMode())
+                                    .isEqualTo(PermissionMode.BYPASS);
+                        });
+    }
+
+    // ------------------------------------------------------------------
+    // Test configurations
+    // ------------------------------------------------------------------
+
     @Configuration(proxyBeanMethods = false)
     static class CustomModelConfiguration {
 
@@ -131,6 +267,83 @@ class AgentscopeAutoConfigurationTest {
         ReActAgent customAgent(Model model, Toolkit toolkit) {
             return ReActAgent.builder().name("customAgent").model(model).toolkit(toolkit).build();
         }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class MaxItersCustomizerConfiguration {
+
+        @Bean
+        AgentBuilderCustomizer maxItersCustomizer() {
+            return builder -> builder.maxIters(99);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class MiddlewareConfiguration {
+
+        @Bean
+        TestMiddleware testMiddleware() {
+            return new TestMiddleware();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserMiddlewareCustomizerConfiguration {
+
+        @Bean
+        AgentBuilderCustomizer userMiddlewareCustomizer() {
+            return builder -> builder.middleware(new UserMiddleware());
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class PermissionConfiguration {
+
+        @Bean
+        PermissionContextState permissionContextState() {
+            return PermissionContextState.builder().mode(PermissionMode.ACCEPT_EDITS).build();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class SecondPermissionConfiguration {
+
+        @Bean
+        PermissionContextState secondPermissionContextState() {
+            return PermissionContextState.builder().mode(PermissionMode.EXPLORE).build();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserPermissionOverrideConfiguration {
+
+        @Bean
+        AgentBuilderCustomizer userPermissionOverride() {
+            return builder ->
+                    builder.permissionContext(
+                            PermissionContextState.builder().mode(PermissionMode.BYPASS).build());
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Test beans
+    // ------------------------------------------------------------------
+
+    static class TestMiddleware implements MiddlewareBase {
+        // All hook methods have default implementations; no override needed.
+    }
+
+    static class UserMiddleware implements MiddlewareBase {
+        // All hook methods have default implementations; no override needed.
+    }
+
+    private static int indexOf(List<?> list, Class<?> type) {
+        for (int i = 0; i < list.size(); i++) {
+            if (type.isInstance(list.get(i))) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static final class TestModel implements Model {
