@@ -23,6 +23,8 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.FinishReasons;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.session.SessionRecorder;
@@ -270,19 +272,13 @@ public class ConversationCompactor {
 
         long totalTokens = tokenCounter.applyAsLong(messages);
         if (!shouldCompact(messages, totalTokens, config)) {
-            return Mono.just(
-                    messages.equals(conversationMessages)
-                            ? Optional.empty()
-                            : Optional.of(messages));
+            return Mono.just(lightweightResult(messages, conversationMessages));
         }
 
         int cutoff = determineCutoffIndex(messages, totalTokens, config);
         if (cutoff <= 0) {
             log.debug("Compaction triggered but safe cutoff is 0 — returning lightweight result");
-            return Mono.just(
-                    messages.equals(conversationMessages)
-                            ? Optional.empty()
-                            : Optional.of(messages));
+            return Mono.just(lightweightResult(messages, conversationMessages));
         }
 
         // Keep prior summaries in the summarization input so each compaction builds on the
@@ -328,13 +324,20 @@ public class ConversationCompactor {
                                 + JsonUtils.getJsonCodec().toJson(sessionId)
                                 + ")";
 
-        // Step 4: LLM summarization of prior summaries plus the newly compacted prefix.
+        // Step 4: LLM summarization of prior summaries plus the newly compacted prefix. Only a
+        // complete summary whose full candidate actually shrinks the conversation may replace
+        // history; anything else keeps the lightweight reductions alone.
         return flushStep
                 .then(summarizePrefix(summaryInput, config))
                 .map(
                         summary -> {
+                            if (summary.isEmpty()) {
+                                log.info(
+                                        "Compaction kept lightweight reductions without a summary");
+                                return lightweightResult(messages, conversationMessages);
+                            }
                             Msg summaryMsg =
-                                    buildSummaryMessage(summary, historyReference)
+                                    buildSummaryMessage(summary.get(), historyReference)
                                             .withMetadata(
                                                     Map.of(
                                                             "context.summary_version", 1,
@@ -347,6 +350,16 @@ public class ConversationCompactor {
                             List<Msg> compacted = new ArrayList<>();
                             compacted.add(summaryMsg);
                             compacted.addAll(tail);
+                            long candidateTokens = tokenCounter.applyAsLong(compacted);
+                            long currentTokens = tokenCounter.applyAsLong(messages);
+                            if (candidateTokens >= currentTokens) {
+                                log.warn(
+                                        "Rejected summary candidate: {} tokens is not smaller than"
+                                                + " the current {} tokens",
+                                        candidateTokens,
+                                        currentTokens);
+                                return lightweightResult(messages, conversationMessages);
+                            }
                             log.info(
                                     "Compaction complete: {} msgs → 1"
                                             + " summary + {} tail = {}"
@@ -356,6 +369,11 @@ public class ConversationCompactor {
                                     compacted.size());
                             return Optional.of(compacted);
                         });
+    }
+
+    /** Lightweight reductions replace history only when they actually changed something. */
+    private static Optional<List<Msg>> lightweightResult(List<Msg> messages, List<Msg> original) {
+        return messages.equals(original) ? Optional.empty() : Optional.of(messages);
     }
 
     // -------------------------------------------------------------------------
@@ -482,9 +500,17 @@ public class ConversationCompactor {
     // Summarization
     // -------------------------------------------------------------------------
 
-    private Mono<String> summarizePrefix(List<Msg> prefix, CompactionConfig config) {
+    /**
+     * Summarizes the prefix and validates the output can replace history.
+     *
+     * <p>The summary is rejected when the model emitted tool calls, stopped at an output-token
+     * limit, or produced no text. A missing or unrecognized finish reason is accepted so
+     * providers that do not report one keep working. Rejection yields {@code Optional.empty()}
+     * rather than an error, so already-successful lightweight reductions still apply.
+     */
+    private Mono<Optional<String>> summarizePrefix(List<Msg> prefix, CompactionConfig config) {
         if (prefix.isEmpty()) {
-            return Mono.just("No previous conversation history.");
+            return Mono.just(Optional.of("No previous conversation history."));
         }
 
         String formatted = formatMessagesForSummary(prefix);
@@ -499,22 +525,53 @@ public class ConversationCompactor {
 
         return ContextModelCalls.auxiliary(model, summarizationInput)
                 .reduce(
-                        new StringBuilder(),
-                        (sb, resp) -> {
-                            if (resp.getContent() != null) {
-                                for (ContentBlock block : resp.getContent()) {
-                                    if (block instanceof TextBlock tb && tb.getText() != null) {
-                                        sb.append(tb.getText());
-                                    }
-                                }
-                            }
-                            return sb;
+                        new SummaryCollection(),
+                        (collection, resp) -> {
+                            collection.accept(resp);
+                            return collection;
                         })
-                .map(StringBuilder::toString)
-                .map(String::strip)
-                .filter(s -> !s.isBlank())
-                .switchIfEmpty(
-                        Mono.error(new IllegalStateException("Summary model returned no content")));
+                .map(SummaryCollection::toValidatedSummary);
+    }
+
+    /** Accumulates one summary call's streamed output together with its terminal state. */
+    private static final class SummaryCollection {
+        private final StringBuilder text = new StringBuilder();
+        private boolean sawToolUse;
+        private String finishReason;
+        private Map<String, Object> finishMetadata = Map.of();
+
+        void accept(ChatResponse response) {
+            if (response.getContent() != null) {
+                for (ContentBlock block : response.getContent()) {
+                    if (block instanceof TextBlock tb) {
+                        text.append(tb.getText());
+                    } else if (block instanceof ToolUseBlock) {
+                        sawToolUse = true;
+                    }
+                }
+            }
+            if (response.getFinishReason() != null && !response.getFinishReason().isBlank()) {
+                finishReason = response.getFinishReason();
+                finishMetadata = response.getMetadata() == null ? Map.of() : response.getMetadata();
+            }
+        }
+
+        Optional<String> toValidatedSummary() {
+            if (FinishReasons.indicatesOutputLimit(finishReason, finishMetadata)) {
+                log.warn("Rejected summary: output stopped at the provider token limit");
+                return Optional.empty();
+            }
+            if (sawToolUse) {
+                log.warn("Rejected summary: model returned tool calls");
+                return Optional.empty();
+            }
+            String summary = text.toString().strip();
+            if (summary.isBlank()) {
+                log.warn("Rejected summary: model returned no text content");
+                return Optional.empty();
+            }
+            return Optional.of(summary);
+        }
     }
 
     /**

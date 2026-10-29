@@ -110,7 +110,8 @@ class CompactionMiddlewareTest {
                                                         .addAll(
                                                                 List.of(
                                                                         userMessage(
-                                                                                "prior summary"),
+                                                                                "prior summary"
+                                                                                        + PAD),
                                                                         userMessage("latest")));
                                                 return Flux.error(
                                                         new IllegalStateException(
@@ -196,7 +197,10 @@ class CompactionMiddlewareTest {
         var ctx = context("user", "notice-overflow");
         var run =
                 agent.prepareCall(
-                        List.of(userMessage("old request"), notice, userMessage("latest request")),
+                        List.of(
+                                userMessage("old request" + PAD),
+                                notice,
+                                userMessage("latest request")),
                         ctx);
         assertEquals("answer", run.stream().blockLast(Duration.ofSeconds(10)).getTextContent());
         assertEquals(2, calls.get());
@@ -234,7 +238,8 @@ class CompactionMiddlewareTest {
         var ctx = context("user", "overflow-session");
         var run =
                 agent.prepareCall(
-                        List.of(userMessage("old context"), userMessage("latest request")), ctx);
+                        List.of(userMessage("old context" + PAD), userMessage("latest request")),
+                        ctx);
         assertEquals("answer", run.stream().blockLast(Duration.ofSeconds(10)).getTextContent());
         assertEquals(AgentRun.Status.COMPLETED, run.status());
         assertEquals(2, calls.get());
@@ -550,6 +555,9 @@ class CompactionMiddlewareTest {
                 .prune(null)
                 .build();
     }
+
+    /** Padding that keeps recovery fixtures larger than the fixed summary-wrapper cost. */
+    private static final String PAD = " earlier conversation detail".repeat(40);
 
     /** Creates stable configuration that bypasses compaction for model-stream interrupt tests. */
     private CompactionConfig noCompactionConfig() {

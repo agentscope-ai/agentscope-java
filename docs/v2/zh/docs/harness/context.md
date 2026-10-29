@@ -263,6 +263,8 @@ builder.compaction(CompactionConfig.builder()
 
 `keepMessages` 仅在 `keepTokens(0)` 时生效。压缩还会维护工具调用与结果的配对，保留范围不能把一次工具交互随意切开。摘要默认使用 Agent 主模型，也可以通过 `CompactionConfig.builder().model(summaryModel)` 指定辅助模型；自定义 `summaryPrompt` 时需保留 `{messages}` 占位符。
 
+摘要只有完整且确实更小时才会替换对话。在供应商 token 上限处被截断、返回工具调用或没有文字的输出会被拒绝；未报告终止原因的输出不会因此被判为失败。完整候选——摘要包装、合并后的既有摘要与保留的尾部——使用与最终请求检查相同的已配置估算器计量，只有确实更小的候选才会替换当前对话。摘要被拒绝时，对话仅保留已完成的轻量裁剪；模型异常与取消的处理保持不变。
+
 <span id="4-预压缩参数截断-可选" />
 
 <Accordion title="进一步减少旧工具参数和结果的开销">
