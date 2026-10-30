@@ -834,6 +834,31 @@ class AguiEventTest {
             assertNull(event.timestamp());
             assertNull(event.rawEvent());
         }
+
+        @Test
+        void testWithBasePropertiesMetadataOverload() {
+            AguiEvent.TextMessageContent original =
+                    new AguiEvent.TextMessageContent("thread-1", "run-1", "msg-1", "Hello");
+            Map<String, Object> metadata = Map.of("traceId", "t-1");
+
+            AguiEvent copied =
+                    AguiEvents.withBaseProperties(original, 42L, Map.of("src", true), metadata);
+
+            assertEquals(42L, copied.timestamp());
+            assertEquals(metadata, copied.metadata());
+            assertTrue(copied.rawEvent() instanceof Map);
+        }
+
+        @Test
+        void testWithBasePropertiesPreservesMetadataByDefault() {
+            AguiEvent.TextMessageContent original =
+                    new AguiEvent.TextMessageContent(
+                            "thread-1", "run-1", "msg-1", "Hello", null, null, Map.of("k", "v"));
+
+            AguiEvent copied = AguiEvents.withBaseProperties(original, 1L, null);
+
+            assertEquals(Map.of("k", "v"), copied.metadata());
+        }
     }
 
     @Nested
@@ -1186,6 +1211,36 @@ class AguiEventTest {
     }
 
     @Nested
+    class SubagentEventTest {
+
+        @Test
+        void testSubagentStarted() throws Exception {
+            AguiEvent.SubagentStarted event =
+                    new AguiEvent.SubagentStarted("t1", "r1", "sa-1", "researcher");
+            assertEquals(AguiEventType.SUBAGENT_STARTED, event.getType());
+            assertEquals("sa-1", event.subagentRunId());
+            assertEquals("researcher", event.name());
+
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            assertTrue(json.contains("\"type\":\"SUBAGENT_STARTED\""));
+            assertTrue(json.contains("\"subagentRunId\":\"sa-1\""));
+            assertFalse(json.contains("description"), json);
+        }
+
+        @Test
+        void testSubagentFinishedAndError() {
+            AguiEvent.SubagentFinished finished =
+                    new AguiEvent.SubagentFinished("t1", "r1", "sa-1");
+            assertEquals(AguiEventType.SUBAGENT_FINISHED, finished.getType());
+
+            AguiEvent.SubagentError error =
+                    new AguiEvent.SubagentError("t1", "r1", "sa-1", "boom", "E1");
+            assertEquals(AguiEventType.SUBAGENT_ERROR, error.getType());
+            assertEquals("boom", error.message());
+        }
+    }
+
+    @Nested
     class ReasoningEncryptedValueTest {
 
         @Test
@@ -1339,7 +1394,7 @@ class AguiEventTest {
 
         @Test
         void testEventTypeCount() {
-            assertEquals(28, AguiEventType.values().length);
+            assertEquals(31, AguiEventType.values().length);
         }
 
         @Test
@@ -1373,6 +1428,9 @@ class AguiEventTest {
             assertNotNull(AguiEventType.REASONING_MESSAGE_CHUNK);
             assertNotNull(AguiEventType.REASONING_END);
             assertNotNull(AguiEventType.REASONING_ENCRYPTED_VALUE);
+            assertNotNull(AguiEventType.SUBAGENT_STARTED);
+            assertNotNull(AguiEventType.SUBAGENT_FINISHED);
+            assertNotNull(AguiEventType.SUBAGENT_ERROR);
         }
 
         @Test

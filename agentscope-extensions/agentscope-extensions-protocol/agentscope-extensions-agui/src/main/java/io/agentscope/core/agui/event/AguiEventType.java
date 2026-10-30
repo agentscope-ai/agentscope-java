@@ -126,5 +126,20 @@ public enum AguiEventType {
      */
     REASONING_END,
 
-    REASONING_ENCRYPTED_VALUE
+    REASONING_ENCRYPTED_VALUE,
+
+    /**
+     * Announces a new subagent invocation.
+     */
+    SUBAGENT_STARTED,
+
+    /**
+     * Marks a subagent invocation as complete.
+     */
+    SUBAGENT_FINISHED,
+
+    /**
+     * Marks a subagent invocation as failed.
+     */
+    SUBAGENT_ERROR
 }
