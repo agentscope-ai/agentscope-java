@@ -92,7 +92,7 @@ v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射�
 
 ## 子 agent 事件
 
-`AguiEvent` 模型已包含 AG-UI 1.0 的 `SUBAGENT_STARTED` / `SUBAGENT_FINISHED` / `SUBAGENT_ERROR`（均带必填 `subagentRunId`）。按协议，多数其他事件还可携带可选 `subagentRunId` 做归因；`RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` 与 `MESSAGES_SNAPSHOT` 除外。默认 adapter 路径尚未发出原生子 agent 生命周期或带归因的内容事件。
+`AguiEvent` 模型已包含 AG-UI 1.0 的 `SUBAGENT_STARTED` / `SUBAGENT_FINISHED` / `SUBAGENT_ERROR`（均带必填 `subagentRunId`）。按协议，多数其他事件还可携带可选 `subagentRunId` 做归因；`RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` 与 `MESSAGES_SNAPSHOT` 除外（快照归因在 `AguiMessage` 上按消息携带，嵌套的 `AguiToolCall` 继承所属消息的归属、自身不带该字段）。默认 adapter 路径尚未发出原生子 agent 生命周期或带归因的内容事件。
 
 默认（`emitSubagentEventsAsNative=false`）下，带非空 `source` 的 AgentEvent（子 / 远程子 agent 事件）**不会**映射为原生的 `TEXT_MESSAGE_*` / `RUN_*` / 工具调用事件，而是变成 `subagent.*` 命名空间下的 AG-UI `CUSTOM` 事件，避免污染父 run 的生命周期与文本流：
 

@@ -1262,6 +1262,23 @@ class AguiEventTest {
                     JsonUtils.getJsonCodec().toJson(parent).contains("subagentRunId"),
                     JsonUtils.getJsonCodec().toJson(parent));
         }
+
+        @Test
+        void testInterruptCarriesOptionalSubagentRunId() throws Exception {
+            AguiEvent.Interrupt attributed =
+                    new AguiEvent.Interrupt(
+                            "int-1", "approval", "ok?", "tc-1", null, null, null, "sa-1");
+            assertEquals("sa-1", attributed.subagentRunId());
+            String json = JsonUtils.getJsonCodec().toJson(attributed);
+            assertTrue(json.contains("\"subagentRunId\":\"sa-1\""), json);
+
+            AguiEvent.Interrupt parent =
+                    new AguiEvent.Interrupt("int-2", "approval", null, null, null, null, null);
+            assertNull(parent.subagentRunId());
+            assertFalse(
+                    JsonUtils.getJsonCodec().toJson(parent).contains("subagentRunId"),
+                    JsonUtils.getJsonCodec().toJson(parent));
+        }
     }
 
     @Nested

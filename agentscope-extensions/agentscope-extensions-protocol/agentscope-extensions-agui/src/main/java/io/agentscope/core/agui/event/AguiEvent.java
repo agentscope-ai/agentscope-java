@@ -1907,8 +1907,10 @@ public sealed interface AguiEvent
     /**
      * Event announcing a new subagent invocation.
      *
-     * <p>{@code subagentRunId} identifies this invocation and is carried on
-     * {@code SUBAGENT_*} events only.
+     * <p>{@code subagentRunId} here identifies the invocation being announced
+     * (required). Content and progress events use optional {@code subagentRunId}
+     * for attribution; {@code RUN_STARTED} / {@code RUN_FINISHED} /
+     * {@code RUN_ERROR} and {@code MESSAGES_SNAPSHOT} do not carry it.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record SubagentStarted(
@@ -2228,7 +2230,8 @@ public sealed interface AguiEvent
             String toolCallId,
             Map<String, Object> responseSchema,
             String expiresAt,
-            Map<String, Object> metadata) {
+            Map<String, Object> metadata,
+            String subagentRunId) {
 
         @JsonCreator
         public Interrupt(
@@ -2238,7 +2241,8 @@ public sealed interface AguiEvent
                 @JsonProperty("toolCallId") String toolCallId,
                 @JsonProperty("responseSchema") Map<String, Object> responseSchema,
                 @JsonProperty("expiresAt") String expiresAt,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.id = Objects.requireNonNull(id, "id cannot be null");
             this.reason = Objects.requireNonNull(reason, "reason cannot be null");
             this.message = message;
@@ -2246,6 +2250,21 @@ public sealed interface AguiEvent
             this.responseSchema = responseSchema;
             this.expiresAt = expiresAt;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
+        }
+
+        /**
+         * Creates an interrupt without subagent attribution.
+         */
+        public Interrupt(
+                String id,
+                String reason,
+                String message,
+                String toolCallId,
+                Map<String, Object> responseSchema,
+                String expiresAt,
+                Map<String, Object> metadata) {
+            this(id, reason, message, toolCallId, responseSchema, expiresAt, metadata, null);
         }
     }
 
