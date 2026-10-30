@@ -29,6 +29,7 @@ import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -92,6 +93,13 @@ public class MemoryFlushManager {
     private final Model model;
     private final String flushPrompt;
 
+    /**
+     * Zone used for the daily-ledger filename and flush timestamps. Defaults to the JVM
+     * default; configurable because a deployment's host zone and the timezone its users think
+     * in can differ, which would otherwise file memories under the wrong day (#3433).
+     */
+    private final ZoneId ledgerZone;
+
     public MemoryFlushManager(WorkspaceManager workspaceManager, Model model) {
         this(workspaceManager, model, DEFAULT_FLUSH_PROMPT);
     }
@@ -101,9 +109,20 @@ public class MemoryFlushManager {
      *     {@link #DEFAULT_FLUSH_PROMPT}.
      */
     public MemoryFlushManager(WorkspaceManager workspaceManager, Model model, String flushPrompt) {
+        this(workspaceManager, model, flushPrompt, ZoneId.systemDefault());
+    }
+
+    /**
+     * Creates a flush manager with an explicit ledger timezone.
+     *
+     * @param ledgerZone zone for daily-ledger filenames and flush timestamps
+     */
+    public MemoryFlushManager(
+            WorkspaceManager workspaceManager, Model model, String flushPrompt, ZoneId ledgerZone) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.flushPrompt = flushPrompt != null ? flushPrompt : DEFAULT_FLUSH_PROMPT;
+        this.ledgerZone = ledgerZone != null ? ledgerZone : ZoneId.systemDefault();
     }
 
     /**
@@ -119,7 +138,7 @@ public class MemoryFlushManager {
         }
 
         String existingMemory = readExistingContent(rc, WorkspaceConstants.MEMORY_MD);
-        String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String today = LocalDate.now(ledgerZone).format(DateTimeFormatter.ISO_LOCAL_DATE);
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
         String existingDaily = readExistingContent(rc, dailyRelPath);
 
@@ -191,12 +210,12 @@ public class MemoryFlushManager {
      * curated, size-bounded MEMORY.md.
      */
     private void writeMemoryFiles(RuntimeContext rc, String content) {
-        String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String today = LocalDate.now(ledgerZone).format(DateTimeFormatter.ISO_LOCAL_DATE);
 
         String dailyEntry =
                 String.format(
                         "\n## Memory Flush — %s\n%s\n",
-                        java.time.Instant.now().toString(), content);
+                        java.time.Instant.now().atZone(ledgerZone), content);
 
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
         workspaceManager.appendMemoryFileUtf8(rc, dailyRelPath, dailyEntry);
