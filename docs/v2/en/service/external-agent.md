@@ -4,7 +4,7 @@ zh_link: /v2/zh/service/external-agent
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This page uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 External Agents keep your application's process, framework and deployment while joining the catalog, Session diagnostics and collaboration. They are neither Service-started Managed Agents nor necessarily Runtime Host providers.
@@ -123,7 +123,7 @@ The current registration endpoint does not authenticate callers or tokens in req
 
 ## Identity queries and credential maintenance
 
-Management calls below require a platform account Bearer token authorized for the target namespace, not an application key.
+Call the management APIs below directly in local development mode.
 
 | Method and path | Parameters | Response |
 | --- | --- | --- |
@@ -136,7 +136,7 @@ Management calls below require a platform account Bearer token authorized for th
 | `POST /api/v1/agent-registrations/{agentId}/credentials/rotate` | Optional `ttlSeconds` | 201; `credential`, new `registrationCredential` |
 | `DELETE /api/v1/agent-registrations/{agentId}/credentials/{credentialId}` | Agent and credential UUIDs | 204 |
 
-Agent status `disabled` prevents subsequent scheduling; `archived` archives the logical resource. Cancel active work through the [task API](/v2/en/service/issues). Changing catalog status alone is not proof that a running process has stopped.
+Agent status `disabled` prevents subsequent scheduling; `archived` archives the logical resource. Cancel active work through the [task API](/v2/en/service/issues#curl-management). Changing catalog status alone is not proof that a running process has stopped.
 
 ## SDK settings
 
@@ -213,7 +213,7 @@ Subclass `FrameworkAdapter` and pass it to `agentscope_service.instrument(..., a
 
 ## Inspect adapter capabilities through the API
 
-Request `GET /api/v1/agents/{agentId}/instances` with a platform account Bearer token and read each item's `capabilities`. `context-query` and `message-query` provide queries, `session-abort` provides cancellation, and `agent-task` provides platform task execution. Instance capabilities depend on adapter configuration, not just the `framework` name.
+Request `GET /api/v1/agents/{agentId}/instances` and read each item's `capabilities`. `context-query` and `message-query` provide queries, `session-abort` provides cancellation, and `agent-task` provides platform task execution. Instance capabilities depend on adapter configuration, not just the `framework` name.
 
 `GET /api/v1/agents/{agentId}/runtime-inventory` returns reported Workspace and subagent information. `not_reporting` means telemetry is unavailable, not that no work has occurred. Applications use the Session API and inspect Session and Turn capabilities to discover interactions supported by the adapter.
 
@@ -244,8 +244,82 @@ Business applications create a Session targeting this Agent and submit Turns. Se
 | Caller | Operation | API and parameters |
 | --- | --- | --- |
 | Work manager | Read task and physical attempts | `GET /api/v1/agent-tasks/{taskId}`; `GET /api/v1/execution-attempts?tenant=...&namespace=...&taskId=...` |
-| Work manager | Request cancellation or retry | `POST /api/v1/agent-tasks/{taskId}/cancel`, `/retry`; see [Issue API](/v2/en/service/issues) for version fields |
+| Work manager | Request cancellation or retry | `POST /api/v1/agent-tasks/{taskId}/cancel`, `/retry`; see [Issue API](/v2/en/service/issues#curl-management) for version fields |
 | Task executor | Context, start, progress, response, completion | `/api/v1/agent-tasks/{taskId}/context`, `/start`, `/progress`, `/respond`, `/complete`, `/fail`, using the assigned task token |
 | Business application | Snapshot and resumable events | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}/snapshot` and `/events/stream`, using invocation credentials |
 
 Do not substitute a management token for the runtime-injected task token. After cancellation is accepted, read the task and Attempt to confirm the terminal state. External Agent Sessions expose cancellation when the selected instance advertises `session-abort`; query capabilities for other interactions.
+
+<span id="curl-management"></span>
+
+## Catalog and credential maintenance examples
+
+Use the local URL and default scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup).
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agents" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "status=active" \
+  --data-urlencode "limit=25"
+```
+
+```bash
+AGENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID"
+)
+CATALOG_VERSION=$(jq -er '.agent.version' <<< "$AGENT_JSON")
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agents/$AGENT_ID/bindings" \
+  --data-urlencode "includeDisabled=true"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/instances"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/runtime-inventory"
+```
+
+<Accordion title="Maintain catalog information and registration credentials">
+
+The catalog version differs from the definition version. This example changes only the display name. After rotation, save the new registrationCredential in protected adapter configuration. Revocation uses the old credential.id, not binding.id.
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "version": $CATALOG_VERSION,
+  "displayName": "Report service"
+}
+JSON
+```
+
+```bash
+ROTATED_CREDENTIAL=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-registrations/$AGENT_ID/credentials/rotate" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<'JSON'
+{
+  "ttlSeconds": 86400
+}
+JSON
+)
+REGISTRATION_CREDENTIAL=$(jq -er '.registrationCredential' <<< "$ROTATED_CREDENTIAL")
+```
+
+Revoke the old credential only after verifying the replacement and confirming old connections no longer need it.
+
+```bash
+OLD_CREDENTIAL_ID="OLD_CREDENTIAL_ID_FROM_REGISTRATION"
+```
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/v1/agent-registrations/$AGENT_ID/credentials/$OLD_CREDENTIAL_ID"
+```
+
+</Accordion>

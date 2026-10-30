@@ -93,6 +93,59 @@ pg_restore --no-owner --no-acl --dbname="$RESTORE_DATABASE_URL" backup/database.
 
 读取使用原调用归属的凭据或已授权平台身份。Turn 数据、Managed 原生日志、Workspace 文件和凭据加密密钥都需恢复；只恢复其中一层不能保证任务可继续。过期事件 cursor 应重新获取 snapshot，不重新提交已完成工作。接口和认证见 [API 参考](/v2/zh/service/api-reference)。
 
+沿用[API 身份准备](/v2/zh/service/kubernetes#production-api-access)的用户 token 和空间变量。
+
+使用恢复前保存的 Agent、Session、Turn ID，只做读取验收。不要重新 POST 原任务来验证恢复，否则可能重复外部操作。
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/bindings" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/snapshot" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/webhooks" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+Session 通知读取 webhooks 状态；Automation 的外部触发记录使用下面的 deliveries。内部 Run、Task 与 Attempt 的查询步骤见[执行诊断](/v2/zh/service/sessions)。
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/automations/$AUTOMATION_ID/deliveries" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data-urlencode "limit=25"
+```
+
 ## 恢复后重新开放服务
 
 先保持定时规则和外部入口受控，在测试工作上验证登录、历史、文件和凭据。确认 Runtime Host 重新上线，再逐个恢复计划触发与业务流量。数据库快照恢复不会撤销备份之后已经发出的消息或外部写入；对照业务系统核对幂等记录和未完成工作后再重跑。
@@ -151,7 +204,7 @@ Gateway 正常不代表模型或工具执行正常。Managed 会话故障查看 
 | 输入命令已接收但没生效 | 查询返回的 command 状态；持久接收不代表模型已消费 |
 | SSE 返回 410/cursor_expired | 重新读取 snapshot 替换界面，再从新的 as_of 继续；不重发任务 |
 | 某个成员完成但调用仍运行 | 检查 Turn 与 steps，不把成员结果当成根工作终态 |
-| 恢复按钮不可用 | 按 available_commands 展示；并非所有后端支持 resume，公共 API 不支持 checkpoint restore |
+| 恢复按钮不可用 | 按 available_commands 展示；并非所有后端支持 resume，Managed 的 checkpoint restore 还要求会话满足恢复条件，见[恢复流程](/v2/zh/service/session-event-log#从-checkpoint-继续试验) |
 
 `/api/v1/events` 是 WebSocket 刷新通知，不能替代持久 Turn SSE。具体请求和响应字段见[统一服务 API](/v2/zh/service/service-api)。
 
@@ -166,7 +219,7 @@ Gateway 正常不代表模型或工具执行正常。Managed 会话故障查看 
 | run.ended / item.completed 后仍显示运行中 | 等目标 turn 的明确结果；执行、消息、工具完成不等于任务完成 |
 | 400 / 409 cursor 错误 | 核对 session 范围，重新取快照；不要自行解析、递增 cursor |
 | 410 资源分页过期 | 从资源第一页重新读取；资源分页 cursor 不可传给 SSE |
-| 确认已提交但工具没有继续 | 查 required_actions 和 GET turns/{turn}/actions；accepted 仅接收，rejected 时先读 reason 和 pending |
+| 确认已提交但工具没有继续 | 查 required_actions 和 GET turns/{turn}/actions；accepted 仅接收；再查询 command 回执，failed 时读取 error 并重新检查待办 |
 | steer 返回 409 | 任务可能已结束或关闭输入；重新读取状态，新的独立问题提交新 turn |
 | checkpoint 恢复返回 409 | 先处理未关闭任务、待办、未消费输入和未知工具结果；恢复不能撤销外部操作 |
 | 费用不完整或预算拒绝执行 | 查 usage/budget 的未计价调用、模型用量和计价配置；调整限制后按任务状态显式 resume |

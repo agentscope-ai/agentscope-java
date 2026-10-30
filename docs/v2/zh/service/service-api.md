@@ -6,88 +6,13 @@ en_link: /v2/en/service/service-api
 
 配置好 Agent 后，业务应用就可以通过 Session API 把工作交给它。应用先创建一个 Session，确定这段工作使用的 Agent 和配置，再向这个 Session 提交任务。每次提交都会创建一个 Turn，用来跟踪这一轮执行的进度和结果。Service 会在后台执行并保存工作记录，因此应用不需要保持提交请求一直连接，也可以在用户返回页面时继续查看同一项任务。
 
-本页从调用凭据开始，说明如何创建 Session、提交任务并处理结果。首次接入可以沿用[创建 Managed Agent](/v2/zh/service/create-managed-agent)时已经验证过的 Agent。以后需要调用 Team 或 Workflow 时，仍然使用同一套 Session API，只需在创建 Session 时选择相应目标，并按它的能力处理输入和交互。
+本页直接说明如何创建 Session、提交任务并处理结果。首次接入可以沿用[创建 Managed Agent](/v2/zh/service/create-managed-agent)时已经验证过的 Agent。以后需要调用 Team 或 Workflow 时，仍然使用同一套 Session API，只需在创建 Session 时选择相应目标，并按它的能力处理输入和交互。
 
-## 为应用准备调用凭据
+<span id="为应用准备调用凭据"></span>
 
-在开发和调试阶段，可以使用登录得到的用户 Bearer token。接入业务后端时，建议创建 Application，为它签发独立的 API key，并明确授予它可以使用的 Agent、Team 或 Workflow。凭据属于 Application，因此同一应用更换 key 后仍能访问自己的 Session；其他应用即使使用同一个 Agent，也不能读取这些记录。API key 应保存在业务后端，由后端检查最终用户的业务权限。
+## 准备
 
-下面的命令假定已经完成[部署](/v2/zh/service/quickstart)，并[创建了一个可以正常执行的 Managed Agent 并准备 API 凭据](/v2/zh/service/create-managed-agent#api-setup)。请保留这些步骤中的 `BASE_URL`、`TOKEN`、`TENANT`、`NAMESPACE` 和 `AGENT_ID`。创建 Application 和签发凭据属于管理操作，需要使用该 Application 所有者的用户身份。
-
-```bash
-set -euo pipefail
-
-APPLICATION_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/applications" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H "Content-Type: application/json" \
-    --data-binary @- <<JSON
-{
-  "tenant": "$TENANT",
-  "namespace": "$NAMESPACE",
-  "name": "report-application"
-}
-JSON
-)
-APPLICATION_ID=$(jq -er '.application.id' <<< "$APPLICATION_JSON")
-```
-
-为应用签发能够调用这个 Agent 的凭据：
-
-```bash
-KEY_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/applications/$APPLICATION_ID/credentials" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H "Content-Type: application/json" \
-    --data-binary @- <<JSON
-{
-  "name": "backend",
-  "scopes": [
-    "invoke",
-    "read",
-    "interact",
-    "cancel",
-    "webhooks:write"
-  ],
-  "targets": [
-    {
-      "type": "agent",
-      "id": "$AGENT_ID"
-    }
-  ]
-}
-JSON
-)
-AGENTSCOPE_API_KEY=$(jq -er '.apiKey' <<< "$KEY_JSON")
-CREDENTIAL_ID=$(jq -er '.credential.id' <<< "$KEY_JSON")
-```
-
-服务只在创建凭据时返回明文 key。轮换时先签发新 key，更新应用配置并确认调用成功，再撤销旧凭据。`invoke` 允许提交工作，`read` 允许读取记录，`interact` 允许补充输入，`cancel` 允许取消；注册和管理回调还需要 `webhooks:write`。这些 scope 不会把应用变成人工审批人，指定人员的确认仍需由有权限的用户完成。
-
-<Accordion title="列出与撤销旧凭据">
-
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/applications/$APPLICATION_ID/credentials" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
-```
-
-先使用上面的签发接口创建并验证新凭据。确认后，将 `OLD_CREDENTIAL_ID` 替换为列表中需要撤销的旧凭据 ID；此操作会停用旧 key。
-
-```bash
-OLD_CREDENTIAL_ID="OLD_CREDENTIAL_ID_FROM_LIST"
-curl -sS --fail-with-body -X DELETE "$BASE_URL/api/v1/applications/$APPLICATION_ID/credentials/$OLD_CREDENTIAL_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
-```
-
-</Accordion>
+先完成[本地部署](/v2/zh/service/quickstart)和[创建第一个 Agent](/v2/zh/service/create-managed-agent)。保留 `BASE_URL` 和 `AGENT_ID`，直接调用下面的 API；本地模式不需要创建 Application 或签发 key。生产账号、授权与应用凭据配置见[生产部署指南](/v2/zh/service/kubernetes#production-application-credentials)。
 
 ## 创建 Session，直接选择执行目标
 
@@ -96,7 +21,6 @@ curl -sS --fail-with-body -X DELETE "$BASE_URL/api/v1/applications/$APPLICATION_
 ```bash
 SESSION_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: report-session-001" \
     --data-binary @- <<JSON
@@ -116,7 +40,7 @@ SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 
 <Accordion title="使用 Team 或已发布的 Workflow">
 
-先在签发凭据的 `targets` 中授权对应 Team 或 Workflow，并填入真实 ID。以下请求是创建 Agent Session 的替代选项；Workflow 的 `revisionId` 必须指向已发布版本。
+填入实际 Team 或 Workflow ID。以下请求是创建 Agent Session 的替代选项；Workflow 的 `revisionId` 必须指向已发布版本。
 
 <Tabs>
 <Tab title="Team">
@@ -125,7 +49,6 @@ SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 TEAM_ID="YOUR_TEAM_ID"
 SESSION_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: team-session-001" \
     --data-binary @- <<JSON
@@ -149,7 +72,6 @@ WORKFLOW_ID="YOUR_WORKFLOW_ID"
 REVISION_ID="YOUR_PUBLISHED_REVISION_ID"
 SESSION_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: workflow-session-001" \
     --data-binary @- <<JSON
@@ -182,7 +104,6 @@ Session 创建时会固定目标配置及其依赖。Managed Agent 可以通过 
 ```bash
 TURN_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/turns" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: report-task-001" \
     --data-binary @- <<'JSON'
@@ -197,8 +118,7 @@ TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
 查询刚提交的任务：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
 ```
 
 如果请求返回 `202 Accepted`，表示任务已经接收，执行可能仍在排队或进行中。网络超时后重试时，应使用同一个 Session、同一个幂等键和完全相同的请求内容。服务会返回原来的 Turn；如果沿用 key 却修改内容，则返回 `409 Conflict`。只有确实提交下一轮任务时，才应换一个新 key。
@@ -211,15 +131,13 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
 
 ```bash
 SNAPSHOT=$(
-  curl -sS --fail-with-body "$SESSION_URL/snapshot" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY"
+  curl -sS --fail-with-body "$SESSION_URL/snapshot"
 )
 CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
 ```
 
 ```bash
 curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Accept: text/event-stream" \
   --data-urlencode "after=$CURSOR"
 ```
@@ -230,14 +148,13 @@ curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
 
 ## 在执行中参与交互
 
-Agent 需要用户确认、补充资料或提供外部工具结果时，应用从快照中的 `required_actions` 读取待办，再向对应 Turn 的 `/actions` 提交答复。请求应包含待办的 `request_id`，需要版本校验的待办还应包含 `expected_version`。Managed Agent 的确认答复放在 `payload` 中，例如 `{"allow":true}`。涉及指定审批人的请求，应改用该用户的登录身份提交，应用 key 本身不能替他作出决定。
+Agent 需要用户确认、补充资料或提供外部工具结果时，应用从快照中的 `required_actions` 读取待办，再向对应 Turn 的 `/actions` 提交答复。请求应包含待办的 `request_id`，需要版本校验的待办还应包含 `expected_version`。Managed Agent 的确认答复放在 `payload` 中，例如 `{"allow":true}`。
 
 先读取当前 Turn 的待办。没有待办时不需要调用 `/actions`：
 
 ```bash
 ACTIONS_JSON=$(
-  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY"
+  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions"
 )
 jq '.required_actions' <<< "$ACTIONS_JSON"
 ```
@@ -248,19 +165,16 @@ jq '.required_actions' <<< "$ACTIONS_JSON"
 REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
 ```
 
-按待办类型选择一种答复。工具确认和业务审批使用有权限的用户 `TOKEN`；外部工具结果可使用具有 `interact` scope 的应用 key。
+按待办类型选择一种答复。本地模式直接提交对应答复；生产审批身份要求见[生产部署指南](/v2/zh/service/kubernetes#production-api-access)。
 
 <Tabs>
 <Tab title="工具确认">
 
-仅适用于 Managed 的 `confirmation` 待办。用户检查工具及参数后，允许时传 `allow: true`，拒绝时改为 `false` 并说明原因。用户必须是指定确认人，或由 Managed Agent 所有者明确授权。
+仅适用于 Managed 的 `confirmation` 待办。用户检查工具及参数后，允许时传 `allow: true`，拒绝时改为 `false` 并说明原因。本地模式直接答复；生产确认身份要求见[生产指南](/v2/zh/service/kubernetes#production-api-access)。
 
 ```bash
 COMMAND_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: report-confirmation-001" \
     --data-binary @- <<JSON
@@ -284,7 +198,6 @@ COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 ```bash
 COMMAND_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: report-tool-result-001" \
     --data-binary @- <<JSON
@@ -303,15 +216,12 @@ COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 </Tab>
 <Tab title="业务审批">
 
-从待办读取当前版本号，将下面的 `1` 替换为实际数字，并使用指定审批人的 `TOKEN`。同意使用 `approved`，拒绝使用 `rejected`；此类答复不使用 `payload.allow`。
+从待办读取当前版本号，将下面的 `1` 替换为实际数字。同意使用 `approved`，拒绝使用 `rejected`；此类答复不使用 `payload.allow`。
 
 ```bash
 EXPECTED_VERSION=1
 COMMAND_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: report-approval-001" \
     --data-binary @- <<JSON
@@ -331,66 +241,40 @@ COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 请求返回 `202 Accepted` 只表示答复已接收。使用返回的命令 ID 查询回执，直到 `command.status` 为 `completed` 或 `failed`；失败时检查 `command.error` 并重新读取待办。网络重试沿用同一个幂等键和请求体。
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID"
 ```
 
 命令完成表示该答复已处理，整个任务仍可能继续执行。继续观察事件或读取 Turn 状态；补充背景、调整要求等其他输入方式见[会话、任务与预算](/v2/zh/service/session-event-log)。
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
 ```
 
 每种运行绑定能提供的交互不同。先读取 Session 的 `/capabilities` 了解目标支持范围，在显示取消、补充输入或恢复按钮前，再读取 Turn 的 `/capabilities` 中的 `available_commands`。取消请求被接受后，仍需继续观察状态，直到确认执行已经停止。需要进一步了解如何补充要求、回答待办或恢复执行时，可以继续阅读[会话、任务与预算](/v2/zh/service/session-event-log)。
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/capabilities" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/capabilities"
 ```
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities"
 ```
 
-## 凭据、预算和后台通知
+<span id="凭据预算和后台通知"></span>
 
-Application 的 `maxConcurrent` 和 `tokenBudget` 约束该应用通过不同 key、不同 Session 提交的工作。Token 用量依据运行时报告累计，预算耗尽时会拒绝后续提交，因此它是执行治理能力，不是外部模型账单的实时硬上限。创建 Session 时，还可以设置 `timeoutSeconds` 和 `budget.maxTokens`，约束该 Session 中每个 Turn 的执行。Managed 会话自己的预算则通过 `/budget` 管理，具体配置与用量查询见[用量、子 Agent 与预算](/v2/zh/service/session-event-log#budgets)。
+## 预算和后台通知
 
-<Accordion title="设置应用限额与任务预算">
+应用级额度见[生产部署](/v2/zh/service/kubernetes#production-application-credentials)。创建 Session 时，还可以设置 `timeoutSeconds` 和 `budget.maxTokens`，约束该 Session 中每个 Turn 的执行。Managed 会话自己的预算则通过 `/budget` 管理，具体配置与用量查询见[用量、子 Agent 与预算](/v2/zh/service/session-event-log#budgets)。
 
-应用所有者先读取当前版本，再更新限额；版本冲突时重新读取，勿覆盖其他人的更新。
+<Accordion title="设置任务预算">
 
-```bash
-APPLICATION_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/applications/$APPLICATION_ID" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE"
-)
-APPLICATION_VERSION=$(jq -er '.application.version' <<< "$APPLICATION_JSON")
 
-curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/applications/$APPLICATION_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<JSON
-{
-  "version": $APPLICATION_VERSION,
-  "maxConcurrent": 5,
-  "tokenBudget": 1000000
-}
-JSON
-```
 
 创建新 Session 时可同时设置每个 Turn 的超时秒数与 token 预算：
 
 ```bash
 SESSION_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: limited-session-001" \
     --data-binary @- <<JSON
@@ -422,13 +306,12 @@ Turn 的 `completed` 表示这轮执行成功结束。应用还需要检查实�
 
 <Accordion title="校验结构化输入与交付结果">
 
-下面假定已发布的 Workflow 接收 `{topic}` 并实际返回 `{answer}`。请按目标真实数据修改 schema 和 JSON Pointer；示例中的 `/answer` 取自结构化结果字段。先为应用凭据授权该 Workflow。
+下面假定已发布的 Workflow 接收 `{topic}` 并实际返回 `{answer}`。请按目标真实数据修改 schema 和 JSON Pointer；示例中的 `/answer` 取自结构化结果字段。
 
 ```bash
 WORKFLOW_ID="YOUR_WORKFLOW_ID"
 SESSION_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: schema-session-001" \
     --data-binary @- <<JSON
@@ -471,7 +354,6 @@ SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: schema-task-001" \
   --data-binary @- <<'JSON'
@@ -489,17 +371,17 @@ JSON
 
 ## 使用 SDK 与可运行示例
 
-Python `ServiceClient` 封装了相同的 Session API。下面的代码使用已经授予目标权限的应用 key；这里的 `AGENT_ID` 是平台 Agent ID。
+Python `ServiceClient` 封装了相同的 Session API。下面使用本地开发模式；这里的 `AGENT_ID` 是平台 Agent ID。免凭据调用需要包含本地模式支持的 SDK 源码版本。
 
 ```bash
-export BASE_URL AGENTSCOPE_API_KEY AGENT_ID
+export BASE_URL AGENT_ID
 ```
 
 ```python
 import os
 from agentscope_service import ServiceClient
 
-api = ServiceClient(os.environ["BASE_URL"], os.environ["AGENTSCOPE_API_KEY"])
+api = ServiceClient(os.environ["BASE_URL"])
 session = api.create_session({"type": "agent", "id": os.environ["AGENT_ID"]},
                              idempotency_key="sdk-report-session-001")
 turn = api.submit(session["id"], message="整理报告并给出来源。",

@@ -12,47 +12,19 @@ en_link: /v2/en/service/create-managed-agent
 
 ## 准备
 
-先完成[Docker Compose 部署](/v2/zh/service/quickstart)，配置模型凭据，并启用 `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`。终端需要 Bash、curl 和 jq；请在同一个 Bash 终端中依次执行下面的命令。
+先完成[本地 Docker Compose 部署](/v2/zh/service/quickstart)，配置模型凭据。终端需要 Bash 或 zsh、curl 和 jq；请在同一个终端中依次执行下面的命令。
 
 <span id="api-setup"></span>
 
-设置 Service 地址、平台用户 token 和有权限的空间。已有团队平台的用户可以使用管理员提供的配置。
+本地开发模式无需登录、用户 token 或应用 API key，所有请求使用默认空间。设置 Service 地址和默认空间变量；生产身份配置见[生产部署指南](/v2/zh/service/kubernetes#production-api-access)。
 
 ```bash
 set -euo pipefail
 export BASE_URL="http://localhost:18080"
-export TOKEN="YOUR_USER_TOKEN"
-export TENANT="YOUR_TENANT"
-export NAMESPACE="YOUR_NAMESPACE"
+export TENANT="default"
+export NAMESPACE="default"
 ```
 
-<Accordion title="还没有用户 token？登录并查询空间">
-
-输入平台账号和密码。首次部署使用 `admin`，密码以 `.env` 或 Profile 中修改后的值为准。
-
-```bash
-read -r -p "Username: " LOGIN_USER
-read -r -s -p "Password: " LOGIN_PASSWORD
-printf '\n'
-
-LOGIN_JSON=$(
-  jq -n --arg username "$LOGIN_USER" --arg password "$LOGIN_PASSWORD" \
-    '{username: $username, password: $password}' \
-  | curl -sS --fail-with-body "$BASE_URL/api/auth/login" \
-      -H "Content-Type: application/json" \
-      --data-binary @-
-)
-unset LOGIN_PASSWORD
-TOKEN=$(jq -er '.token' <<< "$LOGIN_JSON")
-
-curl -sS --fail-with-body "$BASE_URL/api/v1/me/namespaces" \
-  -H "Authorization: Bearer $TOKEN" \
-  | jq '.items[] | {tenant, name}'
-```
-
-从结果中选择一个空间，将它的 `tenant` 和 `name` 分别填入前面的 `TENANT` 和 `NAMESPACE`。平台 token 用于管理资源；应用调用凭据见[应用接入](/v2/zh/service/service-api)。
-
-</Accordion>
 
 <span id="准备执行资源"></span>
 
@@ -65,9 +37,6 @@ curl -sS --fail-with-body "$BASE_URL/api/v1/me/namespaces" \
 ```bash
 ENVIRONMENT_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/environments" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     --data-binary @- <<'JSON'
 {
@@ -91,9 +60,6 @@ ENVIRONMENT_ID=$(jq -er '.id' <<< "$ENVIRONMENT_JSON")
 ```bash
 AGENT_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     --data-binary @- <<JSON
 {
@@ -135,9 +101,6 @@ printf 'Agent ID: %s\n' "$AGENT_ID"
 ```bash
 SESSION_JSON=$(
   curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
     -H "Content-Type: application/json" \
     --data-binary @- <<JSON
 {
@@ -160,7 +123,6 @@ printf 'Session ID: %s\n' "$SESSION_ID"
 ```bash
 TURN_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/turns" \
-    -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: notes-check-001" \
     --data-binary @- <<'JSON'
@@ -185,8 +147,7 @@ jq '{id, status}' <<< "$TURN_JSON"
 
 ```bash
 SNAPSHOT=$(
-  curl -sS --fail-with-body "$SESSION_URL/snapshot" \
-    -H "Authorization: Bearer $TOKEN"
+  curl -sS --fail-with-body "$SESSION_URL/snapshot"
 )
 jq '{items, tools, turns, required_actions}' <<< "$SNAPSHOT"
 CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
@@ -196,7 +157,6 @@ CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
 
 ```bash
 curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "Authorization: Bearer $TOKEN" \
   --data-urlencode "after=$CURSOR"
 ```
 
@@ -204,11 +164,9 @@ curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  -H "Authorization: Bearer $TOKEN" \
   | jq '{id, status, error}'
 
 curl -sS --fail-with-body "$SESSION_URL/snapshot" \
-  -H "Authorization: Bearer $TOKEN" \
   | jq '{items, tools, required_actions}'
 ```
 

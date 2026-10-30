@@ -64,6 +64,9 @@ func (s *Server) authorizeExecutionResources(c *gin.Context, body map[string]jso
 	return true
 }
 func (s *Server) authorizeTaskResources(ctx context.Context, task *model.AgentTask, candidate model.RuntimeBindingCandidate) error {
+	if s.localDev {
+		return nil
+	}
 	n, e := s.store.Access().GetNamespace(ctx, task.Tenant, task.Namespace)
 	if e == store.ErrNotFound {
 		return nil

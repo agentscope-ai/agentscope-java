@@ -38,6 +38,11 @@ func namespaceResourceOwner(n *controlmodel.Namespace) string {
 // namespace resources get a durable namespace owner, independent of the creator.
 func (s *Server) productNamespaceMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if s.localDev && !strings.HasPrefix(c.Request.URL.Path, "/api/internal/") {
+			product.SetResourceOwner(c, "namespace:"+s.defaultTenant+":"+s.defaultNamespace)
+			c.Next()
+			return
+		}
 		user := c.GetString("userId")
 		if user == "" || s.store == nil || strings.HasPrefix(c.Request.URL.Path, "/api/internal/") {
 			c.Next()

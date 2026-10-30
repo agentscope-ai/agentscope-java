@@ -880,7 +880,7 @@ func (s *Server) updateIssueComment(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
-	if current.Author.Type != controlmodel.ActorHuman || current.Author.Ref != s.operatorFromContext(c) {
+	if !s.localDev && (current.Author.Type != controlmodel.ActorHuman || current.Author.Ref != s.operatorFromContext(c)) {
 		c.JSON(http.StatusForbidden, ErrorResponse{Error: "only the author can edit a comment"})
 		return
 	}
@@ -919,7 +919,7 @@ func (s *Server) deleteIssueComment(c *gin.Context) {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "comment not found"})
 		return
 	}
-	if current.Author.Type != controlmodel.ActorHuman || current.Author.Ref != s.operatorFromContext(c) {
+	if !s.localDev && (current.Author.Type != controlmodel.ActorHuman || current.Author.Ref != s.operatorFromContext(c)) {
 		c.JSON(http.StatusForbidden, ErrorResponse{Error: "only the author can delete a comment"})
 		return
 	}
@@ -1065,7 +1065,7 @@ func (s *Server) unsubscribeIssue(c *gin.Context) {
 	}
 	typeValue := controlmodel.AssigneeType(c.Param("subscriberType"))
 	ref := c.Param("subscriberRef")
-	if typeValue == controlmodel.AssigneeHuman && ref != s.operatorFromContext(c) {
+	if !s.localDev && typeValue == controlmodel.AssigneeHuman && ref != s.operatorFromContext(c) {
 		c.JSON(http.StatusForbidden, ErrorResponse{Error: "cannot unsubscribe another user"})
 		return
 	}
@@ -2188,7 +2188,7 @@ func (s *Server) getApproval(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
-	if approval.ApproverRef != s.operatorFromContext(c) && approval.RequestedBy.Ref != s.operatorFromContext(c) {
+	if !s.localDev && approval.ApproverRef != s.operatorFromContext(c) && approval.RequestedBy.Ref != s.operatorFromContext(c) {
 		c.JSON(http.StatusForbidden, ErrorResponse{Error: "approval is not visible to this user"})
 		return
 	}
@@ -2221,7 +2221,7 @@ func (s *Server) decideApproval(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
-	if current.ApproverRef != s.operatorFromContext(c) {
+	if !s.localDev && current.ApproverRef != s.operatorFromContext(c) {
 		c.JSON(http.StatusForbidden, ErrorResponse{Error: "only the designated approver may decide this approval"})
 		return
 	}

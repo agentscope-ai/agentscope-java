@@ -32,6 +32,17 @@ export interface MeResponse {
   isAdmin: boolean;
 }
 
+// Use a runtime endpoint so the same Console build works in both deployment modes.
+export async function tryLocalDevSession(): Promise<boolean> {
+  const response = await fetch('/api/auth/dev-session', { cache: 'no-store' });
+  if (response.status === 404) return false;
+  if (!response.ok) throw new Error('Unable to initialize development session');
+  const session: LoginResponse = await response.json();
+  saveToken(session.token);
+  setAccountIdentity(session.token, session);
+  return true;
+}
+
 export async function login(username: string, password: string): Promise<LoginResponse> {
   const res = await api.post<LoginResponse>('/api/auth/login', { username, password });
   saveToken(res.token);
