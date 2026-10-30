@@ -79,7 +79,13 @@ Anthropic 要求一次请求中的 document 必须全部开启 citations 或全�
 `TextBlock.getCitations()` 获取。带引用的响应可能包含多个文本块，以保证每条引用仍然与其
 支持的具体文本片段关联。请求级设置会覆盖 `defaultOptions`，默认不启用引用。
 如果 `onModelCall` 中间件改写了响应文本，引用会被清除，因为此时无法再可靠地将引用与
-其支持的文本对应；未改写的文本会保留引用。
+其支持的文本对应；未改写的文本会保留引用。`Msg.getTextContent()` 拼接带引用的文本片段时
+不会插入额外换行，以保留原始响应文本。
+
+流式调用中，引用可从模型 `ChatResponse` 的文本块和最终 `AgentResultEvent` 消息中获取；
+单个 `TextBlockDeltaEvent` 事件仅包含文本。默认的 `AnthropicChatFormatter` 会在后续轮次
+发送消息时保留引用。`AnthropicMultiAgentFormatter` 支持 PDF 输入，但合并后的对话历史是
+纯文本，不保留引用元数据。
 
 当前仅支持 PDF document block，暂不支持 plain-text document、custom-content document 和
 Anthropic Files API 的 `file_id` source。

@@ -566,6 +566,9 @@ class ReasoningContextTest {
         Msg finalMessage = context.buildFinalMessage();
         List<TextBlock> textBlocks = finalMessage.getContentBlocks(TextBlock.class);
 
+        assertEquals(
+                "According to the guide, the feature is supported.", finalMessage.getTextContent());
+        assertEquals(context.getAccumulatedText(), finalMessage.getTextContent());
         assertEquals(3, textBlocks.size());
         assertEquals("According to the guide, ", textBlocks.get(0).getText());
         assertEquals("the feature is supported", textBlocks.get(1).getText());

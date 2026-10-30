@@ -24,12 +24,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.message.Citation;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -51,6 +53,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -64,6 +67,78 @@ import reactor.core.publisher.Mono;
 
 /** Integration tests asserting the onion middleware ordering around the core ReAct phases. */
 class ReActAgentMiddlewareIntegrationTest {
+
+    @Test
+    void citedResponseTextMatchesStreamingDeltasAndSurvivesJsonRoundTrip() {
+        Citation citation = new Citation.PageLocation("source", 0, "guide.pdf", null, 1, 2);
+        ChatModelBase model =
+                new ChatModelBase() {
+                    @Override
+                    public String getModelName() {
+                        return "cited-text";
+                    }
+
+                    @Override
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.just(
+                                        TextBlock.builder()
+                                                .text("Intro ")
+                                                .providerBlockIndex(0)
+                                                .build(),
+                                        TextBlock.builder()
+                                                .text("claim")
+                                                .providerBlockIndex(1)
+                                                .build(),
+                                        TextBlock.builder()
+                                                .citations(List.of(citation))
+                                                .providerBlockIndex(1)
+                                                .build(),
+                                        TextBlock.builder().text(".").providerBlockIndex(2).build())
+                                .map(
+                                        block ->
+                                                ChatResponse.builder()
+                                                        .content(List.of(block))
+                                                        .build());
+                    }
+                };
+
+        Msg called = buildAgent(model, List.of()).call(List.of()).block(Duration.ofSeconds(10));
+        List<AgentEvent> events =
+                buildAgent(model, List.of())
+                        .streamEvents(List.of())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(called);
+        assertNotNull(events);
+        String streamedText =
+                events.stream()
+                        .filter(TextBlockDeltaEvent.class::isInstance)
+                        .map(TextBlockDeltaEvent.class::cast)
+                        .map(TextBlockDeltaEvent::getDelta)
+                        .collect(java.util.stream.Collectors.joining());
+        Msg streamedResult =
+                events.stream()
+                        .filter(AgentResultEvent.class::isInstance)
+                        .map(AgentResultEvent.class::cast)
+                        .map(AgentResultEvent::getResult)
+                        .findFirst()
+                        .orElseThrow();
+
+        assertEquals("Intro claim.", streamedText);
+        assertEquals(streamedText, called.getTextContent());
+        assertEquals(streamedText, streamedResult.getTextContent());
+        assertEquals(called.getContent(), streamedResult.getContent());
+        List<TextBlock> blocks = called.getContentBlocks(TextBlock.class);
+        assertEquals(3, blocks.size());
+        assertEquals("claim", blocks.get(1).getText());
+        assertEquals(List.of(citation), blocks.get(1).getCitations());
+        Msg restored =
+                JsonUtils.getJsonCodec()
+                        .fromJson(JsonUtils.getJsonCodec().toJson(called), Msg.class);
+        assertEquals(streamedText, restored.getTextContent());
+        assertEquals(called.getContent(), restored.getContent());
+    }
 
     private static AgentState newState() {
         return AgentState.builder().sessionId("session-mw").build();

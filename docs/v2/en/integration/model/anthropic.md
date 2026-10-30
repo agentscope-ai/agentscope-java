@@ -81,7 +81,14 @@ available from `TextBlock.getCitations()`. Cited responses may contain multiple 
 each citation remains attached to the exact claim it supports. Request-level settings override
 `defaultOptions`, and citations are disabled by default. If `onModelCall` middleware rewrites
 the response text, citations are cleared because they no longer reliably identify the supported
-claims; unchanged text keeps its citations.
+claims; unchanged text keeps its citations. `Msg.getTextContent()` joins cited text fragments
+without inserting newlines, preserving the original response text.
+
+For streaming, citations are available in model `ChatResponse` text blocks and the final
+`AgentResultEvent` message; individual `TextBlockDeltaEvent` events carry only text. The default
+`AnthropicChatFormatter` preserves citations when messages are sent in subsequent turns.
+`AnthropicMultiAgentFormatter` supports PDF input, but its merged conversation history is plain
+text and does not retain citation metadata.
 
 This integration currently supports PDF document blocks. Plain-text documents, custom-content
 documents, and Anthropic Files API `file_id` sources are not yet supported.
