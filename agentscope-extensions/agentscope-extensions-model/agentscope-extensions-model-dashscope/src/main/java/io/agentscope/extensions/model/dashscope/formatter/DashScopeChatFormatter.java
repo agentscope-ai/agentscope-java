@@ -16,8 +16,11 @@
 package io.agentscope.extensions.model.dashscope.formatter;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -50,6 +53,7 @@ public class DashScopeChatFormatter
 
     private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
     private static final int MAX_CACHE_MARKERS = 4;
+    private static final String FILE_ID_SCHEME = "fileid://";
 
     private final DashScopeMessageConverter messageConverter;
     private final DashScopeResponseParser responseParser;
@@ -65,6 +69,7 @@ public class DashScopeChatFormatter
     protected List<DashScopeMessage> doFormat(List<Msg> msgs) {
         List<DashScopeMessage> result = new ArrayList<>();
         for (Msg msg : msgs) {
+            appendDocumentMessages(msg, result, null);
             boolean hasMedia = hasMediaContent(msg);
             DashScopeMessage dsMsg = messageConverter.convertToMessage(msg, hasMedia);
             if (dsMsg != null) {
@@ -79,6 +84,7 @@ public class DashScopeChatFormatter
         List<DashScopeMessage> result = new ArrayList<>();
         List<Boolean> cacheDirectives = new ArrayList<>();
         for (Msg msg : msgs) {
+            appendDocumentMessages(msg, result, cacheDirectives);
             DashScopeMessage dsMsg = messageConverter.convertToMessage(msg, hasMediaContent(msg));
             if (dsMsg != null) {
                 result.add(dsMsg);
@@ -87,6 +93,43 @@ public class DashScopeChatFormatter
         }
         applyAutomaticCacheControl(result, cacheDirectives, options);
         return result;
+    }
+
+    /**
+     * Emit the system message that DashScope's document contract expects.
+     *
+     * <p>{@code qwen-long} reads documents from a {@code fileid://} reference carried by a system
+     * message placed before the turn that asks about them, not from a content part. Each document
+     * block therefore contributes one system message ahead of its own message.
+     *
+     * <p>Only {@link FileIdSource} is supported in this phase: URL and Base64 documents are
+     * rejected here rather than being dropped on the floor.
+     *
+     * @param msg The message whose document blocks should be emitted
+     * @param messages The formatted messages collected so far
+     * @param directives Cache-control directives aligned with {@code messages}; may be null
+     * @throws IllegalArgumentException if a document block carries a non-file-id source
+     */
+    private static void appendDocumentMessages(
+            Msg msg, List<DashScopeMessage> messages, List<Boolean> directives) {
+        for (DocumentBlock document : msg.getContentBlocks(DocumentBlock.class)) {
+            Source source = document.getSource();
+            if (!(source instanceof FileIdSource fileIdSource)) {
+                throw new IllegalArgumentException(
+                        "DashScope document input requires a file id source, got "
+                                + (source == null ? "null" : source.getClass().getSimpleName())
+                                + "; upload the document first and pass the DashScope file id");
+            }
+            messages.add(
+                    DashScopeMessage.builder()
+                            .role("system")
+                            .content(FILE_ID_SCHEME + fileIdSource.getFileId())
+                            .build());
+            if (directives != null) {
+                // Keep the injected message out of automatic cache_control placement.
+                directives.add(Boolean.FALSE);
+            }
+        }
     }
 
     @Override
@@ -154,6 +197,7 @@ public class DashScopeChatFormatter
         List<DashScopeMessage> result = new ArrayList<>();
         List<Boolean> cacheDirectives = new ArrayList<>();
         for (Msg msg : messages) {
+            appendDocumentMessages(msg, result, cacheDirectives);
             DashScopeMessage message = messageConverter.convertToMessage(msg, true);
             result.add(message);
             cacheDirectives.add(cacheControlDirective(msg));

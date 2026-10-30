@@ -26,6 +26,8 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -36,6 +38,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeChoice;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeContentPart;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeFunction;
@@ -74,6 +77,82 @@ class DashScopeChatFormatterTest {
         assertEquals(1, result.size());
         assertEquals("user", result.get(0).getRole());
         assertEquals("Hello", result.get(0).getContentAsString());
+    }
+
+    @Test
+    void testDocumentBlockEmitsFileIdSystemMessageBeforeTheTurn() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Summarise this").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .mimeType("application/pdf")
+                                                .build()))
+                        .build();
+
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
+
+        assertEquals(2, result.size());
+        assertEquals("system", result.get(0).getRole());
+        assertEquals("fileid://file-abc", result.get(0).getContentAsString());
+        assertEquals("user", result.get(1).getRole());
+        assertEquals("Summarise this", result.get(1).getContentAsString());
+    }
+
+    @Test
+    void testDocumentBlockKeepsCacheControlDirectivesAligned() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Summarise this").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<DashScopeMessage> result =
+                formatter.format(
+                        List.of(msg), GenerateOptions.builder().cacheControl(true).build());
+
+        // The injected system message must not break the directive/message alignment, and it
+        // must not be turned into a content-part list just to carry cache_control.
+        assertEquals(2, result.size());
+        assertEquals("system", result.get(0).getRole());
+        assertEquals("fileid://file-abc", result.get(0).getContentAsString());
+    }
+
+    @Test
+    void testDocumentBlockRejectsNonFileIdSource() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.pdf")
+                                                                .build())
+                                                .name("a.pdf")
+                                                .build()))
+                        .build();
+
+        IllegalArgumentException ex =
+                assertThrows(IllegalArgumentException.class, () -> formatter.format(List.of(msg)));
+        assertTrue(ex.getMessage().contains("file id"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("URLSource"), ex.getMessage());
     }
 
     @Test
