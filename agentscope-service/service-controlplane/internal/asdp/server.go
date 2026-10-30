@@ -115,6 +115,12 @@ type ReportIdentity struct {
 type EventSink interface {
 	HandleConnect(tenant, namespace, agentID, bindingID, agentKey, instanceKey string, generation int64, runtime, sdkVersion string, capabilities []string)
 	HandleDisconnect(tenant, namespace, agentID, bindingID, instanceKey string, generation int64)
+	// HandleHeartbeat refreshes the connected instance's liveness. A Heartbeat
+	// carries no payload beyond identity/timestamp; this is the only signal a
+	// quiescent instance (no active sessions) can send to prove it is still
+	// alive between reports, so it must update the same staleness clock the
+	// other report types do.
+	HandleHeartbeat(identity ReportIdentity)
 	HandleSessionReport(identity ReportIdentity, report *SessionReport)
 	HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *ExecutionAttemptReport) error
 	HandleConversationTurnReport(identity ReportIdentity, report *ConversationTurnReport) error

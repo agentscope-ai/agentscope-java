@@ -171,6 +171,7 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 				return err
 			}
 		case *Upstream_Heartbeat:
+			s.handleHeartbeat(meta)
 			if err := conn.Send(&Downstream{
 				Payload: &Downstream_Heartbeat{Heartbeat: &Heartbeat{Timestamp: p.Heartbeat.Timestamp}},
 			}); err != nil {
@@ -231,6 +232,12 @@ func (s *service) handleConfigAck(meta *UpstreamMeta, ack *ConfigAck) {
 		)
 		metrics.RecordConfigPush(meta.Namespace, meta.AgentId, ack.ConfigType.String(), "nack")
 		metrics.RecordConfigNack(meta.Namespace, meta.AgentId, ack.ConfigType.String())
+	}
+}
+
+func (s *service) handleHeartbeat(meta *UpstreamMeta) {
+	if s.server.eventSink != nil {
+		s.server.eventSink.HandleHeartbeat(reportIdentity(meta))
 	}
 }
 
