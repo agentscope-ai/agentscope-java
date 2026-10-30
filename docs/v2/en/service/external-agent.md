@@ -64,6 +64,8 @@ SessionBridge bridge = ControlPlane.instrument(agent,
 
 Obtain `registrationCredential` through the [registration guide](/v2/en/service/register-agentscope-agent) and supply it as `CONTROL_PLANE_REGISTRATION_CREDENTIAL`. The current Java bridge skips automatic registration when both the registration credential and bootstrap setting are empty. The preview registration endpoint itself does not authenticate callers; restrict it to a controlled network or gateway. The returned registration credential authenticates subsequent runtime connections and does not protect registration itself. Contract history and commands depend on the adapter. Java event reporting also requires adapter middleware at Agent construction and an ASDP runtime connection.
 
+After registration, Java sends the returned credential using the X-Agent-Registration-Credential header on heartbeat and unregister requests. The control plane validates it against the addressed Agent instance. These requests can pass through the public Gateway, which deliberately removes X-Builder-Internal-Token; keep the returned credential secret.
+
 <span id="python-with-asdp" />
 
 ## Python with HTTP runtime transport
@@ -149,7 +151,7 @@ Agent status `disabled` prevents subsequent scheduling; `archived` archives the 
 | `controlPlane` | `control_plane` | `host:port` when using gRPC |
 | `publicBaseUrl` | `contract_http_base_url` | Reachable application contract URL |
 | `contractHttpPort` | `contract_http_port` | Java defaults to 18090, Python to 8080; 0 selects an ephemeral port |
-| `registrationCredential` | `registration_credential` | Credential returned by registration for subsequent runtime connections |
+| `registrationCredential` | `registration_credential` | Credential returned by registration; Java also uses it for HTTP heartbeats and unregister |
 | `internalToken` | `internal_token` | Optional deployment-managed runtime/bootstrap setting; the current registration HTTP API does not validate it |
 | `registeredIdentity(agentId, bindingId, generation)` | `agent_id` / `binding_id` / `generation` | Previously registered identity; retain a consistent set |
 | `eventJournalDir` | `event_journal_dir` | Durable event outbox directory; not a replacement for application Session storage |
