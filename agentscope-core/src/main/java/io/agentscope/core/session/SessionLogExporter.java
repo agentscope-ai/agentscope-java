@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.session;
 
+import java.util.function.Consumer;
+
 /** Durable outbox cursor. A lost ACK re-delivers the same immutable event, never re-executes it. */
 public final class SessionLogExporter {
     private final SessionLog log;
@@ -25,12 +27,23 @@ public final class SessionLogExporter {
         this.sink = sink;
     }
 
-    public synchronized void drain() {
+    public void drain() {
+        drain(Runnable::run);
+    }
+
+    /**
+     * Exports a stable prefix, handing each cursor acknowledgement to the caller. A transactional
+     * sink must run these acknowledgements in order after commit, and discard them on rollback.
+     * Until acknowledged, the same immutable events remain available for replay.
+     */
+    public synchronized void drain(Consumer<Runnable> acknowledge) {
         long cursor = log.exportCursor(sink.name());
         for (var event : log.scan(cursor, log.head().seq())) {
             sink.accept(event);
-            log.advanceExportCursor(sink.name(), cursor, event.seq());
-            cursor = event.seq();
+            long expected = cursor;
+            long next = event.seq();
+            acknowledge.accept(() -> log.advanceExportCursor(sink.name(), expected, next));
+            cursor = next;
         }
     }
 }

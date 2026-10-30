@@ -350,6 +350,8 @@ new SessionLogExporter(session.log(), sink).drain();
 
 Keep `sink.name()` stable across deployments because it identifies the saved destination watermark. `drain()` exports committed events without re-executing the Agent. Arrange retries and coordinate replicas exporting the same session and sink. Hosted Service provides its own public event export and SSE endpoints.
 
+If `sink.accept` joins a transaction that remains open when it returns, use `drain(Consumer<Runnable> acknowledge)` to defer cursor updates. Collect the supplied acknowledgement callbacks and run them in order only after the destination transaction commits; discard them on rollback. Until then, those events remain available for replay. The no-argument `drain()` keeps its immediate acknowledgement behavior.
+
 To also export during execution, put the sink under `SessionExportSink.CONTEXT_KEY` in the `RuntimeContext` used for the direct call or for the first `agent.session(ctx)` lookup. Adding it to a later lookup does not replace the cached session's initial context.
 
 <span id="custom-events" />

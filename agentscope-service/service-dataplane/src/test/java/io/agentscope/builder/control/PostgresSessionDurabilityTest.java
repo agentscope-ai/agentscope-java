@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.agentscope.builder.web.persistence.jpa.SessionEventFenceEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionEventFenceRepository;
 import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxEntity;
+import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxOperationsImpl;
 import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxRepository;
 import io.agentscope.core.session.JournalSessionLog;
 import io.agentscope.core.session.SessionEvent;
@@ -43,6 +44,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.repository.support.JpaRepositoryFactory;
+import org.springframework.data.repository.core.support.RepositoryComposition.RepositoryFragments;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.SharedEntityManagerCreator;
@@ -129,7 +131,13 @@ class PostgresSessionDurabilityTest {
             var repositories =
                     new JpaRepositoryFactory(
                             SharedEntityManagerCreator.createSharedEntityManager(factory));
-            var events = repositories.getRepository(SessionEventOutboxRepository.class);
+            var events =
+                    repositories.getRepository(
+                            SessionEventOutboxRepository.class,
+                            RepositoryFragments.just(
+                                    new SessionEventOutboxOperationsImpl(
+                                            SharedEntityManagerCreator.createSharedEntityManager(
+                                                    factory))));
             var fences = repositories.getRepository(SessionEventFenceRepository.class);
             var tx = new TransactionTemplate(new JpaTransactionManager(factory));
             tx.executeWithoutResult(
