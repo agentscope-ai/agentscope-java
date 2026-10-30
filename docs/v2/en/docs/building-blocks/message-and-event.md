@@ -46,6 +46,7 @@ Message content is composed of typed blocks, each representing one type of infor
 |-------|-------------|-----------|
 | `TextBlock` | Plain text content | USER, ASSISTANT, SYSTEM |
 | `DataBlock` | Binary data (image / audio / video) via base64 or URL — unifies the legacy ImageBlock / AudioBlock / VideoBlock | USER, ASSISTANT |
+| `DocumentBlock` | Document input (PDF, Word, plain text) via a provider file ID (`FileIdSource`), URL, or base64 | USER |
 | `ImageBlock` / `AudioBlock` / `VideoBlock` | Legacy concrete media blocks (still supported; new code should prefer `DataBlock`) | USER |
 | `ThinkingBlock` | Model reasoning / chain of thought | ASSISTANT |
 | `ToolUseBlock` | A tool call: `id` / `name` / `input` / `state` (`ToolCallState`) | ASSISTANT |
@@ -55,7 +56,7 @@ Message content is composed of typed blocks, each representing one type of infor
 
 <Note>
 
-Role constraints are enforced at construction: `USER` only allows text/data/image/audio/video blocks; `SYSTEM` only allows `TextBlock`; `ASSISTANT` allows all block types.
+Role constraints are enforced at construction: `USER` only allows text/data/document/image/audio/video blocks; `SYSTEM` only allows `TextBlock`; `ASSISTANT` allows all block types.
 
 </Note>
 
