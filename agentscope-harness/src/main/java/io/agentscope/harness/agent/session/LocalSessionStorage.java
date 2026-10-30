@@ -27,7 +27,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -119,6 +121,16 @@ public final class LocalSessionStorage implements AtomicSessionStorage {
         } catch (IOException e) {
             throw new SessionLogException("Journal read failed: " + file, e);
         }
+    }
+
+    @Override
+    public Map<String, Value> readAll(Collection<String> keys) {
+        if (transactionalStorage != null) {
+            // Preserve path guards before the SQLite delegate reads the batch over one connection.
+            for (String key : keys) path(key);
+            return transactionalStorage.readAll(keys);
+        }
+        return AtomicSessionStorage.super.readAll(keys);
     }
 
     @Override
