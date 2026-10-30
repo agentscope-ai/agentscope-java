@@ -57,7 +57,7 @@ def main():
     request('GET', '/api/internal/channels/config', auth=False, expected=404)
     for name in ('admin', 'alice', 'bob'):
         request('POST', '/api/auth/login', {'username': name, 'password': name}, auth=False, expected=401)
-    login = request('POST', '/api/auth/login', {'username': settings.get('AISTIO_BOOTSTRAP_ADMIN', 'admin'), 'password': settings['AISTIO_BOOTSTRAP_PASSWORD']}, auth=False)
+    login = request('POST', '/api/auth/login', {'username': settings.get('CONTROL_PLANE_BOOTSTRAP_ADMIN', 'admin'), 'password': settings['CONTROL_PLANE_BOOTSTRAP_PASSWORD']}, auth=False)
     token = login['token']
     me = request('GET', '/api/auth/me')
     assert me['isAdmin']

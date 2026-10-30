@@ -43,6 +43,7 @@ final class ReflectiveFunctionTool extends ToolBase {
     private final ToolResultConverter customConverter;
     private final ToolMethodInvoker methodInvoker;
     private final Boolean strict;
+    private final Boolean deferLoading;
 
     private ReflectiveFunctionTool(
             ToolBase.Builder baseBuilder,
@@ -50,13 +51,15 @@ final class ReflectiveFunctionTool extends ToolBase {
             Method method,
             ToolResultConverter customConverter,
             ToolMethodInvoker methodInvoker,
-            Boolean strict) {
+            Boolean strict,
+            Boolean deferLoading) {
         super(baseBuilder);
         this.toolObject = toolObject;
         this.method = method;
         this.customConverter = customConverter;
         this.methodInvoker = methodInvoker;
         this.strict = strict;
+        this.deferLoading = deferLoading;
     }
 
     /**
@@ -125,9 +128,14 @@ final class ReflectiveFunctionTool extends ToolBase {
                             + "set stateInjected=true to enable state injection.");
         }
 
+        // strict=true is the single switch: it recursively injects
+        // additionalProperties=false into the schema (satisfying OpenAI strict mode
+        // and enabling local rejection of undeclared parameters on any provider)
         Map<String, Object> schema =
                 schemaGenerator.generateParameterSchema(
-                        method, presetParamNames == null ? Set.of() : presetParamNames);
+                        method,
+                        presetParamNames == null ? Set.of() : presetParamNames,
+                        !annotation.strict());
 
         ToolBase.Builder builder =
                 ToolBase.builder()
@@ -147,14 +155,20 @@ final class ReflectiveFunctionTool extends ToolBase {
         }
 
         Boolean strict = annotation.strict() ? Boolean.TRUE : null;
+        Boolean deferLoading = annotation.deferLoading() ? Boolean.TRUE : null;
 
         return new ReflectiveFunctionTool(
-                builder, toolObject, method, customConverter, methodInvoker, strict);
+                builder, toolObject, method, customConverter, methodInvoker, strict, deferLoading);
     }
 
     @Override
     public Boolean getStrict() {
         return strict;
+    }
+
+    @Override
+    public Boolean getDeferLoading() {
+        return deferLoading;
     }
 
     @Override

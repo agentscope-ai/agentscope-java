@@ -206,4 +206,4 @@ Coding Agent 的上半场是个人提效——模型更聪明、补全更准、�
 
 文中提到的 codingagent 是一个完整且可读的示例，建议直接 clone 下来跑一遍再翻源码——它把本文讲的这些工程问题都对应到了真实代码。
 
-继续深入：[Harness 架构](/v2/zh/docs/harness/architecture) · [工作区](/v2/zh/docs/harness/workspace) · [沙箱](/v2/zh/docs/harness/sandbox) · [上下文压缩](/v2/zh/docs/harness/compaction) · [子 Agent](/v2/zh/docs/harness/subagent) · [技能](/v2/zh/docs/harness/skill) · [Plan Mode](/v2/zh/docs/harness/plan-mode)
+继续深入：[Harness 架构](/v2/zh/docs/harness/architecture) · [工作区](/v2/zh/docs/harness/workspace) · [沙箱](/v2/zh/docs/harness/sandbox) · [上下文管理](/v2/zh/docs/harness/context) · [子 Agent](/v2/zh/docs/harness/subagent) · [技能](/v2/zh/docs/harness/skill) · [Plan Mode](/v2/zh/docs/harness/plan-mode)

@@ -28,6 +28,8 @@ import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
@@ -59,6 +61,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -93,7 +96,7 @@ import reactor.core.publisher.SignalType;
  *
  * <h2>Streaming</h2>
  *
- * <p>{@code agent_spawn} and {@code agent_send} return {@link Mono}{@code <String>} so that the
+ * <p>{@code agent_spawn} and {@code agent_send} return {@link Mono}{@code <ToolResultBlock>} so that the
  * framework's reactive tool-invocation pipeline (see {@code ToolMethodInvoker}) can subscribe them
  * within the parent agent's streaming chain. When a {@link SubagentEventBus} is present in the
  * Reactor Context (injected by {@code AgentBase.createEventStream}), every child {@link
@@ -212,7 +215,10 @@ public class AgentSpawnTool {
             wait_async_results(task_ids=...) to wait for a chosen group, \
             wait_async_results(wait_all=true) to wait for all current background tasks, \
             task_cancel(task_id='%s') to cancel, or task_list() to see all tasks. \
-            Do NOT call task_output immediately — the task has just started.\
+            Do NOT call task_output immediately — the task has just started. \
+            Do not redo the task's work yourself while it runs in the background. \
+            Never mention task_id, agent_key, or session_id to the user — they are internal handles. \
+            Do not read the task's output files to watch progress; wait for the result instead.\
             """;
 
     /** Short poll interval used while waiting for a remote sync task, to detect awaiting_confirm promptly. */
@@ -228,7 +234,10 @@ public class AgentSpawnTool {
             String key, String agentId, String sessionId, String label, Agent agent, int depth) {}
 
     private final ConcurrentHashMap<String, SpawnedAgent> agentsByKey = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, String> labelToKey = new ConcurrentHashMap<>();
+
+    private record LabelKey(String userId, String parentSessionId, String label) {}
+
+    private final ConcurrentHashMap<LabelKey, String> labelToKey = new ConcurrentHashMap<>();
 
     /**
      * Creates an {@code AgentSpawnTool} that derives the active user-id from each tool call's
@@ -296,9 +305,14 @@ public class AgentSpawnTool {
                     async (timeout_seconds=0) adds task_id for task_output or wait_async_results; \
                     task_id is NOT agent_key. Multiple sync tool calls in one turn run in parallel \
                     by default; pass a Toolkit with parallel=false to serialize, \
-                    or use async tasks for fire-and-forget parallelism.\
+                    or use async tasks for fire-and-forget parallelism. \
+                    The subagent does not inherit the parent conversation, so include every \
+                    file path, constraint, and expected output format the task needs. New \
+                    sessions start from the supplied task; persistent sessions may retain their own history. \
+                    Do not re-spawn the same task reworded to bypass a permission denial; \
+                    report the limitation instead.\
                     """)
-    public Mono<String> agentSpawn(
+    public Mono<ToolResultBlock> agentSpawn(
             RuntimeContext runtimeContext,
             AgentState parentState,
             @ToolParam(name = "agent_id", description = "Subagent identifier to instantiate")
@@ -342,24 +356,23 @@ public class AgentSpawnTool {
         int nextDepth = parentSpawnDepth + 1;
         if (nextDepth > MAX_SPAWN_DEPTH) {
             log.warn("agent_spawn depth exceeded: depth={}, max={}", nextDepth, MAX_SPAWN_DEPTH);
-            return Mono.just("Error: Maximum spawn depth exceeded (max=" + MAX_SPAWN_DEPTH + ")");
+            return Mono.just(
+                    ToolResultBlock.error(
+                            "Maximum spawn depth exceeded (max=" + MAX_SPAWN_DEPTH + ")"));
         }
         String canonLabel = label != null && !label.isBlank() ? label.trim() : null;
         DefaultAgentManager manager = managerFor(runtimeContext);
 
-        Optional<Agent> agentOpt = manager.createAgentIfPresent(agentId, runtimeContext);
-        if (agentOpt.isEmpty()) {
-            if (manager.isPrimaryOnly(agentId)) {
-                return Mono.just(
-                        "Error: agent_id '"
-                                + agentId
-                                + "' is PRIMARY-only and cannot be spawned as a subagent.");
-            }
-            log.warn("agent_spawn unknown agentId={}, known={}", agentId, manager);
-            return Mono.just("Error: Unknown agent_id: " + agentId);
+        if (manager.isPrimaryOnly(agentId)) {
+            return Mono.just(
+                    ToolResultBlock.error(
+                            "agent_id '"
+                                    + agentId
+                                    + "' is PRIMARY-only and cannot be spawned as a subagent."));
         }
-        log.debug("agent_spawn resolved: agentId={}", agentId);
-        Agent agent = agentOpt.get();
+        if (!manager.hasAgent(agentId)) {
+            return Mono.just(ToolResultBlock.error("Unknown agent_id: " + agentId));
+        }
         String currentUserId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         var declOpt = manager.getDeclaration(agentId);
@@ -368,51 +381,74 @@ public class AgentSpawnTool {
         String key;
         String sessionId;
         if (persist) {
-            String hash = deterministicHash(parentSessionId, agentId, canonLabel);
+            String hash = deterministicHash(currentUserId, parentSessionId, agentId, canonLabel);
             key = "agent:" + agentId + ":" + hash;
             sessionId = "sub-" + hash;
-            // Reuse existing agent if same deterministic key was already spawned.
-            SpawnedAgent existing = agentsByKey.get(key);
-            if (existing != null) {
-                propagatePlanMode(
-                        parentState, currentUserId, existing.sessionId(), existing.agent());
-                propagateParentDenyRules(
-                        parentState,
-                        currentUserId,
-                        existing.sessionId(),
-                        existing.agent(),
-                        declOpt);
-                String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
-                boolean hasTask = task != null && !task.isBlank();
-                if (!hasTask) {
-                    return Mono.just(spawnInfo + "\nstatus: accepted (reused)");
-                }
-                return execSpawnTask(
-                        existing,
-                        runtimeContext,
-                        parentState,
-                        spawnInfo,
-                        task,
-                        timeoutSeconds,
-                        declOpt);
-            }
         } else {
             key = "agent:" + agentId + ":" + UUID.randomUUID();
             sessionId = "sub-" + UUID.randomUUID();
         }
 
-        // Label uniqueness check — skipped above for persist=true reuse path (already returned).
-        if (canonLabel != null && labelToKey.containsKey(canonLabel.toLowerCase())) {
-            return Mono.just("Error: Label already in use: " + canonLabel);
+        LabelKey labelKey = canonLabel != null ? labelKey(runtimeContext, canonLabel) : null;
+        String labeledKey = labelKey != null ? labelToKey.get(labelKey) : null;
+        if (labeledKey != null && (!persist || !labeledKey.equals(key))) {
+            return Mono.just(ToolResultBlock.error("Label already in use: " + canonLabel));
         }
 
+        // Create only on a cache miss, including concurrent spawns of the same identity.
+        AtomicBoolean created = new AtomicBoolean();
         SpawnedAgent spawned =
-                new SpawnedAgent(key, agentId, sessionId, canonLabel, agent, nextDepth);
-        agentsByKey.put(key, spawned);
-        if (canonLabel != null) {
-            labelToKey.put(canonLabel.toLowerCase(), key);
+                agentsByKey.computeIfAbsent(
+                        key,
+                        ignored -> {
+                            Optional<Agent> agentOpt =
+                                    manager.createAgentIfPresent(agentId, runtimeContext);
+                            if (agentOpt.isEmpty()) {
+                                return null;
+                            }
+                            created.set(true);
+                            return new SpawnedAgent(
+                                    key, agentId, sessionId, canonLabel, agentOpt.get(), nextDepth);
+                        });
+        if (spawned == null) {
+            return Mono.just(ToolResultBlock.error("Unknown agent_id: " + agentId));
+        }
+        Agent agent = spawned.agent();
+        if (labelKey != null) {
+            labelToKey.put(labelKey, key);
         }
         persistSpawnEntry(parentState, key, agentId, sessionId, canonLabel, nextDepth);
+        if (!created.get()) {
+            propagatePlanMode(parentState, currentUserId, sessionId, agent);
+            propagateParentDenyRules(parentState, currentUserId, sessionId, agent, declOpt);
+            String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
+            if (task == null || task.isBlank()) {
+                return Mono.just(
+                        ToolResultBlock.success(spawnInfo + "\nstatus: accepted (reused)"));
+            }
+            return execSpawnTask(
+                    spawned, runtimeContext, parentState, spawnInfo, task, timeoutSeconds, declOpt);
+        }
+        var recorder = io.agentscope.core.session.SessionRecorder.from(runtimeContext);
+        if (recorder != null)
+            recorder.recordNow(
+                    "subagent/spawned",
+                    Map.of(
+                            "childSessionId",
+                            sessionId,
+                            "childAgentId",
+                            agentId,
+                            "agentKey",
+                            key,
+                            "childLogAgentId",
+                            agent instanceof HarnessAgent child
+                                    ? child.sessionKey(
+                                                    RuntimeContext.builder()
+                                                            .userId(currentUserId)
+                                                            .sessionId(sessionId)
+                                                            .build())
+                                            .agentId()
+                                    : agentId));
 
         // Propagate plan mode: if parent is in plan mode, force child into read-only mode too.
         propagatePlanMode(parentState, currentUserId, sessionId, agent);
@@ -441,7 +477,7 @@ public class AgentSpawnTool {
 
         if (!hasTask) {
             return withSubagentExposedEvent(
-                    Mono.just(spawnInfo + "\nstatus: accepted"),
+                    Mono.just(ToolResultBlock.success(spawnInfo + "\nstatus: accepted")),
                     subagentId,
                     agentId,
                     sessionId,
@@ -469,30 +505,25 @@ public class AgentSpawnTool {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
-                                    try {
-                                        Msg reply =
-                                                manager.invokeAgent(
-                                                                agent,
-                                                                sessionId,
-                                                                currentUserId,
-                                                                capturedTask,
-                                                                runtimeContext)
-                                                        .block();
-                                        return reply != null ? reply.getTextContent() : "";
-                                    } catch (RuntimeException e) {
-                                        return "Error: "
-                                                + (e.getMessage() != null
-                                                        ? e.getMessage()
-                                                        : e.getClass().getSimpleName());
-                                    }
+                                    Msg reply =
+                                            manager.invokeAgent(
+                                                            agent,
+                                                            sessionId,
+                                                            currentUserId,
+                                                            capturedTask,
+                                                            runtimeContext)
+                                                    .block();
+                                    return reply != null ? reply.getTextContent() : "";
                                 });
             }
             taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
             return withSubagentExposedEvent(
                     Mono.just(
-                            spawnInfo
-                                    + "\n"
-                                    + String.format(BG_RESULT_TEMPLATE, taskId, taskId, taskId)),
+                            ToolResultBlock.success(
+                                    spawnInfo
+                                            + "\n"
+                                            + String.format(
+                                                    BG_RESULT_TEMPLATE, taskId, taskId, taskId))),
                     subagentId,
                     agentId,
                     sessionId,
@@ -552,9 +583,12 @@ public class AgentSpawnTool {
                     Send a message to an existing subagent. Use the exact string from the \
                     agent_key line of agent_spawn output (starts with agent:), or the label \
                     you set at spawn. Do not pass agent_id, session_id, or task_id here. \
-                    timeout_seconds=0 returns task_id for task_output or wait_async_results.\
+                    timeout_seconds=0 returns task_id for task_output or wait_async_results. \
+                    Sends are follow-ups to a subagent that already holds the context you \
+                    gave it. Use follow-ups to steer the task or continue its work. Do not \
+                    re-send the same request reworded to bypass a permission denial.\
                     """)
-    public Mono<String> agentSend(
+    public Mono<ToolResultBlock> agentSend(
             RuntimeContext runtimeContext,
             AgentState parentState,
             @ToolParam(
@@ -587,25 +621,25 @@ public class AgentSpawnTool {
         boolean hasKey = agentKey != null && !agentKey.isBlank();
         boolean hasLabel = label != null && !label.isBlank();
         if (hasKey && hasLabel) {
-            return Mono.just("Error: Provide either agent_key or label, not both.");
+            return Mono.just(ToolResultBlock.error("Provide either agent_key or label, not both."));
         }
         if (!hasKey && !hasLabel) {
-            return Mono.just("Error: Either agent_key or label is required.");
+            return Mono.just(ToolResultBlock.error("Either agent_key or label is required."));
         }
         if (message == null || message.isBlank()) {
-            return Mono.just("Error: message is required");
+            return Mono.just(ToolResultBlock.error("message is required"));
         }
 
         String key;
         if (hasKey) {
             key = agentKey.trim();
         } else {
-            key = labelToKey.get(label.trim().toLowerCase());
+            key = labelToKey.get(labelKey(runtimeContext, label.trim()));
             if (key == null) {
                 key = tryResolveLabelFromState(parentState, label.trim());
             }
             if (key == null) {
-                return Mono.just("Error: Unknown label: " + label.trim());
+                return Mono.just(ToolResultBlock.error("Unknown label: " + label.trim()));
             }
         }
 
@@ -614,7 +648,7 @@ public class AgentSpawnTool {
             resolved = tryRestoreFromState(parentState, key, runtimeContext);
         }
         if (resolved == null) {
-            return Mono.just("Error: Unknown agent_key: " + key);
+            return Mono.just(ToolResultBlock.error("Unknown agent_key: " + key));
         }
         final SpawnedAgent spawned = resolved;
 
@@ -646,27 +680,22 @@ public class AgentSpawnTool {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
-                                    try {
-                                        Msg reply =
-                                                manager.invokeAgent(
-                                                                spawned.agent(),
-                                                                spawned.sessionId(),
-                                                                currentUserId,
-                                                                capturedMessage,
-                                                                runtimeContext)
-                                                        .block();
-                                        return reply != null ? reply.getTextContent() : "";
-                                    } catch (RuntimeException e) {
-                                        return "Error: "
-                                                + (e.getMessage() != null
-                                                        ? e.getMessage()
-                                                        : e.getClass().getSimpleName());
-                                    }
+                                    Msg reply =
+                                            manager.invokeAgent(
+                                                            spawned.agent(),
+                                                            spawned.sessionId(),
+                                                            currentUserId,
+                                                            capturedMessage,
+                                                            runtimeContext)
+                                                    .block();
+                                    return reply != null ? reply.getTextContent() : "";
                                 });
             }
             taskRepository.putTask(
                     runtimeContext, taskId, spawned.agentId(), parentSessionId, spec);
-            return Mono.just(String.format(BG_RESULT_TEMPLATE, taskId, taskId, taskId));
+            return Mono.just(
+                    ToolResultBlock.success(
+                            String.format(BG_RESULT_TEMPLATE, taskId, taskId, taskId)));
         }
 
         if (remote) {
@@ -699,9 +728,9 @@ public class AgentSpawnTool {
     }
 
     @Tool(name = "agent_list", description = "List active subagents spawned by this agent.")
-    public String agentList() {
+    public ToolResultBlock agentList() {
         if (agentsByKey.isEmpty()) {
-            return "No active subagents.";
+            return ToolResultBlock.success("No active subagents.");
         }
 
         StringBuilder sb =
@@ -714,7 +743,7 @@ public class AgentSpawnTool {
             }
             sb.append("  spawn_depth: ").append(a.depth()).append("\n");
         }
-        return sb.toString().trim();
+        return ToolResultBlock.success(sb.toString().trim());
     }
 
     // -----------------------------------------------------------------
@@ -773,87 +802,116 @@ public class AgentSpawnTool {
             SpawnedAgent spawned,
             RuntimeContext parentCtx) {
         return Mono.deferContextual(
-                ctxView -> {
-                    DefaultAgentManager manager = managerFor(parentCtx);
-                    // ── Path 1: streamEvents() — AgentEvent forwarding ──
-                    Optional<AgentEventEmitter> emitterOpt = AgentEventEmitter.fromContext(ctxView);
-                    if (emitterOpt.isPresent()) {
-                        AgentEventEmitter parentEmitter = emitterOpt.get();
-                        String sourcePath = buildSourcePath(spawned, parentCtx);
-                        String replyId = UUID.randomUUID().toString().replace("-", "");
-                        AgentEventEmitter taggedEmitter =
-                                event -> parentEmitter.emit(event.withSource(sourcePath));
+                        ctxView -> {
+                            DefaultAgentManager manager = managerFor(parentCtx);
+                            // ── Path 1: streamEvents() — AgentEvent forwarding ──
+                            Optional<AgentEventEmitter> emitterOpt =
+                                    AgentEventEmitter.fromContext(ctxView);
+                            if (emitterOpt.isPresent()) {
+                                AgentEventEmitter parentEmitter = emitterOpt.get();
+                                String sourcePath = buildSourcePath(spawned, parentCtx);
+                                String replyId = UUID.randomUUID().toString().replace("-", "");
+                                AgentEventEmitter taggedEmitter =
+                                        event -> parentEmitter.emit(event.withSource(sourcePath));
 
-                        parentEmitter.emit(
-                                new AgentStartEvent(spawned.sessionId(), replyId, spawned.agentId())
-                                        .withSource(sourcePath));
+                                parentEmitter.emit(
+                                        new AgentStartEvent(
+                                                        spawned.sessionId(),
+                                                        replyId,
+                                                        spawned.agentId())
+                                                .withSource(sourcePath));
 
-                        AtomicBoolean endEmitted = new AtomicBoolean();
-                        Runnable emitEnd =
-                                () -> {
-                                    if (endEmitted.compareAndSet(false, true)) {
-                                        parentEmitter.emit(
-                                                new AgentEndEvent(replyId).withSource(sourcePath));
-                                    }
-                                };
-
-                        return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx)
-                                .contextWrite(
-                                        c ->
-                                                c.put(
-                                                        AgentEventEmitter.FORWARDING_CONTEXT_KEY,
-                                                        taggedEmitter))
-                                // Emit before success or error reaches the parent, which may
-                                // otherwise complete its event sink before doFinally runs.
-                                .doOnSuccess(ignored -> emitEnd.run())
-                                .doOnError(ignored -> emitEnd.run())
-                                // Preserve best-effort cancellation signaling without emitting a
-                                // duplicate if cancellation races with normal termination.
-                                .doFinally(
-                                        signal -> {
-                                            if (signal == SignalType.CANCEL) {
-                                                emitEnd.run();
+                                AtomicBoolean endEmitted = new AtomicBoolean();
+                                Runnable emitEnd =
+                                        () -> {
+                                            if (endEmitted.compareAndSet(false, true)) {
+                                                parentEmitter.emit(
+                                                        new AgentEndEvent(replyId)
+                                                                .withSource(sourcePath));
                                             }
-                                        });
-                    }
+                                        };
 
-                    // ── Path 2: stream() (deprecated) — SubagentEventBus forwarding ──
-                    if (ctxView.hasKey(SubagentEventBus.CONTEXT_KEY)) {
-                        SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
-                        EventSource childSource = buildChildSource(spawned, parentCtx);
+                                return manager.invokeAgent(
+                                                agent, sessionId, userId, prompt, parentCtx)
+                                        .contextWrite(
+                                                c ->
+                                                        c.put(
+                                                                AgentEventEmitter
+                                                                        .FORWARDING_CONTEXT_KEY,
+                                                                taggedEmitter))
+                                        // Emit before success or error reaches the parent, which
+                                        // may
+                                        // otherwise complete its event sink before doFinally runs.
+                                        .doOnSuccess(ignored -> emitEnd.run())
+                                        .doOnError(ignored -> emitEnd.run())
+                                        // Preserve best-effort cancellation signaling without
+                                        // emitting a
+                                        // duplicate if cancellation races with normal termination.
+                                        .doFinally(
+                                                signal -> {
+                                                    if (signal == SignalType.CANCEL) {
+                                                        emitEnd.run();
+                                                    }
+                                                });
+                            }
 
-                        return manager.invokeAgentStream(
-                                        agent,
-                                        sessionId,
-                                        userId,
-                                        prompt,
-                                        childSource,
-                                        StreamOptions.defaults(),
-                                        parentCtx)
-                                .doOnNext(
-                                        e -> {
-                                            log.debug(
-                                                    "[execLocalSync] forwarding child event to"
-                                                            + " bus: type={} msgId={} isLast={}",
-                                                    e.getType(),
-                                                    e.getMessage().getId(),
-                                                    e.isLast());
-                                            bus.emit(e);
-                                        })
-                                .filter(e -> e.isLast() && e.getType() == EventType.AGENT_RESULT)
-                                .last()
-                                .map(e -> e.getMessage())
-                                .switchIfEmpty(
-                                        Mono.defer(
-                                                () ->
-                                                        manager.invokeAgent(
-                                                                agent, sessionId, userId, prompt,
-                                                                parentCtx)));
-                    }
+                            // ── Path 2: stream() (deprecated) — SubagentEventBus forwarding ──
+                            if (ctxView.hasKey(SubagentEventBus.CONTEXT_KEY)) {
+                                SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
+                                EventSource childSource = buildChildSource(spawned, parentCtx);
 
-                    // ── Path 3: non-streaming ──
-                    return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
-                });
+                                return manager.invokeAgentStream(
+                                                agent,
+                                                sessionId,
+                                                userId,
+                                                prompt,
+                                                childSource,
+                                                StreamOptions.defaults(),
+                                                parentCtx)
+                                        .doOnNext(
+                                                e -> {
+                                                    log.debug(
+                                                            "[execLocalSync] forwarding child event"
+                                                                    + " to bus: type={} msgId={}"
+                                                                    + " isLast={}",
+                                                            e.getType(),
+                                                            e.getMessage().getId(),
+                                                            e.isLast());
+                                                    bus.emit(e);
+                                                })
+                                        .filter(
+                                                e ->
+                                                        e.isLast()
+                                                                && e.getType()
+                                                                        == EventType.AGENT_RESULT)
+                                        .last()
+                                        .map(e -> e.getMessage())
+                                        .switchIfEmpty(
+                                                Mono.defer(
+                                                        () ->
+                                                                manager.invokeAgent(
+                                                                        agent, sessionId, userId,
+                                                                        prompt, parentCtx)));
+                            }
+
+                            // ── Path 3: non-streaming ──
+                            return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
+                        })
+                .doOnSuccess(
+                        reply -> {
+                            var recorder =
+                                    io.agentscope.core.session.SessionRecorder.from(parentCtx);
+                            if (recorder != null)
+                                recorder.recordIfOpen(
+                                        "subagent/completed",
+                                        Map.of(
+                                                "childSessionId",
+                                                sessionId,
+                                                "childAgentId",
+                                                spawned.agentId(),
+                                                "status",
+                                                "completed"));
+                        });
     }
 
     /**
@@ -878,7 +936,7 @@ public class AgentSpawnTool {
      *   <li>Agent errors → error message returned
      * </ul>
      */
-    private Mono<String> execWithTimeoutPromotion(
+    private Mono<ToolResultBlock> execWithTimeoutPromotion(
             Agent agent,
             String sessionId,
             String userId,
@@ -892,7 +950,7 @@ public class AgentSpawnTool {
 
         return Mono.deferContextual(
                 parentCtx ->
-                        Mono.<String>create(
+                        Mono.<ToolResultBlock>create(
                                 sink -> {
                                     CompletableFuture<Msg> bridge = new CompletableFuture<>();
 
@@ -959,9 +1017,12 @@ public class AgentSpawnTool {
                                                             innerSub);
                                                 } else {
                                                     sink.success(
-                                                            header
-                                                                    + "\nstatus: ok\nreply:\n"
-                                                                    + textOf(msg));
+                                                            ToolResultBlock.success(
+                                                                    header
+                                                                            + "\n"
+                                                                            + "status: ok\n"
+                                                                            + "reply:\n"
+                                                                            + textOf(msg)));
                                                 }
                                             });
 
@@ -1005,7 +1066,7 @@ public class AgentSpawnTool {
             String header,
             long timeoutMs,
             String agentId,
-            reactor.core.publisher.MonoSink<String> sink,
+            reactor.core.publisher.MonoSink<ToolResultBlock> sink,
             boolean forceSync,
             Disposable innerSub) {
 
@@ -1021,7 +1082,9 @@ public class AgentSpawnTool {
                                 + " agentId={}",
                         timeoutMs,
                         agentId);
-                sink.success(header + "\n" + formatForceSyncTimeout(timeoutMs));
+                sink.success(
+                        ToolResultBlock.text(header + "\n" + formatForceSyncTimeout(timeoutMs))
+                                .withState(ToolResultState.ERROR));
                 return;
             }
             String taskId = "task_" + UUID.randomUUID();
@@ -1038,7 +1101,9 @@ public class AgentSpawnTool {
                     timeoutMs,
                     agentId,
                     taskId);
-            sink.success(header + "\n" + formatTimeoutPromoted(taskId, timeoutMs));
+            sink.success(
+                    ToolResultBlock.success(
+                            header + "\n" + formatTimeoutPromoted(taskId, timeoutMs)));
         } else {
             Throwable reportable = cause != null ? cause : err;
             String errStr =
@@ -1046,7 +1111,9 @@ public class AgentSpawnTool {
                             ? reportable.getMessage()
                             : reportable.getClass().getSimpleName();
             log.warn("agent execution failed: agentId={}", agentId, reportable);
-            sink.success(header + "\nstatus: error\nerror: " + errStr);
+            sink.success(
+                    ToolResultBlock.text(header + "\nstatus: error\nerror: " + errStr)
+                            .withState(ToolResultState.ERROR));
         }
     }
 
@@ -1072,10 +1139,11 @@ public class AgentSpawnTool {
         if (parentState == null) {
             return null;
         }
-        String lowerLabel = label.toLowerCase();
+        String lowerLabel = label.toLowerCase(Locale.ROOT);
         for (io.agentscope.core.state.ToolContextState.SpawnEntry entry :
                 parentState.getToolContext().getSpawnRegistry().values()) {
-            if (entry.label() != null && entry.label().toLowerCase().equals(lowerLabel)) {
+            if (entry.label() != null
+                    && entry.label().toLowerCase(Locale.ROOT).equals(lowerLabel)) {
                 return entry.key();
             }
         }
@@ -1110,7 +1178,7 @@ public class AgentSpawnTool {
                         entry.depth());
         agentsByKey.put(key, restored);
         if (entry.label() != null) {
-            labelToKey.put(entry.label().toLowerCase(), key);
+            labelToKey.put(labelKey(runtimeContext, entry.label()), key);
         }
         log.info(
                 "Restored subagent from persisted state: key={}, agentId={}", key, entry.agentId());
@@ -1139,7 +1207,8 @@ public class AgentSpawnTool {
         return String.format(
                 """
                 status: timeout
-                The task exceeded the %ds sync timeout and was interrupted because force_sync                 is enabled. Background promotion is disabled for this call.\
+                The task exceeded the %ds sync timeout and was interrupted because force_sync \
+                is enabled. Background promotion is disabled for this call.\
                 """,
                 timeoutMs / 1000);
     }
@@ -1289,7 +1358,7 @@ public class AgentSpawnTool {
      * Reactive entry for remote sync execution. Captures {@link AgentEventEmitter} from Reactor
      * Context before blocking on the remote task.
      */
-    private Mono<String> runRemoteSyncReactive(
+    private Mono<ToolResultBlock> runRemoteSyncReactive(
             RuntimeContext runtimeContext,
             AgentState parentState,
             String header,
@@ -1327,7 +1396,7 @@ public class AgentSpawnTool {
      * {@link RemoteAskPolicy#DENY} applies, pending remote confirmations are auto-denied via
      * {@link RemoteSubagentTransport#resume}.
      */
-    private String runRemoteSync(
+    private ToolResultBlock runRemoteSync(
             RuntimeContext runtimeContext,
             AgentState parentState,
             String header,
@@ -1386,9 +1455,12 @@ public class AgentSpawnTool {
                                 timeoutMs,
                                 agentId,
                                 taskId);
-                        return header + "\n" + formatForceSyncTimeout(timeoutMs);
+                        return ToolResultBlock.text(
+                                        header + "\n" + formatForceSyncTimeout(timeoutMs))
+                                .withState(ToolResultState.ERROR);
                     }
-                    return header + "\nstatus: timeout\ntask_id: " + taskId;
+                    return ToolResultBlock.success(
+                            header + "\nstatus: timeout\ntask_id: " + taskId);
                 }
                 long slice = Math.min(REMOTE_CONFIRM_POLL_MS, remaining);
                 boolean done = bgTask.waitForCompletion(slice);
@@ -1430,10 +1502,12 @@ public class AgentSpawnTool {
             if (ts == TaskStatus.FAILED) {
                 Exception err = bgTask.getError();
                 String msg = err != null ? err.getMessage() : "remote task failed";
-                return header + "\nstatus: error\nerror: " + msg;
+                return ToolResultBlock.text(header + "\nstatus: error\nerror: " + msg)
+                        .withState(ToolResultState.ERROR);
             }
             if (ts == TaskStatus.CANCELLED) {
-                return header + "\nstatus: cancelled\ntask_id: " + taskId;
+                return ToolResultBlock.text(header + "\nstatus: cancelled\ntask_id: " + taskId)
+                        .withState(ToolResultState.INTERRUPTED);
             }
             String result = bgTask.getResult();
             StringBuilder sb = new StringBuilder(header).append("\nstatus: ok");
@@ -1441,11 +1515,12 @@ public class AgentSpawnTool {
                 sb.append("\nnote: remote tool confirmation(s) were auto-denied");
             }
             sb.append("\nreply:\n").append(result != null ? result : "");
-            return sb.toString();
+            return ToolResultBlock.success(sb.toString());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("agent remote sync interrupted: agentId={}", agentId);
-            return header + "\nstatus: error\nerror: interrupted";
+            return ToolResultBlock.text(header + "\nstatus: error\nerror: interrupted")
+                    .withState(ToolResultState.INTERRUPTED);
         } finally {
             try {
                 streamHandle.close();
@@ -1568,12 +1643,12 @@ public class AgentSpawnTool {
     }
 
     /**
-     * Wraps a {@code Mono<String>} to emit a {@link SubagentExposedEvent} into the parent's event
+     * Wraps a {@code Mono<ToolResultBlock>} to emit a {@link SubagentExposedEvent} into the parent's event
      * stream when {@code subagentId} is non-null. When subagentId is null (no expose), returns the
      * original Mono unchanged.
      */
-    private static Mono<String> withSubagentExposedEvent(
-            Mono<String> source,
+    private static Mono<ToolResultBlock> withSubagentExposedEvent(
+            Mono<ToolResultBlock> source,
             String subagentId,
             String agentId,
             String sessionId,
@@ -1614,7 +1689,7 @@ public class AgentSpawnTool {
      * {@code agentSpawn} to handle the deterministic-key reuse path without duplicating the
      * sync/async/remote dispatch logic.
      */
-    private Mono<String> execSpawnTask(
+    private Mono<ToolResultBlock> execSpawnTask(
             SpawnedAgent spawned,
             RuntimeContext runtimeContext,
             AgentState parentState,
@@ -1646,28 +1721,24 @@ public class AgentSpawnTool {
                 spec =
                         new TaskRunSpec.LocalTaskRunSpec(
                                 () -> {
-                                    try {
-                                        Msg reply =
-                                                manager.invokeAgent(
-                                                                spawned.agent(),
-                                                                spawned.sessionId(),
-                                                                currentUserId,
-                                                                capturedTask,
-                                                                runtimeContext)
-                                                        .block();
-                                        return reply != null ? reply.getTextContent() : "";
-                                    } catch (RuntimeException e) {
-                                        return "Error: "
-                                                + (e.getMessage() != null
-                                                        ? e.getMessage()
-                                                        : e.getClass().getSimpleName());
-                                    }
+                                    Msg reply =
+                                            manager.invokeAgent(
+                                                            spawned.agent(),
+                                                            spawned.sessionId(),
+                                                            currentUserId,
+                                                            capturedTask,
+                                                            runtimeContext)
+                                                    .block();
+                                    return reply != null ? reply.getTextContent() : "";
                                 });
             }
             taskRepository.putTask(
                     runtimeContext, taskId, spawned.agentId(), parentSessionId, spec);
             return Mono.just(
-                    spawnInfo + "\n" + String.format(BG_RESULT_TEMPLATE, taskId, taskId, taskId));
+                    ToolResultBlock.success(
+                            spawnInfo
+                                    + "\n"
+                                    + String.format(BG_RESULT_TEMPLATE, taskId, taskId, taskId)));
         }
 
         if (remote) {
@@ -1699,15 +1770,29 @@ public class AgentSpawnTool {
                 forceSync);
     }
 
+    private static LabelKey labelKey(RuntimeContext runtimeContext, String label) {
+        return new LabelKey(
+                runtimeContext != null ? runtimeContext.getUserId() : null,
+                runtimeContext != null ? runtimeContext.getSessionId() : null,
+                label.toLowerCase(Locale.ROOT));
+    }
+
     /**
-     * Derives a deterministic 12-char hex hash from (parentSessionId, agentId, label). Same inputs
-     * always produce the same key, enabling subagent state recovery across parent calls.
+     * Derives a deterministic 12-char hex hash from (userId, parentSessionId, agentId, label).
+     * Length prefixes distinguish null values and embedded separators without changing the
+     * external key format.
      */
-    static String deterministicHash(String parentSessionId, String agentId, String label) {
-        String parent = parentSessionId != null ? parentSessionId : "anon";
-        return label != null
-                ? SessionIdUtils.deterministicHash(parent, agentId, label)
-                : SessionIdUtils.deterministicHash(parent, agentId);
+    static String deterministicHash(
+            String userId, String parentSessionId, String agentId, String label) {
+        return SessionIdUtils.deterministicHash(
+                identityPart(userId),
+                identityPart(parentSessionId),
+                identityPart(agentId),
+                identityPart(label));
+    }
+
+    private static String identityPart(String value) {
+        return value == null ? "-1:" : value.length() + ":" + value;
     }
 
     private static void propagateParentDenyRules(

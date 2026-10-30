@@ -27,6 +27,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+import io.agentscope.harness.agent.memory.compaction.ToolResultPreview;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -90,32 +91,51 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
             RuntimeContext ctx,
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
+        return next.apply(prepare(agent, ctx, input));
+    }
+
+    /** Reusable final-boundary offload pass. Successful writes precede replacement. */
+    public ReasoningInput prepare(Agent agent, RuntimeContext ctx, ReasoningInput input) {
+        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        AgentState state = RuntimeContext.resolveAgentState(rc, agent);
+        List<Msg> original = state == null ? List.of() : List.copyOf(state.contextMutable());
+        Candidate candidate = prepareCandidate(agent, rc, input, original);
+        if (state != null
+                && state.contextMutable().equals(original)
+                && !original.equals(candidate.history())) {
+            state.contextMutable().clear();
+            state.contextMutable().addAll(candidate.history());
+        }
+        return candidate.input();
+    }
+
+    public record Candidate(ReasoningInput input, List<Msg> history) {
+        public Candidate {
+            history = List.copyOf(history);
+        }
+    }
+
+    /** Offload files before producing candidates; do not replace active history here. */
+    public Candidate prepareCandidate(
+            Agent agent, RuntimeContext ctx, ReasoningInput input, List<Msg> history) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         Map<ToolResultFingerprint, String> replacements = new HashMap<>();
 
         // PreReasoning hooks run before middleware and may remove or rewrite messages. Evict the
         // canonical state first so hook behavior cannot prevent the original result from being
         // compacted before persistence.
-        AgentState state = RuntimeContext.resolveAgentState(rc, agent);
-        if (state != null) {
-            EvictionResult canonical =
-                    evictMessages(state.contextMutable(), agent.getName(), rc, replacements);
-            if (canonical.changed()) {
-                List<Msg> context = state.contextMutable();
-                for (int i = 0; i < context.size(); i++) {
-                    context.set(i, canonical.messages().get(i));
-                }
-            }
-        }
+        EvictionResult canonical = evictMessages(history, agent.getName(), rc, replacements);
 
         // Preserve the hook-produced model view, compacting only results that remain (or were
         // newly added) in that view. Reuse canonical replacements to avoid duplicate writes.
         EvictionResult result = evictMessages(input.messages(), agent.getName(), rc, replacements);
         if (!result.changed()) {
-            return next.apply(input);
+            return new Candidate(input, canonical.messages());
         }
 
-        return next.apply(new ReasoningInput(result.messages(), input.tools(), input.options()));
+        return new Candidate(
+                new ReasoningInput(result.messages(), input.tools(), input.options()),
+                canonical.messages());
     }
 
     private EvictionResult evictMessages(
@@ -242,12 +262,18 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
     private ToolResultBlock withPlaceholder(ToolResultBlock toolResult, String placeholder) {
         Map<String, Object> metadata = new LinkedHashMap<>(toolResult.getMetadata());
         metadata.put(EVICTED_METADATA_KEY, true);
+        int charsPerEnd =
+                Math.min(
+                        config.getPreviewChars(),
+                        ToolResultPreview.textLength(toolResult.getOutput()) / 2);
         return new ToolResultBlock(
                 toolResult.getId(),
                 toolResult.getName(),
-                List.of(TextBlock.builder().text(placeholder).build()),
+                ToolResultPreview.create(
+                        toolResult.getOutput(), charsPerEnd, placeholder, "\n\n...\n\n"),
                 metadata,
-                toolResult.getState());
+                toolResult.getState(),
+                toolResult.getExecutionDetails());
     }
 
     private String extractText(ToolResultBlock toolResult) {
@@ -296,10 +322,7 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
                         len, evictionPath, evictionPath));
 
         if (pLen > 0) {
-            sb.append(String.format("Preview (first %,d chars):%n", pLen));
-            sb.append(fullText, 0, pLen);
-            sb.append(String.format("%n%n... and last %,d chars:%n", pLen));
-            sb.append(fullText, len - pLen, len);
+            sb.append(String.format("Preview (first and last %,d chars):%n", pLen));
         }
 
         return sb.toString();
