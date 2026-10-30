@@ -102,6 +102,18 @@ List<Document> hits = knowledge.retrieve(
 
 切换向量库只需要换一个 `VDBStoreBase` 实现，传给 `SimpleKnowledge.builder().embeddingStore(...)`。
 
+### 删除文档
+
+所有内置向量库都支持两种删除，语义一致：
+
+```java
+VDBStoreBase store = knowledge.getEmbeddingStore();
+store.delete(chunk.getId());                          // 删一个片段，按 Document#getId()
+store.deleteByDocId(chunk.getMetadata().getDocId());  // 删同一源文档的全部片段
+```
+
+两者在删掉了内容时返回 `true`，没有匹配项时返回 `false`。
+
 ## 检索参数
 
 `RetrieveConfig` 控制检索行为：

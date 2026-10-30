@@ -15,13 +15,17 @@
  */
 package io.agentscope.core.rag.store;
 
+import static io.qdrant.client.ConditionFactory.matchKeyword;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.google.common.util.concurrent.Futures;
@@ -31,8 +35,10 @@ import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.store.dto.SearchDocumentDto;
+import io.qdrant.client.PointIdFactory;
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.QdrantGrpcClient;
+import io.qdrant.client.grpc.Common.Filter;
 import io.qdrant.client.grpc.Common.PointId;
 import io.qdrant.client.grpc.JsonWithInt;
 import io.qdrant.client.grpc.JsonWithInt.Struct;
@@ -43,6 +49,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -264,85 +271,149 @@ class QdrantStoreTest {
         assertNotNull(builder);
     }
 
-    @Test
-    @DisplayName("Qdrant store delete vector")
-    void testDelete() throws Exception {
-        MockedConstruction<QdrantGrpcClient> mockGrpc = mockConstruction(QdrantGrpcClient.class);
-        MockedConstruction<QdrantClient> mockClient =
+    /**
+     * Builds a store over a mocked {@link QdrantClient}. {@code stubs} configures the client;
+     * the store and the mocks are released by the returned handle.
+     */
+    private MockedQdrant mockedQdrant(Consumer<QdrantClient> stubs) throws Exception {
+        MockedConstruction<QdrantGrpcClient> grpc = mockConstruction(QdrantGrpcClient.class);
+        MockedConstruction<QdrantClient> client =
                 mockConstruction(
                         QdrantClient.class,
                         (mock, context) -> {
-                            // Mock collection exists check
                             when(mock.collectionExistsAsync(anyString()))
                                     .thenReturn(Futures.immediateFuture(true));
-
-                            // Mock delete operation
-                            Points.UpdateResult updateResult =
-                                    Points.UpdateResult.newBuilder()
-                                            .setStatus(Points.UpdateStatus.Completed)
-                                            .build();
-                            ListenableFuture<Points.UpdateResult> future =
-                                    Futures.immediateFuture(updateResult);
-                            when(mock.deleteAsync(anyString(), anyList())).thenReturn(future);
+                            stubs.accept(mock);
                         });
-
-        QdrantStore mockStore =
+        QdrantStore store =
                 QdrantStore.builder()
                         .location(TEST_LOCATION)
                         .collectionName(TEST_COLLECTION)
                         .dimensions(TEST_DIMENSIONS)
                         .useTransportLayerSecurity(false)
                         .build();
+        return new MockedQdrant(store, client.constructed().get(0), grpc, client);
+    }
 
-        Boolean delete = mockStore.delete(UUID.randomUUID().toString()).block();
+    private record MockedQdrant(
+            QdrantStore store,
+            QdrantClient client,
+            MockedConstruction<QdrantGrpcClient> grpc,
+            MockedConstruction<QdrantClient> clientConstruction)
+            implements AutoCloseable {
+        @Override
+        public void close() {
+            store.close();
+            grpc.close();
+            clientConstruction.close();
+        }
+    }
 
-        assertEquals(Boolean.TRUE, delete);
+    private static ListenableFuture<Points.UpdateResult> completed() {
+        return Futures.immediateFuture(
+                Points.UpdateResult.newBuilder().setStatus(Points.UpdateStatus.Completed).build());
+    }
 
-        mockStore.close();
-        mockGrpc.close();
-        mockClient.close();
+    private static void stubRetrieve(QdrantClient mock, boolean found) {
+        List<Points.RetrievedPoint> points =
+                found ? List.of(Points.RetrievedPoint.getDefaultInstance()) : List.of();
+        when(mock.retrieveAsync(anyString(), anyList(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(Futures.immediateFuture(points));
+    }
+
+    @Test
+    @DisplayName("Qdrant store delete vector")
+    void testDelete() throws Exception {
+        try (MockedQdrant qdrant =
+                mockedQdrant(
+                        mock -> {
+                            stubRetrieve(mock, true);
+                            when(mock.deleteAsync(anyString(), anyList())).thenReturn(completed());
+                        })) {
+            String id = UUID.randomUUID().toString();
+
+            assertEquals(Boolean.TRUE, qdrant.store().delete(id).block());
+
+            verify(qdrant.client())
+                    .deleteAsync(TEST_COLLECTION, List.of(PointIdFactory.id(UUID.fromString(id))));
+        }
+    }
+
+    @Test
+    @DisplayName("Delete returns false and sends no delete when the point does not exist")
+    void testDeleteMissingPoint() throws Exception {
+        try (MockedQdrant qdrant = mockedQdrant(mock -> stubRetrieve(mock, false))) {
+            assertEquals(
+                    Boolean.FALSE, qdrant.store().delete(UUID.randomUUID().toString()).block());
+
+            verify(qdrant.client(), never()).deleteAsync(anyString(), anyList());
+        }
+    }
+
+    @Test
+    @DisplayName("Delete returns false for an id that is not a UUID instead of failing")
+    void testDeleteNonUuidId() throws Exception {
+        try (MockedQdrant qdrant = mockedQdrant(mock -> {})) {
+            assertEquals(Boolean.FALSE, qdrant.store().delete("doc-1").block());
+
+            verify(qdrant.client(), never()).deleteAsync(anyString(), anyList());
+        }
     }
 
     @Test
     @DisplayName("Should throw VectorStoreException when Qdrant store delete vector occur error")
     void testDeleteError() throws Exception {
-        MockedConstruction<QdrantGrpcClient> mockGrpc = mockConstruction(QdrantGrpcClient.class);
-        MockedConstruction<QdrantClient> mockClient =
-                mockConstruction(
-                        QdrantClient.class,
-                        (mock, context) -> {
-                            // Mock collection exists check
-                            when(mock.collectionExistsAsync(anyString()))
-                                    .thenReturn(Futures.immediateFuture(true));
-
-                            // Mock delete operation
+        try (MockedQdrant qdrant =
+                mockedQdrant(
+                        mock -> {
+                            stubRetrieve(mock, true);
                             when(mock.deleteAsync(anyString(), anyList()))
                                     .thenThrow(new RuntimeException("Test Error"));
-                        });
+                        })) {
+            StepVerifier.create(qdrant.store().delete(UUID.randomUUID().toString()))
+                    .expectErrorMatches(
+                            th ->
+                                    (th instanceof VectorStoreException vectorStoreException)
+                                            && vectorStoreException
+                                                    .getMessage()
+                                                    .equals("Failed to delete document in Qdrant")
+                                            && (th.getCause()
+                                                    instanceof RuntimeException runtimeException)
+                                            && runtimeException.getMessage().equals("Test Error"))
+                    .verify();
+        }
+    }
 
-        QdrantStore mockStore =
-                QdrantStore.builder()
-                        .location(TEST_LOCATION)
-                        .collectionName(TEST_COLLECTION)
-                        .dimensions(TEST_DIMENSIONS)
-                        .useTransportLayerSecurity(false)
-                        .build();
+    @Test
+    @DisplayName("deleteByDocId deletes by a doc_id payload filter")
+    void testDeleteByDocId() throws Exception {
+        try (MockedQdrant qdrant =
+                mockedQdrant(
+                        mock -> {
+                            when(mock.countAsync(anyString(), any(Filter.class), anyBoolean()))
+                                    .thenReturn(Futures.immediateFuture(3L));
+                            when(mock.deleteAsync(anyString(), any(Filter.class)))
+                                    .thenReturn(completed());
+                        })) {
+            assertEquals(Boolean.TRUE, qdrant.store().deleteByDocId("doc-1").block());
 
-        StepVerifier.create(mockStore.delete(UUID.randomUUID().toString()))
-                .expectErrorMatches(
-                        th ->
-                                (th instanceof VectorStoreException vectorStoreException)
-                                        && vectorStoreException
-                                                .getMessage()
-                                                .equals("Failed to delete document in Qdrant")
-                                        && (th.getCause()
-                                                instanceof RuntimeException runtimeException)
-                                        && runtimeException.getMessage().equals("Test Error"))
-                .verify();
+            Filter expected = Filter.newBuilder().addMust(matchKeyword("doc_id", "doc-1")).build();
+            verify(qdrant.client()).deleteAsync(TEST_COLLECTION, expected);
+        }
+    }
 
-        mockStore.close();
-        mockGrpc.close();
-        mockClient.close();
+    @Test
+    @DisplayName("deleteByDocId returns false and sends no delete when no chunk matches")
+    void testDeleteByDocIdNotFound() throws Exception {
+        try (MockedQdrant qdrant =
+                mockedQdrant(
+                        mock ->
+                                when(mock.countAsync(anyString(), any(Filter.class), anyBoolean()))
+                                        .thenReturn(Futures.immediateFuture(0L)))) {
+            assertEquals(Boolean.FALSE, qdrant.store().deleteByDocId("doc-1").block());
+
+            verify(qdrant.client(), never()).deleteAsync(anyString(), any(Filter.class));
+        }
     }
 
     /**

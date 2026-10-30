@@ -26,6 +26,7 @@ import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import io.agentscope.core.util.JsonUtils;
 import io.milvus.v2.client.ConnectConfig;
 import io.milvus.v2.client.MilvusClientV2;
+import io.milvus.v2.common.ConsistencyLevel;
 import io.milvus.v2.common.DataType;
 import io.milvus.v2.common.IndexParam;
 import io.milvus.v2.service.collection.request.AddFieldReq;
@@ -35,10 +36,12 @@ import io.milvus.v2.service.database.request.CreateDatabaseReq;
 import io.milvus.v2.service.database.response.ListDatabasesResp;
 import io.milvus.v2.service.vector.request.DeleteReq;
 import io.milvus.v2.service.vector.request.InsertReq;
+import io.milvus.v2.service.vector.request.QueryReq;
 import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.request.data.FloatVec;
 import io.milvus.v2.service.vector.response.DeleteResp;
 import io.milvus.v2.service.vector.response.InsertResp;
+import io.milvus.v2.service.vector.response.QueryResp;
 import io.milvus.v2.service.vector.response.SearchResp;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -46,6 +49,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -298,16 +302,36 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     }
 
     @Override
-    public Mono<Boolean> delete(String docId) {
-        if (docId == null || docId.trim().isEmpty()) {
+    public Mono<Boolean> delete(String id) {
+        if (id == null || id.trim().isEmpty()) {
             return Mono.error(new IllegalArgumentException("Document ID cannot be null or empty"));
         }
+        return deleteInMilvus(() -> deleteChunkFromMilvus(id));
+    }
 
+    @Override
+    public Mono<Boolean> deleteByDocId(String docId) {
+        if (docId == null || docId.trim().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("Doc ID cannot be null or empty"));
+        }
+        // A filter template keeps quotes or other expression syntax in docId from being
+        // interpreted as part of the filter.
+        DeleteReq deleteReq =
+                DeleteReq.builder()
+                        .databaseName(databaseName)
+                        .collectionName(collectionName)
+                        .filter(FIELD_DOC_ID + " == {docId}")
+                        .filterTemplateValues(Map.of("docId", docId))
+                        .build();
+        return deleteInMilvus(() -> deleteFromMilvus(deleteReq));
+    }
+
+    private Mono<Boolean> deleteInMilvus(Callable<Boolean> deletion) {
         return Mono.fromCallable(
                         () -> {
                             try {
                                 ensureNotClosed();
-                                return deleteDocumentFromMilvus(docId);
+                                return deletion.call();
                             } catch (Exception e) {
                                 throw new VectorStoreException(
                                         "Failed to delete document from Milvus", e);
@@ -704,19 +728,46 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     }
 
     /**
-     * Deletes a document from Milvus document ID.
+     * Deletes one chunk by primary key.
      *
-     * @param docId the document ID to delete
-     * @return true if deletion was successful
+     * <p>For primary-key deletes Milvus reports the number of keys requested, not the number of
+     * entities that existed, so the chunk is looked up first (with strong consistency, so a chunk
+     * added just before is found).
+     *
+     * @param id the chunk id (primary key)
+     * @return true if the chunk existed and was deleted
      */
-    private boolean deleteDocumentFromMilvus(String docId) {
-        DeleteReq deleteReq =
+    private boolean deleteChunkFromMilvus(String id) {
+        List<Object> ids = List.of(id);
+        QueryResp existing =
+                milvusClient.query(
+                        QueryReq.builder()
+                                .databaseName(databaseName)
+                                .collectionName(collectionName)
+                                .ids(ids)
+                                .outputFields(List.of(FIELD_ID))
+                                .consistencyLevel(ConsistencyLevel.STRONG)
+                                .build());
+        if (existing.getQueryResults().isEmpty()) {
+            return false;
+        }
+        milvusClient.delete(
                 DeleteReq.builder()
                         .databaseName(databaseName)
                         .collectionName(collectionName)
-                        .filter(FIELD_DOC_ID + " in [\"" + docId + "\"]")
-                        .build();
+                        .ids(ids)
+                        .build());
+        return true;
+    }
 
+    /**
+     * Executes a filter delete against Milvus. Unlike primary-key deletes, filter deletes report
+     * the number of entities actually removed.
+     *
+     * @param deleteReq the delete request with a filter expression
+     * @return true if at least one entity was deleted
+     */
+    private boolean deleteFromMilvus(DeleteReq deleteReq) {
         DeleteResp deleteResp = milvusClient.delete(deleteReq);
         long deleteCnt = deleteResp.getDeleteCnt();
         log.debug("Deleted {} documents from collection '{}'", deleteCnt, collectionName);
