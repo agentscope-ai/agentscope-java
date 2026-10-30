@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.skill.runtime;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.util.MarkdownSkillParser;
@@ -171,7 +172,7 @@ public final class SkillLoadTool implements AgentTool {
                                         + "'. Check the available skills list."));
             }
 
-            return Mono.just(loadOne(entry, path));
+            return Mono.just(loadOne(entry, path, param.getRuntimeContext()));
         } catch (Exception e) {
             log.error("load_skill_through_path failed", e);
             return Mono.just(ToolResultBlock.error(e.getMessage()));
@@ -186,12 +187,14 @@ public final class SkillLoadTool implements AgentTool {
         return legacy != null ? legacy : SkillCatalog.empty();
     }
 
-    private ToolResultBlock loadOne(HarnessSkillEntry entry, String path) {
+    private ToolResultBlock loadOne(HarnessSkillEntry entry, String path, RuntimeContext context) {
         AgentSkill skill = entry.skill();
 
         // 1. Special case: SKILL.md returns the parsed body text.
         if (SKILL_FILE.equals(path)) {
-            return ToolResultBlock.text(formatSkillMarkdown(entry));
+            String markdown = formatSkillMarkdown(entry);
+            SkillRuntime.registerLoadedBody(context, skill.getSkillId(), markdown);
+            return ToolResultBlock.text(markdown);
         }
 
         // 2. In-memory map (Layer 1/3 host repos + marketplace fully-loaded resources).

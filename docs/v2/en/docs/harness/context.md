@@ -119,6 +119,8 @@ Task, runtime, and reference projections are reconstructed for the request; they
 
 Framework origin does not by itself make a message transient. Persisted subagent deliveries and empty-response reminders remain at their conversation position and participate in compaction. Request-only projections remain outside the durable history; overflow recovery rebuilds from the latest history without restoring notices already summarized.
 
+Custom conversation messages must not reuse Harness projection IDs such as `harness:runtime_materials` or `harness:system`. Preparation rejects these collisions before committing history so generated materials cannot replace a durable message with the same ID.
+
 Persisted notifications are recognized by message ID, including after copying or deserialization. This does not make request-only content or metadata edits durable: a compacted model view replaces working history only when that view still matches the canonical conversation.
 
 Tags such as `TASK_STATE`, `RUNTIME_STATE`, and `HARNESS_CONTEXT` identify purpose and origin. They help the model interpret content, but do not authorize an action or isolate untrusted instructions. Tool schemas describe callable tools; [permissions](/v2/en/docs/building-blocks/permission-system) separately decide whether execution may proceed. Filtering tools or omitting a source from the current request does not erase information already present in conversation history.
@@ -192,6 +194,8 @@ The estimator configured in `ContextPolicy` also governs compaction triggers, to
 Tool-output protection and pruning thresholds count the individual result, excluding unrelated task projections and fixed request overhead. Keeping fewer messages can require projecting task state again, so retained suffixes are checked after projection.
 
 System instructions and `required()` materials are not directly evicted. If the resulting request still exceeds the allowance, preparation raises `ContextBudgetExceededException`. Reducing history cannot solve a request whose instructions, schemas, or required materials already fill the available space.
+
+Successfully loaded `SKILL.md` bodies have call-scoped recovery snapshots. Complete loader results stay in place; after normal reduction, missing bodies are appended only if the complete rendered request fits the remaining budget. A body that does not fit is skipped for this preparation, with `skill_recovery_skipped_for_budget:<sourceId>` in the manifest, and may be recovered on a later preparation. Recovery does not trigger extra compaction or evict retained material. See [Skill](/v2/en/docs/harness/skill#keep-loaded-instructions-available-within-a-call) for call boundaries and the maximum-iteration summary exception.
 
 <span id="2-large-tool-result-eviction-toolresultevictionmiddleware" />
 

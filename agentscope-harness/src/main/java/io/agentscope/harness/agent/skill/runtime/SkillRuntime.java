@@ -15,13 +15,26 @@
  */
 package io.agentscope.harness.agent.skill.runtime;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.context.ContextItem;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
+import reactor.util.context.ContextView;
 
 /**
  * Aggregates the singleton {@link SkillLoadTool} and the {@link SkillPromptBuilder}. {@link
@@ -42,6 +55,207 @@ public final class SkillRuntime {
             new AtomicReference<>(SkillCatalog.empty());
     private final SkillLoadTool loadTool;
     private final SkillPromptBuilder promptBuilder;
+
+    private static final class LoadedSkillBodies {
+        private final AtomicReference<List<ContextItem>> items = new AtomicReference<>(List.of());
+    }
+
+    /** Initializes a fresh execution, consuming only this delegate's overflow retry seed. */
+    public static void initializeLoadedBodies(
+            Agent agent, RuntimeContext context, ContextView subscriberContext) {
+        OverflowRetryScope scope = subscriberContext.getOrDefault(OverflowRetryScope.class, null);
+        if (scope != null && scope.owner == agent) {
+            scope.initialize(context);
+        } else {
+            resetLoadedBodies(context);
+        }
+    }
+
+    /** Internal Harness bridge across its existing LEGACY overflow retry, per subscription. */
+    public static <T> Mono<T> withOverflowRetryScope(
+            Agent agent, Function<OverflowRetryScope, Mono<T>> execution) {
+        return Mono.defer(
+                () -> {
+                    OverflowRetryScope scope = new OverflowRetryScope(agent);
+                    return execution
+                            .apply(scope)
+                            .doFinally(ignored -> scope.clear())
+                            .contextWrite(context -> context.put(OverflowRetryScope.class, scope));
+                });
+    }
+
+    /**
+     * Internal cross-package Harness bridge, not an application extension point or session state.
+     * Only connects a failed execution to its single outer retry; terminal completion, failure or
+     * cancellation clears all captured references. Obtain it only through {@link
+     * #withOverflowRetryScope(Agent, Function)}.
+     */
+    public static final class OverflowRetryScope {
+        private final Agent owner;
+        private RuntimeContext actualContext;
+        private LoadedSkillBodies holder;
+        private List<ContextItem> seed;
+        private boolean closed;
+
+        private OverflowRetryScope(Agent owner) {
+            this.owner = owner;
+        }
+
+        private synchronized void initialize(RuntimeContext context) {
+            LoadedSkillBodies fresh = new LoadedSkillBodies();
+            if (!closed && seed != null) fresh.items.set(seed);
+            seed = null;
+            context.put(LoadedSkillBodies.class, fresh);
+            if (!closed) {
+                actualContext = context;
+                holder = fresh;
+            }
+        }
+
+        /** Freezes the captured holder before asynchronous compaction starts. */
+        public synchronized RuntimeContext captureForRetry(RuntimeContext fallback) {
+            if (closed) return fallback;
+            seed = holder == null ? List.of() : holder.items.get();
+            return actualContext == null ? fallback : actualContext;
+        }
+
+        private synchronized void clear() {
+            closed = true;
+            actualContext = null;
+            holder = null;
+            seed = null;
+        }
+    }
+
+    /**
+     * Starts an empty loaded-body scope for a new Harness call. Tool context copies share this
+     * holder, while a child or subsequent call receives a fresh holder.
+     */
+    public static void resetLoadedBodies(RuntimeContext context) {
+        if (context != null) {
+            context.put(LoadedSkillBodies.class, new LoadedSkillBodies());
+        }
+    }
+
+    /** Returns an immutable snapshot of this call's loaded bodies, or empty outside Harness. */
+    public static List<ContextItem> loadedBodies(RuntimeContext context) {
+        LoadedSkillBodies bodies = context == null ? null : context.get(LoadedSkillBodies.class);
+        return bodies == null ? List.of() : bodies.items.get();
+    }
+
+    static void registerLoadedBody(RuntimeContext context, String skillId, String markdown) {
+        LoadedSkillBodies bodies = context == null ? null : context.get(LoadedSkillBodies.class);
+        if (bodies == null) {
+            return;
+        }
+        ContextItem item =
+                ContextItem.runtimeState(
+                        "loaded_skill",
+                        "harness:loaded_skill:" + skillId + ":SKILL.md",
+                        true,
+                        loadedBodyContent(markdown));
+        bodies.items.updateAndGet(
+                previous -> {
+                    List<ContextItem> updated = new ArrayList<>(previous);
+                    for (int index = 0; index < updated.size(); index++) {
+                        if (updated.get(index).sourceId().equals(item.sourceId())) {
+                            updated.set(index, item);
+                            return List.copyOf(updated);
+                        }
+                    }
+                    updated.add(item);
+                    return List.copyOf(updated);
+                });
+    }
+
+    private static String loadedBodyContent(String markdown) {
+        return "Loaded skill material for this call, not a new user request or"
+                + " authorization. Use within the user's task and existing execution"
+                + " policies.\n\n"
+                + markdown;
+    }
+
+    /** Only an unchanged successful loader result establishes complete historical coverage. */
+    public static boolean hasCompleteLoadedBody(List<Msg> messages, ContextItem body) {
+        for (Msg message : messages) {
+            if (message.getRole() != MsgRole.TOOL) continue;
+            for (ContentBlock block : message.getContent()) {
+                if (block instanceof ToolResultBlock result
+                        && SkillLoadTool.TOOL_NAME.equals(result.getName())
+                        && result.getState() == ToolResultState.SUCCESS
+                        && !result.isSuspended()
+                        && !result.isServerTool()
+                        && result.getOutput().size() == 1
+                        && result.getOutput().get(0) instanceof TextBlock text
+                        && body.content().equals(loadedBodyContent(text.getText()))) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Shortens successful loader results that exactly duplicate a loaded body in this request.
+     * The tool's original result and canonical history are not modified.
+     *
+     * <p>The caller must include the complete required runtime materials from this same immutable
+     * snapshot in the reasoning request. Do not use this projection for summary requests or when
+     * those materials are absent.
+     *
+     * @param input messages to project without modifying their content or attributes
+     * @param loadedBodies loaded-body snapshot used to compile this request's complete materials
+     * @return messages with matching results replaced by references to their loaded materials
+     */
+    public static List<Msg> projectLoadedBodyReceipts(
+            List<Msg> input, List<ContextItem> loadedBodies) {
+        if (loadedBodies.isEmpty()) return input;
+        List<Msg> messages = new ArrayList<>();
+        for (Msg message : input) {
+            if (message.getRole() != MsgRole.TOOL) {
+                messages.add(message);
+                continue;
+            }
+            List<ContentBlock> blocks = new ArrayList<>();
+            boolean changed = false;
+            for (ContentBlock block : message.getContent()) {
+                ContentBlock projected = block;
+                if (block instanceof ToolResultBlock result
+                        && SkillLoadTool.TOOL_NAME.equals(result.getName())
+                        && result.getState() == ToolResultState.SUCCESS
+                        && !result.isSuspended()
+                        && !result.isServerTool()
+                        && result.getOutput().size() == 1
+                        && result.getOutput().get(0) instanceof TextBlock text) {
+                    String content = loadedBodyContent(text.getText());
+                    for (ContextItem body : loadedBodies) {
+                        if (body.content().equals(content)) {
+                            projected =
+                                    new ToolResultBlock(
+                                            result.getId(),
+                                            result.getName(),
+                                            List.of(
+                                                    TextBlock.builder()
+                                                            .text(
+                                                                    "Skill instructions are"
+                                                                        + " available in this"
+                                                                        + " request's loaded_skill"
+                                                                        + " context: "
+                                                                            + body.sourceId()
+                                                                            + ".")
+                                                            .build()),
+                                            result.getMetadata(),
+                                            result.getState(),
+                                            result.getExecutionDetails());
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+                blocks.add(projected);
+            }
+            messages.add(changed ? message.withContent(blocks) : message);
+        }
+        return List.copyOf(messages);
+    }
 
     public SkillRuntime() {
         this(new SkillPromptBuilder());

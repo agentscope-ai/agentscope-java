@@ -60,6 +60,22 @@ HarnessAgent agent = HarnessAgent.builder()
 
 During reasoning, the agent sees skills from the repo and calls `load_skill_through_path` for whichever one it needs.
 
+## Keep loaded instructions available within a call
+
+After a successful `load_skill_through_path(skillId, "SKILL.md")` in a normal Harness call, Harness keeps an immutable snapshot of the complete formatted reply for that execution. A complete successful loader result already in the reasoning request stays at its original position and is not replaced by a short reference. Real repeated loads remain in history. Loading the same skill updates its snapshot without changing its registration order; reference files and scripts remain available on demand.
+
+After normal offloading, omission, pruning and compaction, Harness checks the resulting request. If a loaded body is missing or only a preview remains, it tries to append the complete recovery material using the remaining input budget. The check includes rendered framing, tool schemas, other retained material, output reservation and safety margin. Bodies are tried in snapshot registration order; skipping a large body does not prevent a smaller later body from fitting. Recovery does not trigger extra compaction or evict other retained material.
+
+When a complete body does not fit, Harness skips that recovery copy for this request and continues with the valid base request. It does not truncate the body or discard its snapshot: every later preparation checks again. `ContextManifest.transforms()` records `skill_recovery_skipped_for_budget:<sourceId>` without adding a notice to model input. Bodies already covered by history or skipped for budget do not add a `loaded_skill` material entry. A base request that itself exceeds the budget still raises `ContextBudgetExceededException`.
+
+The snapshot lasts for one subscribed `call()` or `streamEvents()` execution. An existing LEGACY `call()` overflow retry carries it into a fresh holder within that same subscription; native event-log recovery keeps it within the execution. A new call, a new subscription after termination, and a child agent start with independent loaded bodies. The next turn must load the skill again when needed. LEGACY streaming does not gain an outer overflow retry. The special summary after the maximum iteration count is reached does not add recovery material.
+
+Snapshot isolation does not make a run ID already recorded in that session reusable, whether or not the prior execution completed. For an independent event-log execution, create a new `RuntimeContext` with a fresh run ID; copying an existing context also copies its run ID unless explicitly reset. Reusing a publisher with the same recorded run ID is rejected by the session log.
+
+Recovery is a request projection: it is not saved in conversation history or sent as additional input to the compactor. Event-log mode records the actual request in `request/prepared`; these audit events do not rebuild canonical conversation context. Recovery retains the renderer's framing protection: literal `</context_item>` and `</HARNESS_CONTEXT>` are escaped. Original tool output stays unchanged. Business hooks that actively rewrite or remove skill output retain the existing loader-snapshot behavior; this recovery policy does not define a new acceptance contract for such rewrites.
+
+Keeping complete history in place avoids changing its prefix solely for recovery. Appending recovered material after growing history can still affect prompt caching; cache reuse, cost and latency are not guaranteed. Budget-aware recovery also cannot guarantee complete instructions on every request. Keep `SKILL.md` focused and place supporting material in references. Runtime material adds no authorization or system-level priority. Standalone loader calls outside the Harness lifecycle retain their existing output without creating recovery state.
+
 ## Marketplace stores
 
 `skillRepository(...)` is the unified entry point — pass any store.

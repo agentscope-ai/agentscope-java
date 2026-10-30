@@ -19,12 +19,16 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.context.ContextItem;
 import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
+import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import reactor.core.publisher.Mono;
 
-/** Framework-owned, domain-neutral context instructions, loaded once from a versioned resource. */
+/**
+ * Framework-owned, domain-neutral context instructions and per-call material initialization,
+ * including loaded skill bodies. Instructions are loaded once from a versioned resource.
+ */
 public final class ContextConventionsMiddleware implements HarnessRuntimeMiddleware {
     private static final String INSTRUCTIONS = load();
 
@@ -42,12 +46,12 @@ public final class ContextConventionsMiddleware implements HarnessRuntimeMiddlew
 
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext context, String prompt) {
-        return Mono.fromSupplier(
-                () -> {
-                    // Installed before the other framework providers: every agent call gets a
-                    // fresh snapshot, even when the caller reuses a RuntimeContext or a child
-                    // inherits one. Disabled providers must not retain a previous agent's data.
+        return Mono.deferContextual(
+                subscriberContext -> {
+                    // New executions and children get a fresh holder. The existing LEGACY
+                    // overflow retry may consume its owner's one-use seed in this subscription.
                     RuntimeContext rc = context == null ? RuntimeContext.empty() : context;
+                    SkillRuntime.initializeLoadedBodies(agent, rc, subscriberContext);
                     rc.put(
                             WorkspaceContextMaterials.class,
                             new WorkspaceContextMaterials(
@@ -56,7 +60,7 @@ public final class ContextConventionsMiddleware implements HarnessRuntimeMiddlew
                                                     "instruction_rules",
                                                     "harness:context-conventions",
                                                     INSTRUCTIONS))));
-                    return prompt == null ? "" : prompt;
+                    return Mono.just(prompt == null ? "" : prompt);
                 });
     }
 }

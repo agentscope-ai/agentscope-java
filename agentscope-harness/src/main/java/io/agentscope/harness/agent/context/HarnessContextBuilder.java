@@ -30,6 +30,7 @@ import io.agentscope.core.state.TaskContextState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
+import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -51,6 +52,14 @@ import reactor.core.scheduler.Schedulers;
 public final class HarnessContextBuilder implements ModelRequestPreparer {
     private static final String ORIGINAL_SYSTEM_INPUTS =
             "agentscope.context.original_system_inputs";
+    private static final Set<String> PROJECTION_MESSAGE_IDS =
+            Set.of(
+                    "harness:system",
+                    "harness:harness_instructions",
+                    "harness:runtime_materials",
+                    "harness:workspace_materials",
+                    "harness:todo_state",
+                    "harness:plan_state");
     private static final Logger log = LoggerFactory.getLogger(HarnessContextBuilder.class);
     private final ContextPolicy policy;
     private final CompactionMiddleware compaction;
@@ -165,6 +174,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         WorkspaceContextMaterials materials = rc.get(WorkspaceContextMaterials.class);
         List<ContextItem> workspace =
                 materials == null ? List.of() : List.copyOf(materials.items());
+        List<ContextItem> loadedSkills = SkillRuntime.loadedBodies(rc);
         var readContext =
                 new ContextRequest(
                         agent == null ? null : agent.getAgentId(),
@@ -183,6 +193,11 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                     throw new IllegalArgumentException(
                                             "Duplicate context source: " + item.sourceId());
                             }
+                            for (ContextItem item : loadedSkills) {
+                                if (!sourceIds.add(item.sourceId()))
+                                    throw new IllegalArgumentException(
+                                            "Duplicate context source: " + item.sourceId());
+                            }
                             return compileSnapshot(
                                     agent,
                                     rc,
@@ -191,6 +206,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                     purpose,
                                     state,
                                     snapshot,
+                                    loadedSkills,
                                     original,
                                     selected,
                                     new ArrayList<>(collected.transforms()));
@@ -205,6 +221,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
             Purpose purpose,
             AgentState state,
             ProjectionSnapshot snapshot,
+            List<ContextItem> loadedSkills,
             List<Msg> original,
             List<ContextItem> selected,
             List<String> transforms) {
@@ -328,6 +345,35 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                 new ContextBudgetExceededException(estimate.tokens(), finalLimit);
                         validation = "budget_exceeded";
                     }
+                    // Recovery uses only the space left by the normal pipeline. Keep the
+                    // accepted request itself so rendering and final accounting cannot diverge.
+                    if (validationError == null && purpose == Purpose.REASONING) {
+                        for (ContextItem body : loadedSkills) {
+                            if (SkillRuntime.hasCompleteLoadedBody(prepared.messages(), body))
+                                continue;
+                            List<ContextItem> trialItems = new ArrayList<>(selected);
+                            trialItems.add(body);
+                            ModelCallInput trial =
+                                    withMaterials(prepared, trialItems, candidate.history());
+                            var trialEstimate = policy.estimator().estimate(trial);
+                            if (trialEstimate.tokens() <= finalLimit) {
+                                selected.add(body);
+                                prepared = trial;
+                                estimate = trialEstimate;
+                            } else {
+                                transforms.add(
+                                        "skill_recovery_skipped_for_budget:" + body.sourceId());
+                            }
+                        }
+                    }
+                    if (validationError == null) {
+                        try {
+                            validateToolPairs(prepared.messages());
+                        } catch (IllegalArgumentException error) {
+                            validationError = error;
+                            validation = "invalid_tool_pairs";
+                        }
+                    }
                     List<ContextManifest.Item> items = new ArrayList<>();
                     for (Msg msg : prepared.messages()) {
                         String kind =
@@ -420,6 +466,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
 
     private static ModelCallInput withMaterials(
             ModelCallInput input, List<ContextItem> items, List<Msg> canonical) {
+        validateProjectionIds(input.messages(), canonical);
         List<Msg> expanded = new ArrayList<>();
         for (Msg msg : input.messages()) {
             if (synthetic(msg)
@@ -491,8 +538,26 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         return layout(copy(input, List.copyOf(messages)), canonical);
     }
 
+    private static void validateProjectionIds(List<Msg> messages, List<Msg> canonical) {
+        for (Msg message : canonical) {
+            String id = message.getId();
+            if (id != null && PROJECTION_MESSAGE_IDS.contains(id))
+                throw new IllegalArgumentException(
+                        "Canonical message uses reserved projection ID: " + id);
+        }
+        for (Msg message : messages) {
+            String id = message.getId();
+            if (id != null
+                    && PROJECTION_MESSAGE_IDS.contains(id)
+                    && !message.isRequestProjection(canonical))
+                throw new IllegalArgumentException(
+                        "Input message uses reserved projection ID: " + id);
+        }
+    }
+
     /** Stable layout independent of compaction: System, conversation, state, reference material. */
     private static ModelCallInput layout(ModelCallInput input, List<Msg> canonical) {
+        validateProjectionIds(input.messages(), canonical);
         List<Msg> ordered = new ArrayList<>();
         List<Msg> systems =
                 input.messages().stream().filter(msg -> msg.getRole() == MsgRole.SYSTEM).toList();
