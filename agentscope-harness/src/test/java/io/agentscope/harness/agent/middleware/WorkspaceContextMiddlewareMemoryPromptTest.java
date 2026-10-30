@@ -123,7 +123,6 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
 
     @Test
     void memoryOverBudgetKeepsNewestEntriesAndDropsTheMiddle() throws Exception {
-        // memory_save appends, so the newest fact sits at the end of MEMORY.md.
         Files.writeString(
                 workspace.resolve("MEMORY.md"),
                 "# Long-term memory\n\n"
@@ -176,10 +175,6 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
 
     @Test
     void budgetBelowNoticeLengthStillKeepsTheNewestTail() throws Exception {
-        // Edge guard: when the budget cannot hold even the notice, the tail (newest
-        // entries) must still win over the head. Only reachable through onSystemPrompt
-        // with an available budget of a few tokens, which is platform-dependent to pin,
-        // so the guard is exercised directly.
         var wm = track(new WorkspaceManager(workspace));
         var mw = new WorkspaceContextMiddleware(wm, 8000);
         var truncate =

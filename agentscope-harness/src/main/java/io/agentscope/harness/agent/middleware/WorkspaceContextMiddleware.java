@@ -593,11 +593,6 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         return text == null || text.isEmpty() ? 0 : text.length() / 4;
     }
 
-    /**
-     * Fits {@code text} into {@code maxTokens} by keeping the head and the tail and dropping the
-     * middle. {@code memory_save} appends to {@code MEMORY.md}, so the most recent entries sit at
-     * the end and must survive; the head keeps the structure written by consolidation.
-     */
     private String truncateToTokenBudget(String text, int maxTokens) {
         int maxChars = maxTokens * 4;
         if (text.length() <= maxChars) {
