@@ -24,6 +24,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -36,7 +37,9 @@ import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxRepository;
 import io.agentscope.builder.web.persistence.jpa.SessionExecutionScopeEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionExecutionScopeRepository;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -108,6 +111,17 @@ class ManagedEventOutboxTest {
                                 savedScopes.values().stream()
                                         .filter(row -> call.getArgument(0).equals(row.runId))
                                         .findFirst());
+        when(scopes.findBySessionIdAndAttemptId(anyString(), any()))
+                .thenAnswer(
+                        call ->
+                                savedScopes.values().stream()
+                                        .filter(
+                                                row ->
+                                                        row.sessionId.equals(call.getArgument(0))
+                                                                && Objects.equals(
+                                                                        row.attemptId,
+                                                                        call.getArgument(1)))
+                                        .toList());
         when(scopes.saveAndFlush(any()))
                 .thenAnswer(
                         call -> {
@@ -122,6 +136,98 @@ class ManagedEventOutboxTest {
     @AfterEach
     void clearTransaction() {
         TransactionSynchronizationManager.clear();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void personalChatEventsSurviveRestartAndRetryWithoutAnAttemptFence() {
+        outbox.beginAdmission("session", "chat-admission", SessionEventScope.NONE);
+        outbox.bindRun("chat-admission", "chat-run", 0);
+        outbox.finishAdmission("chat-admission");
+        var restarted = new ManagedEventOutbox(events, scopes, fences, tx, mapper, client);
+        var event =
+                new SessionEventDto(
+                        "chat-event",
+                        "session",
+                        4,
+                        "item.completed",
+                        Map.of(
+                                "item",
+                                Map.of(
+                                        "id",
+                                        "reply",
+                                        "role",
+                                        "assistant",
+                                        "content",
+                                        List.of(Map.of("type", "text", "text", "hello")))),
+                        null,
+                        7);
+        var scope = restarted.scopeForRun("session", "chat-run").forNativeFact();
+        restarted.enqueue(event, scope);
+        restarted.enqueue(event, scope);
+        assertThat(savedEvents).containsOnlyKeys("chat-event");
+        assertThatThrownBy(() -> restarted.enqueue(event, original))
+                .isInstanceOf(IllegalStateException.class);
+        doThrow(new IllegalStateException("CP unavailable"))
+                .doNothing()
+                .when(client)
+                .sendSessionEventReport(anyString(), any());
+        assertThat(restarted.deliver(event.id())).isFalse();
+        assertThat(savedEvents.get(event.id()).lastError).contains("CP unavailable");
+        savedEvents.get(event.id()).nextAttemptAt = 0;
+        var retry = new ManagedEventOutbox(events, scopes, fences, tx, mapper, client);
+        assertThat(retry.deliver(event.id())).isTrue();
+        assertThat(retry.deliver(event.id())).isFalse();
+        ArgumentCaptor<Map<String, Object>> reports = ArgumentCaptor.forClass(Map.class);
+        verify(client, times(2)).sendSessionEventReport(anyString(), reports.capture());
+        assertThat(reports.getAllValues())
+                .allSatisfy(
+                        report ->
+                                assertThat(report)
+                                        .doesNotContainKeys(
+                                                "agentTaskId",
+                                                "attemptId",
+                                                "dispatchGeneration",
+                                                "turnId")
+                                        .containsEntry("id", event.id())
+                                        .containsEntry("type", "agent.message"));
+        assertThat(reports.getAllValues().get(0)).isEqualTo(reports.getAllValues().get(1));
+        verifyNoInteractions(fences);
+    }
+
+    @Test
+    void genericTaskEventsCannotEnterThePersonalChatOutbox() {
+        outbox.beginAdmission("personal", "chat-admission", SessionEventScope.NONE);
+        var event = new SessionEventDto("event", "session", 1, "run.ended", Map.of(), null, 7);
+        outbox.enqueue(event, SessionEventScope.NONE);
+        assertThat(savedEvents).isEmpty();
+        outbox.beginAdmission("session", "task-admission", original);
+        outbox.enqueue(event, SessionEventScope.NONE);
+        assertThat(savedEvents).isEmpty();
+        outbox.enqueue(event, original);
+        assertThat(savedEvents.get("event").attemptId).isEqualTo("attempt-a");
+        outbox.enqueue(event, SessionEventScope.NONE);
+        assertThat(savedEvents.get("event").attemptId).isEqualTo("attempt-a");
+    }
+
+    @Test
+    void incompleteTaskScopeIsNotTreatedAsPersonalChat() {
+        outbox.beginAdmission("session", "chat-admission", SessionEventScope.NONE);
+        var event = new SessionEventDto("event", "session", 1, "run.ended", Map.of(), null, 7);
+        outbox.enqueue(event, new SessionEventScope("tenant", "task", null, 1, "turn"));
+        outbox.enqueue(event, new SessionEventScope("tenant", "task", "attempt", 0, "turn"));
+        assertThat(savedEvents).isEmpty();
+        verifyNoInteractions(fences);
+    }
+
+    @Test
+    void personalChatWritesStillRequireTheSourceTransaction() {
+        outbox.beginAdmission("session", "chat-admission", SessionEventScope.NONE);
+        TransactionSynchronizationManager.clear();
+        var event = new SessionEventDto("event", "session", 1, "run.ended", Map.of(), null, 7);
+        assertThatThrownBy(() -> outbox.enqueue(event, SessionEventScope.NONE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("source event transaction");
     }
 
     @Test
