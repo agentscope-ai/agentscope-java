@@ -2594,29 +2594,44 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Builds a fresh runtime from this reusable configuration. Configure the builder before
          * sharing it; builds are serialized, while the resulting agents can execute concurrently.
-         * If a build fails, auto-wired state-store configuration is restored so the same builder
-         * can be corrected and reused.
+         * If a build fails, auto-wired state-store and filesystem configuration is restored so
+         * the same builder can be corrected and reused.
          */
         public synchronized HarnessAgent build() {
             var configuredMessageBus = messageBus;
             var configuredAsyncToolRegistry = asyncToolRegistry;
             var configuredStateStoreOverride = stateStoreOverride;
+            var configuredRemoteStore =
+                    remoteFilesystemSpec != null ? remoteFilesystemSpec.store() : null;
+            var configuredSandboxSnapshotSpec =
+                    sandboxFilesystemSpec != null
+                            ? sandboxFilesystemSpec.getSnapshotSpecOverride()
+                            : null;
+            var configuredSandboxExecutionGuard =
+                    sandboxFilesystemSpec != null
+                            ? sandboxFilesystemSpec.getExecutionGuard()
+                            : null;
+            var successfulBuild = false;
             try {
-                return buildInstance(inner.copy());
-            } catch (RuntimeException error) {
-                // A failed build must not leave auto-wired collaborators behind: a stale
-                // stateStoreOverride silently wins the "override == null" fast path on every
-                // later build, so a builder that threw once would keep the polluted store
-                // even after the caller fixes the configuration. Successful builds keep the
-                // resolved store — dynamic subagent factories read it after the parent is
-                // built (see repeatedBuildPreservesDistributedStateStoreWiring).
-                stateStoreOverride = configuredStateStoreOverride;
-                throw error;
+                var agent = buildInstance(inner.copy());
+                successfulBuild = true;
+                return agent;
             } finally {
                 // Workspace-derived collaborators belong to this build's filesystem, especially
                 // when sandbox bindings or workspace indexes have per-agent lifetimes.
                 messageBus = configuredMessageBus;
                 asyncToolRegistry = configuredAsyncToolRegistry;
+                if (!successfulBuild) {
+                    stateStoreOverride = configuredStateStoreOverride;
+                    if (remoteFilesystemSpec != null) {
+                        remoteFilesystemSpec.restoreAutoInjectedStore(configuredRemoteStore);
+                    }
+                    if (sandboxFilesystemSpec != null) {
+                        sandboxFilesystemSpec
+                                .snapshotSpec(configuredSandboxSnapshotSpec)
+                                .executionGuard(configuredSandboxExecutionGuard);
+                    }
+                }
             }
         }
 
