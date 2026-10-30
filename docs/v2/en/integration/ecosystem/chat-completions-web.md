@@ -45,6 +45,25 @@ The adapter consumes `ReActAgent#streamEvents` and converts the events into Open
 - Stream end → one chunk with `finish_reason`
 - With `"stream_options": {"include_usage": true}` → one more chunk with empty `choices` and the `usage` of the whole request (all model calls, including tool steps). It is not sent when no model call reported usage.
 
+## Runtime context and driving the agent yourself
+
+To pass a `RuntimeContext` (session, user, ...), use the overload that takes one:
+
+```java
+adapter.stream(agent, messages, ctx, requestId, request.getModel(), request.isIncludeUsage());
+```
+
+To also look at the events as they pass, for example to tell a finished reply from one that stopped for tool confirmation, run `streamEvents` yourself and convert each event with a converter. A converter keeps state for one stream, so create a new one for every stream:
+
+```java
+Function<AgentEvent, List<ChatCompletionsChunk>> convert =
+        adapter.newEventConverter(requestId, request.getModel(), request.isIncludeUsage());
+Flux<ChatCompletionsChunk> stream =
+        agent.streamEvents(messages, ctx)
+                .doOnNext(event -> { /* inspect AgentResultEvent etc. */ })
+                .concatMapIterable(convert);
+```
+
 ## Expose as SSE in Spring Boot
 
 Easiest is the starter — it registers the controller. To do it manually:

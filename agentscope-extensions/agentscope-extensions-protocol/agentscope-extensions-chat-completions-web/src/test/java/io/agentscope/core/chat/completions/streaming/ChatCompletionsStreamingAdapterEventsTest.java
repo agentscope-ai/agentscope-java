@@ -29,6 +29,7 @@ import io.agentscope.core.chat.completions.model.ChatChoice;
 import io.agentscope.core.chat.completions.model.ChatCompletionsChunk;
 import io.agentscope.core.chat.completions.model.ToolCall;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -46,9 +47,11 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -145,16 +148,98 @@ class ChatCompletionsStreamingAdapterEventsTest {
         return run(agent(model), includeUsage);
     }
 
+    private static Msg user() {
+        return Msg.builder()
+                .role(MsgRole.USER)
+                .content(TextBlock.builder().text("Weather in Hangzhou?").build())
+                .build();
+    }
+
     private static List<ChatCompletionsChunk> run(ReActAgent agent, boolean includeUsage) {
-        Msg user =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Weather in Hangzhou?").build())
-                        .build();
         return new ChatCompletionsStreamingAdapter()
-                .stream(agent, List.of(user), "req-1", "weather", includeUsage)
+                .stream(agent, List.of(user()), "req-1", "weather", includeUsage)
                         .collectList()
                         .block(TIMEOUT);
+    }
+
+    /** What a client sees in each chunk, leaving out the per-chunk id and timestamp. */
+    private static List<String> visible(List<ChatCompletionsChunk> chunks) throws Exception {
+        List<String> out = new ArrayList<>();
+        for (ChatCompletionsChunk chunk : chunks) {
+            out.add(
+                    MAPPER.writeValueAsString(chunk.getChoices())
+                            + MAPPER.writeValueAsString(chunk.getUsage()));
+        }
+        return out;
+    }
+
+    @Test
+    void streamPassesTheRuntimeContextToTheAgent() {
+        AtomicReference<String> seenSession = new AtomicReference<>();
+        MiddlewareBase capturesContext =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onReasoning(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ReasoningInput input,
+                            Function<ReasoningInput, Flux<AgentEvent>> next) {
+                        seenSession.set(ctx != null ? ctx.getSessionId() : null);
+                        return next.apply(input);
+                    }
+                };
+        ReActAgent agent =
+                agent(new ScriptedModel(List.of(text("r1", "Hi.", null))), capturesContext);
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("session-42").build();
+
+        List<ChatCompletionsChunk> chunks =
+                new ChatCompletionsStreamingAdapter()
+                        .stream(agent, List.of(user()), ctx, "req-1", "weather", false)
+                                .collectList()
+                                .block(TIMEOUT);
+
+        assertEquals("session-42", seenSession.get());
+        assertEquals(1, finishChunks(chunks).size());
+    }
+
+    /**
+     * A caller that drives {@code streamEvents} itself (to pass its own context and watch the
+     * events) converts them with the converter {@link ChatCompletionsStreamingAdapter#stream} is
+     * built on, and gets the same chunks.
+     */
+    @Test
+    void eventConverterGivesCallersDrivingStreamEventsTheSameChunks() throws Exception {
+        List<ChatCompletionsChunk> viaStream = run(toolThenStreamedAnswer(true), true);
+
+        AtomicReference<Msg> result = new AtomicReference<>();
+        Function<AgentEvent, List<ChatCompletionsChunk>> convert =
+                new ChatCompletionsStreamingAdapter().newEventConverter("req-1", "weather", true);
+        List<ChatCompletionsChunk> viaConverter =
+                agent(toolThenStreamedAnswer(true))
+                        .streamEvents(List.of(user()), RuntimeContext.builder().build())
+                        .doOnNext(
+                                event -> {
+                                    if (event instanceof AgentResultEvent done) {
+                                        result.set(done.getResult());
+                                    }
+                                })
+                        .concatMapIterable(convert)
+                        .collectList()
+                        .block(TIMEOUT);
+
+        assertEquals(visible(viaStream), visible(viaConverter));
+        assertNotNull(result.get(), "the caller still sees the result event");
+    }
+
+    @Test
+    void eventConverterSkipsEventsForwardedFromSubagents() {
+        Function<AgentEvent, List<ChatCompletionsChunk>> convert =
+                new ChatCompletionsStreamingAdapter().newEventConverter("req-1", "weather", false);
+
+        assertTrue(
+                convert.apply(new TextBlockDeltaEvent("child", "b", "CHILD").withSource("w/child"))
+                        .isEmpty());
+        assertEquals(1, convert.apply(new TextBlockDeltaEvent("r1", "b", "Hi")).size());
     }
 
     @Test

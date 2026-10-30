@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.model.ChatCompletionsChunk;
 import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
@@ -41,6 +42,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 /**
@@ -58,8 +60,10 @@ import reactor.core.publisher.Flux;
  *   <li>Framework adapters (in starter modules) handle SSE/transport specifics
  * </ul>
  *
- * <p>{@link #stream} consumes {@link ReActAgent#streamEvents(List)}; see the five-argument
- * overload for how each event maps to chunks.
+ * <p>{@link #stream} consumes {@link ReActAgent#streamEvents(List, RuntimeContext)}; see {@link
+ * #newEventConverter} for how each event maps to chunks. Callers that drive {@code streamEvents}
+ * themselves, for example to watch the events as they pass, convert them with {@link
+ * #newEventConverter}.
  *
  * <p><b>Output Chunk Types:</b>
  *
@@ -98,23 +102,8 @@ public class ChatCompletionsStreamingAdapter {
     /**
      * Stream agent events as OpenAI-compatible chunks, optionally ending with a usage chunk.
      *
-     * <p>Built on {@link ReActAgent#streamEvents(List)}:
-     *
-     * <ul>
-     *   <li>{@link TextBlockDeltaEvent} becomes a text chunk.
-     *   <li>{@link ToolCallStartEvent} becomes a tool call chunk with the call's id and name, and
-     *       each {@link ToolCallDeltaEvent} a chunk with the next piece of its arguments, as in
-     *       OpenAI's streaming format.
-     *   <li>A tool's {@link ToolResultTextDeltaEvent}s are collected and sent as one tool result
-     *       chunk when its {@link ToolResultEndEvent} arrives.
-     *   <li>{@link AgentResultEvent} ends the stream with a single finish chunk, and, when {@code
-     *       includeUsage} is true, a chunk with empty {@code choices} carrying the usage of the
-     *       whole request ({@link Msg#getInvocationUsage()}). No usage chunk is sent when no model
-     *       call reported usage.
-     * </ul>
-     *
-     * <p>Events forwarded from subagents (those with a {@code source}) and internal tools (names
-     * starting with {@code "__"}) are not sent to the client.
+     * <p>Same as {@link #stream(ReActAgent, List, RuntimeContext, String, String, boolean)} without
+     * a runtime context.
      *
      * @param agent The agent to stream from
      * @param messages The messages to send to the agent
@@ -130,15 +119,73 @@ public class ChatCompletionsStreamingAdapter {
             String requestId,
             String model,
             boolean includeUsage) {
+        return stream(agent, messages, null, requestId, model, includeUsage);
+    }
+
+    /**
+     * Stream agent events as OpenAI-compatible chunks, optionally ending with a usage chunk.
+     *
+     * <p>Runs {@link ReActAgent#streamEvents(List, RuntimeContext)} and converts each event with a
+     * fresh {@link #newEventConverter} per subscription.
+     *
+     * @param agent The agent to stream from
+     * @param messages The messages to send to the agent
+     * @param context The runtime context passed to the agent; may be {@code null}
+     * @param requestId The request ID for tracking (used as chunk ID)
+     * @param model The model name to include in chunks
+     * @param includeUsage Whether to end with a usage chunk ({@code
+     *     stream_options.include_usage})
+     * @return A {@link Flux} of {@link ChatCompletionsChunk} objects
+     */
+    public Flux<ChatCompletionsChunk> stream(
+            ReActAgent agent,
+            List<Msg> messages,
+            RuntimeContext context,
+            String requestId,
+            String model,
+            boolean includeUsage) {
         return Flux.defer(
-                () -> {
-                    StreamState state = new StreamState();
-                    return agent.streamEvents(messages)
-                            .filter(event -> event.getSource() == null)
-                            .concatMapIterable(
-                                    event ->
-                                            toChunks(event, state, requestId, model, includeUsage));
-                });
+                () ->
+                        agent.streamEvents(messages, context)
+                                .concatMapIterable(
+                                        newEventConverter(requestId, model, includeUsage)));
+    }
+
+    /**
+     * Create a converter from agent events to OpenAI-compatible chunks, for one stream.
+     *
+     * <p>The converter keeps per-stream state (tool call indexes, tool result text collected so
+     * far), so use a new one for every stream and apply it to the events in order:
+     *
+     * <ul>
+     *   <li>{@link TextBlockDeltaEvent} becomes a text chunk.
+     *   <li>{@link ToolCallStartEvent} becomes a tool call chunk with the call's id and name, and
+     *       each {@link ToolCallDeltaEvent} a chunk with the next piece of its arguments, as in
+     *       OpenAI's streaming format.
+     *   <li>A tool's {@link ToolResultTextDeltaEvent}s are collected and sent as one tool result
+     *       chunk when its {@link ToolResultEndEvent} arrives.
+     *   <li>{@link AgentResultEvent} ends the stream with a single finish chunk, and, when {@code
+     *       includeUsage} is true, a chunk with empty {@code choices} carrying the usage of the
+     *       whole request ({@link Msg#getInvocationUsage()}). No usage chunk is sent when no model
+     *       call reported usage.
+     * </ul>
+     *
+     * <p>Events forwarded from subagents (those with a {@code source}) and internal tools (names
+     * starting with {@code "__"}) give no chunks, nor does any event not listed above.
+     *
+     * @param requestId The request ID for tracking (used as chunk ID)
+     * @param model The model name to include in chunks
+     * @param includeUsage Whether to end with a usage chunk ({@code
+     *     stream_options.include_usage})
+     * @return A function from each event to the chunks it produces, possibly none
+     */
+    public Function<AgentEvent, List<ChatCompletionsChunk>> newEventConverter(
+            String requestId, String model, boolean includeUsage) {
+        StreamState state = new StreamState();
+        return event ->
+                event.getSource() != null
+                        ? List.of()
+                        : toChunks(event, state, requestId, model, includeUsage);
     }
 
     /** Per-stream bookkeeping for {@link #toChunks}. */
@@ -242,8 +289,8 @@ public class ChatCompletionsStreamingAdapter {
      * @param model The model name
      * @return Flux of ChatCompletionsChunk objects
      * @deprecated since 2.1.0. Converts the deprecated {@link Event} type, which {@link #stream}
-     *     no longer uses; it now consumes {@link ReActAgent#streamEvents(List)}. Kept for
-     *     callers that drive {@code ReActAgent#stream(List, StreamOptions)} themselves.
+     *     no longer uses. Callers that drive the agent themselves should use {@link
+     *     ReActAgent#streamEvents(List, RuntimeContext)} with {@link #newEventConverter}.
      */
     @Deprecated(since = "2.1.0")
     public Flux<ChatCompletionsChunk> convertEventToChunks(

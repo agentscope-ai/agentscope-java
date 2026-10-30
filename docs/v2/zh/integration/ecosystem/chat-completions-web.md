@@ -45,6 +45,25 @@ Flux<ChatCompletionsChunk> stream =
 - 流结束 → 一个带 `finish_reason` 的 chunk
 - 请求带 `"stream_options": {"include_usage": true}` 时 → 再追加一个 `choices` 为空、带整次请求 `usage`（含工具步骤在内的所有模型调用）的 chunk；没有任何模型调用上报用量时不发送
 
+## 运行时上下文与自行驱动 agent
+
+需要传 `RuntimeContext`（会话、用户等）时，用带上下文的重载：
+
+```java
+adapter.stream(agent, messages, ctx, requestId, request.getModel(), request.isIncludeUsage());
+```
+
+如果还要在事件经过时查看它们（例如区分"答完了"和"停在等工具确认"），就自己调用 `streamEvents`，再用转换器逐个转换事件。转换器带有单条流的状态，每条流都要新建一个：
+
+```java
+Function<AgentEvent, List<ChatCompletionsChunk>> convert =
+        adapter.newEventConverter(requestId, request.getModel(), request.isIncludeUsage());
+Flux<ChatCompletionsChunk> stream =
+        agent.streamEvents(messages, ctx)
+                .doOnNext(event -> { /* 查看 AgentResultEvent 等 */ })
+                .concatMapIterable(convert);
+```
+
 ## 在 Spring Boot 里暴露 SSE
 
 最简单的方式是引入 starter（推荐），它会自动注册控制器。也可以自己写：
