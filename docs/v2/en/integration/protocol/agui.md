@@ -92,6 +92,8 @@ Normal `RUN_STARTED` and `RUN_FINISHED` events are driven by upstream `AgentStar
 
 ## Subagent events
 
+The `AguiEvent` model includes the AG-UI 1.0 lifecycle types `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, and `SUBAGENT_ERROR` (each carries a required `subagentRunId`). Per the protocol, most other events also accept an optional `subagentRunId` for attribution; `RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` and `MESSAGES_SNAPSHOT` do not (snapshot attribution is per-message on `AguiMessage`, and nested `AguiToolCall` objects inherit the message’s owner). The default adapter path does not emit native subagent lifecycle or attributed events yet.
+
 By default (`emitSubagentEventsAsNative=false`), AgentEvents with a non-null `source` (child / remote subagent events) are **not** mapped to native `TEXT_MESSAGE_*` / `RUN_*` / tool-call events. They become AG-UI `CUSTOM` events under the `subagent.*` namespace so they do not pollute the parent run lifecycle or text stream:
 
 | CUSTOM `name` | Typical AgentEvent |
@@ -115,7 +117,9 @@ AguiAdapterConfig config = AguiAdapterConfig.builder()
 
 ## AG-UI Base Event Properties
 
-Every `AguiEvent` supports the official base event properties: optional `timestamp` and `rawEvent`.
+Every `AguiEvent` supports the official base event properties: optional `timestamp`, `rawEvent`, and `metadata`.
+
+`RUN_STARTED` may also carry optional `protocolVersion`. Terminal `RUN_FINISHED` / `RUN_ERROR` events may carry optional `usage` (`TokenUsage` entries).
 
 The default config does not enable `BaseEventPropertiesEnricher`, so the framework does not add `timestamp` to every event by default and does not expose internal `AgentEvent` objects as `rawEvent` by default. Enable the default enricher explicitly if you want timestamps filled:
 
@@ -125,7 +129,7 @@ AguiAdapterConfig config = AguiAdapterConfig.builder()
     .build();
 ```
 
-`BaseEventPropertiesEnricher` only fills a missing `timestamp`; it preserves existing timestamps and does not write `rawEvent`. To expose `rawEvent`, register a custom `AguiEventEnricher`.
+`BaseEventPropertiesEnricher` only fills a missing `timestamp`; it preserves existing timestamps, `rawEvent`, and `metadata`. To set `rawEvent` or `metadata`, register a custom `AguiEventEnricher` and use `AguiEvents.withBaseProperties(event, timestamp, rawEvent)` or the overload that also takes `metadata`.
 
 The Spring Boot starter does not implicitly enable the default base properties enricher. If you want that behavior, expose a `BaseEventPropertiesEnricher` bean or your own `AguiEventEnricher` bean.
 
@@ -155,7 +159,7 @@ AgentEventConverter customEventConverter() {
 }
 ```
 
-`AguiEventEnricher` runs after conversion. It is intended for cross-cutting concerns such as `timestamp`, `rawEvent`, tracing fields, or other event decoration. It may modify, append, or filter converter output.
+`AguiEventEnricher` runs after conversion. It is intended for cross-cutting concerns such as `timestamp`, `rawEvent`, `metadata`, tracing fields, or other event decoration. It may modify, append, or filter converter output.
 
 ```java
 @Bean
@@ -164,7 +168,8 @@ AguiEventEnricher timestampEnricher() {
         .map(event -> AguiEvents.withBaseProperties(
             event,
             event.timestamp() != null ? event.timestamp() : System.currentTimeMillis(),
-            event.rawEvent()))
+            event.rawEvent(),
+            event.metadata()))
         .toList();
 }
 ```
