@@ -46,7 +46,7 @@ public final class ContextConventionsMiddleware implements HarnessRuntimeMiddlew
     }
 
     /**
-     * Runs before user middlewares (low order): the per-call materials reset must happen
+     * Runs before user middlewares: the per-call materials reset must happen
      * before any user {@code WorkspaceContextMaterials.register(...)}, or those
      * registrations are wiped by the reset (#3829).
      */
@@ -77,10 +77,11 @@ public final class ContextConventionsMiddleware implements HarnessRuntimeMiddlew
                                                 LOGGER.warn(
                                                         "Discarding non-framework context item"
                                                                 + " '{}' registered before the"
-                                                                + " per-call materials reset;"
-                                                                + " register after the framework"
-                                                                + " providers (order() > {}) to"
-                                                                + " keep it",
+                                                                + " per-call materials reset; use"
+                                                                + " a lower order() (< {}) so"
+                                                                + " this middleware runs after"
+                                                                + " the reset and the item"
+                                                                + " survives",
                                                         item.sourceId(),
                                                         order()));
                     }
