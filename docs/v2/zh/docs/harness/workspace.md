@@ -427,6 +427,19 @@ tools: [read_file, grep_files]   # 可选；继承工具的白名单
       "args": ["mcp_servers/my_server.py"],
       "prefixToolNames": true,
       "env": {"PYTHONUNBUFFERED": "1"}
+    },
+    "untrusted-3p": {
+      // 连接级一刀切：会话 meta 整体不出进程
+      "transport": "http",
+      "url": "https://third-party.example.com/mcp",
+      "propagateMeta": false
+    },
+    "internal": {
+      // 注册级默认静默，再对个别工具细粒度放行
+      "transport": "http",
+      "url": "https://internal.example.com/mcp",
+      "propagateMetaDefault": false,
+      "propagateMetaOverrides": {"send_callback": true}
     }
   }
 }
@@ -437,6 +450,7 @@ tools: [read_file, grep_files]   # 可选；继承工具的白名单
 - **MCP server 在构建期一次性注册到 toolkit**，agent 看到的就是这些 server 暴露的工具。
 - **`mcpServers.<name>.prefixToolNames` 默认为 `false`。** 设为 `true` 后，工具使用 `{name}__{tool}` 这样的模型侧名称。名称已满足 `[A-Za-z0-9_-]` 和 64 字符上限时保持不变；需要清洗或截断时追加稳定身份后缀。远端调用和服务级 `enableTools` / `disableTools` 使用远端原名，全局 `allow` / `deny` 使用模型侧名称。
 - **MCP 名称冲突现在会拒绝该服务的注册，即使 `prefixToolNames: false` 也不再静默覆盖已有工具。** 冲突服务的工具都不会加入；可选服务报告注册失败后继续构建，配置了 `required: true` 的服务则中止构建。迁移时可启用不同前缀，或用服务级筛选排除冲突的远端工具。全局 `allow` / `deny` 在注册后才执行，无法消除注册时的冲突。
+- **meta 透传由三个可选字段控制**，与 core MCP client 的三级开关一一对应：`propagateMeta`（连接级——部署态一刀切；core 每次调用实时判定该开关，但 Harness 当前不提供运行时取回入口，按构建期配置对待）、`propagateMetaDefault`（注册级——该 server 注册的所有工具默认静默）、`propagateMetaOverrides`（工具级——放行个别工具；写错的工具名会让本次注册直接失败，绝不静默丢失；工具级 `true` 压不过连接级 `false`，连接级始终是实时天花板）。三个都不写时保持 core 默认行为（meta 全部透传）。
 - **`allow` / `deny` 在所有工具注册完之后才应用**——所以也会过滤掉 Harness 的内置工具（`read_file` / `memory_search` / `agent_spawn` 等）。**用 `allow` 列白名单时务必把要保留的内置工具一并列出**，否则会一起被砍掉。
 - `${ENV_VAR}` 语法做环境变量替换；未设置时给 warning 并替换成空字符串。
 - 不想用文件？直接 `builder.toolsConfig(ToolsConfig.builder()...)` 编程注入；要完全关掉读取用 `disableToolsConfig()`。

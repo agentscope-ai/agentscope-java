@@ -19,7 +19,12 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.FinishReasons;
 import io.agentscope.core.model.Model;
+import io.agentscope.harness.agent.context.ContextModelCalls;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
@@ -56,6 +61,26 @@ import reactor.core.publisher.Mono;
  * <p>All file I/O is performed via the {@link AbstractFilesystem} obtained from the
  * {@link WorkspaceManager}, so this class is backend-agnostic (works with Local,
  * Sandbox, and Remote filesystems without any direct {@code java.nio.file.Files} usage).
+ *
+ * <p><b>Commit gate.</b> The LLM merge runs through the budget-only auxiliary call
+ * boundary ({@link ContextModelCalls#auxiliary} — no parent history, tools, or task
+ * projection, no recursive compaction). Its result replaces {@code MEMORY.md} and
+ * advances the watermark only when it is a <em>complete</em> (not length-truncated),
+ * text-only (no tool-call blocks), non-empty body within the configured body-text
+ * target. Truncation, tool-call output, an empty or over-budget body, a model error,
+ * a pre-commit cancellation, or a rejected auxiliary input leaves the existing
+ * {@code MEMORY.md} and the watermark untouched. The watermark advances only after
+ * the write is confirmed by reading the file back. An unconfirmed write leaves the
+ * watermark unchanged so the next run retries on the same ledgers; the memory body
+ * may already have been written.
+ *
+ * <p>{@code maxMemoryTokens} is that <em>body-text target</em>: it is stated in the
+ * prompt (tokens and the approximate character equivalent) and enforced on the
+ * committed body. It is deliberately <b>not</b> passed to the model API as an output
+ * limit — a reasoning model's API limit must also cover its reasoning tokens, so
+ * equating the two would either starve the body or pad the limit. The model's own
+ * output limit keeps its provider default; should it cut the response short, the
+ * truncation check above refuses to commit it.
  */
 public class MemoryConsolidator {
 
@@ -188,27 +213,60 @@ public class MemoryConsolidator {
                         .content(TextBlock.builder().text(userContent.toString()).build())
                         .build());
 
-        return model.stream(messages, null, null)
+        // The merge call is an auxiliary request: it goes through the budget-only boundary
+        // (no parent history, tools, or task projection, no recursive compaction) and the
+        // existing session model-record entry — the same one the flush and compaction
+        // summary use.
+        return ContextModelCalls.auxiliary(model, messages)
                 .reduce(
-                        new StringBuilder(),
-                        (sb, chatResponse) -> {
-                            if (chatResponse.getContent() != null) {
-                                for (var block : chatResponse.getContent()) {
-                                    if (block instanceof TextBlock tb && tb.getText() != null) {
-                                        sb.append(tb.getText());
-                                    }
-                                }
-                            }
-                            return sb;
+                        new ConsolidationOutput(),
+                        (acc, chatResponse) -> {
+                            acc.accept(chatResponse);
+                            return acc;
                         })
                 .flatMap(
-                        sb -> {
-                            String consolidated = sb.toString().strip();
+                        acc -> {
+                            String consolidated = acc.text().strip();
+                            if (FinishReasons.indicatesOutputLimit(
+                                    acc.finishReason(), acc.metadata())) {
+                                log.warn(
+                                        "Consolidation output truncated (finish reason {}) —"
+                                                + " keeping existing MEMORY.md and watermark",
+                                        acc.finishReason());
+                                return Mono.empty();
+                            }
+                            if (acc.sawToolBlock()) {
+                                log.warn(
+                                        "Consolidation output contained tool-call blocks —"
+                                                + " keeping existing MEMORY.md and watermark");
+                                return Mono.empty();
+                            }
                             if (consolidated.isBlank()) {
                                 log.warn("Consolidation produced empty output, skipping");
                                 return Mono.empty();
                             }
+                            if (consolidated.length() > maxChars) {
+                                log.warn(
+                                        "Consolidation output of {} chars exceeds the {}-char body"
+                                                + " target — keeping existing MEMORY.md and"
+                                                + " watermark",
+                                        consolidated.length(),
+                                        maxChars);
+                                return Mono.empty();
+                            }
                             writeConsolidatedMemory(rc, consolidated);
+                            // Confirm the write before advancing: the memory-family writers
+                            // swallow IO failures, so an unconfirmed write (read-back
+                            // mismatch) must leave the watermark behind — the next run
+                            // retries the same ledgers. No cross-store transaction: the
+                            // memory write and the watermark remain two ordinary writes.
+                            String readBack = workspaceManager.readMemoryMd(rc);
+                            if (!consolidated.equals(readBack)) {
+                                log.warn(
+                                        "MEMORY.md write could not be confirmed — keeping"
+                                                + " watermark so the next run retries");
+                                return Mono.empty();
+                            }
                             writeWatermark(rc, runStart);
                             log.info(
                                     "MEMORY.md consolidated ({} chars), watermark advanced to {}",
@@ -216,6 +274,49 @@ public class MemoryConsolidator {
                                     runStart);
                             return Mono.empty();
                         });
+    }
+
+    /** Accumulates one consolidation stream: body text plus the terminal finish signal. */
+    private static final class ConsolidationOutput {
+
+        private final StringBuilder text = new StringBuilder();
+        private String finishReason;
+        private final Map<String, Object> metadata = new HashMap<>();
+        private boolean sawToolBlock;
+
+        void accept(ChatResponse chunk) {
+            if (chunk.getFinishReason() != null) {
+                finishReason = chunk.getFinishReason();
+            }
+            if (chunk.getMetadata() != null && !chunk.getMetadata().isEmpty()) {
+                metadata.putAll(chunk.getMetadata());
+            }
+            if (chunk.getContent() != null) {
+                for (var block : chunk.getContent()) {
+                    if (block instanceof TextBlock tb && tb.getText() != null) {
+                        text.append(tb.getText());
+                    } else if (block instanceof ToolUseBlock || block instanceof ToolResultBlock) {
+                        sawToolBlock = true;
+                    }
+                }
+            }
+        }
+
+        String text() {
+            return text.toString();
+        }
+
+        String finishReason() {
+            return finishReason;
+        }
+
+        Map<String, Object> metadata() {
+            return metadata;
+        }
+
+        boolean sawToolBlock() {
+            return sawToolBlock;
+        }
     }
 
     /**

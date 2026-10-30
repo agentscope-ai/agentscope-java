@@ -266,6 +266,8 @@ When memory is enabled, a throttled background job also runs. The first eligible
 
 Entering maintenance does not necessarily call the model: consolidation skips the LLM request when there are no new daily ledger entries since the last successful consolidation. `FlushTrigger.never()` does not disable this maintenance path.
 
+Consolidation results pass a commit gate: only a **complete** (not cut off by the model's output limit), text-only, non-empty body within the `consolidationMaxTokens` target replaces `MEMORY.md` — and the watermark advances only after that write is confirmed. Truncation, tool-call output, an over-target body, a model error, or a cancellation before writing leaves the existing `MEMORY.md` and the watermark untouched. If a write cannot be confirmed, the memory body may already have changed, but the watermark stays unchanged so the next run retries on the same ledgers. The merge call itself goes through the budget-only auxiliary boundary: it carries no parent conversation history, tools, or task projection, and never triggers compaction recursively.
+
 All thresholds are tunable via `.memory(MemoryConfig.builder()...)`, though most projects don't need to touch them.
 
 ## Turn it off entirely
