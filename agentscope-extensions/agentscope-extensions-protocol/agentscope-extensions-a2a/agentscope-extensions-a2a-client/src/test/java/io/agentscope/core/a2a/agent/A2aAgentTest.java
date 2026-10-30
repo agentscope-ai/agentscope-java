@@ -327,6 +327,34 @@ public class A2aAgentTest {
     }
 
     @Test
+    @DisplayName("Should report a missing agent card instead of failing inside the SDK")
+    void testMissingAgentCardFailsWithClearMessage() {
+        AgentCardResolver resolver = mock(AgentCardResolver.class);
+        when(resolver.getAgentCard("test-agent")).thenReturn(null);
+        AtomicInteger clientsBuilt = new AtomicInteger();
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCardResolver(resolver)
+                        .clientReplacer(
+                                built -> {
+                                    clientsBuilt.incrementAndGet();
+                                    return useMockClient(built);
+                                })
+                        .build();
+
+        IllegalStateException failure =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> agent.call(Msg.builder().textContent("call").build()).block());
+
+        assertTrue(failure.getMessage().contains("No AgentCard found"));
+        assertTrue(failure.getMessage().contains("'test-agent'"));
+        assertEquals(0, clientsBuilt.get());
+        verify(a2aClient, never()).sendMessage(any(Message.class), anyList(), any());
+    }
+
+    @Test
     @DisplayName("Should finish the current call before resolving the card for the next call")
     void testAgentCardResolutionFailureOnNextCall() {
         AgentCardResolver resolver = mock(AgentCardResolver.class);
