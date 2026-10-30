@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -32,8 +33,14 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.session.SessionHistoryMode;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -162,6 +169,120 @@ class HarnessBuilderReuseTest {
         } finally {
             pool.shutdownNow();
             agents.forEach(HarnessAgent::close);
+        }
+    }
+
+    @Test
+    void failedBuildDoesNotLeaveAutoWiredStateStoreOverrideBehind() {
+        var pollutedStore = new InMemoryAgentStateStore();
+        var distributedStore = mock(DistributedStore.class);
+        when(distributedStore.agentStateStore()).thenReturn(pollutedStore);
+        when(distributedStore.baseStore()).thenReturn(mock(BaseStore.class));
+        var builder =
+                builder(mock(Model.class))
+                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
+                        .distributedStore(distributedStore)
+                        // LEGACY + remote filesystem + a local (non-distributed) effective
+                        // session store is rejected by design; the auto-wired override has
+                        // already been written at that point.
+                        .filesystem(new RemoteFilesystemSpec(mock(BaseStore.class)));
+        assertThrows(IllegalStateException.class, builder::build);
+        assertNull(
+                builder.stateStoreOverride,
+                "a failed build must restore the auto-wired stateStoreOverride so the"
+                        + " shared builder stays reusable");
+    }
+
+    @Test
+    void builderRemainsReusableAfterFailedBuild() {
+        var pollutedStore = new InMemoryAgentStateStore();
+        var distributedStore = mock(DistributedStore.class);
+        when(distributedStore.agentStateStore()).thenReturn(pollutedStore);
+        when(distributedStore.baseStore()).thenReturn(mock(BaseStore.class));
+        var builder =
+                builder(mock(Model.class))
+                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
+                        .distributedStore(distributedStore)
+                        .filesystem(new RemoteFilesystemSpec(mock(BaseStore.class)));
+        assertThrows(IllegalStateException.class, builder::build);
+
+        // The caller fixes the configuration on the same shared builder instance; a stale
+        // override would silently win and the agent would keep the polluted local store.
+        var fixedStore = mock(AgentStateStore.class);
+        builder.stateStore(fixedStore);
+        try (var agent = builder.build()) {
+            assertSame(fixedStore, agent.getDelegate().getStateStore());
+        }
+    }
+
+    @Test
+    void failedBuildRestoresAutoWiredRemoteFilesystemStore() {
+        var oldBaseStore = mock(BaseStore.class);
+        var oldDistributedStore = mock(DistributedStore.class);
+        when(oldDistributedStore.agentStateStore()).thenReturn(new InMemoryAgentStateStore());
+        when(oldDistributedStore.baseStore()).thenReturn(oldBaseStore);
+        var spec = new RemoteFilesystemSpec();
+        var builder =
+                builder(mock(Model.class))
+                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
+                        .distributedStore(oldDistributedStore)
+                        .filesystem(spec);
+
+        assertThrows(IllegalStateException.class, builder::build);
+        assertNull(spec.store());
+
+        var newBaseStore = mock(BaseStore.class);
+        var newDistributedStore = mock(DistributedStore.class);
+        when(newDistributedStore.agentStateStore()).thenReturn(mock(AgentStateStore.class));
+        when(newDistributedStore.baseStore()).thenReturn(newBaseStore);
+        builder.distributedStore(newDistributedStore);
+        try (var agent = builder.build()) {
+            assertSame(newBaseStore, spec.store());
+        }
+    }
+
+    @Test
+    void failedBuildRestoresAutoWiredSandboxSpecForAnyThrowable() {
+        var oldDistributedStore = mock(DistributedStore.class);
+        when(oldDistributedStore.agentStateStore()).thenReturn(new InMemoryAgentStateStore());
+        when(oldDistributedStore.baseStore()).thenReturn(mock(BaseStore.class));
+        var spec = new FailingSandboxFilesystemSpec();
+        var builder =
+                builder(mock(Model.class)).distributedStore(oldDistributedStore).filesystem(spec);
+
+        assertThrows(AssertionError.class, builder::build);
+        assertNull(spec.getSnapshotSpecOverride());
+        assertNull(spec.getExecutionGuard());
+        assertNull(builder.stateStoreOverride);
+
+        var newSnapshotSpec = mock(SandboxSnapshotSpec.class);
+        var newExecutionGuard = mock(SandboxExecutionGuard.class);
+        var newDistributedStore = mock(DistributedStore.class);
+        when(newDistributedStore.agentStateStore()).thenReturn(mock(AgentStateStore.class));
+        when(newDistributedStore.baseStore()).thenReturn(mock(BaseStore.class));
+        when(newDistributedStore.sandboxSnapshotSpec()).thenReturn(newSnapshotSpec);
+        when(newDistributedStore.sandboxExecutionGuard()).thenReturn(newExecutionGuard);
+        builder.distributedStore(newDistributedStore);
+        spec.stopFailing();
+        try (var agent = builder.build()) {
+            assertSame(newSnapshotSpec, spec.getSnapshotSpecOverride());
+            assertSame(newExecutionGuard, spec.getExecutionGuard());
+        }
+    }
+
+    private static final class FailingSandboxFilesystemSpec extends InMemorySandboxFilesystemSpec {
+        private boolean failing = true;
+
+        void stopFailing() {
+            failing = false;
+        }
+
+        @Override
+        protected WorkspaceSpec workspaceSpec() {
+            if (failing) {
+                throw new AssertionError("sandbox build failed");
+            }
+            return super.workspaceSpec();
         }
     }
 }

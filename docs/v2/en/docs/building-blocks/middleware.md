@@ -316,6 +316,8 @@ Input record types per hook (under `io.agentscope.core.middleware`):
 
 To replace fields flowing into the next layer, construct a new input record, then call `next.apply(...)`.
 
+Changes made through `onModelCall` affect that model request; they do not automatically rewrite stored conversation history. For the legacy `PostActingEvent`, `setToolResult(...)` updates the tool message stored for the next reasoning step. An explicitly replaced `Msg` takes precedence, and the original tool-call identity is preserved. `returnDirect` retains its direct-return behavior; replacing a result does not rewrite streaming deltas already emitted.
+
 Runnable examples: `agentscope-examples/documentation/.../middleware/CustomizedMiddlewareExample.java`, `middleware/ModelCallMiddlewareExample.java`, `middleware/SystemPromptMiddlewareExample.java`.
 
 ### State-ready notification

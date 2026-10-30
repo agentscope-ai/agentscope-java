@@ -203,6 +203,8 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 
 如果 `CachePolicy.ENABLED` 搭配 `option(...)` 或 `component(...)` 使用，用户必须提供 `cacheId`。
 
+调用 `registerFactory` 会清掉 model id 与新正则匹配的缓存实例，之后再解析这些 id 就会使用新工厂。被清掉的实例不会被关闭，因为调用方可能仍在使用。同一个可缓存 id 的并发首次解析只会创建一次，所有调用方拿到同一个实例。
+
 ### ModelProvider SPI
 
 模型提供商扩展模块通过 Java SPI 暴露 `META-INF/services/io.agentscope.core.model.spi.ModelProvider`，由 `ModelRegistry` 自动发现。新的模型提供商可以实现 `supports(String, ModelCreationContext)` 和 `create(String, ModelCreationContext)` 来消费 context。简单模型提供商仍可只实现原有的 `supports(String)` 和 `create(String)`，因为 context-aware 方法提供了兼容默认实现。
@@ -339,6 +341,8 @@ model.stream(
 ```
 
 `ChatResponse` 包含若干 content block（`TextBlock`、`ThinkingBlock`、`ToolUseBlock`、`DataBlock`）以及记录 token 数与耗时的 `ChatUsage`。
+
+**参数优先级：**传给 `stream(messages, tools, options)` 的单次调用选项优先于 builder 的 `defaultOptions`；单次调用未设置的字段回退到模型默认值。这同样适用于 `toolChoice`：默认配置如 `Specific("get_weather")` 会约束每一次调用，只有调用方显式设置自己的 `toolChoice`（例如 `None`）才会覆盖。对 Gemini 而言，只要请求声明了工具，有效的 toolChoice 就会投影为请求中的 `toolConfig`（`Specific` → `mode=ANY` 加 `allowedFunctionNames`；`None` → `mode=NONE`），因此默认配置与同值的单次配置产生一致的请求。
 
 实际开发中通常不需要直接调模型，而是通过 `ReActAgent` 调度；要直连模型做轻量调用时，推荐参考 `agentscope-examples/documentation/.../model/ModelRegistryExample.java`。
 

@@ -353,7 +353,8 @@ public class OllamaOptions {
      * Converts generic {@link GenerateOptions} to {@link OllamaOptions}.
      * <p>
      * This adapter method maps standard framework options to Ollama-specific parameters.
-     * Note that some fields (like execution config or tools) are not mapped as they belong to different layers.
+     * The execution config is carried over so that per-call timeout and retry settings
+     * reach the execution layer; tools are not mapped as they belong to a different layer.
      *
      * @param genOptions The generic options to convert.
      * @return A configured {@link OllamaOptions} instance.
@@ -364,6 +365,10 @@ public class OllamaOptions {
         }
 
         Builder builder = builder();
+
+        if (genOptions.getExecutionConfig() != null) {
+            builder.executionConfig(genOptions.getExecutionConfig());
+        }
 
         if (genOptions.getTemperature() != null) {
             builder.temperature(genOptions.getTemperature());

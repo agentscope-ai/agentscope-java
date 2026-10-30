@@ -282,6 +282,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /** Default active groups captured after builder-time toolkit configuration is complete. */
     private final List<String> initialActiveToolGroups;
 
+    /**
+     * Builder-configured baseline {@link SkillFilter} for this agent's skill view. Never null —
+     * an unset builder filter defaults to {@link SkillFilter#all()}. This is the baseline the
+     * skill middlewares apply; per-call overlays supplied via the {@link RuntimeContext} compose
+     * on top of it.
+     */
+    private final SkillFilter skillFilter;
+
+    /** Builder-configured stable directory for skill materialisation; {@code null} when unset. */
+    private final Path skillWorkDir;
+
     private final ToolExecutionContext toolExecutionContext;
 
     private final List<MiddlewareBase> middlewares;
@@ -398,6 +409,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
         this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
+        this.skillFilter = builder.skillFilter != null ? builder.skillFilter : SkillFilter.all();
+        this.skillWorkDir = builder.skillWorkDir;
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
@@ -1292,13 +1305,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return Flux.deferContextual(
                 view -> {
                     RunControl inherited = RunControl.current(view, getAgentId());
-                    RunControl control =
-                            inherited != null ? inherited : new RunControl(getAgentId());
                     RuntimeContext source =
                             context != null
                                     ? context
                                     : view.getOrDefault(
                                             RUNTIME_CONTEXT_KEY, RuntimeContext.empty());
+                    RunControl control =
+                            inherited != null
+                                    ? inherited
+                                    : new RunControl(
+                                            getAgentId(),
+                                            source == null ? null : source.getRunId());
                     RuntimeContext effective = RuntimeContext.builder(source).build();
                     SessionKey key = sessionKey(effective);
                     String turnId = (String) effective.get(SessionRecorder.TURN_ID_KEY);
@@ -4353,6 +4370,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .firePostActing(toolUse, updatedResult, toolkit, toolMsg)
                     .doOnNext(
                             e -> {
+                                if (e.getToolResult() != updatedResult
+                                        && e.getToolResultMsg() == toolMsg) {
+                                    e.setToolResultMsg(
+                                            ToolResultMessageBuilder.buildToolResultMsg(
+                                                    e.getToolResult(), toolUse, getName()));
+                                }
                                 if (soTool != null
                                         && STRUCTURED_OUTPUT_TOOL_NAME.equals(toolUse.getName())
                                         && result.getMetadata() != null
@@ -5186,6 +5209,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /** Returns this agent's toolkit; request-specific views do not mutate its registry. */
     public Toolkit getToolkit() {
         return toolkit;
+    }
+
+    /**
+     * Returns the builder-configured baseline {@link SkillFilter} for this agent's skill view.
+     * Never {@code null}: an unset builder filter defaults to {@link SkillFilter#all()}. The
+     * auto-installed {@link DynamicSkillMiddleware} applies this baseline; per-call overlays
+     * supplied via {@code RuntimeContext.get(SkillFilter.class)} compose on top of it.
+     */
+    public SkillFilter getSkillFilter() {
+        return skillFilter;
+    }
+
+    /**
+     * Returns the builder-configured stable directory for skill materialisation, or
+     * {@code null} when unset — consumers then fall back to their own temporary allocation.
+     */
+    public Path getSkillWorkDir() {
+        return skillWorkDir;
     }
 
     public String getSysPrompt() {
@@ -6457,8 +6498,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Builder-time {@link SkillFilter} applied by the auto-installed
-         * {@link DynamicSkillMiddleware}. Defaults to {@link SkillFilter#all()} when unset.
+         * Builder-time {@link SkillFilter} stored on the built agent (see
+         * {@code getSkillFilter()}) and applied by the auto-installed
+         * {@link DynamicSkillMiddleware} as its baseline. Defaults to
+         * {@link SkillFilter#all()} when unset.
          */
         public Builder skillFilter(SkillFilter filter) {
             this.skillFilter = filter;
@@ -6496,9 +6539,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Sets a stable working directory used by {@link DynamicSkillMiddleware} for
-         * {@code uploadSkillFiles}. Pass {@code null} (the default) to let the middleware mkdtemp
-         * a fresh directory on first reload and reuse it for the agent's lifetime.
+         * Sets a stable working directory for skill materialisation, stored on the built agent
+         * (see {@code getSkillWorkDir()}) and caller-managed for its whole lifecycle. When
+         * {@code null} (the default), consumers materialise under a framework-allocated
+         * anonymous temp root that the framework never deletes.
          */
         public Builder skillWorkDir(Path dir) {
             this.skillWorkDir = dir;
@@ -6693,11 +6737,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (!skillRepositories.isEmpty() && dynamicSkillsEnabled) {
                 middlewares.add(
                         new DynamicSkillMiddleware(
-                                List.copyOf(skillRepositories),
-                                agentToolkit,
-                                skillFilter != null ? skillFilter : SkillFilter.all(),
-                                skillCodeExecutionEnabled,
-                                skillWorkDir));
+                                List.copyOf(skillRepositories), skillCodeExecutionEnabled));
             }
 
             // List.sort is stable: middlewares with equal order retain their registration order.
