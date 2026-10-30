@@ -19,6 +19,7 @@ import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.RawMessageStreamEvent;
+import com.anthropic.models.messages.StopReason;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -155,7 +156,7 @@ public class AnthropicResponseParser {
                 .id(resolveMessageId(message))
                 .content(contentBlocks)
                 .usage(usage)
-                .finishReason(message.stopReason().map(Object::toString).orElse(null))
+                .finishReason(message.stopReason().map(StopReason::asString).orElse(null))
                 .metadata(
                         Map.of(
                                 ChatResponse.METADATA_CONTENT_BLOCK_INDEX,
@@ -375,7 +376,11 @@ public class AnthropicResponseParser {
         // the prompt usage captured on message_start
         if (event.isMessageDelta()) {
             finishReason =
-                    event.asMessageDelta().delta().stopReason().map(Object::toString).orElse(null);
+                    event.asMessageDelta()
+                            .delta()
+                            .stopReason()
+                            .map(StopReason::asString)
+                            .orElse(null);
             var deltaUsage = event.asMessageDelta().usage();
             long cacheReadTokens =
                     deltaUsage.cacheReadInputTokens().orElse((long) usageState.cachedTokens);
