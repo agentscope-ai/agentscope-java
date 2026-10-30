@@ -563,6 +563,27 @@ HarnessAgent.builder()
 
 Usually not needed — the three modes cover ~95% of use cases.
 
+If your filesystem **wraps** another one (path filtering, auditing, narrowing access), implement `FilesystemDecorator` and return the wrapped filesystem from `unwrap()`. Otherwise the agent cannot see what is underneath and silently drops the `execute` tool, the namespace-aware path handling and the skill shell paths:
+
+```java
+public class SanitizingFilesystem implements FilesystemDecorator {
+    private final AbstractFilesystem delegate;
+
+    @Override
+    public AbstractFilesystem unwrap() {
+        return delegate;
+    }
+    // ls / read / write / ... delegate to `delegate`
+}
+
+HarnessAgent.builder()
+    ...
+    .abstractFilesystem(new SanitizingFilesystem(new LocalFilesystemWithShell(workspace)))
+    .build();   // `execute` is registered against the wrapped LocalFilesystemWithShell
+```
+
+`execute` talks to the first filesystem along the chain that implements `AbstractSandboxFilesystem`. If only the wrapped one does, shell commands bypass your wrapper; to filter commands too, implement `AbstractSandboxFilesystem` on the wrapper itself.
+
 ## Related Pages
 
 - [Sandbox](/v2/en/docs/harness/sandbox) — runtime details of mode 2 (container lifecycle, snapshot recovery chain)
