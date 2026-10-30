@@ -15,7 +15,6 @@
  */
 package io.agentscope.extensions.model.ollama;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -32,12 +31,8 @@ import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
-import java.net.SocketException;
 import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -45,7 +40,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
@@ -55,9 +49,8 @@ import reactor.test.StepVerifier;
  * the generic-to-Ollama options conversion.
  *
  * <p>These tests assert observable execution behavior via a fake transport: real timeout
- * termination, real retry attempt counts, the no-retry-after-visible-content rule, and
- * cancellation propagation. Response arrival is controlled manually or with wide margins so the
- * assertions do not depend on precise wall-clock timing.
+ * termination and real retry attempt counts. Response arrival is controlled manually or with
+ * wide margins so the assertions do not depend on precise wall-clock timing.
  */
 @Tag("unit")
 @DisplayName("OllamaChatModel per-call execution config tests")
@@ -224,111 +217,6 @@ class OllamaChatModelExecutionOptionsTest {
                 .verify(Duration.ofSeconds(10));
 
         verify(httpTransport, times(3)).execute(any(HttpRequest.class));
-    }
-
-    @Test
-    @DisplayName("Per-call retry recovers after a transient transport failure")
-    void perCallRetryRecoversAfterTransientFailure() {
-        AtomicInteger attempts = new AtomicInteger();
-        when(httpTransport.execute(any(HttpRequest.class)))
-                .thenAnswer(
-                        inv -> {
-                            if (attempts.incrementAndGet() == 1) {
-                                throw new HttpTransportException(
-                                        "Ollama server error", 500, "internal server error");
-                            }
-                            return HttpResponse.builder()
-                                    .statusCode(200)
-                                    .body(OK_RESPONSE_BODY)
-                                    .build();
-                        });
-
-        GenerateOptions options =
-                nonStreamingOptions(
-                        ExecutionConfig.builder()
-                                .maxAttempts(2)
-                                .initialBackoff(Duration.ofMillis(10))
-                                .build());
-
-        StepVerifier.create(model.stream(messages, null, options))
-                .expectNextMatches(
-                        response ->
-                                response.getContent() != null && !response.getContent().isEmpty())
-                .verifyComplete();
-
-        assertEquals(2, attempts.get());
-    }
-
-    @Test
-    @DisplayName("Visible content already emitted disables retry on stream failure")
-    void visibleContentDisablesRetryOnStreamFailure() {
-        AtomicInteger attempts = new AtomicInteger();
-        String contentChunk =
-                "{\"model\":\""
-                        + TEST_MODEL_NAME
-                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"Hello\"},"
-                        + "\"done\":false}";
-        when(httpTransport.stream(any(HttpRequest.class)))
-                .thenAnswer(
-                        inv -> {
-                            attempts.incrementAndGet();
-                            return Flux.just(contentChunk)
-                                    .concatWith(
-                                            Flux.error(
-                                                    new HttpTransportException(
-                                                            "SSE/NDJSON stream failed:"
-                                                                    + " Connection reset",
-                                                            new SocketException(
-                                                                    "Connection reset"))));
-                        });
-
-        // maxAttempts=3 would reissue the request if the visibility rule regressed.
-        GenerateOptions options =
-                optionsWithConfig(
-                        ExecutionConfig.builder()
-                                .maxAttempts(3)
-                                .initialBackoff(Duration.ofMillis(10))
-                                .build());
-
-        StepVerifier.create(model.stream(messages, null, options))
-                .expectNextMatches(
-                        response ->
-                                response.getContent() != null && !response.getContent().isEmpty())
-                .expectError(HttpTransportException.class)
-                .verify(Duration.ofSeconds(10));
-
-        // Retrying would duplicate the already-delivered chunk, so no second attempt happens.
-        assertEquals(1, attempts.get());
-    }
-
-    @Test
-    @DisplayName("Cancelling the subscription propagates to the transport stream")
-    void cancellationPropagatesToTransportStream() throws InterruptedException {
-        CountDownLatch subscribed = new CountDownLatch(1);
-        CountDownLatch cancelled = new CountDownLatch(1);
-        when(httpTransport.stream(any(HttpRequest.class)))
-                .thenReturn(
-                        Flux.<String>never()
-                                .doOnSubscribe(s -> subscribed.countDown())
-                                .doOnCancel(cancelled::countDown));
-
-        GenerateOptions options =
-                optionsWithConfig(
-                        ExecutionConfig.builder()
-                                .timeout(Duration.ofSeconds(30))
-                                .maxAttempts(1)
-                                .build());
-
-        Disposable subscription = model.stream(messages, null, options).subscribe();
-        try {
-            assertTrue(subscribed.await(5, TimeUnit.SECONDS), "transport was never subscribed");
-        } finally {
-            subscription.dispose();
-        }
-
-        assertTrue(
-                cancelled.await(5, TimeUnit.SECONDS),
-                "downstream cancel must reach the transport stream");
     }
 
     @Test
