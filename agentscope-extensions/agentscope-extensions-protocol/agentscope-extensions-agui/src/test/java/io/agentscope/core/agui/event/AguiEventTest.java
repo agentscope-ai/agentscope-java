@@ -853,7 +853,14 @@ class AguiEventTest {
         void testWithBasePropertiesPreservesMetadataByDefault() {
             AguiEvent.TextMessageContent original =
                     new AguiEvent.TextMessageContent(
-                            "thread-1", "run-1", "msg-1", "Hello", null, null, Map.of("k", "v"));
+                            "thread-1",
+                            "run-1",
+                            "msg-1",
+                            "Hello",
+                            null,
+                            null,
+                            Map.of("k", "v"),
+                            null);
 
             AguiEvent copied = AguiEvents.withBaseProperties(original, 1L, null);
 
@@ -1237,6 +1244,23 @@ class AguiEventTest {
                     new AguiEvent.SubagentError("t1", "r1", "sa-1", "boom", "E1");
             assertEquals(AguiEventType.SUBAGENT_ERROR, error.getType());
             assertEquals("boom", error.message());
+        }
+
+        @Test
+        void testAttributableEventsCarryOptionalSubagentRunId() throws Exception {
+            AguiEvent.TextMessageStart attributed =
+                    new AguiEvent.TextMessageStart(
+                            "t1", "r1", "m1", "assistant", null, null, null, "sa-1");
+            assertEquals("sa-1", attributed.subagentRunId());
+            String json = JsonUtils.getJsonCodec().toJson(attributed);
+            assertTrue(json.contains("\"subagentRunId\":\"sa-1\""), json);
+
+            AguiEvent.TextMessageStart parent =
+                    new AguiEvent.TextMessageStart("t1", "r1", "m2", "assistant");
+            assertNull(parent.subagentRunId());
+            assertFalse(
+                    JsonUtils.getJsonCodec().toJson(parent).contains("subagentRunId"),
+                    JsonUtils.getJsonCodec().toJson(parent));
         }
     }
 

@@ -301,7 +301,8 @@ public sealed interface AguiEvent
             String role,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -312,7 +313,8 @@ public sealed interface AguiEvent
                 @JsonProperty("role") String role,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
@@ -321,10 +323,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public TextMessageStart(String threadId, String runId, String messageId, String role) {
-            this(threadId, runId, messageId, role, null, null, null);
+            this(threadId, runId, messageId, role, null, null, null, null);
         }
 
         @Override
@@ -355,7 +358,8 @@ public sealed interface AguiEvent
             String delta,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -366,7 +370,8 @@ public sealed interface AguiEvent
                 @JsonProperty("delta") String delta,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
@@ -375,10 +380,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public TextMessageContent(String threadId, String runId, String messageId, String delta) {
-            this(threadId, runId, messageId, delta, null, null, null);
+            this(threadId, runId, messageId, delta, null, null, null, null);
         }
 
         public TextMessageContent(
@@ -388,7 +394,7 @@ public sealed interface AguiEvent
                 String delta,
                 Long timestamp,
                 Object rawEvent) {
-            this(threadId, runId, messageId, delta, timestamp, rawEvent, null);
+            this(threadId, runId, messageId, delta, timestamp, rawEvent, null, null);
         }
 
         @Override
@@ -418,7 +424,8 @@ public sealed interface AguiEvent
             String messageId,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -428,7 +435,8 @@ public sealed interface AguiEvent
                 @JsonProperty("messageId") String messageId,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
@@ -436,10 +444,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public TextMessageEnd(String threadId, String runId, String messageId) {
-            this(threadId, runId, messageId, null, null, null);
+            this(threadId, runId, messageId, null, null, null, null);
         }
 
         @Override
@@ -471,7 +480,8 @@ public sealed interface AguiEvent
             String parentMessageId,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -483,7 +493,8 @@ public sealed interface AguiEvent
                 @JsonProperty("parentMessageId") String parentMessageId,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.toolCallId = Objects.requireNonNull(toolCallId, "toolCallId cannot be null");
@@ -493,11 +504,12 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ToolCallStart(
                 String threadId, String runId, String toolCallId, String toolCallName) {
-            this(threadId, runId, toolCallId, toolCallName, null, null, null, null);
+            this(threadId, runId, toolCallId, toolCallName, null, null, null, null, null);
         }
 
         public ToolCallStart(
@@ -506,7 +518,16 @@ public sealed interface AguiEvent
                 String toolCallId,
                 String toolCallName,
                 String parentMessageId) {
-            this(threadId, runId, toolCallId, toolCallName, parentMessageId, null, null, null);
+            this(
+                    threadId,
+                    runId,
+                    toolCallId,
+                    toolCallName,
+                    parentMessageId,
+                    null,
+                    null,
+                    null,
+                    null);
         }
 
         @Override
@@ -537,7 +558,8 @@ public sealed interface AguiEvent
             String delta,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -548,7 +570,8 @@ public sealed interface AguiEvent
                 @JsonProperty("delta") String delta,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.toolCallId = Objects.requireNonNull(toolCallId, "toolCallId cannot be null");
@@ -557,10 +580,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ToolCallArgs(String threadId, String runId, String toolCallId, String delta) {
-            this(threadId, runId, toolCallId, delta, null, null, null);
+            this(threadId, runId, toolCallId, delta, null, null, null, null);
         }
 
         @Override
@@ -589,7 +613,8 @@ public sealed interface AguiEvent
             String toolCallId,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -599,7 +624,8 @@ public sealed interface AguiEvent
                 @JsonProperty("toolCallId") String toolCallId,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.toolCallId = Objects.requireNonNull(toolCallId, "toolCallId cannot be null");
@@ -607,10 +633,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ToolCallEnd(String threadId, String runId, String toolCallId) {
-            this(threadId, runId, toolCallId, null, null, null);
+            this(threadId, runId, toolCallId, null, null, null, null);
         }
 
         @Override
@@ -641,7 +668,8 @@ public sealed interface AguiEvent
             String messageId,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -654,7 +682,8 @@ public sealed interface AguiEvent
                 @JsonProperty("messageId") String messageId,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.toolCallId = Objects.requireNonNull(toolCallId, "toolCallId cannot be null");
@@ -665,6 +694,7 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ToolCallResult(
@@ -674,7 +704,7 @@ public sealed interface AguiEvent
                 String content,
                 String role,
                 String messageId) {
-            this(threadId, runId, toolCallId, content, role, messageId, null, null, null);
+            this(threadId, runId, toolCallId, content, role, messageId, null, null, null, null);
         }
 
         @Override
@@ -712,7 +742,8 @@ public sealed interface AguiEvent
             Map<String, Object> snapshot,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -722,7 +753,8 @@ public sealed interface AguiEvent
                 @JsonProperty("snapshot") Map<String, Object> snapshot,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.snapshot =
@@ -733,10 +765,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public StateSnapshot(String threadId, String runId, Map<String, Object> snapshot) {
-            this(threadId, runId, snapshot, null, null, null);
+            this(threadId, runId, snapshot, null, null, null, null);
         }
 
         @Override
@@ -767,7 +800,8 @@ public sealed interface AguiEvent
             List<JsonPatchOperation> delta,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -777,7 +811,8 @@ public sealed interface AguiEvent
                 @JsonProperty("delta") List<JsonPatchOperation> delta,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.delta =
@@ -786,10 +821,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public StateDelta(String threadId, String runId, List<JsonPatchOperation> delta) {
-            this(threadId, runId, delta, null, null, null);
+            this(threadId, runId, delta, null, null, null, null);
         }
 
         @Override
@@ -820,7 +856,8 @@ public sealed interface AguiEvent
             String source,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -831,7 +868,8 @@ public sealed interface AguiEvent
                 @JsonProperty("source") String source,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.event = event;
@@ -839,14 +877,15 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public Raw(String threadId, String runId, Object event, String source) {
-            this(threadId, runId, event, source, null, null, null);
+            this(threadId, runId, event, source, null, null, null, null);
         }
 
         public Raw(String threadId, String runId, Object event) {
-            this(threadId, runId, event, null, null, null, null);
+            this(threadId, runId, event, null, null, null, null, null);
         }
 
         public Raw(
@@ -856,7 +895,7 @@ public sealed interface AguiEvent
                 String source,
                 Long timestamp,
                 Object rawEvent) {
-            this(threadId, runId, event, source, timestamp, rawEvent, null);
+            this(threadId, runId, event, source, timestamp, rawEvent, null, null);
         }
 
         @Override
@@ -886,7 +925,8 @@ public sealed interface AguiEvent
             Object value,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -897,7 +937,8 @@ public sealed interface AguiEvent
                 @JsonProperty("value") Object value,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.name = Objects.requireNonNull(name, "name cannot be null");
@@ -906,10 +947,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public Custom(String threadId, String runId, String name, Object value) {
-            this(threadId, runId, name, value, null, null, null);
+            this(threadId, runId, name, value, null, null, null, null);
         }
 
         @Override
@@ -941,7 +983,8 @@ public sealed interface AguiEvent
             String encryptedContent,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -952,7 +995,8 @@ public sealed interface AguiEvent
                 @JsonProperty("encryptedContent") String encryptedContent,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
@@ -961,11 +1005,12 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ReasoningStart(
                 String threadId, String runId, String messageId, String encryptedContent) {
-            this(threadId, runId, messageId, encryptedContent, null, null, null);
+            this(threadId, runId, messageId, encryptedContent, null, null, null, null);
         }
 
         @Override
@@ -996,7 +1041,8 @@ public sealed interface AguiEvent
             String role,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1007,7 +1053,8 @@ public sealed interface AguiEvent
                 @JsonProperty("role") String role,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
@@ -1016,10 +1063,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ReasoningMessageStart(String threadId, String runId, String messageId, String role) {
-            this(threadId, runId, messageId, role, null, null, null);
+            this(threadId, runId, messageId, role, null, null, null, null);
         }
 
         @Override
@@ -1050,7 +1098,8 @@ public sealed interface AguiEvent
             String delta,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1061,7 +1110,8 @@ public sealed interface AguiEvent
                 @JsonProperty("delta") String delta,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
@@ -1070,11 +1120,12 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ReasoningMessageContent(
                 String threadId, String runId, String messageId, String delta) {
-            this(threadId, runId, messageId, delta, null, null, null);
+            this(threadId, runId, messageId, delta, null, null, null, null);
         }
 
         @Override
@@ -1104,7 +1155,8 @@ public sealed interface AguiEvent
             String messageId,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1114,7 +1166,8 @@ public sealed interface AguiEvent
                 @JsonProperty("messageId") String messageId,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
@@ -1122,10 +1175,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ReasoningMessageEnd(String threadId, String runId, String messageId) {
-            this(threadId, runId, messageId, null, null, null);
+            this(threadId, runId, messageId, null, null, null, null);
         }
 
         @Override
@@ -1156,7 +1210,8 @@ public sealed interface AguiEvent
             String delta,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1167,7 +1222,8 @@ public sealed interface AguiEvent
                 @JsonProperty("delta") String delta,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = messageId; // Optional
@@ -1176,11 +1232,12 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ReasoningMessageChunk(
                 String threadId, String runId, String messageId, String delta) {
-            this(threadId, runId, messageId, delta, null, null, null);
+            this(threadId, runId, messageId, delta, null, null, null, null);
         }
 
         @Override
@@ -1211,7 +1268,8 @@ public sealed interface AguiEvent
             String messageId,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1221,7 +1279,8 @@ public sealed interface AguiEvent
                 @JsonProperty("messageId") String messageId,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
@@ -1229,10 +1288,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ReasoningEnd(String threadId, String runId, String messageId) {
-            this(threadId, runId, messageId, null, null, null);
+            this(threadId, runId, messageId, null, null, null, null);
         }
 
         @Override
@@ -1328,7 +1388,8 @@ public sealed interface AguiEvent
             String stepName,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1338,7 +1399,8 @@ public sealed interface AguiEvent
                 @JsonProperty("stepName") String stepName,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.stepName = Objects.requireNonNull(stepName, "stepName cannot be null");
@@ -1346,10 +1408,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public StepStarted(String threadId, String runId, String stepName) {
-            this(threadId, runId, stepName, null, null, null);
+            this(threadId, runId, stepName, null, null, null, null);
         }
 
         @Override
@@ -1377,7 +1440,8 @@ public sealed interface AguiEvent
             String stepName,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1387,7 +1451,8 @@ public sealed interface AguiEvent
                 @JsonProperty("stepName") String stepName,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.stepName = Objects.requireNonNull(stepName, "stepName cannot be null");
@@ -1395,10 +1460,11 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public StepFinished(String threadId, String runId, String stepName) {
-            this(threadId, runId, stepName, null, null, null);
+            this(threadId, runId, stepName, null, null, null, null);
         }
 
         @Override
@@ -1429,7 +1495,8 @@ public sealed interface AguiEvent
             String name,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1442,7 +1509,8 @@ public sealed interface AguiEvent
                 @JsonProperty("name") String name,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = messageId;
@@ -1453,6 +1521,7 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public TextMessageChunk(
@@ -1462,7 +1531,7 @@ public sealed interface AguiEvent
                 String role,
                 String delta,
                 String name) {
-            this(threadId, runId, messageId, role, delta, name, null, null, null);
+            this(threadId, runId, messageId, role, delta, name, null, null, null, null);
         }
 
         @Override
@@ -1493,7 +1562,8 @@ public sealed interface AguiEvent
             String delta,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1506,7 +1576,8 @@ public sealed interface AguiEvent
                 @JsonProperty("delta") String delta,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.toolCallId = toolCallId;
@@ -1517,6 +1588,7 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ToolCallChunk(
@@ -1533,6 +1605,7 @@ public sealed interface AguiEvent
                     toolCallName,
                     parentMessageId,
                     delta,
+                    null,
                     null,
                     null,
                     null);
@@ -1622,7 +1695,8 @@ public sealed interface AguiEvent
             Boolean replace,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1635,7 +1709,8 @@ public sealed interface AguiEvent
                 @JsonProperty("replace") Boolean replace,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
@@ -1649,6 +1724,7 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ActivitySnapshot(
@@ -1658,7 +1734,17 @@ public sealed interface AguiEvent
                 String activityType,
                 Map<String, Object> content,
                 Boolean replace) {
-            this(threadId, runId, messageId, activityType, content, replace, null, null, null);
+            this(
+                    threadId,
+                    runId,
+                    messageId,
+                    activityType,
+                    content,
+                    replace,
+                    null,
+                    null,
+                    null,
+                    null);
         }
 
         public ActivitySnapshot(
@@ -1699,7 +1785,8 @@ public sealed interface AguiEvent
             List<JsonPatchOperation> patch,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1711,7 +1798,8 @@ public sealed interface AguiEvent
                 @JsonProperty("patch") List<JsonPatchOperation> patch,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
@@ -1722,6 +1810,7 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ActivityDelta(
@@ -1730,7 +1819,7 @@ public sealed interface AguiEvent
                 String messageId,
                 String activityType,
                 List<JsonPatchOperation> patch) {
-            this(threadId, runId, messageId, activityType, patch, null, null, null);
+            this(threadId, runId, messageId, activityType, patch, null, null, null, null);
         }
 
         @Override
@@ -1762,7 +1851,8 @@ public sealed interface AguiEvent
             String encryptedValue,
             Long timestamp,
             Object rawEvent,
-            Map<String, Object> metadata)
+            Map<String, Object> metadata,
+            String subagentRunId)
             implements AguiEvent {
 
         @JsonCreator
@@ -1774,7 +1864,8 @@ public sealed interface AguiEvent
                 @JsonProperty("encryptedValue") String encryptedValue,
                 @JsonProperty("timestamp") Long timestamp,
                 @JsonProperty("rawEvent") Object rawEvent,
-                @JsonProperty("metadata") Map<String, Object> metadata) {
+                @JsonProperty("metadata") Map<String, Object> metadata,
+                @JsonProperty("subagentRunId") String subagentRunId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.subtype = Objects.requireNonNull(subtype, "subtype cannot be null");
@@ -1785,6 +1876,7 @@ public sealed interface AguiEvent
             this.timestamp = timestamp;
             this.rawEvent = rawEvent;
             this.metadata = metadata;
+            this.subagentRunId = subagentRunId;
         }
 
         public ReasoningEncryptedValue(
@@ -1793,7 +1885,7 @@ public sealed interface AguiEvent
                 String subtype,
                 String entityId,
                 String encryptedValue) {
-            this(threadId, runId, subtype, entityId, encryptedValue, null, null, null);
+            this(threadId, runId, subtype, entityId, encryptedValue, null, null, null, null);
         }
 
         @Override

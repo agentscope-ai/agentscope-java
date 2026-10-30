@@ -92,7 +92,7 @@ Normal `RUN_STARTED` and `RUN_FINISHED` events are driven by upstream `AgentStar
 
 ## Subagent events
 
-The `AguiEvent` model includes the AG-UI 1.0 lifecycle types `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, and `SUBAGENT_ERROR` (each carries a required `subagentRunId`). The default adapter path does not emit those types yet.
+The `AguiEvent` model includes the AG-UI 1.0 lifecycle types `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, and `SUBAGENT_ERROR` (each carries a required `subagentRunId`). Per the protocol, most other events also accept an optional `subagentRunId` for attribution; `RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` and `MESSAGES_SNAPSHOT` do not. The default adapter path does not emit native subagent lifecycle or attributed events yet.
 
 By default (`emitSubagentEventsAsNative=false`), AgentEvents with a non-null `source` (child / remote subagent events) are **not** mapped to native `TEXT_MESSAGE_*` / `RUN_*` / tool-call events. They become AG-UI `CUSTOM` events under the `subagent.*` namespace so they do not pollute the parent run lifecycle or text stream:
 

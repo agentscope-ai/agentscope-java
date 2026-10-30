@@ -27,7 +27,7 @@ public final class AguiEvents {
 
     /**
      * Copies an event while replacing timestamp and rawEvent, preserving the
-     * original metadata.
+     * original metadata (and {@code subagentRunId} when present).
      *
      * @param event The event to copy
      * @param timestamp The timestamp for the copied event
@@ -41,6 +41,9 @@ public final class AguiEvents {
 
     /**
      * Copies an event while replacing AG-UI base event properties.
+     *
+     * <p>Preserves {@code subagentRunId} on attributable events. Run lifecycle
+     * and {@code MESSAGES_SNAPSHOT} events are not attributable.
      *
      * @param event The event to copy
      * @param timestamp The timestamp for the copied event
@@ -87,11 +90,23 @@ public final class AguiEvents {
         }
         if (event instanceof AguiEvent.StepStarted e) {
             return new AguiEvent.StepStarted(
-                    e.threadId(), e.runId(), e.stepName(), timestamp, rawEvent, metadata);
+                    e.threadId(),
+                    e.runId(),
+                    e.stepName(),
+                    timestamp,
+                    rawEvent,
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.StepFinished e) {
             return new AguiEvent.StepFinished(
-                    e.threadId(), e.runId(), e.stepName(), timestamp, rawEvent, metadata);
+                    e.threadId(),
+                    e.runId(),
+                    e.stepName(),
+                    timestamp,
+                    rawEvent,
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.TextMessageStart e) {
             return new AguiEvent.TextMessageStart(
@@ -101,7 +116,8 @@ public final class AguiEvents {
                     e.role(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.TextMessageContent e) {
             return new AguiEvent.TextMessageContent(
@@ -111,11 +127,18 @@ public final class AguiEvents {
                     e.delta(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.TextMessageEnd e) {
             return new AguiEvent.TextMessageEnd(
-                    e.threadId(), e.runId(), e.messageId(), timestamp, rawEvent, metadata);
+                    e.threadId(),
+                    e.runId(),
+                    e.messageId(),
+                    timestamp,
+                    rawEvent,
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.TextMessageChunk e) {
             return new AguiEvent.TextMessageChunk(
@@ -127,7 +150,8 @@ public final class AguiEvents {
                     e.name(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ToolCallStart e) {
             return new AguiEvent.ToolCallStart(
@@ -138,7 +162,8 @@ public final class AguiEvents {
                     e.parentMessageId(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ToolCallArgs e) {
             return new AguiEvent.ToolCallArgs(
@@ -148,11 +173,18 @@ public final class AguiEvents {
                     e.delta(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ToolCallEnd e) {
             return new AguiEvent.ToolCallEnd(
-                    e.threadId(), e.runId(), e.toolCallId(), timestamp, rawEvent, metadata);
+                    e.threadId(),
+                    e.runId(),
+                    e.toolCallId(),
+                    timestamp,
+                    rawEvent,
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ToolCallChunk e) {
             return new AguiEvent.ToolCallChunk(
@@ -164,7 +196,8 @@ public final class AguiEvents {
                     e.delta(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ToolCallResult e) {
             return new AguiEvent.ToolCallResult(
@@ -176,15 +209,28 @@ public final class AguiEvents {
                     e.messageId(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.StateSnapshot e) {
             return new AguiEvent.StateSnapshot(
-                    e.threadId(), e.runId(), e.snapshot(), timestamp, rawEvent, metadata);
+                    e.threadId(),
+                    e.runId(),
+                    e.snapshot(),
+                    timestamp,
+                    rawEvent,
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.StateDelta e) {
             return new AguiEvent.StateDelta(
-                    e.threadId(), e.runId(), e.delta(), timestamp, rawEvent, metadata);
+                    e.threadId(),
+                    e.runId(),
+                    e.delta(),
+                    timestamp,
+                    rawEvent,
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.MessagesSnapshot e) {
             return new AguiEvent.MessagesSnapshot(
@@ -200,7 +246,8 @@ public final class AguiEvents {
                     e.replace(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ActivityDelta e) {
             return new AguiEvent.ActivityDelta(
@@ -211,15 +258,30 @@ public final class AguiEvents {
                     e.patch(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.Raw e) {
             return new AguiEvent.Raw(
-                    e.threadId(), e.runId(), e.event(), e.source(), timestamp, rawEvent, metadata);
+                    e.threadId(),
+                    e.runId(),
+                    e.event(),
+                    e.source(),
+                    timestamp,
+                    rawEvent,
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.Custom e) {
             return new AguiEvent.Custom(
-                    e.threadId(), e.runId(), e.name(), e.value(), timestamp, rawEvent, metadata);
+                    e.threadId(),
+                    e.runId(),
+                    e.name(),
+                    e.value(),
+                    timestamp,
+                    rawEvent,
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ReasoningStart e) {
             return new AguiEvent.ReasoningStart(
@@ -229,7 +291,8 @@ public final class AguiEvents {
                     e.encryptedContent(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ReasoningMessageStart e) {
             return new AguiEvent.ReasoningMessageStart(
@@ -239,7 +302,8 @@ public final class AguiEvents {
                     e.role(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ReasoningMessageContent e) {
             return new AguiEvent.ReasoningMessageContent(
@@ -249,11 +313,18 @@ public final class AguiEvents {
                     e.delta(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ReasoningMessageEnd e) {
             return new AguiEvent.ReasoningMessageEnd(
-                    e.threadId(), e.runId(), e.messageId(), timestamp, rawEvent, metadata);
+                    e.threadId(),
+                    e.runId(),
+                    e.messageId(),
+                    timestamp,
+                    rawEvent,
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ReasoningMessageChunk e) {
             return new AguiEvent.ReasoningMessageChunk(
@@ -263,11 +334,18 @@ public final class AguiEvents {
                     e.delta(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ReasoningEnd e) {
             return new AguiEvent.ReasoningEnd(
-                    e.threadId(), e.runId(), e.messageId(), timestamp, rawEvent, metadata);
+                    e.threadId(),
+                    e.runId(),
+                    e.messageId(),
+                    timestamp,
+                    rawEvent,
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.ReasoningEncryptedValue e) {
             return new AguiEvent.ReasoningEncryptedValue(
@@ -278,7 +356,8 @@ public final class AguiEvents {
                     e.encryptedValue(),
                     timestamp,
                     rawEvent,
-                    metadata);
+                    metadata,
+                    e.subagentRunId());
         }
         if (event instanceof AguiEvent.SubagentStarted e) {
             return new AguiEvent.SubagentStarted(
