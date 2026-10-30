@@ -320,9 +320,9 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
 <Accordion title="Model-call events">
 
-**ModelCallStartEvent** — model API call starts (carries `modelName`).
+**ModelCallStartEvent** — model API call starts (carries `modelName`; `attempt` is 1 normally, >1 when the call is retried after an abnormally terminated stream — consumers should discard the partial content of earlier attempts).
 
-    **ModelCallEndEvent** — model API call completes (carries `inputTokens` / `outputTokens`).
+    **ModelCallEndEvent** — model API call completes (carries `inputTokens` / `outputTokens`; `finishReason` is the provider's completion signal, e.g. `stop` / `length` — null means the provider never confirmed completion).
 
 </Accordion>
 

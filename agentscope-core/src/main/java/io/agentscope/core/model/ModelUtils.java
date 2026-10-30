@@ -116,7 +116,11 @@ public final class ModelUtils {
                     maxBackoff = Duration.ofSeconds(10);
                 }
                 if (retryOn == null) {
-                    retryOn = error -> true; // retry all errors by default
+                    // Retry all errors except partial-content stream failures: a retried
+                    // stream restarts from scratch, which would duplicate chunks already
+                    // delivered to subscribers. Those are retried one level up (ReActAgent
+                    // model-call retry) where accumulators can be reset first.
+                    retryOn = error -> !(error instanceof PartialStreamContent);
                 }
                 // Lambda captures below require effectively final variables
                 final int retryCount = maxAttempts - 1;

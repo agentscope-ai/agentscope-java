@@ -320,9 +320,9 @@ sequenceDiagram
 
 <Accordion title="模型调用事件">
 
-**ModelCallStartEvent** — 模型 API 调用开始（带 `modelName`）。
+**ModelCallStartEvent** — 模型 API 调用开始（带 `modelName`；`attempt` 平时为 1，流异常中断后重试时 >1——消费端应丢弃先前尝试的部分内容）。
 
-    **ModelCallEndEvent** — 模型 API 调用完成（带 `inputTokens` / `outputTokens`）。
+    **ModelCallEndEvent** — 模型 API 调用完成（带 `inputTokens` / `outputTokens`；`finishReason` 为 provider 的完成信号，如 `stop` / `length`——null 表示 provider 从未确认完成）。
 
 </Accordion>
 
