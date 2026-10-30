@@ -20,6 +20,7 @@ import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -103,7 +104,9 @@ public class DashScopeChatFormatter
      * block therefore contributes one system message ahead of its own message.
      *
      * <p>Only {@link FileIdSource} is supported in this phase: URL and Base64 documents are
-     * rejected here rather than being dropped on the floor.
+     * rejected here rather than being dropped on the floor. Blocks on non-USER turns are left
+     * alone - documents are user input, and the role validation already rejects them on SYSTEM
+     * while ASSISTANT/TOOL accept arbitrary blocks for back-compat.
      *
      * @param msg The message whose document blocks should be emitted
      * @param messages The formatted messages collected so far
@@ -112,6 +115,9 @@ public class DashScopeChatFormatter
      */
     private static void appendDocumentMessages(
             Msg msg, List<DashScopeMessage> messages, List<Boolean> directives) {
+        if (msg.getRole() != MsgRole.USER) {
+            return;
+        }
         for (DocumentBlock document : msg.getContentBlocks(DocumentBlock.class)) {
             Source source = document.getSource();
             if (!(source instanceof FileIdSource fileIdSource)) {

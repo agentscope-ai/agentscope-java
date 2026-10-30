@@ -134,6 +134,30 @@ class DashScopeChatFormatterTest {
     }
 
     @Test
+    void testDocumentBlockOnNonUserTurnIsLeftAlone() {
+        // ASSISTANT/TOOL accept arbitrary blocks for back-compat; a document there is
+        // aberrant input and must neither be mapped nor rejected, just ignored.
+        Msg assistant =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("reply").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.pdf")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<DashScopeMessage> result = formatter.format(List.of(assistant));
+
+        assertEquals(1, result.size());
+        assertEquals("assistant", result.get(0).getRole());
+    }
+
+    @Test
     void testDocumentBlockRejectsNonFileIdSource() {
         Msg msg =
                 Msg.builder()
