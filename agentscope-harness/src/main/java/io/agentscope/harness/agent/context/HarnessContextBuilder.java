@@ -28,6 +28,7 @@ import io.agentscope.core.middleware.TaskContextProjection;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.TaskContextState;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
 import java.nio.charset.StandardCharsets;
@@ -279,6 +280,15 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                             conversationBudget,
                             history,
                             messages -> {
+                                // Prefer what the provider actually charged once a turn has been
+                                // measured; estimation alone drifts in both directions and no
+                                // character ratio corrects both.
+                                long reported =
+                                        TokenCounterUtil.conversationTokensFromReportedUsage(
+                                                messages, fixedTokens, policy.estimator());
+                                if (reported >= 0) {
+                                    return reported;
+                                }
                                 List<Msg> assembled = new ArrayList<>(prefix);
                                 assembled.addAll(messages);
                                 ModelCallInput request =
