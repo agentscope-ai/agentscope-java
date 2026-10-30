@@ -16,16 +16,21 @@
 package io.agentscope.core.chat.completions.builder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.chat.completions.model.ChatCompletionsRequest;
 import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
 import io.agentscope.core.chat.completions.model.ChatMessage;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatUsage;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -107,6 +112,66 @@ class ChatCompletionsResponseBuilderTest {
 
             assertNotNull(response);
             assertTrue(response.getChoices().get(0).getMessage().getContent().isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should report the invocation total as usage, not the last call's usage")
+        void shouldReportInvocationUsage() throws Exception {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setModel("test-model");
+
+            // Last model call: 15/3. Whole invocation (tool step + answer): 25/5.
+            Msg reply =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Sunny.").build())
+                            .metadata(
+                                    Map.of(
+                                            MessageMetadataKeys.CHAT_USAGE,
+                                            new ChatUsage(15, 3, 0.1),
+                                            MessageMetadataKeys.INVOCATION_USAGE,
+                                            new ChatUsage(25, 5, 0.3)))
+                            .build();
+
+            ChatCompletionsResponse response = builder.buildResponse(request, reply, "test-id");
+
+            ChatCompletionsResponse.Usage usage = response.getUsage();
+            assertNotNull(usage);
+            assertEquals(25, usage.getPromptTokens());
+            assertEquals(5, usage.getCompletionTokens());
+            assertEquals(30, usage.getTotalTokens());
+
+            String json = new ObjectMapper().writeValueAsString(response);
+            assertTrue(
+                    json.contains(
+                            "\"usage\":{\"prompt_tokens\":25,\"completion_tokens\":5,"
+                                    + "\"total_tokens\":30}"),
+                    json);
+        }
+
+        @Test
+        @DisplayName("Should omit usage when no invocation usage was reported")
+        void shouldOmitUsageWhenAbsent() throws Exception {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setModel("test-model");
+
+            // Only per-call usage: not a total, so it must not be reported as one.
+            Msg reply =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Hi").build())
+                            .metadata(
+                                    Map.of(
+                                            MessageMetadataKeys.CHAT_USAGE,
+                                            new ChatUsage(15, 3, 0.1)))
+                            .build();
+
+            ChatCompletionsResponse response = builder.buildResponse(request, reply, "test-id");
+            ChatCompletionsResponse nullReply = builder.buildResponse(request, null, "test-id");
+
+            assertNull(response.getUsage());
+            assertNull(nullReply.getUsage());
+            assertFalse(new ObjectMapper().writeValueAsString(response).contains("\"usage\""));
         }
     }
 

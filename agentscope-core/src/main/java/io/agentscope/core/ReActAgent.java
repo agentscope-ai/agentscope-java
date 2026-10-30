@@ -1558,7 +1558,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     }
                     return scope.doCallInner(msgs)
                             .onErrorResume(error -> saveStateAfterCallFailure(scope, error))
-                            .flatMap(result -> saveStateToSession(scope).thenReturn(result))
+                            .flatMap(
+                                    result -> {
+                                        scope.recordInvocationUsage(result);
+                                        return saveStateToSession(scope).thenReturn(result);
+                                    })
                             .switchIfEmpty(
                                     Mono.defer(
                                             () ->
@@ -1669,6 +1673,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     return scope.doCallInner(msgs)
                             .flatMap(
                                     result -> {
+                                        // Recorded on the stored message; the wrapper copies it.
+                                        scope.recordInvocationUsage(result);
                                         Msg out =
                                                 wrapNativeStructuredResult(
                                                         result,
@@ -1739,6 +1745,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             }
                                             scope.state.contextMutable().add(out);
                                         }
+                                        scope.recordInvocationUsage(out);
                                         return saveStateToSession(scope).thenReturn(out);
                                     })
                             .switchIfEmpty(
@@ -1824,40 +1831,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     private ChatUsage collectAggregatedUsage(AgentState agentState) {
-        int totalInput = 0;
-        int totalOutput = 0;
-        int totalCached = 0;
-        int totalCacheCreation = 0;
-        int totalReasoning = 0;
-        int totalToolUsePrompt = 0;
-        double totalTime = 0;
-        boolean hasUsage = false;
+        ChatUsage total = null;
         for (Msg msg : agentState.getContext()) {
             if (isStructuredOutputRelated(msg) && msg.getRole() == MsgRole.ASSISTANT) {
                 ChatUsage usage = msg.getChatUsage();
                 if (usage != null) {
-                    hasUsage = true;
-                    totalInput += usage.getInputTokens();
-                    totalOutput += usage.getOutputTokens();
-                    totalCached += usage.getCachedTokens();
-                    totalCacheCreation += usage.getCacheCreationTokens();
-                    totalReasoning += usage.getReasoningTokens();
-                    totalToolUsePrompt += usage.getToolUsePromptTokens();
-                    totalTime += usage.getTime();
+                    total = total == null ? usage : total.plus(usage);
                 }
             }
         }
-        return hasUsage
-                ? ChatUsage.builder()
-                        .inputTokens(totalInput)
-                        .outputTokens(totalOutput)
-                        .cachedTokens(totalCached)
-                        .cacheCreationTokens(totalCacheCreation)
-                        .reasoningTokens(totalReasoning)
-                        .toolUsePromptTokens(totalToolUsePrompt)
-                        .time(totalTime)
-                        .build()
-                : null;
+        return total;
     }
 
     private ThinkingBlock collectLastThinking(AgentState agentState) {
@@ -2101,6 +2084,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         FluxSink<AgentEvent> eventSink;
 
         ExecutionIdentity executionIdentity;
+
+        /**
+         * Sum of the usage reported by this call's own {@link ModelCallEndEvent}s, accumulated
+         * in {@link #publishEvent}; {@code null} until a model call reports usage. Recorded on
+         * the reply as {@link MessageMetadataKeys#INVOCATION_USAGE} by
+         * {@link #recordInvocationUsage(Msg)}.
+         */
+        ChatUsage invocationUsage;
 
         /**
          * External event emitter for child-agent event forwarding. When a parent's tool (e.g.
@@ -2602,8 +2593,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private void publishEvent(AgentEvent event) {
-            if (event.getSource() == null || event.getSource().isBlank())
-                event.withExecution(executionIdentity);
+            boolean ownEvent = event.getSource() == null || event.getSource().isBlank();
+            if (ownEvent) event.withExecution(executionIdentity);
+            // Forwarded subagent events carry a source; their usage belongs to the subagent.
+            if (ownEvent && event instanceof ModelCallEndEvent end && end.getUsage() != null) {
+                invocationUsage =
+                        invocationUsage == null
+                                ? end.getUsage()
+                                : invocationUsage.plus(end.getUsage());
+            }
             SessionRecorder recorder = SessionRecorder.from(rc);
             if (recorder != null) recorder.observe(event);
             FluxSink<AgentEvent> sink = eventSink;
@@ -2611,6 +2609,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 sink.next(event);
             } else if (externalEventEmitter != null) {
                 externalEventEmitter.emit(event);
+            }
+        }
+
+        /**
+         * Records this call's {@link #invocationUsage} on {@code reply} under
+         * {@link MessageMetadataKeys#INVOCATION_USAGE}, in place. Callers invoke it before the
+         * state is saved: the reply is usually the same instance as the final message in the
+         * context, so the returned reply and its persisted copy stay identical (and callers that
+         * compare the reply with the context by reference keep working). No-op when
+         * {@code reply} is null or no model call reported usage.
+         */
+        void recordInvocationUsage(Msg reply) {
+            if (reply != null && invocationUsage != null) {
+                reply.getMetadata().put(MessageMetadataKeys.INVOCATION_USAGE, invocationUsage);
             }
         }
 

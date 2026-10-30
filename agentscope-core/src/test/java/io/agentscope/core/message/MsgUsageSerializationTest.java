@@ -201,6 +201,39 @@ class MsgUsageSerializationTest {
     }
 
     @Test
+    void invocationUsageRoundTripsViaJsonIndependentlyOfChatUsage() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .textContent("done")
+                        .metadata(
+                                Map.of(
+                                        MessageMetadataKeys.CHAT_USAGE,
+                                        new ChatUsage(15, 3, 6, 0, 1, 0, 0.1),
+                                        MessageMetadataKeys.INVOCATION_USAGE,
+                                        new ChatUsage(25, 5, 9, 0, 2, 0, 0.3)))
+                        .build();
+
+        String json = JsonUtils.getJsonCodec().toJson(msg);
+        Msg deserialized = JsonUtils.getJsonCodec().fromJson(json, Msg.class);
+
+        ChatUsage total = deserialized.getInvocationUsage();
+        assertNotNull(total);
+        assertEquals(25, total.getInputTokens());
+        assertEquals(5, total.getOutputTokens());
+        assertEquals(9, total.getCachedTokens());
+        assertEquals(2, total.getReasoningTokens());
+        assertEquals(15, deserialized.getChatUsage().getInputTokens());
+    }
+
+    @Test
+    void invocationUsageNullWhenAbsent() {
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).textContent("done").build();
+
+        assertNull(msg.getInvocationUsage());
+    }
+
+    @Test
     void usageDeserializesFromJsonWithoutField() {
         String json =
                 "{\"id\":\"test-1\",\"name\":\"user\",\"role\":\"USER\","
