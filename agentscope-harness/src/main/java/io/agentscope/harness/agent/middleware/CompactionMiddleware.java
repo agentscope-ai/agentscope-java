@@ -36,6 +36,7 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
+import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -44,6 +45,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.ToLongFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -258,6 +260,30 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             ModelCallInput input,
             int conversationBudget,
             List<Msg> canonical) {
+        return prepareCandidate(
+                agent,
+                ctx,
+                input,
+                conversationBudget,
+                canonical,
+                TokenCounterUtil::calculateToken,
+                message -> TokenCounterUtil.calculateToken(List.of(message)));
+    }
+
+    /**
+     * Prepares a candidate using the final request compiler's conversation token counter.
+     * The counter excludes fixed inputs already deducted from {@code conversationBudget}.
+     * The separate tool-result counter prices one result without unrelated projections or
+     * fixed request overhead, using the same estimation rules.
+     */
+    public Mono<Candidate> prepareCandidate(
+            Agent agent,
+            RuntimeContext ctx,
+            ModelCallInput input,
+            int conversationBudget,
+            List<Msg> canonical,
+            ToLongFunction<List<Msg>> tokenCounter,
+            ToLongFunction<Msg> toolResultTokenCounter) {
         return Mono.defer(
                 () -> {
                     RuntimeContext rc = ctx == null ? RuntimeContext.empty() : ctx;
@@ -291,7 +317,10 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                     Math.min(keep, Math.max(0, conversationBudget / 2)));
                     ConversationCompactor compactor =
                             new ConversationCompactor(
-                                    model, new MemoryFlushManager(workspaceManager, model));
+                                    model,
+                                    new MemoryFlushManager(workspaceManager, model),
+                                    tokenCounter,
+                                    toolResultTokenCounter);
                     // Copies may retain message IDs. Only an unchanged view can become durable;
                     // matching IDs alone must not persist hook-edited content or metadata.
                     boolean canCommit = sameSerializedHistory(canonical, conversation);

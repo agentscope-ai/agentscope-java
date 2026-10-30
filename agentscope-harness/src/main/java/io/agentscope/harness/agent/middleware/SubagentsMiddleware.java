@@ -99,7 +99,12 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             ## Subagents
 
             You have access to subagent tools for spawning and coordinating isolated subagents.
-            Subagents are ephemeral — they live only for the duration of the task and return a single result.
+            Each subagent runs its own conversation, separate from yours. Every invocation — a spawn
+            with a task, or a follow-up send — produces one result: returned directly when you wait
+            synchronously, or pushed back to you when it runs in the background. A live local
+            subagent keeps its own history across follow-up sends; remote backends may start a new
+            conversation for each send. Session persistence and later resumption depend on the
+            declaration (`persistSession`) and the backend, so don't rely on resuming it later.
 
             ### Agent Tools
 
@@ -157,9 +162,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             - If splitting would add latency without benefit
 
             ### Subagent lifecycle
-            1. **Spawn** → Provide clear role, instructions, and expected output format
+            1. **Spawn** → Write a self-contained task: goal, needed context and file paths, constraints, and the expected deliverable. The subagent starts from a fresh conversation and does not see yours
             2. **Run** → The subagent completes the task autonomously
-            3. **Return** → The subagent provides a single structured result
+            3. **Return** → The subagent's final message is delivered as that invocation's result (sync tool result, or pushed back for background tasks)
             4. **Reconcile** → Incorporate or synthesize the result into the main thread
 
             ### Usage patterns
@@ -167,7 +172,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             - **Parallel sync delegation**: Multiple sync `agent_spawn` / `agent_send` calls in one turn run concurrently by default (Toolkit parallel=true); the parent waits for that batch of tool results before continuing. Pass a Toolkit with parallel=false to opt out.
             - **Mixed short/long work**: Wait for short prerequisite tasks first, continue reasoning with those results, and merge long-running async results later through `task_output` or `wait_async_results`
             - **Sync delegation**: Use default timeout for simple one-shot delegation when one result is needed before the next reasoning step
-            - **Persistent session**: Spawn without a task, then use send for multi-turn interaction
+            - **Persistent session**: Spawn without a task, then use send for multi-turn interaction with the live subagent
             - **Cancel stale work**: Use task_cancel to stop background tasks that are no longer needed
             - Subagent results are NOT visible to the user — always summarize them in your response
             """;
