@@ -524,16 +524,20 @@ public class WorkspaceTaskRepository implements TaskRepository {
 
     @Override
     public BackgroundTask getTask(RuntimeContext rc, String sessionId, String taskId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
         BackgroundTask local = localTasks.get(localKey(sessionId, taskId));
-        if (local != null) {
+        Optional<TaskRecord> record =
+                workspaceManager.readTaskRecord(effRc, parentAgentId, sessionId, taskId);
+        // Mirror listTasks(): when the durable workspace record is already terminal, it wins over
+        // the local handle. A late cancelTask() racing completion stamps the local handle's
+        // `cancelled` flag (BackgroundTask.cancel is unconditional) even though the workspace
+        // record stays COMPLETED — returning the local handle here would report CANCELLED while
+        // listTasks reports COMPLETED. Never override a terminal workspace status with a stale
+        // local handle.
+        if (local != null && (record.isEmpty() || !record.get().getStatus().isTerminal())) {
             return local;
         }
-        // Fall back to workspace record — construct a synthetic completed/failed BackgroundTask
-        Optional<TaskRecord> record =
-                workspaceManager.readTaskRecord(
-                        rc != null ? rc : RuntimeContext.empty(), parentAgentId, sessionId, taskId);
-        return record.map(r -> syntheticTask(rc != null ? rc : RuntimeContext.empty(), r))
-                .orElse(null);
+        return record.map(r -> syntheticTask(effRc, r)).orElse(local);
     }
 
     @Override

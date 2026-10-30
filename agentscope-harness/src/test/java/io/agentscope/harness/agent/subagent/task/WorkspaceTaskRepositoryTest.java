@@ -379,6 +379,57 @@ class WorkspaceTaskRepositoryTest {
         assertEquals(TaskStatus.COMPLETED, tasks.iterator().next().getTaskStatus());
     }
 
+    @Test
+    @DisplayName(
+            "getTask does not override COMPLETED workspace status after a late cancelTask race")
+    void getTask_terminalStatusNotOverriddenAfterLateCancel() throws Exception {
+        String session = "sess-late-cancel";
+        String taskId = "task-late-cancel";
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                taskId,
+                "agent-lc",
+                session,
+                new TaskRunSpec.LocalTaskRunSpec(() -> "done"));
+
+        // Wait until COMPLETED is durable in both the local handle and the workspace record.
+        awaitCondition(
+                () -> {
+                    BackgroundTask t = repo.getTask(RuntimeContext.empty(), session, taskId);
+                    return t != null && t.getTaskStatus() == TaskStatus.COMPLETED;
+                });
+        awaitCondition(
+                () -> {
+                    Optional<TaskRecord> r =
+                            workspaceManager.readTaskRecord(
+                                    RuntimeContext.empty(), "test-agent", session, taskId);
+                    return r.isPresent() && r.get().getStatus() == TaskStatus.COMPLETED;
+                });
+
+        // Simulate the force_sync timeout race (AgentSpawnTool:1451): cancelTask lands AFTER the
+        // task already completed. cancelTask has no terminal guard on the local handle, so it
+        // stamps the handle's `cancelled` flag while the workspace record stays COMPLETED.
+        repo.cancelTask(RuntimeContext.empty(), session, taskId);
+
+        BackgroundTask fromGet = repo.getTask(RuntimeContext.empty(), session, taskId);
+        assertNotNull(fromGet);
+        TaskStatus getStatus = fromGet.getTaskStatus();
+
+        BackgroundTask fromList =
+                repo.listTasks(RuntimeContext.empty(), session, null).stream()
+                        .filter(t -> taskId.equals(t.getTaskId()))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(fromList);
+        TaskStatus listStatus = fromList.getTaskStatus();
+
+        // getTask must agree with listTasks: the terminal workspace status wins over the stale
+        // local handle, so both report COMPLETED (not CANCELLED).
+        assertEquals(TaskStatus.COMPLETED, getStatus);
+        assertEquals(getStatus, listStatus);
+    }
+
     // ------------------------------------------------------------------
     //  Status filter
     // ------------------------------------------------------------------
