@@ -18,8 +18,10 @@ package io.agentscope.core.agent;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ContextStore;
 import io.agentscope.core.tool.ToolExecutionContext;
+import io.agentscope.core.tool.ToolRequestConfig;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -36,6 +38,13 @@ public class RuntimeContext {
 
     private final String sessionId;
     private final String userId;
+
+    /**
+     * Per-call correlation id: explicit via {@link Builder#runId(String)} (uniqueness is the
+     * caller's) or auto-generated; copied by {@link Builder#from} so derived contexts (subagent
+     * chains) stay correlated. Never {@code null}.
+     */
+    private final String runId;
 
     /**
      * Call-scoped {@link AgentState} for the active {@code (userId, sessionId)} slot. Set once at
@@ -56,13 +65,24 @@ public class RuntimeContext {
 
     private final ToolExecutionContext toolExecutionContext;
 
+    /**
+     * Per-call tool request config (immutable). Carries the per-call tool difference — externally
+     * injected (schema-only) tools + merge mode — composed with the agent's shared toolkit to
+     * produce the tool surface for one call. {@code null} means use the shared toolkit as-is.
+     */
+    private ToolRequestConfig toolRequestConfig;
+
     private RuntimeContext(Builder builder) {
         this.sessionId = builder.sessionId;
         this.userId = builder.userId;
+        // Generated here (not cached on the builder) so reusing one Builder yields distinct ids.
+        this.runId =
+                builder.runId == null || builder.runId.isBlank() ? generateRunId() : builder.runId;
         this.stringAttributes = new ConcurrentHashMap<>();
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
         this.agentState = builder.agentState;
+        this.toolRequestConfig = builder.toolRequestConfig;
         if (builder.stringExtras != null) {
             this.stringAttributes.putAll(builder.stringExtras);
         }
@@ -96,6 +116,20 @@ public class RuntimeContext {
 
     public String getUserId() {
         return userId;
+    }
+
+    /**
+     * Returns the stable per-call correlation id for logs, events, and tracing — including
+     * subagent chains derived from this context — aligned with {@link AgentRun#runId()} for
+     * handles created via {@code prepareRun}/{@code prepareCall}. Never {@code null}.
+     */
+    public String getRunId() {
+        return runId;
+    }
+
+    /** Generates a fresh opaque runId (32-char hex); the single source for default ids. */
+    public static String generateRunId() {
+        return UUID.randomUUID().toString().replace("-", "");
     }
 
     /**
@@ -140,6 +174,23 @@ public class RuntimeContext {
      */
     public ToolExecutionContext getToolExecutionContext() {
         return toolExecutionContext;
+    }
+
+    /**
+     * Returns the per-call tool request config, or {@code null} when none was provided (the
+     * execution engine then uses the agent's shared toolkit as-is).
+     */
+    public ToolRequestConfig getToolRequestConfig() {
+        return toolRequestConfig;
+    }
+
+    /**
+     * Installs the per-call tool request config. Intended for callers that need to vary the tool
+     * surface per call without mutating the agent's shared toolkit (concurrency-safe). Set to
+     * {@code null} to use the shared toolkit as-is.
+     */
+    public void setToolRequestConfig(ToolRequestConfig toolRequestConfig) {
+        this.toolRequestConfig = toolRequestConfig;
     }
 
     @SuppressWarnings("unchecked")
@@ -325,10 +376,12 @@ public class RuntimeContext {
     public static class Builder {
         private String sessionId;
         private String userId;
+        private String runId;
         private Map<String, Object> stringExtras;
         private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
         private AgentState agentState;
+        private ToolRequestConfig toolRequestConfig;
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
@@ -337,6 +390,16 @@ public class RuntimeContext {
 
         public Builder userId(String userId) {
             this.userId = userId;
+            return this;
+        }
+
+        /**
+         * Sets an explicit per-call correlation id (e.g. an orchestration trace id); uniqueness
+         * is the caller's. Overrides a value copied by {@link #from(RuntimeContext)}. Unset or
+         * blank generates one at {@code build()} time.
+         */
+        public Builder runId(String runId) {
+            this.runId = runId;
             return this;
         }
 
@@ -382,8 +445,12 @@ public class RuntimeContext {
             }
             this.sessionId = source.sessionId;
             this.userId = source.userId;
+            // Derived contexts intentionally share the source's runId (agent_spawn chains); a
+            // later runId(x) overrides it.
+            this.runId = source.runId;
             this.agentState = source.agentState;
             this.toolExecutionContext = source.toolExecutionContext;
+            this.toolRequestConfig = source.toolRequestConfig;
             if (!source.stringAttributes.isEmpty()) {
                 this.stringExtras = new ConcurrentHashMap<>(source.stringAttributes);
             }
@@ -403,6 +470,16 @@ public class RuntimeContext {
          */
         public Builder toolExecutionContext(ToolExecutionContext toolExecutionContext) {
             this.toolExecutionContext = toolExecutionContext;
+            return this;
+        }
+
+        /**
+         * Installs a per-call tool request config. When set, the agent's execution engine composes
+         * this immutable tool difference with the shared toolkit for the duration of the call
+         * (concurrency-safe). {@code null} (the default) means use the shared toolkit as-is.
+         */
+        public Builder toolRequestConfig(ToolRequestConfig toolRequestConfig) {
+            this.toolRequestConfig = toolRequestConfig;
             return this;
         }
 

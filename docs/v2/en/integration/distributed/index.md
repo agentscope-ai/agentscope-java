@@ -1,4 +1,7 @@
-# Distributed Storage (Distributed Store)
+---
+title: Distributed Storage (Distributed Store)
+zh_link: /v2/zh/integration/distributed/index
+---
 
 AgentScope unifies all components that need distributed persistence under the `DistributedStore` interface. One line of configuration switches agent state, workspace filesystem, sandbox snapshots, and concurrency locks to the same distributed store.
 
@@ -20,12 +23,12 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## Capability Matrix
 
-| Component | Interface | Redis | OSS | MySQL |
-|-----------|----------|:-----:|:---:|:-----:|
-| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` |
-| Workspace filesystem KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` |
-| Sandbox snapshots | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` |
-| Sandbox concurrency lock | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` |
+| Component | Interface | Redis | OSS | JDBC | MongoDB |
+|-----------|----------|:-----:|:---:|:-----:|:-------:|
+| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `JdbcAgentStateStore` | `MongoAgentStateStore` |
+| Workspace filesystem KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` | `MongoBaseStore` |
+| Sandbox snapshots | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` | `MongoSnapshotSpec` |
+| Sandbox concurrency lock | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` | `MongoSandboxExecutionGuard` |
 
 > OSS does not provide `SandboxExecutionGuard` — object storage is unsuitable for distributed locking. Mix in a Redis guard via `DistributedStore.builder()`.
 
@@ -34,13 +37,13 @@ HarnessAgent agent = HarnessAgent.builder()
 Different components can come from different storage stores:
 
 ```java
-DistributedStore mysql = MysqlDistributedStore.create(dataSource);
+DistributedStore jdbc = JdbcDistributedStore.create(dataSource);
 DistributedStore redis = RedisDistributedStore.fromJedis(jedis);
 
-// MySQL for state and files, Redis for sandbox lock and snapshots
+// JDBC for state and files, Redis for sandbox lock and snapshots
 DistributedStore mixed = DistributedStore.builder()
-    .agentStateStore(mysql.agentStateStore())
-    .baseStore(mysql.baseStore())
+    .agentStateStore(jdbc.agentStateStore())
+    .baseStore(jdbc.baseStore())
     .sandboxSnapshotSpec(redis.sandboxSnapshotSpec())
     .sandboxExecutionGuard(redis.sandboxExecutionGuard())
     .build();
@@ -80,6 +83,26 @@ Explicit builder methods (.stateStore(), .snapshotSpec() on FilesystemSpec, etc.
 
 ## Store Documentation
 
-- [Redis](redis.md) — full capability coverage, recommended for multi-replica production
-- [MySQL / JDBC](mysql.md) — for existing relational database infrastructure
-- [Alibaba Cloud OSS](oss.md) — object storage, best for large-capacity snapshots
+- [Redis](/v2/en/integration/distributed/redis) — full capability coverage, recommended for multi-replica production
+- [JDBC](/v2/en/integration/distributed/jdbc) — for existing relational database infrastructure
+- [MongoDB](/v2/en/integration/distributed/mongodb) — document-oriented storage, ideal for large conversation histories
+- [Alibaba Cloud OSS](/v2/en/integration/distributed/oss) — object storage, best for large-capacity snapshots
+
+## Control Plane Hosted Store
+
+When you already run an AgentScope Service Control Plane, it can host the coordination side of `DistributedStore` (BaseStore, sandbox lock/snapshot, MessageBus, AsyncToolRegistry, **TaskRepository**, optional **SessionTurnGate**). You still provide **one** `AgentStateStore` backend yourself (Redis / JDBC / OSS); core exposes `getVersioned` / `saveIfVersion` optimistic concurrency, but state storage stays off the control plane.
+
+```java
+ControlPlaneStores cp = ControlPlaneStores.fromEnv();
+HarnessAgent.builder()
+    .distributedStore(cp.withAgentStateStore(redis.agentStateStore()))
+    .filesystem(new RemoteFilesystemSpec().isolationScope(IsolationScope.USER))
+    .build();
+```
+
+- Enable on the control plane with `--enable-hosted-store` (Postgres recommended for production).
+- **`withAgentStateStore` includes** hosted `TaskRepository` and `SessionTurnGate`. With **`SandboxFilesystemSpec` and subagent background tasks**, use this path — the workspace `TaskRepository` cannot persist tasks across replicas.
+- **AgentStateStore versioning**: Redis, Postgres, MySQL, and InMemory support CAS; JsonFile, OSS, COS, and JPA remain last-writer-wins. Prefer a versioning backend for multi-replica deployments.
+- **Turn gate + `ConflictPolicy.FAIL`** are optional: they reduce duplicate LLM turns on multi-replica setups; correctness still comes from CAS when the backend supports versioning.
+- Auth today is a shared internal token; tenant (`agentName` / `namespace`) comes from the request body — **not** for mutually untrusted multi-tenant agents on one control plane.
+- `MessageBus.queueDrain` is **destructive** (ack-on-read); a wrong tenant key drops messages.

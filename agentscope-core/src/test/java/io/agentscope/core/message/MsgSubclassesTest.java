@@ -18,6 +18,7 @@ package io.agentscope.core.message;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -346,5 +347,34 @@ class MsgSubclassesTest {
         assertInstanceOf(UserMessage.class, restored);
         assertEquals("bob", restored.getName());
         assertEquals("hey", restored.getTextContent());
+    }
+
+    @Test
+    void textBlockEqualityIncludesCitationsButNotStreamingIndex() {
+        Citation citation = new Citation.PageLocation("source", 0, null, null, 1, 2);
+        TextBlock first =
+                TextBlock.builder()
+                        .text("claim")
+                        .citations(List.of(citation))
+                        .providerBlockIndex(0)
+                        .build();
+        TextBlock same =
+                TextBlock.builder()
+                        .text("claim")
+                        .citations(List.of(citation))
+                        .providerBlockIndex(1)
+                        .build();
+        assertEquals(first, same);
+        assertEquals(first.hashCode(), same.hashCode());
+        assertNotEquals(first, TextBlock.builder().text("claim").build());
+        assertNotEquals(
+                first,
+                TextBlock.builder()
+                        .text("claim")
+                        .citations(
+                                List.of(
+                                        new Citation.PageLocation(
+                                                "different source", 0, null, null, 1, 2)))
+                        .build());
     }
 }

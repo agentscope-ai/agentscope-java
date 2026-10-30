@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.gateway.channel;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -42,5 +44,36 @@ public record OutboundAddress(String channelId, String accountId, String to, Str
     /** Creates an address with account context. */
     public static OutboundAddress withAccount(String channelId, String accountId, String to) {
         return new OutboundAddress(channelId, accountId, to, null);
+    }
+
+    /** Serializes this address to a flat map for {@code BaseStore} persistence. */
+    public Map<String, Object> toMap() {
+        Map<String, Object> m = new HashMap<>();
+        m.put("channelId", channelId);
+        if (accountId != null) {
+            m.put("accountId", accountId);
+        }
+        m.put("to", to);
+        if (threadId != null) {
+            m.put("threadId", threadId);
+        }
+        return m;
+    }
+
+    /** Reconstructs an address from a persisted map, tolerating missing optional fields. */
+    public static OutboundAddress fromMap(Map<String, Object> m) {
+        if (m == null) {
+            return null;
+        }
+        Object channelId = m.get("channelId");
+        Object to = m.get("to");
+        if (channelId == null || to == null) {
+            return null;
+        }
+        return new OutboundAddress(
+                String.valueOf(channelId),
+                m.get("accountId") != null ? String.valueOf(m.get("accountId")) : null,
+                String.valueOf(to),
+                m.get("threadId") != null ? String.valueOf(m.get("threadId")) : null);
     }
 }

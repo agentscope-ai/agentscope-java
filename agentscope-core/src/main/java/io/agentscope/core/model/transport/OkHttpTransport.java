@@ -106,6 +106,9 @@ public class OkHttpTransport implements HttpTransport {
                 new OkHttpClient.Builder()
                         .connectTimeout(
                                 config.getConnectTimeout().toMillis(), TimeUnit.MILLISECONDS)
+                        // OkHttp readTimeout is a socket-read idle timeout. It remains suitable
+                        // for streaming reads and is distinct from JDK streaming response/idle
+                        // timeouts in HttpTransportConfig.
                         .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
                         .writeTimeout(config.getWriteTimeout().toMillis(), TimeUnit.MILLISECONDS)
                         .connectionPool(
@@ -304,7 +307,7 @@ public class OkHttpTransport implements HttpTransport {
                                 closeQuietly(response);
                             }
                         })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic(), false);
     }
 
     @Override

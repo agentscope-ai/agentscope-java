@@ -56,9 +56,13 @@ public class AnthropicAutoConfiguration {
         }
 
         String apiKey = trimToNull(properties.getApiKey());
+        String authToken = trimToNull(properties.getAuthToken());
         AnthropicChatModel.Builder builder =
-                AnthropicChatModel.builder().apiKey(apiKey).modelName(modelName).stream(
-                        properties.isStream());
+                AnthropicChatModel.builder()
+                        .apiKey(apiKey)
+                        .authToken(authToken)
+                        .modelName(modelName)
+                        .stream(properties.isStream());
 
         String baseUrl = trimToNull(properties.getBaseUrl());
         if (baseUrl != null) {

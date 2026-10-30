@@ -77,6 +77,7 @@ import reactor.core.publisher.Mono;
  * Support tools:
  * <ul>
  *     <li>dashscope_text_to_image: Generate image(s) based on the given text.</li>
+ *     <li>dashscope_image_to_image: Edit/transform an image based on a text prompt and the input image.</li>
  *     <li>dashscope_image_to_text: Generate text based on the given images.</li>
  *     <li>dashscope_text_to_audio: Convert the given text to audio.</li>
  *     <li>dashscope_audio_to_text: Convert the given audio to text.</li>
@@ -91,6 +92,22 @@ import reactor.core.publisher.Mono;
 public class DashScopeMultiModalTool {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeMultiModalTool.class);
+
+    /**
+     * Default model of {@code dashscope_image_to_image}. It has to be an edit model: the pure
+     * text-to-image models of the same family reject an {@code input.messages} payload carrying an
+     * image.
+     */
+    private static final String DEFAULT_IMAGE_EDIT_MODEL = "qwen-image-edit";
+
+    /**
+     * Prefix of the qwen-image family. The first generation names its edit models with an
+     * {@code -edit} token ({@code qwen-image-edit}, {@code -plus}, {@code -max}); every numbered
+     * generation from 2.0 on drops that token and carries the generation instead
+     * ({@code qwen-image-2.0}, {@code qwen-image-2.0-pro}). Both spellings edit an input image,
+     * whereas the versionless {@code qwen-image} / {@code qwen-image-plus} are text-to-image only.
+     */
+    private static final String QWEN_IMAGE_PREFIX = "qwen-image-";
 
     /**
      * DashScope API key.
@@ -233,6 +250,331 @@ public class DashScopeMultiModalTool {
                             log.error("Failed to generate images '{}'", e.getMessage(), e);
                             return Mono.just(ToolResultBlock.error(e.getMessage()));
                         });
+    }
+
+    /**
+     * Edit or transform an image based on a text prompt and an input image.
+     *
+     * <p>Logging contract: only the kind and length of {@code image_url} and the length of
+     * {@code prompt} are logged. Neither the reference itself nor the prompt text reaches the log,
+     * because the reference may be a Base64 data URL carrying the whole image.
+     *
+     * @param imageUrl      The public URL, oss:// URL, local file path, or Base64 data URL of the
+     *                      input image to edit.
+     * @param prompt        The text prompt describing the desired edit or transformation.
+     * @param model         The image-edit model to use, e.g., 'qwen-image-edit'.
+     * @param size          Size of the output image, e.g., '1024*1024'. Supported by the numbered
+     *                      generations (2.0 and later) and by the first-generation 'plus' and
+     *                      'max' tiers.
+     * @param useBase64     Whether to return image as base64 data instead of URL.
+     * @return A ToolResultBlock containing the generated image url/base64 or error message.
+     */
+    @Tool(
+            name = "dashscope_image_to_image",
+            description =
+                    "Edit or transform an existing image based on a text prompt and an input"
+                            + " image. The input image must be reachable by the service: a public"
+                            + " http(s) URL (the address an uploaded attachment is served from),"
+                            + " an oss:// URL or a Base64 data URL. A path inside the sandbox"
+                            + " workspace is not readable by this tool, so never invent one - ask"
+                            + " for a link instead. Returns the edited image as URL or base64."
+                            + " Use dashscope_text_to_image when there is no input image.")
+    public Mono<ToolResultBlock> dashscopeImageToImage(
+            @ToolParam(
+                            name = "image_url",
+                            description =
+                                    "The URL, local file path or Base64 data URL (the format"
+                                            + " pattern is data:[MIME_type];base64,{base64_image},"
+                                            + " e.g., 'data:image/png;base64,iVBORw0KGgo...') of"
+                                            + " the input image to edit")
+                    String imageUrl,
+            @ToolParam(
+                            name = "prompt",
+                            description =
+                                    "The text prompt describing the desired edit or"
+                                            + " transformation")
+                    String prompt,
+            @ToolParam(
+                            name = "model",
+                            description =
+                                    "The image-edit model to use, e.g., 'qwen-image-edit',"
+                                            + " 'qwen-image-edit-plus', 'qwen-image-edit-max',"
+                                            + " 'qwen-image-2.0-pro'. Every numbered generation"
+                                            + " (2.0 and later) edits an input image too."
+                                            + " Text-to-image models such as 'qwen-image' or"
+                                            + " 'wanx-v1' take no image input.",
+                            required = false)
+                    String model,
+            @ToolParam(
+                            name = "size",
+                            description =
+                                    "Size of the output image, e.g., '1024*1024', '1280*1280'."
+                                            + " Only supported by 'qwen-image-edit-plus',"
+                                            + " 'qwen-image-edit-max' and the numbered generations"
+                                            + " ('qwen-image-2.0' and later); otherwise the"
+                                            + " resolution follows the input image.",
+                            required = false)
+                    String size,
+            @ToolParam(
+                            name = "use_base64",
+                            description = "Whether to return image as base64 data instead of URL",
+                            required = false)
+                    Boolean useBase64) {
+
+        String finalModel =
+                Optional.ofNullable(model)
+                        .filter(s -> !s.trim().isEmpty())
+                        .orElse(DEFAULT_IMAGE_EDIT_MODEL);
+        Boolean finalUseBase64 = Optional.ofNullable(useBase64).orElse(false);
+
+        // Rejected before the request is built, so an unusable model costs no call. This also has
+        // to come first: resolving the size of a request that is about to be refused logs a
+        // warning about a parameter that is never sent.
+        if (rejectsImageInput(finalModel)) {
+            log.error(
+                    "dashscope_image_to_image rejected model '{}': it takes no image input on this"
+                            + " endpoint",
+                    finalModel);
+            return Mono.just(ToolResultBlock.error(unsupportedEditModelMessage(finalModel)));
+        }
+
+        String finalSize = resolveOutputSize(finalModel, size);
+
+        log.debug(
+                "dashscope_image_to_image called: {}, model='{}', size='{}', useBase64='{}'",
+                describeEditRequest(imageUrl, prompt),
+                finalModel,
+                finalSize,
+                useBase64);
+
+        return Mono.fromCallable(
+                        () -> {
+                            // This endpoint takes exactly one message and its role must be `user`.
+                            // A leading system message, or any second message, is rejected with
+                            // "Input should be 'user'" / "messages parameter length invalid".
+                            List<Map<String, Object>> content = new ArrayList<>();
+                            content.add(Map.of("image", toEditableImageRef(imageUrl)));
+                            content.add(Map.of("text", prompt));
+
+                            MultiModalMessage userMessage =
+                                    MultiModalMessage.builder()
+                                            .role(Role.USER.getValue())
+                                            .content(content)
+                                            .build();
+                            List<MultiModalMessage> messages = List.of(userMessage);
+
+                            var builder =
+                                    MultiModalConversationParam.builder()
+                                            .apiKey(this.apiKey)
+                                            .model(finalModel)
+                                            .messages(messages)
+                                            .header("user-agent", Version.getUserAgent());
+                            // An unsupported or empty `size` fails the whole request, so the entry
+                            // is only added when the model accepts an explicit resolution.
+                            if (finalSize != null) {
+                                builder.parameter("size", finalSize);
+                            }
+                            MultiModalConversationParam param = builder.build();
+
+                            MultiModalConversation conv = new MultiModalConversation();
+                            MultiModalConversationResult result = conv.call(param);
+
+                            // Extract image URL from response
+                            String resultImageUrl =
+                                    Optional.ofNullable(result)
+                                            .map(MultiModalConversationResult::getOutput)
+                                            .map(MultiModalConversationOutput::getChoices)
+                                            .flatMap(choices -> choices.stream().findFirst())
+                                            .map(MultiModalConversationOutput.Choice::getMessage)
+                                            .map(MultiModalMessage::getContent)
+                                            .flatMap(contents -> contents.stream().findFirst())
+                                            .map(m -> m.get("image"))
+                                            .map(Object::toString)
+                                            .orElse(null);
+
+                            if (resultImageUrl == null || resultImageUrl.isEmpty()) {
+                                // Fallback: check if text response (error message from model)
+                                String errorText =
+                                        Optional.ofNullable(result)
+                                                .map(MultiModalConversationResult::getOutput)
+                                                .map(MultiModalConversationOutput::getChoices)
+                                                .flatMap(c -> c.stream().findFirst())
+                                                .map(
+                                                        MultiModalConversationOutput.Choice
+                                                                ::getMessage)
+                                                .map(MultiModalMessage::getContent)
+                                                .flatMap(c -> c.stream().findFirst())
+                                                .map(m -> m.get("text"))
+                                                .map(Object::toString)
+                                                .orElse(null);
+                                log.error(
+                                        "No image URL returned from image-to-image."
+                                                + " Response text: {}",
+                                        errorText);
+                                return ToolResultBlock.error(
+                                        "Failed to generate image: "
+                                                + (errorText != null
+                                                        ? errorText
+                                                        : "no image in response"));
+                            }
+
+                            List<ContentBlock> contentBlocks = new ArrayList<>();
+                            if (finalUseBase64) {
+                                String mediaType;
+                                String data;
+                                try {
+                                    mediaType = MediaUtils.determineMediaType(resultImageUrl);
+                                    data = MediaUtils.downloadUrlToBase64(resultImageUrl);
+                                } catch (IOException e) {
+                                    log.error("Failed to download generated image.");
+                                    return ToolResultBlock.error(e.getMessage());
+                                }
+                                if (data == null || data.trim().isEmpty()) {
+                                    return ToolResultBlock.error(
+                                            "Failed to convert image to base64.");
+                                }
+                                contentBlocks.add(
+                                        ImageBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType(mediaType)
+                                                                .data(data)
+                                                                .build())
+                                                .build());
+                            } else {
+                                contentBlocks.add(
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(resultImageUrl)
+                                                                .build())
+                                                .build());
+                            }
+                            return ToolResultBlock.of(contentBlocks);
+                        })
+                .onErrorResume(
+                        e -> {
+                            log.error(
+                                    "Failed to generate image from image '{}'", e.getMessage(), e);
+                            return Mono.just(ToolResultBlock.error(e.getMessage()));
+                        });
+    }
+
+    /**
+     * Resolve the {@code size} parameter of an edit request. The base {@code qwen-image-edit} model
+     * has no configurable output resolution and rejects the parameter, so it is dropped with a
+     * warning instead of failing the whole call.
+     */
+    private static String resolveOutputSize(String model, String size) {
+        String requested = Optional.ofNullable(size).filter(s -> !s.trim().isEmpty()).orElse(null);
+        if (requested == null) {
+            return null;
+        }
+        if (!supportsOutputSize(model)) {
+            log.warn(
+                    "dashscope_image_to_image drops size='{}' for model '{}': the output"
+                            + " resolution follows the input image",
+                    requested,
+                    model);
+            return null;
+        }
+        return requested;
+    }
+
+    /** Whether the model accepts an explicit output resolution. */
+    private static boolean supportsOutputSize(String model) {
+        String name = model.toLowerCase();
+        // Sending a resolution the model does not accept fails the whole request, so the
+        // first-generation names stay on an explicit list. Numbered generations are covered by
+        // pattern: 2.0 accepts a resolution and there is no evidence a later one drops it.
+        return isNumberedEditGeneration(name)
+                || name.startsWith("qwen-image-edit-plus")
+                || name.startsWith("qwen-image-edit-max");
+    }
+
+    /**
+     * Whether the model belongs to a numbered generation of the image family, e.g.
+     * {@code qwen-image-2.0}, {@code qwen-image-3.0-pro}. Matching the leading digit rather than a
+     * concrete version keeps a model that has not been released yet working.
+     */
+    private static boolean isNumberedEditGeneration(String name) {
+        return name.length() > QWEN_IMAGE_PREFIX.length()
+                && name.startsWith(QWEN_IMAGE_PREFIX)
+                && Character.isDigit(name.charAt(QWEN_IMAGE_PREFIX.length()));
+    }
+
+    /**
+     * Whether the model cannot consume an input image on this endpoint: the wan family, whose image
+     * editing runs on a different asynchronous task API, and the text-to-image members of the
+     * qwen-image family.
+     *
+     * <p>Anything unrecognized is passed through to the service, which reports the real reason. A
+     * false rejection here would silently remove a capability and attribute it to a cause the
+     * message states incorrectly.
+     */
+    private static boolean rejectsImageInput(String model) {
+        String name = model.toLowerCase();
+        if (name.startsWith("wan")) {
+            return true;
+        }
+        return name.startsWith("qwen-image")
+                && !name.contains("edit")
+                && !isNumberedEditGeneration(name);
+    }
+
+    /**
+     * Summarize an edit request for logging without carrying any user payload.
+     *
+     * <p>{@code image_url} is allowed to be a Base64 data URL, so a single call can hand over the
+     * entire encoded image. Writing it to an INFO/DEBUG line puts those bytes in the application
+     * log - typically megabytes per line, and in the clear for anything that collects logs - and
+     * the prompt is user content with no better claim to being logged. Both are therefore reduced
+     * to a kind and a length here; not even a prefix of either value is rendered.
+     */
+    private static String describeEditRequest(String imageUrl, String prompt) {
+        String ref = imageUrl == null ? "" : imageUrl.trim().toLowerCase();
+        String kind;
+        if (ref.isEmpty()) {
+            kind = "absent";
+        } else if (ref.startsWith("data:")) {
+            kind = "base64-data-url";
+        } else if (ref.startsWith("oss://")) {
+            kind = "oss-url";
+        } else if (ref.startsWith("http://") || ref.startsWith("https://")) {
+            kind = "http-url";
+        } else {
+            kind = "local-path";
+        }
+        return "imageRef="
+                + kind
+                + "(len="
+                + ref.length()
+                + "), promptLength="
+                + (prompt == null ? 0 : prompt.length());
+    }
+
+    /** Actionable hint returned instead of an opaque service-side parameter error. */
+    private static String unsupportedEditModelMessage(String model) {
+        return "Model '"
+                + model
+                + "' cannot edit an input image with this tool. Omit the model to"
+                + " use '"
+                + DEFAULT_IMAGE_EDIT_MODEL
+                + "', or pass an edit model:"
+                + " 'qwen-image-edit-plus', 'qwen-image-edit-max', 'qwen-image-2.0-pro'."
+                + " dashscope_text_to_image is the right tool when there is no input image.";
+    }
+
+    /**
+     * Normalize the input image reference. The documented formats are a public http(s) URL, an
+     * {@code oss://} URL returned by the upload API, or a Base64 data URL; an existing local file
+     * is inlined as Base64 rather than sent as a {@code file://} URL, which the endpoint rejects.
+     */
+    private static String toEditableImageRef(String imageUrl) throws IOException {
+        if (MediaUtils.isFileExists(imageUrl)) {
+            return MediaUtils.urlToBase64DataUrl(imageUrl);
+        }
+        return imageUrl;
     }
 
     /**

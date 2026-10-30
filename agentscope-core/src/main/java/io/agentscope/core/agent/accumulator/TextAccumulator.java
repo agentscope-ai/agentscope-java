@@ -134,6 +134,22 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
         return accumulated.toString();
     }
 
+    /**
+     * Replace accumulated text after middleware transforms the model-call event stream.
+     * Unchanged text retains its citation boundaries; transformed text no longer has reliable
+     * source associations, so its citations are cleared.
+     *
+     * @hidden
+     */
+    public void replace(String text) {
+        String replacement = text != null ? text : "";
+        if (accumulated.toString().equals(replacement)) {
+            return;
+        }
+        reset();
+        add(TextBlock.builder().text(replacement).build());
+    }
+
     private static final class TextSegment {
 
         private final StringBuilder text = new StringBuilder();

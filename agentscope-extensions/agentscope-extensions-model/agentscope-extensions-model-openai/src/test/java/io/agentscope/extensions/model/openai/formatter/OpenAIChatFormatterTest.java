@@ -384,7 +384,7 @@ class OpenAIChatFormatterTest {
     class ApplyAdditionalBodyParamsTests {
 
         @Test
-        @DisplayName("Should apply reasoning_effort parameter")
+        @DisplayName("Should keep reasoning_effort as an extra param")
         void testApplyReasoningEffort() {
             OpenAIRequest request = OpenAIRequest.builder().model("o1").messages(List.of()).build();
 
@@ -395,7 +395,8 @@ class OpenAIChatFormatterTest {
 
             formatter.applyOptions(request, options, null);
 
-            assertEquals("high", request.getReasoningEffort());
+            assertNull(request.getReasoningEffort());
+            assertEquals("high", request.getExtraParams().get("reasoning_effort"));
         }
 
         @Test
@@ -492,9 +493,7 @@ class OpenAIChatFormatterTest {
         }
 
         @Test
-        @DisplayName(
-                "Should let additionalBodyParams override thinkingBudget without duplicate extra"
-                        + " param")
+        @DisplayName("Should keep thinking_budget as an extra param")
         void testThinkingBudgetAdditionalBodyParamOverride() {
             OpenAIRequest request =
                     OpenAIRequest.builder().model("qwen3").messages(List.of()).build();
@@ -505,14 +504,12 @@ class OpenAIChatFormatterTest {
 
             formatter.applyOptions(request, options, defaultOptions);
 
-            assertEquals(4096, request.getThinkingBudget());
-            assertTrue(
-                    request.getExtraParams() == null
-                            || !request.getExtraParams().containsKey("thinking_budget"));
+            assertEquals(2048, request.getThinkingBudget());
+            assertEquals(4096, request.getExtraParams().get("thinking_budget"));
         }
 
         @Test
-        @DisplayName("Should apply include_reasoning parameter")
+        @DisplayName("Should keep include_reasoning as an extra param")
         void testApplyIncludeReasoning() {
             OpenAIRequest request =
                     OpenAIRequest.builder().model("deepseek-reasoner").messages(List.of()).build();
@@ -524,7 +521,8 @@ class OpenAIChatFormatterTest {
 
             formatter.applyOptions(request, options, null);
 
-            assertTrue(request.getIncludeReasoning());
+            assertNull(request.getIncludeReasoning());
+            assertEquals(true, request.getExtraParams().get("include_reasoning"));
         }
 
         @Test
@@ -640,7 +638,8 @@ class OpenAIChatFormatterTest {
             formatter.applyOptions(request, options, defaultOptions);
 
             // Options should override defaultOptions
-            assertEquals("high", request.getReasoningEffort());
+            assertNull(request.getReasoningEffort());
+            assertEquals("high", request.getExtraParams().get("reasoning_effort"));
         }
 
         @Test

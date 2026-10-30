@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,13 +31,17 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.mcp.McpClientWrapperTestSupport;
+import io.agentscope.core.tool.mcp.McpTool;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.Type;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -282,7 +288,8 @@ class ToolkitTest {
         AgentTool first = namedAgentTool("remove_if_same_b");
         AgentTool second = namedAgentTool("remove_if_same_b");
         toolkit.registerAgentTool(first);
-        toolkit.registerAgentTool(second);
+        // Duplicate names fail fast since #3328; the replacement here is intentional.
+        toolkit.replaceAgentTool(second);
         assertFalse(
                 toolkit.removeToolIfSame("remove_if_same_b", first),
                 "stale instance after replace must return false");
@@ -324,6 +331,60 @@ class ToolkitTest {
                 tk.removeToolIfSame("remove_if_same_no_delete", tool),
                 "allowToolDeletion=false must return false");
         assertSame(tool, tk.getTool("remove_if_same_no_delete"));
+    }
+
+    @Test
+    @DisplayName("Build-time exclusions preserve deletion policy and group bindings")
+    void copyExcludingTools_preservesPolicyAndGroupsForRebinding() {
+        Toolkit source = new Toolkit(ToolkitConfig.builder().allowToolDeletion(false).build());
+        AgentTool original = new SchemaOnlyTool("original", "Original", Map.of());
+        AgentTool custom = new SchemaOnlyTool("custom", "Custom", Map.of());
+        source.createToolGroup("inactive", "Inactive tools", false);
+        source.registration().agentTool(original).group("inactive").apply();
+        source.registerAgentTool(custom);
+
+        Toolkit copy = source.copyExcludingTools(List.of(original));
+        assertNull(copy.getTool("original"));
+        assertSame(original, source.getTool("original"));
+        assertSame(custom, copy.getTool("custom"));
+        assertNotSame(source.getToolGroup("inactive"), copy.getToolGroup("inactive"));
+
+        AgentTool rebuilt = new SchemaOnlyTool("original", "Rebuilt", Map.of());
+        copy.registerAgentTool(rebuilt);
+        assertTrue(
+                copy.getToolSchemas().stream()
+                        .noneMatch(schema -> schema.getName().equals("original")));
+        copy.removeTool("custom");
+        assertSame(custom, copy.getTool("custom"));
+        assertSame(original, source.getTool("original"));
+    }
+
+    @Test
+    void copyExcludingTools_preservesNewerBindingAndItsMetadata() {
+        AgentTool original = new SchemaOnlyTool("sample", "Original", Map.of());
+        AgentTool replacement = new SchemaOnlyTool("sample", "Replacement", Map.of());
+        toolkit.registerAgentTool(original);
+        toolkit.replaceAgentTool(replacement);
+        toolkit.createToolGroup("inactive", "Inactive tools", false);
+        toolkit.addToolToGroup("inactive", "sample");
+
+        Toolkit copy = toolkit.copyExcludingTools(List.of(original));
+        assertSame(replacement, copy.getTool("sample"));
+        assertSame(replacement, toolkit.getTool("sample"));
+        assertTrue(copy.getToolSchemas().isEmpty());
+        copy.updateToolGroups(List.of("inactive"), true);
+        assertEquals("Replacement", copy.getToolSchemas().get(0).getDescription());
+        assertTrue(toolkit.getToolSchemas().isEmpty());
+    }
+
+    @Test
+    void copyExcludingTools_doesNotRecreateExcludedMetaTool() {
+        toolkit.registerMetaTool();
+        AgentTool metaTool = toolkit.getTool("reset_equipped_tools");
+        assertNotNull(metaTool);
+        assertNull(toolkit.copyExcludingTools(List.of(metaTool)).getTool("reset_equipped_tools"));
+        assertSame(metaTool, toolkit.getTool("reset_equipped_tools"));
+        assertNotSame(metaTool, toolkit.copy().getTool("reset_equipped_tools"));
     }
 
     @Test
@@ -418,12 +479,11 @@ class ToolkitTest {
         toolkit.createToolGroup("activeGroup", "Active tools", true);
         toolkit.createToolGroup("inactiveGroup", "Inactive tools", false);
 
-        // Register tools to different groups
+        // Register tools to the active group. The inactive group keeps a differently-named
+        // tool: the original test relied on a second same-named registration silently
+        // overriding the tool's group binding, which #3328 turned into a fail-fast error.
         toolkit.registration().tool(sampleTools).group("activeGroup").apply();
-
-        // Create a separate tool for inactive group
-        SampleTools inactiveTools = new SampleTools();
-        toolkit.registration().tool(inactiveTools).group("inactiveGroup").apply();
+        toolkit.registration().tool(new InactiveGroupTools()).group("inactiveGroup").apply();
 
         // Get a tool from inactive group (should exist in registry)
         AgentTool tool = toolkit.getTool("add");
@@ -518,7 +578,13 @@ class ToolkitTest {
         toolkit.createToolGroup("groupB", "Group B", false);
 
         toolkit.registration().tool(sampleTools).group("groupA").apply();
-        toolkit.registration().tool(sampleTools).group("groupB").apply();
+        AgentTool registeredTool = toolkit.getTool("add");
+        toolkit.addToolToGroup("groupB", "add");
+        toolkit.addToolToGroup("groupB", "add");
+
+        assertNotNull(registeredTool);
+        assertSame(registeredTool, toolkit.getTool("add"));
+        assertEquals(Set.of("add"), toolkit.getToolGroup("groupB").getTools());
 
         Map<String, Object> addInput = Map.of("a", 5, "b", 7);
         ToolUseBlock toolCall =
@@ -563,6 +629,26 @@ class ToolkitTest {
         assertTrue(
                 isErrorResult(resultWithNone),
                 "Should fail when no groups are active: " + getResultText(resultWithNone));
+    }
+
+    @Test
+    @DisplayName("Should reject adding an unknown group or tool")
+    void testAddToolToGroupValidation() {
+        toolkit.createToolGroup("existingGroup", "Existing group", false);
+        toolkit.registerAgentTool(namedAgentTool("registeredTool"));
+
+        IllegalArgumentException missingGroup =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> toolkit.addToolToGroup("missingGroup", "registeredTool"));
+        assertEquals("Tool group 'missingGroup' does not exist", missingGroup.getMessage());
+
+        IllegalArgumentException missingTool =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> toolkit.addToolToGroup("existingGroup", "missingTool"));
+        assertEquals("Tool not found: missingTool", missingTool.getMessage());
+        assertTrue(toolkit.getToolGroup("existingGroup").getTools().isEmpty());
     }
 
     @Test
@@ -1236,9 +1322,7 @@ class ToolkitTest {
         McpSchema.Tool mcpTool = mock(McpSchema.Tool.class);
         when(mcpTool.name()).thenReturn("structured_mcp_tool");
         when(mcpTool.description()).thenReturn("Returns structured MCP output");
-        when(mcpTool.inputSchema())
-                .thenReturn(
-                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(mcpTool.inputSchema()).thenReturn(Map.of("type", "object"));
         when(mcpTool.outputSchema())
                 .thenReturn(
                         Map.of(
@@ -1263,5 +1347,287 @@ class ToolkitTest {
         Map<String, Object> properties =
                 (Map<String, Object>) schema.getOutputSchema().get("properties");
         assertTrue(properties.containsKey("answer"));
+    }
+
+    @Test
+    @DisplayName("ToolRegistration.propagateMeta should override the wrapper default")
+    void testRegistrationPropagateMetaOverridesWrapper() {
+        McpClientWrapper mcpClientWrapper =
+                McpClientWrapperTestSupport.mockWrapper("external-mcp-client", true);
+        when(mcpClientWrapper.initialize()).thenReturn(Mono.empty());
+        // Wrapper explicitly allows propagation; registration-level setting must win
+
+        McpSchema.Tool mcpTool = mock(McpSchema.Tool.class);
+        when(mcpTool.name()).thenReturn("external_tool");
+        when(mcpTool.description()).thenReturn("Tool from an untrusted MCP server");
+        when(mcpTool.inputSchema()).thenReturn(Map.of("type", "object"));
+        when(mcpClientWrapper.listTools()).thenReturn(Mono.just(List.of(mcpTool)));
+
+        toolkit.registration().mcpClient(mcpClientWrapper).propagateMeta(false).apply();
+
+        AgentTool tool = toolkit.getTool("external_tool");
+        assertNotNull(tool, "Tool should be registered");
+        assertTrue(tool instanceof McpTool);
+        assertFalse(((McpTool) tool).isPropagateMeta());
+    }
+
+    @Test
+    @DisplayName("Per-tool propagateMeta should win over the registration default")
+    void testRegistrationPerToolPropagateMeta() {
+        McpClientWrapper mcpClientWrapper = mock(McpClientWrapper.class);
+        when(mcpClientWrapper.getName()).thenReturn("mixed-mcp-client");
+        when(mcpClientWrapper.initialize()).thenReturn(Mono.empty());
+
+        McpSchema.Tool trustedTool = mock(McpSchema.Tool.class);
+        when(trustedTool.name()).thenReturn("trusted_tool");
+        when(trustedTool.description()).thenReturn("Tool that still needs its callback URL");
+        when(trustedTool.inputSchema()).thenReturn(Map.of("type", "object"));
+
+        McpSchema.Tool noisyTool = mock(McpSchema.Tool.class);
+        when(noisyTool.name()).thenReturn("noisy_tool");
+        when(noisyTool.description()).thenReturn("Tool that must not leak metadata");
+        when(noisyTool.inputSchema()).thenReturn(Map.of("type", "object"));
+
+        when(mcpClientWrapper.listTools()).thenReturn(Mono.just(List.of(trustedTool, noisyTool)));
+
+        toolkit.registration()
+                .mcpClient(mcpClientWrapper)
+                .propagateMeta(false)
+                .propagateMeta("trusted_tool", true)
+                .apply();
+
+        AgentTool trusted = toolkit.getTool("trusted_tool");
+        AgentTool noisy = toolkit.getTool("noisy_tool");
+        assertNotNull(trusted);
+        assertNotNull(noisy);
+        assertTrue(trusted instanceof McpTool);
+        assertTrue(noisy instanceof McpTool);
+        assertTrue(((McpTool) trusted).isPropagateMeta());
+        assertFalse(((McpTool) noisy).isPropagateMeta());
+    }
+
+    @Test
+    @DisplayName("Per-tool propagateMeta should reject a blank tool name")
+    void testRegistrationPerToolPropagateMetaRejectsBlankName() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registration().propagateMeta("  ", false));
+    }
+
+    @Test
+    @DisplayName("Per-tool propagateMeta should reject a null tool name")
+    void testRegistrationPerToolPropagateMetaRejectsNullName() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registration().propagateMeta(null, false));
+    }
+
+    /** Fixture: a tool that only lives in the inactive group of the group-gating test. */
+    static class InactiveGroupTools {
+        @Tool(name = "inactive_only", description = "Bound to the inactive group")
+        public String inactiveOnly() {
+            return "inactive";
+        }
+    }
+
+    @Test
+    @DisplayName("callTool should stamp id and name on success results")
+    void testCallToolStampsIdAndNameOnSuccess() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> input = Map.of("a", 2, "b", 3);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-success")
+                        .name("add")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-success", result.getId());
+        assertEquals("add", result.getName());
+    }
+
+    @Test
+    @DisplayName("callTool should stamp id and name on error results")
+    void testCallToolStampsIdAndNameOnError() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> input = Map.of("message", "boom");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-error")
+                        .name("error_tool")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-error", result.getId());
+        assertEquals("error_tool", result.getName());
+    }
+
+    @Test
+    @DisplayName("callTool should prefer ToolCallParam.input over ToolUseBlock.input")
+    void testCallToolPrefersParamInputOverToolUseBlockInput() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> toolUseInput = Map.of("a", 2, "b", 3);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-param-input")
+                        .name("add")
+                        .input(toolUseInput)
+                        .content(JsonUtils.getJsonCodec().toJson(toolUseInput))
+                        .build();
+
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(toolCall)
+                        .input(Map.of("a", 100, "b", 200))
+                        .build();
+
+        ToolResultBlock result = toolkit.callTool(param).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-param-input", result.getId());
+        assertEquals("add", result.getName());
+        assertEquals("300", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    @DisplayName("callTool with a null per-call config should match the single-arg overload")
+    void testCallToolWithNullConfigMatchesSingleArgOverload() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> input = Map.of("a", 3, "b", 4);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-null-config")
+                        .name("add")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+        ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
+
+        ToolResultBlock result = toolkit.callTool(param, null).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-null-config", result.getId());
+        assertEquals("add", result.getName());
+        assertEquals("7", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    @DisplayName("callTool with a per-call config should return a stamped result")
+    void testCallToolWithPerCallConfigReturnsStampedResult() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> input = Map.of("a", 10, "b", 20);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-percall-config")
+                        .name("add")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+        ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
+
+        ExecutionConfig perCallConfig =
+                ExecutionConfig.builder().timeout(Duration.ofMinutes(10)).build();
+
+        ToolResultBlock result = toolkit.callTool(param, perCallConfig).block();
+
+        assertNotNull(result);
+        assertEquals("call-percall-config", result.getId());
+        assertEquals("add", result.getName());
+        assertEquals("30", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    @DisplayName("callTool per-call config should override a short toolkit-level timeout")
+    void testCallToolPerCallConfigOverridesToolkitTimeout() {
+        ExecutionConfig toolkitTimeout =
+                ExecutionConfig.builder().timeout(Duration.ofMillis(100)).build();
+        Toolkit shortTimeoutToolkit =
+                new Toolkit(ToolkitConfig.builder().executionConfig(toolkitTimeout).build());
+        shortTimeoutToolkit.registerTool(new SlowTool());
+
+        Map<String, Object> input = Map.of("delayMs", 300);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-percall-timeout")
+                        .name("slow")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+        ToolCallParam param = ToolCallParam.builder().toolUseBlock(toolCall).input(input).build();
+
+        ExecutionConfig perCallConfig =
+                ExecutionConfig.builder().timeout(Duration.ofMinutes(10)).build();
+
+        ToolResultBlock result = shortTimeoutToolkit.callTool(param, perCallConfig).block();
+
+        assertNotNull(result);
+        assertEquals("call-percall-timeout", result.getId());
+        assertEquals("slow", result.getName());
+        assertEquals("\"done\"", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    @DisplayName("callTool should stamp id and name when the tool is not found")
+    void testCallToolStampsIdAndNameWhenToolNotFound() {
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-missing")
+                        .name("missing_tool")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-missing", result.getId());
+        assertEquals("missing_tool", result.getName());
+    }
+
+    @Test
+    @DisplayName("callTool should stamp id and name when parameter validation fails")
+    void testCallToolStampsIdAndNameWhenValidationFails() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> input = Map.of("a", "not-a-number", "b", 2);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-invalid")
+                        .name("add")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-invalid", result.getId());
+        assertEquals("add", result.getName());
+    }
+
+    /** Tool used to verify that a per-call timeout can override the toolkit timeout. */
+    public static class SlowTool {
+        @Tool(name = "slow", description = "Delay then return done")
+        public Mono<String> slow(
+                @ToolParam(name = "delayMs", description = "Delay in milliseconds") long delayMs) {
+            return Mono.delay(Duration.ofMillis(delayMs)).thenReturn("done");
+        }
     }
 }

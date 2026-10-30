@@ -18,9 +18,11 @@ package io.agentscope.core.a2a.server.executor.runner;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -29,14 +31,24 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Event;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
 @DisplayName("Agent Runner Tests")
 class AgentRunnerTest {
@@ -157,17 +169,17 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<Event> mockFlux = mock(Flux.class);
-        when(mockAgent.stream(messages)).thenReturn(mockFlux);
+        Flux<AgentEvent> mockFlux = mock(Flux.class);
+        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
         when(mockFlux.doFinally(any())).thenReturn(mockFlux);
 
         // When
-        Flux<Event> result = runner.stream(messages, requestOptions);
+        Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
 
         // Then
         assertNotNull(result);
         verify(mockBuilder, times(1)).build();
-        verify(mockAgent, times(1)).stream(messages);
+        verify(mockAgent, times(1)).streamEvents(messages);
     }
 
     @Test
@@ -179,14 +191,121 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<Event> mockFlux = mock(Flux.class);
-        when(mockAgent.stream(messages)).thenReturn(mockFlux);
+        Flux<AgentEvent> mockFlux = mock(Flux.class);
+        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
 
         // First call to populate the cache
-        runner.stream(messages, requestOptions);
+        runner.streamEvents(messages, requestOptions);
 
         // When & Then
-        assertThrows(IllegalStateException.class, () -> runner.stream(messages, requestOptions));
+        assertThrows(
+                IllegalStateException.class, () -> runner.streamEvents(messages, requestOptions));
+    }
+
+    @Test
+    @DisplayName("Should atomically reject concurrent streams for the same task ID")
+    void testRejectConcurrentStreamsForSameTaskId() throws Exception {
+        String taskId = UUID.randomUUID().toString();
+        requestOptions.setTaskId(taskId);
+        List<Msg> messages = List.of(mock(Msg.class));
+        ReActAgent firstAgent = mock(ReActAgent.class);
+        ReActAgent secondAgent = mock(ReActAgent.class);
+        when(firstAgent.streamEvents(messages)).thenReturn(Flux.never());
+        when(secondAgent.streamEvents(messages)).thenReturn(Flux.never());
+        List<ReActAgent> agents = List.of(firstAgent, secondAgent);
+        AtomicInteger nextAgent = new AtomicInteger();
+        CyclicBarrier buildBarrier = new CyclicBarrier(2);
+        BaseReActAgentRunner concurrentRunner =
+                new BaseReActAgentRunner() {
+                    @Override
+                    protected ReActAgent buildReActAgent() {
+                        ReActAgent agent = agents.get(nextAgent.getAndIncrement());
+                        try {
+                            buildBarrier.await(5, TimeUnit.SECONDS);
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                        return agent;
+                    }
+                };
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<Flux<AgentEvent>>> calls =
+                    List.of(
+                            executor.submit(
+                                    () -> concurrentRunner.streamEvents(messages, requestOptions)),
+                            executor.submit(
+                                    () -> concurrentRunner.streamEvents(messages, requestOptions)));
+            List<Flux<AgentEvent>> successes = new ArrayList<>();
+            List<Throwable> failures = new ArrayList<>();
+            for (Future<Flux<AgentEvent>> call : calls) {
+                try {
+                    successes.add(call.get(5, TimeUnit.SECONDS));
+                } catch (ExecutionException e) {
+                    failures.add(e.getCause());
+                }
+            }
+
+            assertEquals(1, successes.size());
+            assertEquals(1, failures.size());
+            assertInstanceOf(IllegalStateException.class, failures.get(0));
+            assertTrue(failures.get(0).getMessage().contains(taskId));
+        } finally {
+            concurrentRunner.stop(taskId);
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("Should not let an old stream remove a restarted task")
+    void testOldStreamCleanupDoesNotRemoveRestartedTask() {
+        String taskId = UUID.randomUUID().toString();
+        requestOptions.setTaskId(taskId);
+        List<Msg> messages = List.of(mock(Msg.class));
+        ReActAgent firstAgent = mock(ReActAgent.class);
+        ReActAgent secondAgent = mock(ReActAgent.class);
+        Sinks.Empty<AgentEvent> firstCompletion = Sinks.empty();
+        when(firstAgent.streamEvents(messages)).thenReturn(firstCompletion.asMono().flux());
+        when(secondAgent.streamEvents(messages)).thenReturn(Flux.never());
+        when(mockBuilder.build()).thenReturn(firstAgent, secondAgent);
+
+        Disposable firstRun = runner.streamEvents(messages, requestOptions).subscribe();
+        Disposable secondRun = null;
+        try {
+            runner.stop(taskId);
+            secondRun = runner.streamEvents(messages, requestOptions).subscribe();
+
+            assertEquals(Sinks.EmitResult.OK, firstCompletion.tryEmitEmpty());
+            runner.stop(taskId);
+
+            verify(firstAgent, times(1)).interrupt();
+            verify(secondAgent, times(1)).interrupt();
+        } finally {
+            firstRun.dispose();
+            if (secondRun != null) {
+                secondRun.dispose();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Should remove the cached agent when stream creation fails")
+    void testRemoveAgentFromCacheWhenStreamCreationFails() {
+        String taskId = UUID.randomUUID().toString();
+        requestOptions.setTaskId(taskId);
+        List<Msg> messages = List.of(mock(Msg.class));
+        when(mockAgent.streamEvents(messages))
+                .thenThrow(new IllegalStateException("stream creation failed"))
+                .thenReturn(Flux.empty());
+
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> runner.streamEvents(messages, requestOptions));
+
+        assertEquals("stream creation failed", error.getMessage());
+        assertDoesNotThrow(() -> runner.streamEvents(messages, requestOptions));
     }
 
     @Test
@@ -199,11 +318,11 @@ class AgentRunnerTest {
         List<Msg> messages = List.of(mock(Msg.class));
 
         // Setup mock flux that simulates completion
-        Flux<Event> mockFlux = Flux.empty();
-        when(mockAgent.stream(messages)).thenReturn(mockFlux);
+        Flux<AgentEvent> mockFlux = Flux.empty();
+        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
 
         // When
-        Flux<Event> result = runner.stream(messages, requestOptions);
+        Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
 
         // Subscribe to trigger the doFinally block
         result.subscribe();
@@ -216,7 +335,7 @@ class AgentRunnerTest {
         }
 
         // Try to stream again with the same taskId - should succeed since agent was removed
-        Flux<Event> secondResult = runner.stream(messages, requestOptions);
+        Flux<AgentEvent> secondResult = runner.streamEvents(messages, requestOptions);
         assertNotNull(secondResult);
     }
 
@@ -229,16 +348,16 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<Event> mockFlux = mock(Flux.class);
-        when(mockAgent.stream(messages)).thenReturn(mockFlux);
+        Flux<AgentEvent> mockFlux = mock(Flux.class);
+        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
         when(mockFlux.doFinally(any())).thenReturn(mockFlux);
-        runner.stream(messages, requestOptions);
+        runner.streamEvents(messages, requestOptions);
 
         runner.stop(taskId);
         verify(mockAgent, times(1)).interrupt();
 
         // Try to stream again with the same taskId - should succeed since agent was removed
-        Flux<Event> result = runner.stream(messages, requestOptions);
+        Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
         assertNotNull(result);
     }
 

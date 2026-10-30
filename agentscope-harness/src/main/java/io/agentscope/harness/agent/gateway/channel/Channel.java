@@ -43,7 +43,9 @@ import reactor.core.publisher.Mono;
  * <h2>Message dispatch</h2>
  *
  * Implementations call {@link Gateway#run} with the {@link
- * io.agentscope.harness.agent.gateway.MsgContext} produced by {@link ChannelRouter#resolveRoute}.
+ * io.agentscope.harness.agent.gateway.MsgContext} produced by {@link ChannelRouter#resolveRoute},
+ * the resolved {@link OutboundAddress}, and any caller {@link
+ * io.agentscope.core.agent.RuntimeContext} carried on {@link InboundMessage#runtimeContext()}.
  * The returned {@link Msg} reply is delivered back to the originating platform by the channel
  * adapter.
  *
@@ -116,6 +118,14 @@ public interface Channel {
      * @param messages the messages to deliver
      */
     default void deliver(OutboundAddress address, List<Msg> messages) {}
+
+    /** Delivers one durable notification and returns the provider message ID, not a local ack.
+     * Unsupported transports fail explicitly so callers can keep the notification pending.
+     */
+    default Mono<String> deliverWithReceipt(
+            OutboundAddress address, Msg message, String deliveryId) {
+        return Mono.error(new UnsupportedOperationException("Provider receipts are not supported"));
+    }
 
     /**
      * Applies a new routing {@link ChannelConfig} (bindings, dmScope, defaultAgentId) without

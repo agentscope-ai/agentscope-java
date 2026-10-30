@@ -22,24 +22,27 @@ import static io.agentscope.harness.agent.workspace.WorkspaceConstants.KNOWLEDGE
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.MEMORY_DIR;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.MEMORY_MD;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SESSIONS_DIR;
-import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SESSIONS_STORE;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.SKILLS_DIR;
 import static io.agentscope.harness.agent.workspace.WorkspaceConstants.TASKS_DIR;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.subagent.task.TaskRecord;
+import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -59,6 +62,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,13 +95,12 @@ import org.slf4j.LoggerFactory;
  * ├── subagents/&lt;id&gt;.md                     (subagent declarations)
  * ├── agents/&lt;agentId&gt;/workspace/           (isolated subagent runtime root, auto-created)
  * ├── agents/&lt;agentId&gt;/sessions/sessions.json
- * └── agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.log.jsonl
+ * └── .agentscope-runtime/ — private native session journal (local backend)
  * </pre>
  */
 public class WorkspaceManager implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
-    private static final ObjectMapper SESSION_STORE_JSON = new ObjectMapper();
     private static final ObjectMapper TASK_RECORD_JSON =
             new ObjectMapper()
                     .registerModule(new JavaTimeModule())
@@ -110,8 +113,10 @@ public class WorkspaceManager implements AutoCloseable {
      * Keyed by workspace-relative path (e.g. {@code agents/X/tasks/Y.json},
      * {@code agents/X/sessions/sessions.json}, {@code memory/YYYY-MM-DD.md}).
      *
-     * <p>This is an in-process lock only. For cross-process (multi-node) deployments the Remote
-     * backend must additionally use server-side CAS / optimistic locking.
+     * <p>This is an in-process lock only. Workspace file RMW paths here are last-writer-wins
+     * across replicas — {@code WorkspaceManager} does not perform server-side CAS. True
+     * optimistic concurrency lives on {@code BaseStore#putIfVersion} and
+     * {@code AgentStateStore#saveIfVersion}, not on these path locks.
      */
     private final Map<String, ReentrantLock> pathLocks = new ConcurrentHashMap<>();
 
@@ -253,9 +258,122 @@ public class WorkspaceManager implements AutoCloseable {
         return readWithOverride(rc, KNOWLEDGE_DIR + "/" + KNOWLEDGE_MD);
     }
 
-    /** Reads MEMORY.md content (two-layer: filesystem override, local fallback). */
+    /**
+     * Reads MEMORY.md content. Under a sandbox-backed filesystem this reads the host copy —
+     * memory files are cross-call metadata written by the fire-and-forget flush after the
+     * sandbox may be gone (#3110), so the host copy is the authoritative one; a stale sandbox
+     * copy must never shadow it.
+     */
     public String readMemoryMd(RuntimeContext rc) {
-        return readWithOverride(rc, MEMORY_MD);
+        return readMemoryFileUtf8(rc, MEMORY_MD);
+    }
+
+    /**
+     * Reads a memory-family UTF-8 file (e.g. {@code MEMORY.md}, {@code memory/&lt;date&gt;.md},
+     * memory state). Each family member follows the backend serving its own path — a routed
+     * persistent store when one is mounted for it (e.g. on the {@code memory/} prefix), the
+     * host runtime-data namespace when that backend is the per-call sandbox proxy (memory
+     * files are cross-call metadata written by the fire-and-forget flush after the sandbox
+     * may be gone, #3110), and the standard two-layer read otherwise.
+     *
+     * <p><b>Durability assumption:</b> host-side routing presumes the host workspace outlives
+     * the process or is shared across replicas. A stateless multi-replica deployment with
+     * pod-local workspaces needs the whole family on a shared persistent backend — either a
+     * non-sandbox persistent primary filesystem, or explicit routes covering both {@code
+     * memory/} and root-level {@code MEMORY.md} — otherwise a session whose next call is
+     * served by another replica sees no {@code MEMORY.md} and no ledgers.
+     */
+    public String readMemoryFileUtf8(RuntimeContext rc, String relativePath) {
+        String normalized = requireSafeRelativePath(relativePath);
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        if (memoryFilesRouteToLiveSandbox(normalized)) {
+            Path hostPath = resolveRuntimeDataPath(rc, normalized);
+            if (!Files.isRegularFile(hostPath)) {
+                warnWhenSandboxLayerStillHolds(rc, normalized, hostPath);
+            }
+            return readFileQuietly(hostPath);
+        }
+        return readWithOverride(rc, normalized);
+    }
+
+    /**
+     * Best-effort upgrade visibility (#3110): on the first calls after upgrading a sandbox
+     * deployment the host copy does not exist yet while the pre-fix sandbox snapshot may
+     * still hold one. The sandbox copy is deliberately not adopted — it is stale by design,
+     * every post-stream write was already lost from it — so this only surfaces the situation
+     * for an operator who wants to copy the file host-side. When the sandbox layer itself is
+     * unreachable (post-lease) the probe is skipped silently: there is nothing left to adopt.
+     */
+    private void warnWhenSandboxLayerStillHolds(RuntimeContext rc, String relPath, Path hostPath) {
+        try {
+            if (filesystem.exists(rc, relPath)) {
+                log.warn(
+                        "Memory file {} exists in the sandbox layer but not host-side ({}); the"
+                                + " host copy is authoritative (#3110) and sandbox content is not"
+                                + " adopted — copy it host-side to keep it",
+                        relPath,
+                        hostPath);
+            }
+        } catch (Exception e) {
+            log.debug("Sandbox presence probe failed for {}: {}", relPath, e.getMessage());
+        }
+    }
+
+    /**
+     * Appends to a memory-family UTF-8 file. Host-side append when the filesystem serving the
+     * path is the per-call sandbox proxy (the fire-and-forget flush runs after the stream —
+     * and possibly the sandbox — is gone, #3110); otherwise the standard filesystem
+     * read-merge-write append.
+     */
+    public void appendMemoryFileUtf8(RuntimeContext rc, String relativePath, String content) {
+        if (relativePath == null || content == null) {
+            return;
+        }
+        String normalized = requireSafeRelativePath(relativePath);
+        if (normalized.isEmpty()) {
+            return;
+        }
+        if (memoryFilesRouteToLiveSandbox(normalized)) {
+            ReentrantLock lock = pathLocks.computeIfAbsent(normalized, k -> new ReentrantLock());
+            lock.lock();
+            try {
+                appendLocalPath(
+                        resolveRuntimeDataPath(rc, normalized).normalize(), normalized, content);
+            } finally {
+                lock.unlock();
+            }
+            return;
+        }
+        appendUtf8WorkspaceRelative(rc, relativePath, content);
+    }
+
+    /**
+     * Overwrites a memory-family UTF-8 file. Host-side atomic write when the filesystem
+     * serving the path is the per-call sandbox proxy (#3110); otherwise the standard
+     * filesystem write.
+     */
+    public void writeMemoryFileUtf8(RuntimeContext rc, String relativePath, String content) {
+        if (relativePath == null || content == null) {
+            return;
+        }
+        String normalized = requireSafeRelativePath(relativePath);
+        if (normalized.isEmpty()) {
+            return;
+        }
+        if (memoryFilesRouteToLiveSandbox(normalized)) {
+            ReentrantLock lock = pathLocks.computeIfAbsent(normalized, k -> new ReentrantLock());
+            lock.lock();
+            try {
+                writeLocalPath(
+                        resolveRuntimeDataPath(rc, normalized).normalize(), normalized, content);
+            } finally {
+                lock.unlock();
+            }
+            return;
+        }
+        writeUtf8WorkspaceRelative(rc, relativePath, content);
     }
 
     /**
@@ -277,6 +395,11 @@ public class WorkspaceManager implements AutoCloseable {
         return readWithOverride(rc, normalized);
     }
 
+    /**
+     * Returns the {@code memory/} directory for the given context's runtime-data namespace —
+     * the location memory files are stored when their IO is routed host-side (sandbox-backed
+     * filesystems, #3110), mirroring the namespaced layout remote filesystems use.
+     */
     public Path getMemoryDir(RuntimeContext rc) {
         return resolveRuntimeDataPath(rc, MEMORY_DIR);
     }
@@ -336,23 +459,12 @@ public class WorkspaceManager implements AutoCloseable {
     /**
      * Returns the legacy session file path (.json) without creating directories.
      *
-     * @deprecated Use {@link #resolveSessionContextFile(RuntimeContext, String, String)} for the
-     *     JSONL format.
+     * @deprecated Native session history is stored through SessionLogStore; use explicit migration
+     *     when importing old state files.
      */
     @Deprecated
     public Path resolveSessionFile(RuntimeContext rc, String agentId, String sessionId) {
         return getSessionDir(rc, agentId).resolve(sessionId + ".json");
-    }
-
-    /** Returns the JSONL session context file path (LLM-facing, compacted). */
-    public Path resolveSessionContextFile(RuntimeContext rc, String agentId, String sessionId) {
-        return getSessionDir(rc, agentId)
-                .resolve(sessionId + WorkspaceConstants.SESSION_CONTEXT_EXT);
-    }
-
-    /** Returns the JSONL session log file path (full history, append-only). */
-    public Path resolveSessionLogFile(RuntimeContext rc, String agentId, String sessionId) {
-        return getSessionDir(rc, agentId).resolve(sessionId + WorkspaceConstants.SESSION_LOG_EXT);
     }
 
     /**
@@ -360,16 +472,15 @@ public class WorkspaceManager implements AutoCloseable {
      * All writes go through the {@link AbstractFilesystem}.
      *
      * <p>A per-path {@link ReentrantLock} serialises concurrent callers so that the
-     * read→merge→write cycle is atomic within this process. For cross-process / multi-node
-     * deployments the {@link AbstractFilesystem} backend must additionally provide server-side
-     * concurrency control.
+     * read→merge→write cycle is atomic within this process. Across replicas the append is
+     * last-writer-wins; this method does not perform CAS.
      */
     public void appendUtf8WorkspaceRelative(
             RuntimeContext rc, String relativePath, String content) {
         if (relativePath == null || content == null) {
             return;
         }
-        String normalized = normalizeRelativePath(relativePath);
+        String normalized = requireSafeRelativePath(relativePath);
         if (normalized.isEmpty()) {
             return;
         }
@@ -393,47 +504,47 @@ public class WorkspaceManager implements AutoCloseable {
         }
     }
 
+    // ==================== Task record methods ====================
+
     /**
-     * Upserts metadata for a session in {@code agents/&lt;agentId&gt;/sessions/sessions.json}
-     * (small mutable JSON, keyed by {@code sessionId}).
-     *
-     * <p>A per-path {@link ReentrantLock} serialises concurrent callers so that the
-     * read→merge→write cycle is atomic within this process.
+     * {@code true} when the filesystem layer serving task-record paths is the per-call sandbox
+     * proxy. Task records are cross-call orchestration metadata: the heartbeat and orphan
+     * sweeper of {@code WorkspaceTaskRepository} maintain them from scheduler threads that run
+     * outside any agent call, where {@code SandboxBackedFilesystem} holds no live sandbox and
+     * every operation throws. In that case task-record IO is routed to the host workspace
+     * directly — the same location used when no filesystem layer is configured — so task
+     * liveness bookkeeping keeps working between calls. Explicit prefix routes (e.g. a
+     * persistent store mounted for {@code agents/}) are respected and still take over.
      */
-    public void updateSessionIndex(
-            RuntimeContext rc, String agentId, String sessionId, String summary) {
-        if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
-            return;
-        }
-        String rel = AGENTS_DIR + "/" + agentId + "/" + SESSIONS_DIR + "/" + SESSIONS_STORE;
-        ReentrantLock lock = pathLocks.computeIfAbsent(rel, k -> new ReentrantLock());
-        lock.lock();
-        try {
-            String existing = readWritableWorkspaceRelativeUtf8(rc, rel);
-            ObjectNode root = parseSessionStoreOrEmpty(existing);
-            ObjectNode sessions = ensureSessionsObject(root);
-            ObjectNode entry = SESSION_STORE_JSON.createObjectNode();
-            entry.put("summary", summary != null ? summary : "");
-            entry.put("updatedAt", java.time.Instant.now().toString());
-            sessions.set(sessionId, entry);
-            if (!root.has("version")) {
-                root.put("version", 1);
-            }
-            try {
-                String serialized =
-                        SESSION_STORE_JSON
-                                .writerWithDefaultPrettyPrinter()
-                                .writeValueAsString(root);
-                writeUtf8WorkspaceRelative(rc, rel, serialized);
-            } catch (IOException e) {
-                log.warn("Failed to write session store {}: {}", rel, e.getMessage());
-            }
-        } finally {
-            lock.unlock();
-        }
+    private boolean taskRecordsRouteToLiveSandbox(String relPath) {
+        return isLiveSandboxServingPath(relPath);
     }
 
-    // ==================== Task record methods ====================
+    /**
+     * {@code true} when the filesystem layer serving memory-file paths is the per-call sandbox
+     * proxy. Memory files ({@code MEMORY.md}, {@code memory/*.md}, the memory state) are
+     * cross-call metadata: the fire-and-forget flush and the periodic consolidation run AFTER
+     * the agent event stream terminates — by then the sandbox lease may already be released,
+     * and every write through {@code SandboxBackedFilesystem} would fail with "No active
+     * sandbox" (#3110). When this holds, memory-file IO is routed to the host workspace
+     * directly — the same location used when no filesystem layer is configured — so reads and
+     * writes stay symmetric (a host-side write is never shadowed by a stale sandbox copy on
+     * read). Explicit prefix routes are respected and still take over; each family member is
+     * anchored on its own path, so a {@code memory/} prefix route moves the ledgers and the
+     * watermark to the routed store while root-level {@code MEMORY.md} keeps following the
+     * sandbox primary (host-side routing).
+     */
+    private boolean memoryFilesRouteToLiveSandbox(String relPath) {
+        return isLiveSandboxServingPath(relPath);
+    }
+
+    private boolean isLiveSandboxServingPath(String relPath) {
+        AbstractFilesystem fs = this.filesystem;
+        if (fs instanceof RoutedSandboxFilesystem routed) {
+            fs = routed.backendFor(relPath);
+        }
+        return fs instanceof SandboxBackedFilesystem;
+    }
 
     /**
      * Upserts a {@link TaskRecord} in {@code agents/<agentId>/tasks/<sessionId>.json}.
@@ -453,26 +564,174 @@ public class WorkspaceManager implements AutoCloseable {
             return;
         }
         String rel = taskRecordPath(agentId, sessionId);
+        registerTaskScope(rc, agentId);
+        mutateTaskMap(
+                rc,
+                rel,
+                map -> {
+                    TaskRecord current = map.get(record.getTaskId());
+                    // Re-evaluated after each CAS conflict: a delayed heartbeat must not revive a
+                    // task that another node has already completed, cancelled, or declared
+                    // orphaned.
+                    if (current != null
+                            && current.getStatus() != null
+                            && current.getStatus().isTerminal()
+                            && current.getStatus() != record.getStatus()) {
+                        return false;
+                    }
+                    if (current != null
+                            && current.isCancelRequested()
+                            && !record.isCancelRequested()
+                            && (record.getStatus() == null || !record.getStatus().isTerminal())) {
+                        return false;
+                    }
+                    record.touch();
+                    map.put(record.getTaskId(), record);
+                    return true;
+                });
+    }
+
+    private RemoteFilesystem taskRemoteFilesystem(String rel) {
+        AbstractFilesystem fs = filesystem;
+        while (fs != null) {
+            if (fs instanceof CompositeFilesystem composite) {
+                fs = composite.filesystemFor(rel);
+            } else if (fs instanceof RoutedSandboxFilesystem routed) {
+                fs = routed.backendFor(rel);
+            } else if (fs instanceof OverlayFilesystem overlay) {
+                fs = overlay.upper();
+            } else {
+                return fs instanceof RemoteFilesystem remote ? remote : null;
+            }
+        }
+        return null;
+    }
+
+    private void registerTaskScope(RuntimeContext rc, String agentId) {
+        RemoteFilesystem remote = taskRemoteFilesystem(taskRecordPath(agentId, "_"));
+        if (remote != null) {
+            try {
+                remote.registerTaskScope(rc, agentId);
+            } catch (Exception e) {
+                // Preserve best-effort persistence; subsequent reads/writes retry registration.
+                log.warn(
+                        "Failed to register task maintenance scope for agent {}: {}",
+                        agentId,
+                        e.getMessage());
+            }
+        }
+    }
+
+    /** A task record and the routing context required to maintain its original store scope. */
+    public record ScopedTaskRecord(RuntimeContext context, TaskRecord record) {}
+
+    /**
+     * Lists task records for host-side maintenance across registered scopes. Ordinary task
+     * reads remain scoped to the caller. Old files are included: downtime may exceed the
+     * normal recent-file window while a non-terminal record still needs orphan recovery.
+     */
+    public Collection<ScopedTaskRecord> listTaskRecordsForMaintenance(String agentId) {
+        RemoteFilesystem remote = taskRemoteFilesystem(taskRecordPath(agentId, "_"));
+        List<RuntimeContext> contexts =
+                remote == null
+                        ? List.of(RuntimeContext.empty())
+                        : remote.taskMaintenanceContexts(agentId);
+        List<ScopedTaskRecord> records = new ArrayList<>();
+        for (RuntimeContext context : contexts) {
+            for (TaskRecord record : listAllTaskRecords(context, agentId, null)) {
+                records.add(new ScopedTaskRecord(context, record));
+            }
+        }
+        return records;
+    }
+
+    /**
+     * Marks a local task orphaned only if the current persisted record is still stale.
+     * Remote CAS retries recheck the heartbeat and terminal status before writing.
+     */
+    public boolean failOrphanedTask(
+            RuntimeContext rc,
+            String agentId,
+            String sessionId,
+            String taskId,
+            Instant threshold,
+            String error) {
+        return mutateTaskMap(
+                rc,
+                taskRecordPath(agentId, sessionId),
+                map -> {
+                    TaskRecord current = map.get(taskId);
+                    if (current == null
+                            || current.getStatus() == null
+                            || current.getStatus().isTerminal()
+                            || current.isAgentProtocolTransport()
+                            || current.getLastUpdatedAt() == null
+                            || current.getLastUpdatedAt().isAfter(threshold)) {
+                        return false;
+                    }
+                    current.setStatus(TaskStatus.FAILED);
+                    current.setErrorMessage(error);
+                    current.touch();
+                    return true;
+                });
+    }
+
+    private boolean mutateTaskMap(
+            RuntimeContext rc, String rel, Function<Map<String, TaskRecord>, Boolean> mutation) {
         ReentrantLock lock = pathLocks.computeIfAbsent(rel, k -> new ReentrantLock());
         lock.lock();
         try {
-            Map<String, TaskRecord> map;
-            try {
-                map = readTaskMap(rc, rel); // already holding lock
-            } catch (IOException e) {
-                // Never overwrite a malformed store with partial data from a failed parse.
-                log.error(
-                        "Failed to parse task record store {}, aborting write to avoid data loss.",
-                        rel,
-                        e);
-                return;
+            RemoteFilesystem remote = taskRemoteFilesystem(rel);
+            boolean atomic = remote != null && remote.supportsAtomicUpdates();
+            for (int attempt = 0; attempt < 5; attempt++) {
+                if (!atomic) {
+                    Map<String, TaskRecord> map = readTaskMap(rc, rel);
+                    if (!mutation.apply(map)) {
+                        return false;
+                    }
+                    persistTaskMap(rc, rel, map);
+                    return true;
+                }
+                // Read through the route so prefix remapping and overlays remain intact.
+                ReadResult read = filesystem.read(rc, rel, 0, 0);
+                String json =
+                        read.isSuccess() && read.fileData() != null
+                                ? read.fileData().content()
+                                : null;
+                Map<String, TaskRecord> map =
+                        json == null || json.isBlank()
+                                ? new LinkedHashMap<>()
+                                : TASK_RECORD_JSON.readValue(json, TASK_MAP_TYPE);
+                if (map == null) {
+                    map = new LinkedHashMap<>();
+                }
+                if (!mutation.apply(map)) {
+                    return false;
+                }
+                String updated =
+                        TASK_RECORD_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+                boolean written =
+                        json == null
+                                ? filesystem.write(rc, rel, updated).isSuccess()
+                                : filesystem.edit(rc, rel, json, updated, false).isSuccess();
+                if (written) {
+                    if (index != null) {
+                        index.upsert(rel, updated.getBytes(StandardCharsets.UTF_8).length, null);
+                    }
+                    return true;
+                }
             }
-            record.touch();
-            map.put(record.getTaskId(), record);
-            persistTaskMap(rc, rel, map);
+            log.warn("Task record update conflicted repeatedly for {}", rel);
+        } catch (IOException e) {
+            log.error(
+                    "Failed to parse or update task record store {}, aborting write to avoid data"
+                            + " loss.",
+                    rel,
+                    e);
         } finally {
             lock.unlock();
         }
+        return false;
     }
 
     /**
@@ -488,6 +747,7 @@ public class WorkspaceManager implements AutoCloseable {
                 || taskId.isBlank()) {
             return Optional.empty();
         }
+        registerTaskScope(rc, agentId);
         String rel = taskRecordPath(agentId, sessionId);
         Map<String, TaskRecord> map = readTaskMapLocked(rc, rel);
         return Optional.ofNullable(map.get(taskId));
@@ -501,6 +761,7 @@ public class WorkspaceManager implements AutoCloseable {
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
             return Collections.emptyList();
         }
+        registerTaskScope(rc, agentId);
         String rel = taskRecordPath(agentId, sessionId);
         return List.copyOf(readTaskMapLocked(rc, rel).values());
     }
@@ -511,29 +772,25 @@ public class WorkspaceManager implements AutoCloseable {
      *
      * <p>Unions task JSON files from the local disk and the filesystem layer. Files whose last
      * modification time (from disk mtime or {@link FileInfo#modifiedAt()}) is known and older than
-     * {@code recentWindow} are skipped: once all tasks in a session reach a terminal state the file
-     * is never modified again, so stale files cannot contain orphaned tasks.
-     *
-     * <p>Used by the orphan-task sweeper in
-     * {@link io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository} to bound the
-     * number of files read per sweep cycle without missing any genuinely running tasks.
+     * {@code recentWindow} are skipped. Maintenance passes no cutoff because old files may
+     * contain non-terminal tasks whose executor disappeared during prolonged downtime.
      *
      * @param agentId the parent agent identifier
      * @param recentWindow only consider files modified within this duration; files known to be
-     *     older are assumed to contain only terminal tasks and are skipped
+     *     older are skipped; {@code null} includes all retained files
      */
     public Collection<TaskRecord> listAllTaskRecords(
             RuntimeContext rc, String agentId, Duration recentWindow) {
         if (agentId == null || agentId.isBlank()) {
             return Collections.emptyList();
         }
-        Instant cutoff = Instant.now().minus(recentWindow);
+        Instant cutoff = recentWindow == null ? null : Instant.now().minus(recentWindow);
         String tasksRelDir = AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR;
 
         // workspace-relative path → Optional<Instant> last-modified (empty = mtime unknown)
         Map<String, Optional<Instant>> relPaths = new LinkedHashMap<>();
 
-        if (filesystem != null) {
+        if (filesystem != null && !taskRecordsRouteToLiveSandbox(tasksRelDir)) {
             GlobResult glob = filesystem.glob(rc, "*.json", tasksRelDir);
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
@@ -568,7 +825,7 @@ public class WorkspaceManager implements AutoCloseable {
         for (Map.Entry<String, Optional<Instant>> entry : relPaths.entrySet()) {
             Optional<Instant> mtime = entry.getValue();
             // Skip only when mtime is known and clearly before the cutoff
-            if (mtime.isPresent() && mtime.get().isBefore(cutoff)) {
+            if (cutoff != null && mtime.isPresent() && mtime.get().isBefore(cutoff)) {
                 continue;
             }
             all.addAll(readTaskMapLocked(rc, entry.getKey()).values());
@@ -595,49 +852,13 @@ public class WorkspaceManager implements AutoCloseable {
         }
     }
 
-    /**
-     * Reads the timestamp written by the most recent successful orphan-sweep for this agent, or
-     * {@link Optional#empty()} if no sweep has been recorded yet.
-     *
-     * <p>Stored in {@code agents/<agentId>/tasks/_sweep.marker} as a plain ISO-8601 string. Any
-     * node can write to this path, so it naturally propagates through the shared filesystem layer.
-     */
-    public Optional<Instant> readSweepMarker(RuntimeContext rc, String agentId) {
-        if (agentId == null || agentId.isBlank()) {
-            return Optional.empty();
-        }
-        String rel = sweepMarkerPath(agentId);
-        String content = readWritableWorkspaceRelativeUtf8(rc, rel);
-        return Optional.ofNullable(parseInstantQuiet(content == null ? null : content.strip()));
-    }
-
-    /**
-     * Records the current timestamp as the completion time of the most recent orphan-sweep for
-     * this agent. Subsequent nodes that read this marker within the sweep interval will skip their
-     * own sweep, reducing redundant workspace I/O in multi-node deployments.
-     */
-    public void writeSweepMarker(RuntimeContext rc, String agentId) {
-        if (agentId == null || agentId.isBlank()) {
-            return;
-        }
-        String rel = sweepMarkerPath(agentId);
-        try {
-            writeUtf8WorkspaceRelative(rc, rel, Instant.now().toString());
-        } catch (Exception e) {
-            log.warn("Failed to write sweep marker for agent {}: {}", agentId, e.getMessage());
-        }
-    }
-
-    private String sweepMarkerPath(String agentId) {
-        return AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR + "/_sweep.marker";
-    }
-
     private String taskRecordPath(String agentId, String sessionId) {
         return AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR + "/" + sessionId + ".json";
     }
 
     /**
-     * Acquires the per-file lock before delegating to {@link #readTaskMap(String)}, so that reads
+     * Acquires the per-file lock before delegating to {@link #readTaskMap(RuntimeContext, String)},
+     * so that reads
      * are mutually exclusive with the read-modify-write cycle in {@link #writeTaskRecord}. This
      * prevents a concurrent writer's non-atomic file update (truncate → write) from being observed
      * as a partial JSON read.
@@ -662,7 +883,12 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     private Map<String, TaskRecord> readTaskMap(RuntimeContext rc, String rel) throws IOException {
-        String json = readWritableWorkspaceRelativeUtf8(rc, rel);
+        String json =
+                taskRecordsRouteToLiveSandbox(rel)
+                        // Same normalization/validation as the non-routed branch, so a poisoned
+                        // sessionId cannot read outside the workspace via the host-disk path.
+                        ? readFileQuietly(workspace.resolve(requireSafeRelativePath(rel)))
+                        : readWritableWorkspaceRelativeUtf8(rc, rel);
         if (json == null || json.isBlank()) {
             return new LinkedHashMap<>();
         }
@@ -674,42 +900,19 @@ public class WorkspaceManager implements AutoCloseable {
         try {
             String serialized =
                     TASK_RECORD_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+            if (taskRecordsRouteToLiveSandbox(rel)) {
+                writeLocalFile(rel, serialized);
+                return;
+            }
             writeUtf8WorkspaceRelative(rc, rel, serialized);
         } catch (IOException e) {
             log.warn("Failed to write task record store {}: {}", rel, e.getMessage());
         }
     }
 
-    private ObjectNode parseSessionStoreOrEmpty(String json) {
-        if (json == null || json.isBlank()) {
-            return SESSION_STORE_JSON.createObjectNode();
-        }
-        try {
-            var node = SESSION_STORE_JSON.readTree(json);
-            if (node instanceof ObjectNode on) {
-                return on;
-            }
-        } catch (IOException e) {
-            log.warn("Corrupt or unreadable session store, reinitializing: {}", e.getMessage());
-        }
-        return SESSION_STORE_JSON.createObjectNode();
-    }
-
-    private ObjectNode ensureSessionsObject(ObjectNode root) {
-        var n = root.get("sessions");
-        if (n instanceof ObjectNode on) {
-            return on;
-        }
-        ObjectNode fresh = SESSION_STORE_JSON.createObjectNode();
-        root.set("sessions", fresh);
-        return fresh;
-    }
-
     private String readWritableWorkspaceRelativeUtf8(RuntimeContext rc, String relativePath) {
-        String normalized = normalizeRelativePath(relativePath);
-        if (normalized.isEmpty()) {
-            return "";
-        }
+        String normalized = requireSafeRelativePath(relativePath);
+        if (normalized.isEmpty()) return "";
         return readWithOverride(rc, normalized);
     }
 
@@ -718,7 +921,7 @@ public class WorkspaceManager implements AutoCloseable {
         if (relativePath == null || content == null) {
             return;
         }
-        String normalized = normalizeRelativePath(relativePath);
+        String normalized = requireSafeRelativePath(relativePath);
         if (normalized.isEmpty()) {
             return;
         }
@@ -771,7 +974,7 @@ public class WorkspaceManager implements AutoCloseable {
         if (relativePath == null || content == null) {
             return;
         }
-        String normalized = normalizeRelativePath(relativePath);
+        String normalized = requireSafeRelativePath(relativePath);
         if (normalized.isEmpty()) {
             return;
         }
@@ -798,8 +1001,8 @@ public class WorkspaceManager implements AutoCloseable {
         if (fromRelative == null || toRelative == null || filesystem == null) {
             return false;
         }
-        String src = normalizeRelativePath(fromRelative);
-        String dst = normalizeRelativePath(toRelative);
+        String src = requireSafeRelativePath(fromRelative);
+        String dst = requireSafeRelativePath(toRelative);
         if (src.isEmpty() || dst.isEmpty()) {
             return false;
         }
@@ -854,7 +1057,10 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     private void appendLocalFile(String relativePath, String content) {
-        Path local = workspace.resolve(relativePath).normalize();
+        appendLocalPath(workspace.resolve(relativePath).normalize(), relativePath, content);
+    }
+
+    private void appendLocalPath(Path local, String relativePath, String content) {
         if (!local.startsWith(workspace)) {
             log.warn("Refusing to write outside workspace: {}", relativePath);
             return;
@@ -886,7 +1092,10 @@ public class WorkspaceManager implements AutoCloseable {
      * observing a partially-written file.
      */
     private void writeLocalFile(String relativePath, String content) {
-        Path local = workspace.resolve(relativePath).normalize();
+        writeLocalPath(workspace.resolve(relativePath).normalize(), relativePath, content);
+    }
+
+    private void writeLocalPath(Path local, String relativePath, String content) {
         if (!local.startsWith(workspace)) {
             log.warn("Refusing to write outside workspace: {}", relativePath);
             return;
@@ -929,26 +1138,96 @@ public class WorkspaceManager implements AutoCloseable {
         return s;
     }
 
+    private static String requireSafeRelativePath(String relativePath) {
+        String normalized = normalizeRelativePath(relativePath);
+        if (!normalized.isEmpty()) {
+            AbstractFilesystem.validatePath(normalized);
+        }
+        return normalized;
+    }
+
+    /**
+     * Lists memory ledger files as {@link FileInfo}s (path, size, mtime) for watermark-based
+     * eligibility filtering. Under a sandbox-backed filesystem the authoritative copies live
+     * host-side in the context's runtime-data namespaced memory directory — the same scope
+     * the memory-scoped IO reads and writes, mirroring the namespaced layout of remote
+     * filesystems — so the listing is host-side too (the sandbox glob would throw once the
+     * lease is released, and its copies are stale by design). Otherwise the filesystem
+     * layer is globbed. This is the single home for memory listing so callers (consolidator,
+     * tools) can never drift from the routing decision.
+     */
+    public List<FileInfo> listMemoryFileInfos(RuntimeContext rc) {
+        if (memoryFilesRouteToLiveSandbox(MEMORY_DIR)) {
+            List<FileInfo> out = new ArrayList<>();
+            Path memDir = resolveRuntimeDataPath(rc, MEMORY_DIR);
+            if (!Files.isDirectory(memDir)) {
+                return out;
+            }
+            try (Stream<Path> walk = Files.list(memDir)) {
+                walk.filter(Files::isRegularFile)
+                        .filter(pp -> pp.toString().endsWith(".md"))
+                        .forEach(
+                                pp -> {
+                                    try {
+                                        out.add(
+                                                FileInfo.ofFile(
+                                                        MEMORY_DIR + "/" + pp.getFileName(),
+                                                        Files.size(pp),
+                                                        Files.getLastModifiedTime(pp).toMillis()));
+                                    } catch (IOException e) {
+                                        log.warn("Failed to stat {}: {}", pp, e.getMessage());
+                                    }
+                                });
+            } catch (IOException e) {
+                log.warn("Failed to list host memory dir: {}", e.getMessage());
+            }
+            return out;
+        }
+        List<FileInfo> out = new ArrayList<>();
+        if (filesystem != null) {
+            GlobResult glob = filesystem.glob(rc, "*.md", MEMORY_DIR);
+            if (glob.isSuccess() && glob.matches() != null) {
+                out.addAll(glob.matches());
+            }
+        }
+        return out;
+    }
+
     /**
      * Returns workspace-relative paths of all memory files ({@code MEMORY.md} and {@code
-     * memory/*.md}). Unions results from the {@link AbstractFilesystem} layer and the local disk,
-     * deduplicating by relative path.
+     * memory/*.md}), unioning the {@link AbstractFilesystem} layer and the local disk,
+     * deduplicating by relative path. Each family member is anchored on the backend serving
+     * its own path: {@code MEMORY.md} is root-level — a {@code memory/} prefix route never
+     * matches it, so under a sandbox-backed filesystem its authoritative copy lives
+     * host-side and its existence is never probed through the per-call sandbox proxy —
+     * while the ledgers follow the backend serving {@code memory/} (a routed store when one
+     * is mounted, the host side under a bare sandbox). The local part observes the context's
+     * runtime-data namespace — the same namespaced scope the memory-scoped IO writes when
+     * routed host-side (user isolation preserved) and the location {@code getMemoryDir}
+     * resolves.
      */
     public List<String> listMemoryFilePaths(RuntimeContext rc) {
         Set<String> paths = new LinkedHashSet<>();
 
         if (filesystem != null) {
-            ReadResult memMd = filesystem.read(rc, MEMORY_MD, 0, 1);
-            if (memMd.isSuccess()) {
-                paths.add(MEMORY_MD);
+            // Under a sandbox-backed filesystem MEMORY.md lives host-side (#3110): the
+            // sandbox copy is stale-by-design, and probing it after the lease is released
+            // would throw. The ledgers glob follows the memory/ directory's own backend.
+            if (!memoryFilesRouteToLiveSandbox(MEMORY_MD)) {
+                ReadResult memMd = filesystem.read(rc, MEMORY_MD, 0, 1);
+                if (memMd.isSuccess()) {
+                    paths.add(MEMORY_MD);
+                }
             }
-            GlobResult glob = filesystem.glob(rc, "*.md", MEMORY_DIR);
-            if (glob.isSuccess() && glob.matches() != null) {
-                for (FileInfo fi : glob.matches()) {
-                    if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
-                        if (!rel.isEmpty()) {
-                            paths.add(rel);
+            if (!memoryFilesRouteToLiveSandbox(MEMORY_DIR)) {
+                GlobResult glob = filesystem.glob(rc, "*.md", MEMORY_DIR);
+                if (glob.isSuccess() && glob.matches() != null) {
+                    for (FileInfo fi : glob.matches()) {
+                        if (fi.path() != null && !fi.path().isBlank()) {
+                            String rel = normalizeRelativePath(fi.path().trim());
+                            if (!rel.isEmpty()) {
+                                paths.add(rel);
+                            }
                         }
                     }
                 }
@@ -966,49 +1245,6 @@ public class WorkspaceManager implements AutoCloseable {
                         .forEach(p -> paths.add(MEMORY_DIR + "/" + p.getFileName()));
             } catch (IOException e) {
                 log.warn("Failed to list memory dir: {}", e.getMessage());
-            }
-        }
-        return new ArrayList<>(paths);
-    }
-
-    /**
-     * Lists workspace-relative paths of all session log files ({@code *.log.jsonl}).
-     * Unions results from the {@link AbstractFilesystem} layer and the local disk.
-     */
-    public List<String> listSessionLogFiles(RuntimeContext rc) {
-        Set<String> paths = new LinkedHashSet<>();
-
-        if (filesystem != null) {
-            GlobResult glob = filesystem.glob(rc, "*.log.jsonl", AGENTS_DIR);
-            if (glob.isSuccess() && glob.matches() != null) {
-                for (FileInfo fi : glob.matches()) {
-                    if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
-                        if (!rel.isEmpty()) {
-                            paths.add(rel);
-                        }
-                    }
-                }
-            }
-        }
-
-        Path agentsDir = resolveRuntimeDataPath(rc, AGENTS_DIR);
-        if (Files.isDirectory(agentsDir)) {
-            try (Stream<Path> walk = Files.walk(agentsDir)) {
-                walk.filter(Files::isRegularFile)
-                        .filter(p -> p.toString().endsWith(WorkspaceConstants.SESSION_LOG_EXT))
-                        .forEach(
-                                p -> {
-                                    String rel =
-                                            agentsDir
-                                                    .getParent()
-                                                    .relativize(p.normalize())
-                                                    .toString()
-                                                    .replace('\\', '/');
-                                    paths.add(rel);
-                                });
-            } catch (IOException e) {
-                log.warn("Failed to list session log files: {}", e.getMessage());
             }
         }
         return new ArrayList<>(paths);

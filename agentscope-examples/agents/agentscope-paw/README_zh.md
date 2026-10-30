@@ -8,7 +8,7 @@ AgentScope Paw 是 [QwenPaw] 的 Java 版本 —— 一款装在你自己电脑�
 
 它擅长的另一件事，是**直接出现在你已经在用的地方**。开箱即支持钉钉、企业微信、飞书、GitHub 和 GitLab，所以你可以从一条 DM、或者一个 Issue 评论里 @ 它，不必再多开一个网页。
 
-paw 故意不去做更多的事 —— 没有登录、没有多租户隔离、没有 Docker sandbox、不做横向扩展。如果你需要这些 —— 想把 paw 风格的 agent 托管给一个团队，或者想让 agent 跑不可信代码而互相隔离 —— 请看姊妹项目 [agentscope-builder](../agentscope-builder/) 和 [agentscope-dataagent](../agentscope-dataagent/)。
+paw 故意不去做更多的事 —— 没有登录、没有多租户隔离、没有 Docker sandbox、不做横向扩展。如果你需要这些 —— 想把 paw 风格的 agent 托管给一个团队，或者想让 agent 跑不可信代码而互相隔离 —— 请看姊妹项目 [agentscope-service](../../../agentscope-service/) 和 [agentscope-dataagent](../agentscope-dataagent/)。
 
 ### 一览
 
@@ -69,9 +69,10 @@ java -jar agentscope-examples/agents/agentscope-paw/target/agentscope-paw-*.jar
 所有持久化状态都放在 `${paw.home}` 下（默认 `~/.agentscope`）：
 
 ```
-~/.agentscope/
+~/.agentscope/claw/          # 默认 ${claw.home}；可用 CLAW_HOME 覆盖
 ├── agentscope.json          # 内置 agent 定义
-├── agents.json              # 自定义 agent 目录（JSON 文件）
+├── agents.json              # 自定义 agent 目录
+├── workspace/               # 默认 main agent 工作区（自动生成配置时）
 └── agents/
     └── <agentId>/
         ├── workspace/       # AGENTS.md, skills/, subagents/, tools.json, memory/, …
@@ -164,11 +165,37 @@ UI 上点 **New agent** 按钮可以基于空白脚手架、内置模板或 AI �
 | `paw.agent.name` | `paw` | 自动生成的 `default` agent 显示名 |
 | `paw.agent.sys-prompt` | `You are a helpful local assistant. …` | 自动生成的 `default` agent 系统提示 |
 | `server.port` | `8080` | HTTP 端口 |
+| `claw.controlplane.*` / `claw.session-log.*` | 见上文 | BYO + Operate 原生历史联调 |
 
 如果你自己提供了 `Model` Spring Bean（例如再 `@Import` 一个 `@Configuration`），自动注入的 DashScope 模型会被跳过。
 
+## 与 Control Plane Operate 联调（BYO 与原生会话历史）
+
+Harness 默认在 Workspace Filesystem 的私有分区保存原生 Session Log。`AgentSessionHistorySource` 通过 `sessionTranscript()` 提供消息接口；Paw 历史页面也读取相同记录。旧 TranscriptMiddleware、分段 transcript 与 `.log.jsonl` 写入已经移除，已有文件不会被自动删除。
+
+```bash
+export CLAW_CONTROLPLANE_ENABLED=true
+export CONTROL_PLANE_HTTP=http://localhost:8081
+export CLAW_CONTROLPLANE_AGENT_NAME=default
+# 可选：为所有 Agent 配置共享原生日志根；不设置时使用各自 Workspace 后端。
+export CLAW_SESSION_LOG_ROOT=/data/paw-session-history
+```
+
+在 Operate 中读取消息需要可用的 Agent 消息接口，不能再依赖 service-controlplane 的共享 transcript 目录。注册名应与实际发布的 Agent 对应。原生日志本地文件带版本前缀，请通过 API 读取，不能作为 JSONL 文本直接解析。
+
+| 配置项 | 环境变量 | 默认值 |
+| --- | --- | --- |
+| `claw.controlplane.enabled` | `CLAW_CONTROLPLANE_ENABLED` | `false` |
+| `claw.controlplane.control-http` | `CONTROL_PLANE_HTTP` | `http://localhost:8081` |
+| `claw.controlplane.agent-name` | `CLAW_CONTROLPLANE_AGENT_NAME` | `default` |
+| `claw.controlplane.namespace` | `CLAW_CONTROLPLANE_NAMESPACE` | `default` |
+| `claw.controlplane.contract-port` | `CLAW_CONTROLPLANE_CONTRACT_PORT` | `18090` |
+| `claw.session-log.root` | `CLAW_SESSION_LOG_ROOT` | 空，使用 Workspace 后端 |
+
+移除旧 `claw.transcript.*` / `CLAW_TRANSCRIPT_*` 配置。分布式或自定义存储可提供 `SessionLogStore` Spring Bean；它会同时应用于内置和动态 Agent。完整存储、恢复与 SSE 说明见[会话日志指南](../../../../docs/v2/zh/docs/harness/session-log.md)。
+
 ## 这个 fork 不再做的事
 
-agentscope-paw 之前曾支持多租户部署、JWT 登录、按用户切分 workspace 命名空间、Docker sandbox 隔离、agent 共享。这些能力已经全部从 paw 中剥离 —— 详见 [`builder.md`](builder.md)，里面给出了被移除的模块清单以及从 git 历史中找回的方法。也可以直接迁到 [agentscope-builder](../agentscope-builder/) —— 那是 paw 多租户能力的正式归宿。
+agentscope-paw 之前曾支持多租户部署、JWT 登录、按用户切分 workspace 命名空间、Docker sandbox 隔离、agent 共享。这些能力已经全部从 paw 中剥离 —— 详见 [`builder.md`](builder.md)，里面给出了被移除的模块清单以及从 git 历史中找回的方法。也可以直接迁到 [agentscope-service](../../../agentscope-service/) —— 那是 paw 多租户能力的正式归宿。
 
 [AgentScope Java]: https://github.com/agentscope-ai/agentscope-java

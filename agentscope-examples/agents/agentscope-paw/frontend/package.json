@@ -1,6 +1,6 @@
 {
-  "name": "agentscope-builder-frontend",
-  "version": "0.1.0",
+  "name": "agentscope-paw-frontend",
+  "version": "2.1.0-BETA1",
   "private": true,
   "type": "module",
   "scripts": {

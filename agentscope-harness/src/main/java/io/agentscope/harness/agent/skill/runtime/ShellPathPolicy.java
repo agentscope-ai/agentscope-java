@@ -92,7 +92,8 @@ public final class ShellPathPolicy {
 
     /**
      * Returns the absolute {@code filesRoot} for the given skill, or {@code null} when shell
-     * is unavailable / the skill has no shell-reachable representation.
+     * is unavailable / the skill has no shell-reachable representation. The path is not shell-escaped;
+     * the caller must quote it for the execution environment's shell.
      *
      * @param skillName the skill's {@code name}
      * @param stage     staging outcome from {@link MarketplaceStager#stage}
@@ -105,55 +106,41 @@ public final class ShellPathPolicy {
             return joinSkills(skillName);
         }
         if (stage instanceof StageResult.Cached cached) {
-            return joinCache(cached.sourceNamespace(), cached.skillName());
+            return joinCache(cached.scopeSegment(), cached.sourceNamespace(), cached.skillName());
         }
         return null;
     }
 
     private String joinSkills(String skillName) {
         return switch (mode) {
-            case SANDBOX -> escapeSpaces(sandboxPrefix + "/skills/" + skillName);
+            case SANDBOX -> sandboxPrefix + "/skills/" + skillName;
             case LOCAL_WITH_SHELL ->
-                    escapeSpaces(
-                            workspaceRoot
-                                    .resolve("skills")
-                                    .resolve(skillName)
-                                    .toAbsolutePath()
-                                    .toString());
+                    workspaceRoot.resolve("skills").resolve(skillName).toAbsolutePath().toString();
             case NO_SHELL -> null;
         };
     }
 
-    private String joinCache(String sourceNs, String skillName) {
+    private String joinCache(String scopeSegment, String sourceNs, String skillName) {
         return switch (mode) {
             case SANDBOX ->
-                    escapeSpaces(
-                            sandboxPrefix
-                                    + "/"
-                                    + MarketplaceStager.CACHE_DIR
-                                    + "/"
-                                    + sourceNs
-                                    + "/"
-                                    + skillName);
+                    sandboxPrefix
+                            + "/"
+                            + MarketplaceStager.CACHE_DIR
+                            + "/"
+                            + scopeSegment
+                            + "/"
+                            + sourceNs
+                            + "/"
+                            + skillName;
             case LOCAL_WITH_SHELL ->
-                    escapeSpaces(
-                            workspaceRoot
-                                    .resolve(MarketplaceStager.CACHE_DIR)
-                                    .resolve(sourceNs)
-                                    .resolve(skillName)
-                                    .toAbsolutePath()
-                                    .toString());
+                    workspaceRoot
+                            .resolve(MarketplaceStager.CACHE_DIR)
+                            .resolve(scopeSegment)
+                            .resolve(sourceNs)
+                            .resolve(skillName)
+                            .toAbsolutePath()
+                            .toString();
             case NO_SHELL -> null;
         };
-    }
-
-    /**
-     * Escapes spaces with backslash (e.g. {@code "a b" -> "a\ b"}) so the value can be embedded
-     * unquoted in POSIX shell commands without word-splitting.
-     *
-     * <p>This is not a general-purpose shell escaping routine.
-     */
-    static String escapeSpaces(String value) {
-        return value.indexOf(' ') >= 0 ? value.replace(" ", "\\ ") : value;
     }
 }

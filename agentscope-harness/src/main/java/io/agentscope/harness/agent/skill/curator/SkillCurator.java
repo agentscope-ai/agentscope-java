@@ -20,6 +20,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
+import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import java.nio.charset.StandardCharsets;
@@ -42,9 +44,8 @@ import org.slf4j.LoggerFactory;
  *       timestamp from the sidecar. Pinned + DRAFT skills are skipped.</li>
  *   <li>LLM umbrella pass: produces a markdown report of consolidation candidates;
  *       in {@code DRY_RUN_ONLY} mode (default) it does not call {@code skill_manage}, just
- *       writes the report. {@code LIVE} mode is reserved for a future version (it requires
- *       an auxiliary {@code Model} + a forked {@code ReActAgent}; the current implementation
- *       only exposes the dry-run report-generation path).</li>
+ *       writes the report. Live consolidation (actually invoking {@code skill_manage}) is not
+ *       implemented yet.</li>
  * </ul>
  *
  * <p>Strict invariants:
@@ -73,16 +74,27 @@ public class SkillCurator {
     private final SkillUsageStore usageStore;
     private final WorkspaceSkillRepository mainRepo;
     private final SkillCuratorConfig config;
+    private final PeriodicGate periodicGate;
 
     public SkillCurator(
             AbstractFilesystem filesystem,
             SkillUsageStore usageStore,
             WorkspaceSkillRepository mainRepo,
             SkillCuratorConfig config) {
+        this(filesystem, usageStore, mainRepo, config, new LocalPeriodicGate());
+    }
+
+    public SkillCurator(
+            AbstractFilesystem filesystem,
+            SkillUsageStore usageStore,
+            WorkspaceSkillRepository mainRepo,
+            SkillCuratorConfig config,
+            PeriodicGate periodicGate) {
         this.filesystem = java.util.Objects.requireNonNull(filesystem, "filesystem");
         this.usageStore = java.util.Objects.requireNonNull(usageStore, "usageStore");
         this.mainRepo = java.util.Objects.requireNonNull(mainRepo, "mainRepo");
         this.config = config != null ? config : SkillCuratorConfig.defaults();
+        this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
     }
 
     public SkillCuratorConfig config() {
@@ -138,14 +150,18 @@ public class SkillCurator {
     }
 
     /**
-     * Idle-and-interval gate. Returns true iff the curator should fire now: enabled, not
-     * paused, last_run_at older than {@code intervalHours}. First-run behaviour seeds
-     * last_run_at without firing — a fresh deployment doesn't get LLM'd until at least one
-     * interval has elapsed.
+     * Interval + periodic-gate. Returns true iff the curator should fire now: enabled, not
+     * paused, {@code last_run_at} older than {@code intervalHours}, and the injected
+     * {@link PeriodicGate} grants the claim. First-run behaviour seeds {@code last_run_at}
+     * without firing — a fresh deployment doesn't get LLM'd until at least one interval has
+     * elapsed.
      */
     public boolean shouldRunNow(Instant now) {
         if (!config.enabled() || isPaused()) {
             return false;
+        }
+        if (now == null) {
+            now = Instant.now();
         }
         SkillCuratorState s = loadState();
         if (s.lastRunAt() == null) {
@@ -160,8 +176,12 @@ public class SkillCurator {
                             null));
             return false;
         }
-        Duration sinceLast = Duration.between(s.lastRunAt(), now);
-        return sinceLast.toHours() >= config.intervalHours();
+        // Persistent interval check survives JVM restarts; PeriodicGate then deduplicates
+        // across replicas (StoreBacked) or within the process (Local).
+        if (Duration.between(s.lastRunAt(), now).toHours() < config.intervalHours()) {
+            return false;
+        }
+        return periodicGate.tryClaim("skill-curator", Duration.ofHours(config.intervalHours()));
     }
 
     // ---------------------------------------------------------------------
@@ -229,7 +249,7 @@ public class SkillCurator {
      * Generate a human-readable markdown report listing every agent-created skill grouped by
      * common name prefix. This is a stub for the LLM-powered umbrella consolidation pass:
      * the prompt + LLM call require an auxiliary model and are deferred to a future version.
-     * In {@code DRY_RUN_ONLY} or {@code LIVE} mode this method writes a report to
+     * In {@code DRY_RUN_ONLY} mode this method writes a report to
      * {@code skills/.curator_reports/&lt;ts&gt;/REPORT.md}; in {@code DISABLED} mode it returns
      * {@code null} without writing.
      *

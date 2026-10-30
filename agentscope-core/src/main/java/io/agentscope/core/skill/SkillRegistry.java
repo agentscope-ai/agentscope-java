@@ -15,69 +15,70 @@
  */
 package io.agentscope.core.skill;
 
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Registry for managing skill registration and activation state.
+ * Pure storage layer for {@link AgentSkill}s, keyed by skill id.
  *
- * <p>This class provides basic storage and retrieval operations for skills.
+ * <p>The skill activation state is not stored here: it is the per-session {@code activatedGroups}
+ * on {@link io.agentscope.core.state.ToolContextState}.
  *
- * <p><b>Responsibilities:</b>
- * <ul>
- *   <li>Store and retrieve skills
- *   <li>Track skill metadata and activation state
- * </ul>
- *
- * <p><b>Design principle:</b>
- * This is a pure storage layer. All parameters are assumed to be non-null
- * unless explicitly documented. Parameter validation should be performed
- * at the Toolkit layer.
+ * <p>This is a pure storage layer: parameters are assumed non-null and validation is performed at
+ * the {@code Toolkit} layer.
  */
 class SkillRegistry {
+    private static final Logger logger = LoggerFactory.getLogger(SkillRegistry.class);
+
     private final Map<String, AgentSkill> skills = new ConcurrentHashMap<>();
-    private final Map<String, RegisteredSkill> registeredSkills = new ConcurrentHashMap<>();
 
     // ==================== Registration ====================
 
     /**
-     * Registers a skill with its metadata.
-     *
-     * <p>If the skill is already registered, it will be replaced.
+     * Registers a skill, replacing any existing skill with the same id. Re-registering the same
+     * {@code (name, source)} pair (a content update) is the normal path. With the standard name
+     * charset (no underscores) distinct pairs cannot share an id, so the collision warning below
+     * is unreachable for valid skills and acts only as a tripwire against future rule relaxations
+     * or caller-supplied mismatched ids.
      *
      * @param skillId The unique skill identifier (must not be null)
      * @param skill The skill implementation (must not be null)
-     * @param registered The registered skill wrapper containing metadata (must not be null)
      */
-    void registerSkill(String skillId, AgentSkill skill, RegisteredSkill registered) {
-        skills.put(skillId, skill);
-        registeredSkills.put(skillId, registered);
-    }
-
-    // ==================== Activation Management ====================
-
-    /**
-     * Sets the activation state of a skill.
-     *
-     * @param skillId The skill ID (must not be null)
-     * @param active Whether to activate the skill
-     */
-    void setSkillActive(String skillId, boolean active) {
-        RegisteredSkill registered = registeredSkills.get(skillId);
-        if (registered != null) {
-            registered.setActive(active);
+    void registerSkill(String skillId, AgentSkill skill) {
+        AgentSkill existing = skills.get(skillId);
+        if (isAmbiguousIdCollision(existing, skill)) {
+            logger.warn(
+                    "Skill id '{}' was registered for name='{}', source='{}' but is being"
+                            + " overwritten by a different skill name='{}', source='{}'. With the"
+                            + " standard name rule this cannot happen; it indicates a naming-rule"
+                            + " regression or a caller-supplied mismatched id.",
+                    skillId,
+                    existing.getName(),
+                    existing.getSource(),
+                    skill.getName(),
+                    skill.getSource());
         }
+        skills.put(skillId, skill);
     }
 
     /**
-     * Sets the activation state of all skills.
+     * Returns whether registering {@code incoming} under an id already held by {@code existing}
+     * is an ambiguous id collision, i.e. the two skills are different {@code (name, source)}
+     * pairs that map to the same concatenated id. Re-registration of the same pair (a content
+     * update) is not a collision.
      *
-     * @param active Whether to activate all skills
+     * @param existing the currently registered skill under the id ({@code null} when absent)
+     * @param incoming the skill about to be registered under the same id
+     * @return {@code true} when the overwrite is ambiguous, {@code false} otherwise
      */
-    void setAllSkillsActive(boolean active) {
-        registeredSkills.values().forEach(r -> r.setActive(active));
+    static boolean isAmbiguousIdCollision(AgentSkill existing, AgentSkill incoming) {
+        return existing != null
+                && (!existing.getName().equals(incoming.getName())
+                        || !existing.getSource().equals(incoming.getSource()));
     }
 
     // ==================== Query Operations ====================
@@ -93,22 +94,12 @@ class SkillRegistry {
     }
 
     /**
-     * Gets a registered skill by ID.
-     *
-     * @param skillId The skill ID (must not be null)
-     * @return The registered skill, or null if not found
-     */
-    RegisteredSkill getRegisteredSkill(String skillId) {
-        return registeredSkills.get(skillId);
-    }
-
-    /**
      * Gets all skill IDs.
      *
      * @return Set of skill IDs (never null, may be empty)
      */
     Set<String> getSkillIds() {
-        return new HashSet<>(skills.keySet());
+        return new TreeSet<>(skills.keySet());
     }
 
     /**
@@ -121,15 +112,6 @@ class SkillRegistry {
         return skills.containsKey(skillId);
     }
 
-    /**
-     * Gets all registered skills.
-     *
-     * @return Map of skill IDs to registered skills (never null, may be empty)
-     */
-    Map<String, RegisteredSkill> getAllRegisteredSkills() {
-        return new ConcurrentHashMap<>(registeredSkills);
-    }
-
     // ==================== Removal Operations ====================
 
     /**
@@ -139,6 +121,5 @@ class SkillRegistry {
      */
     void removeSkill(String skillId) {
         skills.remove(skillId);
-        registeredSkills.remove(skillId);
     }
 }

@@ -27,7 +27,7 @@
     <name>AgentScope Java - Parent</name>
 
     <properties>
-        <revision>2.0.1-SNAPSHOT</revision>
+        <revision>2.1.0-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -43,11 +43,16 @@
         <maven-site-plugin.version>4.0.0-M16</maven-site-plugin.version>
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
-        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
+        <maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
+        <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
         <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
         <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
         <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
         <central.publishing.maven.version>0.10.0</central.publishing.maven.version>
+
+        <!-- Alibaba Cloud SDK transitive version-range pins; see dependencyManagement below. -->
+        <aliyun-tea.version>1.4.1</aliyun-tea.version>
+        <aliyun-java-sdk-core.version>4.7.8</aliyun-java-sdk-core.version>
 
         <maven.deploy.skip>false</maven.deploy.skip>
         <argLine>-Xms512m -Xmx1024m</argLine>
@@ -56,6 +61,7 @@
     <modules>
         <module>agentscope-core</module>
         <module>agentscope-harness</module>
+        <module>agentscope-service</module>
         <module>agentscope-extensions</module>
         <module>agentscope-examples</module>
         <module>agentscope-dependencies-bom</module>
@@ -144,6 +150,31 @@
                 <version>${revision}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!--
+              Alibaba Cloud SDK transitive dependencies declare version RANGES:
+                - com.aliyun:tea                  [1.1.14, 2.0.0) via alibabacloud-gateway-spi:0.0.3
+                                                  [1.2.0, 2.0.0)  via openapiutil:0.2.2 / credentials-java:1.0.x
+                - com.aliyun:aliyun-java-sdk-core [4.3.2, 5.0.0)  via aliyun-java-sdk-ram:3.1.0
+              Range resolution performs a remote metadata lookup on every build and reports a
+              misleading "No versions available ... within specified range" failure whenever
+              that lookup hiccups, which makes CI non-deterministic (observed as an
+              intermittent failure on PR #2858, cleared by a plain re-run; issue #3256).
+              Pinning the versions the tree already selects removes the lookup. Deliberately
+              kept in the root aggregator (build-local) rather than in the published
+              agentscope-dependencies-bom, so downstream consumers keep resolving the
+              versions their own Alibaba SDK needs.
+            -->
+            <dependency>
+                <groupId>com.aliyun</groupId>
+                <artifactId>tea</artifactId>
+                <version>${aliyun-tea.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.aliyun</groupId>
+                <artifactId>aliyun-java-sdk-core</artifactId>
+                <version>${aliyun-java-sdk-core.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -288,6 +319,15 @@
                     <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
 
                     <!--
+                        Backstop for a hung test fork: kill it after 30 minutes instead of
+                        letting a stuck fork pin its reactor thread until the CI job timeout.
+                        Default forkCount/reuseForks means one fork per module's full suite;
+                        legitimate suites are far below this budget, and a kill surfaces the
+                        offending module in the build log rather than a silent hang.
+                    -->
+                    <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+
+                    <!--
                         Phase 0: redirect HarnessAgent's default JsonSession root into the
                         build directory so test runs don't pollute (or get polluted by)
                         ~/.agentscope/state/. Production callers ignore this property.
@@ -333,6 +373,22 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${maven-jar-plugin.version}</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <!-- Record the resolved ${project.version} in the jar manifest so
+                                 Version can fall back to Implementation-Version when the filtered
+                                 version.properties resource is absent from the classpath (e.g.
+                                 shaded/relocated jars or custom packaging). -->
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-deploy-plugin</artifactId>
                 <version>${maven-deploy-plugin.version}</version>
                 <configuration>
@@ -371,7 +427,7 @@
                             <excludeArtifacts>
                                 <artifact>agentscope-examples</artifact>
                                 <artifact>documentation</artifact>
-                                <artifact>agentscope-builder</artifact>
+                                <artifact>agentscope-service</artifact>
                                 <artifact>agentscope-codingagent</artifact>
                                 <artifact>agentscope-dataagent</artifact>
                                 <artifact>agentscope-paw</artifact>

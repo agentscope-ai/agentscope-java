@@ -17,7 +17,6 @@ package io.agentscope.extensions.model.anthropic.formatter;
 
 import com.anthropic.models.messages.Base64ImageSource;
 import com.anthropic.models.messages.Base64PdfSource;
-import com.anthropic.models.messages.CitationsConfigParam;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.DocumentBlockParam;
 import com.anthropic.models.messages.ImageBlockParam;
@@ -31,7 +30,6 @@ import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
 import java.net.URI;
 import java.nio.file.Path;
-import java.util.Objects;
 
 /**
  * Handles media content conversion for Anthropic API.
@@ -39,22 +37,6 @@ import java.util.Objects;
 public class AnthropicMediaConverter {
 
     private static final String PDF_MEDIA_TYPE = "application/pdf";
-
-    private final CitationMode citationMode;
-
-    /** Create an Anthropic media converter with citations disabled. */
-    public AnthropicMediaConverter() {
-        this(CitationMode.DISABLED);
-    }
-
-    /**
-     * Create an Anthropic media converter with the given citation mode.
-     *
-     * @param citationMode whether PDF documents should enable native citations
-     */
-    AnthropicMediaConverter(CitationMode citationMode) {
-        this.citationMode = Objects.requireNonNull(citationMode);
-    }
 
     /**
      * Convert ImageBlock to Anthropic ImageBlockParam. For local files, converts to base64. For
@@ -153,7 +135,7 @@ public class AnthropicMediaConverter {
      * Convert a PDF DataBlock to an Anthropic document block.
      *
      * <p>Local files are encoded as base64. Remote HTTP(S) URLs are passed through as URL PDF
-     * sources. Citations are enabled based on the context provided at construction time.
+     * sources.
      *
      * @param dataBlock PDF data block
      * @return Anthropic PDF document block
@@ -170,9 +152,6 @@ public class AnthropicMediaConverter {
         DocumentBlockParam.Builder builder = DocumentBlockParam.builder();
         if (dataBlock.getName() != null && !dataBlock.getName().isBlank()) {
             builder.title(dataBlock.getName());
-        }
-        if (citationMode.isEnabled()) {
-            builder.citations(CitationsConfigParam.builder().enabled(true).build());
         }
 
         if (source instanceof URLSource urlSource) {

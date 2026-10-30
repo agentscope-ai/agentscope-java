@@ -39,7 +39,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -73,25 +72,36 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
      */
     @Override
     public List<TReq> format(List<Msg> msgs) {
-        return formatWithTracing(msgs, () -> doFormat(msgs));
+        return TracerRegistry.get().callFormat(this, msgs, () -> doFormat(msgs));
     }
 
     /**
-     * Execute a formatting action within the standard tracing context.
+     * Format AgentScope messages using request-scoped generation options.
      *
-     * <p>Subclasses with request-scoped options (e.g. citation mode) can use this helper to run
-     * a custom formatting action while preserving tracing behavior, without depending on the
-     * tracing implementation directly.
-     *
-     * @param msgs messages being formatted
-     * @param formattingAction the formatting action to execute
-     * @return formatted provider request messages
+     * @param msgs list of AgentScope messages
+     * @param options request-scoped generation options; may be {@code null}
+     * @return list of provider-specific request messages
      */
-    protected List<TReq> formatWithTracing(List<Msg> msgs, Supplier<List<TReq>> formattingAction) {
-        return TracerRegistry.get().callFormat(this, msgs, formattingAction);
+    @Override
+    public List<TReq> format(List<Msg> msgs, GenerateOptions options) {
+        return TracerRegistry.get().callFormat(this, msgs, () -> doFormat(msgs, options));
     }
 
     protected abstract List<TReq> doFormat(List<Msg> msgs);
+
+    /**
+     * Format AgentScope messages using request-scoped generation options.
+     *
+     * <p>The default implementation delegates to {@link #doFormat(List)} for providers that do not
+     * need options during message conversion.
+     *
+     * @param msgs list of AgentScope messages
+     * @param options request-scoped generation options; may be {@code null}
+     * @return list of provider-specific request messages
+     */
+    protected List<TReq> doFormat(List<Msg> msgs, GenerateOptions options) {
+        return doFormat(msgs);
+    }
 
     /**
      * Extract text content from a message, filtering out ThinkingBlock.

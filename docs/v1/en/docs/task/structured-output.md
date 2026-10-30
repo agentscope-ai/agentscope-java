@@ -1,4 +1,7 @@
-# Structured Output
+---
+title: Structured Output
+zh_link: /v1/zh/docs/task/structured-output
+---
 
 Structured output enables Agents to generate typed data conforming to predefined schemas, achieving reliable conversion from natural language to structured data.
 
@@ -121,4 +124,4 @@ try {
 ## More Resources
 
 - **Complete Example**: [StructuredOutputExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java)
-- **Agent Configuration**: [agent-config.md](./agent-config.md)
+- **Agent Configuration**: [agent-config.md](/v1/en/docs/task/agent-config)

@@ -1,6 +1,7 @@
 ---
-title: "Tool"
-description: "Define, register, and manage the capabilities an agent can call"
+title: Tool
+description: Define, register, and manage the capabilities an agent can call
+zh_link: /v2/zh/docs/building-blocks/tool
 ---
 
 ## Overview
@@ -70,9 +71,13 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
 ```
 
-:::{note}
+
+<Note>
+
 The `Toolkit` automatically registers the `reset_tools` meta tool and the `load_skill_through_path` skill viewer tool when extra tool groups or skills are present — you don't need to instantiate them manually. See [self-managed tools](#self-managed-tools) and [Skill](#skill).
-:::
+
+</Note>
+
 
 ### Custom tools (annotation-based)
 
@@ -112,10 +117,20 @@ Common `@Tool` attributes:
 | `name` | `String` | Tool name (defaults to the method name) |
 | `description` | `String` | Description shown to the agent |
 | `readOnly` | `boolean` | Whether the tool is read-only (default `false`) |
-| `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `false`) |
+| `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `true`) |
 | `stateInjected` | `boolean` | Inject `AgentState` as an extra parameter (default `false`) |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
+
+#### Explicit result states
+
+With the default converter, annotated tools returning `void` or `Void`, including successful `Mono<Void>` and `CompletableFuture<Void>` completion, return `(completed with no output)` to the model, so a silent success is never mistaken for a missing tool result. An ordinary `null` return remains `null`; errors and cancellation do not produce this success acknowledgement.
+
+Return `ToolResultBlock.success(text)` for a successful call and `ToolResultBlock.error(message)` for a failure. Both are supported directly and inside `Mono<ToolResultBlock>`. Do not infer failure from text prefixes. `ToolResultBlock.text(text)` defaults to `RUNNING`; use `withState(...)` to set a terminal state when preserving an existing JSON or multiline output.
+
+For ordinary client tools, the Anthropic formatter maps `ERROR`, `DENIED`, and `INTERRUPTED` to `is_error: true`, preserving the tool-call ID and output blocks. `SUCCESS`, `RUNNING`, and `SUSPENDED` are not classified as errors by the formatter. Provider-executed server-tool payloads retain their separate conversion path.
+
+Built-in tools now return structured results. Direct callers should inspect `getState()` and read the text blocks from `getOutput()`; `Toolkit` registration is unchanged.
 
 ### Custom tools (extending `ToolBase`)
 
@@ -125,10 +140,10 @@ When you need a custom permission policy, external execution, or a more complex 
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
-import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
@@ -153,7 +168,7 @@ public class WebSearchTool extends ToolBase {
 
     @Override
     public Mono<PermissionDecision> checkPermissions(
-            Map<String, Object> toolInput, ToolExecutionContext context) {
+            Map<String, Object> toolInput, PermissionContextState context) {
         return Mono.just(PermissionDecision.allow("Web search is read-only."));
     }
 
@@ -173,16 +188,16 @@ public class WebSearchTool extends ToolBase {
 
 ### External execution tools
 
-External-execution tools delegate the actual work outside the agent runtime — typically to a human operator or an external system. The agent emits `RequireExternalExecutionEvent` and pauses until the result is fed back via `ExternalExecutionResultEvent`.
+External-execution tools delegate the actual work outside the agent runtime — typically to a human operator or an external system. The agent emits `RequireExternalExecutionEvent` and pauses. When the next call feeds back matching `ToolResultBlock`s, the agent emits `ExternalExecutionResultEvent` with the same `replyId` before continuing.
 
-This pattern is the foundation of [human-in-the-loop](./agent.md#human-in-the-loop) flows — some actions need human approval or human execution.
+This pattern is the foundation of [human-in-the-loop](/v2/en/docs/building-blocks/agent#human-in-the-loop) flows — some actions need human approval or human execution.
 
 To create an external tool, set `externalTool` to `true` and skip implementing `callAsync`:
 
 ```java
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.tool.ToolBase;
-import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
@@ -207,7 +222,7 @@ public class HumanApprovalTool extends ToolBase {
 
     @Override
     public Mono<PermissionDecision> checkPermissions(
-            Map<String, Object> toolInput, ToolExecutionContext context) {
+            Map<String, Object> toolInput, PermissionContextState context) {
         return Mono.just(PermissionDecision.allow("External tool dispatch is always allowed."));
     }
 }
@@ -215,9 +230,37 @@ public class HumanApprovalTool extends ToolBase {
 
 Runnable examples: `agentscope-examples/documentation/.../tool/ToolBaseExample.java`, `tool/ToolExecutionContextExample.java`.
 
+### Duplicate names and intentional replacement
+
+The tool name is the lookup key everything downstream resolves a call by — schemas, permission rules, tool groups and confirmation handling alike. Registering a tool whose name is already bound to a *different* tool therefore fails fast with an `IllegalStateException` instead of silently replacing the previous binding:
+
+```java
+toolkit.registerTool(new LocalTools());   // @Tool(name = "dup", ...)
+toolkit.registerTool(new OtherTools());   // same name, different tool
+// IllegalStateException: Tool 'dup' is already registered and will not be silently replaced.
+```
+
+MCP tools go through the same check, so a remote tool clashing with a local one (or with another server's tool) is reported when that server's tools are registered. To keep both, register the client with a `toolNamePrefix` or rename one tool.
+
+Re-registering the *same* logical tool stays idempotent — no special handling is needed for refreshes: the same annotated object and method, the same MCP client re-registering its tools (reconnect / tool-list refresh), and an unchanged external-tool schema re-declared through `registerSchema` are all accepted as refreshes. A schema that *changed* under the same name is a conflict: remove the old registration first or pick a different name.
+
+Annotated-source refresh also applies when a tool obtained through `getTool` is registered directly with `registerAgentTool` or `registerTool`: the source object and Java method must both match. Refresh installs the incoming registration configuration. MCP refresh requires the same wrapper instance **and remote tool name**; matching a local name through a different prefix does not make two remote targets the same source.
+
+For a deliberate override — swapping one implementation for another under the same name — use the explicit replacement API:
+
+```java
+toolkit.replaceAgentTool(newFallbackTool); // replaces the existing "dup" binding
+```
+
+`replaceAgentTool` is the only intentional-replacement path; every other registration route (`registerTool`, `registerAgentTool`, `registerSchema`, sub-agent registration and MCP client registration) goes through the fail-fast check.
+
+`HarnessAgent.Builder.fromAgent(source)` rebuilds tools created by the source Harness, including tools in inactive groups. User tools and explicit replacements are retained. If a retained user tool conflicts with a Harness capability, disable that capability on the new builder or choose a different tool name.
+
+For construction-time rebinding, `Toolkit.copyExcludingTools(instances)` excludes only the specified instances. A newer replacement under the same name is preserved. The copy retains tool-group memberships and toolkit configuration, including `allowToolDeletion(false)`; the source is unchanged.
+
 ## Receiving context
 
-The [`RuntimeContext`](./agent.md#runtimecontext-per-call-context) passed to `agent.call(msgs, runtimeContext)` is forwarded to every tool invocation in that reply. Tools can read it in two ways: annotation-based tools through automatic injection, and `ToolBase.callAsync` through `ToolCallParam`.
+The [`RuntimeContext`](/v2/en/docs/building-blocks/agent#runtimecontext-per-call-context) passed to `agent.call(msgs, runtimeContext)` is forwarded to every tool invocation in that reply. Tools can read it in two ways: annotation-based tools through automatic injection, and `ToolBase.callAsync` through `ToolCallParam`.
 
 ### Automatic injection (`@Tool` methods)
 
@@ -225,12 +268,27 @@ Inside a `@Tool` method, any parameter **without `@ToolParam`** is treated as fr
 
 | Parameter type | Source |
 |----------------|--------|
-| `ToolEmitter` | Streaming emitter (no-op when none configured) |
+| `ToolEmitter` | Streaming emitter and tool call context (no-op when none configured) |
 | `Agent` | The current agent instance |
 | `AgentState` | The per-session state for the current call (via `RuntimeContext.getAgentState()`) |
 | `RuntimeContext` | The current per-call context |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()` (compatibility shim, deprecated) |
 | Any other user POJO type | `runtimeContext.get(ParamType.class)` — i.e. an object the caller registered via `RuntimeContext.builder().put(ParamType.class, value)` |
+
+An injected `ToolEmitter` exposes the current tool call ID, which can be used to correlate progress with frontend state or another shared store:
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    String toolCallId = emitter.getToolCallId();
+    if (toolCallId != null) {
+        progressByToolCall.put(toolCallId, "running");
+    }
+    return "done";
+}
+```
+
+`getToolCallId()` returns `null` when the emitter has no tool call context, such as a no-op or custom emitter.
 
 "User POJO" means: no `@ToolParam`, not primitive, not `ContentBlock` / `Msg`, not under `java.*` / `javax.*`. Every other parameter (those with `@ToolParam`, or that fall outside the above types) is read from the LLM-supplied JSON by name.
 
@@ -265,6 +323,25 @@ agent.call(List.of(new UserMessage("Greet me.")), ctx).block();
 ```
 
 The model never sees `userCtx` — it is not part of the tool's JSON schema. Full example: `agentscope-examples/documentation/.../tool/ToolExecutionContextExample.java`.
+
+### Streaming tool progress
+
+Long-running tools can publish intermediate progress through `ToolEmitter.emit()`. Progress travels as [`ToolProgressEvent`](/v2/en/docs/building-blocks/message-and-event#event-types) in the event stream — it is for display only and never sent to the LLM. The tool's return value is what the model receives, and it travels separately as `ToolResultTextDeltaEvent` / `ToolResultDataDeltaEvent`.
+
+```java
+@Tool(name = "run_task", description = "Run a long-running task")
+public String runTask(ToolEmitter emitter) {
+    emitter.emit(ToolResultBlock.text("Scanning 3 directories..."));
+    // ... do work ...
+    emitter.emit(ToolResultBlock.text("Indexing results..."));
+    // ... do more work ...
+
+    // Only this return value is sent to the LLM as the tool result.
+    return "3 files found";
+}
+```
+
+Clients that rebuild tool results from the event stream must accumulate `ToolResult*DeltaEvent` and ignore `ToolProgressEvent`. Mixing the two would put progress text into the tool message and feed it back to the model on the next turn, contradicting `ToolEmitter`'s contract.
 
 ### Accessing context in `ToolBase.callAsync`
 
@@ -313,57 +390,72 @@ MCP tools are exposed in the toolkit under the namespace `mcp__{server_name}__{t
 
 Use `McpClientBuilder` to build an `McpClientWrapper`, then register it on the `Toolkit`:
 
-::::{tab-set}
-:::{tab-item} STDIO
+
+<Tabs>
+
+
+<Tab title="STDIO">
+
 ```java
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper filesystem =
-        McpClientBuilder.stdio()
-                .name("filesystem")
-                .command("mcp-server-filesystem")
-                .args("--root", "/my/project")
-                .build();
+        McpClientBuilder.create("filesystem")
+                .stdioTransport("mcp-server-filesystem", "--root", "/my/project")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(filesystem).block();
 ```
-:::
-:::{tab-item} Streamable HTTP
+
+</Tab>
+
+
+<Tab title="Streamable HTTP">
+
 ```java
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper weather =
-        McpClientBuilder.streamableHttp()
-                .name("weather")
-                .url("https://api.weather.com/mcp")
+        McpClientBuilder.create("weather")
+                .streamableHttpTransport("https://api.weather.com/mcp")
                 .header("Authorization", "Bearer xxx")
-                .build();
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
 ```
-:::
-:::{tab-item} SSE
+
+</Tab>
+
+
+<Tab title="SSE">
+
 ```java
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper search =
-        McpClientBuilder.sse()
-                .name("search")
-                .url("https://api.search.com/mcp/sse")
-                .build();
+        McpClientBuilder.create("search")
+                .sseTransport("https://api.search.com/mcp/sse")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(search).block();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 Runnable examples: `agentscope-examples/documentation/.../mcp/McpStdioExample.java`, `mcp/McpSseExample.java`, `mcp/McpStreamableHttpExample.java`.
 
@@ -402,7 +494,7 @@ When skills are present, the `Toolkit` performs a two-phase setup.
 Initialisation:
 
 - The toolkit scans every registered skill source and collects each skill's name, description, and directory.
-- It auto-registers the built-in viewer tool `load_skill_through_path` (implemented in `io.agentscope.core.skill.SkillToolFactory`) into the `skill-build-in-tools` group.
+- It auto-registers the built-in viewer tool `load_skill_through_path` (implemented in `io.agentscope.core.skill.SkillToolFactory`) as an ungrouped, always-visible tool.
 - It assembles a system-prompt fragment listing the available skills (names + descriptions) and instructing the agent to read full content via `load_skill_through_path`.
 
 At runtime, the agent invokes the viewer with two required arguments:
@@ -426,9 +518,13 @@ Each successful call has two effects:
 1. Returns the requested content (the `SKILL.md` markdown, or the named resource file).
 2. **Activates the skill** — its associated tool group is enabled in the `Toolkit`, so any tools bundled with the skill become callable for the rest of the turn. If the requested `path` does not exist, the viewer returns an error that lists the available resource paths (with `SKILL.md` first) so the agent can retry.
 
-:::{note}
+
+<Note>
+
 A skill is not a tool — the agent cannot call it directly. The agent must read the instructions via `load_skill_through_path` first, then act on them with other tools.
-:::
+
+</Note>
+
 
 ### Skill script execution: configuring shell tools
 
@@ -516,22 +612,24 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new BasicTools());
 
 ToolGroup database =
-        new ToolGroup(
-                "database",
-                "Tools for database operations.",
-                ToolGroupScope.SESSION,
-                /* active = */ false);
+        ToolGroup.builder()
+                .name("database")
+                .description("Tools for database operations.")
+                .scope(ToolGroupScope.SESSION)
+                .active(false)
+                .build();
 database.addTool("db_query");
 database.addTool("db_migrate");
 toolkit.registerTool(new DatabaseTools());
 toolkit.registerToolGroup(database);
 
 ToolGroup deployment =
-        new ToolGroup(
-                "deployment",
-                "Tools for deploying services.",
-                ToolGroupScope.SESSION,
-                /* active = */ false);
+        ToolGroup.builder()
+                .name("deployment")
+                .description("Tools for deploying services.")
+                .scope(ToolGroupScope.SESSION)
+                .active(false)
+                .build();
 deployment.addTool("deploy");
 deployment.addTool("rollback");
 toolkit.registerTool(new DeploymentTools());
@@ -545,7 +643,7 @@ ReActAgent agent =
                 .build();
 ```
 
-`ToolGroup` takes a name, a description, a scope (`ToolGroupScope`), and an initial active flag. The reserved name `"basic"` is auto-populated by `Toolkit#registerTool(Object)` and is always active.
+`ToolGroup` is built with `ToolGroup.builder()`: a name, a description, a scope (`ToolGroupScope`), and an initial active flag. The reserved name `"basic"` is auto-populated by `Toolkit#registerTool(Object)` and is always active.
 
 ### Using the meta tool
 
@@ -558,33 +656,267 @@ Runtime behavior:
 - For each group that just became active, its description and (if provided) instructions are spliced into the meta tool's return value, telling the agent how to use it correctly.
 - Tools in inactive groups do not appear in the agent's tool schema, leaving more context for the active toolset.
 
-:::{warning}
+
+<Warning>
+
 The meta tool's input represents the **final state** of all groups, not a delta. Any group not explicitly set to `true` is deactivated regardless of previous state.
-:::
+
+</Warning>
+
+
+## On-demand tool search
+
+For large tool catalogs, opt in to `ToolSearchMiddleware`. It registers a read-only
+`tool_search(query, limit)` tool (`limit` defaults to 5). Initially, ordinary models
+see only this tool and any tools configured to remain visible. A search makes the
+matched tools available for subsequent model calls without executing them.
+
+```java
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.search.ToolSearchMiddleware;
+
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new OrderTools());
+ToolSearchMiddleware search = new ToolSearchMiddleware(toolkit);
+
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .middleware(search)
+    .build();
+```
+
+The dependency-free `KeywordToolSearchStrategy` matches query terms against tool
+names and descriptions, with name matches ranked higher. Implement
+`ToolSearchStrategy.search(ToolSearchRequest)` to use semantic retrieval or a remote
+index instead. Return eligible tool names in relevance order using
+`ToolSearchResult`; unknown names are rejected and results are deduplicated and
+limited before they change session state. Search candidates respect active tool
+groups and request-scoped tool overrides. Inactive groups must still be activated
+through the existing group-management tools.
+
+To keep control tools visible or force ordinary function calling, use the full
+constructor:
+
+```java
+import io.agentscope.core.tool.search.KeywordToolSearchStrategy;
+import java.util.Set;
+
+new ToolSearchMiddleware(toolkit, new KeywordToolSearchStrategy(),
+    Set.of("reset_equipped_tools"), false);
+```
+
+The final argument enables native loading when `true` (the default). A model's
+`getToolSearchMode()` selects the loading protocol; custom models default to
+`FUNCTION`. `OpenAIResponsesChatModel` uses native client-executed search and
+replays discovered definitions in `tool_search_output`. `AnthropicChatModel` sends
+the eligible catalog with deferred schemas and returns `tool_reference` blocks.
+These paths require a provider/model that supports the native protocol. Set the
+argument to `false` to use ordinary function calling instead. Do not combine the
+middleware with a hosted OpenAI `tool_search` server tool.
+
+Discoveries are stored in the session's `ToolContextState` and survive state-store
+round trips. Tools are rechecked against the current request's eligible catalog;
+search never activates groups or changes execution permissions. Explicitly forced
+tools and the structured-output control tool remain available. No shared toolkit
+is mutated during a call. Native loading keeps the initial tool declarations
+stable; already-discovered native tools remain available through conversation
+history. If compaction removes those results, or the model's loading protocol
+changes, persisted discoveries are exposed eagerly so they remain usable.
+Ordinary function calling accumulates discovered schemas in `tools`.
+
+A credential-free, runnable example is
+[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java).
+## Tool call interceptors
+
+`ToolCallInterceptor` is a Toolkit-layer, per-invocation hook over tool arguments. It runs after JSON-schema validation and preset-argument merging, and before the session dispatch record and real execution — so it sees the exact arguments the tool would receive, plus the caller identity, and decides what actually executes.
+
+Use it for **parameter-level business rules** the [permission system](/v2/en/docs/building-blocks/permission-system) cannot express: the tool is allowed, but is *this* call's `file_path` inside the current user's sandbox? Is this SQL statement within the caller's data scope? Tool-level policy (ALLOW/ASK/DENY, human review) stays in the permission engine; batch-level, event-stream concerns stay in [middleware](/v2/en/docs/building-blocks/middleware) `onActing`.
+
+Register interceptors at build time on `ToolkitConfig`:
+
+```java
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptor(new AuditInterceptor())                    // appends; repeatable
+        .interceptor(new PathSandboxInterceptor(                // appends
+                userId -> Path.of("/data/workspaces", userId)))
+        .build());
+
+// Or set the whole list at once — interceptors(list) replaces, not appends
+Toolkit toolkit2 = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptors(List.of(audit, sandbox))
+        .build());
+```
+
+`interceptor(...)` appends and may be called repeatedly; `interceptors(List)` replaces everything registered so far — handy when you already assembled the chain elsewhere. Interceptors are sorted once by `order()` descending (higher value = outer layer, runs first, sees the result last; equal orders keep registration order) and stay immutable afterwards. A `Toolkit` is shared across concurrent sessions, so interceptor implementations must be stateless or thread-safe; runtime-mutable *policy* (kill switches, tenant rules) lives as mutable state *inside* an interceptor.
+
+The hook follows the same onion shape as middleware:
+
+```java
+public final class PathSandboxInterceptor implements ToolCallInterceptor {
+
+    private final Function<String, Path> workspaceRootResolver;
+
+    public PathSandboxInterceptor(Function<String, Path> workspaceRootResolver) {
+        this.workspaceRootResolver = workspaceRootResolver;
+    }
+
+    @Override
+    public Mono<ToolResultBlock> intercept(
+            ToolInvocation invocation,
+            Function<ToolInvocation, Mono<ToolResultBlock>> next) {
+        if (!invocation.toolName().equals("write_text_file")) {
+            return next.apply(invocation);        // not our tool — pass through
+        }
+        // Injected dependency: registered by the caller via
+        // RuntimeContext.builder().put(FileAuditLog.class, log) — never model-visible
+        FileAuditLog audit = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().get(FileAuditLog.class) : null;
+        String userId = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().getUserId() : null;
+        if (userId == null || userId.isBlank()) { // fail closed on missing identity
+            return deny("no authenticated user context; cannot scope file access");
+        }
+        Path root = workspaceRootResolver.apply(userId).toAbsolutePath().normalize();
+        // Tool argument: "file_path" comes from the model's JSON input (presets included)
+        Path resolved = root
+                .resolve(invocation.input().get("file_path").toString())
+                .normalize();                     // absolute paths also fail the check below
+        // Pre-processing: validate the argument and rewrite it to the in-sandbox path
+        if (!resolved.startsWith(root)) {
+            return deny("path must stay inside your workspace; use relative paths");
+        }
+        Map<String, Object> rewritten = new HashMap<>(invocation.input());
+        rewritten.put("file_path", resolved.toString());
+        // Post-processing: audit the executed result without affecting it
+        return next.apply(invocation.withInput(rewritten))
+                .doOnSuccess(result -> {
+                    if (audit != null) audit.record(userId, resolved, result);
+                });
+    }
+
+    private static Mono<ToolResultBlock> deny(String message) {
+        return Mono.just(ToolResultBlock.text("PathSandbox: " + message)
+                .withState(ToolResultState.DENIED));
+    }
+}
+```
+
+Actions an interceptor can take:
+
+| Action | Expression | Effect |
+|--------|------------|--------|
+| Allow | `next.apply(invocation)` | Continue the chain / execute the tool |
+| Policy deny | `ToolResultBlock.text(msg).withState(ToolResultState.DENIED)` | Tool not executed; result feeds back to the model for self-correction; recorded as a `denied` decision |
+| Reject as invalid | `ToolResultBlock.error(msg)` | "This call failed" semantics, like a schema violation; no denied record |
+| Rewrite | `next.apply(invocation.withInput(newInput))` | Tool receives the rewritten arguments (presets may be overridden; no schema re-validation — developer-produced input, same trust level as presets) |
+| Audit | `next.apply(invocation).doOnSuccess(...)` | Observe without affecting execution |
+| Suspend (HITL) | throw `ToolSuspendException` | Mapped to a `suspended` result by the existing pipeline |
+
+Semantics to keep in mind:
+
+- **Per-agent dispatch.** The snapshot carries `agentId` (audit correlation) and `agentName` (write rules against it, e.g. deny writes for `planner`); both are `null` on agentless direct calls. Identity only, not the `Agent` handle — its operations belong to middleware and carry re-entrancy hazards; structurally different interceptor sets per agent belong in each agent's own `ToolkitConfig` at build time.
+- **Rewrites happen after permission approval.** The permission engine judges the raw model input; if the *final* value of a security-sensitive rewrite (path, SQL, URL) needs user confirmation, suspend for human review instead of rewriting silently. An interceptor denying an already-approved call is expected — the denial simply feeds back to the model.
+- **Denial messages should be model-actionable** ("use relative paths inside your workspace"), free of server internals, and prefixed with your interceptor's identity (e.g. `PathSandbox:`). To harden a path guard beyond the example above: validate caller-controlled ids before using them as path components, re-check existing paths (and the nearest existing ancestor of new files) with `toRealPath()` — `normalize()` misses symlinks, Windows 8.3 names and ADS, and `Path#startsWith` is case-sensitive — and prefer rewrites that do not echo the server-side absolute root back to the model.
+- **Session records stay honest.** The `tool/dispatch` record sits at the end of the chain and contains the arguments selected for dispatch; calls denied by an interceptor leave no `allowed`/`dispatch` record.
+- **Timeouts and retries** on the batch `callTools` path wrap the whole chain: interceptor time counts toward the tool timeout, and retries re-run the chain on every attempt. The direct `Toolkit#callTool` path keeps today's behavior — no timeout wrapper — so interceptors must never block; offload blocking I/O with `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`.
+- **External tools are never intercepted.** `externalTool=true` / `SchemaOnlyTool` calls short-circuit to `suspended` before the chain runs; validation belongs to the external executor. Resumed results are data injection, not execution, and bypass the chain too. The framework-internal `generate_response` tool is likewise not intercepted.
+- **Propagation.** `Toolkit#copy()` (used by harness subagents) carries interceptors along; a subagent built with a brand-new `Toolkit` gets none unless you register them there. Tools a tool delegates to internally (one tool calling another inside `callAsync`) are not re-intercepted — guard by the outer tool name.
+
+## Final tool-dispatch check
+
+Use `ToolkitConfig.builder().beforeToolCall(...)` when an application must recheck run state immediately before a queued tool starts, for example after another tool reports a fatal infrastructure failure:
+
+```java
+// This toolkit and flag belong to one run.
+AtomicBoolean stopped = new AtomicBoolean();
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+        .beforeToolCall(param -> {
+            if (stopped.get()) {
+                throw new IllegalStateException("Run stopped: infrastructure unavailable");
+            }
+        })
+        .build());
+```
+
+The synchronous, non-blocking check runs on each subscription and retry, after earlier scheduling, interceptor, and dispatch-persistence waits, immediately before local `callAsync`. It receives the final execution parameters, including interceptor rewrites. It also runs before an external tool returns a suspended result, even though external tools bypass interceptors. Reject with a regular `RuntimeException`; do not throw `ToolSuspendException` from this check because it signals suspension rather than rejection. Rejections use the existing tool-error path, and batch results retain call IDs and names.
+
+The check is disabled by default. `Toolkit.copy()` retains it for copied and later-registered tools; a new independent toolkit needs its own configuration. For a toolkit shared across runs, resolve the state from the call's `RuntimeContext` instead of capturing a shared stop flag. Already-started calls are not cancelled, and the application remains responsible for stopping the agent loop and deciding recovery. Internal synthetic tool paths and injected external results do not pass through this check.
+
+The local check follows dispatch persistence deliberately, so a persisted `tool/dispatch` records intent even if the check subsequently rejects execution; the action's terminal result records the failure. Use interceptors for argument policy, rewriting, and audit before persistence.
 
 ## Further reading
 
-::::{grid} 2
 
-:::{grid-item-card} Agent
-:link: ./agent.html
+<CardGroup cols={2}>
+
+
+
+<Card title="Agent" href="/v2/en/docs/building-blocks/agent">
+
 
 How agents orchestrate tool calls in the ReAct loop
-:::
-  :::{grid-item-card} Permission System
-:link: ./permission-system.html
+
+</Card>
+
+
+<Card title="Permission System" href="/v2/en/docs/building-blocks/permission-system">
+
 
 Fine-grained control over which tools execute and when
-:::
-  :::{grid-item-card} Middleware
-:link: ./middleware.html
+
+</Card>
+
+
+<Card title="Middleware" href="/v2/en/docs/building-blocks/middleware">
+
 
 Use onion middlewares to intercept and rewrite tool calls
-:::
-  :::{grid-item-card} Human-in-the-Loop
-:link: ./agent.html#human-in-the-loop
+
+</Card>
+
+
+<Card title="Human-in-the-Loop" href="/v2/en/docs/building-blocks/agent#human-in-the-loop">
+
 
 External execution tools and approval workflows
-:::
 
-::::
+</Card>
+
+
+
+</CardGroup>
+
+
+## Request-scoped tools and session isolation
+
+Agent construction copies tool registries and registration metadata. Existing tool instances remain shared by reference, so custom tools must support concurrent use. Hook and knowledge tools registered while building one agent do not overwrite another agent's registrations.
+
+Use `io.agentscope.core.tool.ToolRequestConfig` instead of mutating a shared Toolkit during a call:
+
+```java
+ToolRequestConfig tools = new ToolRequestConfig(
+        Map.of(schema.getName(), new SchemaOnlyTool(schema)),
+        ToolMergeMode.MERGE_EXTERNAL_PRIORITY);
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId(userId).sessionId(sessionId)
+        .toolRequestConfig(tools).build();
+agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
+```
+
+External tools contain schemas only. Execution suspends for the caller to execute the tool and submit its result. External tools override backend tools with the same name. `EXTERNAL_ONLY` hides all backend tools, even with an empty external list or when Toolkit disallows deletion: composing a request view does not delete registrations. `AGENT_ONLY` rejects nonempty external tool maps.
+
+`Toolkit.callTool` and `callTools` also read configuration from their explicit RuntimeContext. `getTool(name)` inspects the underlying registry; use `getTool(name, config)` for the request view. Activation groups live in the session's `ToolContextState`; streaming tool callbacks belong to each invocation.
+
+Repositories with user- or session-dependent visibility implement `io.agentscope.core.skill.repository.RuntimeContextSkillRepository` in Core. Both Core and Harness pass the current context to the repository. Dynamic Skill views are cached by content signature. Concurrent cache misses share one completed materialization; rebuilding an evicted view uses a fresh directory so active executions keep their files. Cache eviction bounds retained boxes, not disk usage: generated directories remain until JVM shutdown. Callers own cleanup of explicitly supplied working directories; do not remove resources while executions still reference them.
+
+## Tool execution lifecycle callbacks
+
+`ToolExecutionCallback` provides `onStart(call)`, `onProgress(call, chunk)`, and `onResult(call, result)`. The executor emits `onStart` when a tool actually begins executing (in sequential batches, when the tool's turn arrives) and `onResult` at most once per invocation, before ordered batch aggregation. `Toolkit.callToolsWithCallback(...)` forwards all lifecycle notifications; existing `callTools(...)` and chunk callback signatures remain supported.
+
+Final results are notified before ordered batch aggregation, so a fast tool does not wait for a slow tool. Retry, timeout, and tool error handling retain their existing behavior. Progress callback exceptions retain the existing logging and isolation; final-result callback exceptions propagate through the returned publisher. Implementations must be thread-safe and nonblocking. Cancellation or infrastructure failure can terminate without a final result.
+
+The Agent publishes results progressively by default, without a configuration flag. Ordinary tools and synthetic `generate_response` use this callback; provider results and permission denials retain direct event conversion. Callback only publishes events: it does not create messages or update conversation state. Message settlement and interruption recovery retain their existing flow, and an early event does not imply that the result has been stored.

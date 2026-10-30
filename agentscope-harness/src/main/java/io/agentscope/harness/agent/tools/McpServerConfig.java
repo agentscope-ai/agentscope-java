@@ -36,6 +36,11 @@ import java.util.Map;
  *   <li>{@code sse} — uses {@link #url} + {@link #headers} + {@link #queryParams}.
  *   <li>{@code http} — streamable HTTP, same fields as {@code sse}.
  * </ul>
+ *
+ * <p>Request-metadata propagation to the server is controlled by three optional fields mirroring
+ * the three-level switches of the core MCP client: {@link #propagateMeta} (connection level),
+ * {@link #propagateMetaDefault} (registration level) and {@link #propagateMetaOverrides}
+ * (per-tool). All are absent by default, which keeps the core behavior unchanged.
  */
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -83,6 +88,90 @@ public class McpServerConfig {
     /** ISO-8601 duration for client initialization timeout. {@code null} keeps the default. */
     @JsonProperty("initializationTimeout")
     private Duration initializationTimeout;
+
+    /**
+     * Connection-level switch for request-metadata propagation to this server. When {@code null},
+     * the core default ({@code true}) applies. When {@code false}, no metadata leaves the process
+     * for this server while the switch stays {@code false} (deployment-level cut-off). The switch
+     * is evaluated live per call inside core, but the Harness currently exposes no handle to flip
+     * it at runtime — an operator-facing accessor would have to come from core first, so treat
+     * this as a build-time configuration.
+     */
+    @JsonProperty("propagateMeta")
+    private Boolean propagateMeta;
+
+    /**
+     * Registration-level default for tools imported from this server. When {@code null}, tools
+     * keep the core default ({@code true}) and only the connection-level switch gates
+     * propagation. When {@code false}, every tool from this server is registered silent by
+     * default, while individual tools may still be re-enabled via {@link #propagateMetaOverrides}.
+     */
+    @JsonProperty("propagateMetaDefault")
+    private Boolean propagateMetaDefault;
+
+    /**
+     * Per-tool overrides applied on top of {@link #propagateMetaDefault}. Keys are remote tool
+     * names as advertised by the server (before any {@code mcpToolNamePrefix}); a name that does
+     * not match a tool actually registered from this server fails the registration with an
+     * {@link IllegalArgumentException}, so an override is never lost silently. {@code null}
+     * values are rejected the same way.
+     *
+     * <p>Note the ceiling: an explicit {@code true} here cannot overrule a {@code false}
+     * {@link #propagateMeta} connection-level switch while that switch stays {@code false}. The
+     * entry is remembered and takes effect only if the connection level is ever re-enabled.
+     */
+    @JsonProperty("propagateMetaOverrides")
+    private Map<String, Boolean> propagateMetaOverrides;
+
+    private boolean defaultToolsEnabled = true;
+    private List<String> disableTools;
+    private boolean prefixToolNames;
+    private boolean required;
+
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private java.util.function.Consumer<McpConnectionException> connectionFailureHandler;
+
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public java.util.function.Consumer<McpConnectionException> getConnectionFailureHandler() {
+        return connectionFailureHandler;
+    }
+
+    public void setConnectionFailureHandler(
+            java.util.function.Consumer<McpConnectionException> handler) {
+        connectionFailureHandler = handler;
+    }
+
+    public boolean isDefaultToolsEnabled() {
+        return defaultToolsEnabled;
+    }
+
+    public void setDefaultToolsEnabled(boolean value) {
+        defaultToolsEnabled = value;
+    }
+
+    public List<String> getDisableTools() {
+        return disableTools;
+    }
+
+    public void setDisableTools(List<String> value) {
+        disableTools = value;
+    }
+
+    public boolean isPrefixToolNames() {
+        return prefixToolNames;
+    }
+
+    public void setPrefixToolNames(boolean value) {
+        prefixToolNames = value;
+    }
+
+    public boolean isRequired() {
+        return required;
+    }
+
+    public void setRequired(boolean value) {
+        required = value;
+    }
 
     public String getTransport() {
         return transport;
@@ -162,5 +251,29 @@ public class McpServerConfig {
 
     public void setInitializationTimeout(Duration initializationTimeout) {
         this.initializationTimeout = initializationTimeout;
+    }
+
+    public Boolean getPropagateMeta() {
+        return propagateMeta;
+    }
+
+    public void setPropagateMeta(Boolean propagateMeta) {
+        this.propagateMeta = propagateMeta;
+    }
+
+    public Boolean getPropagateMetaDefault() {
+        return propagateMetaDefault;
+    }
+
+    public void setPropagateMetaDefault(Boolean propagateMetaDefault) {
+        this.propagateMetaDefault = propagateMetaDefault;
+    }
+
+    public Map<String, Boolean> getPropagateMetaOverrides() {
+        return propagateMetaOverrides;
+    }
+
+    public void setPropagateMetaOverrides(Map<String, Boolean> propagateMetaOverrides) {
+        this.propagateMetaOverrides = propagateMetaOverrides;
     }
 }

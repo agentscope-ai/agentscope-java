@@ -338,21 +338,19 @@ class AnthropicMediaConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    void testConvertBase64PdfDataBlockWithCitations() throws Exception {
+    void testConvertBase64PdfDataBlock() throws Exception {
         Base64Source source =
                 Base64Source.builder().data("JVBERi0xLjQK").mediaType("application/pdf").build();
         DataBlock block = DataBlock.builder().source(source).name("guide.pdf").build();
 
-        AnthropicMediaConverter citationsConverter =
-                new AnthropicMediaConverter(CitationMode.ENABLED);
-        ContentBlockParam result = citationsConverter.convertDataBlockContent(block);
+        ContentBlockParam result = converter.convertDataBlockContent(block);
 
         assertTrue(result.isDocument());
         DocumentBlockParam document = result.asDocument();
         assertTrue(document.source().isBase64());
         assertEquals("JVBERi0xLjQK", document.source().asBase64().data());
         assertEquals("guide.pdf", document.title().orElseThrow());
-        assertTrue(document.citations().orElseThrow().enabled().orElseThrow());
+        assertTrue(document.citations().isEmpty());
     }
 
     @Test

@@ -16,14 +16,18 @@
 package io.agentscope.extensions.model.ollama.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JacksonJsonCodec;
 import io.agentscope.extensions.model.ollama.dto.OllamaMessage;
 import java.util.Arrays;
 import java.util.List;
@@ -136,6 +140,28 @@ class OllamaMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should serialize tool result name as Ollama's tool_name field")
+    void testSerializeToolResultWithOllamaToolName() {
+        // Arrange
+        ToolResultBlock toolResult =
+                new ToolResultBlock(
+                        "call123",
+                        "test_tool",
+                        List.of(TextBlock.builder().text("Tool result output").build()),
+                        null);
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
+
+        // Act
+        OllamaMessage ollamaMsg = converter.convertMessage(msg);
+        String json = new JacksonJsonCodec().toJson(ollamaMsg);
+
+        // Assert
+        assertEquals("test_tool", ollamaMsg.getName());
+        assertTrue(json.contains("\"tool_name\":\"test_tool\""));
+        assertFalse(json.contains("\"name\":\"test_tool\""));
+    }
+
+    @Test
     @DisplayName("Should convert assistant message with tool use")
     void testConvertAssistantMessageWithToolUse() {
         // Arrange
@@ -184,6 +210,33 @@ class OllamaMessageConverterTest {
         assertNotNull(ollamaMsg.getToolCalls());
         assertEquals(1, ollamaMsg.getToolCalls().size());
         assertEquals("search", ollamaMsg.getToolCalls().get(0).getFunction().getName());
+    }
+
+    @Test
+    @DisplayName("Should preserve assistant ThinkingBlock with tool calls")
+    void testConvertAssistantMessageWithThinkingAndToolUse() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                Arrays.asList(
+                                        ThinkingBlock.builder()
+                                                .thinking("I need current weather data.")
+                                                .build(),
+                                        new ToolUseBlock(
+                                                "call-789",
+                                                "get_weather",
+                                                Map.of("city", "Tokyo"),
+                                                null)))
+                        .build();
+
+        OllamaMessage ollamaMsg = converter.convertMessage(msg);
+
+        assertNotNull(ollamaMsg);
+        assertEquals("assistant", ollamaMsg.getRole());
+        assertEquals("I need current weather data.", ollamaMsg.getThinking());
+        assertNotNull(ollamaMsg.getToolCalls());
+        assertEquals("get_weather", ollamaMsg.getToolCalls().get(0).getFunction().getName());
     }
 
     @Test

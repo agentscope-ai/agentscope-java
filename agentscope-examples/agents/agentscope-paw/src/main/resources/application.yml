@@ -1,5 +1,6 @@
 server:
-  port: ${CLAW_PORT:8080}
+  # Default 8090 so paw coexists with agentscope-service gateway (:8080).
+  port: ${CLAW_PORT:8090}
 
 spring:
   application:
@@ -25,6 +26,28 @@ spring:
 # --------------------------------------------------------------------------
 claw:
   home: ${CLAW_HOME:#{systemProperties['user.home']}/.agentscope/claw}
+
+  # ---- controlplane BYO (standalone HTTP self-register; no Kubernetes) ----
+  # Flip enabled to true when running beside agentscope-service (scripts/dev-up.sh)
+  # so Operate can discover this agent. Defaults match local-dev stack:
+  #   control :8081, shared internal token, contract HTTP :18090.
+  #
+  # agent-name must match the registered agent used by Operate.
+  controlplane:
+    enabled: ${CLAW_CONTROLPLANE_ENABLED:false}
+    control-http: ${CONTROL_PLANE_HTTP:http://localhost:8081}
+    internal-token: ${BUILDER_INTERNAL_TOKEN:local-dev-internal-token-at-least-32chars}
+    agent-name: ${CLAW_CONTROLPLANE_AGENT_NAME:default}
+    tenant: ${CLAW_CONTROLPLANE_TENANT:default}
+    namespace: ${CLAW_CONTROLPLANE_NAMESPACE:default}
+    contract-port: ${CLAW_CONTROLPLANE_CONTRACT_PORT:18090}
+    enable-events: true
+
+  # ---- Native session log ----
+  # Empty uses the workspace backend. A shared root can serve multiple agent instances.
+  # Operate reads history through the agent contract; no separate transcript tree is written.
+  session-log:
+    root: ${CLAW_SESSION_LOG_ROOT:}
 
   # ---- DashScope model (used when no Model Spring bean is present) ----
   # Set DASHSCOPE_API_KEY env var or override api-key below.

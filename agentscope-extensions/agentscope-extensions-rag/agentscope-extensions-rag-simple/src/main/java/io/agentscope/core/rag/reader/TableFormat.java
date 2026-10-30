@@ -32,8 +32,8 @@ public enum TableFormat {
      * | Cell1   | Cell2   |
      * </pre>
      *
-     * <p>Note: If table cells contain newlines (\n), the Markdown format
-     * may not render correctly. In such cases, use JSON format instead.
+     * <p>Line breaks within table cells are rendered as {@code <br>} so each table row
+     * remains on one line of Markdown.
      */
     MARKDOWN,
 

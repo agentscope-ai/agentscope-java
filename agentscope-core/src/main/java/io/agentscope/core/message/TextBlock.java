@@ -20,6 +20,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Represents plain text content in a message.
@@ -55,9 +56,7 @@ public final class TextBlock extends ContentBlock {
     private TextBlock(
             @JsonProperty("text") String text,
             @JsonProperty("citations") List<Citation> citations) {
-        this.text = text != null ? text : "";
-        this.citations = citations == null || citations.isEmpty() ? null : List.copyOf(citations);
-        this.providerBlockIndex = null;
+        this(text, citations, null);
     }
 
     /**
@@ -111,6 +110,22 @@ public final class TextBlock extends ContentBlock {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof TextBlock other)) {
+            return false;
+        }
+        return Objects.equals(text, other.text) && Objects.equals(citations, other.citations);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(text, citations);
     }
 
     /**

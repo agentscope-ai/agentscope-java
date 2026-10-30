@@ -1,0 +1,243 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-champagne: var(--champagne);
+  --color-aurora: var(--aurora);
+  --font-sans: "Manrope", ui-sans-serif, sans-serif;
+  --font-display: "Space Grotesk", "Manrope", ui-sans-serif, sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 10px);
+}
+
+:root,
+.dark {
+  --radius: 0.95rem;
+  --background: oklch(0.13 0.012 255);
+  --foreground: oklch(0.94 0.012 95);
+  --card: oklch(0.17 0.014 255 / 0.72);
+  --card-foreground: oklch(0.94 0.012 95);
+  --popover: oklch(0.16 0.014 255);
+  --popover-foreground: oklch(0.94 0.012 95);
+  --primary: oklch(0.84 0.065 88);
+  --primary-foreground: oklch(0.18 0.02 80);
+  --secondary: oklch(0.22 0.016 255);
+  --secondary-foreground: oklch(0.9 0.014 95);
+  --muted: oklch(0.2 0.014 255);
+  --muted-foreground: oklch(0.68 0.02 95);
+  --accent: oklch(0.24 0.02 210);
+  --accent-foreground: oklch(0.9 0.03 195);
+  --destructive: oklch(0.62 0.12 25);
+  --border: oklch(0.84 0.05 88 / 0.14);
+  --input: oklch(0.84 0.05 88 / 0.16);
+  --ring: oklch(0.84 0.065 88 / 0.45);
+  --champagne: oklch(0.84 0.065 88);
+  --aurora: oklch(0.78 0.07 195);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply scroll-smooth bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply m-0 min-h-screen min-w-80 overflow-x-hidden bg-background text-foreground;
+    background:
+      radial-gradient(ellipse 70% 50% at 12% -8%, oklch(0.84 0.065 88 / 0.12), transparent 55%),
+      radial-gradient(ellipse 55% 45% at 88% 8%, oklch(0.72 0.08 195 / 0.12), transparent 50%),
+      radial-gradient(ellipse 50% 40% at 50% 100%, oklch(0.4 0.04 255 / 0.35), transparent 55%),
+      oklch(0.11 0.012 255);
+  }
+
+  ::selection {
+    background: oklch(0.84 0.065 88 / 0.28);
+    color: oklch(0.98 0.01 95);
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+
+  button {
+    @apply cursor-pointer;
+  }
+
+  button:disabled {
+    @apply cursor-not-allowed;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply border border-border bg-card/80 shadow-[0_24px_80px_oklch(0_0_0/0.35)] backdrop-blur-2xl transition-shadow duration-300;
+  }
+
+  .glass-panel:hover {
+    box-shadow:
+      0 28px 90px oklch(0 0 0 / 0.4),
+      0 0 0 1px oklch(0.84 0.065 88 / 0.08);
+  }
+
+  .eyebrow {
+    @apply mb-2 text-[0.7rem] font-semibold tracking-[0.22em] text-champagne uppercase;
+  }
+
+  .hero-grid {
+    background-image:
+      linear-gradient(oklch(0.84 0.05 88 / 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, oklch(0.84 0.05 88 / 0.06) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(ellipse 75% 70% at 50% 40%, black 20%, transparent 75%);
+  }
+
+  .aurora-orb {
+    @apply pointer-events-none absolute rounded-full blur-3xl;
+    animation: aurora-drift 14s ease-in-out infinite;
+  }
+
+  .aurora-orb-gold {
+    background: radial-gradient(circle, oklch(0.84 0.07 88 / 0.35), transparent 70%);
+  }
+
+  .aurora-orb-cyan {
+    background: radial-gradient(circle, oklch(0.75 0.08 195 / 0.28), transparent 70%);
+    animation-delay: -5s;
+  }
+
+  .chat-frame {
+    @apply relative overflow-hidden rounded-2xl border border-border bg-background/60 shadow-inner;
+  }
+
+  .chat-frame [data-testid="copilot-chat"],
+  .chat-frame [data-copilotkit] {
+    height: 100%;
+  }
+
+  [data-copilotkit] {
+    --background: oklch(0.14 0.012 255);
+    --foreground: oklch(0.94 0.012 95);
+    --card: oklch(0.18 0.014 255);
+    --card-foreground: oklch(0.94 0.012 95);
+    --popover: oklch(0.16 0.014 255);
+    --popover-foreground: oklch(0.94 0.012 95);
+    --primary: oklch(0.84 0.065 88);
+    --primary-foreground: oklch(0.18 0.02 80);
+    --secondary: oklch(0.22 0.016 255);
+    --secondary-foreground: oklch(0.9 0.014 95);
+    --muted: oklch(0.2 0.014 255);
+    --muted-foreground: oklch(0.68 0.02 95);
+    --accent: oklch(0.24 0.02 210);
+    --accent-foreground: oklch(0.9 0.03 195);
+    --destructive: oklch(0.62 0.12 25);
+    --border: oklch(0.84 0.05 88 / 0.14);
+    --input: oklch(0.84 0.05 88 / 0.16);
+    --ring: oklch(0.84 0.065 88 / 0.45);
+    --radius: 0.95rem;
+  }
+
+  .surface-row {
+    @apply rounded-2xl border border-border/70 bg-secondary/40 p-3 transition-all duration-300;
+  }
+
+  .surface-row:hover {
+    @apply border-champagne/25 bg-secondary/70 shadow-[0_12px_40px_oklch(0_0_0/0.25)];
+  }
+
+  .prompt-chip {
+    @apply rounded-2xl border border-border bg-secondary/30 p-3 text-left text-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-champagne/30 hover:bg-secondary/60 hover:shadow-[0_16px_40px_oklch(0_0_0/0.3)];
+  }
+
+  /*
+   * CopilotKit scopes preflight under [data-copilotkit] and resets every button
+   * to transparent / radius 0. Restore our shadcn buttons with equal-or-higher
+   * specificity so HITL / panel actions stay solid.
+   */
+  [data-copilotkit] button[data-slot="button"],
+  button[data-slot="button"] {
+    appearance: none;
+    border-style: solid;
+    border-width: 0;
+    font: inherit;
+    line-height: 1.25;
+  }
+}
+
+@keyframes aurora-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translate3d(4%, -3%, 0) scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-fade-up-delay-1 {
+  animation: fade-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
+}
+
+.animate-fade-up-delay-2 {
+  animation: fade-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.24s both;
+}
+
+@media (max-width: 1180px) {
+  body {
+    overflow: auto;
+  }
+}

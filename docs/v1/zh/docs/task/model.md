@@ -1,4 +1,7 @@
-# 模型
+---
+title: 模型集成
+en_link: /v1/en/docs/task/model
+---
 
 本指南介绍 AgentScope Java 支持的 LLM 模型及其配置方法。
 
@@ -161,7 +164,7 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen3-max")
-        .enableThinking(true)  // 启用思考模式，并自动启用流式输出
+        .enableThinking(true)
         .defaultOptions(GenerateOptions.builder()
                 .thinkingBudget(5000)  // 思考 token 预算
                 .build())
@@ -227,7 +230,7 @@ Anthropic 的 Claude 系列模型。
 ```java
 AnthropicChatModel model = AnthropicChatModel.builder()
         .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-        .modelName("claude-sonnet-4-5-20250929")  // 默认值
+        .modelName("claude-sonnet-5-5")  // 默认值
         .build();
 ```
 
@@ -236,7 +239,7 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 | 配置项 | 说明 |
 |--------|------|
 | `apiKey` | Anthropic API 密钥 |
-| `modelName` | 模型名称，默认 `claude-sonnet-4-5-20250929` |
+| `modelName` | 模型名称，默认 `claude-sonnet-5-5` |
 | `baseUrl` | 自定义 API 端点（可选） |
 | `stream` | 是否启用流式输出，默认 `true` |
 

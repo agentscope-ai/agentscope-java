@@ -1,6 +1,7 @@
 ---
-title: "Model"
-description: "在 AgentScope Java 中配置并连接 LLM 模型提供商"
+title: Model
+description: 在 AgentScope Java 中配置并连接 LLM 模型提供商
+en_link: /v2/en/docs/building-blocks/model
 ---
 
 ## 概述
@@ -30,6 +31,7 @@ CredentialBase/
 | 提供商 | Maven artifact | 主要包名 |
 |--------|----------------|----------|
 | OpenAI | `agentscope-extensions-model-openai` | `io.agentscope.extensions.model.openai` |
+| OpenAI Official | `agentscope-extensions-model-openai-official` | `io.agentscope.extensions.model.openaiofficial` |
 | DashScope | `agentscope-extensions-model-dashscope` | `io.agentscope.extensions.model.dashscope` |
 | Gemini | `agentscope-extensions-model-gemini` | `io.agentscope.extensions.model.gemini` |
 | Anthropic | `agentscope-extensions-model-anthropic` | `io.agentscope.extensions.model.anthropic` |
@@ -46,7 +48,7 @@ CredentialBase/
 </dependency>
 ```
 
-其他模型扩展 artifact 遵循同样模式：`agentscope-extensions-model-openai`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-ollama`。
+其他模型扩展 artifact 遵循同样模式：`agentscope-extensions-model-openai`、`agentscope-extensions-model-openai-official`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-ollama`。
 
 2. 将模型提供商实现的 import 从 `io.agentscope.core.model.*` 改为 `io.agentscope.extensions.model.<provider>.*`。
 3. 将模型提供商 formatter import 从 `io.agentscope.core.formatter.<provider>.*` 改为 `io.agentscope.extensions.model.<provider>.formatter.*`。
@@ -63,7 +65,7 @@ CredentialBase/
 
 ### 字符串 model id
 
-简单的非 Spring 应用可以使用 `dashscope:qwen-plus`、`openai:gpt-4.1-mini` 这样的字符串 id。引入对应模型扩展模块，设置模型提供商的标准环境变量，例如 `DASHSCOPE_API_KEY` 或 `OPENAI_API_KEY`，然后直接把 id 传给 agent：
+简单的非 Spring 应用可以使用 `dashscope:qwen-plus`、`openai:gpt-4.1-mini`、`deepseek:deepseek-v4-flash` 这样的字符串 id。引入对应模型扩展模块，设置模型提供商的标准环境变量，例如 `DASHSCOPE_API_KEY`、`OPENAI_API_KEY` 或 `DEEPSEEK_API_KEY`，然后直接把 id 传给 agent：
 
 ```java
 ReActAgent agent =
@@ -73,7 +75,7 @@ ReActAgent agent =
                 .build();
 ```
 
-扩展模块会通过 Java SPI 被自动发现。模型提供商会读取自己的标准环境变量，例如 `DASHSCOPE_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`。Ollama 会在存在时读取 `OLLAMA_BASE_URL`，否则默认使用本地 Ollama endpoint。
+扩展模块会通过 Java SPI 被自动发现。模型提供商会读取自己的标准环境变量，例如 `DASHSCOPE_API_KEY`、`OPENAI_API_KEY`、`GLM_API_KEY`、`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`。Ollama 会在存在时读取 `OLLAMA_BASE_URL`，否则默认使用本地 Ollama endpoint。
 
 ### 显式 Model builder
 
@@ -100,7 +102,7 @@ ReActAgent agent =
 
 ### Spring Boot 应用
 
-Spring Boot 场景下，优先使用特定模型提供商的 starter，例如 `agentscope-openai-spring-boot-starter`、`agentscope-dashscope-spring-boot-starter`、`agentscope-gemini-spring-boot-starter`、`agentscope-anthropic-spring-boot-starter`、`agentscope-ollama-spring-boot-starter`。这些 starter 直接依赖对应模型扩展模块，创建 Spring 管理的 `Model` bean，通用的 `agentscope-spring-boot-starter` 继续负责 AgentScope 的公共基础设施。它们不会通过静态 `ModelRegistry` 创建模型；高级用户始终可以自定义 `Model` bean。
+Spring Boot 场景下，优先使用特定模型提供商的 starter，例如 `agentscope-openai-spring-boot-starter`、`agentscope-openai-official-spring-boot-starter`、`agentscope-dashscope-spring-boot-starter`、`agentscope-gemini-spring-boot-starter`、`agentscope-anthropic-spring-boot-starter`、`agentscope-ollama-spring-boot-starter`。这些 starter 直接依赖对应模型扩展模块，创建 Spring 管理的 `Model` bean，通用的 `agentscope-spring-boot-starter` 继续负责 AgentScope 的公共基础设施。它们不会通过静态 `ModelRegistry` 创建模型；高级用户始终可以自定义 `Model` bean。
 
 OpenAI 示例：
 
@@ -123,6 +125,7 @@ formatter、默认生成参数、代理/client 配置，或其他提供商专属
 | Starter | Customizer 类型 |
 |---------|-----------------|
 | `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
+| `agentscope-openai-official-spring-boot-starter` | `OpenAIResponsesChatModelBuilderCustomizer` |
 | `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
 | `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
 | `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
@@ -200,6 +203,8 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 
 如果 `CachePolicy.ENABLED` 搭配 `option(...)` 或 `component(...)` 使用，用户必须提供 `cacheId`。
 
+调用 `registerFactory` 会清掉 model id 与新正则匹配的缓存实例，之后再解析这些 id 就会使用新工厂。被清掉的实例不会被关闭，因为调用方可能仍在使用。同一个可缓存 id 的并发首次解析只会创建一次，所有调用方拿到同一个实例。
+
 ### ModelProvider SPI
 
 模型提供商扩展模块通过 Java SPI 暴露 `META-INF/services/io.agentscope.core.model.spi.ModelProvider`，由 `ModelRegistry` 自动发现。新的模型提供商可以实现 `supports(String, ModelCreationContext)` 和 `create(String, ModelCreationContext)` 来消费 context。简单模型提供商仍可只实现原有的 `supports(String)` 和 `create(String)`，因为 context-aware 方法提供了兼容默认实现。
@@ -211,19 +216,24 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 | 提供商 | 模型类 | 说明 |
 |--------|--------|------|
 | OpenAI | `OpenAIChatModel` | Chat Completions API，兼容 vLLM 与 OpenAI 兼容端点（含 DeepSeek、Kimi 等） |
+| OpenAI Official | `OpenAIResponsesChatModel` | Responses API（官方 SDK）；推理、结构化输出 |
 | Anthropic | `AnthropicChatModel` | Claude 模型，支持 prompt 缓存与 thinking |
 | DashScope | `DashScopeChatModel` | Qwen 模型，多模态（视觉/音频/视频）、推理 |
 | Gemini | `GeminiChatModel` | Google Gemini 模型，支持多模态 |
 | Ollama | `OllamaChatModel` | 本地 LLM 托管，凭证可选 |
 
-模型提供商凭证类随对应模型扩展模块提供，例如 `OpenAICredential`、`AnthropicCredential`、`DashScopeCredential`、`GeminiCredential`、`OllamaCredential`。OpenAI 兼容提供商的 `DeepSeekCredential`、`KimiCredential`、`XAICredential` 仍在 core 模块中可用。
+模型提供商凭证类随对应模型扩展模块提供，例如 `OpenAICredential`、`OpenAIOfficialCredential`、`AnthropicCredential`、`DashScopeCredential`、`GeminiCredential`、`OllamaCredential`。OpenAI 兼容提供商的 `DeepSeekCredential`、`KimiCredential`、`XAICredential` 仍在 core 模块中可用。
 
 ### 创建 Chat Model
 
 每个 Chat Model 通过 builder 构造，最常见的字段是 `apiKey`、`modelName`、`stream`、`formatter`、`defaultOptions`。下面三个 tab 分别展示流式、工具调用与推理三种典型初始化场景：
 
-::::{tab-set}
-:::{tab-item} Streaming
+
+<Tabs>
+
+
+<Tab title="Streaming">
+
 ```java
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
@@ -236,8 +246,12 @@ DashScopeChatModel model =
                 .formatter(new DashScopeChatFormatter())
                 .build();
 ```
-:::
-:::{tab-item} Tools
+
+</Tab>
+
+
+<Tab title="Tools">
+
 ```java
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
@@ -255,8 +269,12 @@ DashScopeChatModel model =
                                 .build())
                 .build();
 ```
-:::
-:::{tab-item} Reasoning
+
+</Tab>
+
+
+<Tab title="Reasoning">
+
 ```java
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
@@ -275,8 +293,12 @@ DashScopeChatModel model =
                                 .build())
                 .build();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 各 Chat Model 的 builder 共享的字段大致相同：
 
@@ -320,6 +342,8 @@ model.stream(
 
 `ChatResponse` 包含若干 content block（`TextBlock`、`ThinkingBlock`、`ToolUseBlock`、`DataBlock`）以及记录 token 数与耗时的 `ChatUsage`。
 
+**参数优先级：**传给 `stream(messages, tools, options)` 的单次调用选项优先于 builder 的 `defaultOptions`；单次调用未设置的字段回退到模型默认值。这同样适用于 `toolChoice`：默认配置如 `Specific("get_weather")` 会约束每一次调用，只有调用方显式设置自己的 `toolChoice`（例如 `None`）才会覆盖。对 Gemini 而言，只要请求声明了工具，有效的 toolChoice 就会投影为请求中的 `toolConfig`（`Specific` → `mode=ANY` 加 `allowedFunctionNames`；`None` → `mode=NONE`），因此默认配置与同值的单次配置产生一致的请求。
+
 实际开发中通常不需要直接调模型，而是通过 `ReActAgent` 调度；要直连模型做轻量调用时，推荐参考 `agentscope-examples/documentation/.../model/ModelRegistryExample.java`。
 
 ### 生成结构化输出
@@ -349,7 +373,7 @@ Msg msg =
 WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
-实现细节：框架会基于目标 Class 合成强制结构化的工具调用，再校验并修复模型输出，最后把结果挂到 `Msg.metadata` 的 `structured_output` 字段，供 `getStructuredData(Class)` 直接反序列化。完整示例：`agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`。
+实现细节：框架会基于目标 Class 生成输出 schema，按下文规则选择 Native 或 fallback 路径，解析并按 schema 校验 native JSON 响应，或校验 fallback 工具入参，并把结果挂到 `Msg.metadata` 的 `_structured_output` 字段，供 `getStructuredData(Class)` 直接反序列化。完整示例：`agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`。
 
 #### 结构化输出路径选择
 
@@ -360,18 +384,35 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 | **Native** | `supportsNativeStructuredOutput() = true` | 通过 `response_format` + `json_schema` 让模型直接输出合规 JSON |
 | **Fallback**（默认） | `supportsNativeStructuredOutput() = false` | 注入 `generate_response` 合成工具，模型通过 tool call 返回结构化数据 |
 
-当 native 路径失败（如模型返回 400），框架会**自动降级**到 fallback 路径，无需用户干预。
+当 native 路径失败（例如提供商拒绝请求，或输出为空、不是合法 JSON、不符合 schema）时，框架会**自动降级**到 fallback 路径，无需用户干预。被拒绝的 native 响应不会保留在会话上下文中。
+
+Native 响应校验默认开启。如果提供商已保证 schema 合规，并希望避免客户端侧校验及其降级行为，可以使用 `ReActAgent.builder().validateStructuredOutput(false)` 显式关闭。
+
+Native structured output 默认不会强制 schema 进入 strict 模式。OpenAI 与 OpenAI Official
+厂商可以通过 `strictJsonSchema(true)` 显式开启；schema 内的 `strict` 值优先。
+
+在 fallback 路径上，AgentScope 会基于输出 schema 创建一个只属于本次调用的 `generate_response` 工具。该工具不会注册到共享 toolkit，因此并发结构化输出调用不会互相干扰。
+同时，每个 fallback 请求都会追加一条只传给模型的 transient `<system-reminder>`：
+如果请求的最后一条消息是 user message，就把 reminder 作为额外 TextBlock 追加到这条消息的请求内副本末尾；否则追加一条新的 user message。hook、middleware、`state.contextMutable()`、
+session 持久化以及后续调用都只会看到调用方真实写入的消息。
+
+第一次 fallback 请求不会设置 named `tool_choice`。如果模型在没有调用 `generate_response` 的情况下直接结束，AgentScope 最多会再触发 3 次 reasoning 重试。在重试中，声明
+`supportsToolChoiceSpecific() = true` 的模型会收到 `tool_choice: generate_response`；
+其他模型继续依赖 reminder。如果工具仍未被调用，Agent 会返回不带结构化数据的响应，而不是无限循环。
 
 #### 各模型提供商默认行为
 
-| 模型提供商 | `supportsNativeStructuredOutput` | 说明 |
-|----------|----------------------------------|------|
-| OpenAI (GPT-4o 等) | `true` | 原生支持 `json_schema` |
-| OpenAI (DeepSeek/GLM formatter) | `false` | 不支持，自动走 fallback |
-| DashScope | `false` | DashScope 原生端点仅支持 `json_object`，不支持 `json_schema`；框架默认走 fallback |
-| Anthropic | `false`（默认） | — |
+| 模型提供商                           | `supportsNativeStructuredOutput` | `supportsNativeStructuredOutputWithTools` | 说明                                                         |
+|---------------------------------|----------------------------------|------------------------------------------|------------------------------------------------------------|
+| OpenAI (Chat Completions API)   | `true` | `true` | 原生支持 `json_schema`，与工具调用兼容                                 |
+| OpenAI Official (Responses API) | `true` | `true` | 原生支持 `json_schema`，与工具调用兼容                                 |
+| Kimi formatter                  | `true` | `false` | 原生支持 `json_schema`；`response_format` 会压制工具调用，带工具时走 fallback |
+| DeepSeek/GLM/MiniMax formatter  | `false` | `false` | —                                                          |
+| DashScope                       | `false` | `false` | 部分模型不支持 `json_schema`                                      |
+| Anthropic                       | `false` | `false` | —                                                          |
+| Gemini                          | `false` | `false` | —                                                          |
 
-> **DashScope 用户注意**：DashScope 的思考模式（`enableThinking(true)`）不支持结构化输出，框架会强制走 fallback 路径。
+> **DashScope 用户注意**：DashScope 部分模型思考模式（`enableThinking(true)`）不支持结构化输出，框架会强制走 fallback 路径。
 
 #### 显式配置
 
@@ -387,7 +428,7 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 
 #### 结构化输出与工具调用共存
 
-当 Agent 同时注册了工具并请求结构化输出时，部分 OpenAI 兼容 API（如 Kimi、Deepseek 等）会优先遵循 `response_format` 约束而跳过工具调用。设置 `nativeStructuredOutputWithTools(false)` 可解决此问题：
+当 Agent 同时注册了工具并请求结构化输出时，部分 OpenAI 兼容 API（如 Kimi 等）会优先遵循 `response_format` 约束而跳过工具调用。设置 `nativeStructuredOutputWithTools(false)` 可解决此问题：
 
 ```java
 OpenAIChatModel model = OpenAIChatModel.builder()
@@ -399,6 +440,19 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 ```
 
 `DashScopeChatModel` 同样支持此配置。对于 OpenAI 原生模型（GPT-4o 等）无需设置。
+
+#### 指定 `tool_choice` 支持
+
+结构化输出降级路径因模型跳过 `generate_response` 而需要重试时，支持指定具体函数名 `tool_choice` 的端点可以收到硬约束。该能力通过 `supportsToolChoiceSpecific` 选项声明。未知模型和自定义模型默认为 `false`，不会收到 named `tool_choice` 请求，因此不会被网关要求一个可能不支持的约束。OpenAI、DeepSeek、Anthropic、Gemini、DashScope、Ollama 官方端点会声明支持；GLM、MiniMax 以及启用 thinking 的 Kimi 模型不支持。如果连接一个已知支持指定 tool_choice 的自定义 OpenAI 兼容端点，需要显式开启：
+
+```java
+OpenAIChatModel model = OpenAIChatModel.builder()
+        .apiKey("...")
+        .baseUrl("https://your-gateway.example.com/v1")
+        .modelName("your-model")
+        .supportsToolChoiceSpecific(true)
+        .build();
+```
 
 ### Formatter
 
@@ -430,6 +484,7 @@ DashScopeChatModel model =
 |---|---|---|
 | DashScope | `DashScopeChatFormatter` | `DashScopeMultiAgentFormatter` |
 | OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
+| OpenAI Official | — | `ResponsesMultiAgentFormatter` |
 | Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
 | Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
 | Ollama | `OllamaChatFormatter` | `OllamaMultiAgentFormatter` |
@@ -537,9 +592,13 @@ ModelRegistry.registerFactory(
 | `displayName()` | `String` | 用于展示的可读名称（例如 `"Claude Sonnet 4.6"`） |
 | `contextSize()` | `Integer` | 最大上下文窗口（token 数） |
 
-:::{note}
+
+<Note>
+
 ModelCard 字段当前最小化；能力标记（输入/输出 MIME 类型）与参数 schema 将随模型发现基础设施完善而扩展。
-:::
+
+</Note>
+
 
 ### 获取 ModelCard
 

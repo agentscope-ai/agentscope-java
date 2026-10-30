@@ -18,23 +18,40 @@ package io.agentscope.extensions.model.gemini;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.ClientOptions;
+import com.google.genai.types.FunctionCallingConfig;
+import com.google.genai.types.FunctionCallingConfigMode;
+import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GoogleSearch;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.ProxyOptions;
+import com.google.genai.types.Tool;
+import com.google.genai.types.ToolConfig;
+import com.google.genai.types.UrlContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.test.ModelTestUtils;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.gemini.formatter.GeminiChatFormatter;
 import io.agentscope.extensions.model.gemini.formatter.GeminiMultiAgentFormatter;
+import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
 import java.lang.reflect.Field;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 /**
  * Unit tests for GeminiChatModel.
@@ -56,6 +73,68 @@ class GeminiChatModelTest {
     @BeforeEach
     void setUp() {
         mockApiKey = ModelTestUtils.createMockApiKey();
+    }
+
+    @Test
+    @DisplayName("Should apply request timeout to Gemini response streams")
+    void testAppliesRequestTimeout() {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .executionConfig(
+                                ExecutionConfig.builder()
+                                        .timeout(Duration.ofMillis(10))
+                                        .maxAttempts(1)
+                                        .build())
+                        .build();
+
+        ModelException error =
+                assertThrows(
+                        ModelException.class,
+                        () ->
+                                new TestGeminiChatModel(Flux.never())
+                                        .stream(List.of(), List.of(), options)
+                                                .blockLast(Duration.ofSeconds(1)));
+
+        assertTrue(error.getMessage().contains("timeout"));
+    }
+
+    @Test
+    @DisplayName("Should support forcing a specific tool")
+    void testSupportsSpecificToolChoice() {
+        GeminiChatModel model =
+                GeminiChatModel.builder().apiKey(mockApiKey).modelName("gemini-2.0-flash").build();
+
+        assertTrue(model.supportsToolChoiceSpecific());
+    }
+
+    @Test
+    @DisplayName("Should retry Gemini response streams according to execution config")
+    void testRetriesRequestThroughStreamEntryPoint() {
+        AtomicInteger attempts = new AtomicInteger();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .executionConfig(
+                                ExecutionConfig.builder()
+                                        .maxAttempts(2)
+                                        .initialBackoff(Duration.ofMillis(1))
+                                        .maxBackoff(Duration.ofMillis(1))
+                                        .retryOn(error -> true)
+                                        .build())
+                        .build();
+
+        assertThrows(
+                RuntimeException.class,
+                () ->
+                        new TestGeminiChatModel(
+                                        Flux.defer(
+                                                () -> {
+                                                    attempts.incrementAndGet();
+                                                    return Flux.error(
+                                                            new IllegalStateException("failed"));
+                                                }))
+                                .stream(List.of(), List.of(), options).blockLast());
+
+        assertEquals(2, attempts.get());
     }
 
     @Test
@@ -128,6 +207,36 @@ class GeminiChatModelTest {
                 List.of(ModelTestUtils.createSimpleToolSchema("test_tool", "A test tool"));
 
         assertNotNull(tools, "Tool schemas should be created");
+    }
+
+    @Test
+    @DisplayName("Should combine function tools and Gemini server tools in request config")
+    void testBuildConfigCombinesFunctionAndServerTools() {
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .serverTools(
+                                List.of(
+                                        GeminiServerTool.of(
+                                                Tool.builder()
+                                                        .googleSearch(
+                                                                GoogleSearch.builder().build())
+                                                        .build()),
+                                        GeminiServerTool.of(
+                                                Tool.builder()
+                                                        .urlContext(UrlContext.builder().build())
+                                                        .build())))
+                        .build();
+        ToolSchema functionTool =
+                ModelTestUtils.createSimpleToolSchema("test_tool", "A test function tool");
+
+        GenerateContentConfig config =
+                model.buildGenerateContentConfig(List.of(functionTool), null);
+
+        assertEquals(3, config.tools().orElseThrow().size());
+        assertTrue(config.tools().orElseThrow().get(0).functionDeclarations().isPresent());
+        assertTrue(config.tools().orElseThrow().get(1).googleSearch().isPresent());
+        assertTrue(config.tools().orElseThrow().get(2).urlContext().isPresent());
     }
 
     @Test
@@ -453,19 +562,154 @@ class GeminiChatModelTest {
     }
 
     @Test
-    @DisplayName("Should handle tool choice configuration")
-    void testToolChoiceConfiguration() {
-        GenerateOptions optionsWithToolChoice =
-                GenerateOptions.builder().toolChoice(new ToolChoice.Auto()).build();
+    @DisplayName("Should apply model-default Specific tool choice identically to per-call Specific")
+    void testDefaultToolChoiceSpecificMatchesPerCallSpecific() {
+        List<ToolSchema> tools =
+                List.of(ModelTestUtils.createSimpleToolSchema("get_weather", "Get the weather"));
+
+        GeminiChatModel withDefault =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .defaultOptions(
+                                GenerateOptions.builder()
+                                        .toolChoice(new ToolChoice.Specific("get_weather"))
+                                        .build())
+                        .build();
+        GeminiChatModel withoutDefault =
+                GeminiChatModel.builder().apiKey(mockApiKey).modelName("gemini-2.0-flash").build();
+
+        GenerateContentConfig fromDefault = withDefault.buildGenerateContentConfig(tools, null);
+        GenerateContentConfig fromPerCall =
+                withoutDefault.buildGenerateContentConfig(
+                        tools,
+                        GenerateOptions.builder()
+                                .toolChoice(new ToolChoice.Specific("get_weather"))
+                                .build());
+
+        FunctionCallingConfig defaultFunctionCalling =
+                fromDefault.toolConfig().orElseThrow().functionCallingConfig().orElseThrow();
+        FunctionCallingConfig perCallFunctionCalling =
+                fromPerCall.toolConfig().orElseThrow().functionCallingConfig().orElseThrow();
+
+        assertEquals(
+                FunctionCallingConfigMode.Known.ANY,
+                defaultFunctionCalling.mode().orElseThrow().knownEnum());
+        assertEquals(
+                List.of("get_weather"),
+                defaultFunctionCalling.allowedFunctionNames().orElseThrow());
+        assertEquals(perCallFunctionCalling, defaultFunctionCalling);
+    }
+
+    @Test
+    @DisplayName("Should let per-call tool choice override the model default")
+    void testPerCallToolChoiceOverridesDefault() {
+        List<ToolSchema> tools =
+                List.of(ModelTestUtils.createSimpleToolSchema("get_weather", "Get the weather"));
 
         GeminiChatModel model =
                 GeminiChatModel.builder()
                         .apiKey(mockApiKey)
                         .modelName("gemini-2.0-flash")
-                        .defaultOptions(optionsWithToolChoice)
+                        .defaultOptions(
+                                GenerateOptions.builder()
+                                        .toolChoice(new ToolChoice.Specific("get_weather"))
+                                        .build())
                         .build();
 
-        assertNotNull(model);
+        GenerateContentConfig config =
+                model.buildGenerateContentConfig(
+                        tools, GenerateOptions.builder().toolChoice(new ToolChoice.None()).build());
+
+        FunctionCallingConfig functionCalling =
+                config.toolConfig().orElseThrow().functionCallingConfig().orElseThrow();
+        assertEquals(
+                FunctionCallingConfigMode.Known.NONE,
+                functionCalling.mode().orElseThrow().knownEnum());
+        assertTrue(functionCalling.allowedFunctionNames().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should keep default tool choice when per-call options omit it")
+    void testDefaultToolChoiceKeptWhenPerCallOmitsIt() {
+        List<ToolSchema> tools =
+                List.of(ModelTestUtils.createSimpleToolSchema("get_weather", "Get the weather"));
+
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .defaultOptions(
+                                GenerateOptions.builder()
+                                        .toolChoice(new ToolChoice.Specific("get_weather"))
+                                        .temperature(0.2)
+                                        .build())
+                        .build();
+
+        GenerateContentConfig config =
+                model.buildGenerateContentConfig(
+                        tools, GenerateOptions.builder().temperature(0.5).build());
+
+        FunctionCallingConfig functionCalling =
+                config.toolConfig().orElseThrow().functionCallingConfig().orElseThrow();
+        assertEquals(
+                FunctionCallingConfigMode.Known.ANY,
+                functionCalling.mode().orElseThrow().knownEnum());
+        assertEquals(List.of("get_weather"), functionCalling.allowedFunctionNames().orElseThrow());
+        assertEquals(0.5f, config.temperature().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should not set tool config when no tools are declared")
+    void testNoToolConfigWithoutTools() {
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .defaultOptions(
+                                GenerateOptions.builder()
+                                        .toolChoice(new ToolChoice.Required())
+                                        .build())
+                        .build();
+
+        GenerateContentConfig config = model.buildGenerateContentConfig(List.of(), null);
+
+        assertTrue(config.toolConfig().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should combine default tool choice with Gemini server tools")
+    void testDefaultToolChoiceWithServerTools() {
+        ToolSchema functionTool =
+                ModelTestUtils.createSimpleToolSchema("test_tool", "A test function tool");
+
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .serverTools(
+                                List.of(
+                                        GeminiServerTool.of(
+                                                Tool.builder()
+                                                        .googleSearch(
+                                                                GoogleSearch.builder().build())
+                                                        .build())))
+                        .defaultOptions(
+                                GenerateOptions.builder()
+                                        .toolChoice(new ToolChoice.Specific("test_tool"))
+                                        .build())
+                        .build();
+
+        GenerateContentConfig config =
+                model.buildGenerateContentConfig(List.of(functionTool), null);
+
+        assertEquals(2, config.tools().orElseThrow().size());
+        ToolConfig toolConfig = config.toolConfig().orElseThrow();
+        FunctionCallingConfig functionCalling = toolConfig.functionCallingConfig().orElseThrow();
+        assertEquals(
+                FunctionCallingConfigMode.Known.ANY,
+                functionCalling.mode().orElseThrow().knownEnum());
+        assertEquals(List.of("test_tool"), functionCalling.allowedFunctionNames().orElseThrow());
+        assertTrue(toolConfig.includeServerSideToolInvocations().orElse(false));
     }
 
     @Test
@@ -628,5 +872,21 @@ class GeminiChatModelTest {
         Field httpOptionsField = GeminiChatModel.class.getDeclaredField("httpOptions");
         httpOptionsField.setAccessible(true);
         return (HttpOptions) httpOptionsField.get(model);
+    }
+
+    private static final class TestGeminiChatModel extends GeminiChatModel {
+
+        private final Flux<ChatResponse> response;
+
+        private TestGeminiChatModel(Flux<ChatResponse> response) {
+            super("test-key", "gemini-test", true, null, null, null, null, null, null, null, null);
+            this.response = response;
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream0(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return response;
+        }
     }
 }

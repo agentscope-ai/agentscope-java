@@ -1085,5 +1085,80 @@ class OpenAIResponseParserTest {
             assertEquals(0, result.getUsage().getOutputTokens());
             assertEquals(0, result.getUsage().getCachedTokens());
         }
+
+        @Test
+        @DisplayName("Should parse reasoning and cached tokens from usage details")
+        void testParseReasoningAndCachedTokens() {
+            OpenAIResponse response = new OpenAIResponse();
+            response.setObject("chat.completion");
+
+            OpenAIUsage usage = new OpenAIUsage();
+            usage.setPromptTokens(100);
+            usage.setCompletionTokens(50);
+
+            OpenAIUsage.PromptTokensDetails promptDetails = new OpenAIUsage.PromptTokensDetails();
+            promptDetails.setCachedTokens(70);
+            promptDetails.setCacheWriteTokens(5);
+            usage.setPromptTokensDetails(promptDetails);
+
+            OpenAIUsage.CompletionTokensDetails completionDetails =
+                    new OpenAIUsage.CompletionTokensDetails();
+            completionDetails.setReasoningTokens(20);
+            usage.setCompletionTokensDetails(completionDetails);
+            response.setUsage(usage);
+
+            OpenAIMessage message = new OpenAIMessage();
+            message.setContent("Answer");
+            message.setRole("assistant");
+
+            OpenAIChoice choice = new OpenAIChoice();
+            choice.setMessage(message);
+            choice.setFinishReason("stop");
+            choice.setIndex(0);
+
+            response.setChoices(List.of(choice));
+
+            ChatResponse result = parser.parseResponse(response, startTime);
+
+            assertNotNull(result);
+            assertNotNull(result.getUsage());
+            assertEquals(100, result.getUsage().getInputTokens());
+            assertEquals(50, result.getUsage().getOutputTokens());
+            assertEquals(70, result.getUsage().getCachedTokens());
+            assertEquals(5, result.getUsage().getCacheCreationTokens());
+            assertEquals(20, result.getUsage().getReasoningTokens());
+        }
+
+        @Test
+        @DisplayName("Should parse DeepSeek compatible prompt cache hit tokens")
+        void testParseDeepSeekPromptCacheHitTokens() {
+            OpenAIResponse response = new OpenAIResponse();
+            response.setObject("chat.completion");
+
+            OpenAIUsage usage = new OpenAIUsage();
+            usage.setPromptTokens(100);
+            usage.setCompletionTokens(50);
+            usage.setPromptCacheHitTokens(60);
+            response.setUsage(usage);
+
+            OpenAIMessage message = new OpenAIMessage();
+            message.setContent("Answer");
+            message.setRole("assistant");
+
+            OpenAIChoice choice = new OpenAIChoice();
+            choice.setMessage(message);
+            choice.setFinishReason("stop");
+            choice.setIndex(0);
+
+            response.setChoices(List.of(choice));
+
+            ChatResponse result = parser.parseResponse(response, startTime);
+
+            assertNotNull(result);
+            assertNotNull(result.getUsage());
+            assertEquals(100, result.getUsage().getInputTokens());
+            assertEquals(60, result.getUsage().getCachedTokens());
+            assertEquals(0, result.getUsage().getReasoningTokens());
+        }
     }
 }

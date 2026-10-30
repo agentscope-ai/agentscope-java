@@ -39,16 +39,18 @@ import reactor.core.publisher.Mono;
  * <ol>
  *   <li>{@code skill.getResources().get(path)} — in-memory map (Layer 1/3 host repositories and
  *       marketplace repositories that preload everything)
- *   <li>{@code entry.lazyResources().read(path)} — filesystem fallback for sources that
- *       implement {@link io.agentscope.harness.agent.skill.LazyResourceCapable}
- *       (e.g. {@code WorkspaceSkillRepository})
+ *   <li>{@code entry.lazyResources().read(path)} — filesystem fallback. Populated by sources
+ *       that implement {@link io.agentscope.harness.agent.skill.LazyResourceCapable} (e.g.
+ *       {@code WorkspaceSkillRepository}) or, for other repositories, by an origin-dir reader
+ *       built from {@code skill.getOriginDir()} when present
  *   <li>Not found → error with a deduped enumeration of {@code SKILL.md} + in-memory keys +
  *       lazy listing
  * </ol>
  *
- * <p>The tool's catalog reference is held via an {@link AtomicReference} supplied by
- * {@link SkillRuntime} so the registered tool instance can be reused across {@code call()}
- * rounds without re-registering, while the catalog itself is rebuilt every round.
+ * <p>The registered tool resolves the filtered catalog from each {@link
+ * ToolCallParam#getRuntimeContext() tool call's RuntimeContext}, keeping concurrent calls and
+ * sessions isolated without re-registering the tool. A legacy catalog reference is consulted only
+ * for deprecated callers that invoke the tool without any RuntimeContext.
  */
 @SuppressWarnings("deprecation")
 public final class SkillLoadTool implements AgentTool {
@@ -58,13 +60,37 @@ public final class SkillLoadTool implements AgentTool {
 
     private static final Logger log = LoggerFactory.getLogger(SkillLoadTool.class);
 
-    private final AtomicReference<SkillCatalog> catalogRef;
+    private final AtomicReference<SkillCatalog> legacyCatalogRef;
+    private final boolean exposeLegacyCatalogInSchema;
 
+    /** Creates a context-scoped loader with an empty context-free compatibility catalog. */
+    public SkillLoadTool() {
+        this(new AtomicReference<>(SkillCatalog.empty()), false);
+    }
+
+    /**
+     * Creates a loader backed by a legacy context-free catalog reference.
+     *
+     * <p>This constructor is retained for source and binary compatibility. The supplied reference
+     * is never used when a tool call carries a RuntimeContext, preventing it from bypassing the
+     * request-scoped skill filter.
+     *
+     * @deprecated Prefer {@link #SkillLoadTool()} and bind catalogs through {@link
+     *     SkillRuntime#install(SkillCatalog, io.agentscope.core.agent.RuntimeContext,
+     *     io.agentscope.core.tool.Toolkit)}.
+     */
+    @Deprecated(since = "2.2.0")
     public SkillLoadTool(AtomicReference<SkillCatalog> catalogRef) {
-        if (catalogRef == null) {
+        this(catalogRef, true);
+    }
+
+    SkillLoadTool(
+            AtomicReference<SkillCatalog> legacyCatalogRef, boolean exposeLegacyCatalogInSchema) {
+        if (legacyCatalogRef == null) {
             throw new IllegalArgumentException("catalogRef must not be null");
         }
-        this.catalogRef = catalogRef;
+        this.legacyCatalogRef = legacyCatalogRef;
+        this.exposeLegacyCatalogInSchema = exposeLegacyCatalogInSchema;
     }
 
     @Override
@@ -79,38 +105,44 @@ public final class SkillLoadTool implements AgentTool {
 
     @Override
     public String getDescription() {
-        return "Load and return a skill resource by its skill id and a path relative to the"
-                + " skill root.\n\n"
-                + "Path rules:\n"
-                + "- Use path=\"SKILL.md\" to load the skill's markdown documentation.\n"
-                + "- Use exact resource paths listed by the skill, e.g."
-                + " \"references/guide.md\" or \"scripts/run.py\".\n"
-                + "- Do not use '.', './', the skill directory itself, or an absolute path.";
+        return "Read a skill's full instructions or a referenced resource file.";
     }
 
     @Override
     public Map<String, Object> getParameters() {
-        SkillCatalog snapshot = catalogRef.get();
-        List<String> ids = snapshot == null ? List.of() : snapshot.ids();
+        Map<String, Object> skillIdSchema;
+        if (exposeLegacyCatalogInSchema) {
+            SkillCatalog snapshot = legacyCatalogRef.get();
+            List<String> ids = snapshot != null ? snapshot.ids() : List.of();
+            skillIdSchema =
+                    Map.of(
+                            "type", "string",
+                            "description", "Unique skill identifier.",
+                            "enum", ids);
+        } else {
+            skillIdSchema =
+                    Map.of(
+                            "type",
+                            "string",
+                            "description",
+                            "Unique skill identifier listed in the current <available_skills>"
+                                    + " block.");
+        }
         return Map.of(
                 "type", "object",
                 "properties",
                         Map.of(
                                 "skillId",
-                                        Map.of(
-                                                "type", "string",
-                                                "description", "Unique skill identifier.",
-                                                "enum", ids),
+                                skillIdSchema,
                                 "path",
-                                        Map.of(
-                                                "type",
-                                                "string",
-                                                "description",
-                                                "Exact resource path within the skill."
-                                                        + " Use 'SKILL.md' for the skill's"
-                                                        + " instructions; do not use '.',"
-                                                        + " './', directories, or absolute"
-                                                        + " paths.")),
+                                Map.of(
+                                        "type",
+                                        "string",
+                                        "description",
+                                        "Exact file path relative to the skill root: 'SKILL.md'"
+                                                + " for instructions, or a referenced resource"
+                                                + " such as 'references/guide.md' or"
+                                                + " 'scripts/run.py'.")),
                 "required", List.of("skillId", "path"));
     }
 
@@ -129,8 +161,8 @@ public final class SkillLoadTool implements AgentTool {
                         ToolResultBlock.error("Missing or empty required parameter: path"));
             }
 
-            SkillCatalog catalog = catalogRef.get();
-            HarnessSkillEntry entry = catalog == null ? null : catalog.get(skillId);
+            SkillCatalog catalog = catalogFor(param);
+            HarnessSkillEntry entry = catalog.get(skillId);
             if (entry == null) {
                 return Mono.just(
                         ToolResultBlock.error(
@@ -144,6 +176,14 @@ public final class SkillLoadTool implements AgentTool {
             log.error("load_skill_through_path failed", e);
             return Mono.just(ToolResultBlock.error(e.getMessage()));
         }
+    }
+
+    private SkillCatalog catalogFor(ToolCallParam param) {
+        if (param.getRuntimeContext() != null) {
+            return SkillRuntime.catalogFor(param.getRuntimeContext());
+        }
+        SkillCatalog legacy = legacyCatalogRef.get();
+        return legacy != null ? legacy : SkillCatalog.empty();
     }
 
     private ToolResultBlock loadOne(HarnessSkillEntry entry, String path) {
@@ -160,7 +200,7 @@ public final class SkillLoadTool implements AgentTool {
             return ToolResultBlock.text(formatResource(entry, path, mem.get(path)));
         }
 
-        // 3. Lazy fallback (WorkspaceSkillRepository and other LazyResourceCapable sources).
+        // 3. Lazy fallback (LazyResourceCapable sources, or an origin-dir reader for others).
         if (entry.lazyResources() != null) {
             Optional<String> lazy = entry.lazyResources().read(path);
             if (lazy.isPresent()) {
@@ -176,12 +216,22 @@ public final class SkillLoadTool implements AgentTool {
     //  Formatting helpers
     // ---------------------------------------------------------------------
 
-    /**
-     * Wrapping fence used to demarcate file content from the surrounding tool-result header.
-     * Four backticks so it stays unambiguous even when the wrapped body contains the more common
-     * triple-backtick code fences.
-     */
-    private static final String CONTENT_FENCE = "````";
+    /** Uses a fence longer than every backtick run in the wrapped content. */
+    private static String contentFence(String content) {
+        int length = 4;
+        int run = 0;
+        if (content != null) {
+            for (int i = 0; i < content.length(); i++) {
+                if (content.charAt(i) == '`') {
+                    run++;
+                    length = Math.max(length, run + 1);
+                } else {
+                    run = 0;
+                }
+            }
+        }
+        return "`".repeat(length);
+    }
 
     private String formatSkillMarkdown(HarnessSkillEntry entry) {
         AgentSkill skill = entry.skill();
@@ -199,17 +249,19 @@ public final class SkillLoadTool implements AgentTool {
         // anything near the frontmatter boundary, since the parser eats that whitespace.
         String fullMarkdown =
                 MarkdownSkillParser.generate(skill.getMetadata(), skill.getSkillContent());
+        String fence = contentFence(fullMarkdown);
         sb.append("\nContent (").append("SKILL.md").append("):\n");
-        sb.append(CONTENT_FENCE).append("markdown\n");
+        sb.append(fence).append("markdown\n");
         sb.append(fullMarkdown);
         if (!fullMarkdown.endsWith("\n")) {
             sb.append("\n");
         }
-        sb.append(CONTENT_FENCE).append("\n");
+        sb.append(fence).append("\n");
         return sb.toString();
     }
 
     private String formatResource(HarnessSkillEntry entry, String path, String content) {
+        String fence = contentFence(content);
         StringBuilder sb = new StringBuilder();
         sb.append("Successfully loaded resource from skill: ")
                 .append(entry.skill().getSkillId())
@@ -219,12 +271,12 @@ public final class SkillLoadTool implements AgentTool {
             sb.append("Files root: ").append(entry.filesRoot()).append("\n");
         }
         sb.append("\nContent (").append(path).append("):\n");
-        sb.append(CONTENT_FENCE).append("\n");
+        sb.append(fence).append("\n");
         sb.append(content);
         if (content == null || !content.endsWith("\n")) {
             sb.append("\n");
         }
-        sb.append(CONTENT_FENCE).append("\n");
+        sb.append(fence).append("\n");
         return sb.toString();
     }
 

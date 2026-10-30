@@ -27,12 +27,11 @@ import reactor.core.publisher.Mono;
  * An external tool implementation that only contains schema definition without execution logic.
  *
  * <p>This class is used for registering external tools that will be executed outside the framework.
- * When a model returns a call to a SchemaOnlyTool, the framework will catch the
- * {@link ToolSuspendException} thrown by {@link #callAsync(ToolCallParam)} and convert it to a
- * pending {@link ToolResultBlock}, then return a suspended message to the user.
+ * When a model returns a call to a SchemaOnlyTool, Toolkit surfaces the call as a pending
+ * {@link ToolResultBlock}, then the agent returns a suspended message to the user.
  *
- * <p>The {@link #callAsync(ToolCallParam)} method throws a {@link ToolSuspendException}
- * to signal that this tool requires external execution.
+ * <p>The {@link #callAsync(ToolCallParam)} method still throws a {@link ToolSuspendException}
+ * for direct invocations outside the Toolkit execution path.
  *
  * <p>Example usage:
  * <pre>{@code
@@ -57,11 +56,13 @@ import reactor.core.publisher.Mono;
 public class SchemaOnlyTool extends ToolBase {
 
     private final Boolean strict;
+    private final Boolean deferLoading;
 
     /**
      * Creates a new SchemaOnlyTool from a ToolSchema.
      *
-     * @param schema The tool schema containing name, description, parameters, and strict mode
+     * @param schema The tool schema containing name, description, parameters, strict mode, and
+     *     deferred loading configuration
      * @throws NullPointerException if schema is null
      */
     public SchemaOnlyTool(ToolSchema schema) {
@@ -69,7 +70,8 @@ public class SchemaOnlyTool extends ToolBase {
                 Objects.requireNonNull(schema, "schema cannot be null").getName(),
                 schema.getDescription(),
                 schema.getParameters(),
-                schema.getStrict());
+                schema.getStrict(),
+                schema.getDeferLoading());
     }
 
     /**
@@ -97,10 +99,16 @@ public class SchemaOnlyTool extends ToolBase {
      * @param description The tool description
      * @param parameters The tool parameters schema
      * @param strict Whether the tool should use strict schema validation (null if unspecified)
+     * @param deferLoading Whether to defer loading this tool's schema until tool search (null if
+     *     unspecified)
      * @throws NullPointerException if name or description is null
      */
     public SchemaOnlyTool(
-            String name, String description, Map<String, Object> parameters, Boolean strict) {
+            String name,
+            String description,
+            Map<String, Object> parameters,
+            Boolean strict,
+            Boolean deferLoading) {
         super(
                 ToolBase.builder()
                         .name(Objects.requireNonNull(name, "name cannot be null"))
@@ -114,6 +122,24 @@ public class SchemaOnlyTool extends ToolBase {
                         .readOnly(false)
                         .concurrencySafe(true));
         this.strict = strict;
+        this.deferLoading = deferLoading;
+    }
+
+    /**
+     * Creates a new SchemaOnlyTool with the specified name, description, parameters, and strict
+     * mode configuration.
+     *
+     * <p>Deferred loading is set to null (unspecified).
+     *
+     * @param name The tool name
+     * @param description The tool description
+     * @param parameters The tool parameters schema
+     * @param strict Whether the tool should use strict schema validation (null if unspecified)
+     * @throws NullPointerException if name or description is null
+     */
+    public SchemaOnlyTool(
+            String name, String description, Map<String, Object> parameters, Boolean strict) {
+        this(name, description, parameters, strict, null);
     }
 
     @Override
@@ -121,12 +147,16 @@ public class SchemaOnlyTool extends ToolBase {
         return strict;
     }
 
+    @Override
+    public Boolean getDeferLoading() {
+        return deferLoading;
+    }
+
     /**
      * Throws a ToolSuspendException to signal that this tool requires external execution.
      *
-     * <p>The framework will catch this exception and convert it to a pending {@link ToolResultBlock}.
-     * The agent will then return a suspended message with {@code GenerateReason.TOOL_SUSPENDED}
-     * containing the tool use blocks that need external execution.
+     * <p>Toolkit execution short-circuits external tools before invoking this method. Direct
+     * invocations keep the same suspension signal.
      *
      * @param param The tool call parameters (ignored)
      * @return Never returns normally

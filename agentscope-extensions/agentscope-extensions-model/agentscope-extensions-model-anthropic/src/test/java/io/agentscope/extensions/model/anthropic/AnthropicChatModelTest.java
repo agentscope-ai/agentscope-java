@@ -20,9 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.anthropic.models.messages.MessageParam;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ToolChoice;
@@ -31,6 +33,7 @@ import io.agentscope.core.model.test.ModelTestUtils;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicChatFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicMultiAgentFormatter;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -72,6 +75,7 @@ class AnthropicChatModelTest {
 
         assertNotNull(model, "Model should be created");
         assertEquals("claude-sonnet-4-5-20250929", model.getModelName());
+        assertTrue(model.supportsToolChoiceSpecific());
     }
 
     @Test
@@ -81,9 +85,17 @@ class AnthropicChatModelTest {
 
         assertNotNull(model, "Model should be created with default settings");
         assertEquals(
-                "claude-sonnet-4-5-20250929",
+                "claude-sonnet-5-5",
                 model.getModelName(),
-                "Default model should be claude-sonnet-4-5-20250929");
+                "Default model should be claude-sonnet-5-5");
+    }
+
+    @Test
+    @DisplayName("Should resolve the context window of the default model")
+    void testDefaultModelContextWindow() {
+        AnthropicChatModel model = AnthropicChatModel.builder().apiKey(mockApiKey).build();
+
+        assertEquals(1_000_000, model.getContextWindowSize());
     }
 
     @Test
@@ -391,9 +403,7 @@ class AnthropicChatModelTest {
 
         assertNotNull(minimalModel, "Model should be created with minimal configuration");
         assertEquals(
-                "claude-sonnet-4-5-20250929",
-                minimalModel.getModelName(),
-                "Should use default model name");
+                "claude-sonnet-5-5", minimalModel.getModelName(), "Should use default model name");
     }
 
     @Test
@@ -454,6 +464,57 @@ class AnthropicChatModelTest {
                         .build();
 
         assertNotNull(model);
+    }
+
+    // ==========================================================================
+    // Prompt caching (cache_control) request-building tests
+    // ==========================================================================
+
+    @Test
+    @DisplayName("Should build streaming request with cacheControl enabled before transport error")
+    void testStreamWithCacheControlEnabled() {
+        // Unreachable local endpoint: the request-building path (system message with
+        // cache_control, message formatting, applyCacheControl) executes fully and
+        // only the transport call fails.
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("claude-sonnet-4-5-20250929")
+                        .baseUrl("http://127.0.0.1:1")
+                        .stream(true)
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().cacheControl(true).build();
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .textContent("You are a helpful assistant.")
+                                .build(),
+                        Msg.builder().role(MsgRole.USER).textContent("Hello").build());
+
+        StepVerifier.create(model.stream(messages, null, options))
+                .expectError()
+                .verify(Duration.ofSeconds(60));
+    }
+
+    @Test
+    @DisplayName(
+            "Should build non-streaming request with cacheControl disabled before transport error")
+    void testCallWithCacheControlDisabled() {
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("claude-sonnet-4-5-20250929")
+                        .baseUrl("http://127.0.0.1:1")
+                        .stream(false)
+                        .build();
+
+        List<Msg> messages = List.of(Msg.builder().role(MsgRole.USER).textContent("Hello").build());
+
+        StepVerifier.create(model.stream(messages, null, null))
+                .expectError()
+                .verify(Duration.ofSeconds(60));
     }
 
     @Test

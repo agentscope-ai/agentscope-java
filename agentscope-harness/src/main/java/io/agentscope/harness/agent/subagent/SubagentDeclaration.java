@@ -15,7 +15,11 @@
  */
 package io.agentscope.harness.agent.subagent;
 
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.subagent.protocol.RemoteStreamDetail;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -93,13 +97,37 @@ public final class SubagentDeclaration {
     private final boolean persistSession;
     private final boolean inheritParentPermissions;
     private final Boolean exposeToUser;
+    private final Boolean enablePendingToolRecovery;
     private final List<String> tools;
     private final List<String> skills;
+    private final CompactionConfig compactionConfig;
+    private final boolean disableCompaction;
 
     /** Base URL of the remote task server (e.g. {@code http://host:8080}). */
     private final String url;
 
     private final Map<String, String> headers;
+
+    /**
+     * Whether remote subagent events should be streamed back into the parent's event stream.
+     * {@code null} defaults to {@code true}; see {@link #isRemoteStreaming()}.
+     */
+    private final Boolean remoteStreaming;
+
+    /**
+     * How much of the remote event stream to request. {@code null} defaults to
+     * {@link RemoteStreamDetail#FULL}; see {@link #getRemoteStreamDetail()}.
+     */
+    private final RemoteStreamDetail remoteStreamDetail;
+
+    /** Policy for resolving remote HITL confirmations. Defaults to {@link RemoteAskPolicy#DENY}. */
+    private final RemoteAskPolicy remoteAskPolicy;
+
+    /**
+     * Static attributes sent as {@code context.attributes} on every remote submission. Never empty
+     * when non-null.
+     */
+    private final Map<String, Object> remoteContextAttributes;
 
     private SubagentDeclaration(Builder b) {
         this.name = b.name;
@@ -117,10 +145,21 @@ public final class SubagentDeclaration {
         this.persistSession = b.persistSession;
         this.inheritParentPermissions = b.inheritParentPermissions;
         this.exposeToUser = b.exposeToUser;
+        this.enablePendingToolRecovery = b.enablePendingToolRecovery;
         this.tools = b.tools != null ? List.copyOf(b.tools) : List.of();
         this.skills = b.skills != null ? List.copyOf(b.skills) : List.of();
+        this.compactionConfig = b.compactionConfig;
+        this.disableCompaction = b.disableCompaction;
         this.url = b.url;
         this.headers = b.headers != null && !b.headers.isEmpty() ? Map.copyOf(b.headers) : null;
+        this.remoteStreaming = b.remoteStreaming;
+        this.remoteStreamDetail = b.remoteStreamDetail;
+        this.remoteAskPolicy = b.remoteAskPolicy != null ? b.remoteAskPolicy : RemoteAskPolicy.DENY;
+        this.remoteContextAttributes =
+                b.remoteContextAttributes != null && !b.remoteContextAttributes.isEmpty()
+                        ? Collections.unmodifiableMap(
+                                new LinkedHashMap<>(b.remoteContextAttributes))
+                        : null;
     }
 
     /** Factory method for a new builder. */
@@ -232,7 +271,7 @@ public final class SubagentDeclaration {
 
     /**
      * Whether the subagent's session state should persist across parent calls. When {@code true},
-     * the spawn key is derived deterministically from (parentSessionId, agentId, label), enabling
+     * the spawn key is derived deterministically from (userId, parentSessionId, agentId, label), enabling
      * state recovery after process restarts. When {@code false} (default), a random UUID is used.
      */
     public boolean isPersistSession() {
@@ -269,6 +308,15 @@ public final class SubagentDeclaration {
     }
 
     /**
+     * Recovery policy for orphaned tool calls in an automatically constructed local subagent.
+     * {@code null} (default) inherits the parent's setting; {@code true} or {@code false}
+     * explicitly overrides it. Remote subagents configure recovery on their own server.
+     */
+    public Boolean getEnablePendingToolRecovery() {
+        return enablePendingToolRecovery;
+    }
+
+    /**
      * Optional tool allowlist. When non-empty, only inherited parent tools whose names are listed
      * remain on the subagent's inherited toolkit. Empty means inherit all parent tools.
      */
@@ -278,6 +326,22 @@ public final class SubagentDeclaration {
 
     public List<String> getSkills() {
         return skills;
+    }
+
+    /**
+     * Optional compaction configuration for this subagent.
+     *
+     * <p>When {@code null}, the subagent inherits the parent configuration unless
+     * {@link #isCompactionDisabled()} is {@code true}. Remote subagents manage compaction on their
+     * own server and do not consume this setting.
+     */
+    public CompactionConfig getCompactionConfig() {
+        return compactionConfig;
+    }
+
+    /** Whether this declaration explicitly disables compaction for the local subagent. */
+    public boolean isCompactionDisabled() {
+        return disableCompaction;
     }
 
     /** Returns {@code true} when this declaration targets a remote task HTTP server. */
@@ -298,6 +362,44 @@ public final class SubagentDeclaration {
      */
     public Map<String, String> getHeaders() {
         return headers;
+    }
+
+    /**
+     * Whether remote subagent events (text deltas, tool calls, confirmations) should be streamed
+     * back into the parent's live event stream when one is present. Defaults to {@code true}
+     * when unset.
+     */
+    public boolean isRemoteStreaming() {
+        return remoteStreaming == null || remoteStreaming;
+    }
+
+    /**
+     * How much of the remote event stream to forward. Defaults to {@link RemoteStreamDetail#FULL}
+     * (lifecycle, tool calls, text and thinking deltas). Use {@link RemoteStreamDetail#VERBOSE} to
+     * mirror a local subagent's stream in full — block boundaries, tool output deltas, model calls
+     * with token usage and every other event — at the cost of more traffic. Only relevant when
+     * {@link #isRemoteStreaming()} is true.
+     */
+    public RemoteStreamDetail getRemoteStreamDetail() {
+        return remoteStreamDetail != null ? remoteStreamDetail : RemoteStreamDetail.FULL;
+    }
+
+    /**
+     * Policy for resolving remote HITL (tool-confirmation) requests. Defaults to
+     * {@link RemoteAskPolicy#DENY}, which auto-denies pending confirmations rather than leaving
+     * the remote task blocked indefinitely.
+     */
+    public RemoteAskPolicy getRemoteAskPolicy() {
+        return remoteAskPolicy;
+    }
+
+    /**
+     * Static attributes sent as {@code context.attributes} with every remote submission, for the
+     * remote server to route on or expose to its agent. {@code null} when unset; never empty
+     * otherwise.
+     */
+    public Map<String, Object> getRemoteContextAttributes() {
+        return remoteContextAttributes;
     }
 
     /** Returns {@code true} when this declaration points at an external definition workspace. */
@@ -326,10 +428,17 @@ public final class SubagentDeclaration {
         private boolean persistSession = false;
         private boolean inheritParentPermissions = true;
         private Boolean exposeToUser;
+        private Boolean enablePendingToolRecovery;
         private List<String> tools;
         private List<String> skills;
+        private CompactionConfig compactionConfig;
+        private boolean disableCompaction;
         private String url;
         private Map<String, String> headers;
+        private Boolean remoteStreaming;
+        private RemoteStreamDetail remoteStreamDetail;
+        private RemoteAskPolicy remoteAskPolicy = RemoteAskPolicy.DENY;
+        private Map<String, Object> remoteContextAttributes;
 
         private Builder() {}
 
@@ -457,7 +566,7 @@ public final class SubagentDeclaration {
 
         /**
          * When {@code true}, the subagent's spawn key is derived deterministically from
-         * (parentSessionId, agentId, label), enabling state recovery across parent calls and
+         * (userId, parentSessionId, agentId, label), enabling state recovery across parent calls and
          * process restarts. Defaults to {@code false}.
          */
         public Builder persistSession(boolean persistSession) {
@@ -488,6 +597,18 @@ public final class SubagentDeclaration {
         }
 
         /**
+         * Overrides pending-tool recovery for this local subagent. Pass {@code null} to inherit
+         * the parent setting (the default). Permission confirmations are never auto-recovered.
+         *
+         * @param enable whether to enable recovery, or {@code null} to inherit
+         * @return this builder
+         */
+        public Builder enablePendingToolRecovery(Boolean enable) {
+            this.enablePendingToolRecovery = enable;
+            return this;
+        }
+
+        /**
          * Tool allowlist: when non-empty, only inherited parent tools with listed names are kept.
          * Child-local tool registrations are unaffected.
          */
@@ -498,6 +619,26 @@ public final class SubagentDeclaration {
 
         public Builder skills(List<String> skills) {
             this.skills = skills;
+            return this;
+        }
+
+        /**
+         * Sets a compaction configuration for this subagent.
+         *
+         * <p>An explicit declaration-level configuration takes precedence over the parent agent's
+         * compaction configuration and can enable compaction for this subagent even when the parent
+         * disables it.
+         */
+        public Builder compaction(CompactionConfig compactionConfig) {
+            this.compactionConfig = compactionConfig;
+            this.disableCompaction = false;
+            return this;
+        }
+
+        /** Disables compaction for this subagent, overriding the parent's configuration. */
+        public Builder disableCompaction() {
+            this.compactionConfig = null;
+            this.disableCompaction = true;
             return this;
         }
 
@@ -516,6 +657,47 @@ public final class SubagentDeclaration {
          */
         public Builder headers(Map<String, String> headers) {
             this.headers = headers;
+            return this;
+        }
+
+        /**
+         * Whether remote subagent events should be streamed back into the parent's event stream.
+         * {@code null} (default) is treated as {@code true}. Only relevant when {@link #url(String)}
+         * is set.
+         */
+        public Builder remoteStreaming(Boolean remoteStreaming) {
+            this.remoteStreaming = remoteStreaming;
+            return this;
+        }
+
+        /**
+         * How much of the remote event stream to forward. {@code null} (default) is treated as
+         * {@link RemoteStreamDetail#FULL}; {@link RemoteStreamDetail#VERBOSE} forwards every event
+         * the remote agent emits, matching a local subagent. Only relevant when
+         * {@link #remoteStreaming(Boolean)} is enabled.
+         */
+        public Builder remoteStreamDetail(RemoteStreamDetail remoteStreamDetail) {
+            this.remoteStreamDetail = remoteStreamDetail;
+            return this;
+        }
+
+        /**
+         * Policy for resolving remote HITL confirmations. {@code null} is treated as
+         * {@link RemoteAskPolicy#DENY}. Only relevant when {@link #url(String)} is set.
+         */
+        public Builder remoteAskPolicy(RemoteAskPolicy remoteAskPolicy) {
+            this.remoteAskPolicy = remoteAskPolicy != null ? remoteAskPolicy : RemoteAskPolicy.DENY;
+            return this;
+        }
+
+        /**
+         * Static attributes sent as {@code context.attributes} with every submission to this
+         * remote subagent (e.g. tenant or deployment tags). Values must be JSON-serializable. Per
+         * call attributes set on the parent's {@code RuntimeContext} are merged on top. Only
+         * relevant when {@link #url(String)} is set.
+         */
+        public Builder remoteContextAttributes(Map<String, Object> remoteContextAttributes) {
+            this.remoteContextAttributes = remoteContextAttributes;
             return this;
         }
 

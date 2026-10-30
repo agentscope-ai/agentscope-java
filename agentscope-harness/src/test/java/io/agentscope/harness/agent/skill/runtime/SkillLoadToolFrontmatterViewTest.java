@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.skill.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -26,9 +27,10 @@ import io.agentscope.core.tool.ToolCallParam;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Verifies the #7-B change: {@code load_skill_through_path(path="SKILL.md")} now returns the
@@ -52,9 +54,11 @@ class SkillLoadToolFrontmatterViewTest {
 
         SkillCatalog catalog =
                 SkillCatalog.of(java.util.List.of(HarnessSkillEntry.of(skill, null)));
-        SkillLoadTool tool = new SkillLoadTool(new AtomicReference<>(catalog));
+        SkillLoadTool tool = new SkillLoadTool();
+        RuntimeContext ctx = RuntimeContext.empty();
+        ctx.put(SkillCatalog.class, catalog);
 
-        String text = runTool(tool, Map.of("skillId", skill.getSkillId(), "path", "SKILL.md"));
+        String text = runTool(tool, ctx, Map.of("skillId", skill.getSkillId(), "path", "SKILL.md"));
 
         assertTrue(
                 text.contains("name: alpha"),
@@ -73,7 +77,7 @@ class SkillLoadToolFrontmatterViewTest {
     }
 
     @Test
-    @DisplayName("Resource view also uses 4-backtick fence to avoid collision with body")
+    @DisplayName("Resource view keeps a 4-backtick minimum fence")
     void resourceFenceConsistent() {
         AgentSkill skill =
                 new AgentSkill(
@@ -84,10 +88,12 @@ class SkillLoadToolFrontmatterViewTest {
                         "custom");
         SkillCatalog catalog =
                 SkillCatalog.of(java.util.List.of(HarnessSkillEntry.of(skill, null)));
-        SkillLoadTool tool = new SkillLoadTool(new AtomicReference<>(catalog));
+        SkillLoadTool tool = new SkillLoadTool();
+        RuntimeContext ctx = RuntimeContext.empty();
+        ctx.put(SkillCatalog.class, catalog);
 
         String text =
-                runTool(tool, Map.of("skillId", skill.getSkillId(), "path", "scripts/run.sh"));
+                runTool(tool, ctx, Map.of("skillId", skill.getSkillId(), "path", "scripts/run.sh"));
 
         assertTrue(text.contains("scripts/run.sh"), "resource path should appear in header");
         assertTrue(text.contains("echo hi"), "resource body should be present");
@@ -96,14 +102,76 @@ class SkillLoadToolFrontmatterViewTest {
         assertEquals(2, fenceCount, "expected exactly one open + one close fence, got " + text);
     }
 
-    private static String runTool(SkillLoadTool tool, Map<String, Object> input) {
+    @ParameterizedTest
+    @ValueSource(ints = {3, 4, 7})
+    void skillMarkdownFenceContainsNestedBackticks(int backticks) {
+        String body =
+                "# Body\n"
+                        + "`".repeat(backticks)
+                        + "\nnested content\n"
+                        + "`".repeat(backticks)
+                        + "\n";
+        AgentSkill skill = new AgentSkill("alpha", "alpha skill", body, null, "custom");
+        RuntimeContext ctx = RuntimeContext.empty();
+        ctx.put(
+                SkillCatalog.class,
+                SkillCatalog.of(java.util.List.of(HarnessSkillEntry.of(skill, null))));
+
+        String text =
+                runTool(
+                        new SkillLoadTool(),
+                        ctx,
+                        Map.of("skillId", skill.getSkillId(), "path", "SKILL.md"));
+        String fence = "`".repeat(Math.max(4, backticks + 1));
+
+        assertTrue(text.contains("\n" + fence + "markdown\n"));
+        assertTrue(text.contains(body));
+        assertTrue(text.endsWith("\n" + fence + "\n"));
+        assertEquals(2, countOccurrences(text, fence));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {3, 4, 7})
+    void resourceFenceContainsNestedBackticks(int backticks) {
+        String content = "`".repeat(backticks) + "\nnested content\n" + "`".repeat(backticks);
+        AgentSkill skill =
+                new AgentSkill(
+                        "alpha",
+                        "alpha skill",
+                        "body",
+                        Map.of("references/guide.md", content),
+                        "custom");
+        RuntimeContext ctx = RuntimeContext.empty();
+        ctx.put(
+                SkillCatalog.class,
+                SkillCatalog.of(java.util.List.of(HarnessSkillEntry.of(skill, null))));
+
+        String text =
+                runTool(
+                        new SkillLoadTool(),
+                        ctx,
+                        Map.of("skillId", skill.getSkillId(), "path", "references/guide.md"));
+        String fence = "`".repeat(Math.max(4, backticks + 1));
+
+        assertTrue(text.contains("\n" + fence + "\n" + content));
+        assertTrue(text.endsWith("\n" + fence + "\n"));
+        assertEquals(2, countOccurrences(text, fence));
+    }
+
+    private static String runTool(
+            SkillLoadTool tool, RuntimeContext ctx, Map<String, Object> input) {
         ToolUseBlock useBlock =
                 ToolUseBlock.builder()
                         .id("view-test")
                         .name(SkillLoadTool.TOOL_NAME)
                         .input(input)
                         .build();
-        ToolCallParam param = ToolCallParam.builder().toolUseBlock(useBlock).input(input).build();
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(useBlock)
+                        .input(input)
+                        .runtimeContext(ctx)
+                        .build();
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
         if (result == null || result.getOutput() == null) {
             return "";

@@ -32,12 +32,13 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.search.ToolSearchTool;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,8 @@ import org.slf4j.LoggerFactory;
 public class AnthropicMessageConverter {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicMessageConverter.class);
+    private static final AnthropicServerToolHelper SERVER_TOOL_HELPER =
+            AnthropicServerToolHelper.instance();
 
     private final AnthropicMediaConverter mediaConverter;
     private final Function<List<ContentBlock>, String> toolResultConverter;
@@ -64,37 +67,8 @@ public class AnthropicMessageConverter {
      * @param toolResultConverter Function to convert tool result blocks to strings
      */
     public AnthropicMessageConverter(Function<List<ContentBlock>, String> toolResultConverter) {
-        this(toolResultConverter, CitationMode.DISABLED);
-    }
-
-    /**
-     * Create an AnthropicMessageConverter with citation mode.
-     *
-     * @param toolResultConverter Function to convert tool result blocks to strings
-     * @param citationMode whether PDF documents should enable native citations
-     */
-    AnthropicMessageConverter(
-            Function<List<ContentBlock>, String> toolResultConverter, CitationMode citationMode) {
-        this.mediaConverter = new AnthropicMediaConverter(citationMode);
-        this.toolResultConverter = Objects.requireNonNull(toolResultConverter);
-    }
-
-    /**
-     * Convert an image or data block to an Anthropic content block param.
-     *
-     * @param block the content block to convert
-     * @return Anthropic content block param
-     * @throws Exception if conversion fails
-     */
-    ContentBlockParam convertMediaBlock(ContentBlock block) throws Exception {
-        if (block instanceof ImageBlock imageBlock) {
-            return ContentBlockParam.ofImage(mediaConverter.convertImageBlock(imageBlock));
-        }
-        if (block instanceof DataBlock dataBlock) {
-            return mediaConverter.convertDataBlockContent(dataBlock);
-        }
-        throw new IllegalArgumentException(
-                "Unsupported media block: " + block.getClass().getSimpleName());
+        this.mediaConverter = new AnthropicMediaConverter();
+        this.toolResultConverter = toolResultConverter;
     }
 
     /**
@@ -109,9 +83,9 @@ public class AnthropicMessageConverter {
 
         for (int i = 0; i < messages.size(); i++) {
             Msg msg = messages.get(i);
+            boolean isFirstMessage = (i == 0);
 
-            if (msg.getRole() == MsgRole.ASSISTANT
-                    && msg.getContentBlocks(ToolUseBlock.class).size() > 1) {
+            if (msg.getRole() == MsgRole.ASSISTANT && clientToolUses(msg).size() > 1) {
                 SplitToolResultSequence splitResults = collectSplitToolResults(messages, i + 1);
                 if (shouldSplitParallelToolCalls(msg, splitResults)) {
                     result.addAll(convertParallelToolCalls(msg, splitResults));
@@ -120,14 +94,16 @@ public class AnthropicMessageConverter {
                 }
             }
 
-            // Special handling for tool results - they create separate user messages
+            // Special handling for tool results - they create separate user messages.
+            // Server tool results (e.g. web_search_tool_result) stay inline in the
+            // assistant message instead.
             if (msg.hasContentBlocks(ToolResultBlock.class)) {
                 // Add non-tool-result content first (if any)
                 List<ContentBlock> nonToolBlocks = new ArrayList<>();
                 List<ToolResultBlock> toolResults = new ArrayList<>();
 
                 for (ContentBlock block : msg.getContent()) {
-                    if (block instanceof ToolResultBlock tr) {
+                    if (block instanceof ToolResultBlock tr && !tr.isServerTool()) {
                         toolResults.add(tr);
                     } else {
                         nonToolBlocks.add(block);
@@ -136,7 +112,7 @@ public class AnthropicMessageConverter {
 
                 // Add regular content if present
                 if (!nonToolBlocks.isEmpty()) {
-                    MessageParam regularMsg = convertMessageContent(msg, nonToolBlocks);
+                    MessageParam regularMsg = convertMessageContent(msg, nonToolBlocks, i == 0);
                     if (regularMsg != null) {
                         result.add(regularMsg);
                     }
@@ -147,7 +123,7 @@ public class AnthropicMessageConverter {
                     result.add(convertToolResult(toolResult));
                 }
             } else {
-                MessageParam param = convertMessageContent(msg, msg.getContent());
+                MessageParam param = convertMessageContent(msg, msg.getContent(), isFirstMessage);
                 if (param != null) {
                     result.add(param);
                 }
@@ -177,7 +153,7 @@ public class AnthropicMessageConverter {
             return false;
         }
 
-        List<ToolUseBlock> toolUses = msg.getContentBlocks(ToolUseBlock.class);
+        List<ToolUseBlock> toolUses = clientToolUses(msg);
         if (toolUses.size() <= 1) {
             return false;
         }
@@ -238,11 +214,13 @@ public class AnthropicMessageConverter {
     private List<MessageParam> convertParallelToolCalls(
             Msg assistantMsg, SplitToolResultSequence splitResults) {
         List<MessageParam> converted = new ArrayList<>();
+        // Server tool blocks (use + result) stay with the leading content; only client tool
+        // calls participate in the tool-use/tool-result alternation.
         List<ContentBlock> leadingBlocks =
                 assistantMsg.getContent().stream()
-                        .filter(block -> !(block instanceof ToolUseBlock))
+                        .filter(block -> !(block instanceof ToolUseBlock tub) || tub.isServerTool())
                         .toList();
-        List<ToolUseBlock> toolUses = assistantMsg.getContentBlocks(ToolUseBlock.class);
+        List<ToolUseBlock> toolUses = clientToolUses(assistantMsg);
 
         for (int i = 0; i < toolUses.size(); i++) {
             ToolUseBlock toolUse = toolUses.get(i);
@@ -252,7 +230,8 @@ public class AnthropicMessageConverter {
             }
             assistantBlocks.add(toolUse);
 
-            MessageParam assistantParam = convertMessageContent(assistantMsg, assistantBlocks);
+            MessageParam assistantParam =
+                    convertMessageContent(assistantMsg, assistantBlocks, false);
             if (assistantParam != null) {
                 converted.add(assistantParam);
             }
@@ -268,10 +247,21 @@ public class AnthropicMessageConverter {
             Map<String, ToolResultBlock> resultsById, int consumedMessages) {}
 
     /**
+     * Tool calls that are executed by the local toolkit (i.e. excluding provider server tools
+     * such as Anthropic's web_search, which are executed on the server side).
+     */
+    private List<ToolUseBlock> clientToolUses(Msg msg) {
+        return msg.getContentBlocks(ToolUseBlock.class).stream()
+                .filter(toolUse -> !toolUse.isServerTool())
+                .toList();
+    }
+
+    /**
      * Convert message content to MessageParam.
      */
-    private MessageParam convertMessageContent(Msg msg, List<ContentBlock> blocks) {
-        Role role = convertRole(msg.getRole());
+    private MessageParam convertMessageContent(
+            Msg msg, List<ContentBlock> blocks, boolean isFirstMessage) {
+        Role role = convertRole(msg.getRole(), isFirstMessage);
         List<ContentBlockParam> contentBlocks = new ArrayList<>();
 
         for (ContentBlock block : blocks) {
@@ -319,19 +309,31 @@ public class AnthropicMessageConverter {
                                             .build()));
                 }
             } else if (block instanceof ToolUseBlock tub) {
-                contentBlocks.add(
-                        ContentBlockParam.ofToolUse(
-                                ToolUseBlockParam.builder()
-                                        .id(tub.getId())
-                                        .name(tub.getName())
-                                        .input(
-                                                JsonValue.from(
-                                                        tub.getInput() != null
-                                                                ? tub.getInput()
-                                                                : Map.of()))
-                                        .build()));
+                if (tub.isServerTool()) {
+                    // Server tool calls are echoed back as server_tool_use blocks
+                    contentBlocks.add(
+                            ContentBlockParam.ofServerToolUse(SERVER_TOOL_HELPER.encodeUse(tub)));
+                } else {
+                    contentBlocks.add(
+                            ContentBlockParam.ofToolUse(
+                                    ToolUseBlockParam.builder()
+                                            .id(tub.getId())
+                                            .name(tub.getName())
+                                            .input(
+                                                    JsonValue.from(
+                                                            tub.getInput() != null
+                                                                    ? tub.getInput()
+                                                                    : Map.of()))
+                                            .build()));
+                }
+            } else if (block instanceof ToolResultBlock trb && trb.isServerTool()) {
+                // Server tool results stay inline in the assistant message, echoed verbatim
+                ContentBlockParam param = SERVER_TOOL_HELPER.encodeResult(trb);
+                if (param != null) {
+                    contentBlocks.add(param);
+                }
             }
-            // ToolResultBlock is handled separately in convert() method
+            // Client ToolResultBlock is handled separately in convert() method
         }
 
         if (contentBlocks.isEmpty()) {
@@ -402,12 +404,29 @@ public class AnthropicMessageConverter {
                             TextBlockParam.builder().text(outputStr).build()));
         }
 
+        if ("DEFERRED".equals(toolResult.getMetadata().get(ToolSearchTool.METADATA_MODE))
+                && toolResult.getState() != ToolResultState.ERROR) {
+            Object matches = toolResult.getMetadata().get(ToolSearchTool.METADATA_TOOLS);
+            if (matches instanceof List<?> list) {
+                for (Object match : list) {
+                    if (match instanceof Map<?, ?> schema
+                            && schema.get("name") instanceof String name) {
+                        blocks.add(ToolResultBlockParam.Content.Block.ofToolReference(name));
+                    }
+                }
+            }
+        }
+
         // Create tool result block
-        ToolResultBlockParam toolResultParam =
+        var resultBuilder =
                 ToolResultBlockParam.builder()
                         .toolUseId(toolResult.getId())
-                        .content(ToolResultBlockParam.Content.ofBlocks(blocks))
-                        .build();
+                        .content(ToolResultBlockParam.Content.ofBlocks(blocks));
+        switch (toolResult.getState()) {
+            case ERROR, DENIED, INTERRUPTED -> resultBuilder.isError(true);
+            default -> {}
+        }
+        ToolResultBlockParam toolResultParam = resultBuilder.build();
 
         // Wrap in user message
         return MessageParam.builder()
@@ -428,15 +447,16 @@ public class AnthropicMessageConverter {
     }
 
     /**
-     * Convert AgentScope MsgRole to Anthropic Role. System messages are converted to USER role
-     * because Anthropic uses the system parameter instead of system messages.
+     * Convert AgentScope MsgRole to Anthropic Role. Important: Anthropic only allows the first
+     * message to be system. Non-first system messages are converted to user.
      */
-    private Role convertRole(MsgRole msgRole) {
+    private Role convertRole(MsgRole msgRole, boolean isFirstMessage) {
         return switch (msgRole) {
-            case SYSTEM -> Role.USER;
+            case SYSTEM -> isFirstMessage ? Role.USER : Role.USER; // Anthropic uses user for
+            // system messages
             case USER -> Role.USER;
             case ASSISTANT -> Role.ASSISTANT;
-            case TOOL -> Role.USER;
+            case TOOL -> Role.USER; // Tool results are always user messages
         };
     }
 

@@ -15,12 +15,19 @@
  */
 package io.agentscope.extensions.model.anthropic.formatter;
 
+import com.anthropic.models.messages.CacheControlEphemeral;
+import com.anthropic.models.messages.CitationsConfigParam;
+import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
+import com.anthropic.models.messages.TextBlockParam;
+import com.anthropic.models.messages.ToolResultBlockParam;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -47,12 +54,8 @@ public abstract class AnthropicBaseFormatter
     }
 
     /**
-     * Format messages with request and default options, applying Anthropic-specific conversion
-     * settings such as citation mode.
-     *
-     * <p>Creates a request-scoped {@link AnthropicMessageConverter} when citations are enabled.
-     * The converter is a local variable — the formatter's {@link #messageConverter} field is never
-     * mutated, so concurrent requests are safe.
+     * Format messages through the existing formatter hook, then configure document citations.
+     * Request options override model defaults without changing the shared message converter.
      *
      * @param messages messages to format
      * @param options request-specific generation options
@@ -61,37 +64,57 @@ public abstract class AnthropicBaseFormatter
      */
     public List<MessageParam> format(
             List<Msg> messages, GenerateOptions options, GenerateOptions defaultOptions) {
-        boolean enabled =
-                Boolean.TRUE.equals(
-                        getOptionOrDefault(
-                                options, defaultOptions, GenerateOptions::getCitationsEnabled));
-        if (!enabled) {
-            return format(messages);
+        List<MessageParam> formatted = format(messages);
+        Boolean enabled =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getCitationsEnabled);
+        if (enabled == null) {
+            return formatted;
         }
-
-        AnthropicMessageConverter requestConverter =
-                new AnthropicMessageConverter(
-                        this::convertToolResultToString, CitationMode.ENABLED);
-
-        return formatWithTracing(messages, () -> doFormat(messages, requestConverter));
+        CitationsConfigParam config = CitationsConfigParam.builder().enabled(enabled).build();
+        return formatted.stream()
+                .map(
+                        message -> {
+                            if (!message.content().isBlockParams()) {
+                                return message;
+                            }
+                            List<ContentBlockParam> blocks =
+                                    message.content().asBlockParams().stream()
+                                            .map(block -> configureCitations(block, config))
+                                            .toList();
+                            return message.toBuilder().contentOfBlockParams(blocks).build();
+                        })
+                .toList();
     }
 
-    /**
-     * Format messages using a request-scoped message converter.
-     *
-     * <p>This non-abstract hook allows built-in formatters to receive the request-scoped converter
-     * (which may have citations enabled) without exposing mutable state. External subclasses that
-     * only override {@link #doFormat(List)} continue to work unchanged.
-     *
-     * <p>The default implementation delegates to {@link #doFormat(List)}, ignoring the converter.
-     *
-     * @param messages messages to format
-     * @param requestConverter converter configured for this request's options
-     * @return formatted Anthropic messages
-     */
-    protected List<MessageParam> doFormat(
-            List<Msg> messages, AnthropicMessageConverter requestConverter) {
-        return doFormat(messages);
+    private static ContentBlockParam configureCitations(
+            ContentBlockParam block, CitationsConfigParam config) {
+        if (block.isDocument()) {
+            return ContentBlockParam.ofDocument(
+                    block.asDocument().toBuilder().citations(config).build());
+        }
+        if (block.isToolResult() && block.asToolResult().content().isPresent()) {
+            var result = block.asToolResult();
+            var content = result.content().get();
+            if (content.isBlocks()) {
+                var blocks =
+                        content.asBlocks().stream()
+                                .map(
+                                        item ->
+                                                item.isDocument()
+                                                        ? ToolResultBlockParam.Content.Block
+                                                                .ofDocument(
+                                                                        item
+                                                                                .asDocument()
+                                                                                .toBuilder()
+                                                                                .citations(config)
+                                                                                .build())
+                                                        : item)
+                                .toList();
+                return ContentBlockParam.ofToolResult(
+                        result.toBuilder().contentOfBlocks(blocks).build());
+            }
+        }
+        return block;
     }
 
     /**
@@ -106,8 +129,8 @@ public abstract class AnthropicBaseFormatter
             MessageCreateParams.Builder paramsBuilder,
             GenerateOptions options,
             GenerateOptions defaultOptions) {
-        // Save options for applyTools
-        currentOptions.set(options);
+        // Save effective options for applyTools, including model-level defaults.
+        currentOptions.set(GenerateOptions.mergeOptions(options, defaultOptions));
 
         // Apply other options
         AnthropicToolsHelper.applyOptions(paramsBuilder, options, defaultOptions);
@@ -122,17 +145,28 @@ public abstract class AnthropicBaseFormatter
      */
     @Override
     public void applyTools(MessageCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
-        if (tools == null || tools.isEmpty()) {
-            currentOptions.remove();
-            return;
-        }
+        applyTools(paramsBuilder, tools, List.of());
+    }
 
-        // Use saved options to apply tools with tool choice
+    /**
+     * Apply client tools and Anthropic built-in server tools as one tool set.
+     *
+     * @param paramsBuilder Anthropic request parameters
+     * @param tools client tool schemas
+     * @param serverTools Anthropic server tools
+     */
+    public void applyTools(
+            MessageCreateParams.Builder paramsBuilder,
+            List<ToolSchema> tools,
+            List<AnthropicServerTool> serverTools) {
         GenerateOptions options = currentOptions.get();
-        AnthropicToolsHelper.applyTools(paramsBuilder, tools, options);
 
-        // Clean up thread-local storage
-        currentOptions.remove();
+        try {
+            AnthropicToolsHelper.applyTools(paramsBuilder, tools, serverTools, options, cacheTtl);
+        } finally {
+            // Clean up thread-local storage even when tool validation fails.
+            currentOptions.remove();
+        }
     }
 
     /**
@@ -146,9 +180,157 @@ public abstract class AnthropicBaseFormatter
      * @param messages All messages including potential system message
      */
     public void applySystemMessage(MessageCreateParams.Builder paramsBuilder, List<Msg> messages) {
+        applySystemMessage(paramsBuilder, messages, false);
+    }
+
+    /**
+     * Extract and apply system message if present, optionally marking it for prompt caching.
+     *
+     * <p>When {@code cacheControlEnabled} is true, the system prompt is sent as a text block
+     * carrying <code>cache_control: {"type": "ephemeral"}</code> so long system prompts can be
+     * cached by Anthropic.
+     *
+     * @param paramsBuilder Anthropic request parameters builder
+     * @param messages All messages including potential system message
+     * @param cacheControlEnabled whether prompt caching is enabled
+     */
+    public void applySystemMessage(
+            MessageCreateParams.Builder paramsBuilder,
+            List<Msg> messages,
+            boolean cacheControlEnabled) {
         String systemMessage = messageConverter.extractSystemMessage(messages);
-        if (systemMessage != null && !systemMessage.isEmpty()) {
+        if (systemMessage == null || systemMessage.isEmpty()) {
+            return;
+        }
+
+        if (cacheControlEnabled) {
+            paramsBuilder.systemOfTextBlockParams(
+                    List.of(
+                            TextBlockParam.builder()
+                                    .text(systemMessage)
+                                    .cacheControl(buildCacheControl(this.cacheTtl))
+                                    .build()));
+        } else {
             paramsBuilder.system(systemMessage);
         }
+    }
+
+    /** Shared ephemeral cache control marker for prompt caching. */
+    static final CacheControlEphemeral EPHEMERAL_CACHE_CONTROL =
+            CacheControlEphemeral.builder().build();
+
+    /** TTL for ephemeral cache control, set once at model construction. */
+    private String cacheTtl;
+
+    /** Configure the TTL applied to prompt-caching markers (e.g. {@code "1h"}). */
+    public void cacheTtl(String cacheTtl) {
+        this.cacheTtl = cacheTtl;
+    }
+
+    /**
+     * Build a {@link CacheControlEphemeral} applying the configured TTL. When no TTL is set
+     * the shared default ephemeral marker is returned.
+     */
+    static CacheControlEphemeral buildCacheControl(String cacheTtl) {
+        if (cacheTtl == null || cacheTtl.isEmpty()) {
+            return EPHEMERAL_CACHE_CONTROL;
+        }
+        return CacheControlEphemeral.builder().ttl(CacheControlEphemeral.Ttl.of(cacheTtl)).build();
+    }
+
+    /**
+     * Apply the automatic cache control strategy to formatted messages.
+     *
+     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to the last cacheable content
+     * block of the last message. Anthropic caches everything up to and including the marked
+     * block, so this caches the entire conversation prefix across turns.
+     *
+     * @param formattedMessages the formatted Anthropic messages
+     * @return the messages with cache control applied
+     */
+    public List<MessageParam> applyCacheControl(List<MessageParam> formattedMessages) {
+        if (formattedMessages == null || formattedMessages.isEmpty()) {
+            return formattedMessages;
+        }
+
+        int lastIdx = formattedMessages.size() - 1;
+        MessageParam last = formattedMessages.get(lastIdx);
+        CacheControlEphemeral cacheControl = buildCacheControl(this.cacheTtl);
+        MessageParam marked = markLastCacheableBlock(last, cacheControl);
+        if (marked == last) {
+            return formattedMessages;
+        }
+
+        List<MessageParam> result = new ArrayList<>(formattedMessages);
+        result.set(lastIdx, marked);
+        return result;
+    }
+
+    /**
+     * Return a copy of the message whose last cacheable content block carries ephemeral
+     * cache_control. String content is converted to a single text block so cache_control can be
+     * attached. Returns the original instance when nothing can be marked.
+     */
+    private static MessageParam markLastCacheableBlock(
+            MessageParam message, CacheControlEphemeral cacheControl) {
+        MessageParam.Content content = message.content();
+
+        if (content.isString()) {
+            TextBlockParam text =
+                    TextBlockParam.builder()
+                            .text(content.asString())
+                            .cacheControl(cacheControl)
+                            .build();
+            return message.toBuilder()
+                    .content(
+                            MessageParam.Content.ofBlockParams(
+                                    List.of(ContentBlockParam.ofText(text))))
+                    .build();
+        }
+
+        if (content.isBlockParams()) {
+            List<ContentBlockParam> blocks = new ArrayList<>(content.asBlockParams());
+            for (int i = blocks.size() - 1; i >= 0; i--) {
+                ContentBlockParam marked = withCacheControl(blocks.get(i), cacheControl);
+                if (marked == null) {
+                    continue;
+                }
+                blocks.set(i, marked);
+                return message.toBuilder()
+                        .content(MessageParam.Content.ofBlockParams(blocks))
+                        .build();
+            }
+        }
+
+        return message;
+    }
+
+    /**
+     * Return a copy of the block with ephemeral cache_control attached, or {@code null} when the
+     * block type does not support cache_control (e.g. thinking blocks).
+     */
+    private static ContentBlockParam withCacheControl(
+            ContentBlockParam block, CacheControlEphemeral cacheControl) {
+        if (block.isText()) {
+            return ContentBlockParam.ofText(
+                    block.asText().toBuilder().cacheControl(cacheControl).build());
+        }
+        if (block.isDocument()) {
+            return ContentBlockParam.ofDocument(
+                    block.asDocument().toBuilder().cacheControl(cacheControl).build());
+        }
+        if (block.isImage()) {
+            return ContentBlockParam.ofImage(
+                    block.asImage().toBuilder().cacheControl(cacheControl).build());
+        }
+        if (block.isToolUse()) {
+            return ContentBlockParam.ofToolUse(
+                    block.asToolUse().toBuilder().cacheControl(cacheControl).build());
+        }
+        if (block.isToolResult()) {
+            return ContentBlockParam.ofToolResult(
+                    block.asToolResult().toBuilder().cacheControl(cacheControl).build());
+        }
+        return null;
     }
 }

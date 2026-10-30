@@ -19,8 +19,8 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.skill.repository.RuntimeContextSkillRepository;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tool.ToolkitAware;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -28,6 +28,8 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +38,7 @@ import java.util.TreeSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Dynamically composes skills from an ordered list of {@link AgentSkillRepository repositories}
@@ -48,98 +51,170 @@ import reactor.core.publisher.Mono;
  *
  * <p>Rebuilding on every call is intentional: per-user namespaced repositories may return
  * different content under the same skill name as the {@link RuntimeContext} switches users, so
- * caching by skill id alone would mask those swaps. {@code bindToolkit} /
- * {@code registerSkillLoadTool} are idempotent on a fresh {@link SkillBox}, so the rebuild stays
- * cheap.
+ * caching by skill id alone would mask those swaps. A content-addressed cache keyed by the
+ * visible-view signature reuses an already-materialised (immutable) box when the visible content
+ * is unchanged, so {@code uploadSkillFiles} only re-runs when content actually changes. No tools
+ * are (re)registered on the shared toolkit.
  *
  * <p>Subclasses can plug runtime visibility logic (canary lists, environment gates, etc.) by
  * overriding {@link #filterVisible(List, RuntimeContext)} — the default implementation returns
  * the input list unchanged.
+ *
+ * <p>Contract:
+ * <ul>
+ *   <li>Construction performs no registration; the shared {@code load_skill_through_path}
+ *       tool is registered on the invoking agent's live toolkit at the first prompt pass —
+ *       before tool schemas are enumerated, so it is visible to the model within the same
+ *       call. {@link #registerSkillTools(Toolkit)} remains available for explicit manual
+ *       wiring.</li>
+ *   <li>Per-pass runtime objects resolve from the invoking agent: its live toolkit
+ *       ({@link Agent#getToolkit()}) flows into box construction, its filter baseline and
+ *       its stable work directory ({@link Agent#getSkillWorkDir()}) drive filtering and
+ *       materialisation. Instances hold no per-agent runtime references.</li>
+ *   <li>Same-signature cache hits share one materialised directory: skill-side modifications
+ *       stay visible to later calls with the same content; changed content materialises a
+ *       fresh, isolated directory.</li>
+ *   <li>The framework creates a fresh {@link RuntimeContext} per call; every pass overwrites
+ *       (or clears) the {@link SkillBox} binding.</li>
+ *   <li>The effective filter composes the per-call context overlay on the invoking agent's
+ *       baseline ({@link Agent#getSkillFilter()}), defaulting to {@link SkillFilter#all()}
+ *       when the agent exposes none.</li>
+ * </ul>
  */
 @SuppressWarnings("deprecation")
-public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
+public class DynamicSkillMiddleware implements MiddlewareBase {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicSkillMiddleware.class);
+    private static final int MAX_CACHED_BOXES = 32;
 
     private final List<AgentSkillRepository> repositories;
-    private volatile Toolkit toolkit;
-    private final SkillFilter builderFilter;
+
     private final boolean codeExecutionEnabled;
 
     /**
-     * Stable workDir handed to every rebuilt {@link SkillBox}. {@code null} means "mkdtemp once
-     * on first use and reuse." Fixed for the lifetime of the middleware so {@code uploadSkillFiles}
-     * no longer creates a fresh {@code agentscope-code-execution-*} directory every call.
+     * JVM-wide fallback root for materialising {@link SkillBox} directories when the invoking
+     * agent provides none. Allocated once and cleaned up by a shutdown hook at JVM exit —
+     * preserving the pre-refactor dir-handling behaviour; agent-provided roots are
+     * caller-managed.
      */
-    private volatile Path stableWorkDir;
+    private static volatile Path fallbackWorkDir;
 
-    private volatile SkillBox currentSkillBox;
+    /** Content-addressed cache of materialised {@link SkillBox}es, keyed by the visible-view
+     * signature. Boxes are immutable after build, so sharing them across sessions with identical
+     * content is safe and skips re-running {@code uploadSkillFiles}. */
+    private final Map<String, SkillBox> boxCache = new LinkedHashMap<>();
 
-    /** Hash of the last merged-and-filtered skill view; identical hash ⇒ reuse {@link #currentSkillBox}. */
-    private volatile String lastSignature;
-
-    public DynamicSkillMiddleware(List<AgentSkillRepository> repositories, Toolkit toolkit) {
-        this(repositories, toolkit, null, false, null);
-    }
-
-    public DynamicSkillMiddleware(
-            List<AgentSkillRepository> repositories, Toolkit toolkit, SkillFilter builderFilter) {
-        this(repositories, toolkit, builderFilter, false, null);
+    /**
+     * Convenience constructor delegating to the full constructor with code execution disabled.
+     *
+     * @param repositories compose-ordered list (low-to-high priority); merged by skill name
+     */
+    public DynamicSkillMiddleware(List<AgentSkillRepository> repositories) {
+        this(repositories, false);
     }
 
     /**
-     * Full constructor.
+     * Full constructor. Performs pure field initialisation; the shared load tool is registered
+     * at wiring time via {@link #registerSkillTools(Toolkit)} (called by the agent builder), or
+     * lazily before the first prompt pass when the instance is used outside agent assembly.
+     * Per-pass runtime objects — the box-construction toolkit, the filter baseline and the
+     * materialisation root — are resolved from the invoking agent.
      *
-     * @param repositories        compose-ordered list (low-to-high priority); merged by skill name
-     * @param toolkit             toolkit to register {@code load_skill_through_path} on
-     * @param builderFilter       optional builder-time skill filter; null treated as {@link SkillFilter#all()}
+     * @param repositories         compose-ordered list (low-to-high priority); merged by skill name
      * @param codeExecutionEnabled when {@code true}, toggles the prompt provider's code-execution
      *                             block. Set this only when the agent has a shell-like tool wired
      *                             in; otherwise the prompt asks the model to do things it cannot.
-     * @param workDir              stable working directory for {@code uploadSkillFiles}; {@code null}
-     *                             ⇒ the middleware mkdtemps one on first reload and reuses it
      */
     public DynamicSkillMiddleware(
-            List<AgentSkillRepository> repositories,
-            Toolkit toolkit,
-            SkillFilter builderFilter,
-            boolean codeExecutionEnabled,
-            Path workDir) {
+            List<AgentSkillRepository> repositories, boolean codeExecutionEnabled) {
         this.repositories = repositories != null ? List.copyOf(repositories) : List.of();
-        this.toolkit = toolkit;
-        this.builderFilter = builderFilter != null ? builderFilter : SkillFilter.all();
         this.codeExecutionEnabled = codeExecutionEnabled;
-        this.stableWorkDir = workDir;
     }
 
     /**
-     * Returns the most recently materialised {@link SkillBox}, or {@code null} when no skills
-     * are visible yet (e.g. before the first {@code call()}).
+     * Registers the shared {@code load_skill_through_path} tool on the given toolkit. Invoked
+     * per prompt pass with the invoking agent's live toolkit (before tool schemas are
+     * enumerated, so the tool is visible within the same call); also callable directly for
+     * explicit manual wiring. No-op for a {@code null} toolkit or when a same-named tool
+     * already exists (never overwritten); because the guard inspects the toolkit, a removed
+     * tool is re-registered on the next call.
+     *
+     * @param toolkit the toolkit to register the shared load tool on; may be {@code null}
      */
-    public SkillBox getCurrentSkillBox() {
-        return currentSkillBox;
+    public void registerSkillTools(Toolkit toolkit) {
+        if (toolkit == null || SkillToolFactory.isRuntimeLoadToolRegistered(toolkit)) {
+            return;
+        }
+        // The shared load tool resolves the current per-call SkillBox from the RuntimeContext,
+        // so the shared toolkit is never mutated per call.
+        SkillToolFactory.registerRuntimeLoadTool(toolkit);
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
-    public void rebindToolkit(Toolkit toolkit) {
-        this.toolkit = toolkit;
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
+    /**
+     * Reloads the visible skill view and appends its rendered prompt to {@code currentPrompt}.
+     *
+     * <p>The reload performs blocking I/O (repository reads, file materialization), so it runs on
+     * {@link Schedulers#boundedElastic()} rather than the subscribing thread, keeping reactive
+     * event-loop threads non-blocking. Semantics are unchanged: the reload still happens on every
+     * call, and the content-addressed box cache reuses an already-materialised box whenever the
+     * visible content is unchanged. The cache-hit fast path cannot stay on the calling thread
+     * because the cache key (the content signature) is only known after the blocking repository
+     * read, so the whole reload — including cache hits — moves to boundedElastic.
+     *
+     * <p>Agent contract: the framework invokes this hook with a non-null {@code agent}; direct
+     * callers must supply one or accept the degraded behaviour of a null one (tolerated, not
+     * contractual).
+     *
+     * @param agent the agent whose toolkit, skill-filter baseline and work dir drive this pass;
+     *     may be {@code null} for direct use outside agent assembly
+     * @param ctx the per-call {@link RuntimeContext}; {@code null} is treated as an empty context
+     * @param currentPrompt the system prompt composed so far by earlier middlewares
+     * @return the prompt with this call's skill section appended, or {@code currentPrompt}
+     *     unchanged when no skill is visible for this call
+     */
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
-        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        reloadSkills(rc);
-        if (currentSkillBox == null) {
-            return Mono.just(currentPrompt);
+        // The tool follows the middleware binding: register on the invoking agent's live
+        // toolkit before the first prompt pass (idempotent — a same-named tool present
+        // means already registered). Runs before tool schemas are enumerated, so the
+        // load tool is visible to the model within the same call.
+        if (agent != null) {
+            registerSkillTools(agent.getToolkit());
         }
-        SkillFilter effectiveFilter = resolveFilter(rc);
-        String prompt = currentSkillBox.getSkillPrompt(effectiveFilter);
+        RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        return Mono.fromCallable(
+                        () -> {
+                            SkillBox box = reloadSkills(agent, rc);
+                            // Expose the current per-call SkillBox — or clear it when null — so
+                            // the shared load tool resolves this call's skill view and a reused
+                            // RuntimeContext never serves a stale box.
+                            rc.put(SkillBox.class, box);
+                            return appendSkillPrompt(agent, box, rc, currentPrompt);
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /** Returns {@code currentPrompt} with the box's rendered skill prompt appended, or {@code
+     * currentPrompt} unchanged when {@code box} is {@code null} or renders no prompt. */
+    private String appendSkillPrompt(
+            Agent agent, SkillBox box, RuntimeContext rc, String currentPrompt) {
+        if (box == null) {
+            return currentPrompt;
+        }
+        SkillFilter effectiveFilter = resolveFilter(agent, rc);
+        String prompt = box.getSkillPrompt(effectiveFilter);
         if (prompt == null || prompt.isEmpty()) {
-            return Mono.just(currentPrompt);
+            return currentPrompt;
         }
         String base = currentPrompt != null ? currentPrompt : "";
         String separator = base.isEmpty() || base.endsWith("\n") ? "" : "\n";
-        return Mono.just(base + separator + prompt);
+        return base + separator + prompt;
     }
 
     /**
@@ -158,22 +233,30 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
         return raw;
     }
 
-    private SkillFilter resolveFilter(RuntimeContext rc) {
+    /** Effective filter = per-call context overlay on the invoking agent's baseline. */
+    private SkillFilter resolveFilter(Agent agent, RuntimeContext rc) {
+        SkillFilter baseline = resolveBaseline(agent);
         SkillFilter runtimeOverlay = rc != null ? rc.get(SkillFilter.class) : null;
-        return builderFilter.overlay(runtimeOverlay);
+        return baseline.overlay(runtimeOverlay);
     }
 
-    private void reloadSkills(RuntimeContext ctx) {
+    private SkillFilter resolveBaseline(Agent agent) {
+        SkillFilter fromAgent = agent != null ? agent.getSkillFilter() : null;
+        return fromAgent != null ? fromAgent : SkillFilter.all();
+    }
+
+    private SkillBox reloadSkills(Agent agent, RuntimeContext ctx) {
         if (repositories.isEmpty()) {
-            currentSkillBox = null;
-            lastSignature = null;
-            return;
+            return null;
         }
         Map<String, AgentSkill> skillsByName = new LinkedHashMap<>();
         for (AgentSkillRepository repo : repositories) {
             List<AgentSkill> skills;
             try {
-                skills = repo.getAllSkills();
+                skills =
+                        repo instanceof RuntimeContextSkillRepository contextual
+                                ? contextual.getAllSkills(ctx)
+                                : repo.getAllSkills();
             } catch (Exception e) {
                 log.warn(
                         "Skill repository {} failed to load: {}",
@@ -192,9 +275,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
             }
         }
         if (skillsByName.isEmpty()) {
-            currentSkillBox = null;
-            lastSignature = null;
-            return;
+            return null;
         }
         // Apply subclass visibility hook before the SkillBox is rebuilt so the prompt only
         // sees skills the current ctx is allowed to see.
@@ -210,34 +291,38 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
             visible = new ArrayList<>(skillsByName.values());
         }
         if (visible.isEmpty()) {
-            currentSkillBox = null;
-            lastSignature = null;
-            return;
+            return null;
         }
 
-        // Content-keyed short-circuit: if the (sorted) merged view hashes to the same value as
-        // the previous call AND we already have a SkillBox, skip the entire rebuild + upload.
-        // This is the common case once the agent has been running for a while — repos don't
-        // change between most turns.
         String signature = computeSignature(visible);
-        if (signature.equals(lastSignature) && currentSkillBox != null) {
-            return;
+        synchronized (boxCache) {
+            SkillBox box = boxCache.get(signature);
+            if (box == null) {
+                box = buildBox(agent, visible, signature);
+                if (boxCache.size() >= MAX_CACHED_BOXES) {
+                    // Only bound retained boxes. Active requests may still reference evicted
+                    // boxes and their files, so resource directories must remain available.
+                    boxCache.clear();
+                }
+                boxCache.put(signature, box);
+            }
+            return box;
         }
+    }
 
-        SkillBox box = new SkillBox(toolkit);
-        // Hand it the stable workDir BEFORE uploadSkillFiles runs so the upload lands at a
-        // predictable location and we don't mkdtemp per call.
-        box.setWorkDir(ensureStableWorkDir());
+    private SkillBox buildBox(Agent agent, List<AgentSkill> visible, String signature) {
+        SkillBox box = new SkillBox(agent != null ? agent.getToolkit() : null);
+        // Each materialization owns its directory. After eviction, rebuilding the same
+        // signature must not truncate files that an earlier request may still be reading.
+        try {
+            Path root = ensureStableWorkDir(agent);
+            Files.createDirectories(root);
+            box.setWorkDir(Files.createTempDirectory(root, signature + "-"));
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to allocate skill resource directory", e);
+        }
         for (AgentSkill skill : visible) {
             box.registerSkill(skill);
-        }
-        if (toolkit != null) {
-            try {
-                box.bindToolkit(toolkit);
-                box.registerSkillLoadTool();
-            } catch (Exception e) {
-                log.warn("Failed to bind skill toolkit hooks: {}", e.getMessage());
-            }
         }
         if (box.isAutoUploadSkill()) {
             try {
@@ -251,23 +336,27 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
         // originDir) or fall back to the single uploadDir template. Either way the LLM gets
         // an addressable path instead of staring at a `load_skill_through_path` blob.
         box.getSkillPromptProvider().setCodeExecutionEnable(codeExecutionEnabled);
-        currentSkillBox = box;
-        lastSignature = signature;
+        return box;
     }
 
     /**
-     * Lazily allocates the stable workDir on first call when the caller didn't provide one.
-     * The directory is registered for shutdown cleanup so a long-running JVM doesn't leak temp
-     * trees.
+     * Resolves the workDir for this pass: the invoking agent's stable directory when it
+     * provides one (caller-managed); otherwise the shared fallback root, lazily allocated on
+     * first call and registered for shutdown cleanup. Resource trees remain available while
+     * the JVM runs, including after cache eviction.
      */
-    private Path ensureStableWorkDir() {
-        Path dir = stableWorkDir;
+    private Path ensureStableWorkDir(Agent agent) {
+        Path fromAgent = agent != null ? agent.getSkillWorkDir() : null;
+        if (fromAgent != null) {
+            return fromAgent;
+        }
+        Path dir = fallbackWorkDir;
         if (dir != null) {
             return dir;
         }
-        synchronized (this) {
-            if (stableWorkDir != null) {
-                return stableWorkDir;
+        synchronized (DynamicSkillMiddleware.class) {
+            if (fallbackWorkDir != null) {
+                return fallbackWorkDir;
             }
             try {
                 Path created = Files.createTempDirectory("agentscope-skill-workdir-");
@@ -284,7 +373,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
                                                         e.getMessage());
                                             }
                                         }));
-                stableWorkDir = created;
+                fallbackWorkDir = created;
                 return created;
             } catch (IOException e) {
                 throw new IllegalStateException("Failed to allocate stable skill workDir", e);
@@ -307,12 +396,12 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
     }
 
     /**
-     * Build a deterministic SHA-256 over the merged skill view: per-skill {@code name +
-     * sha256(content) + sha256(sorted-resource-keys) + originDir}. Two reload calls with the
-     * same repository content produce the same signature, regardless of map iteration order.
+     * Build a deterministic SHA-256 over the merged visible skill view: per-skill {@code name +
+     * sha256(content) + sha256(sorted-resource-keys) + originDir}. Two reload calls with the same
+     * visible content produce the same signature, regardless of map iteration order, so the
+     * content-addressed {@link #boxCache} can reuse a box without re-uploading its files.
      */
     private static String computeSignature(List<AgentSkill> visible) {
-        // Use a sorted set so that LinkedHashMap insertion-order changes don't perturb the hash.
         Set<String> sortedNames = new TreeSet<>();
         for (AgentSkill s : visible) {
             sortedNames.add(s.getName());
@@ -328,14 +417,20 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
                 md.update(name.getBytes(StandardCharsets.UTF_8));
                 md.update((byte) 0);
                 md.update(
+                        s.getSource() != null
+                                ? s.getSource().getBytes(StandardCharsets.UTF_8)
+                                : new byte[0]);
+                md.update((byte) 0);
+                hashMetadata(md, s.getMetadata());
+                md.update((byte) 0);
+                md.update(
                         s.getSkillContent() != null
                                 ? s.getSkillContent().getBytes(StandardCharsets.UTF_8)
                                 : new byte[0]);
                 md.update((byte) 0);
-                Set<String> sortedResources = new TreeSet<>(s.getResources().keySet());
-                for (String key : sortedResources) {
+                for (String key : new TreeSet<>(s.getResourcePaths())) {
                     md.update(key.getBytes(StandardCharsets.UTF_8));
-                    String val = s.getResources().get(key);
+                    String val = s.getResource(key);
                     if (val != null) {
                         md.update(val.getBytes(StandardCharsets.UTF_8));
                     }
@@ -348,11 +443,56 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
             byte[] hash = md.digest();
             StringBuilder hex = new StringBuilder(hash.length * 2);
             for (byte b : hash) {
-                hex.append(String.format("%02x", b));
+                hex.append(String.format("%02x", b & 0xff));
             }
             return hex.toString();
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 unavailable", e);
+        }
+    }
+
+    /** Hashes a skill's full metadata (sorted keys, nested maps/lists recursively) so that custom
+     * fields rendered into the prompt (version/homepage/license/...) also participate in the
+     * content signature. */
+    private static void hashMetadata(MessageDigest md, Map<String, Object> metadata) {
+        if (metadata == null) {
+            return;
+        }
+        for (String key : new TreeSet<>(metadata.keySet())) {
+            md.update(key.getBytes(StandardCharsets.UTF_8));
+            md.update((byte) 0);
+            hashMetadataValue(md, metadata.get(key));
+            md.update((byte) 0);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void hashMetadataValue(MessageDigest md, Object value) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof String s) {
+            md.update(s.getBytes(StandardCharsets.UTF_8));
+        } else if (value instanceof Map<?, ?> rawMap) {
+            @SuppressWarnings("unchecked")
+            Map<Object, Object> map = (Map<Object, Object>) rawMap;
+            md.update((byte) '{');
+            List<Object> keys = new ArrayList<>(map.keySet());
+            keys.sort(Comparator.comparing(Object::toString));
+            for (Object key : keys) {
+                md.update(String.valueOf(key).getBytes(StandardCharsets.UTF_8));
+                md.update((byte) ':');
+                hashMetadataValue(md, map.get(key));
+            }
+            md.update((byte) '}');
+        } else if (value instanceof List<?> list) {
+            md.update((byte) '[');
+            for (Object element : list) {
+                hashMetadataValue(md, element);
+            }
+            md.update((byte) ']');
+        } else {
+            md.update(String.valueOf(value).getBytes(StandardCharsets.UTF_8));
         }
     }
 }
