@@ -253,6 +253,32 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
+        void write_checkCommand_mkdirsParentWithoutCommandSubstitution() {
+            FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
+
+            filesystem.write(RT, "/workspace/docs/notes.md", "hello");
+
+            assertFalse(
+                    filesystem.lastCommand.contains("$("),
+                    "the check command must not use command substitution: "
+                            + filesystem.lastCommand);
+            assertTrue(
+                    filesystem.lastCommand.contains("mkdir -p '/workspace/docs'"),
+                    "expected the parent directory to be created: " + filesystem.lastCommand);
+        }
+
+        @Test
+        void write_checkCommand_usesDotForRelativePaths() {
+            FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
+
+            filesystem.write(RT, "notes.md", "hello");
+
+            assertTrue(
+                    filesystem.lastCommand.contains("mkdir -p '.'"),
+                    "a relative path has no parent directory: " + filesystem.lastCommand);
+        }
+
+        @Test
         void grep_executeFailure_shouldFailInsteadOfEmptySuccess() {
             GrepResult result =
                     new FixedResponseFilesystem(sandboxRequestFailed())

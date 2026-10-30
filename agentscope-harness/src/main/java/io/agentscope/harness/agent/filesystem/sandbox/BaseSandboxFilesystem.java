@@ -210,9 +210,9 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 "if [ -e "
                         + escapedPath
                         + " ]; then echo 'EXISTS'; exit 1; fi; "
-                        + "mkdir -p \"$(dirname "
-                        + escapedPath
-                        + ")\" 2>&1";
+                        + "mkdir -p "
+                        + FilesystemUtils.shellQuote(parentDirectory(filePath))
+                        + " 2>&1";
 
         ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
         if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
@@ -237,6 +237,25 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         }
 
         return WriteResult.ok(filePath);
+    }
+
+    /**
+     * Parent directory of a path as used inside the sandbox.
+     *
+     * <p>Computed here rather than with {@code $(dirname ...)}: a double-quoted command
+     * substitution is mangled by the Docker CLI on Windows hosts before the container shell
+     * sees it, which made {@code write_file} fail with {@code Syntax error: end of file
+     * unexpected}.
+     */
+    static String parentDirectory(String path) {
+        int slash = path.lastIndexOf('/');
+        if (slash < 0) {
+            return ".";
+        }
+        if (slash == 0) {
+            return "/";
+        }
+        return path.substring(0, slash);
     }
 
     /**
