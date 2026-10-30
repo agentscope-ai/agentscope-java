@@ -63,6 +63,21 @@ public class AguiStreamContext {
     private final Predicate<String> isExternalTool;
     private final Map<String, String> startedToolCallNames = new LinkedHashMap<>();
 
+    /** source path → subagentRunId for active / attributed subagent invocations. */
+    private final Map<String, String> subagentRunIdBySource = new LinkedHashMap<>();
+
+    /** replyId → subagentRunId for closing by AgentEndEvent.replyId. */
+    private final Map<String, String> subagentRunIdByReplyId = new LinkedHashMap<>();
+
+    /** messageId → subagentRunId for text / reasoning streams. */
+    private final Map<String, String> subagentRunIdByMessageId = new LinkedHashMap<>();
+
+    /** toolCallId → subagentRunId for tool-call streams. */
+    private final Map<String, String> subagentRunIdByToolCallId = new LinkedHashMap<>();
+
+    /** Attribution applied to events emitted by the next helper calls. */
+    private String eventAttribution;
+
     public AguiStreamContext(String threadId, String runId, AguiAdapterConfig config) {
         this(threadId, runId, config, null, null);
     }
@@ -113,6 +128,83 @@ public class AguiStreamContext {
         return runInput;
     }
 
+    /**
+     * Sets attribution for subsequent helper emissions ({@code TEXT_MESSAGE_*}, tool calls, …).
+     * Clear with {@link #clearEventAttribution()} after the current AgentEvent is converted.
+     *
+     * @param subagentRunId subagent invocation id, or null for parent-agent events
+     */
+    public void setEventAttribution(String subagentRunId) {
+        this.eventAttribution = subagentRunId;
+    }
+
+    /** Clears {@link #setEventAttribution(String)}. */
+    public void clearEventAttribution() {
+        this.eventAttribution = null;
+    }
+
+    /**
+     * Registers a subagent invocation so later events with the same {@code source} resolve to
+     * {@code subagentRunId}.
+     *
+     * @param source AgentEvent source path
+     * @param subagentRunId opaque invocation id
+     * @param replyId optional reply id from AgentStartEvent, used to close on AgentEnd
+     */
+    public void registerSubagent(String source, String subagentRunId, String replyId) {
+        Objects.requireNonNull(source, "source cannot be null");
+        Objects.requireNonNull(subagentRunId, "subagentRunId cannot be null");
+        subagentRunIdBySource.put(source, subagentRunId);
+        if (replyId != null && !replyId.isBlank()) {
+            subagentRunIdByReplyId.put(replyId, subagentRunId);
+        }
+    }
+
+    /**
+     * Resolves the subagentRunId for a source path, if one was registered.
+     *
+     * @param source AgentEvent source path
+     * @return subagentRunId or null
+     */
+    public String resolveSubagentRunId(String source) {
+        if (source == null || source.isBlank()) {
+            return null;
+        }
+        return subagentRunIdBySource.get(source);
+    }
+
+    /**
+     * Resolves subagentRunId by AgentEnd replyId, falling back to source.
+     *
+     * @param replyId AgentEndEvent reply id
+     * @param source AgentEvent source path
+     * @return subagentRunId or null
+     */
+    public String resolveSubagentRunId(String replyId, String source) {
+        if (replyId != null && !replyId.isBlank()) {
+            String byReply = subagentRunIdByReplyId.get(replyId);
+            if (byReply != null) {
+                return byReply;
+            }
+        }
+        return resolveSubagentRunId(source);
+    }
+
+    /**
+     * Unregisters a finished subagent invocation.
+     *
+     * @param source AgentEvent source path
+     * @param replyId optional reply id
+     */
+    public void unregisterSubagent(String source, String replyId) {
+        if (source != null) {
+            subagentRunIdBySource.remove(source);
+        }
+        if (replyId != null) {
+            subagentRunIdByReplyId.remove(replyId);
+        }
+    }
+
     public void beginEvent() {
         pendingEvents.clear();
     }
@@ -133,7 +225,17 @@ public class AguiStreamContext {
 
     public void startTextMessage(String messageId) {
         if (startedTextMessages.add(messageId)) {
-            emit(new AguiEvent.TextMessageStart(threadId, runId, messageId, "assistant"));
+            rememberMessageAttribution(messageId);
+            emit(
+                    new AguiEvent.TextMessageStart(
+                            threadId,
+                            runId,
+                            messageId,
+                            "assistant",
+                            null,
+                            null,
+                            null,
+                            attributionForMessage(messageId)));
         }
         currentTextMessageId = messageId;
     }
@@ -141,7 +243,16 @@ public class AguiStreamContext {
     public void appendTextDelta(String messageId, String delta) {
         if (delta != null && !delta.isEmpty()) {
             startTextMessage(messageId);
-            emit(new AguiEvent.TextMessageContent(threadId, runId, messageId, delta));
+            emit(
+                    new AguiEvent.TextMessageContent(
+                            threadId,
+                            runId,
+                            messageId,
+                            delta,
+                            null,
+                            null,
+                            null,
+                            attributionForMessage(messageId)));
         }
     }
 
@@ -162,12 +273,31 @@ public class AguiStreamContext {
         if (Objects.equals(messageId, currentTextMessageId)) {
             currentTextMessageId = null;
         }
-        emit(new AguiEvent.TextMessageEnd(threadId, runId, messageId));
+        emit(
+                new AguiEvent.TextMessageEnd(
+                        threadId,
+                        runId,
+                        messageId,
+                        null,
+                        null,
+                        null,
+                        attributionForMessage(messageId)));
+        subagentRunIdByMessageId.remove(messageId);
     }
 
     public void startReasoningMessage(String messageId) {
         if (startedReasoningMessages.add(messageId)) {
-            emit(new AguiEvent.ReasoningMessageStart(threadId, runId, messageId, "reasoning"));
+            rememberMessageAttribution(messageId);
+            emit(
+                    new AguiEvent.ReasoningMessageStart(
+                            threadId,
+                            runId,
+                            messageId,
+                            "reasoning",
+                            null,
+                            null,
+                            null,
+                            attributionForMessage(messageId)));
         }
         currentReasoningMessageId = messageId;
     }
@@ -175,7 +305,16 @@ public class AguiStreamContext {
     public void appendReasoningDelta(String messageId, String delta) {
         if (delta != null && !delta.isEmpty()) {
             startReasoningMessage(messageId);
-            emit(new AguiEvent.ReasoningMessageContent(threadId, runId, messageId, delta));
+            emit(
+                    new AguiEvent.ReasoningMessageContent(
+                            threadId,
+                            runId,
+                            messageId,
+                            delta,
+                            null,
+                            null,
+                            null,
+                            attributionForMessage(messageId)));
         }
     }
 
@@ -196,7 +335,16 @@ public class AguiStreamContext {
         if (Objects.equals(messageId, currentReasoningMessageId)) {
             currentReasoningMessageId = null;
         }
-        emit(new AguiEvent.ReasoningMessageEnd(threadId, runId, messageId));
+        emit(
+                new AguiEvent.ReasoningMessageEnd(
+                        threadId,
+                        runId,
+                        messageId,
+                        null,
+                        null,
+                        null,
+                        attributionForMessage(messageId)));
+        subagentRunIdByMessageId.remove(messageId);
     }
 
     public void startToolCall(String toolCallId, String toolCallName) {
@@ -208,9 +356,18 @@ public class AguiStreamContext {
             if (toolCallName != null && !toolCallName.isBlank()) {
                 startedToolCallNames.put(toolCallId, toolCallName);
             }
+            rememberToolCallAttribution(toolCallId);
             emit(
                     new AguiEvent.ToolCallStart(
-                            threadId, runId, toolCallId, normalizeToolCallName(toolCallName)));
+                            threadId,
+                            runId,
+                            toolCallId,
+                            normalizeToolCallName(toolCallName),
+                            null,
+                            null,
+                            null,
+                            null,
+                            attributionForToolCall(toolCallId)));
         }
     }
 
@@ -219,7 +376,16 @@ public class AguiStreamContext {
             return;
         }
         if (delta != null && !delta.isEmpty()) {
-            emit(new AguiEvent.ToolCallArgs(threadId, runId, toolCallId, delta));
+            emit(
+                    new AguiEvent.ToolCallArgs(
+                            threadId,
+                            runId,
+                            toolCallId,
+                            delta,
+                            null,
+                            null,
+                            null,
+                            attributionForToolCall(toolCallId)));
         }
     }
 
@@ -228,8 +394,17 @@ public class AguiStreamContext {
             return;
         }
         if (endedToolCalls.add(toolCallId)) {
-            emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
+            emit(
+                    new AguiEvent.ToolCallEnd(
+                            threadId,
+                            runId,
+                            toolCallId,
+                            null,
+                            null,
+                            null,
+                            attributionForToolCall(toolCallId)));
             startedToolCallNames.remove(toolCallId);
+            subagentRunIdByToolCallId.remove(toolCallId);
         }
     }
 
@@ -289,6 +464,8 @@ public class AguiStreamContext {
             emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
         }
         StringBuilder content = toolResultContent.remove(toolCallId);
+        // ToolCallResult attribution is independent of the call (executor may differ from
+        // requester); stamp the current event attribution when set.
         emit(
                 new AguiEvent.ToolCallResult(
                         threadId,
@@ -296,7 +473,12 @@ public class AguiStreamContext {
                         toolCallId,
                         content != null && !content.isEmpty() ? content.toString() : null,
                         "tool",
-                        replyId + ":" + toolCallId));
+                        replyId + ":" + toolCallId,
+                        null,
+                        null,
+                        null,
+                        eventAttribution));
+        subagentRunIdByToolCallId.remove(toolCallId);
     }
 
     public void markToolCallSuspended(String toolCallId) {
@@ -360,6 +542,32 @@ public class AguiStreamContext {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private void rememberMessageAttribution(String messageId) {
+        if (eventAttribution != null) {
+            subagentRunIdByMessageId.put(messageId, eventAttribution);
+        }
+    }
+
+    private void rememberToolCallAttribution(String toolCallId) {
+        if (eventAttribution != null) {
+            subagentRunIdByToolCallId.put(toolCallId, eventAttribution);
+        }
+    }
+
+    private String attributionForMessage(String messageId) {
+        if (eventAttribution != null) {
+            return eventAttribution;
+        }
+        return subagentRunIdByMessageId.get(messageId);
+    }
+
+    private String attributionForToolCall(String toolCallId) {
+        if (eventAttribution != null) {
+            return eventAttribution;
+        }
+        return subagentRunIdByToolCallId.get(toolCallId);
     }
 
     private void warnMissingToolCallId(String eventName) {

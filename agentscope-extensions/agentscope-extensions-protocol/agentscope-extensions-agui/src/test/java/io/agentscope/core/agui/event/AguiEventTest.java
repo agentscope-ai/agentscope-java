@@ -1421,6 +1421,8 @@ class AguiEventTest {
             AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
             assertNull(event.parentRunId());
             assertNull(event.input());
+            assertEquals(
+                    io.agentscope.core.agui.AguiProtocol.PROTOCOL_VERSION, event.protocolVersion());
         }
 
         @Test

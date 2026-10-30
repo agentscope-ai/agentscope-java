@@ -92,9 +92,20 @@ v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射�
 
 ## 子 agent 事件
 
-`AguiEvent` 模型已包含 AG-UI 1.0 的 `SUBAGENT_STARTED` / `SUBAGENT_FINISHED` / `SUBAGENT_ERROR`（均带必填 `subagentRunId`）。按协议，多数其他事件还可携带可选 `subagentRunId` 做归因；`RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` 与 `MESSAGES_SNAPSHOT` 除外（快照归因在 `AguiMessage` 上按消息携带，嵌套的 `AguiToolCall` 继承所属消息的归属、自身不带该字段）。默认 adapter 路径尚未发出原生子 agent 生命周期或带归因的内容事件。
+`AguiEvent` 模型已包含 AG-UI 1.0 的 `SUBAGENT_STARTED` / `SUBAGENT_FINISHED` / `SUBAGENT_ERROR`（均带必填 `subagentRunId`）。按协议，多数其他事件还可携带可选 `subagentRunId` 做归因；`RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` 与 `MESSAGES_SNAPSHOT` 除外（快照归因在 `AguiMessage` 上按消息携带，嵌套的 `AguiToolCall` 继承所属消息的归属、自身不带该字段）。
 
-默认（`emitSubagentEventsAsNative=false`）下，带非空 `source` 的 AgentEvent（子 / 远程子 agent 事件）**不会**映射为原生的 `TEXT_MESSAGE_*` / `RUN_*` / 工具调用事件，而是变成 `subagent.*` 命名空间下的 AG-UI `CUSTOM` 事件，避免污染父 run 的生命周期与文本流：
+子 agent 呈现方式按 `RunAgentInput.protocolVersion` 协商（见 [AG-UI versioning](https://docs.ag-ui.com/spec/1.0/basic/versioning)）：
+
+| 消费者 `protocolVersion` | 带非空 `source` 的子 AgentEvent |
+| --- | --- |
+| 缺省 / 早于 1.0.0 | AgentScope 旧路径：`subagent.*` 命名空间下的 AG-UI `CUSTOM`（避免旧客户端无法识别 `SUBAGENT_*`） |
+| `>= 1.0.0`（含两位 `"1.0"`） | 原生 `SUBAGENT_STARTED` / `SUBAGENT_FINISHED`，以及带 `subagentRunId` 的 `TEXT_MESSAGE_*` / 工具 / reasoning 内容事件 |
+
+嵌套子 agent：当 `source` 为 `main/researcher/writer` 这类路径时，`SUBAGENT_STARTED` 会把 `parentSubagentRunId` 设为已注册的 `main/researcher` 调用 id；单层路径（`main/researcher`）无父链接（由顶层 agent 直接拉起）。
+
+`RUN_STARTED` 始终声明生产者版本（`AguiProtocol.PROTOCOL_VERSION`，当前为 `"1.0.0"`），不会回声 input。
+
+消费者为 pre-1.0.0 时的 CUSTOM 名称：
 
 | CUSTOM `name` | 典型 AgentEvent |
 | --- | --- |
@@ -105,13 +116,24 @@ v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射�
 | `subagent.tool_result` | `ToolResultEndEvent` |
 | `subagent.require_confirm` | `RequireUserConfirmEvent` |
 
-payload 至少包含 `source` 与 `type`（以及 `delta`、`toolCallId` 等类型相关字段）。
+CUSTOM payload 至少包含 `source` 与 `type`（以及 `delta`、`toolCallId` 等类型相关字段）。
 
-若要恢复子事件与父事件使用同一套原生 converter 的旧行为：
+若要忽略 `protocolVersion`、将子事件摊平进与父事件相同的原生 converter：
 
 ```java
 AguiAdapterConfig config = AguiAdapterConfig.builder()
     .emitSubagentEventsAsNative(true)
+    .build();
+```
+
+1.0.0 客户端应在 run 输入上声明版本：
+
+```java
+RunAgentInput input = RunAgentInput.builder()
+    .threadId(threadId)
+    .runId(runId)
+    .protocolVersion(AguiProtocol.PROTOCOL_VERSION)
+    .messages(messages)
     .build();
 ```
 

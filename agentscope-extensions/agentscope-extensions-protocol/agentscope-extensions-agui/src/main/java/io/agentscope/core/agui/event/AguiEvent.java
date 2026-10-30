@@ -25,6 +25,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import io.agentscope.core.agui.AguiProtocol;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import java.io.IOException;
@@ -203,7 +204,15 @@ public sealed interface AguiEvent
         }
 
         public RunStarted(String threadId, String runId, String parentRunId, RunAgentInput input) {
-            this(threadId, runId, parentRunId, input, null, null, null, null);
+            this(
+                    threadId,
+                    runId,
+                    parentRunId,
+                    input,
+                    AguiProtocol.PROTOCOL_VERSION,
+                    null,
+                    null,
+                    null);
         }
 
         public RunStarted(String threadId, String runId) {

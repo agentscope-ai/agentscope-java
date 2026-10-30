@@ -92,9 +92,20 @@ Normal `RUN_STARTED` and `RUN_FINISHED` events are driven by upstream `AgentStar
 
 ## Subagent events
 
-The `AguiEvent` model includes the AG-UI 1.0 lifecycle types `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, and `SUBAGENT_ERROR` (each carries a required `subagentRunId`). Per the protocol, most other events also accept an optional `subagentRunId` for attribution; `RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` and `MESSAGES_SNAPSHOT` do not (snapshot attribution is per-message on `AguiMessage`, and nested `AguiToolCall` objects inherit the message’s owner). The default adapter path does not emit native subagent lifecycle or attributed events yet.
+The `AguiEvent` model includes the AG-UI 1.0 lifecycle types `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, and `SUBAGENT_ERROR` (each carries a required `subagentRunId`). Per the protocol, most other events also accept an optional `subagentRunId` for attribution; `RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` and `MESSAGES_SNAPSHOT` do not (snapshot attribution is per-message on `AguiMessage`, and nested `AguiToolCall` objects inherit the message’s owner).
 
-By default (`emitSubagentEventsAsNative=false`), AgentEvents with a non-null `source` (child / remote subagent events) are **not** mapped to native `TEXT_MESSAGE_*` / `RUN_*` / tool-call events. They become AG-UI `CUSTOM` events under the `subagent.*` namespace so they do not pollute the parent run lifecycle or text stream:
+Subagent presentation is negotiated from `RunAgentInput.protocolVersion` (see [AG-UI versioning](https://docs.ag-ui.com/spec/1.0/basic/versioning)):
+
+| Consumer `protocolVersion` | Subagent AgentEvents (`source != null`) |
+| --- | --- |
+| Absent / pre-1.0.0 | AgentScope legacy: AG-UI `CUSTOM` under `subagent.*` (avoids unknown `SUBAGENT_*` types on older clients) |
+| `>= 1.0.0` (incl. two-part `"1.0"`) | Native `SUBAGENT_STARTED` / `SUBAGENT_FINISHED` plus attributed `TEXT_MESSAGE_*` / tool / reasoning events carrying `subagentRunId` |
+
+Nested subagents: when `source` is a path such as `main/researcher/writer`, `SUBAGENT_STARTED` sets `parentSubagentRunId` to the already-registered id for `main/researcher`. A single-level path (`main/researcher`) has no parent link (spawned by the top-level agent).
+
+`RUN_STARTED` always declares the producer version (`AguiProtocol.PROTOCOL_VERSION`, currently `"1.0.0"`) — never an echo of the input.
+
+Legacy CUSTOM names when the consumer is pre-1.0.0:
 
 | CUSTOM `name` | Typical AgentEvent |
 | --- | --- |
@@ -105,13 +116,24 @@ By default (`emitSubagentEventsAsNative=false`), AgentEvents with a non-null `so
 | `subagent.tool_result` | `ToolResultEndEvent` |
 | `subagent.require_confirm` | `RequireUserConfirmEvent` |
 
-Each payload includes at least `source` and `type` (plus type-specific fields such as `delta` or `toolCallId`).
+Each CUSTOM payload includes at least `source` and `type` (plus type-specific fields such as `delta` or `toolCallId`).
 
-To restore the previous behavior where child events used the same native converters as the parent:
+To flatten child events into the same native converters as the parent (ignoring `protocolVersion` negotiation):
 
 ```java
 AguiAdapterConfig config = AguiAdapterConfig.builder()
     .emitSubagentEventsAsNative(true)
+    .build();
+```
+
+A 1.0.0 client should send `protocolVersion` on the run input:
+
+```java
+RunAgentInput input = RunAgentInput.builder()
+    .threadId(threadId)
+    .runId(runId)
+    .protocolVersion(AguiProtocol.PROTOCOL_VERSION)
+    .messages(messages)
     .build();
 ```
 

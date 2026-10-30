@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
 import java.util.HashMap;
@@ -33,6 +34,7 @@ public class RunAgentInput {
 
     private final String threadId;
     private final String runId;
+    private final String protocolVersion;
     private final List<AguiMessage> messages;
     private final List<AguiTool> tools;
     private final List<AguiContext> context;
@@ -52,14 +54,14 @@ public class RunAgentInput {
      * @param forwardedProps Additional properties to forward
      */
     public RunAgentInput(
-            @JsonProperty("threadId") String threadId,
-            @JsonProperty("runId") String runId,
-            @JsonProperty("messages") List<AguiMessage> messages,
-            @JsonProperty("tools") List<AguiTool> tools,
-            @JsonProperty("context") List<AguiContext> context,
-            @JsonProperty("state") Map<String, Object> state,
-            @JsonProperty("forwardedProps") Map<String, Object> forwardedProps) {
-        this(threadId, runId, messages, tools, context, state, forwardedProps, null);
+            String threadId,
+            String runId,
+            List<AguiMessage> messages,
+            List<AguiTool> tools,
+            List<AguiContext> context,
+            Map<String, Object> state,
+            Map<String, Object> forwardedProps) {
+        this(threadId, runId, null, messages, tools, context, state, forwardedProps, null);
     }
 
     /**
@@ -74,10 +76,37 @@ public class RunAgentInput {
      * @param forwardedProps Additional properties to forward
      * @param resume Resume responses for previously emitted interrupts
      */
+    public RunAgentInput(
+            String threadId,
+            String runId,
+            List<AguiMessage> messages,
+            List<AguiTool> tools,
+            List<AguiContext> context,
+            Map<String, Object> state,
+            Map<String, Object> forwardedProps,
+            List<AguiResume> resume) {
+        this(threadId, runId, null, messages, tools, context, state, forwardedProps, resume);
+    }
+
+    /**
+     * Creates a new RunAgentInput.
+     *
+     * @param threadId The thread ID for this conversation
+     * @param runId The unique run ID
+     * @param protocolVersion Protocol version the consumer speaks (e.g. {@code "1.0"}); absent
+     *     means a pre-versioning peer
+     * @param messages The conversation messages
+     * @param tools Frontend-provided tools
+     * @param context Additional context information
+     * @param state Initial state to load
+     * @param forwardedProps Additional properties to forward
+     * @param resume Resume responses for previously emitted interrupts
+     */
     @JsonCreator
     public RunAgentInput(
             @JsonProperty("threadId") String threadId,
             @JsonProperty("runId") String runId,
+            @JsonProperty("protocolVersion") String protocolVersion,
             @JsonProperty("messages") List<AguiMessage> messages,
             @JsonProperty("tools") List<AguiTool> tools,
             @JsonProperty("context") List<AguiContext> context,
@@ -86,6 +115,7 @@ public class RunAgentInput {
             @JsonProperty("resume") List<AguiResume> resume) {
         this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
         this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+        this.protocolVersion = protocolVersion;
         this.messages =
                 messages != null ? Collections.unmodifiableList(messages) : Collections.emptyList();
         this.tools = tools != null ? Collections.unmodifiableList(tools) : Collections.emptyList();
@@ -119,6 +149,20 @@ public class RunAgentInput {
      */
     public String getRunId() {
         return runId;
+    }
+
+    /**
+     * Get the protocol version the consumer speaks.
+     *
+     * <p>Absent means a peer from before the protocol carried a version. Producers use this for
+     * negotiation (for example subagent CUSTOM vs attributed emission) and must declare their own
+     * version on {@code RUN_STARTED}, never echo this value.
+     *
+     * @return The consumer protocol version, or null if not provided
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public String getProtocolVersion() {
+        return protocolVersion;
     }
 
     /**
@@ -247,6 +291,8 @@ public class RunAgentInput {
                 + threadId
                 + "', runId='"
                 + runId
+                + "', protocolVersion='"
+                + protocolVersion
                 + "', messages="
                 + messages.size()
                 + ", tools="
@@ -277,6 +323,7 @@ public class RunAgentInput {
     public static class Builder {
         private String threadId;
         private String runId;
+        private String protocolVersion;
         private List<AguiMessage> messages;
         private List<AguiTool> tools;
         private List<AguiContext> context;
@@ -291,6 +338,11 @@ public class RunAgentInput {
 
         public Builder runId(String runId) {
             this.runId = runId;
+            return this;
+        }
+
+        public Builder protocolVersion(String protocolVersion) {
+            this.protocolVersion = protocolVersion;
             return this;
         }
 
@@ -326,7 +378,15 @@ public class RunAgentInput {
 
         public RunAgentInput build() {
             return new RunAgentInput(
-                    threadId, runId, messages, tools, context, state, forwardedProps, resume);
+                    threadId,
+                    runId,
+                    protocolVersion,
+                    messages,
+                    tools,
+                    context,
+                    state,
+                    forwardedProps,
+                    resume);
         }
     }
 }
