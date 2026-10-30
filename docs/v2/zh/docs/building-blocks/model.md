@@ -342,6 +342,8 @@ model.stream(
 
 `ChatResponse` 包含若干 content block（`TextBlock`、`ThinkingBlock`、`ToolUseBlock`、`DataBlock`）以及记录 token 数与耗时的 `ChatUsage`。
 
+**参数优先级：**传给 `stream(messages, tools, options)` 的单次调用选项优先于 builder 的 `defaultOptions`；单次调用未设置的字段回退到模型默认值。这同样适用于 `toolChoice`：默认配置如 `Specific("get_weather")` 会约束每一次调用，只有调用方显式设置自己的 `toolChoice`（例如 `None`）才会覆盖。对 Gemini 而言，只要请求声明了工具，有效的 toolChoice 就会投影为请求中的 `toolConfig`（`Specific` → `mode=ANY` 加 `allowedFunctionNames`；`None` → `mode=NONE`），因此默认配置与同值的单次配置产生一致的请求。
+
 实际开发中通常不需要直接调模型，而是通过 `ReActAgent` 调度；要直连模型做轻量调用时，推荐参考 `agentscope-examples/documentation/.../model/ModelRegistryExample.java`。
 
 ### 生成结构化输出

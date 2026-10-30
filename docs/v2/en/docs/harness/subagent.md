@@ -7,7 +7,7 @@ zh_link: /v2/zh/docs/harness/subagent
 
 ## Role
 
-Let the parent delegate "independent, context-heavy, parallelizable" tasks so it doesn't bloat its own loop. Each subagent is a transient instance (a local `HarnessAgent` or a remote stub), with its own session, returning a result via tool result.
+Let the parent delegate "independent, context-heavy, parallelizable" tasks so it doesn't bloat its own loop. Each subagent (a local `HarnessAgent` or a remote stub) runs its own conversation, separate from the parent's: every invocation — a spawn with a task, or a follow-up `agent_send` — runs to completion and returns that invocation's result (as the sync tool result, or pushed back for background tasks). A live local subagent keeps its own history across follow-up sends; remote backends may start a new conversation for each send. Session persistence and later resumption depend on the declaration (`persistSession`) and the backend — see [Persistent sessions](#persistent-sessions).
 
 ## A minimal example
 

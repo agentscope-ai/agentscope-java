@@ -294,11 +294,13 @@ agent 每次 call 时，harness 会构建一个 `<available_skills>` 块，列�
 
 每个条目只携带最少的元数据，方便 agent 判断要不要加载详情。`<files-root>`（如果有）是 agent 通过 shell 执行该 skill 脚本时使用的绝对路径，详见下面。
 
+目录只含摘要，不等于 skill 指令。用户点名某个 skill，或任务明显匹配描述时，prompt 要求 agent 在行动前用准确的 `<skill-id>` 加载 `SKILL.md`。完整正文仍在对话中时可以复用，支持文件按需读取。没有 `<files-root>` 的条目通过 loader 读取，不能因为另一条目有该字段就为它编造 shell 路径。
+
 ### 读 SKILL.md 和资源文件
 
 加载某个 skill 时 agent 会调用内置工具 `load_skill_through_path`：
 
-- `load_skill_through_path(skillId, path="SKILL.md")` 返回 markdown 正文
+- `load_skill_through_path(skillId, path="SKILL.md")` 返回 YAML frontmatter 和 markdown 正文；根据内容选择围栏长度，保留内嵌代码块
 - `load_skill_through_path(skillId, path="references/style-guide.md")` 返回该 skill 目录下的任意文件
 
 具体怎么取文件，取决于 skill 来自哪里：
@@ -310,7 +312,7 @@ agent 每次 call 时，harness 会构建一个 `<available_skills>` 块，列�
 | `workspace/skills/` 共用（Layer 3） | 注册时预载到内存 |
 | `<userId>/skills/` 用户隔离（Layer 4） | SKILL.md 预载；其它文件按需通过 `AbstractFilesystem` 读取（自动遵循 per-user namespace + sandbox 路由） |
 
-agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。底层查找顺序是"内存命中 → 文件系统读取 → 找不到时返回所有真正可用的路径列表"，所以传错 path 也只会拿到清单而不是死路。
+agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。底层顺序是"内存命中 → 来源提供的资源读取器 → 找不到时返回可用路径列表"。只预载 `SKILL.md` 的文件系统技能，可以从原始目录按需读取支持文件；仓库自身的 lazy reader 优先，不会绕过它回退到原始目录，也不会因此获得 shell 路径。
 
 ### `<files-root>` 和 shell 执行
 
@@ -322,7 +324,7 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 | Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
 | Local 不带 shell / Composite | （不渲染——没注册 shell 工具） | （不渲染） |
 
-所以 agent 发出来的 shell 命令永远是 `execute("python3 <files-root>/scripts/foo.py")`——不用猜路径，不用记每种来源对应哪个前缀。
+`<files-root>` 是执行环境中的原始绝对路径，空格也原样保留。agent 以它为基准解析脚本路径，再按该环境的 shell 语法引用。本地 Windows 使用 `cmd.exe`，本地 POSIX 使用 `sh`，Docker 和 Kubernetes 在各自沙箱里执行。宿主 JVM 的系统、路径和已安装运行时不代表沙箱。应按已加载 skill 的脚本说明，使用命令执行环境中实际可用的解释器，不再假定 `ls` 或 `python3` 存在。只有可见技能中至少一个带 `<files-root>` 时，才会提供执行指引。
 
 ### 市场 skill 文件实际落在哪儿
 
@@ -387,10 +389,10 @@ AGENTS.md  skills/  subagents/  knowledge/  .skills-cache/
 | 工作区 skill | `/workspace/skills/<name>` |
 | 市场 skill | `/workspace/.skills-cache/<source>/<name>` |
 
-于是 agent 直接发：
+以默认 `/workspace` 根目录、沙箱已安装 `sh` 为例，agent 可以用以下参数调用 `execute`：
 
-```
-execute("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <目标路径>")
+```json
+{"command": "sh '/workspace/skills/code-reviewer/scripts/run-checks.sh' '<目标路径>'"}
 ```
 
 这条命令在容器里跑，读到的就是投影进来的那份文件。agent 不用知道 skill 来自哪一层，前缀由框架算好。

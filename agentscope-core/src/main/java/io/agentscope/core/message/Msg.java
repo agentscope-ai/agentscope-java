@@ -93,11 +93,11 @@ public class Msg implements State {
 
     /**
      * Metadata key (boolean) marking a message as <em>synthetic</em>: framework-injected rather
-     * than authored by the user, the model, or a tool. Synthetic messages (e.g. the per-turn todo
-     * reminder produced by {@code TaskReminderMiddleware}) are appended transiently to the
-     * reasoning input and are not persisted into {@code AgentState.context}; this flag lets any
-     * downstream consumer that does observe such a message recognise and skip it (memory
-     * extraction, compaction, RAG recall).
+     * than authored by the user, the model, or a tool. This identifies origin, not lifetime:
+     * current-state projections such as todo reminders are request-only, while task deliveries
+     * and empty-response reminders can be persisted in {@code AgentState.context}. Consumers
+     * that separate projections from conversation must also consult the canonical history,
+     * matching copies or restored messages by their stable message ID; {@link #isRequestProjection(List)} implements this membership test.
      */
     public static final String METADATA_SYNTHETIC = "agentscope_synthetic";
 
@@ -210,6 +210,29 @@ public class Msg implements State {
                 // No restriction; TOOL preserved for back-compat.
             }
         }
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof Msg other)) {
+            return false;
+        }
+        return Objects.equals(id, other.id)
+                && Objects.equals(name, other.name)
+                && role == other.role
+                && Objects.equals(content, other.content)
+                && ValueEquality.equal(metadata, other.metadata)
+                && Objects.equals(timestamp, other.timestamp)
+                && Objects.equals(usage, other.usage);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                id, name, role, content, ValueEquality.hash(metadata), timestamp, usage);
     }
 
     /**
@@ -547,6 +570,27 @@ public class Msg implements State {
                 .map(TextBlock.class::cast)
                 .map(TextBlock::getText)
                 .collect(Collectors.joining("\n"));
+    }
+
+    /**
+     * Returns whether this message is a request-only projection: synthetic (see {@link
+     * #METADATA_SYNTHETIC}) and absent from the canonical history, where membership is decided by
+     * identity or by a matching stable message ID so copies and restored messages keep their
+     * durable lifetime.
+     *
+     * @param canonical the canonical history this request was built from
+     * @return {@code true} when the message must stay transient for this request only
+     */
+    @Transient
+    @JsonIgnore
+    public boolean isRequestProjection(List<Msg> canonical) {
+        return metadata != null
+                && Boolean.TRUE.equals(metadata.get(METADATA_SYNTHETIC))
+                && canonical.stream()
+                        .noneMatch(
+                                original ->
+                                        original == this
+                                                || (id != null && id.equals(original.getId())));
     }
 
     /**
