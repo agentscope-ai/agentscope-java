@@ -24,7 +24,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
@@ -200,8 +199,6 @@ public class JdbcStore implements BaseStore {
                 ps.setLong(4, now);
                 ps.executeUpdate();
                 return true;
-            } catch (SQLIntegrityConstraintViolationException dup) {
-                return false;
             } catch (SQLException e) {
                 if (isDuplicateKey(e)) {
                     return false;
@@ -331,25 +328,35 @@ public class JdbcStore implements BaseStore {
      * violation. Different JDBC drivers signal this differently:
      *
      * <ul>
-     *   <li>MySQL / MariaDB / Postgres / H2 throw {@link SQLIntegrityConstraintViolationException}
-     *       and/or set SQLSTATE {@code 23xxx}.
+     *   <li>Postgres / H2 use SQLSTATE {@code 23505}; MySQL / MariaDB use SQLSTATE {@code 23000}
+     *       with error code {@code 1062} or {@code 1022}.
      *   <li>SQLite throws a plain {@code SQLiteException} with {@code sqlState=null} and
      *       {@code errorCode=19} ({@code SQLITE_CONSTRAINT}); we also key on the driver class name
-     *       to avoid swallowing unrelated vendor codes that happen to be 19.
+     *       and require an extended {@code PRIMARYKEY} or {@code UNIQUE} result code.
      * </ul>
      */
     private static boolean isDuplicateKey(SQLException e) {
-        if (e instanceof SQLIntegrityConstraintViolationException) {
+        if ("23505".equals(e.getSQLState())) {
             return true;
         }
-        String state = e.getSQLState();
-        if (state != null && state.startsWith("23")) {
-            // 23xxx = integrity constraint violation in SQL:2003
+        if ("23000".equals(e.getSQLState())
+                && (e.getErrorCode() == 1062 || e.getErrorCode() == 1022)) {
             return true;
         }
-        // SQLite reports constraint violations as errorCode=19 with a null SQLSTATE.
-        String className = e.getClass().getName();
-        return e.getErrorCode() == 19 && className.startsWith("org.sqlite.");
+        // SQLite is optional; distinguish unique violations without requiring the driver at
+        // runtime.
+        if (e.getErrorCode() == 19 && e.getClass().getName().startsWith("org.sqlite.")) {
+            try {
+                Object result = e.getClass().getMethod("getResultCode").invoke(e);
+                if (result instanceof Enum<?> code) {
+                    return "SQLITE_CONSTRAINT_PRIMARYKEY".equals(code.name())
+                            || "SQLITE_CONSTRAINT_UNIQUE".equals(code.name());
+                }
+            } catch (ReflectiveOperationException ignored) {
+                // Unknown constraints must propagate rather than being treated as contention.
+            }
+        }
+        return false;
     }
 
     // -------------------------------------------------------------------------
