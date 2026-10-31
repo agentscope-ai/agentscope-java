@@ -900,7 +900,8 @@ public class PostgresSkillRepositoryTest {
 
             assertNotNull(skill);
             assertEquals("3000", skill.getVersion());
-            assertEquals("hello", Files.readString(skill.getOriginDir().resolve("readme.md")));
+            assertEquals(
+                    "hello", Files.readString(skill.getOriginDir().get().resolve("readme.md")));
             verify(resourceStatement).setLong(1, 7L);
         }
 
