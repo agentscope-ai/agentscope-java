@@ -109,6 +109,9 @@ public class DashScopeMultiAgentFormatter
 
         for (MessageGroup group : groups) {
             if (group.type == GroupType.AGENT_MESSAGE) {
+                for (Msg msg : group.messages) {
+                    DashScopeChatFormatter.appendDocumentMessages(msg, result, cacheDirectives);
+                }
                 // Format agent messages with conversation history
                 String historyPrompt = isFirstAgentMessage ? conversationHistoryPrompt : "";
                 DashScopeMessage mergedMessage =
@@ -229,6 +232,9 @@ public class DashScopeMultiAgentFormatter
 
         for (MessageGroup group : groups) {
             if (group.type == GroupType.AGENT_MESSAGE) {
+                for (Msg msg : group.messages) {
+                    DashScopeChatFormatter.appendDocumentMessages(msg, result, cacheDirectives);
+                }
                 // Format agent messages with conversation history
                 DashScopeMessage mergedMessage =
                         conversationMerger.mergeToMultiModalMessage(

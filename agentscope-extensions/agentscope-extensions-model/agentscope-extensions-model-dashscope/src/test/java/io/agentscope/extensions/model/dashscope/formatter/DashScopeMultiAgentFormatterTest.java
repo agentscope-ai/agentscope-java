@@ -26,6 +26,8 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -36,6 +38,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeChoice;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeFunction;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
@@ -77,6 +80,92 @@ class DashScopeMultiAgentFormatterTest {
         assertTrue(result.get(0).getContentAsString().contains("</history>"));
         // Multi-agent formatter uses only name, no role prefix
         assertTrue(result.get(0).getContentAsString().contains("Alice: Hello"));
+    }
+
+    @Test
+    void testDocumentBlockEmitsFileIdSystemMessageBeforeMergedHistory() {
+        List<Msg> msgs =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .content(TextBlock.builder().text("You are helpful").build())
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .name("Alice")
+                                .content(
+                                        List.of(
+                                                TextBlock.builder().text("Summarise this").build(),
+                                                DocumentBlock.builder()
+                                                        .source(
+                                                                FileIdSource.builder()
+                                                                        .provider("dashscope")
+                                                                        .fileId("file-abc")
+                                                                        .build())
+                                                        .name("report.pdf")
+                                                        .build()))
+                                .build());
+
+        List<DashScopeMessage> result =
+                formatter.format(msgs, GenerateOptions.builder().cacheControl(true).build());
+
+        assertEquals(3, result.size());
+        assertEquals("system", result.get(0).getRole());
+        assertEquals("You are helpful", result.get(0).getContentAsString());
+        assertEquals("system", result.get(1).getRole());
+        assertEquals("fileid://file-abc", result.get(1).getContentAsString());
+        assertEquals("user", result.get(2).getRole());
+        assertTrue(result.get(2).getContentAsString().contains("Alice: Summarise this"));
+    }
+
+    @Test
+    void testDocumentBlockRejectsNonFileIdSource() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Summarise this").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.pdf")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        IllegalArgumentException ex =
+                assertThrows(IllegalArgumentException.class, () -> formatter.format(List.of(msg)));
+
+        assertTrue(ex.getMessage().contains("file id"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("URLSource"), ex.getMessage());
+    }
+
+    @Test
+    void testDocumentBlockEmitsFileIdSystemMessageInMultiModalFormat() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Summarise this").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("dashscope")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<DashScopeMessage> result = formatter.formatMultiModal(List.of(msg));
+
+        assertEquals(2, result.size());
+        assertEquals("system", result.get(0).getRole());
+        assertEquals("fileid://file-abc", result.get(0).getContentAsString());
+        assertEquals("user", result.get(1).getRole());
     }
 
     @Test

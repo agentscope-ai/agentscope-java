@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -42,15 +43,22 @@ class DocumentBlockTest {
     void testBuildWithFileIdSource() {
         DocumentBlock block =
                 DocumentBlock.builder()
-                        .source(FileIdSource.builder().fileId("file-abc").build())
+                        .source(
+                                FileIdSource.builder()
+                                        .provider("dashscope")
+                                        .fileId("file-abc")
+                                        .build())
                         .name("report.pdf")
                         .mimeType("application/pdf")
+                        .sizeBytes(123L)
                         .build();
 
         assertInstanceOf(FileIdSource.class, block.getSource());
+        assertEquals("dashscope", ((FileIdSource) block.getSource()).getProvider());
         assertEquals("file-abc", ((FileIdSource) block.getSource()).getFileId());
         assertEquals("report.pdf", block.getName());
         assertEquals("application/pdf", block.getMimeType());
+        assertEquals(123L, block.getSizeBytes());
         assertNotNull(block.getId());
         assertFalse(block.getId().isEmpty());
         assertNull(block.getMetadata());
@@ -61,24 +69,33 @@ class DocumentBlockTest {
     void testJsonRoundTrip() throws Exception {
         DocumentBlock original =
                 DocumentBlock.builder()
-                        .source(FileIdSource.builder().fileId("file-abc").build())
+                        .source(
+                                FileIdSource.builder()
+                                        .provider("dashscope")
+                                        .fileId("file-abc")
+                                        .build())
                         .id("doc-1")
                         .name("report.pdf")
                         .mimeType("application/pdf")
+                        .sizeBytes(123L)
                         .build();
 
         String json = mapper.writeValueAsString(original);
         assertTrue(json.contains("\"type\":\"document\""), "missing type discriminator: " + json);
         assertTrue(json.contains("\"type\":\"file_id\""), "missing source discriminator: " + json);
         assertTrue(json.contains("\"file_id\":\"file-abc\""), "missing file id: " + json);
+        assertTrue(json.contains("\"provider\":\"dashscope\""), "missing provider: " + json);
         assertTrue(
                 json.contains("\"mime_type\":\"application/pdf\""), "missing mime type: " + json);
+        assertTrue(json.contains("\"size_bytes\":123"), "missing size: " + json);
 
         DocumentBlock parsed = mapper.readValue(json, DocumentBlock.class);
         assertEquals("doc-1", parsed.getId());
         assertEquals("report.pdf", parsed.getName());
         assertEquals("application/pdf", parsed.getMimeType());
+        assertEquals(123L, parsed.getSizeBytes());
         assertInstanceOf(FileIdSource.class, parsed.getSource());
+        assertEquals("dashscope", ((FileIdSource) parsed.getSource()).getProvider());
         assertEquals("file-abc", ((FileIdSource) parsed.getSource()).getFileId());
         assertEquals(original, parsed);
     }
@@ -88,15 +105,18 @@ class DocumentBlockTest {
     void testJsonDeserializationViaContentBlock() throws Exception {
         String json =
                 "{\"type\":\"document\","
-                        + "\"source\":{\"type\":\"file_id\",\"file_id\":\"file-xyz\"},"
-                        + "\"id\":\"doc-2\",\"name\":\"spec.docx\"}";
+                        + "\"source\":{\"type\":\"file_id\",\"provider\":\"dashscope\","
+                        + "\"file_id\":\"file-xyz\"},"
+                        + "\"id\":\"doc-2\",\"name\":\"spec.docx\",\"size_bytes\":456}";
         ContentBlock block = mapper.readValue(json, ContentBlock.class);
 
         assertInstanceOf(DocumentBlock.class, block);
         DocumentBlock document = (DocumentBlock) block;
         assertEquals("doc-2", document.getId());
         assertEquals("spec.docx", document.getName());
+        assertEquals(456L, document.getSizeBytes());
         assertEquals("file-xyz", ((FileIdSource) document.getSource()).getFileId());
+        assertEquals("dashscope", ((FileIdSource) document.getSource()).getProvider());
     }
 
     @Test
@@ -124,7 +144,11 @@ class DocumentBlockTest {
     void testMetadataRoundTrip() throws Exception {
         DocumentBlock original =
                 DocumentBlock.builder()
-                        .source(FileIdSource.builder().fileId("file-abc").build())
+                        .source(
+                                FileIdSource.builder()
+                                        .provider("dashscope")
+                                        .fileId("file-abc")
+                                        .build())
                         .metadata(Map.of("provider", "dashscope"))
                         .build();
 
@@ -136,15 +160,63 @@ class DocumentBlockTest {
     }
 
     @Test
+    @DisplayName("Provider metadata with binary values survives the JSON round-trip")
+    void testBinaryMetadataRoundTrip() throws Exception {
+        DocumentBlock original =
+                DocumentBlock.builder()
+                        .source(
+                                FileIdSource.builder()
+                                        .provider("dashscope")
+                                        .fileId("file-abc")
+                                        .build())
+                        .metadata(Map.of("signature", new byte[] {1, 2, 3}))
+                        .build();
+
+        DocumentBlock parsed =
+                mapper.readValue(mapper.writeValueAsString(original), DocumentBlock.class);
+
+        assertEquals(original, parsed);
+    }
+
+    @Test
+    @DisplayName("Provider metadata is defensively copied and immutable")
+    void testMetadataIsDefensivelyCopied() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("provider", "dashscope");
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .source(
+                                FileIdSource.builder()
+                                        .provider("dashscope")
+                                        .fileId("file-abc")
+                                        .build())
+                        .metadata(metadata)
+                        .build();
+
+        metadata.put("mutable", "value");
+
+        assertFalse(block.getMetadata().containsKey("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> block.getMetadata().put("x", "y"));
+    }
+
+    @Test
     @DisplayName("id is auto-generated when omitted")
     void testIdAutoGenerated() {
         DocumentBlock a =
                 DocumentBlock.builder()
-                        .source(FileIdSource.builder().fileId("file-a").build())
+                        .source(
+                                FileIdSource.builder()
+                                        .provider("dashscope")
+                                        .fileId("file-a")
+                                        .build())
                         .build();
         DocumentBlock b =
                 DocumentBlock.builder()
-                        .source(FileIdSource.builder().fileId("file-b").build())
+                        .source(
+                                FileIdSource.builder()
+                                        .provider("dashscope")
+                                        .fileId("file-b")
+                                        .build())
                         .build();
 
         assertNotNull(a.getId());
@@ -163,7 +235,11 @@ class DocumentBlockTest {
     void testRoleValidation() {
         DocumentBlock document =
                 DocumentBlock.builder()
-                        .source(FileIdSource.builder().fileId("file-abc").build())
+                        .source(
+                                FileIdSource.builder()
+                                        .provider("dashscope")
+                                        .fileId("file-abc")
+                                        .build())
                         .build();
 
         Msg user =

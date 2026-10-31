@@ -120,6 +120,7 @@ class OpenAIMessageConverterTest {
                                         DocumentBlock.builder()
                                                 .source(
                                                         FileIdSource.builder()
+                                                                .provider("openai")
                                                                 .fileId("file-abc")
                                                                 .build())
                                                 .name("report.pdf")

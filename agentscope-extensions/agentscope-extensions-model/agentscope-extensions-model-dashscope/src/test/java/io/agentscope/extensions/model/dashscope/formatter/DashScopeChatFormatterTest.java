@@ -90,6 +90,7 @@ class DashScopeChatFormatterTest {
                                         DocumentBlock.builder()
                                                 .source(
                                                         FileIdSource.builder()
+                                                                .provider("dashscope")
                                                                 .fileId("file-abc")
                                                                 .build())
                                                 .name("report.pdf")
@@ -117,6 +118,7 @@ class DashScopeChatFormatterTest {
                                         DocumentBlock.builder()
                                                 .source(
                                                         FileIdSource.builder()
+                                                                .provider("dashscope")
                                                                 .fileId("file-abc")
                                                                 .build())
                                                 .build()))
@@ -177,6 +179,29 @@ class DashScopeChatFormatterTest {
                 assertThrows(IllegalArgumentException.class, () -> formatter.format(List.of(msg)));
         assertTrue(ex.getMessage().contains("file id"), ex.getMessage());
         assertTrue(ex.getMessage().contains("URLSource"), ex.getMessage());
+    }
+
+    @Test
+    void testDocumentBlockRejectsNonDashScopeProvider() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("openai")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        IllegalArgumentException ex =
+                assertThrows(IllegalArgumentException.class, () -> formatter.format(List.of(msg)));
+
+        assertTrue(ex.getMessage().contains("DashScope file id"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("openai"), ex.getMessage());
     }
 
     @Test

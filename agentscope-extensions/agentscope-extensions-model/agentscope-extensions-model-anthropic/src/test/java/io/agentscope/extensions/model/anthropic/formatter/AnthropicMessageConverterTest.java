@@ -96,6 +96,7 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
                                         DocumentBlock.builder()
                                                 .source(
                                                         FileIdSource.builder()
+                                                                .provider("anthropic")
                                                                 .fileId("file-abc")
                                                                 .build())
                                                 .name("report.pdf")

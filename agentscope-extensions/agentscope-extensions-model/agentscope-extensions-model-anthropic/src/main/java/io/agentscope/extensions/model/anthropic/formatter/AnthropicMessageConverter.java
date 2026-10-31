@@ -311,7 +311,7 @@ public class AnthropicMessageConverter {
                                                             + "]")
                                             .build()));
                 }
-            } else if (block instanceof DocumentBlock db) {
+            } else if (block instanceof DocumentBlock db && msg.getRole() == MsgRole.USER) {
                 log.warn(
                         "DocumentBlock is not supported by Anthropic; sending a text placeholder"
                                 + " instead of '{}'",

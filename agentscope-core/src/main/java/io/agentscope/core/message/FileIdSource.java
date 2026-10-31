@@ -30,11 +30,13 @@ import java.util.Objects;
  * provider-specific client; use {@link URLSource} or {@link Base64Source} when the document bytes
  * travel with the request.
  *
- * <p>The identifier is provider-scoped and opaque to the SDK — it is forwarded as-is by the
- * formatter of the provider that understands it.
+ * <p>The provider and identifier are opaque to the SDK. The identifier is forwarded as-is by the
+ * formatter of the provider named by {@link #getProvider()}.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class FileIdSource extends Source {
+
+    private final String provider;
 
     @JsonProperty("file_id")
     private final String fileId;
@@ -42,12 +44,24 @@ public class FileIdSource extends Source {
     /**
      * Creates a new file ID source for JSON deserialization.
      *
+     * @param provider The provider that owns the file identifier; required
      * @param fileId The provider-assigned file identifier; required
-     * @throws NullPointerException if fileId is null
+     * @throws NullPointerException if provider or fileId is null
      */
     @JsonCreator
-    public FileIdSource(@JsonProperty("file_id") String fileId) {
+    public FileIdSource(
+            @JsonProperty("provider") String provider, @JsonProperty("file_id") String fileId) {
+        this.provider = Objects.requireNonNull(provider, "provider cannot be null");
         this.fileId = Objects.requireNonNull(fileId, "fileId cannot be null");
+    }
+
+    /**
+     * Gets the provider that owns the file identifier.
+     *
+     * @return The provider identifier
+     */
+    public String getProvider() {
+        return provider;
     }
 
     /**
@@ -76,12 +90,12 @@ public class FileIdSource extends Source {
         if (!(o instanceof FileIdSource other)) {
             return false;
         }
-        return Objects.equals(fileId, other.fileId);
+        return Objects.equals(provider, other.provider) && Objects.equals(fileId, other.fileId);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(fileId);
+        return Objects.hash(provider, fileId);
     }
 
     /**
@@ -89,7 +103,19 @@ public class FileIdSource extends Source {
      */
     public static class Builder {
 
+        private String provider;
         private String fileId;
+
+        /**
+         * Sets the provider that owns the file identifier.
+         *
+         * @param provider The provider identifier
+         * @return This builder for chaining
+         */
+        public Builder provider(String provider) {
+            this.provider = provider;
+            return this;
+        }
 
         /**
          * Sets the provider-assigned file identifier.
@@ -106,10 +132,10 @@ public class FileIdSource extends Source {
          * Builds a new FileIdSource with the configured fields.
          *
          * @return A new FileIdSource instance
-         * @throws NullPointerException if fileId is null
+         * @throws NullPointerException if provider or fileId is null
          */
         public FileIdSource build() {
-            return new FileIdSource(fileId);
+            return new FileIdSource(provider, fileId);
         }
     }
 }

@@ -18,6 +18,8 @@ package io.agentscope.core.message;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -26,8 +28,9 @@ import java.util.UUID;
  * Document content for model input (PDF, Word, plain text, and other provider-supported formats).
  *
  * <p>Unlike {@link DataBlock}, which is a generic binary/media container, this block carries
- * document semantics that converters need in order to route the content: an optional MIME type, a
- * human-readable file name, and a source that may be a provider-side file ID rather than bytes.
+ * document semantics that converters need in order to route the content: optional MIME type and
+ * size fields, a human-readable file name, and a source that may be a provider-side file ID
+ * rather than bytes.
  *
  * <p>Documents are user input. {@link MsgRole#USER} accepts this block; providers that cannot
  * consume documents report it instead of silently dropping the content.
@@ -44,6 +47,9 @@ public final class DocumentBlock extends ContentBlock {
     @JsonProperty("mime_type")
     private final String mimeType;
 
+    @JsonProperty("size_bytes")
+    private final Long sizeBytes;
+
     private final Map<String, Object> metadata;
 
     /**
@@ -53,6 +59,7 @@ public final class DocumentBlock extends ContentBlock {
      * @param id Stable identifier; if null, a fresh UUID hex is generated
      * @param name Optional human-readable name (e.g. file name); may be null
      * @param mimeType Optional MIME type of the document (e.g. "application/pdf"); may be null
+     * @param sizeBytes Optional size of the document in bytes; may be null
      * @param metadata Optional provider-specific metadata; may be null
      * @throws NullPointerException if source is null
      */
@@ -62,13 +69,16 @@ public final class DocumentBlock extends ContentBlock {
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
             @JsonProperty("mime_type") String mimeType,
+            @JsonProperty("size_bytes") Long sizeBytes,
             @JsonProperty("metadata") Map<String, Object> metadata) {
         this.source = Objects.requireNonNull(source, "source cannot be null");
         this.id =
                 (id != null && !id.isEmpty()) ? id : UUID.randomUUID().toString().replace("-", "");
         this.name = name;
         this.mimeType = mimeType;
-        this.metadata = metadata;
+        this.sizeBytes = sizeBytes;
+        this.metadata =
+                metadata == null ? null : Collections.unmodifiableMap(new HashMap<>(metadata));
     }
 
     /**
@@ -108,6 +118,15 @@ public final class DocumentBlock extends ContentBlock {
     }
 
     /**
+     * Gets the optional size of the document in bytes.
+     *
+     * @return The size in bytes, or null if not set
+     */
+    public Long getSizeBytes() {
+        return sizeBytes;
+    }
+
+    /**
      * Gets the optional provider-specific metadata attached to this block.
      *
      * @return The metadata map, or null if not set
@@ -137,12 +156,13 @@ public final class DocumentBlock extends ContentBlock {
                 && Objects.equals(id, other.id)
                 && Objects.equals(name, other.name)
                 && Objects.equals(mimeType, other.mimeType)
-                && Objects.equals(metadata, other.metadata);
+                && Objects.equals(sizeBytes, other.sizeBytes)
+                && ValueEquality.equal(metadata, other.metadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(source, id, name, mimeType, metadata);
+        return Objects.hash(source, id, name, mimeType, sizeBytes, ValueEquality.hash(metadata));
     }
 
     /**
@@ -157,6 +177,8 @@ public final class DocumentBlock extends ContentBlock {
         private String name;
 
         private String mimeType;
+
+        private Long sizeBytes;
 
         private Map<String, Object> metadata;
 
@@ -206,6 +228,17 @@ public final class DocumentBlock extends ContentBlock {
         }
 
         /**
+         * Sets the optional size of the document in bytes.
+         *
+         * @param sizeBytes The size in bytes
+         * @return This builder for chaining
+         */
+        public Builder sizeBytes(Long sizeBytes) {
+            this.sizeBytes = sizeBytes;
+            return this;
+        }
+
+        /**
          * Sets the optional provider-specific metadata for the document block.
          *
          * @param metadata The metadata map
@@ -223,7 +256,7 @@ public final class DocumentBlock extends ContentBlock {
          * @throws NullPointerException if source is null
          */
         public DocumentBlock build() {
-            return new DocumentBlock(source, id, name, mimeType, metadata);
+            return new DocumentBlock(source, id, name, mimeType, sizeBytes, metadata);
         }
     }
 }

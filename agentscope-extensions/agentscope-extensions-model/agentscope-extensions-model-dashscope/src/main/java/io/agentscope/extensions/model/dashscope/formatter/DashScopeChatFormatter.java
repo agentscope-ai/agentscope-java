@@ -55,6 +55,7 @@ public class DashScopeChatFormatter
     private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
     private static final int MAX_CACHE_MARKERS = 4;
     private static final String FILE_ID_SCHEME = "fileid://";
+    private static final String DASHSCOPE_PROVIDER = "dashscope";
 
     private final DashScopeMessageConverter messageConverter;
     private final DashScopeResponseParser responseParser;
@@ -111,9 +112,9 @@ public class DashScopeChatFormatter
      * @param msg The message whose document blocks should be emitted
      * @param messages The formatted messages collected so far
      * @param directives Cache-control directives aligned with {@code messages}; may be null
-     * @throws IllegalArgumentException if a document block carries a non-file-id source
+     * @throws IllegalArgumentException if a document block carries a non-DashScope file id source
      */
-    private static void appendDocumentMessages(
+    static void appendDocumentMessages(
             Msg msg, List<DashScopeMessage> messages, List<Boolean> directives) {
         if (msg.getRole() != MsgRole.USER) {
             return;
@@ -125,6 +126,12 @@ public class DashScopeChatFormatter
                         "DashScope document input requires a file id source, got "
                                 + (source == null ? "null" : source.getClass().getSimpleName())
                                 + "; upload the document first and pass the DashScope file id");
+            }
+            if (!DASHSCOPE_PROVIDER.equals(fileIdSource.getProvider())) {
+                throw new IllegalArgumentException(
+                        "DashScope document input requires a DashScope file id, got provider '"
+                                + fileIdSource.getProvider()
+                                + "'");
             }
             messages.add(
                     DashScopeMessage.builder()

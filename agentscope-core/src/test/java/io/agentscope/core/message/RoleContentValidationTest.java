@@ -67,7 +67,7 @@ class RoleContentValidationTest {
 
     private static DocumentBlock document() {
         return DocumentBlock.builder()
-                .source(FileIdSource.builder().fileId("file-abc").build())
+                .source(FileIdSource.builder().provider("dashscope").fileId("file-abc").build())
                 .name("report.pdf")
                 .mimeType("application/pdf")
                 .build();
