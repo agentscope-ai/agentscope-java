@@ -709,6 +709,10 @@ client-executed 搜索，通过 `tool_search_output` 重放命中的工具定义
 `AnthropicChatModel` 发送带有延迟加载标记的候选工具目录，并返回 `tool_reference`。
 这两种方式需要 provider 和模型支持对应的原生协议。不支持时，将参数设为 `false`，
 改用普通函数调用。不要将此 middleware 与 OpenAI hosted `tool_search` server tool 同时配置。
+failover 主备模型混用两种原生协议（例如 `AnthropicChatModel` 主模型配
+`OpenAIResponsesChatModel` 兜底）不受支持：工具面按主模型的模式一次性塑形、不会为兜底
+模型重算，`CLIENT` 兜底会拒绝带 `deferLoading` 的工具。跨这类模型配置 failover 时，请
+使用普通函数调用的兜底模型，或将 `nativeLoading` 设为 `false`。
 
 发现结果保存在会话的 `ToolContextState` 中，支持通过状态存储恢复。每次请求都会按
 当前候选目录重新检查工具；搜索不会激活工具组或改变执行权限。显式指定调用的工具和

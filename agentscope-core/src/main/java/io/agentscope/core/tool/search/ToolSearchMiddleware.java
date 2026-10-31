@@ -38,7 +38,16 @@ import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
-/** Opt-in discovery over the current model-call tool surface, without changing tool execution. */
+/**
+ * Opt-in discovery over the current model-call tool surface, without changing tool execution.
+ *
+ * <p>Under native loading the surface is shaped once from {@code input.model()}'s mode before the
+ * call. With a failover pair that mixes native protocols (for example an {@code AnthropicChatModel}
+ * primary with an {@code OpenAIResponsesChatModel} fallback) the already-shaped surface is passed
+ * to the fallback unchanged, and a {@code CLIENT} fallback rejects {@code deferLoading} entries.
+ * Pair the middleware with a plain function-calling fallback, or disable native loading, when
+ * failing over across native-protocol models.
+ */
 public final class ToolSearchMiddleware implements MiddlewareBase {
     private final ToolSearchTool tool;
     private final Toolkit toolkit;

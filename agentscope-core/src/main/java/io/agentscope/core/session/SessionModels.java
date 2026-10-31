@@ -22,6 +22,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.search.ToolSearchMode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,22 +44,37 @@ public final class SessionModels {
 
     private record Recorded(Model delegate, RuntimeContext context, String purpose)
             implements ManagedModel {
+        @Override
         public String getModelName() {
             return delegate.getModelName();
         }
 
+        @Override
         public boolean supportsNativeStructuredOutput() {
             return delegate.supportsNativeStructuredOutput();
         }
 
+        @Override
         public boolean supportsNativeStructuredOutputWithTools() {
             return delegate.supportsNativeStructuredOutputWithTools();
         }
 
+        @Override
         public int getContextWindowSize() {
             return delegate.getContextWindowSize();
         }
 
+        @Override
+        public ToolSearchMode getToolSearchMode() {
+            return delegate.getToolSearchMode();
+        }
+
+        @Override
+        public boolean supportsToolChoiceSpecific() {
+            return delegate.supportsToolChoiceSpecific();
+        }
+
+        @Override
         public Flux<ChatResponse> stream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             return Flux.defer(
