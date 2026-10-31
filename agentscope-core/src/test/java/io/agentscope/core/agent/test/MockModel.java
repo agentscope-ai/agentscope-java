@@ -35,7 +35,7 @@ import reactor.core.publisher.Flux;
 
 /**
  * Mock Model implementation for testing.
- *
+ * <p>
  * This mock provides configurable responses and allows tests to verify
  * model interactions without making actual API calls.
  */
@@ -45,10 +45,19 @@ public class MockModel implements Model {
     private Function<List<Msg>, List<ChatResponse>> responseGenerator;
     private int callCount = 0;
     private List<Msg> lastMessages;
+    private final List<List<Msg>> recordedMessages = new ArrayList<>();
     private List<ToolSchema> lastTools;
     private GenerateOptions lastOptions;
     private boolean shouldThrowError = false;
     private String errorMessage = "Mock error";
+
+    /**
+     * Whether this mock reports {@code ToolChoice.Specific} support. Defaults to {@code true},
+     * unlike the {@link Model} interface default of {@code false}; tests exercising the
+     * prompt-reminder fallback call {@link #setSupportsToolChoiceSpecific(boolean)} with
+     * {@code false}.
+     */
+    private boolean supportsToolChoiceSpecific = true;
 
     /**
      * Create a mock model with a simple text response.
@@ -118,6 +127,7 @@ public class MockModel implements Model {
         // Record the call
         this.callCount++;
         this.lastMessages = messages;
+        this.recordedMessages.add(List.copyOf(messages));
         this.lastTools = tools;
         this.lastOptions = options;
 
@@ -164,6 +174,13 @@ public class MockModel implements Model {
     }
 
     /**
+     * Get the messages of every call, in call order, unlike {@link #getLastMessages()}.
+     */
+    public List<List<Msg>> getRecordedMessages() {
+        return recordedMessages;
+    }
+
+    /**
      * Get the last tools sent to the model.
      */
     public List<ToolSchema> getLastTools() {
@@ -183,14 +200,27 @@ public class MockModel implements Model {
     public void reset() {
         this.callCount = 0;
         this.lastMessages = null;
+        this.recordedMessages.clear();
         this.lastTools = null;
         this.lastOptions = null;
         this.shouldThrowError = false;
+        this.supportsToolChoiceSpecific = true;
     }
 
     @Override
     public String getModelName() {
         return "mock-model";
+    }
+
+    /** Getter (interface override — cannot take a {@code get} prefix, see {@link Model}). */
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return supportsToolChoiceSpecific;
+    }
+
+    /** Sets whether this mock reports {@code ToolChoice.Specific} support. */
+    public void setSupportsToolChoiceSpecific(boolean supportsToolChoiceSpecific) {
+        this.supportsToolChoiceSpecific = supportsToolChoiceSpecific;
     }
 
     // Helper methods to create responses

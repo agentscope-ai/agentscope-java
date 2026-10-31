@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -25,6 +26,8 @@ import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxFileTransfer;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
@@ -43,6 +46,24 @@ import org.junit.jupiter.api.Test;
 class SandboxBackedFilesystemTest {
 
     private static final RuntimeContext RT = RuntimeContext.empty();
+
+    @Test
+    void releasedContextCannotFallBackToAnotherCallsSandbox() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeSandbox previous = new FakeSandbox(new ExecResult(0, "", "", false));
+        FakeSandbox current = new FakeSandbox(new ExecResult(0, "", "", false));
+        SandboxAcquireResult acquired = SandboxAcquireResult.userManaged(previous);
+        RuntimeContext stale =
+                RuntimeContext.builder().put(SandboxAcquireResult.class, acquired).build();
+        acquired.beginRelease();
+        filesystem.setSandbox(current);
+
+        assertThrows(
+                SandboxException.SandboxConfigurationException.class,
+                () -> filesystem.execute(stale, "echo stale", 1));
+        assertNull(previous.lastCommand);
+        assertNull(current.lastCommand);
+    }
 
     @Test
     void downloadFiles_decodesWrappedBase64Output() {

@@ -260,6 +260,19 @@ public final class JevClient {
         }
     }
 
+    /** Validates typed questions for custom offline or online evaluation backends. */
+    public static void validateEvaluationRequest(SystemOneRequest request) {
+        validateRequest(Objects.requireNonNull(request));
+    }
+
+    /** Applies the HTTP client's response contract to injected evaluation backends. */
+    public static void validateResponse(SystemOneRequest request, SystemOneResult result) {
+        validateRequest(Objects.requireNonNull(request));
+        validateResult(request, Objects.requireNonNull(result));
+        if (result.usage().inputTokens() < 0 || result.usage().outputTokens() < 0)
+            throw new JevException("System One usage must not be negative");
+    }
+
     private static void validateRequest(SystemOneRequest request) {
         if (request.state() == null) {
             throw new IllegalArgumentException("state must not be null");

@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -34,6 +35,8 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
@@ -93,7 +96,9 @@ class AgentSpawnToolSuspensionTest {
     @ValueSource(strings = {"spawn", "send", "reuse"})
     void suspendedChildReportsError(String operation) {
         when(child.call(anyList())).thenReturn(Mono.just(suspended()));
-        String result = invoke(operation, 30).block(Duration.ofSeconds(5));
+        String result =
+                assertText(
+                        invoke(operation, 30).block(Duration.ofSeconds(5)), ToolResultState.ERROR);
         assertNotNull(result);
         assertTrue(result.contains("status: error"), result);
         assertTrue(result.contains("choose_x"), result);
@@ -104,7 +109,9 @@ class AgentSpawnToolSuspensionTest {
     @ValueSource(strings = {"spawn", "send", "reuse"})
     void suspendedBackgroundChildFailsTask(String operation) {
         when(child.call(anyList())).thenReturn(Mono.just(suspended()));
-        String result = invoke(operation, 0).block(Duration.ofSeconds(5));
+        String result =
+                assertText(
+                        invoke(operation, 0).block(Duration.ofSeconds(5)), ToolResultState.SUCCESS);
         assertNotNull(result);
         assertTrue(result.contains("task_id:"), result);
         TaskRunSpec.LocalTaskRunSpec spec =
@@ -118,7 +125,9 @@ class AgentSpawnToolSuspensionTest {
     void suspendedPromotedChildFailsFuture() throws Exception {
         Sinks.One<Msg> completion = Sinks.one();
         when(child.call(anyList())).thenReturn(completion.asMono());
-        String result = invoke("spawn", 1).block(Duration.ofSeconds(5));
+        String result =
+                assertText(
+                        invoke("spawn", 1).block(Duration.ofSeconds(5)), ToolResultState.SUCCESS);
         assertNotNull(result);
         assertTrue(result.contains("status: timeout_promoted"), result);
         TaskRunSpec.AdoptedTaskRunSpec spec =
@@ -147,7 +156,10 @@ class AgentSpawnToolSuspensionTest {
         when(child.call(anyList())).thenReturn(completion.asMono());
         try {
             String result =
-                    invoke(createTool(writer), operation, timeout).block(Duration.ofSeconds(5));
+                    assertText(
+                            invoke(createTool(writer), operation, timeout)
+                                    .block(Duration.ofSeconds(5)),
+                            ToolResultState.SUCCESS);
             assertNotNull(result);
             assertTrue(result.contains("task_id:"), result);
             if (timeout > 0) {
@@ -181,7 +193,10 @@ class AgentSpawnToolSuspensionTest {
                 assertNotNull(observed);
                 assertEquals(TaskStatus.FAILED, observed.getTaskStatus());
                 assertNull(observed.getResult());
-                String output = new TaskTool(source).taskOutput(context, taskId, false, null);
+                String output =
+                        assertText(
+                                new TaskTool(source).taskOutput(context, taskId, false, null),
+                                ToolResultState.ERROR);
                 assertTrue(output.contains("status: Failed: " + diagnostic), output);
                 assertTrue(output.contains("Error:\n" + diagnostic), output);
                 assertFalse(output.contains("Result:\n"), output);
@@ -193,11 +208,11 @@ class AgentSpawnToolSuspensionTest {
         }
     }
 
-    private Mono<String> invoke(String operation, int timeout) {
+    private Mono<ToolResultBlock> invoke(String operation, int timeout) {
         return invoke(tool, operation, timeout);
     }
 
-    private Mono<String> invoke(AgentSpawnTool tool, String operation, int timeout) {
+    private Mono<ToolResultBlock> invoke(AgentSpawnTool tool, String operation, int timeout) {
         if (!"spawn".equals(operation)) {
             tool.agentSpawn(context, null, "worker", null, "existing", 30, null)
                     .block(Duration.ofSeconds(5));

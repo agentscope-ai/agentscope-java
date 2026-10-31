@@ -42,9 +42,69 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
     .build();
 ```
 
+## Server-side built-in tools
+
+OpenAI Official Documents: https://developers.openai.com/api/docs/guides/tools#available-tools
+
+Enable provider-executed built-in tools for the Responses API with `serverTools`:
+
+```java
+import com.openai.models.responses.Tool;
+import com.openai.models.responses.WebSearchTool;
+import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
+
+OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
+    .apiKey(System.getenv("OPENAI_API_KEY"))
+    .modelName("gpt-5")
+    .serverTools(List.of(OpenAIServerTool.of(
+        Tool.ofWebSearch(WebSearchTool.builder()
+            .type(WebSearchTool.Type.WEB_SEARCH)
+            .build()))))
+    .build();
+```
+
+Supported tool types are `web_search`, `code_interpreter`, `image_generation`, and `tool_search`.
+
+Built-in tool calls and results are preserved as server-tool-marked `ToolUseBlock` / `ToolResultBlock` blocks, and the raw Responses item is stored in metadata for replay in later turns.
+
+Hosted `tool_search` is configured through `OpenAIServerTool`. Mark individual local
+function tools with `@Tool(deferLoading = true)` to defer their parameter schemas.
+Unmarked tools stay eagerly available, and requesting `deferLoading` without a
+hosted search declaration fails fast.
+
+For client-executed search, register `ToolSearchMiddleware` on the agent instead.
+The middleware uses your `ToolSearchStrategy`; the model adapter declares native
+client search, dispatches `tool_search_call` locally through the normal permission
+and execution path, and replays `tool_search_output` with the discovered schemas.
+Streaming and non-streaming responses use the same call representation. Hosted
+and client-executed search declarations cannot be combined in one request.
+See [on-demand tool search](/v2/en/docs/building-blocks/tool#on-demand-tool-search)
+for configuration and the ordinary-function fallback.
+
+Message annotations, including `container_file_citation`, are preserved in the `openai.response.citations` response metadata. Code Interpreter image outputs are represented as `DataBlock` blocks with `URLSource`, and the container ID is retained in the tool result metadata.
+
+`image_generation` results are returned as a `DataBlock` with a `Base64Source`. If `partial_images` is enabled, each `response.image_generation_call.partial_image` event is emitted as a `RUNNING` server-tool result containing a preview `DataBlock`, and the terminal response replaces it with the final image.
+
 ## Spring Boot
 
-There is no dedicated Spring Boot starter for this module yet.
+Spring Boot applications can use the OpenAI Official starter:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-openai-official-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+```yaml
+agentscope:
+  model:
+    provider: openai-official
+  openai-official:
+    api-key: ${OPENAI_API_KEY}
+    model-name: gpt-4o
+```
 
 ## Reasoning
 

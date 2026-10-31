@@ -206,4 +206,4 @@ The first half of the Coding Agent era was about personal productivity—smarter
 
 The codingagent example mentioned in this post is a complete and readable sample; I recommend cloning it, running it once, and then reading the source code—it maps all the engineering problems discussed here to real code.
 
-Dig deeper: [Harness Architecture](/v2/en/docs/harness/architecture) · [Workspace](/v2/en/docs/harness/workspace) · [Sandbox](/v2/en/docs/harness/sandbox) · [Context Compaction](/v2/en/docs/harness/compaction) · [Subagent](/v2/en/docs/harness/subagent) · [Skill](/v2/en/docs/harness/skill) · [Plan Mode](/v2/en/docs/harness/plan-mode)
+Dig deeper: [Harness Architecture](/v2/en/docs/harness/architecture) · [Workspace](/v2/en/docs/harness/workspace) · [Sandbox](/v2/en/docs/harness/sandbox) · [Context management](/v2/en/docs/harness/context) · [Subagent](/v2/en/docs/harness/subagent) · [Skill](/v2/en/docs/harness/skill) · [Plan Mode](/v2/en/docs/harness/plan-mode)

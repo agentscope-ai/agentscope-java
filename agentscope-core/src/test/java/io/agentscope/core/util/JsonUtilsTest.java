@@ -134,6 +134,18 @@ class JsonUtilsTest {
         }
 
         @Test
+        void rejectsTrailingValuesWithoutChangingCodecConfiguration() {
+            assertFalse(JsonUtils.isValidJsonObject("{\"a\":1}{\"b\":"));
+            assertFalse(JsonUtils.isValidJsonObject("{}{}"));
+            assertFalse(JsonUtils.isValidJsonObject("{\"a\":1}]"));
+            assertFalse(JsonUtils.isValidJsonObject("{} garbage"));
+            assertTrue(JsonUtils.isValidJsonObject(" {\"a\": [1, {\"text\": \"} {\"}]} \n\t"));
+            // Strictness belongs to this validation operation, not the application's codec.
+            assertEquals(
+                    Map.of("a", 1), JsonUtils.getJsonCodec().fromJson("{\"a\":1}{}", Map.class));
+        }
+
+        @Test
         @DisplayName("Should reject incomplete JSON")
         void testIncompleteJson() {
             assertFalse(JsonUtils.isValidJsonObject("{\"query\":\"hel"));

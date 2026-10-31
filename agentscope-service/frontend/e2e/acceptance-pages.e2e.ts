@@ -219,7 +219,7 @@ test('New Managed session can create a default environment without manual select
   expect(environmentCreated).toBe(true);
 });
 
-test('Endpoint contract provides copyable authenticated jobs and polling examples', async ({ page }) => {
+test('Endpoint contract provides authenticated Invocation snapshot, SSE and action examples', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (value: string) => { (window as any).__copiedCode = value; } } });
   });
@@ -237,8 +237,13 @@ test('Endpoint contract provides copyable authenticated jobs and polling example
   expect(copied).toContain('X-API-Key: $ENDPOINT_TOKEN');
   expect(copied).toContain('Idempotency-Key: $REQUEST_KEY');
   expect(copied).toContain('"input"');
-  await expect(page.getByRole('heading', { name: '2. Check status' })).toBeVisible();
-  await expect(page.getByText('invocation.errorMessage', { exact: false })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '2. Restore snapshot' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '3. Stream events' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '4. Respond to a required action' })).toBeVisible();
+  await expect(page.locator('pre').filter({ hasText: '/invoke/v1/invocations/INVOCATION_ID/snapshot' }).first()).toBeVisible();
+  await expect(page.locator('pre').filter({ hasText: 'Last-Event-ID: $CURSOR' })).toBeVisible();
+  await expect(page.getByText('partial_succeeded', { exact: false }).first()).toBeVisible();
+  await expect(page.locator('pre').filter({ hasText: '/invoke/v1/jobs/' })).toHaveCount(0);
 });
 
 test('Failed task shows its cause, retry errors and results with sibling artifacts', async ({ page }) => {
@@ -334,4 +339,35 @@ test('Workflow session links use only the control-plane reference and never the 
   const session = page.getByRole('link', { name: 'Session ↗', exact: true });
   await expect(session).toHaveAttribute('href', '/work/sessions/control-plane-session');
   await expect(page.locator(`a[href*="/work/sessions/${runtimeId}"]`)).toHaveCount(0);
+});
+
+test('Endpoint playground restores the submitted invocation after a browser refresh', async ({ page }) => {
+  await fixture(page, async (path, _route, json) => {
+    if (path === '/api/v1/endpoints/review/readiness') { await json({ readiness: { state: 'ready' } }); return true; }
+    if (path === '/api/v1/endpoints/review') { await json({ endpoint: { id: 'review', name: 'Review API', slug: 'review', status: 'published', invocationMode: 'job', targetType: 'agent', targetRef: 'agent', authPolicy: { type: 'api_key' }, inputSchema: { type: 'object' } } }); return true; }
+    if (path.endsWith('/credentials')) { await json({ items: [{ id: 'key', status: 'active', recoverable: true }] }); return true; }
+    if (path.endsWith('/reveal')) { await json({ secret: 'application-secret' }); return true; }
+    return false;
+  });
+  let submissions = 0;
+  let snapshots = 0;
+  await page.route('**/invoke/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (value: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(value) });
+    expect(route.request().headers()['x-api-key']).toBe('application-secret');
+    if (path.endsWith('/jobs')) { submissions++; return json({ invocationId: 'invocation-one', status: 'accepted' }); }
+    if (path.endsWith('/snapshot')) { snapshots++; return json({ as_of: 'opaque-cursor', invocation: { id: 'invocation-one', status: 'completed' }, items: { final: { item: { role: 'assistant', content: [{ type: 'text', text: 'Persisted final answer' }] } } }, tools: {}, required_actions: {}, steps: {}, artifacts: {}, usage: {} }); }
+    return json({ available_commands: [] });
+  });
+  await page.goto('/agent-center/endpoints/review?tab=playground');
+  await expect(page.getByLabel('Application API credential')).toHaveValue('application-secret');
+  await page.getByLabel('Input JSON').fill('{}');
+  await page.getByRole('button', { name: 'Submit', exact: true }).click();
+  await expect(page).toHaveURL(/invocation=invocation-one/);
+  await expect(page.getByRole('region', { name: 'Invocation execution' })).toContainText('Persisted final answer');
+  await page.reload();
+  await expect(page.getByRole('region', { name: 'Invocation execution' })).toContainText('Persisted final answer');
+  expect(submissions).toBe(1);
+  expect(snapshots).toBeGreaterThanOrEqual(2);
+  expect(page.url()).not.toContain('application-secret');
 });

@@ -27,8 +27,8 @@ import { useAccountIdentity } from '@/lib/accountIdentity';
 import { resolveAuthorizedNamespace, setRequestNamespace, type NamespaceSummary } from '@/lib/namespaceScope';
 import { useQueryClient } from '@tanstack/react-query';
 
-const TENANT_KEY = 'aistio.console.tenant';
-const NAMESPACE_KEY = 'aistio.console.namespace';
+const TENANT_KEY = 'controlplane.console.tenant';
+const NAMESPACE_KEY = 'controlplane.console.namespace';
 
 type ControlPlaneScope = {
   namespaces: NamespaceSummary[];

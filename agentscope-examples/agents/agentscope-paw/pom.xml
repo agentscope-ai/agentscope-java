@@ -56,10 +56,10 @@
             <artifactId>agentscope-extensions-model-dashscope</artifactId>
         </dependency>
 
-        <!-- BYO aistio: /agentscope/* contract + HTTP self-register into Operate -->
+        <!-- BYO controlplane: /agentscope/* contract + HTTP self-register into Operate -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-aistio</artifactId>
+            <artifactId>agentscope-extensions-controlplane</artifactId>
         </dependency>
 
         <!-- IM channel implementations -->
