@@ -27,7 +27,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -135,10 +134,11 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
     /**
      * Plain repositories already warned about lacking an explicit selection — the
      * enumeration skip is by design, so the warning fires once per repository, never per
-     * call. Identity-based: repositories do not override equals.
+     * call. Safe for concurrent sessions: repositories do not override equals, so the
+     * set's default equality is identity, and {@link ConcurrentHashMap#newKeySet()} keeps
+     * concurrent first-touch warnings race-free.
      */
-    private final Set<AgentSkillRepository> plainEnumerationWarned =
-            Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<AgentSkillRepository> plainEnumerationWarned = ConcurrentHashMap.newKeySet();
 
     private final boolean codeExecutionEnabled;
 
@@ -736,7 +736,9 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
      * non-pinned entry at a null version and compare stamps — an unchanged stamp keeps the
      * entry; a new stamp replaces the resident skill (materialized by the repository with a
      * fresh {@code originDir}) and records a REFRESH audit event. Pinned entries are
-     * skipped: a pin never advances.
+     * skipped: a pin never advances. The same pass also advances the session's discovery
+     * view ({@link #refreshCatalogs}): new catalog names become visible and vanished names
+     * leave the view, so LATEST sees current content, not the establishment-time snapshot.
      *
      * @param ctx the per-call {@link RuntimeContext} supplying the audit recorder; never
      *     {@code null}
@@ -767,6 +769,48 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
             String previous = entry.version();
             entry.skill = pulled;
             SkillAnchorService.refreshAudit(recorder, pulled.getSkillId(), previous, latest);
+        }
+        refreshCatalogs(ctx, session);
+    }
+
+    /**
+     * Advances the session's discovery view alongside LATEST freshness: every versioned
+     * context-scoped repository re-lists its request-bound catalog, names that vanished drop
+     * their non-pinned entries (LATEST means current content — a deleted skill must leave the
+     * view, while PIN entries stay anchored), and new names become pullable by the overlay
+     * pass that follows this refresh. A failed re-list keeps the previous catalog, mirroring
+     * the per-entry transient-failure tolerance above.
+     *
+     * @param ctx the per-call {@link RuntimeContext}; never {@code null}
+     * @param session the session whose catalogs and entries are reconciled
+     */
+    private void refreshCatalogs(RuntimeContext ctx, MirrorSession session) {
+        for (Map.Entry<AgentSkillRepository, List<String>> catalog :
+                session.nameCatalogs.entrySet()) {
+            AgentSkillRepository repo = catalog.getKey();
+            if (!session.versionedRepositories.contains(repo)
+                    || !(repo instanceof RuntimeContextSkillRepository contextual)) {
+                continue;
+            }
+            try {
+                List<String> fresh = contextual.getAllSkillNames(ctx);
+                if (fresh == null) {
+                    continue;
+                }
+                catalog.setValue(new ArrayList<>(fresh));
+                session.entriesByName
+                        .values()
+                        .removeIf(
+                                entry ->
+                                        entry.repository == repo
+                                                && !entry.pinned
+                                                && !fresh.contains(entry.skill.getName()));
+            } catch (Exception e) {
+                log.warn(
+                        "Skill repository {} failed to re-list names: {}",
+                        repo.getClass().getSimpleName(),
+                        e.getMessage());
+            }
         }
     }
 

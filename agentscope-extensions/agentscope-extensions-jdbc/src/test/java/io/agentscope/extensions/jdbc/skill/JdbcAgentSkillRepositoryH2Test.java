@@ -18,6 +18,7 @@ package io.agentscope.extensions.jdbc.skill;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -38,7 +39,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
-import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -796,7 +796,7 @@ class JdbcAgentSkillRepositoryH2Test {
         @Test
         @DisplayName(
                 "the row's updated_at is the native version: probe, loads, and the raw row agree")
-        void updatedAtIsTheNativeVersion() throws Exception {
+        void rowIdIsTheNativeVersion() throws Exception {
             DataSource ds = H2TestSupport.createDataSource("skill_repo_version_native");
             JdbcAgentSkillRepository repo =
                     new JdbcAgentSkillRepository(ds, skillDialect(ds), "default", true, cacheDir);
@@ -810,17 +810,16 @@ class JdbcAgentSkillRepositoryH2Test {
                     "the deprecated shim delegates to the version route (version-carried)");
             assertEquals(version, repo.getAllSkills().get(0).getVersion());
 
-            // The version is the row's updated_at in epoch millis, read through the same
-            // timezone-aware conversion as the repository, so the check is TZ-independent.
+            // The version is the row's id: every save is a delete plus insert, so each
+            // publish mints a fresh, monotonic token — collision-free and timezone-free.
             long expected;
             try (Connection conn = ds.getConnection();
                     Statement stmt = conn.createStatement();
                     ResultSet rs =
                             stmt.executeQuery(
-                                    "SELECT updated_at FROM agentscope_skills WHERE name ="
-                                            + " 'demo'")) {
+                                    "SELECT id FROM agentscope_skills WHERE name =" + " 'demo'")) {
                 assertTrue(rs.next());
-                expected = rs.getTimestamp("updated_at").getTime();
+                expected = rs.getLong("id");
             }
             assertEquals(String.valueOf(expected), version);
         }
@@ -873,16 +872,13 @@ class JdbcAgentSkillRepositoryH2Test {
             String live = latestVersionOf(repo, "demo");
             assertNotNull(repo.getSkill("demo", live));
 
-            try (Connection conn = ds.getConnection();
-                    Statement stmt = conn.createStatement()) {
-                stmt.execute(
-                        "UPDATE agentscope_skills SET updated_at = TIMESTAMP"
-                                + " '2001-01-01 00:00:00' WHERE name = 'demo'");
-            }
+            // A republish is a delete plus insert: the fresh row carries a strictly new id,
+            // so the token moves even when both saves land within the same second.
+            repo.save(
+                    List.of(sampleSkill("demo").toBuilder().skillContent("Changed").build()), true);
+            String changed = latestVersionOf(repo, "demo");
+            assertNotEquals(live, changed, "a republish must mint a distinct token");
 
-            // Timestamp.valueOf uses the same local-timezone semantics as the read path.
-            String expected = String.valueOf(Timestamp.valueOf("2001-01-01 00:00:00").getTime());
-            assertEquals(expected, latestVersionOf(repo, "demo"));
             // A reference never materialized while live answers null — the table keeps no
             // history.
             assertNull(
@@ -892,7 +888,36 @@ class JdbcAgentSkillRepositoryH2Test {
             AgentSkill retained = repo.getSkill("demo", live);
             assertNotNull(retained, "a materialised version is retained by the cache");
             assertEquals(live, retained.getVersion());
-            assertNotNull(repo.getSkill("demo", expected));
+            assertNotNull(repo.getSkill("demo", changed));
+        }
+
+        @Test
+        @DisplayName("two databases with the same table and namespace never share cache entries")
+        void sameTableDifferentDatabasesStayIsolated() throws Exception {
+            DataSource dsA = H2TestSupport.createDataSource("skill_repo_iso_a");
+            DataSource dsB = H2TestSupport.createDataSource("skill_repo_iso_b");
+            JdbcAgentSkillRepository repoA =
+                    new JdbcAgentSkillRepository(dsA, skillDialect(dsA), "default", true, cacheDir);
+            JdbcAgentSkillRepository repoB =
+                    new JdbcAgentSkillRepository(dsB, skillDialect(dsB), "default", true, cacheDir);
+            repoA.save(
+                    List.of(
+                            sampleSkill("demo").toBuilder()
+                                    .skillContent("Content of database A")
+                                    .build()),
+                    false);
+            repoB.save(
+                    List.of(
+                            sampleSkill("demo").toBuilder()
+                                    .skillContent("Content of database B")
+                                    .build()),
+                    false);
+
+            // Same explicit cache root, same table name, same namespace, same skill name —
+            // only the JDBC URL distinguishes the two instances, so served content must
+            // never cross between them.
+            assertTrue(skillBody(repoA.getSkill("demo")).contains("database A"));
+            assertTrue(skillBody(repoB.getSkill("demo")).contains("database B"));
         }
 
         @Test

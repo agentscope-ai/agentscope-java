@@ -46,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -85,11 +86,12 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
 
     /**
      * Plain repositories already warned about lacking an explicit selection — the skip is
-     * by design, so the warning fires once per repository, never per call. Identity-based:
-     * repositories do not override equals.
+     * by design, so the warning fires once per repository, never per call. Safe for
+     * concurrent sessions: repositories do not override equals, so the set's default
+     * equality is identity, and {@link ConcurrentHashMap#newKeySet()} keeps concurrent
+     * first-touch warnings race-free.
      */
-    private final Set<AgentSkillRepository> plainEnumerationWarned =
-            Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<AgentSkillRepository> plainEnumerationWarned = ConcurrentHashMap.newKeySet();
 
     private final SkillFilter builderFilter;
     private final SkillVisibilityFilter visibilityFilter;

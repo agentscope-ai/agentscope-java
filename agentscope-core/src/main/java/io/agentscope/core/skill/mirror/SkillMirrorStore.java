@@ -28,6 +28,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.Connection;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
@@ -39,6 +40,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import javax.sql.DataSource;
 
 /**
  * A version-keyed materialization cache for repository-backed skills under a shared cache
@@ -185,6 +187,30 @@ public class SkillMirrorStore {
     }
 
     /**
+     * Location string for a DataSource-backed repository's cache identity: the JDBC URL of
+     * the instance behind {@code dataSource} plus the repository's own location marker — two
+     * repositories over different databases must never share one cache tree, even when their
+     * table and namespace names match. Best-effort and read lazily (it opens a connection):
+     * when the URL cannot be read, the plain location is returned and an explicit {@code
+     * cacheDir} remains the disambiguator.
+     *
+     * @param dataSource the data source whose instance URL is read (never null)
+     * @param location the repository's own location marker (never null)
+     * @return {@code <url>@<location>} when the URL is readable, else {@code location}
+     */
+    public static String dataSourceIdentity(DataSource dataSource, String location) {
+        try (Connection connection = dataSource.getConnection()) {
+            String url = connection.getMetaData().getURL();
+            if (url != null && !url.isBlank()) {
+                return url + "@" + location;
+            }
+        } catch (Exception e) {
+            // URL unreadable (mocked data source, exhausted pool): fall back to the marker.
+        }
+        return location;
+    }
+
+    /**
      * Returns the local directory of {@code (repoIdentity, name, version)} when a complete
      * materialization exists — a hit requires {@code SKILL.md}, so an incomplete or
      * concurrently deleted directory is a miss, not an error. Unusable inputs (an invalid or
@@ -292,8 +318,9 @@ public class SkillMirrorStore {
      *
      * <p>Blank or otherwise unusable names and blank versions yield {@code empty()} without
      * contacting the fetcher, so repositories keep their {@code null}-on-unresolvable
-     * semantics. An unreadable freshly installed directory (out-of-band eviction racing the
-     * parse) also yields {@code empty()}; the next call re-pulls it.
+     * semantics. A complete directory that fails to parse into a summary (corrupted or
+     * foreign manifest — not a fetch miss) is self-healing: the entry is evicted and rebuilt
+     * once through the fetcher, so a bad cache never poisons the key permanently.
      *
      * @param repoIdentity the repository identity (never null)
      * @param name the requested skill name
@@ -312,12 +339,53 @@ public class SkillMirrorStore {
         if (!isUsableNameSegment(name) || version == null || version.isBlank()) {
             return Optional.empty();
         }
+        Optional<Path> cached = materialize(repoIdentity, name, version, fetcher);
+        if (cached.isEmpty()) {
+            return Optional.empty();
+        }
+        AgentSkill summary =
+                SkillSummaryReader.readFromDirectory(cached.get(), name, version, source);
+        if (summary != null) {
+            return Optional.of(summary);
+        }
+        // A complete-but-unparseable entry is corruption, not a fetch miss — evict it and
+        // rebuild once; leaving it in place would fail every later serve of this key.
+        evict(repoIdentity, name, version);
         return materialize(repoIdentity, name, version, fetcher)
                 .flatMap(
                         dir ->
                                 Optional.ofNullable(
                                         SkillSummaryReader.readFromDirectory(
                                                 dir, name, version, source)));
+    }
+
+    /**
+     * Removes the version directory of {@code (repoIdentity, name, version)}, if present —
+     * the counterpart of out-of-band deletion, for callers that verified an entry is bad
+     * (an unparseable manifest) and want the next materialization to start clean. Takes the
+     * same key lock as {@link #materialize} so an eviction cannot interleave with a
+     * concurrent install of the same key; missing directories are a no-op.
+     *
+     * @param repoIdentity the repository identity (never null)
+     * @param name the skill name (validated here; never null)
+     * @param version the full version reference (never null or blank)
+     */
+    public void evict(String repoIdentity, String name, String version) {
+        if (!isUsableNameSegment(name) || version == null || version.isBlank()) {
+            return;
+        }
+        String dirName = versionDirName(version);
+        String key = lockKey(repoIdentity, name, dirName);
+        ReentrantLock lock = KEY_LOCKS.computeIfAbsent(key, k -> new ReentrantLock());
+        lock.lock();
+        try {
+            deleteRecursively(versionDir(repoIdentity, name, dirName));
+        } finally {
+            lock.unlock();
+            if (!lock.hasQueuedThreads()) {
+                KEY_LOCKS.remove(key, lock);
+            }
+        }
     }
 
     /** Builds the lock key: root plus the three key segments. */

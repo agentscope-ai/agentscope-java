@@ -148,6 +148,32 @@ public final class SkillFileSystemHelper {
         return resources;
     }
 
+    /**
+     * Reads the skill's complete {@code SKILL.md} markdown for consumers that need the full
+     * manifest (marketplace details, workspace installs): from the skill's {@code originDir}
+     * when present — the materialized file is authoritative, and descriptor-form skills
+     * carry no body in memory — otherwise regenerated from the in-memory metadata and body
+     * (legacy full-form skills without an origin directory).
+     *
+     * @param skill the skill whose manifest is read (never null)
+     * @return the complete markdown (frontmatter plus body); empty when the skill carries
+     *     neither a readable manifest on disk nor an in-memory body — callers treat that as
+     *     invalid input
+     */
+    public static String readSkillManifest(AgentSkill skill) {
+        if (skill.getOriginDir().isPresent()) {
+            Optional<String> fromDisk = readResource(skill.getOriginDir().get(), SKILL_FILE_NAME);
+            if (fromDisk.isPresent()) {
+                return fromDisk.get();
+            }
+        }
+        String body = skill.getSkillContent();
+        if (body == null || body.isBlank()) {
+            return "";
+        }
+        return MarkdownSkillParser.generate(skill.getMetadata(), body);
+    }
+
     private static Optional<String> sanitizeRelativePath(String path) {
         if (path == null || path.isBlank()) {
             return Optional.empty();

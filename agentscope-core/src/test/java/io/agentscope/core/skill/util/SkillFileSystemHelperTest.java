@@ -600,4 +600,33 @@ class SkillFileSystemHelperTest {
 
         Files.writeString(skillDir.resolve("SKILL.md"), skillMd, StandardCharsets.UTF_8);
     }
+
+    @Test
+    @DisplayName("readSkillManifest prefers the originDir manifest over the in-memory form")
+    void testReadSkillManifestPrefersOriginDir() throws IOException {
+        Path skillDir = tempDir.resolve("demo");
+        Files.createDirectories(skillDir);
+        String onDisk = "---\nname: demo\ndescription: On-disk entry\n---\n# disk body\n";
+        Files.writeString(skillDir.resolve("SKILL.md"), onDisk, StandardCharsets.UTF_8);
+
+        // Descriptor form (no in-memory body): the manifest must still be served in full.
+        AgentSkill descriptor =
+                AgentSkill.builder()
+                        .name("demo")
+                        .description("On-disk entry")
+                        .skillContent(null)
+                        .originDir(skillDir)
+                        .build();
+        assertEquals(onDisk, SkillFileSystemHelper.readSkillManifest(descriptor));
+    }
+
+    @Test
+    @DisplayName("readSkillManifest regenerates the manifest for skills without originDir")
+    void testReadSkillManifestRegeneratesWithoutOriginDir() {
+        AgentSkill fullForm = new AgentSkill("demo", "Legacy form", "# memory body", Map.of());
+
+        String manifest = SkillFileSystemHelper.readSkillManifest(fullForm);
+        assertTrue(manifest.contains("name: demo"), "frontmatter is regenerated: " + manifest);
+        assertTrue(manifest.contains("# memory body"), "body is regenerated: " + manifest);
+    }
 }

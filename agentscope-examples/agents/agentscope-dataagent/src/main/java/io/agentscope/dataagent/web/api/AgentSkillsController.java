@@ -328,7 +328,7 @@ public class AgentSkillsController {
                             skill.getName(),
                             skill.getDescription(),
                             skill.getSource(),
-                            skill.getSkillContent(),
+                            SkillFileSystemHelper.readSkillManifest(skill),
                             SkillFileSystemHelper.readAllResources(skill));
                 });
     }
@@ -376,7 +376,7 @@ public class AgentSkillsController {
                     if (fs.exists(null, "/skills/" + targetName)) {
                         fs.delete(null, "/skills/" + targetName);
                     }
-                    String markdown = skill.getSkillContent();
+                    String markdown = SkillFileSystemHelper.readSkillManifest(skill);
                     if (markdown == null || markdown.isBlank()) {
                         throw new ResponseStatusException(
                                 HttpStatus.BAD_GATEWAY,

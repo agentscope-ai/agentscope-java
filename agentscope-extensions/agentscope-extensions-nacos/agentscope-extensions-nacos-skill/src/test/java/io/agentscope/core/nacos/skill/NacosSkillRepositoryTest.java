@@ -198,6 +198,42 @@ class NacosSkillRepositoryTest {
     }
 
     @Test
+    @DisplayName("Two clusters sharing one cache root never swap content")
+    void testTwoClustersShareNoCacheEntries(@TempDir Path cacheDir)
+            throws NacosException, IOException {
+        Properties propsA = new Properties();
+        propsA.setProperty("serverAddr", "cluster-a:8848");
+        propsA.setProperty(NacosSkillRepository.SKILL_VERSION_PATH, "v1");
+        Properties propsB = new Properties();
+        propsB.setProperty("serverAddr", "cluster-b:8848");
+        propsB.setProperty(NacosSkillRepository.SKILL_VERSION_PATH, "v1");
+        AiService clusterB = org.mockito.Mockito.mock(AiService.class);
+
+        when(aiService.downloadSkillZipByVersion("my-skill", "v1"))
+                .thenReturn(
+                        createSkillZip("my-skill", "Desc", "Cluster A body", null, (String) null));
+        when(clusterB.downloadSkillZipByVersion("my-skill", "v1"))
+                .thenReturn(
+                        createSkillZip("my-skill", "Desc", "Cluster B body", null, (String) null));
+
+        NacosSkillRepository repoA =
+                new NacosSkillRepository(aiService, "public", propsA, null, cacheDir);
+        NacosSkillRepository repoB =
+                new NacosSkillRepository(clusterB, "public", propsB, null, cacheDir);
+
+        // Same namespace, same skill, same version key, one shared cache root — only the
+        // server address distinguishes the clusters, so each must serve its own bytes.
+        String manifestA =
+                Files.readString(
+                        repoA.getSkill("my-skill").getOriginDir().get().resolve("SKILL.md"));
+        String manifestB =
+                Files.readString(
+                        repoB.getSkill("my-skill").getOriginDir().get().resolve("SKILL.md"));
+        assertTrue(manifestA.contains("Cluster A body"), "cluster A serves its own content");
+        assertTrue(manifestB.contains("Cluster B body"), "cluster B serves its own content");
+    }
+
+    @Test
     @DisplayName(
             "Should use downloadSkillZipByLabel when only label is set in application Properties")
     void testGetSkillUsesByLabelWhenConfigured() throws NacosException, IOException {

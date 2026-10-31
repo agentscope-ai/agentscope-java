@@ -16,6 +16,7 @@
 package io.agentscope.core.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -106,7 +107,7 @@ class DynamicSkillMiddlewareVersionRouteTest {
 
         /** Lists the skills at their current latest versions (the bulk read). */
         @SuppressWarnings("deprecation")
-        private List<AgentSkill> snapshot() {
+        List<AgentSkill> snapshot() {
             List<AgentSkill> skills = new ArrayList<>();
             for (Map.Entry<String, String> entry : latestVersionByName.entrySet()) {
                 skills.add(contentByVersion.get(entry.getKey()).get(entry.getValue()));
@@ -696,6 +697,21 @@ class DynamicSkillMiddlewareVersionRouteTest {
         public void close() {}
     }
 
+    /** Context-scoped version-capable fake: the request-bound catalog is the published name
+     * set, served through the context-less pulls the interface defaults route to. */
+    private static final class VersionedContextFakeRepository extends VersionedFakeRepository
+            implements RuntimeContextSkillRepository {
+
+        VersionedContextFakeRepository(Path cacheRoot) {
+            super(cacheRoot);
+        }
+
+        @Override
+        public List<AgentSkill> getAllSkills(RuntimeContext context) {
+            return snapshot();
+        }
+    }
+
     /** Context-scoped repository with an empty catalog: nothing to pull, nothing to
      * classify — the establishment guard must name this shape, not claim failed pulls. */
     private static final class EmptyCatalogFakeRepository implements RuntimeContextSkillRepository {
@@ -787,6 +803,31 @@ class DynamicSkillMiddlewareVersionRouteTest {
         assertTrue(
                 error.getMessage().contains("no skill is available to pull"),
                 "The empty-catalog shape must be named as such, got: " + error.getMessage());
+    }
+
+    @Test
+    @DisplayName("A skill published after establishment becomes visible on the next TTL refresh")
+    void testNewSkillVisibleAfterTtlRefresh() {
+        VersionedContextFakeRepository repository =
+                new VersionedContextFakeRepository(tempDir.resolve("repo-cache"));
+        repository.publish("alpha", "v1", "# one");
+        ReActAgent agent = agentWith(repository, null, null);
+        DynamicSkillMiddleware middleware = middlewareOf(repository);
+        RuntimeContext rc = RuntimeContext.builder().userId("u").sessionId("s").build();
+
+        String first = middleware.onSystemPrompt(agent, rc, "").block();
+        assertTrue(first.contains("alpha"), "the established skill is served");
+        assertFalse(first.contains("beta"), "the unpublished skill is absent");
+
+        repository.publish("beta", "v1", "# two");
+        DynamicSkillMiddleware.freshnessTtlMillis = 0;
+        String second = middleware.onSystemPrompt(agent, rc, "").block();
+
+        assertTrue(
+                second.contains("beta"),
+                "a skill published after establishment must appear once the TTL refresh"
+                        + " re-lists the catalog");
+        assertTrue(second.contains("alpha"), "the previously served skill stays");
     }
 
     @Test

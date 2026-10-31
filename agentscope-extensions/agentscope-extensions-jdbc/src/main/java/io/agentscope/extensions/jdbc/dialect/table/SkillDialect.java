@@ -48,14 +48,10 @@ public interface SkillDialect {
     /** DDL statements (one or more) to create the skill table. Must be idempotent. */
     List<String> skillCreateTableDdls();
 
-    /**
-     * SELECT of one skill by name within a namespace. Projection includes {@code metadata_json}
-     * and {@code updated_at} (see {@link #skillLatestVersion}).
-     */
+    /** SELECT of one skill by name within a namespace. Projection includes {@code metadata_json}. */
     default BoundSql skillSelectByName(String namespace, String name) {
         return new BoundSql(
-                "SELECT id, name, description, skill_content, source, metadata_json, updated_at"
-                        + " FROM "
+                "SELECT id, name, description, skill_content, source, metadata_json FROM "
                         + skillTableName()
                         + " WHERE namespace = ? AND name = ?",
                 namespace,
@@ -65,24 +61,24 @@ public interface SkillDialect {
     /** SELECT of all skills of one namespace ordered by name. Projection includes {@code metadata_json}. */
     default BoundSql skillSelectAll(String namespace) {
         return new BoundSql(
-                "SELECT id, name, description, skill_content, source, metadata_json, updated_at"
-                        + " FROM "
+                "SELECT id, name, description, skill_content, source, metadata_json FROM "
                         + skillTableName()
                         + " WHERE namespace = ? ORDER BY name",
                 namespace);
     }
 
     /**
-     * SELECT of one skill's {@code updated_at} by name within a namespace — a one-row probe
-     * of the row's current version, reading no content. Every save inserts a fresh row (the
-     * column defaults to {@code CURRENT_TIMESTAMP}), so the timestamp moves on any change,
-     * resource-only saves included.
+     * SELECT of one skill's {@code id} by name within a namespace — a one-row probe of the
+     * row's current version, reading no content. Every save is a delete plus insert, so the
+     * auto-generated id moves on any change (resource-only saves included) and never
+     * repeats: a collision-free, timezone-free version token, unlike a same-second
+     * {@code updated_at} stamp.
      *
-     * <p>Projection: (updated_at).
+     * <p>Projection: (id).
      */
     default BoundSql skillLatestVersion(String namespace, String skillName) {
         return new BoundSql(
-                "SELECT updated_at FROM " + skillTableName() + " WHERE namespace = ? AND name = ?",
+                "SELECT id FROM " + skillTableName() + " WHERE namespace = ? AND name = ?",
                 namespace,
                 skillName);
     }

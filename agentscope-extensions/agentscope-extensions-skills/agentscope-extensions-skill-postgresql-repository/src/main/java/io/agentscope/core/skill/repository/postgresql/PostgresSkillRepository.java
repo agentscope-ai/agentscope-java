@@ -27,7 +27,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -172,15 +171,21 @@ public class PostgresSkillRepository implements AgentSkillRepository {
     private volatile boolean writeable;
 
     /**
-     * Version-materialization cache root, resolved at construction (explicit {@code cacheDir}
-     * &gt; {@value SkillMirrorStore#CACHE_DIR_PROPERTY} property &gt; default home root). The
-     * store itself is only created on first serve ({@link SkillMirrorStore#of(Path)}), so
-     * construction never touches the disk.
+     * Location marker of this repository within its database ({@code <schema>.<table>}); the
+     * full cache identity additionally carries the instance's JDBC URL (see {@link
+     * #repoIdentity()}), so two DataSources over different databases never share one cache
+     * tree.
      */
-    private final Path cacheRoot;
+    private final String identityLocation;
 
-    /** Cache identity shared by this repository's skills: {@code postgresql_<schema>.<table>}. */
-    private final String repoIdentity;
+    /** Explicit cache root from construction; {@code null} resolves the property/default. */
+    private final Path explicitCacheDir;
+
+    /** Cache identity, resolved lazily on first serve; guarded by {@code this}. */
+    private String repoIdentity;
+
+    /** Cache root derived from the identity; set together with {@link #repoIdentity}. */
+    private Path cacheRoot;
 
     @FunctionalInterface
     private interface SqlOperation {
@@ -283,10 +288,8 @@ public class PostgresSkillRepository implements AgentSkillRepository {
         validateIdentifier(this.skillsTableName, "Skills table name");
         validateIdentifier(this.resourcesTableName, "Resources table name");
 
-        this.repoIdentity =
-                SkillMirrorStore.repoIdentity(
-                        "postgresql", this.schemaName + "." + this.skillsTableName);
-        this.cacheRoot = SkillMirrorStore.resolveBuiltinRoot(cacheDir, this.repoIdentity);
+        this.identityLocation = this.schemaName + "." + this.skillsTableName;
+        this.explicitCacheDir = cacheDir;
 
         if (createIfNotExist) {
             // Create schema and tables if they don't exist
@@ -527,26 +530,72 @@ public class PostgresSkillRepository implements AgentSkillRepository {
     }
 
     /**
+     * The cache identity of this repository, resolved on first use: the JDBC URL of the
+     * instance behind the {@code DataSource} plus this repository's location marker — two
+     * repositories over different databases (same table name) must never share one cache
+     * tree. Deferred off the constructor because reading the URL opens a connection; when
+     * the URL cannot be read the plain location remains, and an explicit {@code cacheDir}
+     * stays the disambiguator.
+     */
+    private String repoIdentity() {
+        synchronized (this) {
+            if (repoIdentity == null) {
+                repoIdentity =
+                        SkillMirrorStore.repoIdentity(
+                                "postgresql",
+                                SkillMirrorStore.dataSourceIdentity(dataSource, identityLocation));
+                cacheRoot = SkillMirrorStore.resolveBuiltinRoot(explicitCacheDir, repoIdentity);
+            }
+            return repoIdentity;
+        }
+    }
+
+    /** The cache root for the lazily resolved identity (see {@link #repoIdentity()}). */
+    private Path cacheRoot() {
+        synchronized (this) {
+            if (cacheRoot == null) {
+                repoIdentity();
+            }
+            return cacheRoot;
+        }
+    }
+
+    /**
      * Serves the named skill through the version cache. A {@code null}/blank version resolves
-     * to the live row's current version ({@code updated_at}); a non-blank version is served
-     * from a cached version directory when one exists — the table keeps no history, so the
-     * database can only answer a version that is still the live row's current one, and any
-     * other version resolves to {@code null}. The returned skill is a summary: stamped with
-     * the version, {@code originDir} = the materialized directory, resources on disk only.
+     * to the live row's current version (its id); a non-blank version is served from a
+     * cached version directory when one exists — the table keeps no history, so the database
+     * can only answer a version that is still the live row's current one, and any other
+     * version resolves to {@code null}. A latest pull whose row advanced between the probe
+     * and the cache-miss load (the loader refuses a moved row) re-probes once, so a
+     * concurrent save never surfaces as a transient miss. The returned skill is a summary:
+     * stamped with the version, {@code originDir} = the materialized directory, resources on
+     * disk only.
      */
     @Override
     public AgentSkill getSkill(String name, String version) {
         if (name == null || name.isBlank()) {
             return null;
         }
-        String target = version == null || version.isBlank() ? latestVersion(name) : version;
+        boolean latest = version == null || version.isBlank();
+        String target = latest ? latestVersion(name) : version;
         if (target == null || target.isBlank()) {
             return null;
         }
-        final String resolved = target;
-        return SkillMirrorStore.of(cacheRoot)
+        AgentSkill served = serveAt(name, target);
+        if (served == null && latest) {
+            String fresh = latestVersion(name);
+            if (fresh != null && !fresh.equals(target)) {
+                served = serveAt(name, fresh);
+            }
+        }
+        return served;
+    }
+
+    /** One store serve of {@code name} at an already-resolved version reference. */
+    private AgentSkill serveAt(String name, String resolved) {
+        return SkillMirrorStore.of(cacheRoot())
                 .serve(
-                        repoIdentity,
+                        repoIdentity(),
                         name,
                         resolved,
                         getSource(),
@@ -561,19 +610,18 @@ public class PostgresSkillRepository implements AgentSkillRepository {
     }
 
     /**
-     * The skill's current version ({@code updated_at} epoch millis), read from one row
-     * without touching content; {@code null} when the skill does not exist.
+     * The skill's current version (its row id — every save is a delete plus insert, so each
+     * publish mints a fresh, collision-free id), read from one row without touching content;
+     * {@code null} when the skill does not exist.
      */
     private String latestVersion(String name) {
         String selectVersionSql =
-                "SELECT updated_at FROM "
-                        + getFullTableName(skillsTableName)
-                        + " WHERE name = ? LIMIT 1";
+                "SELECT id FROM " + getFullTableName(skillsTableName) + " WHERE name = ? LIMIT 1";
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(selectVersionSql)) {
             stmt.setString(1, name);
             try (ResultSet rs = stmt.executeQuery()) {
-                return rs.next() ? effectiveVersion(updatedMillis(rs)) : null;
+                return rs.next() ? effectiveVersion(rs.getLong("id")) : null;
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load skill version: " + name, e);
@@ -585,15 +633,13 @@ public class PostgresSkillRepository implements AgentSkillRepository {
         return skill == null ? null : skill.toBuilder().version(version).build();
     }
 
-    /** The version a row currently carries: {@code updated_at} epoch millis. */
-    private static String effectiveVersion(long updatedMillis) {
-        return String.valueOf(updatedMillis);
-    }
-
-    /** Reads the row's {@code updated_at} as epoch millis; a NULL timestamp answers 0. */
-    private static long updatedMillis(ResultSet rs) throws SQLException {
-        Timestamp ts = rs.getTimestamp("updated_at");
-        return ts != null ? ts.getTime() : 0L;
+    /**
+     * The version a row currently carries: its id. Every save is a delete plus insert, so
+     * each publish mints a fresh, monotonic, timezone-free token — unlike a same-second
+     * {@code updated_at} stamp, distinct publishes can never collide on one token.
+     */
+    private static String effectiveVersion(long rowId) {
+        return String.valueOf(rowId);
     }
 
     /**
@@ -605,7 +651,7 @@ public class PostgresSkillRepository implements AgentSkillRepository {
         validateSkillName(name);
 
         String selectSkillSql =
-                "SELECT id, name, description, skill_content, source, updated_at"
+                "SELECT id, name, description, skill_content, source"
                         + (metadataJsonColumnSupported ? ", metadata_json" : "")
                         + " FROM "
                         + getFullTableName(skillsTableName)
@@ -623,7 +669,6 @@ public class PostgresSkillRepository implements AgentSkillRepository {
             String skillContent;
             String source;
             String metadataJson = null;
-            long updatedMillis;
 
             try (PreparedStatement stmt = conn.prepareStatement(selectSkillSql)) {
                 stmt.setString(1, name);
@@ -635,7 +680,6 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                     description = rs.getString("description");
                     skillContent = rs.getString("skill_content");
                     source = rs.getString("source");
-                    updatedMillis = updatedMillis(rs);
                     if (metadataJsonColumnSupported) {
                         metadataJson = rs.getString("metadata_json");
                     }
@@ -657,7 +701,7 @@ public class PostgresSkillRepository implements AgentSkillRepository {
 
             return stampVersion(
                     buildSkill(name, description, skillContent, source, metadataJson, resources),
-                    effectiveVersion(updatedMillis));
+                    effectiveVersion(skillId));
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load skill: " + name, e);
@@ -689,7 +733,7 @@ public class PostgresSkillRepository implements AgentSkillRepository {
     @Override
     public List<AgentSkill> getAllSkills() {
         String selectAllSkillsSql =
-                "SELECT id, name, description, skill_content, source, updated_at"
+                "SELECT id, name, description, skill_content, source"
                         + (metadataJsonColumnSupported ? ", metadata_json" : "")
                         + " FROM "
                         + getFullTableName(skillsTableName)
@@ -722,7 +766,7 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                                     skillContent,
                                     source,
                                     metadataJson,
-                                    updatedMillis(rs)));
+                                    skillId));
                 }
             }
 
@@ -756,7 +800,7 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                                             record.source,
                                             record.metadataJson,
                                             record.resources),
-                                    effectiveVersion(record.updatedMillis)));
+                                    effectiveVersion(record.id)));
                 } catch (IllegalArgumentException e) {
                     logger.warn("Failed to build skill: {}", e.getMessage(), e);
                 }
@@ -1221,7 +1265,7 @@ public class PostgresSkillRepository implements AgentSkillRepository {
         private final String skillContent;
         private final String source;
         private final String metadataJson;
-        private final long updatedMillis;
+        private final long id;
         private final Map<String, String> resources = new HashMap<>();
 
         private LoadedSkillRecord(
@@ -1230,13 +1274,13 @@ public class PostgresSkillRepository implements AgentSkillRepository {
                 String skillContent,
                 String source,
                 String metadataJson,
-                long updatedMillis) {
+                long id) {
             this.name = name;
             this.description = description;
             this.skillContent = skillContent;
             this.source = source;
             this.metadataJson = metadataJson;
-            this.updatedMillis = updatedMillis;
+            this.id = id;
         }
     }
 

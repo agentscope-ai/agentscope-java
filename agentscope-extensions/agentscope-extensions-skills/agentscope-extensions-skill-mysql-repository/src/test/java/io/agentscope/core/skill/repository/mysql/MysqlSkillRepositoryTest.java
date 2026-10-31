@@ -36,7 +36,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -609,7 +608,7 @@ public class MysqlSkillRepositoryTest {
         void testGetSkill(@TempDir Path cacheDir) throws SQLException {
             // next(): detection (construction), latest version, skill row, resources end
             when(mockResultSet.next()).thenReturn(true, true, true, false);
-            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(1000L));
+            when(mockResultSet.getLong("id")).thenReturn(1000L);
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
@@ -641,7 +640,7 @@ public class MysqlSkillRepositoryTest {
         void testGetSkillLegacySchemaFallback(@TempDir Path cacheDir) throws SQLException {
             // next(): detection (construction), latest version, skill row, resources end
             when(mockResultSet.next()).thenReturn(false, true, true, false);
-            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(2000L));
+            when(mockResultSet.getLong("id")).thenReturn(2000L);
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");

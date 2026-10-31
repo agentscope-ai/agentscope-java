@@ -195,7 +195,15 @@ public class NacosSkillRepository implements AgentSkillRepository {
 
         this.namespaceId = StringUtils.isBlank(namespaceId) ? "public" : namespaceId.trim();
         this.source = REPO_TYPE + "@" + this.namespaceId;
-        this.location = LOCATION_PREFIX + this.namespaceId;
+        // The cache identity carries the server address as well as the namespace: two
+        // Nacos clusters sharing one cache root must never swap content just because their
+        // namespace ids match. When no address is discoverable from the properties, the
+        // namespace-only identity remains and an explicit cacheDir stays the disambiguator.
+        String serverAddr =
+                firstNonBlank(
+                        getProperties(properties, "serverAddr"), System.getProperty("serverAddr"));
+        this.location =
+                LOCATION_PREFIX + (serverAddr != null ? serverAddr + "@" : "") + this.namespaceId;
         this.repoIdentity = SkillMirrorStore.repoIdentity(REPO_TYPE, this.location);
         this.cacheRoot = SkillMirrorStore.resolveBuiltinRoot(cacheDir, this.repoIdentity);
         this.skillVersion =

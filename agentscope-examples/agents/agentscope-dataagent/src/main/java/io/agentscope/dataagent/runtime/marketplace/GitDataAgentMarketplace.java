@@ -106,7 +106,7 @@ public class GitDataAgentMarketplace implements DataAgentMarketplace {
         return new MarketSkillContent(
                 skill.getName(),
                 skill.getDescription(),
-                skill.getSkillContent(),
+                SkillFileSystemHelper.readSkillManifest(skill),
                 SkillFileSystemHelper.readAllResources(skill));
     }
 

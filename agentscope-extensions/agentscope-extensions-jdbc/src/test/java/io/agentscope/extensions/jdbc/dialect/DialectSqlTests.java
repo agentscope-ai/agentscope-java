@@ -332,12 +332,12 @@ class DialectSqlTests {
 
         BoundSql select = d.skillSelectByName("team-a", "code-review");
         assertEquals(
-                "SELECT id, name, description, skill_content, source, metadata_json, updated_at"
+                "SELECT id, name, description, skill_content, source, metadata_json"
                         + " FROM agentscope_skills WHERE namespace = ? AND name = ?",
                 select.sql());
         assertEquals(List.of("team-a", "code-review"), select.params());
         assertEquals(
-                "SELECT updated_at FROM agentscope_skills WHERE namespace = ? AND name = ?",
+                "SELECT id FROM agentscope_skills WHERE namespace = ? AND name = ?",
                 d.skillLatestVersion("team-a", "s").sql(),
                 "the latest-version probe reads one indexed row — no content");
 

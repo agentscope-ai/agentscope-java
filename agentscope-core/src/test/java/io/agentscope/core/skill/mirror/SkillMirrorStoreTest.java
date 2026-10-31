@@ -572,6 +572,50 @@ class SkillMirrorStoreTest {
     }
 
     @Test
+    @DisplayName("serve self-heals a complete but unparseable cache entry")
+    void testServeEvictsAndRebuildsCorruptEntry() throws Exception {
+        SkillMirrorStore store = new SkillMirrorStore(tempDir.resolve("root"));
+        AtomicInteger fetches = new AtomicInteger();
+
+        AgentSkill first =
+                store.serve(
+                                "repo_a",
+                                "demo-skill",
+                                "v1",
+                                "src-x",
+                                () -> {
+                                    fetches.incrementAndGet();
+                                    return fetched(skill("demo-skill", "# body"));
+                                })
+                        .orElseThrow();
+        Path dir = first.getOriginDir().get();
+        assertEquals(1, fetches.get());
+
+        // Corrupt the installed manifest: a complete directory (SKILL.md present) whose
+        // frontmatter no longer matches its key — unparseable forever unless evicted.
+        Files.writeString(
+                dir.resolve("SKILL.md"),
+                "---\nname: other-skill\ndescription: Foreign entry\n---\n# foreign\n",
+                StandardCharsets.UTF_8);
+
+        AgentSkill healed =
+                store.serve(
+                                "repo_a",
+                                "demo-skill",
+                                "v1",
+                                "src-x",
+                                () -> {
+                                    fetches.incrementAndGet();
+                                    return fetched(skill("demo-skill", "# fresh body"));
+                                })
+                        .orElseThrow();
+
+        assertEquals("demo-skill", healed.getName());
+        assertEquals("# fresh body", manifestBody(healed.getOriginDir().get().resolve("SKILL.md")));
+        assertEquals(2, fetches.get(), "the corrupt entry must be evicted and re-fetched once");
+    }
+
+    @Test
     @DisplayName("serve refuses unusable inputs without contacting the fetcher")
     void testServeGatesUnusableInputs() {
         SkillMirrorStore store = new SkillMirrorStore(tempDir.resolve("root"));

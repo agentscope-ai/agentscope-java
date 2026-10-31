@@ -32,7 +32,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
-import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -148,15 +147,24 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     private volatile boolean writeable;
 
     /**
-     * Version-materialization cache root, resolved at construction (explicit {@code cacheDir}
-     * &gt; {@value SkillMirrorStore#CACHE_DIR_PROPERTY} property &gt; default home root). The
-     * store itself is only created on first serve ({@link SkillMirrorStore#of(Path)}), so
-     * construction never touches the disk.
+     * Location marker of this repository within its database ({@code <table>@<namespace>});
+     * the full cache identity additionally carries the instance's JDBC URL (see {@link
+     * #repoIdentity()}), so two DataSources over different databases never share one cache
+     * tree.
      */
-    private final Path cacheRoot;
+    private final String identityLocation;
 
-    /** Cache identity shared by all skills of this repository: {@code jdbc_<table>@<namespace>}. */
-    private final String repoIdentity;
+    /** Explicit cache root from construction; {@code null} resolves the property/default. */
+    private final Path explicitCacheDir;
+
+    /**
+     * Cache identity, resolved lazily on first serve (reading the JDBC URL opens a
+     * connection, which the constructor must not do); guarded by {@code this}.
+     */
+    private String repoIdentity;
+
+    /** Cache root derived from the identity; set together with {@link #repoIdentity}. */
+    private Path cacheRoot;
 
     /**
      * Creates a repository over tables already created and validated by
@@ -237,10 +245,8 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         this.skillResourcesDialect = dialect;
         this.namespace = namespace;
         this.writeable = writeable;
-        this.repoIdentity =
-                SkillMirrorStore.repoIdentity(
-                        REPOSITORY_TYPE, skillDialect.skillTableName() + "@" + namespace);
-        this.cacheRoot = SkillMirrorStore.resolveBuiltinRoot(cacheDir, this.repoIdentity);
+        this.identityLocation = skillDialect.skillTableName() + "@" + namespace;
+        this.explicitCacheDir = cacheDir;
         requireSkillTablesEnabled(dialect);
         LOG.info(
                 "JdbcAgentSkillRepository initialized: skills table '{}', resources table"
@@ -260,12 +266,44 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
     }
 
     /**
-     * The skill's current version ({@code updated_at} epoch millis), read from one row
-     * without touching content; {@code null} when the skill does not exist.
+     * The cache identity of this repository, resolved on first use: the JDBC URL of the
+     * instance behind the {@code DataSource} plus this repository's location marker — two
+     * repositories over different databases (same table name, same namespace) must never
+     * share one cache tree. Deferred off the constructor because reading the URL opens a
+     * connection; when the URL cannot be read the plain location remains, and an explicit
+     * {@code cacheDir} stays the disambiguator.
+     */
+    private String repoIdentity() {
+        synchronized (this) {
+            if (repoIdentity == null) {
+                repoIdentity =
+                        SkillMirrorStore.repoIdentity(
+                                REPOSITORY_TYPE,
+                                SkillMirrorStore.dataSourceIdentity(dataSource, identityLocation));
+                cacheRoot = SkillMirrorStore.resolveBuiltinRoot(explicitCacheDir, repoIdentity);
+            }
+            return repoIdentity;
+        }
+    }
+
+    /** The cache root for the lazily resolved identity (see {@link #repoIdentity()}). */
+    private Path cacheRoot() {
+        synchronized (this) {
+            if (cacheRoot == null) {
+                repoIdentity();
+            }
+            return cacheRoot;
+        }
+    }
+
+    /**
+     * The skill's current version (its row id — every save is a delete plus insert, so each
+     * publish mints a fresh, collision-free id), read from one row without touching content;
+     * {@code null} when the skill does not exist.
      */
     private String latestVersion(String name) {
         try (Connection conn = dataSource.getConnection()) {
-            Long millis =
+            Long rowId =
                     query(
                             conn,
                             skillDialect.skillLatestVersion(namespace, name),
@@ -273,9 +311,9 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
                                 if (!rs.next()) {
                                     return null;
                                 }
-                                return Long.valueOf(updatedMillis(rs));
+                                return Long.valueOf(rs.getLong("id"));
                             });
-            return millis != null ? effectiveVersion(millis) : null;
+            return rowId != null ? effectiveVersion(rowId) : null;
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load skill version: " + name, e);
         }
@@ -283,25 +321,40 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
 
     /**
      * Serves the named skill through the version cache. A {@code null}/blank version resolves
-     * to the live row's current version ({@code updated_at}); a non-blank version is served
-     * from a cached version directory when one exists — the table keeps no history, so the
-     * database can only answer a version that is still the live row's current one, and any
-     * other version resolves to {@code null}. The returned skill is a summary: stamped with
-     * the version, {@code originDir} = the materialized directory, resources on disk only.
+     * to the live row's current version (its id); a non-blank version is served from a
+     * cached version directory when one exists — the table keeps no history, so the database
+     * can only answer a version that is still the live row's current one, and any other
+     * version resolves to {@code null}. A latest pull whose row advanced between the probe
+     * and the cache-miss load (the loader refuses a moved row) re-probes once, so a
+     * concurrent save never surfaces as a transient miss. The returned skill is a summary:
+     * stamped with the version, {@code originDir} = the materialized directory, resources on
+     * disk only.
      */
     @Override
     public AgentSkill getSkill(String name, String version) {
         if (name == null || name.isBlank()) {
             return null;
         }
-        String target = version == null || version.isBlank() ? latestVersion(name) : version;
+        boolean latest = version == null || version.isBlank();
+        String target = latest ? latestVersion(name) : version;
         if (target == null || target.isBlank()) {
             return null;
         }
-        final String resolved = target;
-        return SkillMirrorStore.of(cacheRoot)
+        AgentSkill served = serveAt(name, target);
+        if (served == null && latest) {
+            String fresh = latestVersion(name);
+            if (fresh != null && !fresh.equals(target)) {
+                served = serveAt(name, fresh);
+            }
+        }
+        return served;
+    }
+
+    /** One store serve of {@code name} at an already-resolved version reference. */
+    private AgentSkill serveAt(String name, String resolved) {
+        return SkillMirrorStore.of(cacheRoot())
                 .serve(
-                        repoIdentity,
+                        repoIdentity(),
                         name,
                         resolved,
                         getSource(),
@@ -458,7 +511,7 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
                                 }
                                 return LoadedSkillRecord.fromResultSet(rs);
                             });
-            String current = effectiveVersion(row.updatedMillis);
+            String current = effectiveVersion(row.id);
             if (version != null && !current.equals(version)) {
                 throw new IllegalArgumentException(
                         "Skill not found at version '"
@@ -548,15 +601,13 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         return skill == null ? null : skill.toBuilder().version(version).build();
     }
 
-    /** The version a row currently carries: {@code updated_at} epoch millis. */
-    private static String effectiveVersion(long updatedMillis) {
-        return String.valueOf(updatedMillis);
-    }
-
-    /** Reads the row's {@code updated_at} as epoch millis; a NULL timestamp answers 0. */
-    private static long updatedMillis(ResultSet rs) throws SQLException {
-        Timestamp ts = rs.getTimestamp("updated_at");
-        return ts != null ? ts.getTime() : 0L;
+    /**
+     * The version a row currently carries: its id. Every save is a delete plus insert, so
+     * each publish mints a fresh, monotonic, timezone-free token — unlike a same-second
+     * {@code updated_at} stamp, distinct publishes can never collide on one token.
+     */
+    private static String effectiveVersion(long rowId) {
+        return String.valueOf(rowId);
     }
 
     /** Builds the skills, skipping (with a warning) any row the model rejects. */
@@ -574,7 +625,7 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
                                         record.source,
                                         record.metadataJson,
                                         record.resources),
-                                effectiveVersion(record.updatedMillis)));
+                                effectiveVersion(record.id)));
             } catch (Exception e) {
                 omitted++;
                 LOG.warn("Failed to build skill '{}': {}", record.name, e.getMessage(), e);
@@ -1241,7 +1292,6 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
         private final String skillContent;
         private final String source;
         private final String metadataJson;
-        private final long updatedMillis;
         private final Map<String, String> resources = new HashMap<>();
 
         /** Holds one skill row until its resources are stitched on. */
@@ -1251,18 +1301,16 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
                 String description,
                 String skillContent,
                 String source,
-                String metadataJson,
-                long updatedMillis) {
+                String metadataJson) {
             this.id = id;
             this.name = name;
             this.description = description;
             this.skillContent = skillContent;
             this.source = source;
             this.metadataJson = metadataJson;
-            this.updatedMillis = updatedMillis;
         }
 
-        /** Maps the shared skill projection (id through updated_at) onto one record. */
+        /** Maps the shared skill projection onto one record. */
         private static LoadedSkillRecord fromResultSet(ResultSet rs) throws SQLException {
             return new LoadedSkillRecord(
                     rs.getLong("id"),
@@ -1270,8 +1318,7 @@ public class JdbcAgentSkillRepository implements AgentSkillRepository {
                     rs.getString("description"),
                     rs.getString("skill_content"),
                     rs.getString("source"),
-                    rs.getString("metadata_json"),
-                    updatedMillis(rs));
+                    rs.getString("metadata_json"));
         }
     }
 }

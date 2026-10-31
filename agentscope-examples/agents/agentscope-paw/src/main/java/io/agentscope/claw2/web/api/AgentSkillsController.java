@@ -286,7 +286,7 @@ public class AgentSkillsController {
                             skill.getName(),
                             skill.getDescription(),
                             skill.getSource(),
-                            skill.getSkillContent(),
+                            SkillFileSystemHelper.readSkillManifest(skill),
                             SkillFileSystemHelper.readAllResources(skill));
                 });
     }
@@ -339,7 +339,7 @@ public class AgentSkillsController {
                                                 "Failed to overwrite: " + e.getMessage());
                                     }
                                 }
-                                String markdown = skill.getSkillContent();
+                                String markdown = SkillFileSystemHelper.readSkillManifest(skill);
                                 if (markdown == null || markdown.isBlank()) {
                                     throw new ResponseStatusException(
                                             HttpStatus.BAD_GATEWAY,

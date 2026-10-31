@@ -40,7 +40,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.sql.Timestamp;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -821,7 +820,7 @@ public class PostgresSkillRepositoryTest {
         void testGetSkill(@TempDir Path cacheDir) throws SQLException {
             // next(): detection (construction), latest version, skill row, resources end
             when(mockResultSet.next()).thenReturn(true, true, true, false);
-            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(1000L));
+            when(mockResultSet.getLong("id")).thenReturn(1000L);
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
@@ -873,7 +872,7 @@ public class PostgresSkillRepositoryTest {
                                 if (sql.contains("resource_path")) {
                                     return resourceStatement;
                                 }
-                                if (sql.startsWith("SELECT updated_at")) {
+                                if (sql.startsWith("SELECT id FROM")) {
                                     return versionStatement;
                                 }
                                 if (sql.contains("skill_content")) {
@@ -885,10 +884,9 @@ public class PostgresSkillRepositoryTest {
             when(skillStatement.executeQuery()).thenReturn(skillResultSet);
             when(resourceStatement.executeQuery()).thenReturn(resourceResultSet);
             when(versionResultSet.next()).thenReturn(true);
-            when(versionResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(3000L));
+            when(versionResultSet.getLong("id")).thenReturn(7L);
             when(skillResultSet.next()).thenReturn(true);
             when(skillResultSet.getLong("id")).thenReturn(7L);
-            when(skillResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(3000L));
             when(skillResultSet.getString("description")).thenReturn("Test description");
             when(skillResultSet.getString("skill_content")).thenReturn("Test content");
             when(skillResultSet.getString("source")).thenReturn("postgresql_test");
@@ -899,7 +897,7 @@ public class PostgresSkillRepositoryTest {
             AgentSkill skill = localRepo.getSkill("test-skill");
 
             assertNotNull(skill);
-            assertEquals("3000", skill.getVersion());
+            assertEquals("7", skill.getVersion());
             assertEquals(
                     "hello", Files.readString(skill.getOriginDir().get().resolve("readme.md")));
             verify(resourceStatement).setLong(1, 7L);
@@ -910,7 +908,7 @@ public class PostgresSkillRepositoryTest {
         void testGetSkillLegacySchemaFallback(@TempDir Path cacheDir) throws SQLException {
             // next(): detection (construction), latest version, skill row, resources end
             when(mockResultSet.next()).thenReturn(false, true, true, false);
-            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(2000L));
+            when(mockResultSet.getLong("id")).thenReturn(2000L);
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
@@ -933,7 +931,7 @@ public class PostgresSkillRepositoryTest {
         @DisplayName("Should fall back to core metadata when metadata_json is invalid")
         void testGetSkillInvalidMetadataJsonFallback(@TempDir Path cacheDir) throws SQLException {
             when(mockResultSet.next()).thenReturn(true, true, true, false);
-            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(1000L));
+            when(mockResultSet.getLong("id")).thenReturn(1000L);
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
@@ -956,7 +954,7 @@ public class PostgresSkillRepositoryTest {
         @DisplayName("Should fall back when metadata_json parses to null")
         void testGetSkillNullMetadataJsonValueFallback(@TempDir Path cacheDir) throws SQLException {
             when(mockResultSet.next()).thenReturn(true, true, true, false);
-            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(1000L));
+            when(mockResultSet.getLong("id")).thenReturn(1000L);
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
@@ -980,7 +978,7 @@ public class PostgresSkillRepositoryTest {
         void testGetSkillBlankMetadataJsonValueFallback(@TempDir Path cacheDir)
                 throws SQLException {
             when(mockResultSet.next()).thenReturn(true, true, true, false);
-            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(1000L));
+            when(mockResultSet.getLong("id")).thenReturn(1000L);
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
