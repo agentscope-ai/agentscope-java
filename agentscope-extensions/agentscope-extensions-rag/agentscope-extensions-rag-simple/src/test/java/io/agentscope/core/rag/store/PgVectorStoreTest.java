@@ -464,6 +464,61 @@ class PgVectorStoreTest {
     }
 
     @Test
+    @DisplayName("Should register vector type only after creating the extension")
+    void testRegistersVectorTypeAfterCreatingExtension() throws Exception {
+        Connection mockConnection = mock(Connection.class);
+        Statement mockStatement = mock(Statement.class);
+        DatabaseMetaData mockMetaData = mock(DatabaseMetaData.class);
+        ResultSet mockTableResultSet = mock(ResultSet.class);
+        List<String> executedSql = new ArrayList<>();
+        List<String> executedBeforeTypeRegistration = new ArrayList<>();
+
+        when(mockConnection.createStatement()).thenReturn(mockStatement);
+        when(mockStatement.execute(anyString()))
+                .thenAnswer(
+                        invocation -> {
+                            executedSql.add(invocation.getArgument(0));
+                            return false;
+                        });
+        when(mockConnection.getMetaData()).thenReturn(mockMetaData);
+        when(mockMetaData.getTables(any(), any(), anyString(), any()))
+                .thenReturn(mockTableResultSet);
+        when(mockTableResultSet.next()).thenReturn(false);
+
+        try (MockedStatic<DriverManager> driverManagerMock = mockStatic(DriverManager.class);
+                MockedStatic<PGvector> pgVectorMock = mockStatic(PGvector.class)) {
+            driverManagerMock
+                    .when(() -> DriverManager.getConnection(anyString(), any(Properties.class)))
+                    .thenReturn(mockConnection);
+            pgVectorMock
+                    .when(() -> PGvector.addVectorType(any(Connection.class)))
+                    .then(
+                            invocation -> {
+                                executedBeforeTypeRegistration.addAll(executedSql);
+                                return null;
+                            });
+
+            store =
+                    PgVectorStore.builder()
+                            .jdbcUrl(TEST_JDBC_URL)
+                            .username(TEST_USERNAME)
+                            .password(TEST_PASSWORD)
+                            .tableName(TEST_TABLE)
+                            .dimensions(TEST_DIMENSIONS)
+                            .build();
+
+            pgVectorMock.verify(() -> PGvector.addVectorType(mockConnection));
+        }
+
+        // Registering the type on a database without the extension leaves the connection
+        // unable to bind vectors ("Unknown type vector.") for the store's whole lifetime
+        assertTrue(
+                executedBeforeTypeRegistration.contains("CREATE EXTENSION IF NOT EXISTS vector"),
+                "CREATE EXTENSION must run before PGvector.addVectorType, executed before: "
+                        + executedBeforeTypeRegistration);
+    }
+
+    @Test
     @DisplayName("Should close store successfully")
     void testCloseStore() throws Exception {
         store = createMockStore();
