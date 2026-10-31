@@ -21,13 +21,17 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxRequestException;
+import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxTimeoutException;
 import io.agentscope.extensions.sandbox.kubernetes.client.internal.SandboxConnector;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
+import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -59,7 +63,8 @@ class CommandExecutorTest {
                         eq("execute"),
                         any(HttpRequest.BodyPublisher.class),
                         eq("application/json"),
-                        anyInt());
+                        anyInt(),
+                        eq(Duration.ofSeconds(90)));
 
         ExecutionResult result = executor.run("echo hello");
         assertEquals(0, result.getExitCode());
@@ -80,7 +85,8 @@ class CommandExecutorTest {
                         eq("execute"),
                         any(HttpRequest.BodyPublisher.class),
                         eq("application/json"),
-                        anyInt());
+                        anyInt(),
+                        any(Duration.class));
 
         ExecutionResult result = executor.run("nonexistent");
         assertEquals(127, result.getExitCode());
@@ -100,8 +106,26 @@ class CommandExecutorTest {
                         eq("execute"),
                         any(HttpRequest.BodyPublisher.class),
                         eq("application/json"),
-                        anyInt());
+                        anyInt(),
+                        any(Duration.class));
 
         assertThrows(SandboxRequestException.class, () -> executor.run("test"));
+    }
+
+    @Test
+    void run_timeout_mapsToSandboxTimeoutException() throws Exception {
+        doThrow(new HttpTimeoutException("timed out"))
+                .when(connector)
+                .sendRequest(
+                        eq("POST"),
+                        eq("execute"),
+                        any(HttpRequest.BodyPublisher.class),
+                        eq("application/json"),
+                        eq(1),
+                        eq(Duration.ofSeconds(330)));
+
+        assertThrows(
+                SandboxTimeoutException.class,
+                () -> executor.run("sleep 300", Duration.ofMinutes(5)));
     }
 }

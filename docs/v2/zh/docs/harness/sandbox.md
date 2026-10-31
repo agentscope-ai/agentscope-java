@@ -239,6 +239,14 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 
 **从模型视角跨越边界。** 上面的文件 API（upload/download）是内部机制——对 LLM 不可见，`FilesystemTool` 不暴露任何传输工具。沙箱中的 agent 把自己产出的产物交给沙箱外目标的受支持方式是通用 **`deliver_artifact`** 工具。只有当你通过 `HarnessAgent.builder().artifactDeliveryTarget(...)` 配置了 `ArtifactDeliveryTarget` 时它才会被注册。该 SPI 保持业务无关——`deliver(RuntimeContext, ArtifactDeliveryRequest) -> ArtifactDeliveryResult`——目标逻辑（例如 WebDAV 上传）由你的应用实现。工具会从沙箱工作区下载文件字节，并把传输委托给 target。未配置 target 时，沙箱工作区提示语会明确说明文件无法离开容器。
 
+## Kubernetes HTTP 交换超时
+
+Kubernetes 沙箱请求同时限制响应头和完整响应体的等待时间。即使服务端发送响应头后停止发送响应体，调用方也能超时返回。命令请求使用传入的超时时间加上 30 秒传输余量（默认 60 + 30 秒）；已有的请求超时可能更早触发。命令交换超时抛出 `SandboxTimeoutException`，Harness 将其映射为 `SandboxException.ExecTimeoutException`。
+
+文件上传和下载默认使用 10 分钟交换预算；目录列表和存在性检查默认使用 60 秒。接受 `Duration` 的客户端方法使用传入值作为交换预算，重试和退避共享这份预算。
+
+这些期限限制 HTTP 等待。连接发现和 pod IP 查询仍使用各自的超时机制。取消客户端交换不保证远程命令已经停止；需要终止远程进程时，应在运行时侧设置进程执行限制。
+
 ## Kubernetes 后端的状态保存：PVC 是第一层
 
 Kubernetes 后端完全基于 agent-sandbox：沙箱 pod 由 agent-sandbox 控制器管理，镜像、资源、存储都声明在集群侧的 `SandboxTemplate` / `SandboxWarmPool` 里，Java 侧只负责领取（`SandboxClaim`）和连接。这带来一个和其他后端不同的点——**工作区数据的持久化主要靠 PVC，而不是 Harness 快照**，两层机制各管一事：
