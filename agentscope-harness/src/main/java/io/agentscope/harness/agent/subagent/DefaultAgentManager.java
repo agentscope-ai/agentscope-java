@@ -249,6 +249,8 @@ public final class DefaultAgentManager {
                         : RuntimeContext.builder(parent)
                                 .sessionId(sessionId)
                                 .userId(userId)
+                                // Frontend tools belong to the parent run's client.
+                                .toolRequestConfig(null)
                                 .build();
         var recorder = SessionRecorder.from(parent);
         child.put(SessionRecorder.CONTEXT_KEY, null);
