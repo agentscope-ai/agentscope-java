@@ -2193,14 +2193,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private Mono<Msg> doCallInner(List<Msg> msgs) {
-            // Graceful-shutdown deduplication: if the agent's session was previously interrupted
-            // by shutdown, the client is likely retrying with the same user prompt that already
-            // exists in memory. Discard the duplicate input so the agent resumes purely from its
-            // saved memory context.
-            if (shutdownManager.checkAndClearShutdownInterruptedForState(state)) {
+            // Graceful-shutdown deduplication: discard only an exact retry of the input message
+            // IDs saved for the interrupted call. A distinct request must still enter the context.
+            if (shutdownManager.checkAndClearShutdownInterruptedForState(state, msgs)) {
                 log.info(
                         "Detected shutdown-interrupted session for agent {}, discarding duplicate"
-                                + " input",
+                                + " input with matching message IDs",
                         getName());
                 msgs = List.of();
             }

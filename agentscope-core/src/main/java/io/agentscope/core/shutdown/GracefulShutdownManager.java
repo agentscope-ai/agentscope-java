@@ -18,9 +18,12 @@ package io.agentscope.core.shutdown;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.RunControl;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentState;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -161,9 +164,55 @@ public final class GracefulShutdownManager {
     public boolean checkAndClearShutdownInterruptedForState(AgentState state) {
         if (state != null && state.isShutdownInterrupted()) {
             state.setShutdownInterrupted(false);
+            state.setShutdownInputMessageIds(null);
             return true;
         }
         return false;
+    }
+
+    /**
+     * Check whether the supplied inputs are an exact retry of the call interrupted by shutdown,
+     * while consuming the interruption marker for this session.
+     *
+     * <p>New checkpoints compare the complete ordered list of message IDs, so batches and
+     * multimodal messages are deduplicated without content inspection. A missing or null message
+     * ID is never considered a match. States written by older versions have no captured ID list;
+     * those retain the legacy one-time discard behavior for backward compatibility.
+     *
+     * @param state the resolved state for the current call
+     * @param inputs the inputs accepted for the recovery call
+     * @return true only when the recovery input should be discarded as a retry
+     */
+    public boolean checkAndClearShutdownInterruptedForState(AgentState state, List<Msg> inputs) {
+        if (state == null || !state.isShutdownInterrupted()) {
+            return false;
+        }
+
+        List<String> interruptedInputIds = state.getShutdownInputMessageIds();
+        state.setShutdownInterrupted(false);
+        state.setShutdownInputMessageIds(null);
+
+        if (interruptedInputIds == null) {
+            return true;
+        }
+
+        List<String> currentInputIds = inputMessageIds(inputs);
+        if (interruptedInputIds.stream().anyMatch(java.util.Objects::isNull)
+                || currentInputIds.stream().anyMatch(java.util.Objects::isNull)) {
+            return false;
+        }
+        return interruptedInputIds.equals(currentInputIds);
+    }
+
+    private static List<String> inputMessageIds(List<Msg> inputs) {
+        if (inputs == null) {
+            return List.of();
+        }
+        List<String> ids = new ArrayList<>(inputs.size());
+        for (Msg input : inputs) {
+            ids.add(input == null ? null : input.getId());
+        }
+        return ids;
     }
 
     public boolean isAcceptingRequests() {
@@ -203,6 +252,11 @@ public final class GracefulShutdownManager {
             return;
         }
         getActiveRequest(requestId).ifPresent(ctx -> ctx.bindState(state));
+    }
+
+    /** Bind the input messages currently accepted for an in-flight request. */
+    public void bindRequestInputs(String requestId, List<Msg> inputs) {
+        getActiveRequest(requestId).ifPresent(ctx -> ctx.bindInputs(inputs));
     }
 
     public void unregisterRequest(String requestId) {
