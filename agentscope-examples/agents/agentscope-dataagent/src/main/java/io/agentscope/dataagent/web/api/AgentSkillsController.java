@@ -21,6 +21,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.dataagent.runtime.marketplace.DataAgentMarketplace;
 import io.agentscope.dataagent.runtime.marketplace.MarketSkillContent;
 import io.agentscope.dataagent.runtime.marketplace.UserMarketplaceRegistry;
@@ -328,9 +329,7 @@ public class AgentSkillsController {
                             skill.getDescription(),
                             skill.getSource(),
                             skill.getSkillContent(),
-                            skill.getResources() != null
-                                    ? new LinkedHashMap<>(skill.getResources())
-                                    : Map.of());
+                            SkillFileSystemHelper.readAllResources(skill));
                 });
     }
 

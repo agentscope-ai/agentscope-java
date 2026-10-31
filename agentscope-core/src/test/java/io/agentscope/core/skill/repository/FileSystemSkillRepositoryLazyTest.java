@@ -16,9 +16,7 @@
 package io.agentscope.core.skill.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.AgentSkill;
@@ -26,8 +24,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
-import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,9 +31,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Covers the Path-B additions: lazy mode, mtime+size cache, originDir stamping. */
+/** Covers the lazy-mode loading semantics and originDir stamping. */
 @Tag("unit")
-@DisplayName("FileSystemSkillRepository: lazy + cache + originDir")
+@DisplayName("FileSystemSkillRepository: lazy + originDir")
 class FileSystemSkillRepositoryLazyTest {
 
     @TempDir Path tempDir;
@@ -98,41 +94,26 @@ class FileSystemSkillRepositoryLazyTest {
     }
 
     @Test
-    @DisplayName("getAllSkills reuses cached AgentSkill when SKILL.md mtime+size unchanged")
-    void cacheReusesWhenUnchanged() {
+    @DisplayName("disk changes are visible on the next bulk read (no memoisation)")
+    void diskChangesVisibleOnNextBulkRead() throws IOException {
         FileSystemSkillRepository repo = new FileSystemSkillRepository(baseDir);
-        AgentSkill alphaFirst = pick(repo.getAllSkills(), "alpha");
-        AgentSkill alphaSecond = pick(repo.getAllSkills(), "alpha");
-        assertSame(
-                alphaFirst,
-                alphaSecond,
-                "identical SKILL.md mtime+size should return the same AgentSkill instance");
-    }
+        assertNotNull(pick(repo.getAllSkills(), "alpha"));
 
-    @Test
-    @DisplayName("cache invalidates when SKILL.md mtime changes")
-    void cacheInvalidatesOnMtimeBump() throws IOException {
-        FileSystemSkillRepository repo = new FileSystemSkillRepository(baseDir);
-        AgentSkill alphaFirst = pick(repo.getAllSkills(), "alpha");
-
-        // Bump mtime by 5 seconds to guarantee the filesystem reports a change even on
-        // coarse-grained mtime stores; also tweak content so size changes too.
         Path skillFile = baseDir.resolve("alpha/SKILL.md");
         Files.writeString(
                 skillFile,
                 Files.readString(skillFile, StandardCharsets.UTF_8) + "\nappended\n",
                 StandardCharsets.UTF_8);
-        Files.setLastModifiedTime(skillFile, FileTime.from(Instant.now().plusSeconds(5)));
 
         AgentSkill alphaSecond = pick(repo.getAllSkills(), "alpha");
-        assertFalse(
-                alphaFirst == alphaSecond,
-                "mtime change should invalidate cache and produce a fresh AgentSkill");
+        assertTrue(
+                alphaSecond.getSkillContent().contains("appended"),
+                "every read is the current bytes — no cache in between");
     }
 
     @Test
-    @DisplayName("save() invalidates the cache")
-    void saveClearsCache() {
+    @DisplayName("save() persists and the next bulk read serves the new content")
+    void savePersistsForNextBulkRead() {
         FileSystemSkillRepository repo = new FileSystemSkillRepository(baseDir);
         AgentSkill alphaFirst = pick(repo.getAllSkills(), "alpha");
 

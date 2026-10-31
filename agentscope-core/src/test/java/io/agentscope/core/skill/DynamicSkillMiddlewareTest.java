@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,20 +26,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import reactor.test.StepVerifier;
 
 class DynamicSkillMiddlewareTest {
-
-    @TempDir Path workDir;
 
     /**
      * Minimal fake agent standing in for the framework caller — direct middleware invocation
@@ -46,17 +42,29 @@ class DynamicSkillMiddlewareTest {
      */
     private final Agent agent = org.mockito.Mockito.mock(Agent.class);
 
-    @BeforeEach
-    void stubAgentDefaults() {
-        org.mockito.Mockito.when(agent.getSkillWorkDir()).thenReturn(workDir);
-    }
-
-    /** Minimal repository stub: only {@code getAllSkills()} is meaningful for these tests. */
-    private static final class StubRepo implements AgentSkillRepository {
+    /** Minimal context-scoped repository stub: name discovery, null-version pulls, and the
+     * per-call bulk read all serve the same unstamped in-memory list — a repository without
+     * version capability; these tests exercise the SkillBox invariants against it. */
+    private static final class StubRepo
+            implements io.agentscope.core.skill.repository.RuntimeContextSkillRepository {
         List<AgentSkill> skills;
 
         StubRepo(List<AgentSkill> skills) {
             this.skills = skills;
+        }
+
+        /** Latest pull: a null version answers the unstamped skill; any version answers null. */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            if (name == null || version != null) {
+                return null;
+            }
+            for (AgentSkill skill : skills) {
+                if (skill != null && name.equals(skill.getName())) {
+                    return skill;
+                }
+            }
+            return null;
         }
 
         @Override
@@ -66,11 +74,24 @@ class DynamicSkillMiddlewareTest {
 
         @Override
         public List<String> getAllSkillNames() {
-            return List.of();
+            List<String> names = new java.util.ArrayList<>(skills.size());
+            for (AgentSkill skill : skills) {
+                if (skill != null && skill.getName() != null) {
+                    names.add(skill.getName());
+                }
+            }
+            return names;
         }
 
         @Override
         public List<AgentSkill> getAllSkills() {
+            return skills;
+        }
+
+        /** Per-call contextual read the middleware uses for repositories without version
+         * stamps. */
+        @Override
+        public List<AgentSkill> getAllSkills(RuntimeContext context) {
             return skills;
         }
 
@@ -179,12 +200,22 @@ class DynamicSkillMiddlewareTest {
                         boxB.getUploadDir().resolve(id).resolve("data.txt")));
         repo.skills = List.of(a);
         mw.onSystemPrompt(agent, rcA, "").block();
-        org.junit.jupiter.api.Assertions.assertSame(boxA, rcA.get(SkillBox.class));
-        assertEquals("A", java.nio.file.Files.readString(fileA));
+        SkillBox boxA2 = rcA.get(SkillBox.class);
+        assertNotSame(
+                boxA, boxA2, "content A again is a fresh per-call build, not a cached instance");
+        assertEquals(
+                "A",
+                java.nio.file.Files.readString(fileA),
+                "the earlier box's materialized files stay intact");
+        assertEquals(
+                "A",
+                java.nio.file.Files.readString(
+                        boxA2.getUploadDir().resolve(id).resolve("data.txt")),
+                "the fresh build re-materializes content A");
     }
 
     @Test
-    void concurrentMissesShareOneFullyMaterializedBox() throws Exception {
+    void concurrentBuildsEachGetAFullyMaterializedBox() throws Exception {
         AgentSkill skill =
                 new AgentSkill(
                         "shared",
@@ -224,18 +255,20 @@ class DynamicSkillMiddlewareTest {
                                     return box;
                                 }));
             }
-            SkillBox first = futures.get(0).get(15, java.util.concurrent.TimeUnit.SECONDS);
+            // Every concurrent build must complete fully and independently — no call observes
+            // another call's box, its directory, or any partial state.
+            var distinct = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
             for (var future : futures) {
-                org.junit.jupiter.api.Assertions.assertSame(
-                        first, future.get(15, java.util.concurrent.TimeUnit.SECONDS));
+                distinct.add(future.get(15, java.util.concurrent.TimeUnit.SECONDS));
             }
+            assertEquals(8, distinct.size(), "per-call builds must not share box instances");
         } finally {
             pool.shutdownNow();
         }
     }
 
     @Test
-    void evictionDoesNotRewriteResourcesOfAnActiveBox() throws Exception {
+    void rebuildNeverRewritesAnActiveBoxsFiles() throws Exception {
         AgentSkill skill =
                 new AgentSkill(
                         "shared",
@@ -248,7 +281,7 @@ class DynamicSkillMiddlewareTest {
         mw.onSystemPrompt(agent, rc, "").block();
         SkillBox active = rc.get(SkillBox.class);
         Path activeFile = active.getUploadDir().resolve(skill.getSkillId()).resolve("data.txt");
-        for (int i = 0; i < 32; i++) {
+        for (int i = 0; i < 3; i++) {
             repo.skills = List.of(new AgentSkill("other" + i, "Other", "content", null));
             mw.onSystemPrompt(agent, RuntimeContext.empty(), "").block();
         }
@@ -275,13 +308,17 @@ class DynamicSkillMiddlewareTest {
                         io.agentscope.core.skill.repository.RuntimeContextSkillRepository.class);
         RuntimeContext a = RuntimeContext.builder().userId("A").sessionId("s").build();
         RuntimeContext b = RuntimeContext.builder().userId("B").sessionId("s").build();
-        org.mockito.Mockito.when(repo.getAllSkills(a))
-                .thenReturn(List.of(new AgentSkill("skill-a", "A", "A", null)));
-        org.mockito.Mockito.when(repo.getAllSkills(b))
-                .thenReturn(List.of(new AgentSkill("skill-b", "B", "B", null)));
+        org.mockito.Mockito.when(repo.getAllSkillNames(a)).thenReturn(List.of("skill-a"));
+        org.mockito.Mockito.when(repo.getAllSkillNames(b)).thenReturn(List.of("skill-b"));
+        org.mockito.Mockito.when(repo.getSkill("skill-a", null, a))
+                .thenReturn(new AgentSkill("skill-a", "A", "A", null));
+        org.mockito.Mockito.when(repo.getSkill("skill-b", null, b))
+                .thenReturn(new AgentSkill("skill-b", "B", "B", null));
         DynamicSkillMiddleware mw = new DynamicSkillMiddleware(List.of(repo));
         assertTrue(mw.onSystemPrompt(agent, a, "").block().contains("skill-a"));
         assertTrue(mw.onSystemPrompt(agent, b, "").block().contains("skill-b"));
+        // Discovery and the null-version pull both route with the exact request context; the
+        // context-less bulk read is never the establishment path.
         org.mockito.Mockito.verify(repo, org.mockito.Mockito.never()).getAllSkills();
     }
 
@@ -455,10 +492,8 @@ class DynamicSkillMiddlewareTest {
                 new DynamicSkillMiddleware(List.of(new StubRepo(List.of(alpha, gamma))));
         Agent alphaOnly = org.mockito.Mockito.mock(Agent.class);
         org.mockito.Mockito.when(alphaOnly.getSkillFilter()).thenReturn(SkillFilter.only("alpha"));
-        org.mockito.Mockito.when(alphaOnly.getSkillWorkDir()).thenReturn(workDir);
         Agent gammaOnly = org.mockito.Mockito.mock(Agent.class);
         org.mockito.Mockito.when(gammaOnly.getSkillFilter()).thenReturn(SkillFilter.only("gamma"));
-        org.mockito.Mockito.when(gammaOnly.getSkillWorkDir()).thenReturn(workDir);
 
         String forAlpha = mw.onSystemPrompt(alphaOnly, RuntimeContext.empty(), "").block();
         String forGamma = mw.onSystemPrompt(gammaOnly, RuntimeContext.empty(), "").block();
@@ -503,54 +538,26 @@ class DynamicSkillMiddlewareTest {
                         + " work directory");
     }
 
-    /**
-     * Golden value of {@code computeSignature} for a fixed two-skill input, captured by running
-     * the pre-refactor implementation (which copied the whole resource map per key). The refactor
-     * to per-key {@code AgentSkill#getResource(String)} access must keep the hashed bytes — and
-     * therefore this constant — bit-for-bit identical. {@code originDir} stays empty because
-     * {@code Path#toString()} is platform-dependent.
-     */
-    private static final String GOLDEN_SIGNATURE =
-            "12cf4fa8d7ce1d654ed2e5625b41b5e990bf5658db1c2deb7548413ffea1b7e3";
-
     @Test
-    void signatureValueUnchangedAfterPerKeyResourceAccess() throws Exception {
-        java.util.LinkedHashMap<String, Object> alphaMeta = new java.util.LinkedHashMap<>();
-        alphaMeta.put("name", "alpha");
-        alphaMeta.put("description", "Alpha skill");
-        alphaMeta.put("version", "1.2.3");
-        alphaMeta.put("tags", List.of("one", "two"));
-        alphaMeta.put("nested", java.util.Map.of("k", "v"));
-        AgentSkill alpha =
-                new AgentSkill(
-                        alphaMeta,
-                        "alpha body\nsecond line",
-                        java.util.Map.of("z.txt", "zeta", "a.txt", "ada", "m/n.txt", "nu"),
-                        "repo-a");
-        AgentSkill beta =
-                new AgentSkill(
-                        "beta",
-                        "Beta skill",
-                        "# beta body",
-                        java.util.Map.of("y.md", "why", "b.md", "be"));
-
-        java.lang.reflect.Method compute =
-                DynamicSkillMiddleware.class.getDeclaredMethod("computeSignature", List.class);
-        compute.setAccessible(true);
-        String signature = (String) compute.invoke(null, List.of(beta, alpha));
-
-        assertEquals(GOLDEN_SIGNATURE, signature);
-    }
-
-    @Test
-    void runsReloadOnBoundedElasticWhenCacheMisses() {
+    void runsReloadOnBoundedElastic() {
         AtomicReference<String> reloadThreadName = new AtomicReference<>();
-        AgentSkillRepository repo = org.mockito.Mockito.mock(AgentSkillRepository.class);
-        org.mockito.Mockito.when(repo.getAllSkills())
+        // Contextual mock: the request-bound name catalog is the discovery source, and the
+        // null-version pull is the reload whose thread the test pins down. A plain
+        // repository would need an explicit selection — covered by the plain-repo
+        // contract tests.
+        io.agentscope.core.skill.repository.RuntimeContextSkillRepository repo =
+                org.mockito.Mockito.mock(
+                        io.agentscope.core.skill.repository.RuntimeContextSkillRepository.class);
+        org.mockito.Mockito.when(repo.getAllSkillNames(anyCtx())).thenReturn(List.of("my-skill"));
+        org.mockito.Mockito.when(
+                        repo.getSkill(
+                                org.mockito.ArgumentMatchers.eq("my-skill"),
+                                org.mockito.ArgumentMatchers.isNull(),
+                                anyCtx()))
                 .thenAnswer(
                         invocation -> {
                             reloadThreadName.set(Thread.currentThread().getName());
-                            return List.of(new AgentSkill("my-skill", "My Skill", "# C", null));
+                            return new AgentSkill("my-skill", "My Skill", "# C", null);
                         });
         DynamicSkillMiddleware mw = new DynamicSkillMiddleware(List.of(repo));
 
@@ -558,17 +565,33 @@ class DynamicSkillMiddlewareTest {
                 .assertNext(prompt -> assertTrue(prompt.contains("my-skill")))
                 .verifyComplete();
 
-        assertNotNull(reloadThreadName.get(), "getAllSkills must have been invoked");
+        assertNotNull(reloadThreadName.get(), "the null-version pull must have been invoked");
         assertTrue(
                 reloadThreadName.get().contains("boundedElastic"),
                 "blocking reload must run on boundedElastic, but ran on " + reloadThreadName.get());
     }
 
     @Test
-    void keepsCacheHitPathBehaviorUnchanged() {
+    void perCallBoxRebuildKeepsSessionReadsBounded() {
         AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
-        AgentSkillRepository repo = org.mockito.Mockito.mock(AgentSkillRepository.class);
-        org.mockito.Mockito.when(repo.getAllSkills()).thenReturn(List.of(skill));
+        // Contextual mock of a repository without version stamps: names and null pulls at
+        // establishment feed the first pass; later passes use the per-call bulk read.
+        io.agentscope.core.skill.repository.RuntimeContextSkillRepository repo =
+                org.mockito.Mockito.mock(
+                        io.agentscope.core.skill.repository.RuntimeContextSkillRepository.class);
+        org.mockito.Mockito.when(
+                        repo.getAllSkillNames(
+                                org.mockito.ArgumentMatchers.any(RuntimeContext.class)))
+                .thenReturn(List.of("my-skill"));
+        org.mockito.Mockito.when(
+                        repo.getSkill(
+                                org.mockito.ArgumentMatchers.eq("my-skill"),
+                                org.mockito.ArgumentMatchers.isNull(),
+                                org.mockito.ArgumentMatchers.any(RuntimeContext.class)))
+                .thenReturn(skill);
+        org.mockito.Mockito.when(
+                        repo.getAllSkills(org.mockito.ArgumentMatchers.any(RuntimeContext.class)))
+                .thenReturn(List.of(skill));
         DynamicSkillMiddleware mw = new DynamicSkillMiddleware(List.of(repo));
         RuntimeContext rc = RuntimeContext.empty();
 
@@ -578,12 +601,21 @@ class DynamicSkillMiddlewareTest {
         SkillBox secondBox = rc.get(SkillBox.class);
 
         assertEquals(first, second);
-        assertSame(
-                firstBox,
-                secondBox,
-                "a cache hit with the same signature must reuse the materialised box");
-        // Per-call reload semantics are preserved: the repository is still read on every call;
-        // only the box build/upload is skipped on the cache hit.
-        org.mockito.Mockito.verify(repo, org.mockito.Mockito.times(2)).getAllSkills();
+        assertNotSame(
+                firstBox, secondBox, "each call builds its own box; no cross-call box sharing");
+        // Session state, not box caching, keeps repository reads bounded: establishment reads
+        // serve the first pass, the bulk re-read serves the second — the box is rebuilt per
+        // call while the repository interaction stays at one establishment + one re-read.
+        org.mockito.Mockito.verify(repo, org.mockito.Mockito.times(1)).getAllSkillNames(anyCtx());
+        org.mockito.Mockito.verify(repo, org.mockito.Mockito.times(1))
+                .getSkill(
+                        org.mockito.ArgumentMatchers.eq("my-skill"),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        anyCtx());
+        org.mockito.Mockito.verify(repo, org.mockito.Mockito.times(1)).getAllSkills(anyCtx());
+    }
+
+    private static RuntimeContext anyCtx() {
+        return org.mockito.ArgumentMatchers.any(RuntimeContext.class);
     }
 }

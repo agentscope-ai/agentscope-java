@@ -18,6 +18,7 @@ package io.agentscope.core.skill.repository.postgresql;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -32,11 +33,14 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +50,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -759,58 +764,41 @@ public class PostgresSkillRepositoryTest {
         }
 
         @Test
-        @DisplayName("Should reject null skill name in getSkill")
+        @DisplayName("Should return null for null skill name in getSkill")
         void testGetSkillWithNullName() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill(null),
-                    "Skill name cannot be null or empty");
+            assertNull(repo.getSkill(null));
         }
 
         @Test
-        @DisplayName("Should reject empty skill name in getSkill")
+        @DisplayName("Should return null for empty skill name in getSkill")
         void testGetSkillWithEmptyName() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill(""),
-                    "Skill name cannot be null or empty");
+            assertNull(repo.getSkill(""));
         }
 
         @Test
-        @DisplayName("Should reject skill name with path traversal")
+        @DisplayName("Should return null for skill name with path traversal")
         void testGetSkillWithPathTraversal() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill("../etc/passwd"),
-                    "Skill name cannot contain path separators");
+            assertNull(repo.getSkill("../etc/passwd"));
         }
 
         @Test
-        @DisplayName("Should reject skill name with forward slash")
+        @DisplayName("Should return null for skill name with forward slash")
         void testGetSkillWithForwardSlash() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill("dir/skill"),
-                    "Skill name cannot contain path separators");
+            assertNull(repo.getSkill("dir/skill"));
         }
 
         @Test
-        @DisplayName("Should reject skill name with backslash")
+        @DisplayName("Should return null for skill name with backslash")
         void testGetSkillWithBackslash() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill("dir\\skill"),
-                    "Skill name cannot contain path separators");
+            assertNull(repo.getSkill("dir\\skill"));
         }
 
         @Test
-        @DisplayName("Should reject skill name exceeding max length")
+        @DisplayName("Should return null for skill name exceeding max length")
         void testGetSkillWithExceedingMaxLength() {
             String longName = "a".repeat(256);
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill(longName),
-                    "Skill name cannot exceed 255 characters");
+
+            assertNull(repo.getSkill(longName));
         }
     }
 
@@ -830,8 +818,10 @@ public class PostgresSkillRepositoryTest {
 
         @Test
         @DisplayName("Should get skill successfully")
-        void testGetSkill() throws SQLException {
-            when(mockResultSet.next()).thenReturn(true, true, false);
+        void testGetSkill(@TempDir Path cacheDir) throws SQLException {
+            // next(): detection (construction), latest version, skill row, resources end
+            when(mockResultSet.next()).thenReturn(true, true, true, false);
+            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(1000L));
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
@@ -842,32 +832,63 @@ public class PostgresSkillRepositoryTest {
                                     + "\"homepage\":\"https://example.com\"}");
 
             PostgresSkillRepository metadataRepo =
-                    new PostgresSkillRepository(mockDataSource, true, true);
+                    PostgresSkillRepository.builder(mockDataSource)
+                            .createIfNotExist(true)
+                            .writeable(true)
+                            .cacheDir(cacheDir)
+                            .build();
 
             AgentSkill skill = metadataRepo.getSkill("test-skill");
 
             assertNotNull(skill);
             assertEquals("test-skill", skill.getName());
             assertEquals("Test description", skill.getDescription());
-            assertEquals("Test content", skill.getSkillContent());
-            assertEquals("postgresql_test", skill.getSource());
+            assertEquals("1000", skill.getVersion());
             assertEquals("https://example.com", skill.getMetadataValue("homepage"));
+            assertNotNull(skill.getOriginDir());
         }
 
         @Test
         @DisplayName("Should get skill resources by skill id")
-        void testGetSkillLoadsResources() throws SQLException {
+        void testGetSkillLoadsResources(@TempDir Path cacheDir) throws Exception {
+            // Constructed first so construction-time DDL/detection keeps using the shared
+            // mockStatement; serving queries are routed by their SQL shape.
+            PostgresSkillRepository localRepo =
+                    PostgresSkillRepository.builder(mockDataSource)
+                            .createIfNotExist(true)
+                            .writeable(true)
+                            .cacheDir(cacheDir)
+                            .build();
+
+            PreparedStatement versionStatement = mock(PreparedStatement.class);
             PreparedStatement skillStatement = mock(PreparedStatement.class);
             PreparedStatement resourceStatement = mock(PreparedStatement.class);
+            ResultSet versionResultSet = mock(ResultSet.class);
             ResultSet skillResultSet = mock(ResultSet.class);
             ResultSet resourceResultSet = mock(ResultSet.class);
             when(mockConnection.prepareStatement(anyString()))
-                    .thenReturn(skillStatement)
-                    .thenReturn(resourceStatement);
+                    .thenAnswer(
+                            inv -> {
+                                String sql = inv.getArgument(0);
+                                if (sql.contains("resource_path")) {
+                                    return resourceStatement;
+                                }
+                                if (sql.startsWith("SELECT updated_at")) {
+                                    return versionStatement;
+                                }
+                                if (sql.contains("skill_content")) {
+                                    return skillStatement;
+                                }
+                                return mockStatement;
+                            });
+            when(versionStatement.executeQuery()).thenReturn(versionResultSet);
             when(skillStatement.executeQuery()).thenReturn(skillResultSet);
             when(resourceStatement.executeQuery()).thenReturn(resourceResultSet);
+            when(versionResultSet.next()).thenReturn(true);
+            when(versionResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(3000L));
             when(skillResultSet.next()).thenReturn(true);
             when(skillResultSet.getLong("id")).thenReturn(7L);
+            when(skillResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(3000L));
             when(skillResultSet.getString("description")).thenReturn("Test description");
             when(skillResultSet.getString("skill_content")).thenReturn("Test content");
             when(skillResultSet.getString("source")).thenReturn("postgresql_test");
@@ -875,23 +896,31 @@ public class PostgresSkillRepositoryTest {
             when(resourceResultSet.getString("resource_path")).thenReturn("readme.md");
             when(resourceResultSet.getString("resource_content")).thenReturn("hello");
 
-            AgentSkill skill = repo.getSkill("test-skill");
+            AgentSkill skill = localRepo.getSkill("test-skill");
 
-            assertEquals("hello", skill.getResources().get("readme.md"));
+            assertNotNull(skill);
+            assertEquals("3000", skill.getVersion());
+            assertEquals("hello", Files.readString(skill.getOriginDir().resolve("readme.md")));
             verify(resourceStatement).setLong(1, 7L);
         }
 
         @Test
         @DisplayName("Should fall back to core metadata when metadata_json column is absent")
-        void testGetSkillLegacySchemaFallback() throws SQLException {
-            when(mockResultSet.next()).thenReturn(false, true, false);
+        void testGetSkillLegacySchemaFallback(@TempDir Path cacheDir) throws SQLException {
+            // next(): detection (construction), latest version, skill row, resources end
+            when(mockResultSet.next()).thenReturn(false, true, true, false);
+            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(2000L));
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
             when(mockResultSet.getString("source")).thenReturn("postgresql_test");
 
             PostgresSkillRepository legacyRepo =
-                    new PostgresSkillRepository(mockDataSource, true, true);
+                    PostgresSkillRepository.builder(mockDataSource)
+                            .createIfNotExist(true)
+                            .writeable(true)
+                            .cacheDir(cacheDir)
+                            .build();
             AgentSkill skill = legacyRepo.getSkill("test-skill");
 
             assertEquals(List.of("name", "description"), List.copyOf(skill.getMetadata().keySet()));
@@ -901,8 +930,9 @@ public class PostgresSkillRepositoryTest {
 
         @Test
         @DisplayName("Should fall back to core metadata when metadata_json is invalid")
-        void testGetSkillInvalidMetadataJsonFallback() throws SQLException {
-            when(mockResultSet.next()).thenReturn(true, true, false);
+        void testGetSkillInvalidMetadataJsonFallback(@TempDir Path cacheDir) throws SQLException {
+            when(mockResultSet.next()).thenReturn(true, true, true, false);
+            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(1000L));
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
@@ -910,7 +940,11 @@ public class PostgresSkillRepositoryTest {
             when(mockResultSet.getString("metadata_json")).thenReturn("{invalid-json");
 
             PostgresSkillRepository metadataRepo =
-                    new PostgresSkillRepository(mockDataSource, true, true);
+                    PostgresSkillRepository.builder(mockDataSource)
+                            .createIfNotExist(true)
+                            .writeable(true)
+                            .cacheDir(cacheDir)
+                            .build();
             AgentSkill skill = metadataRepo.getSkill("test-skill");
 
             assertEquals("test-skill", skill.getName());
@@ -919,8 +953,9 @@ public class PostgresSkillRepositoryTest {
 
         @Test
         @DisplayName("Should fall back when metadata_json parses to null")
-        void testGetSkillNullMetadataJsonValueFallback() throws SQLException {
-            when(mockResultSet.next()).thenReturn(true, true, false);
+        void testGetSkillNullMetadataJsonValueFallback(@TempDir Path cacheDir) throws SQLException {
+            when(mockResultSet.next()).thenReturn(true, true, true, false);
+            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(1000L));
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
@@ -928,7 +963,11 @@ public class PostgresSkillRepositoryTest {
             when(mockResultSet.getString("metadata_json")).thenReturn("null");
 
             PostgresSkillRepository metadataRepo =
-                    new PostgresSkillRepository(mockDataSource, true, true);
+                    PostgresSkillRepository.builder(mockDataSource)
+                            .createIfNotExist(true)
+                            .writeable(true)
+                            .cacheDir(cacheDir)
+                            .build();
             AgentSkill skill = metadataRepo.getSkill("test-skill");
 
             assertEquals("test-skill", skill.getName());
@@ -937,8 +976,10 @@ public class PostgresSkillRepositoryTest {
 
         @Test
         @DisplayName("Should ignore blank metadata_json value")
-        void testGetSkillBlankMetadataJsonValueFallback() throws SQLException {
-            when(mockResultSet.next()).thenReturn(true, true, false);
+        void testGetSkillBlankMetadataJsonValueFallback(@TempDir Path cacheDir)
+                throws SQLException {
+            when(mockResultSet.next()).thenReturn(true, true, true, false);
+            when(mockResultSet.getTimestamp("updated_at")).thenReturn(new Timestamp(1000L));
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
@@ -946,7 +987,11 @@ public class PostgresSkillRepositoryTest {
             when(mockResultSet.getString("metadata_json")).thenReturn("  ");
 
             PostgresSkillRepository metadataRepo =
-                    new PostgresSkillRepository(mockDataSource, true, true);
+                    PostgresSkillRepository.builder(mockDataSource)
+                            .createIfNotExist(true)
+                            .writeable(true)
+                            .cacheDir(cacheDir)
+                            .build();
             AgentSkill skill = metadataRepo.getSkill("test-skill");
 
             assertEquals("test-skill", skill.getName());
@@ -1019,15 +1064,12 @@ public class PostgresSkillRepositoryTest {
         }
 
         @Test
-        @DisplayName("Should throw exception when skill not found")
+        @DisplayName("Should return null when skill not found")
         void testGetSkillNotFound() throws SQLException {
             when(mockStatement.executeQuery()).thenReturn(mockResultSet);
             when(mockResultSet.next()).thenReturn(false);
 
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill("non-existent"),
-                    "Skill not found");
+            assertNull(repo.getSkill("non-existent"));
         }
 
         @Test

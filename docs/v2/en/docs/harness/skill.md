@@ -330,11 +330,12 @@ When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an ab
 
 For repository skills with no materialized auxiliary resources (for example, an inline-only skill), staging reports `NONE` and no `<files-root>` is advertised. The skill remains available through `load_skill_through_path(..., path="SKILL.md")`. In a mixed catalog, only entries that provide `<files-root>` support file listing and script execution at that path.
 
-Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each call (during PreCall, in the same `onSystemPrompt` pass that builds `<available_skills>`):
+Where a repository skill's files live depends on the backend:
 
-- Per-file SHA-256 dedup — only changed files are rewritten
-- Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass
-- In sandbox mode, `.skills-cache` is in the default workspace projection roots, so the staged tree is hydrated into the sandbox alongside `workspace/skills/` at sandbox start time (and on content change)
+- **Caching backends (Git / Nacos with a configured version / JDBC family / Classpath-in-JAR)** materialize every versioned read themselves into an immutable, version-keyed cache directory — Maven-local style, at `~/.agentscope/skill-cache/<repoIdentity>/<skill>/<version>/` by default. The served skill points at that directory through its `<files-root>` (originDir), so the harness does zero staging for them. Override the cache root with the repository constructor's `cacheDir` argument, or globally for tests and ops with the `agentscope.skill.cache.dir` system property. The tree is shared across processes and may be deleted out of band at any time — a miss simply re-pulls the same version deterministically; `close()` never deletes it.
+- **Non-caching backends (FileSystem / Workspace, or skills that arrive as pure in-memory bytes)** keep the legacy staging path: harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each call (during PreCall, in the same `onSystemPrompt` pass that builds `<available_skills>`) with per-file SHA-256 dedup, and orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass. In sandbox mode, `.skills-cache` is in the default workspace projection roots, so the staged tree is hydrated into the sandbox alongside `workspace/skills/` at sandbox start time (and on content change).
+
+Sandbox note for the repository cache: the default `~/.agentscope/skill-cache` root lives on the host. When sandboxed execution must see repository-skill files directly, point `cacheDir` at a session-visible volume (the harness-side constructor injection), or rely on the workspace staging path above.
 
 Workspace skills (Layer 3 / Layer 4) need no staging — they already live in the workspace tree.
 

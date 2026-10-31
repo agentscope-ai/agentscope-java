@@ -48,10 +48,14 @@ public interface SkillDialect {
     /** DDL statements (one or more) to create the skill table. Must be idempotent. */
     List<String> skillCreateTableDdls();
 
-    /** SELECT of one skill by name within a namespace. Projection includes {@code metadata_json}. */
+    /**
+     * SELECT of one skill by name within a namespace. Projection includes {@code metadata_json}
+     * and {@code updated_at} (see {@link #skillLatestVersion}).
+     */
     default BoundSql skillSelectByName(String namespace, String name) {
         return new BoundSql(
-                "SELECT id, name, description, skill_content, source, metadata_json FROM "
+                "SELECT id, name, description, skill_content, source, metadata_json, updated_at"
+                        + " FROM "
                         + skillTableName()
                         + " WHERE namespace = ? AND name = ?",
                 namespace,
@@ -61,10 +65,26 @@ public interface SkillDialect {
     /** SELECT of all skills of one namespace ordered by name. Projection includes {@code metadata_json}. */
     default BoundSql skillSelectAll(String namespace) {
         return new BoundSql(
-                "SELECT id, name, description, skill_content, source, metadata_json FROM "
+                "SELECT id, name, description, skill_content, source, metadata_json, updated_at"
+                        + " FROM "
                         + skillTableName()
                         + " WHERE namespace = ? ORDER BY name",
                 namespace);
+    }
+
+    /**
+     * SELECT of one skill's {@code updated_at} by name within a namespace — a one-row probe
+     * of the row's current version, reading no content. Every save inserts a fresh row (the
+     * column defaults to {@code CURRENT_TIMESTAMP}), so the timestamp moves on any change,
+     * resource-only saves included.
+     *
+     * <p>Projection: (updated_at).
+     */
+    default BoundSql skillLatestVersion(String namespace, String skillName) {
+        return new BoundSql(
+                "SELECT updated_at FROM " + skillTableName() + " WHERE namespace = ? AND name = ?",
+                namespace,
+                skillName);
     }
 
     /** SELECT of all skill names of one namespace ordered by name. Projection: (name). */

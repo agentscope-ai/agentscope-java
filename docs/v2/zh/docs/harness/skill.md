@@ -330,11 +330,12 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 仓库技能没有实际物化的附属资源时（例如仅提供内联正文的技能），staging 返回 `NONE`，不公布 `<files-root>`；技能仍可通过 `load_skill_through_path(..., path="SKILL.md")` 加载。混合技能目录中，只有提供 `<files-root>` 的条目才支持按该路径列文件或执行脚本。
 
-市场 skill 的资源最初只在内存里。要让 shell 能跑它们，harness 在每次 call 前（PreCall 阶段，与 `<available_skills>` 同一次 `onSystemPrompt`）把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`：
+仓库技能的文件落在哪儿取决于后端：
 
-- 文件级 SHA-256 去重，只重写变化过的文件
-- 已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录，会在同一次物化里顺手清掉
-- Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱
+- **带缓存的后端（Git / 配置了版本的 Nacos / JDBC 系 / JAR 内 Classpath）**：每次按版本读取都由仓储自己物化成不可变、按版本键控的缓存目录——Maven local 风格，默认在 `~/.agentscope/skill-cache/<repoIdentity>/<skill>/<version>/`。对外返回的技能通过 `<files-root>`（originDir）直指该目录，harness 对它们零 staging。可在仓储构造参数里传 `cacheDir` 覆盖缓存根，测试/运维也可用系统属性 `agentscope.skill.cache.dir` 全局覆盖。该目录树跨进程共享，可随时被运维整棵删除——未命中只是按同版本确定性重拉，`close()` 永远不会删它。
+- **不带缓存的后端（FileSystem / Workspace，以及纯内存形态到达的技能）**：保持原有 staging 路径——harness 在每次 call 前（PreCall 阶段，与 `<available_skills>` 同一次 `onSystemPrompt`）把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`，文件级 SHA-256 去重、只重写变化过的文件；已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录会在同一次物化里顺手清掉。Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱。
+
+沙箱注意事项：仓储缓存默认在宿主的 `~/.agentscope/skill-cache`。若沙箱内执行需要直接看到仓库技能文件，请把 `cacheDir` 指到会话可见卷（harness 侧构造注入），或走上面的 workspace staging 路径。
 
 工作区 skill（Layer 3 / Layer 4）不需要 stage——它们本来就在工作区目录里。
 

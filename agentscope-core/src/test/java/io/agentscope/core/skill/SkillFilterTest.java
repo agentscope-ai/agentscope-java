@@ -15,9 +15,12 @@
  */
 package io.agentscope.core.skill;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class SkillFilterTest {
@@ -172,5 +175,47 @@ class SkillFilterTest {
     void testMergedFilterIsNotOverlay() {
         SkillFilter merged = SkillFilter.all().overlay(SkillFilter.disable("b"));
         assertFalse(merged.isOverlay());
+    }
+
+    // ==================== Declared names (raw data) ====================
+
+    @Test
+    void testDeclaredNamesAreRawAndModeAgnostic() {
+        // Whitelist and blacklist entries alike are reported; all()/none() declare none.
+        // What the names mean is the caller's scenario logic, never the filter's.
+        assertTrue(SkillFilter.all().declaredNames().isEmpty());
+        assertTrue(SkillFilter.none().declaredNames().isEmpty());
+        assertEquals(Set.of("a", "b"), SkillFilter.only("a", "b").declaredNames());
+        assertEquals(Set.of("a", "b"), SkillFilter.except("a", "b").declaredNames());
+        assertEquals(Set.of("a"), SkillFilter.enable("a").declaredNames());
+        assertEquals(Set.of("a"), SkillFilter.disable("a").declaredNames());
+    }
+
+    @Test
+    void testDeclaredNamesComposeAcrossOverlay() {
+        SkillFilter merged = SkillFilter.only("a").overlay(SkillFilter.enable("b"));
+        assertEquals(Set.of("a", "b"), merged.declaredNames());
+
+        // A disable-overlay's names stay in the raw union; isAllowed sorts them out.
+        SkillFilter disabled = SkillFilter.only("a", "b").overlay(SkillFilter.disable("b"));
+        assertEquals(Set.of("a", "b"), disabled.declaredNames());
+        assertFalse(disabled.isAllowed("b"));
+    }
+
+    @Test
+    void testDeclaredNamesIntersectedWithAllowanceBoundsSelection() {
+        // The caller-side rule: declared ∩ still-allowed is the bounded selection. A
+        // blacklist's declared names are denied and drop out; an enable-overlay's names
+        // survive; unbounded filters declare nothing.
+        assertTrue(selectionOf(SkillFilter.all()).isEmpty());
+        assertTrue(selectionOf(SkillFilter.except("a")).isEmpty());
+        assertEquals(List.of("a", "b"), selectionOf(SkillFilter.only("b", "a")));
+        assertEquals(
+                List.of("a", "x"),
+                selectionOf(SkillFilter.all().overlay(SkillFilter.enable("x", "a"))));
+    }
+
+    private static List<String> selectionOf(SkillFilter filter) {
+        return filter.declaredNames().stream().filter(filter::isAllowed).sorted().toList();
     }
 }

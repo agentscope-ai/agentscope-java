@@ -82,6 +82,31 @@ class SkillFileSystemHelperTest {
         }
     }
 
+    @Test
+    @DisplayName("Should rebuild the resource map from originDir for summary-form skills")
+    void readAllResources_RebuildsFromOriginDir() throws IOException {
+        createSampleSkill("summary-skill", "Summary Skill", "Summary content");
+        Path skillDir = skillsBaseDir.resolve("summary-skill");
+        Files.createDirectories(skillDir.resolve("refs"));
+        Files.writeString(skillDir.resolve("refs/doc.md"), "doc", StandardCharsets.UTF_8);
+
+        AgentSkill summary =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "summary-skill", "src", false);
+        assertTrue(summary.getOriginDir().isPresent());
+        assertTrue(summary.getResources().isEmpty());
+
+        assertEquals(Map.of("refs/doc.md", "doc"), SkillFileSystemHelper.readAllResources(summary));
+    }
+
+    @Test
+    @DisplayName("Should fall back to the in-memory resource map without originDir")
+    void readAllResources_FallsBackToInMemoryMap() {
+        AgentSkill skill =
+                new AgentSkill("mem-skill", "Memory Skill", "Content", Map.of("a.txt", "a"));
+
+        assertEquals(Map.of("a.txt", "a"), SkillFileSystemHelper.readAllResources(skill));
+    }
+
     @BeforeEach
     void setUp() throws IOException {
         skillsBaseDir = tempDir.resolve("skills");
@@ -214,6 +239,41 @@ class SkillFileSystemHelperTest {
     @DisplayName("Should return false when saving null list")
     void testSaveSkills_NullList() {
         assertFalse(SkillFileSystemHelper.saveSkills(skillsBaseDir, null, false));
+    }
+
+    @Test
+    @DisplayName("Should refuse resources that escape the dir, clobber SKILL.md, or are null")
+    void testSaveSkills_RefusesUnsafeResources() throws IOException {
+        AgentSkill escaping =
+                new AgentSkill("evil-skill", "Evil", "Content", Map.of("../evil.txt", "payload"));
+        IllegalArgumentException escape =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                SkillFileSystemHelper.saveSkills(
+                                        skillsBaseDir, List.of(escaping), false));
+        assertTrue(escape.getMessage().contains("../evil.txt"));
+        assertFalse(
+                Files.exists(skillsBaseDir.getParent().resolve("evil.txt")),
+                "nothing may be written outside the skill base dir");
+
+        AgentSkill stowaway =
+                new AgentSkill(
+                        "stowaway-skill", "Stowaway", "Content", Map.of("SKILL.md", "# stowaway"));
+        IllegalArgumentException manifest =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                SkillFileSystemHelper.saveSkills(
+                                        skillsBaseDir, List.of(stowaway), false));
+        assertTrue(manifest.getMessage().contains("SKILL.md"));
+
+        Map<String, String> withNull = new HashMap<>();
+        withNull.put("a.txt", null);
+        AgentSkill nullContent = new AgentSkill("null-skill", "Null", "Content", withNull);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> SkillFileSystemHelper.saveSkills(skillsBaseDir, List.of(nullContent), false));
     }
 
     @Test

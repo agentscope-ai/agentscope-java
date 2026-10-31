@@ -77,12 +77,20 @@ import reactor.core.publisher.Mono;
  * active-group list still see it. Each system-prompt pass also verifies the live toolkit, so direct
  * middleware usage remains supported.
  */
-@SuppressWarnings("deprecation")
 public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessSkillMiddleware.class);
 
     private final List<AgentSkillRepository> repositories;
+
+    /**
+     * Plain repositories already warned about lacking an explicit selection — the skip is
+     * by design, so the warning fires once per repository, never per call. Identity-based:
+     * repositories do not override equals.
+     */
+    private final Set<AgentSkillRepository> plainEnumerationWarned =
+            Collections.newSetFromMap(new IdentityHashMap<>());
+
     private final SkillFilter builderFilter;
     private final SkillVisibilityFilter visibilityFilter;
     private final MarketplaceStager stager;
@@ -389,25 +397,34 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
      * Merge skills from every repository, in compose order. Later entries with the same
      * {@code AgentSkill.name} win. Also remembers the source repository per winning skill so
      * subsequent steps (lazy resources, marketplace stage) can act on it.
+     *
+     * <p>A context-scoped repository contributes its request-bound catalog (the first-class
+     * context variant) — that read is the freshness mechanism for the workspace tier,
+     * bounded by the request's scope. A plain repository is never bulk-enumerated: it
+     * contributes only its explicitly selected names — the effective filter's declared
+     * names it still admits — pulled one by one through the serving primitive; without an
+     * explicit selection it is skipped with one warning per repository.
      */
     private LinkedHashMap<String, RepoBound> mergeRepositories(RuntimeContext ctx) {
         LinkedHashMap<String, RepoBound> merged = new LinkedHashMap<>();
+        List<String> explicitSelection = explicitSelectionOf(effectiveFilter(ctx));
         for (AgentSkillRepository repo : repositories) {
             List<AgentSkill> skills;
-            try {
-                skills =
-                        repo instanceof RuntimeContextSkillRepository contextRepository
-                                ? contextRepository.getAllSkills(ctx)
-                                : repo.getAllSkills();
-            } catch (Exception e) {
-                log.warn(
-                        "Skill repository {} failed to load: {}",
-                        repo.getClass().getSimpleName(),
-                        e.getMessage());
-                continue;
-            }
-            if (skills == null) {
-                continue;
+            if (repo instanceof RuntimeContextSkillRepository contextRepository) {
+                try {
+                    skills = contextRepository.getAllSkills(ctx);
+                } catch (Exception e) {
+                    log.warn(
+                            "Skill repository {} failed to load: {}",
+                            repo.getClass().getSimpleName(),
+                            e.getMessage());
+                    continue;
+                }
+                if (skills == null) {
+                    continue;
+                }
+            } else {
+                skills = pullExplicitSelection(repo, explicitSelection);
             }
             for (AgentSkill skill : skills) {
                 if (skill == null || skill.getName() == null) {
@@ -417,6 +434,67 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
             }
         }
         return merged;
+    }
+
+    /**
+     * The serving rule for repositories this middleware must not enumerate (same rule as
+     * the core {@code DynamicSkillMiddleware}): the selection is the names the filter
+     * declares that the filter itself still admits. The interpretation lives here, at the
+     * serving scenario — the filter reports raw declared names and stays a predicate.
+     * Sorted for stable prompt material across calls.
+     */
+    private static List<String> explicitSelectionOf(SkillFilter filter) {
+        if (filter.declaredNames().isEmpty()) {
+            return List.of();
+        }
+        List<String> selection = new ArrayList<>(filter.declaredNames().size());
+        for (String name : filter.declaredNames()) {
+            if (filter.isAllowed(name)) {
+                selection.add(name);
+            }
+        }
+        Collections.sort(selection);
+        return selection;
+    }
+
+    /** Pulls the explicit selection from a plain repository name by name through the
+     * serving primitive; any per-name failure is skipped with a warning. */
+    private List<AgentSkill> pullExplicitSelection(
+            AgentSkillRepository repo, List<String> explicitSelection) {
+        if (explicitSelection.isEmpty()) {
+            warnPlainEnumerationSkipped(repo);
+            return List.of();
+        }
+        List<AgentSkill> skills = new ArrayList<>(explicitSelection.size());
+        for (String name : explicitSelection) {
+            try {
+                AgentSkill skill = repo.getSkill(name, null);
+                if (skill != null && skill.getName() != null) {
+                    skills.add(skill);
+                }
+            } catch (Exception e) {
+                log.warn(
+                        "Skill pull '{}' on {} failed: {}",
+                        name,
+                        repo.getClass().getSimpleName(),
+                        e.getMessage());
+            }
+        }
+        return skills;
+    }
+
+    /** Warns once per repository that a plain repository without explicit selection is
+     * skipped — enumeration is not part of the serving contract, so this is a usage
+     * hint, not an error. */
+    private void warnPlainEnumerationSkipped(AgentSkillRepository repo) {
+        if (plainEnumerationWarned.add(repo)) {
+            log.warn(
+                    "Skill repository {} is not context-scoped and the agent declares no"
+                            + " explicit skill selection; skipping it for serving — bind the"
+                            + " names to serve via SkillFilter.only(...), or serve dynamic"
+                            + " discovery from a RuntimeContextSkillRepository",
+                    repo.getClass().getSimpleName());
+        }
     }
 
     private List<RepoBound> applyVisibility(

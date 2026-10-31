@@ -152,6 +152,12 @@ class MarketplaceStagerLazyRepositoryTest {
     /** Minimal repository stub: the stager only reads {@link #getSource()}. */
     private static final class StubRepo implements AgentSkillRepository {
 
+        /** Always {@code null}: no versioned reads on this stub. */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            return null;
+        }
+
         private final String source;
 
         StubRepo(String source) {

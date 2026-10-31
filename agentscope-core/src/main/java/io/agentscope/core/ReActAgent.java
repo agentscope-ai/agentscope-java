@@ -133,6 +133,7 @@ import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.SkillHook;
+import io.agentscope.core.skill.SkillVersionPolicy;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
@@ -290,6 +291,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private final SkillFilter skillFilter;
 
+    /**
+     * Builder-declared version policy for every skill this agent loads ({@code
+     * skillVersionPolicy(policy)}); defaults to {@link SkillVersionPolicy#latest()} when
+     * nothing was declared.
+     */
+    private final SkillVersionPolicy skillVersionPolicy;
+
     /** Builder-configured stable directory for skill materialisation; {@code null} when unset. */
     private final Path skillWorkDir;
 
@@ -410,6 +418,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
         this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
         this.skillFilter = builder.skillFilter != null ? builder.skillFilter : SkillFilter.all();
+        this.skillVersionPolicy =
+                builder.skillVersionPolicy != null
+                        ? builder.skillVersionPolicy
+                        : SkillVersionPolicy.latest();
         this.skillWorkDir = builder.skillWorkDir;
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
@@ -5212,8 +5224,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Returns the builder-configured stable directory for skill materialisation, or
-     * {@code null} when unset — consumers then fall back to their own temporary allocation.
+     * Returns the agent's skill version policy (see {@code skillVersionPolicy(policy)} on the
+     * builder) — it applies to every skill this agent loads. Never {@code null}; defaults to
+     * {@link SkillVersionPolicy#latest()} when nothing was declared.
+     */
+    @Override
+    public SkillVersionPolicy getSkillVersionPolicy() {
+        return skillVersionPolicy;
+    }
+
+    /**
+     * Returns the builder-configured stable directory for skill materialization, or
+     * {@code null} when unset.
      */
     public Path getSkillWorkDir() {
         return skillWorkDir;
@@ -5887,6 +5909,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private SkillFilter skillFilter;
         private boolean dynamicSkillsEnabled = true;
 
+        /** Agent-wide skill version policy; see {@link #skillVersionPolicy(SkillVersionPolicy)}. */
+        private SkillVersionPolicy skillVersionPolicy;
+
         /**
          * When true, {@link DynamicSkillMiddleware} toggles the prompt provider's code-execution
          * block (per-skill {@code <files-root>} listing + instructions). Off by default —
@@ -5896,8 +5921,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private boolean skillCodeExecutionEnabled = false;
 
         /**
-         * Stable working directory passed to {@link DynamicSkillMiddleware}. {@code null} means
-         * the middleware will mkdtemp one on first reload and reuse it for the agent's lifetime.
+         * Legacy option retained for builder compatibility; no longer consumed. The
+         * auto-installed {@link DynamicSkillMiddleware} never sets a stable workDir — a build
+         * that must materialize skills allocates its directory lazily inside {@link SkillBox}.
          */
         private Path skillWorkDir;
 
@@ -5946,6 +5972,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             copy.retrieveConfig = this.retrieveConfig;
             copy.skillBox = this.skillBox;
             copy.skillFilter = this.skillFilter;
+            copy.skillVersionPolicy = this.skillVersionPolicy;
             copy.dynamicSkillsEnabled = this.dynamicSkillsEnabled;
             copy.skillCodeExecutionEnabled = this.skillCodeExecutionEnabled;
             copy.skillWorkDir = this.skillWorkDir;
@@ -6499,6 +6526,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
+         * Declares the agent-wide {@link SkillVersionPolicy}, applied to every skill this
+         * agent loads. When unset, the default {@link SkillVersionPolicy#latest()} applies.
+         *
+         * <p>Whether a PIN can be honored is decided when skills are first loaded, not here:
+         * building never probes the registered repositories, and an unreachable pin follows
+         * the policy's {@link SkillVersionPolicy.OnUnreachable} decision.
+         *
+         * @param policy the version policy (never null)
+         * @return this builder
+         */
+        public Builder skillVersionPolicy(SkillVersionPolicy policy) {
+            this.skillVersionPolicy = Objects.requireNonNull(policy, "policy must not be null");
+            return this;
+        }
+
+        /**
          * Toggles automatic installation of {@link DynamicSkillMiddleware}. Set to {@code false}
          * when an external orchestrator (e.g. {@code HarnessAgent}) wants to attach its own
          * subclass of {@link DynamicSkillMiddleware} or fall back to a static
@@ -6529,10 +6572,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Sets a stable working directory for skill materialisation, stored on the built agent
-         * (see {@code getSkillWorkDir()}) and caller-managed for its whole lifecycle. When
-         * {@code null} (the default), consumers materialise under a framework-allocated
-         * anonymous temp root that the framework never deletes.
+         * Sets a stable working directory for skill materialization, stored on the built agent
+         * (see {@code getSkillWorkDir()}) and caller-managed for its whole lifecycle.
          */
         public Builder skillWorkDir(Path dir) {
             this.skillWorkDir = dir;

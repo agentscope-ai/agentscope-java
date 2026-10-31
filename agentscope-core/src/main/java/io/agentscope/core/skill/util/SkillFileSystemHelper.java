@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -124,6 +125,29 @@ public final class SkillFileSystemHelper {
         return List.copyOf(entries);
     }
 
+    /**
+     * Reads the full resource map of a skill for serving. With an {@code originDir} the map
+     * is rebuilt from the materialized directory: paths come from {@link #listResourcePaths}
+     * and each entry resolves through {@link AgentSkill#getResource(String)} (memory first,
+     * then disk). Without an {@code originDir} the in-memory resource map is returned as-is.
+     *
+     * @param skill The skill whose resources should be served
+     * @return the resource map keyed by relative path
+     */
+    public static Map<String, String> readAllResources(AgentSkill skill) {
+        if (skill.getOriginDir().isEmpty()) {
+            return skill.getResources();
+        }
+        Map<String, String> resources = new LinkedHashMap<>();
+        for (String path : listResourcePaths(skill.getOriginDir().get())) {
+            String content = skill.getResource(path);
+            if (content != null) {
+                resources.put(path, content);
+            }
+        }
+        return resources;
+    }
+
     private static Optional<String> sanitizeRelativePath(String path) {
         if (path == null || path.isBlank()) {
             return Optional.empty();
@@ -141,6 +165,10 @@ public final class SkillFileSystemHelper {
     /**
      * Loads a skill by name from the given base directory.
      *
+     * <p>Equivalent to {@link #loadSkill(Path, String, String, boolean)
+     * loadSkill(baseDir, skillName, source, true)} — every support file is pre-loaded into the
+     * in-memory resource map.
+     *
      * @param baseDir The base directory containing skill folders
      * @param skillName The skill name to load
      * @param source The source identifier for the created skill
@@ -148,6 +176,27 @@ public final class SkillFileSystemHelper {
      * @throws IllegalArgumentException if the skill cannot be found or is invalid
      */
     public static AgentSkill loadSkill(Path baseDir, String skillName, String source) {
+        return loadSkill(baseDir, skillName, source, true);
+    }
+
+    /**
+     * Loads a skill by name from the given base directory with control over resource loading.
+     *
+     * <p>The skill directory is matched by SKILL.md metadata name (the discovery convention
+     * of the listing helpers). With {@code includeResources=false} only SKILL.md is read:
+     * the returned skill carries an empty resource map and its {@code originDir} — the
+     * summary form repositories serve, with resource content read on demand through {@link
+     * AgentSkill#getResource(String)}.
+     *
+     * @param baseDir The base directory containing skill folders
+     * @param skillName The skill name to load
+     * @param source The source identifier for the created skill
+     * @param includeResources when {@code false}, support files stay on disk (summary form)
+     * @return The loaded AgentSkill (always with {@code originDir} populated)
+     * @throws IllegalArgumentException if the skill cannot be found or is invalid
+     */
+    public static AgentSkill loadSkill(
+            Path baseDir, String skillName, String source, boolean includeResources) {
         Path skillDir =
                 findSkillDirectoryByName(baseDir, skillName)
                         .orElseThrow(
@@ -155,7 +204,7 @@ public final class SkillFileSystemHelper {
                                         new IllegalArgumentException(
                                                 "Skill directory does not exist for skill name: "
                                                         + skillName));
-        return loadSkillFromDirectory(skillDir, source);
+        return loadSkillFromDirectory(skillDir, source, includeResources);
     }
 
     /**
@@ -176,8 +225,9 @@ public final class SkillFileSystemHelper {
      * @param skillDir The directory containing SKILL.md
      * @param source The source identifier for the created skill
      * @param includeResources when {@code true}, all non-hidden files under {@code skillDir} are
-     *     pre-loaded into the skill's in-memory resource map (legacy behavior). When {@code false},
-     *     only SKILL.md is read; callers fall back to disk through {@code originDir} on demand.
+     *     pre-loaded into the skill's in-memory resource map (legacy behavior). When {@code
+     *     false}, the summary form is returned: a descriptor-only instance — no body, empty
+     *     resource map, {@code originDir} set; body and resources are read from disk on demand.
      * @return The loaded AgentSkill (with {@code originDir} populated)
      * @throws IllegalArgumentException if SKILL.md is missing or invalid
      */
@@ -202,7 +252,14 @@ public final class SkillFileSystemHelper {
             Map<String, String> resources =
                     includeResources ? loadResources(skillDir, skillFile) : null;
             AgentSkill base = SkillUtil.createFrom(skillMdContent, resources, source);
-            return base.toBuilder().originDir(skillDir.toAbsolutePath().normalize()).build();
+            AgentSkill.Builder builder =
+                    base.toBuilder().originDir(skillDir.toAbsolutePath().normalize());
+            if (!includeResources) {
+                // Summary form: keep the parsed frontmatter, drop the body — no skill file
+                // content is held in memory; the body is read from originDir on demand.
+                builder.skillContent(null);
+            }
+            return builder.build();
         } catch (IOException e) {
             throw new RuntimeException("Failed to load skill from: " + skillDir, e);
         }
@@ -305,10 +362,19 @@ public final class SkillFileSystemHelper {
                         logger.info(
                                 "Skill directory already exists and force=false: {}", skillName);
                         continue; // Skip to the next skill if force=false
-                    } else {
-                        logger.info("Overwriting existing skill directory: {}", skillName);
-                        deleteDirectory(skillDir);
                     }
+                    if (!hasSkillFile(skillDir) && hasVersionedLayout(skillDir)) {
+                        // A versioned container holds the skill's versions in
+                        // subdirectories: a flat force-save would delete every version
+                        // directory — refuse it.
+                        logger.warn(
+                                "Skill directory '{}' is a versioned container; refusing the"
+                                        + " force-save that would delete all its versions",
+                                skillName);
+                        continue;
+                    }
+                    logger.info("Overwriting existing skill directory: {}", skillName);
+                    deleteDirectory(skillDir);
                 }
 
                 Files.createDirectories(skillDir);
@@ -321,10 +387,31 @@ public final class SkillFileSystemHelper {
 
                 Map<String, String> resources = skill.getResources();
                 for (Map.Entry<String, String> entry : resources.entrySet()) {
-                    Path resourceFile = skillDir.resolve(entry.getKey());
-                    Files.createDirectories(resourceFile.getParent());
+                    // A resource key must resolve inside the skill directory, and none may
+                    // collide with the SKILL.md manifest regenerated above (compared
+                    // case-insensitively for case-insensitive filesystems).
+                    Path resourceFile =
+                            SkillUtil.resolveContainedPath(skillDir, entry.getKey())
+                                    .orElseThrow(
+                                            () ->
+                                                    new IllegalArgumentException(
+                                                            "Resource path escapes skill dir: "
+                                                                    + entry.getKey()));
+                    if (SKILL_FILE_NAME.equalsIgnoreCase(
+                            skillDir.relativize(resourceFile).toString())) {
+                        throw new IllegalArgumentException(
+                                "Resources must not contain "
+                                        + SKILL_FILE_NAME
+                                        + "; the manifest is regenerated from metadata: "
+                                        + entry.getKey());
+                    }
                     String content = entry.getValue();
-                    if (content != null && content.startsWith("base64:")) {
+                    if (content == null) {
+                        throw new IllegalArgumentException(
+                                "Resource content must not be null: " + entry.getKey());
+                    }
+                    Files.createDirectories(resourceFile.getParent());
+                    if (content.startsWith("base64:")) {
                         String base64 = content.substring("base64:".length());
                         byte[] bytes = Base64.getDecoder().decode(base64);
                         Files.write(resourceFile, bytes);
@@ -423,6 +510,26 @@ public final class SkillFileSystemHelper {
             return files.anyMatch(p -> p.getFileName().toString().equals(SKILL_FILE_NAME));
         } catch (IOException e) {
             logger.warn("Failed to check for SKILL.md in directory: {}", dir, e);
+            return false;
+        }
+    }
+
+    /**
+     * Whether the directory is a version directory: non-hidden and holding a direct SKILL.md.
+     */
+    public static boolean isVersionDirectory(Path dir) {
+        Path fileName = dir.getFileName();
+        return fileName != null
+                && !fileName.toString().startsWith(".")
+                && Files.isDirectory(dir)
+                && hasSkillFile(dir);
+    }
+
+    /** Whether the directory holds at least one version directory (a versioned container). */
+    public static boolean hasVersionedLayout(Path container) {
+        try (Stream<Path> children = Files.list(container)) {
+            return children.anyMatch(SkillFileSystemHelper::isVersionDirectory);
+        } catch (IOException e) {
             return false;
         }
     }

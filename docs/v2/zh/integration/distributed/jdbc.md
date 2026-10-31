@@ -151,7 +151,7 @@ AgentSkillRepository repo = new JdbcAgentSkillRepository(dataSource, dialect);
 
 #### 作用域隔离（namespace）
 
-技能名跨团队重名是常态，`agentscope_skills` 用 `namespace` 列做作用域隔离：唯一键为 **`UNIQUE(namespace, name)`**，namespace 内唯一、跨 namespace 可重名。`skill_resources` 同样带 `namespace` 列，与技能行同一事务写入。这也是 `AgentSkillRepository` 作用域隔离契约在关系型存储上的落地：**一个实例绑定一个 namespace，无参方法全部作用于绑定值**。
+技能名跨团队重名是常态，`agentscope_skills` 用 `namespace` 列做作用域隔离：唯一键为 **`UNIQUE(namespace, name)`**，namespace 内唯一、跨 namespace 可重名。`skill_resources` 同样带 `namespace` 列，与技能行同一事务写入。这也是 `AgentSkillRepository` 作用域隔离契约在关系型存储上的落地：**一个实例绑定一个 namespace，所有方法都作用于绑定值——没有任何方法带 namespace 参数**。
 
 ```sql
 namespace VARCHAR(64) NOT NULL DEFAULT 'default'   -- 存量行自动落入 default
@@ -168,16 +168,13 @@ teamA.save(List.of(skill), false);                 // 团队 A 保存
 teamB.save(List.of(skill), false);                 // 同名技能在另一 namespace，互不影响
 teamA.getSkill("code-review");
 teamA.delete("code-review");                       // 只作用于绑定的 namespace
-
-// 同一实例上显式指定 namespace 的便捷方法
-teamA.save("team-b", List.of(otherSkill), false);
 ```
 
 - 不指定 namespace 的构造器都绑定 `"default"`。
 - `force=true` 的覆盖只发生在同一 namespace 内，不会跨 namespace 删旧写新。
-- namespace 在构造与便捷方法入口都校验：1–64 字符、`[A-Za-z0-9._-]`，非法抛 `IllegalArgumentException`。
+- namespace 在构造时校验：1–64 字符、`[A-Za-z0-9._-]`，非法抛 `IllegalArgumentException`。
 - namespace 比较在所有数据库上均大小写敏感；MySQL 下两表的 `namespace` 列显式指定 `utf8mb4_bin`，`name` 列保持默认的大小写不敏感。
-- `clearAllSkills()` 清除一个 namespace 的全部技能（无参形式作用于绑定的 namespace）。
+- `clearAllSkills()` 清除绑定 namespace 的全部技能。
 - `namespace` **一次写入**——仓库没有任何语句会更新它。
 
 **存量升级**（框架不会代改已有表，需人工执行一次）：

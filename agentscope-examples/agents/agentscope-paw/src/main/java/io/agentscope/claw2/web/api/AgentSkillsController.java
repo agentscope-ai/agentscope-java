@@ -27,6 +27,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -286,9 +287,7 @@ public class AgentSkillsController {
                             skill.getDescription(),
                             skill.getSource(),
                             skill.getSkillContent(),
-                            skill.getResources() != null
-                                    ? new LinkedHashMap<>(skill.getResources())
-                                    : Map.of());
+                            SkillFileSystemHelper.readAllResources(skill));
                 });
     }
 

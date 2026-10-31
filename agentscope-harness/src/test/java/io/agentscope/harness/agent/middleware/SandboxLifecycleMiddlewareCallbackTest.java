@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.Toolkit;
@@ -59,7 +60,7 @@ class SandboxLifecycleMiddlewareCallbackTest {
                 new HarnessSkillMiddleware(
                         List.of(dbRepo),
                         new Toolkit(),
-                        null,
+                        SkillFilter.only("db-tool"),
                         null,
                         stager,
                         ShellPathPolicy.noShell());
@@ -90,7 +91,7 @@ class SandboxLifecycleMiddlewareCallbackTest {
                 new HarnessSkillMiddleware(
                         List.of(repo),
                         new Toolkit(),
-                        null,
+                        SkillFilter.only("idempotent-skill"),
                         null,
                         stager,
                         ShellPathPolicy.noShell());
@@ -129,7 +130,7 @@ class SandboxLifecycleMiddlewareCallbackTest {
                 new HarnessSkillMiddleware(
                         List.of(repo),
                         new Toolkit(),
-                        null,
+                        SkillFilter.only("callback-skill"),
                         null,
                         stager,
                         ShellPathPolicy.noShell());
@@ -146,6 +147,13 @@ class SandboxLifecycleMiddlewareCallbackTest {
 
     /** Minimal repository stub that returns a fixed skill list. */
     private static final class StubSkillRepository implements AgentSkillRepository {
+
+        /** Latest pull serves the stored skill; any explicit version answers {@code null}
+         * (no version capability on this stub). */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            return version == null || version.isBlank() ? getSkill(name) : null;
+        }
 
         private final List<AgentSkill> skills;
         private final String source;
