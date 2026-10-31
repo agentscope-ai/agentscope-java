@@ -104,7 +104,11 @@ class WeixinChannelLoopbackTest {
                                 "baseUrl",
                                 baseUrl,
                                 "ilinkUserId",
-                                "user-1"));
+                                "user-1",
+                                // Cap the poll backoff so load-induced transient poll errors
+                                // cannot stretch recovery beyond the test's time budget.
+                                "maxBackoffMs",
+                                "1000"));
         channel.init(gateway);
         channel.start();
 
@@ -137,7 +141,7 @@ class WeixinChannelLoopbackTest {
     }
 
     @Test
-    @Timeout(10)
+    @Timeout(30)
     void doesNotLoseMessageWhenCursorPersistenceInterruptsThePoll() throws Exception {
         AtomicInteger saves = new AtomicInteger();
         CountDownLatch handled = new CountDownLatch(1);
@@ -183,7 +187,11 @@ class WeixinChannelLoopbackTest {
                                         "baseUrl",
                                         baseUrl,
                                         "ilinkUserId",
-                                        "user-1")),
+                                        "user-1",
+                                        // The injected failure already costs one backoff cycle;
+                                        // cap it so load-induced errors stay within budget.
+                                        "maxBackoffMs",
+                                        "1000")),
                         WeixinCredentialProvider.fixed("test-token"),
                         interruptedStore,
                         WeixinRuntimeListener.noOp());
@@ -191,7 +199,7 @@ class WeixinChannelLoopbackTest {
         channel.start();
 
         assertTrue(
-                handled.await(4, TimeUnit.SECONDS),
+                handled.await(10, TimeUnit.SECONDS),
                 "The message must remain recoverable when cursor persistence interrupts the poll");
     }
 

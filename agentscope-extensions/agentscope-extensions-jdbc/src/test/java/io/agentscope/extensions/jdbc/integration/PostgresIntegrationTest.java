@@ -32,6 +32,7 @@ import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.List;
@@ -42,6 +43,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.io.TempDir;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -63,6 +65,9 @@ class PostgresIntegrationTest {
     @Container
     static final PostgreSQLContainer<?> postgres =
             new PostgreSQLContainer<>("postgres:16").withDatabaseName("agentscope");
+
+    /** Explicit cache root — versioned reads never touch the real home. */
+    @TempDir Path cacheDir;
 
     record TestState(String value) implements State {}
 
@@ -149,7 +154,7 @@ class PostgresIntegrationTest {
     void skillRepositoryRoundTrip() {
         DataSource ds = createDataSource();
         AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).enableSkillTables(true).build();
-        var repo = new JdbcAgentSkillRepository(ds, dialect);
+        var repo = new JdbcAgentSkillRepository(ds, dialect, "default", true, cacheDir);
 
         var skill =
                 new AgentSkill(
@@ -162,7 +167,7 @@ class PostgresIntegrationTest {
                         "integration");
         assertTrue(repo.save(List.of(skill), false));
 
-        AgentSkill loaded = repo.getSkill("pg-skill");
+        AgentSkill loaded = repo.getSkill("pg-skill", null);
         assertEquals("https://example.com", loaded.getMetadataValue("homepage"));
         assertEquals("hello", loaded.getResource("readme.md"));
         assertTrue(repo.delete("pg-skill"));
@@ -174,7 +179,8 @@ class PostgresIntegrationTest {
     void namespacedSkillIsolation() {
         DataSource ds = createDataSource();
         AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).enableSkillTables(true).build();
-        var repo = new JdbcAgentSkillRepository(ds, dialect);
+        var teamARepo = new JdbcAgentSkillRepository(ds, dialect, "team-a", true, cacheDir);
+        var teamBRepo = new JdbcAgentSkillRepository(ds, dialect, "team-b", true, cacheDir);
 
         var teamA =
                 new AgentSkill(
@@ -188,18 +194,18 @@ class PostgresIntegrationTest {
                         "content-b",
                         Map.of("docs/b.md", "b"),
                         "integration");
-        assertTrue(repo.save("team-a", List.of(teamA), false));
+        assertTrue(teamARepo.save(List.of(teamA), false));
         assertTrue(
-                repo.save("team-b", List.of(teamB), false),
+                teamBRepo.save(List.of(teamB), false),
                 "UNIQUE(namespace, name) must admit the same name in another namespace");
-        assertEquals("content-a", repo.getSkill("team-a", "pg-ns-skill").getSkillContent());
-        assertEquals("content-b", repo.getSkill("team-b", "pg-ns-skill").getSkillContent());
+        assertEquals("content-a", teamARepo.getSkill("pg-ns-skill", null).getSkillContent());
+        assertEquals("content-b", teamBRepo.getSkill("pg-ns-skill", null).getSkillContent());
 
         // Namespace-scoped delete and clear against a real PostgreSQL.
-        assertTrue(repo.delete("team-a", "pg-ns-skill"));
-        assertEquals("b", repo.getSkill("team-b", "pg-ns-skill").getResource("docs/b.md"));
-        assertEquals(1, repo.clearAllSkills("team-b"));
-        assertTrue(repo.getAllSkillNames("team-b").isEmpty());
+        assertTrue(teamARepo.delete("pg-ns-skill"));
+        assertEquals("b", teamBRepo.getSkill("pg-ns-skill", null).getResource("docs/b.md"));
+        assertEquals(1, teamBRepo.clearAllSkills());
+        assertTrue(teamBRepo.getAllSkillNames().isEmpty());
     }
 
     /**

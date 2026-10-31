@@ -24,12 +24,19 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -51,11 +58,28 @@ import java.util.zip.ZipInputStream;
  * AgentSkill skill2 = SkillUtil.createFrom(skillMd, resources, "github");
  * }</pre>
  *
+ * <p>Also hosts directory-versioning helpers for backends without a native version signal:
+ * {@link #hashSkillDirectory(Path)} mints the content-addressed version (the same directory
+ * bytes always hash to the same string) and {@link #statFingerprint(Path)} is a cheap change
+ * probe in front of it.
  */
 public class SkillUtil {
 
     private static final String SKILL_FILE_NAME = "SKILL.md";
     private static final String DEFAULT_SOURCE = "custom";
+
+    /** NUL byte separating hashed fields; never legal in a path name, so framing is unambiguous. */
+    private static final byte HASH_SEPARATOR = 0;
+
+    /** Immutable and thread-safe; a shared instance avoids per-call formatter setup. */
+    private static final HexFormat HEX = HexFormat.of();
+
+    /**
+     * {@link MessageDigest} is not thread-safe and {@code getInstance} is a provider lookup,
+     * so each thread reuses one instance; {@link #digest()} resets it before every use.
+     */
+    private static final ThreadLocal<MessageDigest> DIGEST =
+            ThreadLocal.withInitial(SkillUtil::createDigest);
 
     /**
      * Maximum length of a skill name, following the Agent Skills ecosystem standard.
@@ -420,6 +444,125 @@ public class SkillUtil {
 
         return createFrom(skillMdContent, resources, source);
     }
+
+    // ------------------------------------------------------------------
+    //  Directory versioning — content hash + stat fingerprint
+    // ------------------------------------------------------------------
+
+    /**
+     * Hashes a skill directory into its content-addressed version: every regular, non-hidden
+     * file, sorted by relative path, hashing path and bytes. For directory-backed
+     * repositories without a native version signal — the walk covers the whole file set
+     * (SKILL.md, metadata, every resource) regardless of what has been read into memory.
+     *
+     * <p>Hidden files are skipped and hidden directories (for example {@code .git}) pruned
+     * whole; symlinks are not followed. Minting reads the full content, so pair {@link
+     * #statFingerprint(Path)} in front of it as a cheap change probe. The framing is stable:
+     * the same directory bytes must forever hash to the same value (pinned by a golden value
+     * in {@code SkillUtilTest}).
+     *
+     * @param skillDir the skill's directory (never null; missing yields an IOException)
+     * @return the hex SHA-256 version hash
+     * @throws IOException when the directory cannot be walked or a file cannot be read
+     */
+    public static String hashSkillDirectory(Path skillDir) throws IOException {
+        TreeMap<String, FileStat> files = walkRegularFiles(skillDir);
+        MessageDigest md = digest();
+        for (Map.Entry<String, FileStat> entry : files.entrySet()) {
+            md.update(entry.getKey().getBytes(StandardCharsets.UTF_8));
+            md.update(HASH_SEPARATOR);
+            md.update(HASH_SEPARATOR);
+            md.update(Files.readAllBytes(entry.getValue().path()));
+            md.update(HASH_SEPARATOR);
+        }
+        return HEX.formatHex(md.digest());
+    }
+
+    /**
+     * Stat fingerprint of a skill directory: the same file set {@link
+     * #hashSkillDirectory(Path)} hashes, reduced to each file's relative path, size and
+     * mtime. Callers memoize (fingerprint → hash) so a steady-state probe costs one stat
+     * walk instead of a full re-hash; the fingerprint only decides when the content hash is
+     * re-minted — it is never a version token itself.
+     *
+     * @param skillDir the skill's directory (never null; missing yields an IOException)
+     * @return the fingerprint string (empty for a directory with no matching files)
+     * @throws IOException when the directory cannot be walked or a file cannot be stat'ed
+     */
+    public static String statFingerprint(Path skillDir) throws IOException {
+        TreeMap<String, FileStat> files = walkRegularFiles(skillDir);
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, FileStat> entry : files.entrySet()) {
+            sb.append(entry.getKey())
+                    .append('|')
+                    .append(entry.getValue().size())
+                    .append('|')
+                    .append(entry.getValue().modifiedMillis())
+                    .append(';');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Walks the skill directory once, collecting the shared file set for both the hash and
+     * the fingerprint ({@link Files#walkFileTree} hands the walk's own attributes to the
+     * visitor, avoiding extra stats). Keyed by the slash-normalized relative path in a
+     * sorted map, so both consumers iterate in a platform-independent order.
+     */
+    private static TreeMap<String, FileStat> walkRegularFiles(Path skillDir) throws IOException {
+        TreeMap<String, FileStat> files = new TreeMap<>();
+        Files.walkFileTree(
+                skillDir,
+                new SimpleFileVisitor<Path>() {
+                    @Override
+                    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                        return !dir.equals(skillDir) && isHidden(dir)
+                                ? FileVisitResult.SKIP_SUBTREE
+                                : FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                        // Without FOLLOW_LINKS a symlink answers isRegularFile() false, so
+                        // only true regular files reach the map.
+                        if (attrs.isRegularFile() && !isHidden(file)) {
+                            files.put(
+                                    relativePath(skillDir, file),
+                                    new FileStat(
+                                            file,
+                                            attrs.size(),
+                                            attrs.lastModifiedTime().toMillis()));
+                        }
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
+        return files;
+    }
+
+    private static boolean isHidden(Path file) {
+        return file.getFileName().toString().startsWith(".");
+    }
+
+    private static String relativePath(Path skillDir, Path file) {
+        return skillDir.relativize(file).toString().replace('\\', '/');
+    }
+
+    private static MessageDigest digest() {
+        MessageDigest md = DIGEST.get();
+        md.reset();
+        return md;
+    }
+
+    private static MessageDigest createDigest() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
+    }
+
+    /** A walked file with the attributes the walk already read. */
+    private record FileStat(Path path, long size, long modifiedMillis) {}
 
     private static String normalizeZipEntryName(String entryName) {
         if (entryName == null || entryName.isEmpty()) {

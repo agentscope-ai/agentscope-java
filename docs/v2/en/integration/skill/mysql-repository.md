@@ -101,8 +101,9 @@ repo.save(List.of(skill), /* overwrite */ true);
 
 // Read
 AgentSkill loaded = repo.getSkill("calculator");
-List<String> names = repo.getAllSkillNames();
 boolean exists = repo.skillExists("calculator");
+// (getAllSkillNames() still works for management tooling; it is deprecated for
+//  serving since 2.1.0)
 
 // Delete
 repo.delete("calculator");

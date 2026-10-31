@@ -34,9 +34,11 @@ GitSkillRepository repo = new GitSkillRepository(
     "https://github.com/agentscope/skills.git"
 );
 
-// Register all skills into a Toolkit
+// Register the skills you selected into a Toolkit. Registering everything
+// (repo.getAllSkills()) is deprecated for serving since 2.1.0 — enumerate only
+// from management/bulk tooling, and keep agents on explicit per-name pulls.
 Toolkit toolkit = new Toolkit();
-repo.getAllSkills().forEach(toolkit::registerSkill);
+toolkit.registerSkill(repo.getSkill("calculator"));
 
 // Clean up the temp directory on shutdown
 Runtime.getRuntime().addShutdownHook(new Thread(repo::close));

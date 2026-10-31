@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -235,7 +236,23 @@ public final class MarketplaceStager {
 
             Path stagedDir = scopeRoot.resolve(ns).resolve(name);
             try {
-                if (!materializeIfChanged(stagedDir, skill.getResources())) {
+                Map<String, String> resources = skill.getResources();
+                if (skill.getOriginDir().isPresent()
+                        && (resources == null || resources.isEmpty())
+                        && materializeDirectoryIfChanged(stagedDir, skill.getOriginDir().get())) {
+                    // Descriptor-form skill whose whole tree already lives on disk — the
+                    // repository's materialized version directory. Stage that tree instead
+                    // of a resource map so shell and sandbox modes keep a <files-root>: the
+                    // source is immutable under one version token, so a complete staged
+                    // copy is the freshness check — reused, never rewritten.
+                    touch(stagedDir);
+                    retained.add(stagedDir);
+                    roots.put(
+                            name,
+                            new StageResult.Cached(scopeRoot.getFileName().toString(), ns, name));
+                    continue;
+                }
+                if (!materializeIfChanged(stagedDir, resources)) {
                     // Nothing was materialised, which is what a lazy repository produces:
                     // it publishes no in-memory resources. Reporting Cached here would
                     // render a <files-root> for a directory that stays permanently empty,
@@ -327,6 +344,32 @@ public final class MarketplaceStager {
         // POSIX mode, so we re-derive +x from a shebang / known script extension. Not a true
         // mode preservation — pure-static skill assets (.json/.md/.txt) stay 644.
         maybeMarkExecutable(target, bytes);
+    }
+
+    /**
+     * Stages an immutable on-disk skill tree (a repository's materialized version directory)
+     * into {@code stagedDir}: a complete staged copy is reused — the source never changes
+     * under one version token — and a missing or incomplete copy is rebuilt by a recursive
+     * copy through {@link #writeIfChanged}, inheriting its sha-compare and executable-bit
+     * heuristics. Returns {@code true} when {@code stagedDir} holds a complete skill
+     * (a readable {@code SKILL.md}) on return.
+     */
+    private boolean materializeDirectoryIfChanged(Path stagedDir, Path originDir)
+            throws IOException {
+        if (Files.isRegularFile(stagedDir.resolve("SKILL.md"))) {
+            return true;
+        }
+        deleteRecursively(stagedDir);
+        Files.createDirectories(stagedDir);
+        List<Path> sources = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(originDir)) {
+            walk.filter(Files::isRegularFile).forEach(sources::add);
+        }
+        for (Path source : sources) {
+            Path target = stagedDir.resolve(originDir.relativize(source).toString());
+            writeIfChanged(target, Files.readAllBytes(source));
+        }
+        return Files.isRegularFile(stagedDir.resolve("SKILL.md"));
     }
 
     /**

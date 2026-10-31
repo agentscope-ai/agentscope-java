@@ -19,10 +19,14 @@ The `agentscope-extensions-*` repository ships the following ready-to-use implem
 
 ```java
 AgentSkillRepository repo = ...;        // any implementation
-List<AgentSkill> skills = repo.getAllSkills();
+
+// Serve by explicit name (latest pull). Bulk enumeration — getAllSkillNames() /
+// getAllSkills() — is deprecated for serving since 2.1.0: bound an agent's skill
+// set by explicit selection, never by enumerating a repository of unknown size.
+AgentSkill calculate = repo.getSkill("calculate");
 
 Toolkit toolkit = new Toolkit();
-skills.forEach(toolkit::registerSkill);
+toolkit.registerSkill(calculate);
 
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
