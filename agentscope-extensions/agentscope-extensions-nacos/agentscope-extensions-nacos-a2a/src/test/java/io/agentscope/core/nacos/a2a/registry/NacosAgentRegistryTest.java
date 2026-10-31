@@ -217,6 +217,33 @@ class NacosAgentRegistryTest {
     }
 
     @Test
+    @DisplayName("Should bracket IPv6 hosts when overwriting the preferred interface")
+    void testOverwritePreferredProtocolWithIpv6Host()
+            throws NoSuchFieldException, IllegalAccessException {
+        nacosA2aProperties =
+                NacosA2aRegistryProperties.builder().overwritePreferredTransport("JSONRPC").build();
+        nacosAgentRegistry =
+                NacosAgentRegistry.builder(mock(AiService.class))
+                        .nacosA2aProperties(nacosA2aProperties)
+                        .build();
+        injectMockNacosA2aRegistry(nacosAgentRegistry);
+        TransportProperties ipv6Transport =
+                TransportProperties.builder("JSONRPC")
+                        .host("::1")
+                        .port(8080)
+                        .path("/a2a")
+                        .supportTls(false)
+                        .build();
+
+        nacosAgentRegistry.register(mockAgentCard(), List.of(ipv6Transport));
+
+        ArgumentCaptor<AgentCard> registered = ArgumentCaptor.forClass(AgentCard.class);
+        verify(nacosA2aRegistry)
+                .registerAgent(registered.capture(), any(NacosA2aRegistryProperties.class));
+        assertAgentCard(registered.getValue(), "http://[::1]:8080/a2a", "JSONRPC");
+    }
+
+    @Test
     @DisplayName("Should list the overwritten interface once when the card already has it")
     void testOverwriteWithInterfaceAlreadyInCard()
             throws NoSuchFieldException, IllegalAccessException {

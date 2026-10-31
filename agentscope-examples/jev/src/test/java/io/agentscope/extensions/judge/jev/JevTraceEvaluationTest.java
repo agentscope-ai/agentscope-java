@@ -49,7 +49,12 @@ import reactor.test.StepVerifier;
 
 class JevTraceEvaluationTest {
     static final JevTraceMetrics.Thresholds THRESHOLDS = new JevTraceMetrics.Thresholds(.2, .8);
-    static final JevTraceEvaluator.Limits LIMITS = JevTraceEvaluator.Limits.defaults();
+    // The evaluator measures its budget in wall-clock time from evaluation start, so a starved
+    // -T1C runner can burn the 3s default inside the microseconds-fast planning phase and time
+    // out every metric with zero backend calls (PR #3766, 2026-10-26). 60s absorbs multi-second
+    // scheduler stalls; the instant in-memory backends keep the happy path unchanged.
+    static final JevTraceEvaluator.Limits LIMITS =
+            new JevTraceEvaluator.Limits(Duration.ofSeconds(60), 128, 100000);
 
     static JevTrace sample(String id) {
         return JevTrace.fromMessages(
@@ -195,7 +200,7 @@ class JevTraceEvaluationTest {
                 new JevTraceEvaluator(
                         r -> Mono.just(answer(r, .9)),
                         List.of(custom("a", Map.of()), custom("b", Map.of())),
-                        new JevTraceEvaluator.Limits(Duration.ofSeconds(1), 1, 1000));
+                        new JevTraceEvaluator.Limits(Duration.ofSeconds(60), 1, 1000));
         var r = e.evaluate(sample("one")).block();
         assertEquals(2, r.requests());
         assertTrue(r.passed());
@@ -210,7 +215,7 @@ class JevTraceEvaluationTest {
                             return Mono.empty();
                         },
                         List.of(JevTraceMetrics.grounded(THRESHOLDS)),
-                        new JevTraceEvaluator.Limits(Duration.ofSeconds(1), 1, 1000));
+                        new JevTraceEvaluator.Limits(Duration.ofSeconds(60), 1, 1000));
         var r =
                 e.evaluate(sample("one").with("claims", List.of("First claim", "Second claim")))
                         .block();

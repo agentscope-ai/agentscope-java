@@ -15,11 +15,13 @@
  */
 package io.agentscope.core.model;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -27,7 +29,14 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -88,6 +97,123 @@ class ModelRegistryTest {
         Model a = ModelRegistry.resolve("local:alpha");
         Model b = ModelRegistry.resolve("local:alpha");
         assertSame(a, b);
+    }
+
+    @Test
+    void registerFactory_evictsCachedInstancesMatchingNewPattern() {
+        ModelRegistry.registerFactory("acme:(.+)", id -> new StubModel("old"));
+        ModelRegistry.registerFactory("other:(.+)", id -> new StubModel("other"));
+        assertEquals("old", ModelRegistry.resolve("acme:m1").getModelName());
+        Model other = ModelRegistry.resolve("other:m1");
+
+        ModelRegistry.registerFactory("acme:(.+)", id -> new StubModel("new"));
+
+        assertEquals("new", ModelRegistry.resolve("acme:m1").getModelName());
+        assertSame(other, ModelRegistry.resolve("other:m1"));
+    }
+
+    @Test
+    void registerFactory_evictsEntryWhoseCreationIsStillInFlight() throws Exception {
+        CountDownLatch inOldFactory = new CountDownLatch(1);
+        CountDownLatch releaseOldFactory = new CountDownLatch(1);
+        ModelRegistry.registerFactory(
+                "acme:(.+)",
+                id -> {
+                    inOldFactory.countDown();
+                    await(releaseOldFactory);
+                    return new StubModel("old");
+                });
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Model> inFlight = pool.submit(() -> ModelRegistry.resolve("acme:m1"));
+            assertTrue(inOldFactory.await(5, TimeUnit.SECONDS));
+
+            ModelRegistry.registerFactory("acme:(.+)", id -> new StubModel("new"));
+            releaseOldFactory.countDown();
+
+            // The call that started before the re-registration may finish with the old factory,
+            // but its result must not stay cached.
+            assertEquals("old", inFlight.get(5, TimeUnit.SECONDS).getModelName());
+            assertEquals("new", ModelRegistry.resolve("acme:m1").getModelName());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void resolve_concurrentFirstResolution_createsSingleInstance() throws Exception {
+        int threads = 8;
+        AtomicInteger factoryCalls = new AtomicInteger();
+        CountDownLatch start = new CountDownLatch(1);
+        ModelRegistry.registerFactory(
+                "race:(.+)",
+                id -> {
+                    factoryCalls.incrementAndGet();
+                    sleep(50);
+                    return new StubModel(id);
+                });
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        try {
+            List<Future<Model>> results = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                results.add(
+                        pool.submit(
+                                () -> {
+                                    await(start);
+                                    return ModelRegistry.resolve("race:m");
+                                }));
+            }
+            start.countDown();
+            Model first = results.get(0).get(5, TimeUnit.SECONDS);
+            for (Future<Model> result : results) {
+                assertSame(first, result.get(5, TimeUnit.SECONDS));
+            }
+            assertEquals(1, factoryCalls.get());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void resolve_failedCreation_isNotCached() {
+        AtomicInteger factoryCalls = new AtomicInteger();
+        ModelRegistry.registerFactory(
+                "flaky:(.+)",
+                id -> {
+                    if (factoryCalls.incrementAndGet() == 1) {
+                        throw new IllegalStateException("boom");
+                    }
+                    return new StubModel(id);
+                });
+
+        assertThrows(IllegalArgumentException.class, () -> ModelRegistry.resolve("flaky:m"));
+        Model recovered = ModelRegistry.resolve("flaky:m");
+        assertSame(recovered, ModelRegistry.resolve("flaky:m"));
+        assertEquals(2, factoryCalls.get());
+    }
+
+    @Test
+    void resolve_factoryResolvingItsOwnId_failsInsteadOfHanging() {
+        AtomicInteger factoryCalls = new AtomicInteger();
+        ModelRegistry.registerFactory(
+                "self:(.+)",
+                id ->
+                        factoryCalls.incrementAndGet() == 1
+                                ? ModelRegistry.resolve(id)
+                                : new StubModel(id));
+
+        assertTimeoutPreemptively(
+                Duration.ofSeconds(5),
+                () -> {
+                    IllegalArgumentException e =
+                            assertThrows(
+                                    IllegalArgumentException.class,
+                                    () -> ModelRegistry.resolve("self:m"));
+                    assertInstanceOf(IllegalStateException.class, e.getCause());
+                });
+        // The failed attempt must not leave a stuck entry behind.
+        assertEquals("self:m", ModelRegistry.resolve("self:m").getModelName());
+        assertEquals(2, factoryCalls.get());
     }
 
     @Test
@@ -404,6 +530,26 @@ class ModelRegistryTest {
         @Override
         public Model create(String modelId) {
             return new StubModel("tccl-" + modelId);
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("latch not released");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
         }
     }
 

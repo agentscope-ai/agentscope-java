@@ -39,6 +39,7 @@ import com.anthropic.models.messages.RawMessageDeltaEvent;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.ServerToolUseBlock;
+import com.anthropic.models.messages.StopReason;
 import com.anthropic.models.messages.Usage;
 import com.anthropic.models.messages.WebSearchResultBlock;
 import com.anthropic.models.messages.WebSearchToolResultBlock;
@@ -726,6 +727,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(deltaEvent.isMessageDelta()).thenReturn(true);
         when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
         when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(messageDelta.delta()).thenReturn(mock(RawMessageDeltaEvent.Delta.class));
         when(deltaUsage.outputTokens()).thenReturn(42L);
         when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
         when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
@@ -763,6 +765,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(deltaEvent.isMessageDelta()).thenReturn(true);
         when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
         when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(messageDelta.delta()).thenReturn(mock(RawMessageDeltaEvent.Delta.class));
         when(deltaUsage.outputTokens()).thenReturn(42L);
         when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
         when(deltaUsage.inputTokens()).thenReturn(Optional.of(100L));
@@ -846,5 +849,73 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertNotNull(response.getId()); // generated, since the proxy stripped it
         assertTrue(response.getContent().isEmpty());
+    }
+
+    // ==================== Finish reason ====================
+
+    @Test
+    void testParseMessageReportsStopReasonAsFinishReason() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        when(message.id()).thenReturn("msg_truncated");
+        when(message.content()).thenReturn(List.of());
+        when(message.usage()).thenReturn(usage);
+        when(message.stopReason()).thenReturn(Optional.of(StopReason.MAX_TOKENS));
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals("max_tokens", response.getFinishReason());
+    }
+
+    @Test
+    void testParseMessageWithoutStopReasonHasNoFinishReason() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        when(message.id()).thenReturn("msg_no_stop_reason");
+        when(message.content()).thenReturn(List.of());
+        when(message.usage()).thenReturn(usage);
+        when(message.stopReason()).thenReturn(Optional.empty());
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertNull(response.getFinishReason());
+    }
+
+    @Test
+    void testParseStreamEventsReportsStopReasonOfMessageDelta() {
+        RawMessageStreamEvent deltaEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        RawMessageDeltaEvent.Delta delta = mock(RawMessageDeltaEvent.Delta.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+
+        when(deltaEvent.isMessageDelta()).thenReturn(true);
+        when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.delta()).thenReturn(delta);
+        when(delta.stopReason()).thenReturn(Optional.of(StopReason.MAX_TOKENS));
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(deltaUsage.outputTokens()).thenReturn(42L);
+        when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(deltaEvent), Instant.now());
+
+        StepVerifier.create(responseFlux)
+                .assertNext(response -> assertEquals("max_tokens", response.getFinishReason()))
+                .verifyComplete();
     }
 }

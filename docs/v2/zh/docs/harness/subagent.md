@@ -6,7 +6,7 @@ en_link: /v2/en/docs/harness/subagent
 
 ## 作用
 
-让主 agent 把"可独立处理、上下文重、可并行"的任务委派出去，避免主线程膨胀。每个子 agent 都是一个临时实例（本地的 `HarnessAgent` 或远程 stub），跑自己的会话，结果通过工具返回给父 agent。
+让主 agent 把"可独立处理、上下文重、可并行"的任务委派出去，避免主线程膨胀。每个子 agent（本地 `HarnessAgent` 或远程 stub）跑自己的会话，与父对话相互独立：每次调用——带任务的 spawn，或 `agent_send` follow-up——都完整跑完并返回本次调用的结果（同步走工具结果，后台任务经推送回传）。存活的本地子 agent 在 follow-up send 之间保留自己的历史；远端后端可能为每次 send 开启新对话。会话持久化与后续恢复取决于声明（`persistSession`）和后端——见[持久会话](#持久会话)。
 
 ## 一个最小例子
 
@@ -102,6 +102,29 @@ HarnessAgent.builder()
 也适用于从失败会话中重新加载的工具调用。等待人工审批的工具仍须提供审批结果；空输入恢复执行、
 调用方补交工具结果的行为保持原有语义。远端 agent 和自定义工厂需自行配置恢复策略。
 
+### 为子 agent 单独配置压缩
+
+本地声明默认继承父 agent 的压缩配置和启用状态。在工作区规格中设置 `compaction: false`
+可单独禁用压缩；`compaction: true` 使用默认配置，即使父 agent 已禁用压缩也会启用。
+映射形式用于指定独立配置，省略的字段使用 `CompactionConfig` 默认值：
+
+```yaml
+compaction:
+  triggerMessages: 20
+  keepMessages: 5
+  keepTokens: 0
+  flushBeforeCompact: false
+```
+
+支持的字段包括 `triggerMessages`、`triggerTokens`、`reserved`、`keepMessages`、
+`keepTokens`、`keepTokensMin`、`keepTokensMax`、`keepTokensRatio`、`summaryPrompt`、
+和 `flushBeforeCompact`。字段名区分大小写。类型错误或未知字段会记录警告，
+但子 agent 声明仍会加载，并继承父 agent 的压缩配置。省略 `compaction` 或设置为 null 时也继承父配置。
+
+Java 中可调用 `SubagentDeclaration.Builder` 的 `.compaction(config)` 或 `.disableCompaction()`，
+最后一次调用生效；`.compaction(null)` 恢复继承。Java 配置还支持自定义模型、剪枝和参数截断。
+这些设置仅适用于本地子 agent。远程子 agent 自行管理压缩，远程声明中的 `compaction` 设置会被忽略。
+
 ### 自定义工厂
 
 子 agent 需要声明描述不了的实例时——比如自己的 middleware、父 agent 没有的工具、直接传
@@ -167,11 +190,13 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 开启后：
 
-1. 若设置了 `CTX_FORCE_SYNC_TIMEOUT_SECONDS`，它会**完全覆盖** LLM 的 `timeout_seconds`（`<=0` 回退到 30s，上限 600s）。
+1. 若设置了 `CTX_FORCE_SYNC_TIMEOUT_SECONDS`，它会**完全覆盖** LLM 的 `timeout_seconds`（`<=0` 回退到 30s；应用设置的正数不受 600s 上限限制）。
 2. 未设置时，LLM 传的 `timeout_seconds=0` 会被改写成默认同步超时（30s），**不会**提交后台任务；LLM 传的正数超时仍生效。
 3. 同步等待超时后返回 `status: timeout` 并中断子 agent，**不会** promote 成后台 `task_id`。
 
 `agent_send` 同样遵守该开关。同一轮里多个强制同步的 `agent_spawn` 仍可按 Toolkit 默认并行推进。
+
+`agent_spawn` 和 `agent_send` 使用自身的等待超时，不受 `ExecutionConfig` 中普通工具超时的限制。子 agent 内部调用的工具仍遵守普通工具超时。取消父调用仍会取消同步执行的子 agent。
 
 如果一个目标可以拆成多个互不依赖、资源不冲突的子任务，主 agent 可以在同一轮 reasoning 里发起多个同步子 agent 调用。Toolkit 默认启用工具并行（`ToolkitConfig.parallel=true`），因此在 `ReActAgent` 与 `HarnessAgent` 上这些同步调用都会并行推进；主 agent 会等这一批工具结果都返回后再进入下一轮推理，相当于一次同步 fan-out / fan-in。若需串行执行工具，可传入 `ToolkitConfig.builder().parallel(false).build()` 构建的自定义 `Toolkit`。
 

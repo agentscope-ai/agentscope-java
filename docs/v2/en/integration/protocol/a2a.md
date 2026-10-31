@@ -50,6 +50,8 @@ Msg result = remote.call(new UserMessage("Translate to English: 你好")).block(
 
 `streamEvents` streams the events of a call: the text and thinking the remote agent streams arrive as `TextBlockDeltaEvent` and `ThinkingBlockDeltaEvent`, then `AgentResultEvent` carries the same message `call()` returns. Tool calls and tool results are only in the result message.
 
+For completed tasks, the final result prefers output artifacts. When no artifacts are present, it uses the final status message, whether completion arrives as a full task or a streaming status update.
+
 ```java
 remote.streamEvents(new UserMessage("Translate to English: 你好"))
     .doOnNext(event -> {
@@ -153,6 +155,14 @@ server.close();
 ```
 
 `AgentScopeA2aServer` does not bind a port or expose endpoints itself; it only assembles components and the request-handling chain. You wire transport into Spring Boot, Quarkus, Vert.x, etc. as you prefer.
+
+### Request session identifiers
+
+The server fills `AgentRequestOptions.sessionId` for the `AgentRunner` from the SDK-resolved A2A `contextId`. Clients can use the standard protocol field without adding a custom metadata key. If the client omits `contextId`, the SDK generates one.
+
+For compatibility, a non-null, non-blank `message.metadata["sessionId"]` overrides this mapping, even when it differs from `contextId`. This preserves existing session keys when the SDK generates a new context ID. Null, empty, or whitespace-only metadata values fall back to `contextId`. The protocol message's `contextId` is not changed.
+
+This mapping supplies the runner's request options; it does not automatically enable session persistence. A custom runner can use the identifier when setting up its runtime context or state store.
 
 ### Optional components
 

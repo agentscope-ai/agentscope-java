@@ -54,6 +54,7 @@ import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.builtin.RequirementTools;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
 import io.agentscope.harness.agent.context.ContextPolicy;
 import io.agentscope.harness.agent.context.ContextSelectionPolicy;
@@ -147,6 +148,7 @@ import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -193,6 +195,15 @@ import reactor.core.scheduler.Schedulers;
 public class HarnessAgent implements Agent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
+
+    /** Records framework-owned bindings for construction-time copies; no runtime hooks. */
+    private record HarnessToolBindings(Map<String, AgentTool> tools)
+            implements HarnessRuntimeMiddleware {
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return Set.of();
+        }
+    }
 
     private final ReActAgent delegate;
     private final WorkspaceManager workspaceManager;
@@ -1323,6 +1334,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean enablePendingToolRecovery = false;
         Model model;
         Toolkit toolkit = newDefaultToolkit();
+        private boolean enableMetaTool;
         int maxIters = 10;
         ExecutionConfig modelExecutionConfig;
         ExecutionConfig toolExecutionConfig;
@@ -1397,7 +1409,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
         Function<String, Model> modelResolver;
         final List<String> additionalContextFiles = new ArrayList<>();
         int maxContextTokens = 8000;
-        boolean useLegacyXmlWorkspaceContext = false;
 
         ArtifactDeliveryTarget artifactDeliveryTarget;
         boolean disableFilesystemTools = false;
@@ -1535,10 +1546,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *           code)</td></tr>
          * </table>
          *
-         * <p>Note: {@code enableMetaTool} and {@code enableTaskList} are builder-time flags that
-         * mutate the toolkit at build. They do not round-trip as flags, but the toolkit copy
-         * <i>already</i> carries the tools they registered, so the resulting agent has the same
-         * tool surface.
+         * <p>The toolkit copy rebinds its meta tool. Harness task tools are rebuilt with their
+         * task-list configuration; user tools and explicit replacements are retained.
          *
          * <h4>What this method does <b>not</b> copy</h4>
          *
@@ -1597,13 +1606,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
             b.model(agent.getModel());
             b.maxIters(agent.getMaxIters());
             b.generateOptions(agent.getGenerateOptions());
-            b.toolkit(agent.getToolkit().copy());
+            List<AgentTool> frameworkTools =
+                    new ArrayList<>(
+                            agent.getMiddlewares().stream()
+                                    .filter(HarnessToolBindings.class::isInstance)
+                                    .map(HarnessToolBindings.class::cast)
+                                    .flatMap(bindings -> bindings.tools().values().stream())
+                                    .toList());
             if (b.contextSources.taskContext().requirementProposals()) {
-                // Re-register from the copied task options at build time. This also lets the
-                // caller disable proposals on the copy without retaining the original tool.
-                b.toolkit.removeTool("task_requirement_propose");
+                // Plain ReActAgent sources have no Harness ownership marker.
+                frameworkTools.addAll(
+                        agent.getToolkit().getToolsFromSource(RequirementTools.class));
             }
-
+            b.toolkit(agent.getToolkit().copyExcludingTools(frameworkTools));
             // Persistence.
             AgentStateStore srcSession = agent.getStateStore();
             if (srcSession != null) {
@@ -1661,15 +1676,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
             List<MiddlewareBase> srcMiddlewares = agent.getMiddlewares();
             if (srcMiddlewares != null && !srcMiddlewares.isEmpty()) {
                 List<MiddlewareBase> copyable = filterCopyableMiddlewares(srcMiddlewares);
-                if (b.contextSources.taskContext().requirementProposals()) {
-                    // Task configuration rebuilds its reminder. Preserve a copied todo capability
-                    // without adding a second requirement grounding block.
-                    for (MiddlewareBase middleware : copyable) {
-                        if (middleware.getClass() == TaskReminderMiddleware.class
-                                && ((TaskReminderMiddleware) middleware).todoEnabled()) {
-                            b.enableTaskList();
-                        }
-                    }
+                boolean rebuildTaskList =
+                        srcMiddlewares.stream().anyMatch(HarnessToolBindings.class::isInstance)
+                                && hasTaskList(copyable);
+                if (rebuildTaskList) {
+                    b.enableTaskList();
+                }
+                if (rebuildTaskList || b.contextSources.taskContext().requirementProposals()) {
                     copyable =
                             copyable.stream()
                                     .filter(
@@ -1815,6 +1828,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return copyable;
         }
 
+        private static boolean hasTaskList(List<MiddlewareBase> middlewares) {
+            return middlewares.stream()
+                    .filter(middleware -> middleware.getClass() == TaskReminderMiddleware.class)
+                    .map(TaskReminderMiddleware.class::cast)
+                    .anyMatch(TaskReminderMiddleware::todoEnabled);
+        }
+
         /** Legacy snapshot backend and sandbox metadata storage. Native conversation recovery
          * uses {@link #sessionLogStore(SessionLogStore)} and never imports this backend implicitly.
          */
@@ -1864,7 +1884,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public Builder enableMetaTool(boolean enableMetaTool) {
-            inner.enableMetaTool(enableMetaTool);
+            this.enableMetaTool = enableMetaTool;
             return this;
         }
 
@@ -2274,9 +2294,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Switches workspace context rendering between markdown (default) and legacy XML style. */
+        /** The legacy XML rendering of workspace context has been removed; the current format is the only mode.
+         * @deprecated No configuration is required; the legacy XML rendering no longer exists.
+         */
+        @Deprecated
         public Builder useLegacyXmlWorkspaceContext(boolean enabled) {
-            this.useLegacyXmlWorkspaceContext = enabled;
             return this;
         }
 
@@ -2593,17 +2615,53 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Builds a fresh runtime from this reusable configuration. Configure the builder before
          * sharing it; builds are serialized, while the resulting agents can execute concurrently.
+         * If a build fails, auto-wired state-store and filesystem configuration is restored so
+         * the same builder can be corrected and reused.
          */
         public synchronized HarnessAgent build() {
             var configuredMessageBus = messageBus;
             var configuredAsyncToolRegistry = asyncToolRegistry;
+            var configuredStateStoreOverride = stateStoreOverride;
+            var configuredRemoteStore =
+                    remoteFilesystemSpec != null ? remoteFilesystemSpec.store() : null;
+            var configuredSandboxSnapshotSpec =
+                    sandboxFilesystemSpec != null
+                            ? sandboxFilesystemSpec.getSnapshotSpecOverride()
+                            : null;
+            var configuredSandboxExecutionGuard =
+                    sandboxFilesystemSpec != null
+                            ? sandboxFilesystemSpec.getExecutionGuard()
+                            : null;
+            var successfulBuild = false;
             try {
-                return buildInstance(inner.copy());
+                var agent = buildInstance(inner.copy());
+                successfulBuild = true;
+                return agent;
             } finally {
                 // Workspace-derived collaborators belong to this build's filesystem, especially
                 // when sandbox bindings or workspace indexes have per-agent lifetimes.
                 messageBus = configuredMessageBus;
                 asyncToolRegistry = configuredAsyncToolRegistry;
+                if (!successfulBuild) {
+                    stateStoreOverride = configuredStateStoreOverride;
+                    if (remoteFilesystemSpec != null) {
+                        remoteFilesystemSpec.restoreAutoInjectedStore(configuredRemoteStore);
+                    }
+                    if (sandboxFilesystemSpec != null) {
+                        sandboxFilesystemSpec
+                                .snapshotSpec(configuredSandboxSnapshotSpec)
+                                .executionGuard(configuredSandboxExecutionGuard);
+                    }
+                }
+            }
+        }
+
+        private static void captureFrameworkTools(
+                Toolkit toolkit, Set<String> inheritedNames, Map<String, AgentTool> bindings) {
+            for (String name : toolkit.getToolNames()) {
+                if (!inheritedNames.contains(name)) {
+                    bindings.put(name, toolkit.getTool(name));
+                }
             }
         }
 
@@ -2611,6 +2669,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
             // user-registered tools never bleed across builds.
             Toolkit agentToolkit = this.toolkit.copy();
+            Set<String> inheritedToolNames = agentToolkit.getToolNames();
 
             // ---- Validation ----
             int specCount = 0;
@@ -3021,6 +3080,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 planExtraAllowed));
             }
 
+            Map<String, AgentTool> frameworkTools = new LinkedHashMap<>();
+            captureFrameworkTools(agentToolkit, inheritedToolNames, frameworkTools);
             // ---- workspace/tools.json: MCP servers + allow/deny filter ----
             ToolsConfig resolvedToolsConfig = null;
             if (!disableToolsConfig) {
@@ -3036,6 +3097,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         resolvedToolsConfig.getMcpServers(),
                         mcpServerRegistrationListener);
             }
+
+            Set<String> externalToolNames = agentToolkit.getToolNames();
 
             // ---- Skills ----
             List<AgentSkillRepository> orderedSkillRepos =
@@ -3202,6 +3265,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (resolvedToolsConfig != null) {
                 ToolFilter.apply(agentToolkit, resolvedToolsConfig);
             }
+            captureFrameworkTools(agentToolkit, externalToolNames, frameworkTools);
+            // Toolkit copies rebind their own meta tool; Harness must not exclude it.
+            if (enableMetaTool) {
+                agentToolkit.registerMetaTool();
+            }
+            Set<String> coreInheritedNames = agentToolkit.getToolNames();
 
             log.info(
                     "HarnessAgent '{}' built [workspace={}, filesystem={}, subagents={}]",
@@ -3211,8 +3280,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     !leafSubagent && !disableSubagents && model != null);
 
             // ---- Build inner ReActAgent ----
+            inner.middleware(new HarnessToolBindings(Collections.unmodifiableMap(frameworkTools)));
             inner.toolkit(agentToolkit);
             ReActAgent delegate = inner.build();
+            // Core adds tools during build; finish ownership before exposing the agent.
+            captureFrameworkTools(delegate.getToolkit(), coreInheritedNames, frameworkTools);
+            frameworkTools
+                    .entrySet()
+                    .removeIf(
+                            entry ->
+                                    delegate.getToolkit().getTool(entry.getKey())
+                                            != entry.getValue());
 
             return new HarnessAgent(
                     delegate,

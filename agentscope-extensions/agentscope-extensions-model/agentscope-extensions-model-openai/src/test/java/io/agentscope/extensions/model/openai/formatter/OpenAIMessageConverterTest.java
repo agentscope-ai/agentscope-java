@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -105,6 +107,34 @@ class OpenAIMessageConverterTest {
         assertNotNull(result);
         assertEquals("user", result.getRole());
         assertEquals("Hello", result.getContentAsString());
+    }
+
+    @Test
+    @DisplayName("Should replace a DocumentBlock with a text placeholder")
+    void testDocumentBlockPlaceholder() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("openai")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, true);
+
+        assertEquals("user", result.getRole());
+        @SuppressWarnings("unchecked")
+        List<OpenAIContentPart> parts = (List<OpenAIContentPart>) result.getContent();
+        assertEquals(1, parts.size());
+        assertTrue(parts.get(0).getText().contains("Document - not supported by OpenAI"));
+        assertTrue(parts.get(0).getText().contains("report.pdf"));
     }
 
     // Note: ImageBlock and AudioBlock constructors require non-null source,
