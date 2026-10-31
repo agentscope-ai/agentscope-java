@@ -112,10 +112,21 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
                             continue;
                         }
                         AsyncToolRecord rec = readRecord(fi.path());
-                        if (rec != null
-                                && AsyncToolRecord.RUNNING.equals(rec.status())
-                                && rec.createdAt().isBefore(cutoff)) {
+                        if (rec == null) {
+                            continue;
+                        }
+                        if (!rec.createdAt().isBefore(cutoff)) {
+                            continue;
+                        }
+                        if (AsyncToolRecord.RUNNING.equals(rec.status())) {
                             stale.add(rec);
+                        } else {
+                            // Nothing reads a terminal record — findStale is the only reader and
+                            // it reports RUNNING only — so leaving it on disk makes every later
+                            // scan pay a full read (a network round-trip on a remote backend)
+                            // for a result nobody will look at again. The same TTL that declares
+                            // a RUNNING record dead doubles as the retention window here.
+                            reclaim(fi.path());
                         }
                     }
                     return stale;
@@ -144,6 +155,15 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
                                     "createdAt", rec.createdAt().toString());
                     fs.write(RC, path, JsonUtils.getJsonCodec().toJson(data));
                 });
+    }
+
+    /** Deletes one record file, leaving the scan running if the backend refuses the delete. */
+    private void reclaim(String path) {
+        try {
+            fs.delete(RC, path);
+        } catch (Exception e) {
+            log.debug("Failed to reclaim async tool record at {}: {}", path, e.getMessage());
+        }
     }
 
     private AsyncToolRecord readRecord(String path) {
