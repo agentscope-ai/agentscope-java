@@ -151,6 +151,7 @@ import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.builtin.RequirementTools;
 import io.agentscope.core.tool.builtin.TodoTools;
+import io.agentscope.core.tool.search.ToolSearchMode;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
@@ -5145,6 +5146,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             @Override
             public int getContextWindowSize() {
                 return activeModel.get().getContextWindowSize();
+            }
+
+            @Override
+            public boolean supportsNativeStructuredOutputWithTools() {
+                return activeModel.get().supportsNativeStructuredOutputWithTools();
+            }
+
+            @Override
+            public ToolSearchMode getToolSearchMode() {
+                return activeModel.get().getToolSearchMode();
+            }
+
+            @Override
+            public boolean supportsToolChoiceSpecific() {
+                return activeModel.get().supportsToolChoiceSpecific();
             }
         };
     }
