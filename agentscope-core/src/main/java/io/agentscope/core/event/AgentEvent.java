@@ -90,6 +90,15 @@ public abstract class AgentEvent {
     public static final String METADATA_PARENT_SESSION_ID = "parentSessionId";
 
     /**
+     * Well-known {@link #metadata} key carrying the subagent invocation's own session id. The
+     * {@link #source} path is {@code parentSessionId/agentId}, so events from two spawned
+     * instances of the same subagent type are indistinguishable by source alone; this key gives
+     * consumers (AG-UI frontends grouping messages per subagent instance) a stable unique
+     * discriminator — stable across {@code agent_send} follow-ups to the same instance (#3776).
+     */
+    public static final String METADATA_SUBAGENT_SESSION_ID = "subagentSessionId";
+
+    /**
      * Well-known {@link #metadata} key carrying the {@code GenerateReason} name behind a text
      * projection. Currently attached to the {@code TextBlock} events synthesized for a
      * {@code returnDirect} closing message, letting observers distinguish "the model said this"

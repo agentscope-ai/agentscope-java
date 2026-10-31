@@ -814,8 +814,19 @@ public class AgentSpawnTool {
                                 AgentEventEmitter parentEmitter = emitterOpt.get();
                                 String sourcePath = buildSourcePath(spawned, parentCtx);
                                 String replyId = UUID.randomUUID().toString().replace("-", "");
+                                // The source path is parentSessionId/agentId, so events from two
+                                // spawned instances of the same subagent type are
+                                // indistinguishable by source alone; thread the per-instance
+                                // session id as metadata so AG-UI consumers can group per
+                                // instance (#3776).
                                 AgentEventEmitter taggedEmitter =
-                                        event -> parentEmitter.emit(event.withSource(sourcePath));
+                                        event ->
+                                                parentEmitter.emit(
+                                                        event.withSource(sourcePath)
+                                                                .withMetadataEntry(
+                                                                        AgentEvent
+                                                                                .METADATA_SUBAGENT_SESSION_ID,
+                                                                        spawned.sessionId()));
 
                                 parentEmitter.emit(
                                         new AgentStartEvent(
