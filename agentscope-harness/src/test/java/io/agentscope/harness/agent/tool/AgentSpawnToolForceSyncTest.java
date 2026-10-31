@@ -21,17 +21,21 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
@@ -52,7 +56,10 @@ import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -118,13 +125,16 @@ class AgentSpawnToolForceSyncTest {
                         .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 0)
                         .build();
         assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(5, forceBadOverride) == 30_000L);
-        // Clamp at 600s.
+        // Deployer-provided override is honored as-is (no 600s ceiling).
         RuntimeContext forceHuge =
                 RuntimeContext.builder()
                         .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
                         .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 9999)
                         .build();
-        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(5, forceHuge) == 600_000L);
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(5, forceHuge) == 9_999_000L);
+        // LLM-requested timeouts (no override) remain clamped at 600s.
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(9999, noForce) == 600_000L);
+        assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(9999, forceOnly) == 600_000L);
     }
 
     @Test
@@ -162,6 +172,80 @@ class AgentSpawnToolForceSyncTest {
                 result.contains("status: accepted"),
                 "Force-sync must not return background accepted. Got: " + result);
         assertTrue(repo.putCount.get() == 0, "No background task should be submitted");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @Timeout(15)
+    void toolkitKeepsDelegationAndOrdinaryToolTimeoutsSeparate(boolean batch) throws Exception {
+        Agent child = Mockito.mock(Agent.class);
+        Mockito.when(child.getAgentId()).thenReturn("child");
+        Mockito.when(child.getName()).thenReturn("child");
+        Mockito.when(child.call(Mockito.<List<Msg>>any()))
+                .thenReturn(
+                        Mono.just(Msg.builder().name("child").textContent("done").build())
+                                .delayElement(Duration.ofMillis(200)));
+        DefaultAgentManager manager =
+                new DefaultAgentManager(
+                        List.of(new SubagentEntry("slow_agent", "Slow", rc -> child)), null);
+        Toolkit toolkit =
+                timedToolkit(new AgentSpawnTool(manager, new CapturingTaskRepository(), 0));
+        RuntimeContext ctx =
+                RuntimeContext.builder()
+                        .sessionId("parent")
+                        .userId("user")
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 5)
+                        .build();
+        for (String name : List.of("agent_spawn", "agent_send")) {
+            Map<String, Object> input =
+                    "agent_spawn".equals(name)
+                            ? Map.of("agent_id", "slow_agent", "task", "go", "label", "slow")
+                            : Map.of("label", "slow", "message", "continue");
+            String result =
+                    assertText(
+                            callTool(toolkit, name, input, ctx, batch).block(Duration.ofSeconds(5)),
+                            ToolResultState.SUCCESS);
+            assertTrue(result.contains("status: ok"), result);
+        }
+
+        CountDownLatch ordinaryCancelled = new CountDownLatch(1);
+        AgentTool ordinary = Mockito.mock(AgentTool.class);
+        Mockito.when(ordinary.getName()).thenReturn("ordinary");
+        Mockito.when(ordinary.getDescription()).thenReturn("Ordinary tool");
+        Mockito.when(ordinary.getParameters()).thenReturn(Map.of("type", "object"));
+        Mockito.when(ordinary.callAsync(Mockito.any()))
+                .thenReturn(Mono.<ToolResultBlock>never().doOnCancel(ordinaryCancelled::countDown));
+        toolkit.registerTool(ordinary);
+        String error =
+                assertText(
+                        callTool(toolkit, "ordinary", Map.of(), ctx, batch)
+                                .block(Duration.ofSeconds(5)),
+                        ToolResultState.ERROR);
+        assertTrue(error.contains("Tool execution timeout after PT0.05S"), error);
+        assertTrue(ordinaryCancelled.await(5, TimeUnit.SECONDS));
+
+        CountDownLatch childStarted = new CountDownLatch(1);
+        CountDownLatch childCancelled = new CountDownLatch(1);
+        Mockito.when(child.call(Mockito.<List<Msg>>any()))
+                .thenReturn(
+                        Mono.<Msg>never()
+                                .doOnSubscribe(ignored -> childStarted.countDown())
+                                .doOnCancel(childCancelled::countDown));
+        Disposable subscription =
+                callTool(
+                                toolkit,
+                                "agent_send",
+                                Map.of("label", "slow", "message", "continue"),
+                                ctx,
+                                batch)
+                        .subscribe();
+        try {
+            assertTrue(childStarted.await(5, TimeUnit.SECONDS));
+        } finally {
+            subscription.dispose();
+        }
+        assertTrue(childCancelled.await(5, TimeUnit.SECONDS));
     }
 
     @Test
@@ -261,7 +345,18 @@ class AgentSpawnToolForceSyncTest {
 
         String result =
                 assertText(
-                        tool.agentSpawn(ctx, null, "slow_agent", "go", null, 1, null)
+                        callTool(
+                                        timedToolkit(tool),
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                "slow_agent",
+                                                "task",
+                                                "go",
+                                                "timeout_seconds",
+                                                1),
+                                        ctx,
+                                        true)
                                 .block(Duration.ofSeconds(10)),
                         ToolResultState.ERROR);
 
@@ -280,6 +375,32 @@ class AgentSpawnToolForceSyncTest {
 
         assertTrue(
                 toolCancelled.await(5, TimeUnit.SECONDS), "Timed-out child tool must be cancelled");
+    }
+
+    private static Toolkit timedToolkit(AgentSpawnTool tool) {
+        Toolkit toolkit =
+                new Toolkit(
+                        ToolkitConfig.builder()
+                                .executionConfig(
+                                        ExecutionConfig.builder()
+                                                .timeout(Duration.ofMillis(50))
+                                                .build())
+                                .build());
+        toolkit.registerTool(tool);
+        return toolkit;
+    }
+
+    private static Mono<ToolResultBlock> callTool(
+            Toolkit toolkit,
+            String name,
+            Map<String, Object> input,
+            RuntimeContext ctx,
+            boolean batch) {
+        ToolUseBlock call = ToolUseBlock.builder().id(name).name(name).input(input).build();
+        return batch
+                ? toolkit.callTools(List.of(call), null, null, ctx).map(results -> results.get(0))
+                : toolkit.callTool(
+                        ToolCallParam.builder().toolUseBlock(call).runtimeContext(ctx).build());
     }
 
     private static final class CapturingTaskRepository implements TaskRepository {
