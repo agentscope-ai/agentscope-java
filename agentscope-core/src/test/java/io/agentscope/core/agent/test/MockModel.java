@@ -45,6 +45,7 @@ public class MockModel implements Model {
     private Function<List<Msg>, List<ChatResponse>> responseGenerator;
     private int callCount = 0;
     private List<Msg> lastMessages;
+    private final List<List<Msg>> recordedMessages = new ArrayList<>();
     private List<ToolSchema> lastTools;
     private GenerateOptions lastOptions;
     private boolean shouldThrowError = false;
@@ -126,6 +127,7 @@ public class MockModel implements Model {
         // Record the call
         this.callCount++;
         this.lastMessages = messages;
+        this.recordedMessages.add(List.copyOf(messages));
         this.lastTools = tools;
         this.lastOptions = options;
 
@@ -172,6 +174,13 @@ public class MockModel implements Model {
     }
 
     /**
+     * Get the messages of every call, in call order, unlike {@link #getLastMessages()}.
+     */
+    public List<List<Msg>> getRecordedMessages() {
+        return recordedMessages;
+    }
+
+    /**
      * Get the last tools sent to the model.
      */
     public List<ToolSchema> getLastTools() {
@@ -191,6 +200,7 @@ public class MockModel implements Model {
     public void reset() {
         this.callCount = 0;
         this.lastMessages = null;
+        this.recordedMessages.clear();
         this.lastTools = null;
         this.lastOptions = null;
         this.shouldThrowError = false;

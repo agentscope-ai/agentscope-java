@@ -205,6 +205,8 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 
 If `CachePolicy.ENABLED` is used with `option(...)` or `component(...)`, the user must provide a `cacheId`.
 
+Calling `registerFactory` evicts cached instances whose model id matches the new pattern, so the next resolution of those ids uses the new factory. Evicted instances are not closed, since callers may still hold them. Concurrent first resolutions of the same cached id share one creation and receive the same instance.
+
 ### ModelProvider SPI
 
 Provider extension modules are discovered with Java SPI through `META-INF/services/io.agentscope.core.model.spi.ModelProvider`. A provider can implement `supports(String, ModelCreationContext)` and `create(String, ModelCreationContext)` to consume context values. Simple providers can keep implementing the original `supports(String)` and `create(String)` methods because the context-aware methods have compatible defaults.
@@ -341,6 +343,8 @@ model.stream(
 ```
 
 A `ChatResponse` carries a list of content blocks (`TextBlock`, `ThinkingBlock`, `ToolUseBlock`, `DataBlock`) and a `ChatUsage` recording token counts and timing.
+
+**Option precedence:** per-call options passed to `stream(messages, tools, options)` take precedence over the builder's `defaultOptions`; fields the call leaves unset fall back to the model defaults. This includes `toolChoice`: a default such as `Specific("get_weather")` constrains every call, and only a call that sets its own `toolChoice` (for example `None`) overrides it. For Gemini, whenever tools are declared the effective choice is projected into the request's `toolConfig` (`Specific` becomes `mode=ANY` plus `allowedFunctionNames`; `None` becomes `mode=NONE`), so a default and an equal per-call value produce the same request.
 
 In practice you usually call models indirectly via `ReActAgent`. For lightweight direct invocation, see `agentscope-examples/documentation/.../model/ModelRegistryExample.java`.
 

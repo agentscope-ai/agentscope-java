@@ -6,7 +6,7 @@ en_link: /v2/en/docs/harness/subagent
 
 ## 作用
 
-让主 agent 把"可独立处理、上下文重、可并行"的任务委派出去，避免主线程膨胀。每个子 agent 都是一个临时实例（本地的 `HarnessAgent` 或远程 stub），跑自己的会话，结果通过工具返回给父 agent。
+让主 agent 把"可独立处理、上下文重、可并行"的任务委派出去，避免主线程膨胀。每个子 agent（本地 `HarnessAgent` 或远程 stub）跑自己的会话，与父对话相互独立：每次调用——带任务的 spawn，或 `agent_send` follow-up——都完整跑完并返回本次调用的结果（同步走工具结果，后台任务经推送回传）。存活的本地子 agent 在 follow-up send 之间保留自己的历史；远端后端可能为每次 send 开启新对话。会话持久化与后续恢复取决于声明（`persistSession`）和后端——见[持久会话](#持久会话)。
 
 ## 一个最小例子
 

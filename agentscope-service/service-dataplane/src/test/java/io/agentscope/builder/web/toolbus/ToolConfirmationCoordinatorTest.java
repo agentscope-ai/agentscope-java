@@ -350,8 +350,15 @@ class ToolConfirmationCoordinatorTest {
                         2,
                         false,
                         "timed_out");
+        // RESOLVED is the outcome when this call releases the continuation itself. The ticket's
+        // own poller thread legitimately picks the persisted decision up at any moment, so a
+        // loaded runner can complete the release (and drop the local waiter) between the durable
+        // resolution and the owner lookup, yielding OWNER_UNAVAILABLE. Both codes mean the
+        // decision was accepted; a control-plane retry would observe IDEMPOTENT.
         assertThat(coordinator.resolveManaged(cancelled))
-                .isEqualTo(ToolConfirmationCoordinator.DecisionResult.RESOLVED);
+                .isIn(
+                        ToolConfirmationCoordinator.DecisionResult.RESOLVED,
+                        ToolConfirmationCoordinator.DecisionResult.OWNER_UNAVAILABLE);
         assertThat(waiting.get(1, TimeUnit.SECONDS)).isFalse();
         assertThat(ticket.get().resolutionStatus()).isEqualTo("cancelled");
 

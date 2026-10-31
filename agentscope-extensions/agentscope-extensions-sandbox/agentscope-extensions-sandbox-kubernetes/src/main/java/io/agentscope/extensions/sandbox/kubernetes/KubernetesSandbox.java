@@ -88,6 +88,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     @Override
     protected ExecResult doExec(RuntimeContext runtimeContext, String command, int timeoutSeconds)
             throws Exception {
+        requireActiveConnection();
         if (command == null || command.isBlank()) {
             throw new SandboxException.ExecException(
                     2, "", "empty command rejected by KubernetesSandbox");
@@ -110,6 +111,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     protected InputStream doPersistWorkspace() throws Exception {
+        requireActiveConnection();
         String root = k8sState.getWorkspaceRoot();
         StringBuilder tarArgs = new StringBuilder();
         // The temp archive may live inside the workspace when the file API is rooted there;
@@ -168,6 +170,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     protected void doHydrateWorkspace(InputStream archive) throws Exception {
+        requireActiveConnection();
         String root = k8sState.getWorkspaceRoot();
         sdkSandbox.commands().run("mkdir -p " + shellQuote(root));
 
@@ -267,6 +270,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     public void uploadFile(String absolutePath, byte[] content) throws Exception {
+        requireActiveConnection();
         String rel = requireFileApiRelative(absolutePath);
         int slash = absolutePath.lastIndexOf('/');
         if (slash > 0) {
@@ -286,7 +290,16 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     public byte[] downloadFile(String absolutePath) throws Exception {
+        requireActiveConnection();
         return sdkSandbox.files().read(requireFileApiRelative(absolutePath));
+    }
+
+    private void requireActiveConnection() {
+        if (!sdkSandbox.isActive()) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.SANDBOX_CONNECTION_CLOSED,
+                    "Kubernetes sandbox connection has been closed");
+        }
     }
 
     /**

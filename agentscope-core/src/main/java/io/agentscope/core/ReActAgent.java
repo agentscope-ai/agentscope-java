@@ -282,6 +282,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /** Default active groups captured after builder-time toolkit configuration is complete. */
     private final List<String> initialActiveToolGroups;
 
+    /**
+     * Builder-configured baseline {@link SkillFilter} for this agent's skill view. Never null —
+     * an unset builder filter defaults to {@link SkillFilter#all()}. This is the baseline the
+     * skill middlewares apply; per-call overlays supplied via the {@link RuntimeContext} compose
+     * on top of it.
+     */
+    private final SkillFilter skillFilter;
+
+    /** Builder-configured stable directory for skill materialisation; {@code null} when unset. */
+    private final Path skillWorkDir;
+
     private final ToolExecutionContext toolExecutionContext;
 
     private final List<MiddlewareBase> middlewares;
@@ -398,6 +409,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
         this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
+        this.skillFilter = builder.skillFilter != null ? builder.skillFilter : SkillFilter.all();
+        this.skillWorkDir = builder.skillWorkDir;
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
@@ -1292,13 +1305,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return Flux.deferContextual(
                 view -> {
                     RunControl inherited = RunControl.current(view, getAgentId());
-                    RunControl control =
-                            inherited != null ? inherited : new RunControl(getAgentId());
                     RuntimeContext source =
                             context != null
                                     ? context
                                     : view.getOrDefault(
                                             RUNTIME_CONTEXT_KEY, RuntimeContext.empty());
+                    RunControl control =
+                            inherited != null
+                                    ? inherited
+                                    : new RunControl(
+                                            getAgentId(),
+                                            source == null ? null : source.getRunId());
                     RuntimeContext effective = RuntimeContext.builder(source).build();
                     SessionKey key = sessionKey(effective);
                     String turnId = (String) effective.get(SessionRecorder.TURN_ID_KEY);
@@ -2045,6 +2062,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     final class CallExecution {
         private static final String PERMISSION_DENIED_BY_USER = "Permission denied by user";
         private static final String PERMISSION_DENIED_BY_RULES = "Permission denied by rules";
+        private static final String OUTPUT_LIMIT_TOOL_ARGUMENTS =
+                "Tool call not executed: the response stopped at its output token limit before"
+                        + " complete arguments could be parsed. Do not repeat the same large"
+                        + " arguments. Split the work into smaller tool calls or provide a"
+                        + " shorter argument payload, then reissue the call.";
+        private static final String INVALID_TOOL_ARGUMENTS =
+                "Tool call not executed: its arguments were not a valid JSON object. Reissue"
+                        + " the call with corrected JSON object arguments.";
 
         InterruptControl interruption = new InterruptControl();
         AgentState state;
@@ -3455,25 +3480,42 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Mono<Msg> acting(int iter) {
             List<ToolUseBlock> pendingToolCalls =
                     MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
+            String replyId = UUID.randomUUID().toString().replace("-", "");
+
+            // Tool calls whose streamed arguments never formed a valid JSON object (typically
+            // truncated by a max-tokens stop) are not executable. Synthesize ERROR results with
+            // the original call IDs so tool_use ↔ tool_result pairing stays complete, and never
+            // hand them to the permission gate, middleware chain or executor. The loop continues
+            // to the next reasoning iteration; no automatic retry is attempted this turn.
+            List<ToolUseBlock> malformedToolCalls =
+                    pendingToolCalls.stream().filter(ToolUseBlock::hasMalformedArguments).toList();
+            if (!malformedToolCalls.isEmpty()) {
+                writeMalformedArgumentResults(
+                        malformedToolCalls,
+                        replyId,
+                        MessageUtils.lastAssistantReachedOutputLimit(
+                                state.contextMutable(), getName()));
+            }
+            List<ToolUseBlock> executableToolCalls =
+                    pendingToolCalls.stream().filter(tc -> !tc.hasMalformedArguments()).toList();
+
             List<ToolUseBlock> roundToolCalls = extractRecentToolCalls();
 
-            if (pendingToolCalls.isEmpty()) {
-                List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
-                if (!recentToolCalls.isEmpty()
+            if (executableToolCalls.isEmpty()) {
+                if (!roundToolCalls.isEmpty()
                         && MessageUtils.allToolCallsDenied(
-                                state.contextMutable(), recentToolCalls)) {
-                    return emitAllToolsDeniedThroughMiddleware(recentToolCalls, iter);
+                                state.contextMutable(), roundToolCalls)) {
+                    return emitAllToolsDeniedThroughMiddleware(roundToolCalls, iter);
                 }
                 return executeIteration(iter + 1);
             }
 
-            String replyId = UUID.randomUUID().toString().replace("-", "");
             AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder =
                     new AtomicReference<>(List.of());
 
             AtomicReference<RequestStopEvent> actingStopRequested = new AtomicReference<>();
             return hookDispatcher
-                    .firePreActing(pendingToolCalls, toolkit)
+                    .firePreActing(executableToolCalls, toolkit)
                     .flatMap(
                             toolCalls -> {
                                 Function<ActingInput, Flux<AgentEvent>> actingCore =
@@ -3534,7 +3576,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
 
                                 boolean returnDirect =
-                                        pendingToolCalls.size() == roundToolCalls.size()
+                                        executableToolCalls.size() == roundToolCalls.size()
                                                 && pendingPairs.isEmpty()
                                                 && !successPairs.isEmpty()
                                                 && successPairs.stream()
@@ -3690,6 +3732,31 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 .withState(ToolResultState.DENIED);
                 Msg deniedMsg = ToolResultMessageBuilder.buildToolResultMsg(denied, tc, getName());
                 state.contextMutable().add(deniedMsg);
+            }
+        }
+
+        /**
+         * Synthesise ERROR ToolResultBlocks for tool calls whose streamed arguments never formed a
+         * valid JSON object (marked via {@link
+         * ToolUseBlock#METADATA_MALFORMED_ARGUMENTS}). The handler is never invoked; results are
+         * appended to the context and emitted as lifecycle events so the tool_use ↔ tool_result
+         * pairing stays complete and the model can reissue the call.
+         */
+        private void writeMalformedArgumentResults(
+                List<ToolUseBlock> toolCalls, String replyId, boolean outputLimitReached) {
+            String message =
+                    outputLimitReached ? OUTPUT_LIMIT_TOOL_ARGUMENTS : INVALID_TOOL_ARGUMENTS;
+            for (ToolUseBlock tc : toolCalls) {
+                ToolResultBlock errorResult = ToolResultBlock.error(tc.getId(), message);
+                Msg toolResultMsg =
+                        ToolResultMessageBuilder.buildToolResultMsg(errorResult, tc, getName());
+                state.contextMutable().add(toolResultMsg);
+                publishEvent(new ToolResultStartEvent(replyId, tc.getId(), tc.getName()));
+                publishEvent(
+                        new ToolResultTextDeltaEvent(replyId, tc.getId(), tc.getName(), message));
+                publishEvent(
+                        new ToolResultEndEvent(
+                                replyId, tc.getId(), tc.getName(), ToolResultState.ERROR));
             }
         }
 
@@ -4303,6 +4370,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .firePostActing(toolUse, updatedResult, toolkit, toolMsg)
                     .doOnNext(
                             e -> {
+                                if (e.getToolResult() != updatedResult
+                                        && e.getToolResultMsg() == toolMsg) {
+                                    e.setToolResultMsg(
+                                            ToolResultMessageBuilder.buildToolResultMsg(
+                                                    e.getToolResult(), toolUse, getName()));
+                                }
                                 if (soTool != null
                                         && STRUCTURED_OUTPUT_TOOL_NAME.equals(toolUse.getName())
                                         && result.getMetadata() != null
@@ -5136,6 +5209,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /** Returns this agent's toolkit; request-specific views do not mutate its registry. */
     public Toolkit getToolkit() {
         return toolkit;
+    }
+
+    /**
+     * Returns the builder-configured baseline {@link SkillFilter} for this agent's skill view.
+     * Never {@code null}: an unset builder filter defaults to {@link SkillFilter#all()}. The
+     * auto-installed {@link DynamicSkillMiddleware} applies this baseline; per-call overlays
+     * supplied via {@code RuntimeContext.get(SkillFilter.class)} compose on top of it.
+     */
+    public SkillFilter getSkillFilter() {
+        return skillFilter;
+    }
+
+    /**
+     * Returns the builder-configured stable directory for skill materialisation, or
+     * {@code null} when unset — consumers then fall back to their own temporary allocation.
+     */
+    public Path getSkillWorkDir() {
+        return skillWorkDir;
     }
 
     public String getSysPrompt() {
@@ -6407,8 +6498,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Builder-time {@link SkillFilter} applied by the auto-installed
-         * {@link DynamicSkillMiddleware}. Defaults to {@link SkillFilter#all()} when unset.
+         * Builder-time {@link SkillFilter} stored on the built agent (see
+         * {@code getSkillFilter()}) and applied by the auto-installed
+         * {@link DynamicSkillMiddleware} as its baseline. Defaults to
+         * {@link SkillFilter#all()} when unset.
          */
         public Builder skillFilter(SkillFilter filter) {
             this.skillFilter = filter;
@@ -6446,9 +6539,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Sets a stable working directory used by {@link DynamicSkillMiddleware} for
-         * {@code uploadSkillFiles}. Pass {@code null} (the default) to let the middleware mkdtemp
-         * a fresh directory on first reload and reuse it for the agent's lifetime.
+         * Sets a stable working directory for skill materialisation, stored on the built agent
+         * (see {@code getSkillWorkDir()}) and caller-managed for its whole lifecycle. When
+         * {@code null} (the default), consumers materialise under a framework-allocated
+         * anonymous temp root that the framework never deletes.
          */
         public Builder skillWorkDir(Path dir) {
             this.skillWorkDir = dir;
@@ -6643,11 +6737,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (!skillRepositories.isEmpty() && dynamicSkillsEnabled) {
                 middlewares.add(
                         new DynamicSkillMiddleware(
-                                List.copyOf(skillRepositories),
-                                agentToolkit,
-                                skillFilter != null ? skillFilter : SkillFilter.all(),
-                                skillCodeExecutionEnabled,
-                                skillWorkDir));
+                                List.copyOf(skillRepositories), skillCodeExecutionEnabled));
             }
 
             // List.sort is stable: middlewares with equal order retain their registration order.
