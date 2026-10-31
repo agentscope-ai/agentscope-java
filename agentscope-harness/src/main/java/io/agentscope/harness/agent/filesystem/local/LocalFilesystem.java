@@ -775,7 +775,10 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (relPath.startsWith(nsPrefix + "/")) {
             return relPath.substring(nsPrefix.length() + 1);
         }
-        return relPath;
+        // Entries outside the namespace folder (e.g. .skills-cache/<scope>/...) would get the
+        // namespace prepended again when the relative path is passed back in, so report them as
+        // absolute paths, which applyNamespacePrefix leaves untouched.
+        return absolutePath.toAbsolutePath().normalize().toString();
     }
 
     // ==================== Grep implementations ====================
