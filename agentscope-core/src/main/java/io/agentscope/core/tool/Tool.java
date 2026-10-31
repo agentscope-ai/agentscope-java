@@ -136,6 +136,14 @@ public @interface Tool {
     boolean concurrencySafe() default true;
 
     /**
+     * Whether the tool manages its own timeout instead of the ordinary tool execution timeout.
+     * Parent cancellation still propagates to the tool.
+     *
+     * @return true if the tool owns its timeout budget
+     */
+    boolean timeoutManaged() default false;
+
+    /**
      * Whether the tool is executed outside the framework.
      *
      * <p>External tools never run their {@code callAsync} body through Toolkit execution. The

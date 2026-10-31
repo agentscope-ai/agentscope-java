@@ -748,7 +748,8 @@ class ToolExecutor {
                                                 executeUnobserved(
                                                         param, requestConfig, executionCallback)),
                                         executionConfig,
-                                        toolCall));
+                                        toolCall,
+                                        requestConfig));
 
         // Every retry receives a separate observed attempt.
         execution = applyRetry(execution, executionConfig, toolCall);
@@ -779,8 +780,15 @@ class ToolExecutor {
     }
 
     private Mono<ToolResultBlock> applyTimeout(
-            Mono<ToolResultBlock> execution, ExecutionConfig config, ToolUseBlock toolCall) {
+            Mono<ToolResultBlock> execution,
+            ExecutionConfig config,
+            ToolUseBlock toolCall,
+            ToolRequestConfig requestConfig) {
         if (config == null || config.getTimeout() == null) {
+            return execution;
+        }
+        AgentTool tool = resolveTool(toolCall.getName(), requestConfig);
+        if (tool != null && tool.isTimeoutManaged()) {
             return execution;
         }
 

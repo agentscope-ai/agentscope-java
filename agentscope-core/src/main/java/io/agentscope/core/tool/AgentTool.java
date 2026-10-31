@@ -156,6 +156,16 @@ public interface AgentTool {
     }
 
     /**
+     * Whether this tool manages its own timeout, bypassing the ordinary tool execution timeout.
+     * Parent cancellation still propagates to the tool.
+     *
+     * @return true if the tool owns its timeout budget
+     */
+    default boolean isTimeoutManaged() {
+        return false;
+    }
+
+    /**
      * Whether this tool's result should be returned directly to the caller,
      * skipping the next reasoning iteration. Defaults to {@code false}.
      *

@@ -173,6 +173,11 @@ final class ReflectiveFunctionTool extends ToolBase {
     }
 
     @Override
+    public boolean isTimeoutManaged() {
+        return method.getAnnotation(Tool.class).timeoutManaged();
+    }
+
+    @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
         if (isExternalTool()) {
             return Mono.just(

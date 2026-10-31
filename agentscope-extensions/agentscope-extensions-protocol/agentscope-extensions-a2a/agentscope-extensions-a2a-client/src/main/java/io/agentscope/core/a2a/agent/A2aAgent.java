@@ -80,6 +80,9 @@ import reactor.util.context.ContextView;
  * <p>Agent description should get from AgentCard. If AgentCard get failed, description will be default value from
  * {@link Agent#getDescription()}
  *
+ * <p>Every call resolves the AgentCard again. If no card is found for the name of this agent, the call fails with an
+ * {@link IllegalStateException} that names the agent and the resolver.
+ *
  * <p>Example Usage:
  * <pre>{@code
  *  // Simple usage.
@@ -348,6 +351,15 @@ public class A2aAgent extends AgentBase {
     private A2aCall startCall(Session session) {
         String requestId = UUID.randomUUID().toString();
         AgentCard agentCard = agentCardResolver.getAgentCard(getName());
+        if (null == agentCard) {
+            throw new IllegalStateException(
+                    "No AgentCard found for A2A agent '"
+                            + getName()
+                            + "' via "
+                            + agentCardResolver.getClass().getSimpleName()
+                            + ". Check that the agent name matches the name registered on the"
+                            + " server.");
+        }
         Client client = buildA2aClient(agentCard);
         LoggerUtil.debug(
                 log, "[{}] A2aAgent build A2a Client with Agent Card: {}.", requestId, agentCard);

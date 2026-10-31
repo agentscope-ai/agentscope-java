@@ -25,6 +25,7 @@ import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -310,6 +311,21 @@ public class AnthropicMessageConverter {
                                                             + "]")
                                             .build()));
                 }
+            } else if (block instanceof DocumentBlock db && msg.getRole() == MsgRole.USER) {
+                log.warn(
+                        "DocumentBlock is not supported by Anthropic; sending a text placeholder"
+                                + " instead of '{}'",
+                        db.getName() != null ? db.getName() : db.getId());
+                contentBlocks.add(
+                        ContentBlockParam.ofText(
+                                TextBlockParam.builder()
+                                        .text(
+                                                "[Document - not supported by Anthropic: "
+                                                        + (db.getName() != null
+                                                                ? db.getName()
+                                                                : db.getId())
+                                                        + "]")
+                                        .build()));
             } else if (block instanceof ToolUseBlock tub) {
                 if (tub.isServerTool()) {
                     // Server tool calls are echoed back as server_tool_use blocks
