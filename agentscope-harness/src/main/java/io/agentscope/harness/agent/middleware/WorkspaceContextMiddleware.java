@@ -124,7 +124,6 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private static final String TRUNCATION_NOTICE_PLAIN = "\n\n... (memory truncated) ...\n";
 
-    /** Share of the post-notice memory budget kept from the head; the rest keeps the tail. */
     private static final int MEMORY_HEAD_SHARE = 4;
 
     private static final int DEFAULT_MAX_CONTEXT_TOKENS = 8000;
