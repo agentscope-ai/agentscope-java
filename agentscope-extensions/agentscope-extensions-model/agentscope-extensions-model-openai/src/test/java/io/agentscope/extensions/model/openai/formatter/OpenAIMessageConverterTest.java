@@ -16,10 +16,12 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -40,6 +42,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -183,7 +186,7 @@ class OpenAIMessageConverterTest {
     }
 
     @Test
-    @DisplayName("A mixed tool result keeps the document reference")
+    @DisplayName("A mixed tool result keeps the document reference as text, not as a part")
     void testMixedToolResultKeepsDocumentReference() {
         ToolResultBlock toolResult =
                 ToolResultBlock.of(
@@ -203,14 +206,42 @@ class OpenAIMessageConverterTest {
                                         .build()));
         Msg msg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
 
-        OpenAIMessage result = converter.convertToMessage(msg, false);
+        // Production renders documents as references, the way
+        // AbstractBaseFormatter#convertToolResultToString does.
+        OpenAIMessageConverter withDocuments =
+                new OpenAIMessageConverter(
+                        unused -> "",
+                        blocks ->
+                                blocks.stream()
+                                        .map(
+                                                block ->
+                                                        block instanceof TextBlock tb
+                                                                ? tb.getText()
+                                                                : block instanceof DocumentBlock doc
+                                                                        ? DocumentReferenceRenderer
+                                                                                .render(doc)
+                                                                        : "")
+                                        .collect(Collectors.joining()));
 
-        @SuppressWarnings("unchecked")
-        List<OpenAIContentPart> parts = (List<OpenAIContentPart>) result.getContent();
-        assertEquals(3, parts.size());
-        assertEquals(
-                "[document: report.pdf, provider file id: file-abc (dashscope)]",
-                parts.get(2).getText());
+        OpenAIMessage result = withDocuments.convertToMessage(msg, false);
+
+        String content = result.getContentAsString();
+        assertTrue(content.contains("Generated."), "tool text must survive: " + content);
+        assertTrue(
+                content.contains("[document: report.pdf, provider file id: file-abc (dashscope)]"),
+                "the document reference must stay in the tool message: " + content);
+
+        OpenAIMessage media = withDocuments.convertToolMediaToUserMessage(msg);
+        assertNotNull(media, "the image has to travel in a follow-up user message");
+        assertEquals("user", media.getRole());
+        assertTrue(
+                media.getContentAsList().stream()
+                        .noneMatch(part -> String.valueOf(part.getText()).contains("document:")),
+                "the document must not be repeated in the media message");
+        assertTrue(
+                media.getContentAsList().stream()
+                        .anyMatch(part -> "image_url".equals(part.getType())),
+                "the image block has to reach the user message");
     }
 
     // Note: ImageBlock and AudioBlock constructors require non-null source,
@@ -1014,7 +1045,10 @@ class OpenAIMessageConverterTest {
             assertNotNull(result);
             assertEquals("tool", result.getRole());
             assertEquals("call_123", result.getToolCallId());
-            assertTrue(result.isMultimodal());
+            assertFalse(
+                    result.isMultimodal(),
+                    "a tool message must not carry media; the media follows in a user message");
+            assertTrue(result.getContentAsString().contains("Screenshot taken"));
         }
 
         @Test
