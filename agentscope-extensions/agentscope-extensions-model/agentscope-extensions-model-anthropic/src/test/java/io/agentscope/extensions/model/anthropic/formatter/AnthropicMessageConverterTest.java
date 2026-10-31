@@ -25,6 +25,8 @@ import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -81,6 +83,35 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, blocks.size());
         assertTrue(blocks.get(0).isText());
         assertEquals("Hello", blocks.get(0).asText().text());
+    }
+
+    @Test
+    void testDocumentBlockBecomesTextPlaceholder() {
+        Msg msg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("anthropic")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        // An all-document message must not collapse into an empty (dropped) message.
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(1, blocks.size());
+        assertTrue(blocks.get(0).isText());
+        assertTrue(blocks.get(0).asText().text().contains("Document - not supported by Anthropic"));
+        assertTrue(blocks.get(0).asText().text().contains("report.pdf"));
     }
 
     @Test
