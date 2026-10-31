@@ -165,4 +165,18 @@ class AgentStateTest {
         assertEquals(0, decoded.getCurIter());
         assertNotNull(decoded.getReplyId());
     }
+
+    @Test
+    void setPermissionContextReplacesAndRejectsNull() {
+        AgentState state = AgentState.builder().sessionId("s").build();
+        PermissionContextState original = state.getPermissionContext();
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                NullPointerException.class, () -> state.setPermissionContext(null));
+
+        PermissionContextState replacement =
+                PermissionContextState.builder().mode(PermissionMode.DONT_ASK).build();
+        state.setPermissionContext(replacement);
+        org.junit.jupiter.api.Assertions.assertSame(replacement, state.getPermissionContext());
+    }
 }
