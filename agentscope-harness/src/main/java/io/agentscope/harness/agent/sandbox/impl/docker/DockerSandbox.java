@@ -509,12 +509,62 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                         CONTAINER_START_TIMEOUT_SECONDS, "docker", "start", containerId);
                 return;
             }
-            // Container not found — fall through to create a new one
-            log.warn("[sandbox-docker] Container {} not found, creating a new one", containerId);
+            if (state == ContainerState.UNKNOWN) {
+                // A probe that could not answer is not evidence that the container is gone.
+                // Creating a second one now would race the daemon and could leave two containers
+                // claiming the same workspace; the next command reports the transport failure.
+                log.warn(
+                        "[sandbox-docker] Container {} could not be inspected; keeping it",
+                        containerId);
+                return;
+            }
+            log.warn(
+                    "[sandbox-docker] Container {} no longer exists, reconciling by name",
+                    containerId);
+            dockerState.setContainerId(null);
             dockerState.setWorkspaceRootReady(false);
         }
 
-        createAndStartContainer(containerName());
+        // The name is derived from the session id, so the daemon can still hold a container under
+        // it while no usable id is persisted -- docker run may have succeeded with only persisting
+        // its id failing. Creating another container under that name is rejected on every turn.
+        String containerName = containerName();
+        if (adoptContainerByName(containerName)) {
+            return;
+        }
+        createAndStartContainer(containerName);
+    }
+
+    /**
+     * Adopts a container the daemon still holds under the session's deterministic name.
+     *
+     * @param containerName the container name derived from the session id
+     * @return whether an existing container now backs the session
+     */
+    private boolean adoptContainerByName(String containerName) throws Exception {
+        ContainerState state = inspectContainerState(containerName);
+        if (state == ContainerState.RUNNING) {
+            adoptContainer(containerName);
+            log.info("[sandbox-docker] Adopted container found by name: {}", containerName);
+            return true;
+        }
+        if (state == ContainerState.STOPPED) {
+            log.warn("[sandbox-docker] Starting container found by name: {}", containerName);
+            runDockerCliBlocking(CONTAINER_START_TIMEOUT_SECONDS, "docker", "start", containerName);
+            adoptContainer(containerName);
+            return true;
+        }
+        return false;
+    }
+
+    private void adoptContainer(String containerName) {
+        String resolved = resolveContainerId(containerName);
+        if (resolved != null) {
+            dockerState.setContainerId(resolved);
+        }
+        dockerState.setContainerName(containerName);
+        // The workspace inside an adopted container has unknown provenance.
+        dockerState.setWorkspaceRootReady(false);
     }
 
     /**
