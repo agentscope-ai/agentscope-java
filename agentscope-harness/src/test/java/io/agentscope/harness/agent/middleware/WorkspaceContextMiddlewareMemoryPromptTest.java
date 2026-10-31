@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -118,6 +119,74 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         assertTrue(
                 rc.get(WorkspaceContextMaterials.class).items().stream()
                         .anyMatch(item -> item.content().contains("cats prefer windowsills")));
+    }
+
+    @Test
+    void memoryOverBudgetKeepsNewestEntriesAndDropsTheMiddle() throws Exception {
+        Files.writeString(
+                workspace.resolve("MEMORY.md"),
+                "# Long-term memory\n\n"
+                        + "header ".repeat(60)
+                        + "\nmiddle-fact-must-be-dropped\n"
+                        + "older-entry ".repeat(700)
+                        + "\nNEWEST: deploy freeze until Friday\n");
+        var wm = track(new WorkspaceManager(workspace));
+        var rc = RuntimeContext.empty();
+        int maxTokens = 300;
+        new WorkspaceContextMiddleware(wm, maxTokens).onSystemPrompt(null, rc, "BASE").block();
+
+        String memory =
+                rc.get(WorkspaceContextMaterials.class).items().stream()
+                        .filter(item -> item.kind().equals("memory"))
+                        .findFirst()
+                        .orElseThrow()
+                        .content();
+
+        assertTrue(
+                memory.contains("NEWEST: deploy freeze until Friday"),
+                "the most recently appended entry must survive the budget cut");
+        assertFalse(
+                memory.contains("middle-fact-must-be-dropped"),
+                "the dropped middle must not reappear");
+        assertTrue(memory.contains("memory truncated"));
+        assertTrue(memory.startsWith("# Long-term memory"), "head structure is preserved");
+        assertTrue(
+                memory.length() <= maxTokens * 4,
+                "the block stays within the char budget it was given");
+    }
+
+    @Test
+    void memoryWithinBudgetIsKeptVerbatim() throws Exception {
+        Files.writeString(workspace.resolve("MEMORY.md"), "# Memory\n\nprefers tabs\n");
+        var wm = track(new WorkspaceManager(workspace));
+        var rc = RuntimeContext.empty();
+        new WorkspaceContextMiddleware(wm, 300).onSystemPrompt(null, rc, "BASE").block();
+
+        String memory =
+                rc.get(WorkspaceContextMaterials.class).items().stream()
+                        .filter(item -> item.kind().equals("memory"))
+                        .findFirst()
+                        .orElseThrow()
+                        .content();
+
+        assertEquals("# Memory\n\nprefers tabs", memory);
+        assertFalse(memory.contains("memory truncated"));
+    }
+
+    @Test
+    void budgetBelowNoticeLengthStillKeepsTheNewestTail() throws Exception {
+        var wm = track(new WorkspaceManager(workspace));
+        var mw = new WorkspaceContextMiddleware(wm, 8000);
+        var truncate =
+                WorkspaceContextMiddleware.class.getDeclaredMethod(
+                        "truncateToTokenBudget", String.class, int.class);
+        truncate.setAccessible(true);
+
+        String text = "old-entry ".repeat(200) + "NEWEST";
+        String out = (String) truncate.invoke(mw, text, 4);
+
+        assertEquals(16, out.length());
+        assertTrue(out.endsWith("NEWEST"));
     }
 
     @Test
