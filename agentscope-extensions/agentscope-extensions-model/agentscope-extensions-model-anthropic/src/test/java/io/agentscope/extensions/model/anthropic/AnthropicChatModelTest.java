@@ -17,12 +17,16 @@ package io.agentscope.extensions.model.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.anthropic.models.messages.MessageParam;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.test.ModelTestUtils;
@@ -511,5 +515,61 @@ class AnthropicChatModelTest {
         StepVerifier.create(model.stream(messages, null, null))
                 .expectError()
                 .verify(Duration.ofSeconds(60));
+    }
+
+    @Test
+    @DisplayName("Should pass request and default options to formatter")
+    void testPassesRequestAndDefaultOptionsToFormatter() {
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder().citationsEnabled(true).temperature(0.7).build();
+        GenerateOptions requestOptions = GenerateOptions.builder().maxTokens(1024).build();
+        RecordingAnthropicChatFormatter formatter = new RecordingAnthropicChatFormatter();
+
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("claude-sonnet-4-5-20250929")
+                        .defaultOptions(defaultOptions)
+                        .formatter(formatter)
+                        .build();
+
+        StepVerifier.create(model.stream(List.of(), null, requestOptions))
+                .expectErrorMatches(
+                        error ->
+                                error instanceof ModelException
+                                        && error.getCause() instanceof StopAfterFormattingException)
+                .verify();
+
+        assertFalse(formatter.singleArgumentFormatCalled);
+        assertSame(requestOptions, formatter.requestOptions);
+        assertSame(defaultOptions, formatter.defaultOptions);
+    }
+
+    private static final class RecordingAnthropicChatFormatter extends AnthropicChatFormatter {
+
+        private boolean singleArgumentFormatCalled;
+        private GenerateOptions requestOptions;
+        private GenerateOptions defaultOptions;
+
+        @Override
+        public List<MessageParam> format(List<Msg> messages) {
+            singleArgumentFormatCalled = true;
+            throw new StopAfterFormattingException();
+        }
+
+        @Override
+        public List<MessageParam> format(
+                List<Msg> messages,
+                GenerateOptions requestOptions,
+                GenerateOptions defaultOptions) {
+            this.requestOptions = requestOptions;
+            this.defaultOptions = defaultOptions;
+            throw new StopAfterFormattingException();
+        }
+    }
+
+    private static final class StopAfterFormattingException extends RuntimeException {
+
+        private static final long serialVersionUID = 1L;
     }
 }

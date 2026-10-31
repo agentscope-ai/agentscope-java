@@ -16,10 +16,12 @@
 package io.agentscope.extensions.model.anthropic.formatter;
 
 import com.anthropic.models.messages.CacheControlEphemeral;
+import com.anthropic.models.messages.CitationsConfigParam;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
+import com.anthropic.models.messages.ToolResultBlockParam;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.GenerateOptions;
@@ -49,6 +51,70 @@ public abstract class AnthropicBaseFormatter
 
     protected AnthropicBaseFormatter() {
         this.messageConverter = new AnthropicMessageConverter(this::convertToolResultToString);
+    }
+
+    /**
+     * Format messages through the existing formatter hook, then configure document citations.
+     * Request options override model defaults without changing the shared message converter.
+     *
+     * @param messages messages to format
+     * @param options request-specific generation options
+     * @param defaultOptions model default generation options
+     * @return formatted Anthropic messages
+     */
+    public List<MessageParam> format(
+            List<Msg> messages, GenerateOptions options, GenerateOptions defaultOptions) {
+        List<MessageParam> formatted = format(messages);
+        Boolean enabled =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getCitationsEnabled);
+        if (enabled == null) {
+            return formatted;
+        }
+        CitationsConfigParam config = CitationsConfigParam.builder().enabled(enabled).build();
+        return formatted.stream()
+                .map(
+                        message -> {
+                            if (!message.content().isBlockParams()) {
+                                return message;
+                            }
+                            List<ContentBlockParam> blocks =
+                                    message.content().asBlockParams().stream()
+                                            .map(block -> configureCitations(block, config))
+                                            .toList();
+                            return message.toBuilder().contentOfBlockParams(blocks).build();
+                        })
+                .toList();
+    }
+
+    private static ContentBlockParam configureCitations(
+            ContentBlockParam block, CitationsConfigParam config) {
+        if (block.isDocument()) {
+            return ContentBlockParam.ofDocument(
+                    block.asDocument().toBuilder().citations(config).build());
+        }
+        if (block.isToolResult() && block.asToolResult().content().isPresent()) {
+            var result = block.asToolResult();
+            var content = result.content().get();
+            if (content.isBlocks()) {
+                var blocks =
+                        content.asBlocks().stream()
+                                .map(
+                                        item ->
+                                                item.isDocument()
+                                                        ? ToolResultBlockParam.Content.Block
+                                                                .ofDocument(
+                                                                        item
+                                                                                .asDocument()
+                                                                                .toBuilder()
+                                                                                .citations(config)
+                                                                                .build())
+                                                        : item)
+                                .toList();
+                return ContentBlockParam.ofToolResult(
+                        result.toBuilder().contentOfBlocks(blocks).build());
+            }
+        }
+        return block;
     }
 
     /**
@@ -248,6 +314,10 @@ public abstract class AnthropicBaseFormatter
         if (block.isText()) {
             return ContentBlockParam.ofText(
                     block.asText().toBuilder().cacheControl(cacheControl).build());
+        }
+        if (block.isDocument()) {
+            return ContentBlockParam.ofDocument(
+                    block.asDocument().toBuilder().cacheControl(cacheControl).build());
         }
         if (block.isImage()) {
             return ContentBlockParam.ofImage(

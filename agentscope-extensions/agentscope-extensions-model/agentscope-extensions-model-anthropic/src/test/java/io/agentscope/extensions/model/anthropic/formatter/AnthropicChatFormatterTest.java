@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.anthropic.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,6 +30,8 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.Usage;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -503,6 +506,64 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testFormatPdfWithRequestLevelCitations() {
+        DataBlock pdf =
+                DataBlock.builder()
+                        .name("guide.pdf")
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("application/pdf")
+                                        .data("JVBERi0xLjQK")
+                                        .build())
+                        .build();
+        Msg msg = Msg.builder().role(MsgRole.USER).content(pdf).build();
+
+        List<MessageParam> result =
+                formatter.format(
+                        List.of(msg),
+                        GenerateOptions.builder().citationsEnabled(true).build(),
+                        null);
+
+        ContentBlockParam document = result.get(0).content().asBlockParams().get(0);
+        assertTrue(document.isDocument());
+        assertTrue(document.asDocument().citations().orElseThrow().enabled().orElseThrow());
+
+        ContentBlockParam withoutCitations =
+                formatter.format(List.of(msg)).get(0).content().asBlockParams().get(0);
+        assertTrue(withoutCitations.asDocument().citations().isEmpty());
+    }
+
+    @Test
+    void testFormatWithCitationsDisabledDelegatesToSingleParamFormat() {
+        RecordingChatFormatter recordingFormatter = new RecordingChatFormatter();
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text("Hello").build())
+                                .build());
+
+        List<MessageParam> result =
+                recordingFormatter.format(
+                        messages, GenerateOptions.builder().citationsEnabled(false).build(), null);
+
+        assertTrue(recordingFormatter.singleArgumentFormatCalled);
+        assertEquals(recordingFormatter.formattedMessages, result);
+    }
+
+    private static final class RecordingChatFormatter extends AnthropicChatFormatter {
+
+        private final List<MessageParam> formattedMessages = List.of();
+        private boolean singleArgumentFormatCalled;
+
+        @Override
+        public List<MessageParam> format(List<Msg> msgs) {
+            singleArgumentFormatCalled = true;
+            return formattedMessages;
+        }
+    }
+
+    @Test
     void defaultFormatterPreservesSystemTextNewlines() {
         Msg system =
                 Msg.builder().role(MsgRole.SYSTEM).textContent("first\nsecond\n\nthird").build();
@@ -543,5 +604,157 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                         .asToolResult();
         assertEquals("failed-call", result.toolUseId());
         assertTrue(result.isError().orElse(false));
+    }
+
+    @Test
+    void testCitationOptionsPreserveCustomDoFormat() {
+        AnthropicChatFormatter custom =
+                new AnthropicChatFormatter() {
+                    @Override
+                    public List<MessageParam> doFormat(List<Msg> messages) {
+                        return List.of(
+                                MessageParam.builder()
+                                        .role(MessageParam.Role.USER)
+                                        .content("custom formatting")
+                                        .build());
+                    }
+                };
+        var result =
+                custom.format(
+                        List.of(), GenerateOptions.builder().citationsEnabled(true).build(), null);
+        assertEquals("custom formatting", result.get(0).content().asString());
+    }
+
+    @Test
+    void testCitationOptionsPreserveCustomFormat() {
+        RecordingChatFormatter custom = new RecordingChatFormatter();
+        custom.format(List.of(), GenerateOptions.builder().citationsEnabled(true).build(), null);
+        assertTrue(custom.singleArgumentFormatCalled);
+    }
+
+    @Test
+    void testCitationsApplyToAllDocumentsAndRespectRequestOverride() {
+        DataBlock pdf =
+                DataBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("application/pdf")
+                                        .data("JVBERi0xLjQK")
+                                        .build())
+                        .build();
+        List<Msg> messages =
+                List.of(
+                        Msg.builder().role(MsgRole.USER).content(pdf).build(),
+                        Msg.builder()
+                                .role(MsgRole.TOOL)
+                                .content(
+                                        ToolResultBlock.builder()
+                                                .id("pdf-tool")
+                                                .name("read_pdf")
+                                                .output(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("attached")
+                                                                        .build(),
+                                                                pdf))
+                                                .build())
+                                .build());
+        GenerateOptions defaults = GenerateOptions.builder().citationsEnabled(true).build();
+        var enabled = formatter.format(messages, null, defaults);
+        assertTrue(
+                enabled.get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asDocument()
+                        .citations()
+                        .orElseThrow()
+                        .enabled()
+                        .orElseThrow());
+        assertTrue(
+                enabled.get(1)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asToolResult()
+                        .content()
+                        .orElseThrow()
+                        .asBlocks()
+                        .get(1)
+                        .asDocument()
+                        .citations()
+                        .orElseThrow()
+                        .enabled()
+                        .orElseThrow());
+        var disabled =
+                formatter.format(
+                        messages,
+                        GenerateOptions.builder().citationsEnabled(false).build(),
+                        defaults);
+        assertFalse(
+                disabled.get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asDocument()
+                        .citations()
+                        .orElseThrow()
+                        .enabled()
+                        .orElseThrow());
+        assertFalse(
+                disabled.get(1)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asToolResult()
+                        .content()
+                        .orElseThrow()
+                        .asBlocks()
+                        .get(1)
+                        .asDocument()
+                        .citations()
+                        .orElseThrow()
+                        .enabled()
+                        .orElseThrow());
+        assertTrue(
+                formatter
+                        .format(messages)
+                        .get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asDocument()
+                        .citations()
+                        .isEmpty());
+        // Configuring a later request must not mutate an earlier request.
+        assertTrue(
+                enabled.get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asDocument()
+                        .citations()
+                        .orElseThrow()
+                        .enabled()
+                        .orElseThrow());
+        var cached = formatter.applyCacheControl(enabled.subList(0, 1));
+        assertTrue(
+                cached.get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asDocument()
+                        .cacheControl()
+                        .isPresent());
+        assertTrue(
+                cached.get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asDocument()
+                        .citations()
+                        .orElseThrow()
+                        .enabled()
+                        .orElseThrow());
     }
 }

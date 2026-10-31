@@ -52,6 +52,7 @@ public class GenerateOptions {
     private final Long seed;
     private final Boolean cacheControl;
     private final Boolean parallelToolCalls;
+    private final Boolean citationsEnabled;
     private final ResponseFormat responseFormat;
     private final Map<String, String> additionalHeaders;
     private final Map<String, Object> additionalBodyParams;
@@ -82,6 +83,7 @@ public class GenerateOptions {
         this.seed = builder.seed;
         this.cacheControl = builder.cacheControl;
         this.parallelToolCalls = builder.parallelToolCalls;
+        this.citationsEnabled = builder.citationsEnabled;
         this.responseFormat = builder.responseFormat;
         this.additionalHeaders =
                 builder.additionalHeaders != null
@@ -337,6 +339,19 @@ public class GenerateOptions {
     }
 
     /**
+     * Gets whether native source citations are enabled for supported model providers.
+     *
+     * <p>Providers may restrict citations to specific input types. For Anthropic, this option is
+     * applied to every document in the request because the Messages API requires citations to be
+     * enabled for all documents or none of them.
+     *
+     * @return true to enable citations, false to disable them, or null to use provider defaults
+     */
+    public Boolean getCitationsEnabled() {
+        return citationsEnabled;
+    }
+
+    /**
      * Gets the response format for structured output.
      *
      * <p>When set, the model will return a response conforming to the specified format
@@ -484,6 +499,10 @@ public class GenerateOptions {
                 primary.parallelToolCalls != null
                         ? primary.parallelToolCalls
                         : fallback.parallelToolCalls);
+        builder.citationsEnabled(
+                primary.citationsEnabled != null
+                        ? primary.citationsEnabled
+                        : fallback.citationsEnabled);
         builder.responseFormat(
                 primary.responseFormat != null ? primary.responseFormat : fallback.responseFormat);
 
@@ -538,6 +557,7 @@ public class GenerateOptions {
         private Long seed;
         private Boolean cacheControl;
         private Boolean parallelToolCalls;
+        private Boolean citationsEnabled;
         private ResponseFormat responseFormat;
         private Map<String, String> additionalHeaders;
         private Map<String, Object> additionalBodyParams;
@@ -799,6 +819,17 @@ public class GenerateOptions {
          */
         public Builder parallelToolCalls(Boolean parallelToolCalls) {
             this.parallelToolCalls = parallelToolCalls;
+            return this;
+        }
+
+        /**
+         * Sets whether native source citations are enabled for supported model providers.
+         *
+         * @param citationsEnabled true to enable citations, false to disable them
+         * @return this builder instance
+         */
+        public Builder citationsEnabled(Boolean citationsEnabled) {
+            this.citationsEnabled = citationsEnabled;
             return this;
         }
 

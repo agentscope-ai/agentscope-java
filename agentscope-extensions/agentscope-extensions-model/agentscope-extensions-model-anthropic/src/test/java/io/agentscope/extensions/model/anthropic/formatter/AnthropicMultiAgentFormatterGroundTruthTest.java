@@ -16,10 +16,14 @@
 package io.agentscope.extensions.model.anthropic.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.anthropic.core.ObjectMappers;
+import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.MessageParam;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -27,6 +31,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.util.JsonCodec;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
@@ -461,5 +466,31 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
 
         JsonNode groundTruthNode = jsonCodec.fromJson(groundTruthJson, JsonNode.class);
         assertEquals(groundTruthNode, resultNode);
+    }
+
+    @Test
+    void testMultiAgentFormatterConvertsPdfDataBlockWithCitations() {
+        DataBlock pdf =
+                DataBlock.builder()
+                        .name("conversation.pdf")
+                        .source(
+                                Base64Source.builder()
+                                        .data("JVBERi0xLjQK")
+                                        .mediaType("application/pdf")
+                                        .build())
+                        .build();
+        Msg message = Msg.builder().name("user").role(MsgRole.USER).content(List.of(pdf)).build();
+        GenerateOptions options = GenerateOptions.builder().citationsEnabled(true).build();
+
+        List<MessageParam> result =
+                formatter.format(List.of(message), options, GenerateOptions.builder().build());
+
+        ContentBlockParam document =
+                result.get(0).content().asBlockParams().stream()
+                        .filter(ContentBlockParam::isDocument)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals("JVBERi0xLjQK", document.asDocument().source().asBase64().data());
+        assertTrue(document.asDocument().citations().orElseThrow().enabled().orElseThrow());
     }
 }

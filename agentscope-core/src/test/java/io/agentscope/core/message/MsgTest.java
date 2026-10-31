@@ -21,7 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.JsonUtils;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -125,6 +127,33 @@ class MsgTest {
                         .build();
 
         assertEquals("First line\nSecond line\nThird line", msg.getTextContent());
+    }
+
+    @Test
+    void testGetTextContentPreservesMarkdownAcrossCitationBoundaries() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder().text("See [").build(),
+                                TextBlock.builder()
+                                        .text("the guide")
+                                        .citations(
+                                                List.of(
+                                                        new Citation.PageLocation(
+                                                                "source", 0, null, null, 1, 2)))
+                                        .build(),
+                                TextBlock.builder()
+                                        .text("](https://example.com/guide).\nNext line.")
+                                        .build())
+                        .build();
+
+        String expected = "See [the guide](https://example.com/guide).\nNext line.";
+        assertEquals(expected, msg.getTextContent());
+        Msg restored =
+                JsonUtils.getJsonCodec().fromJson(JsonUtils.getJsonCodec().toJson(msg), Msg.class);
+        assertEquals(expected, restored.getTextContent());
+        assertEquals(msg.getContent(), restored.getContent());
     }
 
     @Test

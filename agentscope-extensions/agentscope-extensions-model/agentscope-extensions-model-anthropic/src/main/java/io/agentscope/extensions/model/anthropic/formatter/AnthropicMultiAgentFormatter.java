@@ -206,8 +206,7 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
                 }
             } else if (block instanceof DataBlock db) {
                 try {
-                    ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
-                    contentBlocks.add(ContentBlockParam.ofImage(imageParam));
+                    contentBlocks.add(mediaConverter.convertDataBlockContent(db));
                 } catch (Exception e) {
                     log.warn("Failed to process DataBlock in multi-agent conversation: {}", e);
                 }

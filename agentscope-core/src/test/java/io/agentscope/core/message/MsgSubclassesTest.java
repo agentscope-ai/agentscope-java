@@ -16,7 +16,9 @@
 package io.agentscope.core.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -176,10 +178,39 @@ class MsgSubclassesTest {
     void jsonRoundTrip_assistantMessage() {
         JsonCodec codec = JsonUtils.getJsonCodec();
         Msg orig = new AssistantMessage("ok");
-        Msg restored = codec.fromJson(codec.toJson(orig), Msg.class);
+        String json = codec.toJson(orig);
+        Msg restored = codec.fromJson(json, Msg.class);
 
         assertInstanceOf(AssistantMessage.class, restored);
         assertEquals("ok", restored.getTextContent());
+        assertFalse(json.contains("\"citations\""));
+    }
+
+    @Test
+    void jsonRoundTrip_assistantMessageWithCitations() {
+        JsonCodec codec = JsonUtils.getJsonCodec();
+        TextBlock citedText =
+                TextBlock.builder()
+                        .text("Supported claim")
+                        .citations(
+                                List.of(
+                                        new Citation.PageLocation(
+                                                "source text", 0, "guide.pdf", null, 2, 3),
+                                        new Citation.CharLocation(
+                                                "source text", 1, "guide.txt", "file-1", 4, 15),
+                                        new Citation.ContentBlockLocation(
+                                                "source text", 2, "guide", null, 5, 7)))
+                        .build();
+        Msg restored = codec.fromJson(codec.toJson(new AssistantMessage(citedText)), Msg.class);
+
+        TextBlock restoredText = (TextBlock) restored.getFirstContentBlock();
+        assertEquals(3, restoredText.getCitations().size());
+        assertInstanceOf(Citation.PageLocation.class, restoredText.getCitations().get(0));
+        assertInstanceOf(Citation.CharLocation.class, restoredText.getCitations().get(1));
+        assertInstanceOf(Citation.ContentBlockLocation.class, restoredText.getCitations().get(2));
+        Citation.PageLocation page = (Citation.PageLocation) restoredText.getCitations().get(0);
+        assertEquals("guide.pdf", page.documentTitle());
+        assertEquals(2, page.startPageNumber());
     }
 
     @Test
@@ -316,5 +347,34 @@ class MsgSubclassesTest {
         assertInstanceOf(UserMessage.class, restored);
         assertEquals("bob", restored.getName());
         assertEquals("hey", restored.getTextContent());
+    }
+
+    @Test
+    void textBlockEqualityIncludesCitationsButNotStreamingIndex() {
+        Citation citation = new Citation.PageLocation("source", 0, null, null, 1, 2);
+        TextBlock first =
+                TextBlock.builder()
+                        .text("claim")
+                        .citations(List.of(citation))
+                        .providerBlockIndex(0)
+                        .build();
+        TextBlock same =
+                TextBlock.builder()
+                        .text("claim")
+                        .citations(List.of(citation))
+                        .providerBlockIndex(1)
+                        .build();
+        assertEquals(first, same);
+        assertEquals(first.hashCode(), same.hashCode());
+        assertNotEquals(first, TextBlock.builder().text("claim").build());
+        assertNotEquals(
+                first,
+                TextBlock.builder()
+                        .text("claim")
+                        .citations(
+                                List.of(
+                                        new Citation.PageLocation(
+                                                "different source", 0, null, null, 1, 2)))
+                        .build());
     }
 }

@@ -41,6 +41,7 @@ class GenerateOptionsTest {
                         .maxTokens(4096)
                         .frequencyPenalty(0.3)
                         .presencePenalty(0.4)
+                        .citationsEnabled(true)
                         .build();
 
         assertNotNull(options);
@@ -49,6 +50,7 @@ class GenerateOptionsTest {
         assertEquals(4096, options.getMaxTokens());
         assertEquals(0.3, options.getFrequencyPenalty());
         assertEquals(0.4, options.getPresencePenalty());
+        assertTrue(options.getCitationsEnabled());
     }
 
     @Test
@@ -76,6 +78,18 @@ class GenerateOptionsTest {
         assertNull(options.getMaxTokens());
         assertNull(options.getFrequencyPenalty());
         assertNull(options.getPresencePenalty());
+        assertNull(options.getCitationsEnabled());
+    }
+
+    @Test
+    @DisplayName("Should merge request citation setting over model defaults")
+    void testMergeCitationsEnabled() {
+        GenerateOptions defaults = GenerateOptions.builder().citationsEnabled(true).build();
+        GenerateOptions request = GenerateOptions.builder().citationsEnabled(false).build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(request, defaults);
+
+        assertEquals(false, merged.getCitationsEnabled());
     }
 
     @Test

@@ -266,9 +266,7 @@ public class AnthropicMessageConverter {
 
         for (ContentBlock block : blocks) {
             if (block instanceof TextBlock tb) {
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder().text(tb.getText()).build()));
+                contentBlocks.add(ContentBlockParam.ofText(convertTextBlock(tb)));
             } else if (block instanceof HintBlock hb) {
                 contentBlocks.add(
                         ContentBlockParam.ofText(
@@ -297,8 +295,8 @@ public class AnthropicMessageConverter {
                 }
             } else if (block instanceof DataBlock db) {
                 try {
-                    ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
-                    contentBlocks.add(ContentBlockParam.ofImage(imageParam));
+                    ContentBlockParam converted = mediaConverter.convertDataBlockContent(db);
+                    contentBlocks.add(converted);
                 } catch (Exception e) {
                     log.warn("Failed to process DataBlock: {}", e.getMessage());
                     contentBlocks.add(
@@ -366,9 +364,7 @@ public class AnthropicMessageConverter {
             for (Object item : outputList) {
                 if (item instanceof ContentBlock cb) {
                     if (cb instanceof TextBlock tb) {
-                        blocks.add(
-                                ToolResultBlockParam.Content.Block.ofText(
-                                        TextBlockParam.builder().text(tb.getText()).build()));
+                        blocks.add(ToolResultBlockParam.Content.Block.ofText(convertTextBlock(tb)));
                     } else if (cb instanceof ImageBlock ib) {
                         try {
                             ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
@@ -378,8 +374,17 @@ public class AnthropicMessageConverter {
                         }
                     } else if (cb instanceof DataBlock db) {
                         try {
-                            ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
-                            blocks.add(ToolResultBlockParam.Content.Block.ofImage(imageParam));
+                            ContentBlockParam converted =
+                                    mediaConverter.convertDataBlockContent(db);
+                            if (converted.isImage()) {
+                                blocks.add(
+                                        ToolResultBlockParam.Content.Block.ofImage(
+                                                converted.asImage()));
+                            } else if (converted.isDocument()) {
+                                blocks.add(
+                                        ToolResultBlockParam.Content.Block.ofDocument(
+                                                converted.asDocument()));
+                            }
                         } catch (Exception e) {
                             log.warn("Failed to process DataBlock in tool result: {}", e);
                         }
@@ -430,6 +435,15 @@ public class AnthropicMessageConverter {
                         MessageParam.Content.ofBlockParams(
                                 List.of(ContentBlockParam.ofToolResult(toolResultParam))))
                 .build();
+    }
+
+    private TextBlockParam convertTextBlock(TextBlock textBlock) {
+        TextBlockParam.Builder builder = TextBlockParam.builder().text(textBlock.getText());
+        var citations = AnthropicCitationConverter.convertToParams(textBlock.getCitations());
+        if (!citations.isEmpty()) {
+            builder.citations(citations);
+        }
+        return builder.build();
     }
 
     /**
