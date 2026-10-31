@@ -27,7 +27,6 @@ import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
-import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -231,25 +230,22 @@ class ToolExecutor {
         // Check tool activation. This gate only applies to backend tools: an external tool injected
         // via the request config is ungrouped and always callable, so a same-named-but-inactive
         // backend tool must not reject it (the model was shown the external override and the call
-        // must be honoured).
-        boolean fromRequestConfig = requestConfig.overrides(toolCall.getName());
-        RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
-        if (!fromRequestConfig
-                && registered != null
-                && !groupManager.isActiveTool(toolCall.getName(), resolveActiveGroups(param))) {
-            String errorMsg =
-                    String.format(
-                            "Unauthorized tool call: '%s' is not available", toolCall.getName());
+        // must be honoured). Shared with the permission pre-gate so the two cannot disagree.
+        if (isBackendToolUnavailable(
+                toolRegistry,
+                groupManager,
+                toolCall.getName(),
+                requestConfig,
+                resolveActiveGroups(param))) {
+            String errorMsg = ToolValidator.unavailableToolMessage(toolCall.getName());
             logger.warn(errorMsg);
             return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
-        // Validate input against schema. Resolve the effective arguments the same way the
-        // invocation path does (raw content when valid, otherwise the parsed input map), so
-        // input-only tool calls are not rejected with a misleading NPE-derived error.
+        // Validate input against schema. Same args string as the permission pre-gate.
         String validationError =
                 ToolValidator.validateInput(
-                        JsonUtils.resolveToolCallArgsJson(toolCall), tool.getParameters());
+                        ToolValidator.resolveArgsForValidation(toolCall), tool.getParameters());
         if (validationError != null) {
             String errorMsg =
                     String.format(
@@ -324,6 +320,7 @@ class ToolExecutor {
         } else if (!toolCall.getInput().isEmpty()) {
             mergedInput.putAll(toolCall.getInput());
         }
+        RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
         if (registered != null) {
             mergedInput.putAll(registered.getPresetParameters());
         }
@@ -504,6 +501,34 @@ class ToolExecutor {
                                 ToolResultBlock.error(
                                         "Tool execution failed: Tool completed without returning a"
                                                 + " result")));
+    }
+
+    /**
+     * Whether a registered backend tool would be rejected as unavailable before schema validation.
+     *
+     * <p>Request-config overrides and unknown tools are not unavailable here (unknown tools are
+     * "not found"). {@code activeGroups} null falls back to the shared activation flags.
+     */
+    static boolean isBackendToolUnavailable(
+            ToolRegistry registry,
+            ToolGroupManager groups,
+            String toolName,
+            ToolRequestConfig requestConfig,
+            Collection<String> activeGroups) {
+        if (toolName == null || registry == null || groups == null) {
+            return false;
+        }
+        ToolRequestConfig config = requestConfig != null ? requestConfig : ToolRequestConfig.NONE;
+        if (config.hidesBackend()) {
+            return false;
+        }
+        if (config.overrides(toolName)) {
+            return false;
+        }
+        if (registry.getRegisteredTool(toolName) == null) {
+            return false;
+        }
+        return !groups.isActiveTool(toolName, activeGroups);
     }
 
     /**
