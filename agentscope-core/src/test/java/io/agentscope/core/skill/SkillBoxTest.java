@@ -75,7 +75,7 @@ class SkillBoxTest {
             AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
             skillBox.registerSkill(skill);
 
-            AgentSkill retrieved = skillBox.getSkill(skill.getSkillId());
+            AgentSkill retrieved = skillBox.getSkill(skill.getName());
 
             assertNotNull(retrieved);
             assertEquals("test-skill", retrieved.getName());
@@ -94,11 +94,11 @@ class SkillBoxTest {
             AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
             skillBox.registerSkill(skill);
 
-            assertTrue(skillBox.exists("test-skill_custom"));
+            assertTrue(skillBox.exists("test-skill"));
 
-            skillBox.removeSkill("test-skill_custom");
+            skillBox.removeSkill("test-skill");
 
-            assertFalse(skillBox.exists(skill.getSkillId()));
+            assertFalse(skillBox.exists(skill.getName()));
         }
 
         @Test
@@ -109,7 +109,7 @@ class SkillBoxTest {
             AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
             skillBox.registerSkill(skill);
 
-            assertTrue(skillBox.exists(skill.getSkillId()));
+            assertTrue(skillBox.exists(skill.getName()));
         }
 
         @Test
@@ -126,7 +126,7 @@ class SkillBoxTest {
             AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
 
             // Before registration, the tool group should not exist
-            String toolsGroupName = skill.getSkillId() + "_skill_tools";
+            String toolsGroupName = skill.getName() + "_skill_tools";
             assertNull(
                     toolkit.getToolGroup(toolsGroupName),
                     "Tool group should not exist before skill registration");
@@ -168,7 +168,7 @@ class SkillBoxTest {
             // Should not throw - only one registration type
             skillBox.registration().skill(skill).tool(toolObject).apply();
 
-            assertTrue(skillBox.exists(skill.getSkillId()));
+            assertTrue(skillBox.exists(skill.getName()));
             assertNotNull(toolkit.getTool("test_tool_method"), "Tool should be registered");
         }
 
@@ -186,7 +186,7 @@ class SkillBoxTest {
             // Should not throw - only one registration type
             skillBox.registration().skill(skill).agentTool(agentTool).apply();
 
-            assertTrue(skillBox.exists(skill.getSkillId()));
+            assertTrue(skillBox.exists(skill.getName()));
             assertNotNull(toolkit.getTool("agent_tool_only"), "Agent tool should be registered");
         }
 
@@ -210,22 +210,23 @@ class SkillBoxTest {
             // Should not throw - only one registration type
             skillBox.registration().skill(skill).mcpClient(mcpClient).apply();
 
-            assertTrue(skillBox.exists(skill.getSkillId()));
+            assertTrue(skillBox.exists(skill.getName()));
             assertNotNull(toolkit.getTool("mcp_only_tool"), "MCP tool should be registered");
         }
 
         @Test
         @DisplayName("Should return empty set when no skills are registered")
         void testGetAllSkillIdsWhenEmpty() {
-            var skillIds = skillBox.getAllSkillIds();
+            var skillNames = skillBox.getAllSkillIds();
 
-            assertNotNull(skillIds, "Skill IDs set should not be null");
+            assertNotNull(skillNames, "Skill names set should not be null");
             assertTrue(
-                    skillIds.isEmpty(), "Skill IDs set should be empty when no skills registered");
+                    skillNames.isEmpty(),
+                    "Skill names set should be empty when no skills registered");
         }
 
         @Test
-        @DisplayName("Should return all skill IDs when multiple skills are registered")
+        @DisplayName("Should return all skill names when multiple skills are registered")
         void testGetAllSkillIdsWithMultipleSkills() {
             AgentSkill skill1 = new AgentSkill("skill-one", "Skill One", "# Content 1", null);
             AgentSkill skill2 = new AgentSkill("skill-two", "Skill Two", "# Content 2", null);
@@ -235,13 +236,13 @@ class SkillBoxTest {
             skillBox.registerSkill(skill2);
             skillBox.registerSkill(skill3);
 
-            var skillIds = skillBox.getAllSkillIds();
+            var skillNames = skillBox.getAllSkillIds();
 
-            assertNotNull(skillIds, "Skill IDs set should not be null");
-            assertEquals(3, skillIds.size(), "Should have exactly three skill IDs");
-            assertTrue(skillIds.contains(skill1.getSkillId()), "Should contain first skill ID");
-            assertTrue(skillIds.contains(skill2.getSkillId()), "Should contain second skill ID");
-            assertTrue(skillIds.contains(skill3.getSkillId()), "Should contain third skill ID");
+            assertNotNull(skillNames, "Skill names set should not be null");
+            assertEquals(3, skillNames.size(), "Should have exactly three skill names");
+            assertTrue(skillNames.contains(skill1.getName()), "Should contain first skill name");
+            assertTrue(skillNames.contains(skill2.getName()), "Should contain second skill name");
+            assertTrue(skillNames.contains(skill3.getName()), "Should contain third skill name");
         }
     }
 
@@ -301,7 +302,7 @@ class SkillBoxTest {
 
             // Valid resources land under skills/<skillId>/ with their content intact; the
             // escaping resource is the only thing left out of the tree.
-            Path skillDir = tempDir.resolve("skills").resolve("safe_custom");
+            Path skillDir = tempDir.resolve("skills").resolve("safe");
             assertEquals("fine", Files.readString(skillDir.resolve("ok.txt")));
             assertEquals(
                     "echo hi", Files.readString(skillDir.resolve("scripts").resolve("run.sh")));

@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.CapabilitySurface;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -55,6 +57,16 @@ class ToolExecutorTest {
 
     private Toolkit toolkit;
 
+    /**
+     * Direct-execution tests bypass the agent {@code call()} entry, so the grant layer's
+     * fail-closed semantics would deny every backend tool. Seed ALLOW_ALL explicitly.
+     */
+    private static RuntimeContext grantRc() {
+        RuntimeContext rc = RuntimeContext.empty();
+        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
+        return rc;
+    }
+
     @BeforeEach
     void setUp() {
         toolkit = new Toolkit();
@@ -83,7 +95,8 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(addCall, concatCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(addCall, concatCall), null, null, grantRc())
+                        .block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return responses for tool calls");
         assertEquals(2, responses.size(), "All tool calls should be executed");
@@ -137,7 +150,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(errorCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(errorCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return an error response");
         assertEquals(1, responses.size(), "Single failing call should yield one response");
@@ -185,7 +198,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(emptyCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(emptyCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return an error response");
         assertEquals(1, responses.size(), "Empty completion should still yield one response");
@@ -221,7 +234,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(externalCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(externalCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return a suspended response");
         assertEquals(1, responses.size(), "Single external call should yield one response");
@@ -263,7 +276,8 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(invalidExternalCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(invalidExternalCall), null, null, grantRc())
+                        .block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return a validation response");
         assertEquals(1, responses.size(), "Single external call should yield one response");
@@ -312,7 +326,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(externalCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(externalCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return an authorization response");
         assertEquals(1, responses.size(), "Single external call should yield one response");
@@ -369,7 +383,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(interruptedCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(interruptedCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Should return error response");
         assertEquals(1, responses.size(), "Should have one response");
@@ -449,7 +463,8 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(call1, call2, call3), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(call1, call2, call3), null, null, grantRc())
+                        .block(TIMEOUT);
 
         assertNotNull(responses, "Should return responses");
         assertEquals(3, responses.size(), "Should have three responses");
@@ -506,6 +521,7 @@ class ToolExecutorTest {
                                 ToolCallParam.builder()
                                         .toolUseBlock(toolCall)
                                         .input(explicitInput)
+                                        .runtimeContext(grantRc())
                                         .build())
                         .block(TIMEOUT);
 
@@ -540,7 +556,11 @@ class ToolExecutorTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(grantRc())
+                                        .build())
                         .block(TIMEOUT);
 
         assertNotNull(result, "Result should not be null");
@@ -599,7 +619,11 @@ class ToolExecutorTest {
                         .build();
 
         ToolResultBlock result =
-                executor.execute(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                executor.execute(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(grantRc())
+                                        .build())
                         .block(TIMEOUT);
 
         assertNotNull(result, "Result should not be null");
@@ -675,7 +699,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(npeCall, argCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(npeCall, argCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Should return responses");
         assertEquals(2, responses.size(), "Should have two responses");

@@ -285,7 +285,7 @@ agent 每次 call 时，harness 会构建一个 `<available_skills>` 块，列�
 <skill>
   <name>code-reviewer</name>
   <description>当用户需要代码评审、风格反馈或 PR 审核时使用。</description>
-  <skill-id>code-reviewer_workspace-namespaced</skill-id>
+  <skill-id>code-reviewer__s__workspace-namespaced</skill-id>
   <files-root>/workspace/skills/code-reviewer</files-root>
 </skill>
 ...
@@ -338,7 +338,7 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 工作区 skill（Layer 3 / Layer 4）不需要 stage——它们本来就在工作区目录里。
 
-如果两个仓库返回了相同的 `getSource()`，第二个会自动加后缀（`<source>_2`、`<source>_3` …），并打 warning log，所以路径和 skill-id 不会撞。
+如果两个仓库返回了相同的 `getSource()`，第二个会自动加后缀（`<source>_2`、`<source>_3` …），并打 warning log，所以路径和 skillName 不会撞。
 
 ## 在沙箱里运行 skill
 

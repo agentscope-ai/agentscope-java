@@ -94,10 +94,10 @@ class HarnessSkillMiddlewareContextIsolationTest {
         assertEquals(ContextItem.Placement.RUNTIME, skills.placement());
         assertTrue(
                 middleware.runtime().currentCatalog(alice).ids().stream()
-                        .anyMatch(id -> id.startsWith("alice-skill_")));
+                        .anyMatch(id -> id.startsWith("alice-skill")));
         assertFalse(
                 middleware.runtime().currentCatalog(alice).ids().stream()
-                        .anyMatch(id -> id.startsWith("bob-skill_")));
+                        .anyMatch(id -> id.startsWith("bob-skill")));
     }
 
     @Test
