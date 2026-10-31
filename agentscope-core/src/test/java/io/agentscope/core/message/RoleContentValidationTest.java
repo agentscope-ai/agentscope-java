@@ -33,8 +33,8 @@ import org.junit.jupiter.api.Test;
  * Behaviour spec for {@code Msg#validateRoleContent()}.
  *
  * <ul>
- *   <li>{@link MsgRole#USER} accepts the unified {@link DataBlock} <em>and</em>
- *       the legacy {@link ImageBlock} / {@link AudioBlock} / {@link VideoBlock}
+ *   <li>{@link MsgRole#USER} accepts the unified {@link DataBlock}, {@link DocumentBlock}
+ *       <em>and</em> the legacy {@link ImageBlock} / {@link AudioBlock} / {@link VideoBlock}
  *       subclasses (kept for back-compat).</li>
  *   <li>{@link MsgRole#TOOL} is treated as unrestricted (same as assistant) to
  *       avoid cascading changes across the formatter/converter call sites that
@@ -46,7 +46,7 @@ import org.junit.jupiter.api.Test;
  * <table>
  *   <caption>Role × block compatibility</caption>
  *   <tr><th>Role</th><th>Allowed blocks</th></tr>
- *   <tr><td>{@code USER}</td><td>{@link TextBlock}, {@link DataBlock}, {@link ImageBlock}, {@link AudioBlock}, {@link VideoBlock}</td></tr>
+ *   <tr><td>{@code USER}</td><td>{@link TextBlock}, {@link DataBlock}, {@link DocumentBlock}, {@link ImageBlock}, {@link AudioBlock}, {@link VideoBlock}</td></tr>
  *   <tr><td>{@code ASSISTANT}</td><td>any (no restriction)</td></tr>
  *   <tr><td>{@code SYSTEM}</td><td>{@link TextBlock} only</td></tr>
  *   <tr><td>{@code TOOL}</td><td>any (back-compat carve-out)</td></tr>
@@ -62,6 +62,14 @@ class RoleContentValidationTest {
         return DataBlock.builder()
                 .source(URLSource.builder().url("https://example.com/x.png").build())
                 .name("x.png")
+                .build();
+    }
+
+    private static DocumentBlock document() {
+        return DocumentBlock.builder()
+                .source(FileIdSource.builder().provider("dashscope").fileId("file-abc").build())
+                .name("report.pdf")
+                .mimeType("application/pdf")
                 .build();
     }
 
@@ -96,7 +104,7 @@ class RoleContentValidationTest {
     }
 
     @Nested
-    @DisplayName("USER role: text and data (incl. legacy image/audio/video) only")
+    @DisplayName("USER role: text, data and documents (incl. legacy image/audio/video) only")
     class UserRole {
 
         @Test
@@ -111,6 +119,13 @@ class RoleContentValidationTest {
         void userAcceptsData() {
             assertDoesNotThrow(
                     () -> Msg.builder().role(MsgRole.USER).content(List.of(data())).build());
+        }
+
+        @Test
+        @DisplayName("USER + DocumentBlock is valid")
+        void userAcceptsDocument() {
+            assertDoesNotThrow(
+                    () -> Msg.builder().role(MsgRole.USER).content(List.of(document())).build());
         }
 
         @Test
