@@ -64,9 +64,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             """
             ## Runtime Environment
             You are the %s agent.
-            The host operating system is: %s
+            %s
             The host workspace directory is: %s
-            The host JVM temporary directory is: %s
             %s
             """;
 
@@ -225,7 +224,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                 detectLocalUpper(filesystem) != null
                         ? workspaceManager.resolveRuntimeDataPath(rc, "")
                         : workspace;
-        String sessionContext = buildSessionContextSection(effectiveWorkspace);
+        String sessionContext = buildSessionContextSection(effectiveWorkspace, filesystem);
 
         String knowledgeBlock = buildKnowledgeBlock(knowledgeContent, knowledgeFiles, workspace);
         String additionalBlock = buildAdditionalContextBlock(rc);
@@ -532,20 +531,35 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         };
     }
 
-    private String buildSessionContextSection(Path workspace) {
-        String platform = System.getProperty("os.name") + " " + System.getProperty("os.version");
-        String tempDir = System.getProperty("java.io.tmpdir");
+    private String buildSessionContextSection(Path workspace, AbstractFilesystem filesystem) {
         String environmentMemoryPart =
                 environmentMemory != null && !environmentMemory.isBlank() ? environmentMemory : "";
+        String hostFacts =
+                isSandboxFilesystem(filesystem)
+                        ? "The host operating system and JVM temporary directory are not reported"
+                                + " because a sandbox filesystem runs commands in its own"
+                                + " container."
+                        : "The host operating system is: "
+                                + System.getProperty("os.name")
+                                + " "
+                                + System.getProperty("os.version")
+                                + "\nThe host JVM temporary directory is: "
+                                + System.getProperty("java.io.tmpdir");
 
         return String.format(
                         SESSION_CONTEXT_SECTION_TEMPLATE,
                         agentName,
-                        platform,
+                        hostFacts,
                         workspace.toAbsolutePath(),
-                        tempDir,
                         environmentMemoryPart)
                 .strip();
+    }
+
+    /** Whether commands run in a sandbox container rather than on the backend host. */
+    private static boolean isSandboxFilesystem(AbstractFilesystem filesystem) {
+        return filesystem instanceof AbstractSandboxFilesystem
+                && !(filesystem instanceof LocalFilesystemWithShell)
+                && !(filesystem instanceof OverlayFilesystem);
     }
 
     /**
