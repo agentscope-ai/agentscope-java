@@ -32,6 +32,8 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.test.ModelTestUtils;
+import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.LoggingHttpTransport;
 import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.core.util.JsonUtils;
@@ -1175,6 +1177,27 @@ class DashScopeChatModelTest {
 
         assertNotNull(model);
         assertEquals("qwen-plus", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should decorate the proxy-only transport with sanitized request logging")
+    void testProxyTransportIsDecoratedWithLogging() {
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+        DashScopeChatModel.Builder builder =
+                DashScopeChatModel.builder().apiKey("test-api-key").modelName("qwen-plus").stream(
+                                false)
+                        .proxy(proxy);
+
+        HttpTransport transport = builder.resolveTransport();
+
+        assertTrue(
+                transport instanceof LoggingHttpTransport,
+                "Expected LoggingHttpTransport but got " + transport.getClass().getName());
+        HttpTransport delegate = ((LoggingHttpTransport) transport).getDelegate();
+        assertTrue(
+                delegate instanceof OkHttpTransport,
+                "Expected OkHttpTransport but got " + delegate.getClass().getName());
+        assertEquals(proxy, ((OkHttpTransport) delegate).getConfig().getProxyConfig());
     }
 
     @Test

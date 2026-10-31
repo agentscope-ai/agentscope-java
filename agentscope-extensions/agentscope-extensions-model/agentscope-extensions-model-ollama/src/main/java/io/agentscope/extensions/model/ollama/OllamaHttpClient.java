@@ -125,7 +125,6 @@ public class OllamaHttpClient {
         final String requestBody;
         try {
             requestBody = JsonUtils.getJsonCodec().toJson(request);
-            log.debug("Ollama request to {}: {}", url, requestBody);
         } catch (JsonException e) {
             // Known Jackson checked exception -> wrap into OllamaHttpException
             throw new OllamaHttpException("Failed to serialize/deserialize request", e);
@@ -162,7 +161,6 @@ public class OllamaHttpClient {
         }
 
         String responseBody = httpResponse.getBody();
-        log.debug("Ollama response: {}", responseBody);
 
         try {
             return JsonUtils.getJsonCodec().fromJson(responseBody, responseType);
@@ -185,7 +183,6 @@ public class OllamaHttpClient {
 
         try {
             String requestBody = JsonUtils.getJsonCodec().toJson(request);
-            log.debug("Ollama streaming request to {}: {}", url, requestBody);
 
             Map<String, String> headers = new HashMap<>();
             headers.put("Content-Type", "application/json");

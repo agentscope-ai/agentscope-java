@@ -286,7 +286,6 @@ public class OpenAIClient {
             request.setStream(false);
 
             String requestBody = JsonUtils.getJsonCodec().toJson(request);
-            log.debug("OpenAI request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
@@ -316,7 +315,6 @@ public class OpenAIClient {
                         httpResponse.getStatusCode(),
                         null);
             }
-            log.debug("OpenAI response: {}", responseBody);
 
             OpenAIResponse response;
             try {
@@ -392,7 +390,6 @@ public class OpenAIClient {
             request.setStream(true);
 
             String requestBody = JsonUtils.getJsonCodec().toJson(request);
-            log.debug("OpenAI streaming request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
@@ -509,9 +506,6 @@ public class OpenAIClient {
      * @return the parsed OpenAIResponse, or null if parsing fails
      */
     private OpenAIResponse parseStreamData(String data) {
-        if (log.isDebugEnabled()) {
-            log.debug("SSE data: {}", data);
-        }
         try {
             if (data == null || data.isEmpty()) {
                 log.debug("Ignoring empty SSE data");
@@ -671,7 +665,6 @@ public class OpenAIClient {
                     requestBody instanceof String
                             ? (String) requestBody
                             : JsonUtils.getJsonCodec().toJson(requestBody);
-            log.debug("OpenAI API request to {}: {}", url, requestBodyJson);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
@@ -697,7 +690,6 @@ public class OpenAIClient {
                         httpResponse.getStatusCode(),
                         null);
             }
-            log.debug("OpenAI API response: {}", responseBody);
             return responseBody;
         } catch (JsonException e) {
             throw new OpenAIException("Failed to serialize request", e);

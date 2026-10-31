@@ -29,6 +29,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportConfig;
 import io.agentscope.core.model.transport.HttpTransportFactory;
+import io.agentscope.core.model.transport.LoggingHttpTransport;
 import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
@@ -546,12 +547,13 @@ public class OpenAIChatModel extends ChatModelBase {
          *
          * <p>If {@code httpTransport()} is set, it takes full precedence and
          * {@code proxyConfig} is ignored (with a warning logged). Otherwise,
-         * if {@code proxy()} is set, a default transport with the proxy applied
-         * is created. If neither is set, the factory default is used.
+         * if {@code proxy()} is set, a default transport with the proxy applied and sanitized
+         * request logging enabled is created. If neither is set, the factory default is used.
          *
          * @return the resolved HttpTransport
          */
-        private HttpTransport resolveTransport() {
+        // Package-private for tests; not an extension point.
+        HttpTransport resolveTransport() {
             if (httpTransport != null) {
                 if (proxyConfig != null) {
                     log.warn(
@@ -566,10 +568,12 @@ public class OpenAIChatModel extends ChatModelBase {
             }
 
             if (proxyConfig != null) {
-                // Only proxy() called → use default transport with proxy
-                return OkHttpTransport.builder()
-                        .config(HttpTransportConfig.builder().proxy(proxyConfig).build())
-                        .build();
+                // Only proxy() called → use the default OkHttp transport with proxy, decorated
+                // with the same sanitized logging the factory default provides.
+                HttpTransportConfig config =
+                        HttpTransportConfig.builder().proxy(proxyConfig).build();
+                return new LoggingHttpTransport(
+                        OkHttpTransport.builder().config(config).build(), config);
             }
 
             // Neither called → use factory default
