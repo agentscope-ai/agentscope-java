@@ -28,8 +28,12 @@ import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.FinishReasons;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * Reasoning context that manages all state and content accumulation for a single reasoning round.
@@ -53,7 +57,12 @@ public class ReasoningContext {
     private final ToolCallsAccumulator toolCallsAcc = new ToolCallsAccumulator();
     private final ServerToolResultAccumulator serverToolResults = new ServerToolResultAccumulator();
 
+    // Providers that expose block indices retain native boundaries and order for history replay.
+    private final Map<Integer, List<ContentBlock>> indexedChunks = new TreeMap<>();
+    private final Set<Integer> completedBlocks = new HashSet<>();
+    private int lastObservedBlockIndex = -1;
     private String finishReason;
+    private boolean textReplaced;
 
     // ChatUsage
     private int inputTokens = 0;
@@ -106,6 +115,31 @@ public class ReasoningContext {
         // Propagate provider-specific metadata
         if (chunk.getMetadata() != null && !chunk.getMetadata().isEmpty()) {
             responseMetadata.putAll(chunk.getMetadata());
+            responseMetadata.remove(ChatResponse.METADATA_CONTENT_BLOCK_INDEX);
+            responseMetadata.remove(ChatResponse.METADATA_CONTENT_BLOCK_COMPLETE);
+            Object index = chunk.getMetadata().get(ChatResponse.METADATA_CONTENT_BLOCK_INDEX);
+            if (index instanceof Number number) {
+                int blockIndex = number.intValue();
+                // Include metadata-only events and every block in a non-streaming response.
+                lastObservedBlockIndex =
+                        Math.max(
+                                lastObservedBlockIndex,
+                                blockIndex + Math.max(1, chunk.getContent().size()) - 1);
+                boolean complete =
+                        Boolean.TRUE.equals(
+                                chunk.getMetadata()
+                                        .get(ChatResponse.METADATA_CONTENT_BLOCK_COMPLETE));
+                if (complete) {
+                    completedBlocks.add(blockIndex);
+                }
+                for (ContentBlock block : chunk.getContent()) {
+                    indexedChunks.computeIfAbsent(blockIndex, k -> new ArrayList<>()).add(block);
+                    if (complete) {
+                        completedBlocks.add(blockIndex);
+                    }
+                    blockIndex++;
+                }
+            }
         }
 
         List<Msg> streamingMsgs = new ArrayList<>();
@@ -158,34 +192,33 @@ public class ReasoningContext {
      * <p>This method ensures that a single reasoning round produces one message
      * that may contain multiple content blocks.
      *
-     * <p>Strategy:
-     *
-     * <ol>
-     *   <li>Add text content if present
-     *   <li>Add thinking content if present
-     *   <li>Add all tool calls
-     * </ol>
+     * <p>Native block indices preserve provider boundaries and order. Providers without indices
+     * keep the existing thinking, text, and tool-call aggregation order.
      *
      * @hidden
      * @return The complete reasoning message with all blocks, or null if no content
      */
     public Msg buildFinalMessage() {
         List<ContentBlock> blocks = new ArrayList<>();
-
-        // Add thinking content if present
-        if (thinkingAcc.hasContent()) {
-            blocks.add(thinkingAcc.buildAggregated());
-        }
-
-        // Add text content if present
-        if (textAcc.hasContent()) {
-            blocks.add(textAcc.buildAggregated());
-        }
-
-        // Add all tool calls, placing server tool results right after their calls
         boolean outputLimitReached = isTruncated();
-        List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls(outputLimitReached);
-        blocks.addAll(serverToolResults.placeAfterToolCalls(toolCalls));
+
+        if (!indexedChunks.isEmpty()) {
+            blocks.addAll(buildIndexedContent());
+        } else {
+            // Add thinking content if present
+            if (thinkingAcc.hasContent()) {
+                blocks.add(thinkingAcc.buildAggregated());
+            }
+
+            // Add text content if present
+            if (textAcc.hasContent()) {
+                blocks.add(textAcc.buildAggregated());
+            }
+
+            // Add all tool calls, placing server tool results right after their calls
+            List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls(outputLimitReached);
+            blocks.addAll(serverToolResults.placeAfterToolCalls(toolCalls));
+        }
 
         // If no content at all, return null
         if (blocks.isEmpty()) {
@@ -223,6 +256,59 @@ public class ReasoningContext {
 
     private boolean isTruncated() {
         return FinishReasons.indicatesOutputLimit(finishReason, responseMetadata);
+    }
+
+    private List<ContentBlock> buildIndexedContent() {
+        List<ContentBlock> blocks = new ArrayList<>();
+        boolean replacementAdded = false;
+        for (Map.Entry<Integer, List<ContentBlock>> entry : indexedChunks.entrySet()) {
+            List<ContentBlock> chunks = entry.getValue();
+            if (chunks.get(0) instanceof TextBlock && textReplaced) {
+                // Middleware replaced all native text: emit the replacement once, anchored at
+                // the position of the first native text block.
+                if (!replacementAdded && textAcc.hasContent()) {
+                    blocks.add(textAcc.buildAggregated());
+                }
+                replacementAdded = true;
+            } else {
+                blocks.addAll(aggregateGroup(entry.getKey(), chunks));
+            }
+        }
+        if (textReplaced && !replacementAdded && textAcc.hasContent()) {
+            // Replaced/added text with no native text block to anchor it (e.g. middleware
+            // adding text to a thinking-only response).
+            blocks.add(textAcc.buildAggregated());
+        }
+        return blocks;
+    }
+
+    /** Re-aggregates the fragments of one native block into final content blocks. */
+    private List<? extends ContentBlock> aggregateGroup(Integer index, List<ContentBlock> chunks) {
+        ContentBlock first = chunks.get(0);
+        if (first instanceof TextBlock) {
+            TextAccumulator accumulator = new TextAccumulator();
+            chunks.forEach(b -> accumulator.add((TextBlock) b));
+            return accumulator.hasContent() ? List.of(accumulator.buildAggregated()) : List.of();
+        } else if (first instanceof ThinkingBlock) {
+            ThinkingAccumulator accumulator = new ThinkingAccumulator();
+            chunks.forEach(b -> accumulator.add((ThinkingBlock) b));
+            return accumulator.hasContent() ? List.of(accumulator.buildAggregated()) : List.of();
+        } else if (first instanceof ToolUseBlock) {
+            ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
+            chunks.forEach(b -> accumulator.add((ToolUseBlock) b));
+            // A stop event alone does not prove that the last native block completed before
+            // the output limit. Earlier completed blocks remain executable.
+            boolean blockTruncated =
+                    isTruncated()
+                            && (index == lastObservedBlockIndex
+                                    || !completedBlocks.contains(index));
+            return accumulator.buildAllToolCalls(blockTruncated);
+        } else if (first instanceof ToolResultBlock) {
+            ServerToolResultAccumulator accumulator = new ServerToolResultAccumulator();
+            chunks.forEach(b -> accumulator.add((ToolResultBlock) b));
+            return accumulator.buildAllToolResults();
+        }
+        return List.of();
     }
 
     /**
@@ -283,6 +369,7 @@ public class ReasoningContext {
      * @param text text reconstructed from the transformed event stream
      */
     public void replaceAccumulatedText(String text) {
+        textReplaced |= !Objects.equals(textAcc.getAccumulated(), text);
         textAcc.replace(text);
     }
 

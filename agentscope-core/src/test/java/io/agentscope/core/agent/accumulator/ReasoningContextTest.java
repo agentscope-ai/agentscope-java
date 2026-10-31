@@ -17,6 +17,7 @@ package io.agentscope.core.agent.accumulator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -662,5 +664,141 @@ class ReasoningContextTest {
 
         assertTrue(emitted.isEmpty());
         assertNull(context.buildFinalMessage());
+    }
+
+    @Test
+    @DisplayName("Should merge signature-only thinking chunks into the accumulated thinking")
+    void testThinkingSignatureChunkMergesIntoThinkingBlock() {
+        // Streaming providers emit the thinking signature as a separate chunk after the
+        // thinking text (empty thinking, signature in metadata); it must merge into the
+        // accumulated thinking block without disturbing the thinking text.
+        context.processChunk(
+                ChatResponse.builder()
+                        .content(List.of(ThinkingBlock.builder().thinking("Let me reason").build()))
+                        .build());
+        context.processChunk(
+                ChatResponse.builder()
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_ANTHROPIC_SIGNATURE,
+                                                                "sig_abc"))
+                                                .build()))
+                        .build());
+
+        Msg finalMsg = context.buildFinalMessage();
+        assertNotNull(finalMsg);
+        ThinkingBlock thinking =
+                assertInstanceOf(ThinkingBlock.class, finalMsg.getContent().get(0));
+        assertEquals("Let me reason", thinking.getThinking());
+        assertEquals(
+                "sig_abc", thinking.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE));
+    }
+
+    @Test
+    void indexedTruncationTracksAllBlocksInSingleChunk() {
+        context.processChunk(
+                ChatResponse.builder()
+                        .metadata(
+                                Map.of(
+                                        ChatResponse.METADATA_CONTENT_BLOCK_INDEX,
+                                        0,
+                                        ChatResponse.METADATA_CONTENT_BLOCK_COMPLETE,
+                                        true))
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("complete")
+                                                .name("record")
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("incomplete")
+                                                .name("record")
+                                                .build()))
+                        .finishReason("max_tokens")
+                        .build());
+
+        List<ToolUseBlock> calls = context.buildFinalMessage().getContentBlocks(ToolUseBlock.class);
+        assertEquals(2, calls.size());
+        assertFalse(calls.get(0).hasMalformedArguments());
+        assertTrue(calls.get(1).hasMalformedArguments());
+    }
+
+    @Test
+    void indexedReplayKeepsThinkingWhileApplyingTextMiddleware() {
+        context.processChunk(
+                ChatResponse.builder()
+                        .metadata(
+                                Map.of(
+                                        ChatResponse.METADATA_CONTENT_BLOCK_INDEX,
+                                        0,
+                                        ChatResponse.METADATA_CONTENT_BLOCK_COMPLETE,
+                                        true))
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("first")
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_ANTHROPIC_SIGNATURE,
+                                                                "sig-first"))
+                                                .build(),
+                                        TextBlock.builder().text("visible").build(),
+                                        ThinkingBlock.builder()
+                                                .thinking("second")
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_ANTHROPIC_SIGNATURE,
+                                                                "sig-second"))
+                                                .build(),
+                                        TextBlock.builder().text(" text").build()))
+                        .build());
+        context.replaceAccumulatedText("filtered");
+        Msg message = context.buildFinalMessage();
+        assertEquals(3, message.getContent().size());
+        assertEquals("first", ((ThinkingBlock) message.getContent().get(0)).getThinking());
+        assertEquals("filtered", ((TextBlock) message.getContent().get(1)).getText());
+        assertEquals("second", ((ThinkingBlock) message.getContent().get(2)).getThinking());
+        assertEquals(
+                "sig-second",
+                ((ThinkingBlock) message.getContent().get(2))
+                        .getMetadata()
+                        .get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE));
+        assertTrue(
+                message.getMetadata().isEmpty(),
+                "block bookkeeping must not leak into history metadata");
+        context.replaceAccumulatedText("");
+        assertEquals(2, context.buildFinalMessage().getContent().size());
+    }
+
+    @Test
+    void indexedReplayKeepsTextAddedByMiddlewareToThinkingOnlyResponse() {
+        context.processChunk(
+                ChatResponse.builder()
+                        .metadata(Map.of(ChatResponse.METADATA_CONTENT_BLOCK_INDEX, 0))
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("reasoning")
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_ANTHROPIC_SIGNATURE,
+                                                                "sig"))
+                                                .build()))
+                        .build());
+        context.replaceAccumulatedText("added by middleware");
+
+        Msg message = context.buildFinalMessage();
+        assertEquals(2, message.getContent().size());
+        ThinkingBlock thinking = assertInstanceOf(ThinkingBlock.class, message.getContent().get(0));
+        assertEquals("reasoning", thinking.getThinking());
+        assertEquals("sig", thinking.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE));
+        assertEquals("added by middleware", message.getTextContent());
     }
 }

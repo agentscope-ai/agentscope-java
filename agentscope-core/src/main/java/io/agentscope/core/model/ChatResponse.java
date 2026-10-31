@@ -28,6 +28,12 @@ import java.util.UUID;
  */
 public class ChatResponse {
 
+    /** Metadata key for a chunk's native content-block index (Number). */
+    public static final String METADATA_CONTENT_BLOCK_INDEX = "contentBlockIndex";
+
+    /** Metadata key marking completion of the indexed native content block (Boolean). */
+    public static final String METADATA_CONTENT_BLOCK_COMPLETE = "contentBlockComplete";
+
     private final String id;
     private final List<ContentBlock> content;
     private final ChatUsage usage;

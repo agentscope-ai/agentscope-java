@@ -207,6 +207,144 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testConvertSignedThinkingBlockReplayedNatively() {
+        Msg msg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("Let me think...")
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_ANTHROPIC_SIGNATURE,
+                                                                "sig_abc123"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(2, blocks.size());
+        // Signed thinking is replayed as a native thinking block, not masqueraded as text
+        assertTrue(blocks.get(0).isThinking());
+        assertEquals("Let me think...", blocks.get(0).asThinking().thinking());
+        assertEquals("sig_abc123", blocks.get(0).asThinking().signature());
+        assertTrue(blocks.get(1).isToolUse());
+    }
+
+    @Test
+    void testSignedThinkingToolUseToolResultChainReplayedNatively() {
+        // One extended-thinking tool-use turn replayed natively in the next request:
+        // user -> assistant[signed thinking + tool_use] -> user[tool_result]
+        Msg userMsg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Check Beijing weather.").build())
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("The user wants Beijing weather.")
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_ANTHROPIC_SIGNATURE,
+                                                                "sig_chain1"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build()))
+                        .build();
+        Msg toolResultMsg =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .output(
+                                                        TextBlock.builder()
+                                                                .text("Beijing: sunny, 28 C")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result =
+                converter.convert(List.of(userMsg, assistantMsg, toolResultMsg));
+
+        assertEquals(3, result.size());
+        assertEquals(MessageParam.Role.USER, result.get(0).role());
+
+        assertEquals(MessageParam.Role.ASSISTANT, result.get(1).role());
+        List<ContentBlockParam> assistantBlocks = result.get(1).content().asBlockParams();
+        assertEquals(2, assistantBlocks.size());
+        assertTrue(assistantBlocks.get(0).isThinking());
+        assertEquals(
+                "The user wants Beijing weather.", assistantBlocks.get(0).asThinking().thinking());
+        assertEquals("sig_chain1", assistantBlocks.get(0).asThinking().signature());
+        assertTrue(assistantBlocks.get(1).isToolUse());
+        assertEquals("call_1", assistantBlocks.get(1).asToolUse().id());
+
+        assertEquals(MessageParam.Role.USER, result.get(2).role());
+        List<ContentBlockParam> resultBlocks = result.get(2).content().asBlockParams();
+        assertEquals(1, resultBlocks.size());
+        assertTrue(resultBlocks.get(0).isToolResult());
+        assertEquals("call_1", resultBlocks.get(0).asToolResult().toolUseId());
+    }
+
+    @Test
+    void testConvertRedactedThinkingBlockReplayedNatively() {
+        Msg msg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_ANTHROPIC_REDACTED_DATA,
+                                                                "enc_123"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(2, blocks.size());
+        // Redacted thinking is replayed as its native opaque block, not dropped or
+        // masqueraded as text
+        assertTrue(blocks.get(0).isRedactedThinking());
+        assertEquals("enc_123", blocks.get(0).asRedactedThinking().data());
+        assertTrue(blocks.get(1).isToolUse());
+    }
+
+    @Test
     void testConvertToolUseBlock() {
         Map<String, Object> input = Map.of("query", "test");
         Msg msg =
@@ -371,7 +509,7 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    void testConvertParallelToolCallsToAlternatingMessages() {
+    void testConvertParallelToolCallsToNativeBatchShape() {
         Msg userMsg =
                 Msg.builder()
                         .name("User")
@@ -435,33 +573,79 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         List<MessageParam> result =
                 converter.convert(List.of(userMsg, assistantMsg, toolResultsMsg1, toolResultsMsg2));
 
-        assertEquals(5, result.size());
+        // Native shape: one assistant message with both tool_use blocks, followed by ONE
+        // user message aggregating both tool_results (5 messages before, 3 after).
+        assertEquals(3, result.size());
         assertEquals(MessageParam.Role.USER, result.get(0).role());
         assertEquals(
                 "Check Beijing and Hangzhou weather in parallel.",
                 result.get(0).content().asBlockParams().get(0).asText().text());
+
         assertEquals(MessageParam.Role.ASSISTANT, result.get(1).role());
-        assertEquals(2, result.get(1).content().asBlockParams().size());
-        assertTrue(result.get(1).content().asBlockParams().get(0).isText());
+        List<ContentBlockParam> assistantBlocks = result.get(1).content().asBlockParams();
+        assertEquals(3, assistantBlocks.size());
+        assertTrue(assistantBlocks.get(0).isText());
         assertEquals(
                 "I will check both cities at the same time.",
-                result.get(1).content().asBlockParams().get(0).asText().text());
-        assertTrue(result.get(1).content().asBlockParams().get(1).isToolUse());
-        assertEquals("call_1", result.get(1).content().asBlockParams().get(1).asToolUse().id());
+                assistantBlocks.get(0).asText().text());
+        assertTrue(assistantBlocks.get(1).isToolUse());
+        assertEquals("call_1", assistantBlocks.get(1).asToolUse().id());
+        assertTrue(assistantBlocks.get(2).isToolUse());
+        assertEquals("call_2", assistantBlocks.get(2).asToolUse().id());
+
         assertEquals(MessageParam.Role.USER, result.get(2).role());
-        assertTrue(result.get(2).content().asBlockParams().get(0).isToolResult());
+        List<ContentBlockParam> resultBlocks = result.get(2).content().asBlockParams();
+        assertEquals(2, resultBlocks.size());
+        assertTrue(resultBlocks.get(0).isToolResult());
+        assertEquals("call_1", resultBlocks.get(0).asToolResult().toolUseId());
+        assertTrue(resultBlocks.get(1).isToolResult());
+        assertEquals("call_2", resultBlocks.get(1).asToolResult().toolUseId());
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = ToolResultState.class,
+            names = {"ERROR", "DENIED", "INTERRUPTED"})
+    void testParallelToolResultBatchPreservesFailureStates(ToolResultState failureState) {
+        Msg success =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_success")
+                                        .name("search")
+                                        .output(TextBlock.builder().text("found").build())
+                                        .build())
+                        .build();
+        Msg failure =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_failure")
+                                        .name("search")
+                                        .state(failureState)
+                                        .output(TextBlock.builder().text("diagnostic").build())
+                                        .build())
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(success, failure));
+
+        assertEquals(1, result.size());
+        assertEquals(MessageParam.Role.USER, result.get(0).role());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(2, blocks.size());
+        var successResult = blocks.get(0).asToolResult();
+        assertEquals("call_success", successResult.toolUseId());
+        assertTrue(successResult.isError().isEmpty());
         assertEquals(
-                "call_1",
-                result.get(2).content().asBlockParams().get(0).asToolResult().toolUseId());
-        assertEquals(MessageParam.Role.ASSISTANT, result.get(3).role());
-        assertEquals(1, result.get(3).content().asBlockParams().size());
-        assertTrue(result.get(3).content().asBlockParams().get(0).isToolUse());
-        assertEquals("call_2", result.get(3).content().asBlockParams().get(0).asToolUse().id());
-        assertEquals(MessageParam.Role.USER, result.get(4).role());
-        assertTrue(result.get(4).content().asBlockParams().get(0).isToolResult());
+                "found", successResult.content().orElseThrow().asBlocks().get(0).asText().text());
+        var failureResult = blocks.get(1).asToolResult();
+        assertEquals("call_failure", failureResult.toolUseId());
+        assertTrue(failureResult.isError().orElse(false));
         assertEquals(
-                "call_2",
-                result.get(4).content().asBlockParams().get(0).asToolResult().toolUseId());
+                "diagnostic",
+                failureResult.content().orElseThrow().asBlocks().get(0).asText().text());
     }
 
     @Test

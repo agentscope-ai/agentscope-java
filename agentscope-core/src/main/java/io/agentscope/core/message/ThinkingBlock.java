@@ -40,6 +40,12 @@ public final class ThinkingBlock extends ContentBlock {
     /** Metadata key for storing OpenRouter/Gemini reasoning details list. */
     public static final String METADATA_REASONING_DETAILS = "reasoningDetails";
 
+    /** Metadata key for storing the Anthropic extended-thinking signature (opaque String). */
+    public static final String METADATA_ANTHROPIC_SIGNATURE = "anthropicSignature";
+
+    /** Metadata key for storing the Anthropic redacted-thinking payload (opaque String). */
+    public static final String METADATA_ANTHROPIC_REDACTED_DATA = "anthropicRedactedData";
+
     private final String thinking;
     private final Map<String, Object> metadata;
 

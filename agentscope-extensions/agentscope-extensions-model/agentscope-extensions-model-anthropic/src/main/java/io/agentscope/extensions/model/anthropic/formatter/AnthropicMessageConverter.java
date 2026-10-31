@@ -20,7 +20,9 @@ import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.MessageParam.Role;
+import com.anthropic.models.messages.RedactedThinkingBlockParam;
 import com.anthropic.models.messages.TextBlockParam;
+import com.anthropic.models.messages.ThinkingBlockParam;
 import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.ContentBlock;
@@ -36,7 +38,6 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.search.ToolSearchTool;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -72,8 +73,11 @@ public class AnthropicMessageConverter {
     }
 
     /**
-     * Convert list of Msg to list of Anthropic MessageParam. Handles the special case where tool
-     * results need to be in separate user messages.
+     * Convert list of Msg to list of Anthropic MessageParam. Tool results are placed in user
+     * messages that immediately follow the assistant tool-use turn: Anthropic's native shape for
+     * a parallel tool batch is one assistant message with N tool_use blocks followed by one user
+     * message with N tool_result blocks, so consecutive pure tool-result messages are aggregated
+     * into a single user message.
      *
      * @param messages The messages to convert
      * @return List of MessageParam for Anthropic API
@@ -85,16 +89,7 @@ public class AnthropicMessageConverter {
             Msg msg = messages.get(i);
             boolean isFirstMessage = (i == 0);
 
-            if (msg.getRole() == MsgRole.ASSISTANT && clientToolUses(msg).size() > 1) {
-                SplitToolResultSequence splitResults = collectSplitToolResults(messages, i + 1);
-                if (shouldSplitParallelToolCalls(msg, splitResults)) {
-                    result.addAll(convertParallelToolCalls(msg, splitResults));
-                    i += splitResults.consumedMessages();
-                    continue;
-                }
-            }
-
-            // Special handling for tool results - they create separate user messages.
+            // Special handling for tool results - they create a user message.
             // Server tool results (e.g. web_search_tool_result) stay inline in the
             // assistant message instead.
             if (msg.hasContentBlocks(ToolResultBlock.class)) {
@@ -110,17 +105,28 @@ public class AnthropicMessageConverter {
                     }
                 }
 
+                // Aggregate the tool results of consecutive pure tool-result messages
+                // into the same user message, keeping one tool_result per tool_use id.
+                int last = i;
+                while (last + 1 < messages.size()
+                        && isPureClientToolResultMessage(messages.get(last + 1))) {
+                    last++;
+                    toolResults.addAll(messages.get(last).getContentBlocks(ToolResultBlock.class));
+                }
+                i = last;
+
                 // Add regular content if present
                 if (!nonToolBlocks.isEmpty()) {
-                    MessageParam regularMsg = convertMessageContent(msg, nonToolBlocks, i == 0);
+                    MessageParam regularMsg =
+                            convertMessageContent(msg, nonToolBlocks, isFirstMessage);
                     if (regularMsg != null) {
                         result.add(regularMsg);
                     }
                 }
 
-                // Add tool results as separate user messages
-                for (ToolResultBlock toolResult : toolResults) {
-                    result.add(convertToolResult(toolResult));
+                // Add tool results as one user message
+                if (!toolResults.isEmpty()) {
+                    result.add(convertToolResults(toolResults));
                 }
             } else {
                 MessageParam param = convertMessageContent(msg, msg.getContent(), isFirstMessage);
@@ -134,126 +140,15 @@ public class AnthropicMessageConverter {
     }
 
     /**
-     * Decide whether the current assistant message should be expanded into Anthropic's required
-     * tool-use/tool-result alternation.
-     *
-     * <p>Splitting is enabled only when all of the following are true:
-     *
-     * <ul>
-     *   <li>The current message role is {@link MsgRole#ASSISTANT}.
-     *   <li>At least one following pure tool-result message was discovered.
-     *   <li>The current message contains two or more {@link ToolUseBlock}s.
-     *   <li>Every tool-use id is present and non-blank.
-     *   <li>The number of collected tool results equals the number of tool uses, and every
-     *       tool-use id has a corresponding result.
-     * </ul>
+     * Whether the message consists entirely of client {@link ToolResultBlock}s — the shape
+     * produced by the tool-result message builder for one finished tool call, and the shape that
+     * aggregates into a single user message for parallel tool batches.
      */
-    private boolean shouldSplitParallelToolCalls(Msg msg, SplitToolResultSequence splitResults) {
-        if (msg.getRole() != MsgRole.ASSISTANT || splitResults.consumedMessages() == 0) {
-            return false;
-        }
-
-        List<ToolUseBlock> toolUses = clientToolUses(msg);
-        if (toolUses.size() <= 1) {
-            return false;
-        }
-
-        List<String> toolUseIds = toolUses.stream().map(ToolUseBlock::getId).toList();
-        if (toolUseIds.stream().anyMatch(id -> id == null || id.isBlank())) {
-            return false;
-        }
-
-        return splitResults.resultsById().size() == toolUseIds.size()
-                && toolUseIds.stream().allMatch(id -> splitResults.resultsById().containsKey(id));
-    }
-
-    /**
-     * Collect the consecutive pure tool-result messages that immediately follow an assistant
-     * message.
-     *
-     * <p>Scanning starts at {@code startIndex}, which is normally the message right after the
-     * assistant message being inspected. The scan continues only across messages whose content is
-     * made entirely of {@link ToolResultBlock}s. It stops as soon as a message has no tool results
-     * or contains any non-tool-result content, because such a message must be preserved in its
-     * original position rather than consumed into the split sequence.
-     */
-    private SplitToolResultSequence collectSplitToolResults(List<Msg> messages, int startIndex) {
-        Map<String, ToolResultBlock> byId = new LinkedHashMap<>();
-        int consumed = 0;
-
-        for (int i = startIndex; i < messages.size(); i++) {
-            Msg msg = messages.get(i);
-            List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
-            if (toolResults.isEmpty() || hasNonToolResultContent(msg)) {
-                break;
-            }
-
-            consumed++;
-            for (ToolResultBlock toolResult : toolResults) {
-                if (toolResult.getId() != null) {
-                    byId.putIfAbsent(toolResult.getId(), toolResult);
-                }
-            }
-        }
-
-        return new SplitToolResultSequence(byId, consumed);
-    }
-
-    private boolean hasNonToolResultContent(Msg msg) {
-        return msg.getContent().stream().anyMatch(block -> !(block instanceof ToolResultBlock));
-    }
-
-    /**
-     * Expand one assistant message with parallel tool uses into alternating Anthropic messages.
-     *
-     * <p>Each {@link ToolUseBlock} from the original assistant message is wrapped in its own
-     * assistant message and immediately followed by the matching user tool-result message. Any
-     * leading assistant content, such as explanatory text before the tool calls, is attached only
-     * to the first split assistant message so it is not duplicated across the generated sequence.
-     */
-    private List<MessageParam> convertParallelToolCalls(
-            Msg assistantMsg, SplitToolResultSequence splitResults) {
-        List<MessageParam> converted = new ArrayList<>();
-        // Server tool blocks (use + result) stay with the leading content; only client tool
-        // calls participate in the tool-use/tool-result alternation.
-        List<ContentBlock> leadingBlocks =
-                assistantMsg.getContent().stream()
-                        .filter(block -> !(block instanceof ToolUseBlock tub) || tub.isServerTool())
-                        .toList();
-        List<ToolUseBlock> toolUses = clientToolUses(assistantMsg);
-
-        for (int i = 0; i < toolUses.size(); i++) {
-            ToolUseBlock toolUse = toolUses.get(i);
-            List<ContentBlock> assistantBlocks = new ArrayList<>();
-            if (i == 0) {
-                assistantBlocks.addAll(leadingBlocks);
-            }
-            assistantBlocks.add(toolUse);
-
-            MessageParam assistantParam =
-                    convertMessageContent(assistantMsg, assistantBlocks, false);
-            if (assistantParam != null) {
-                converted.add(assistantParam);
-            }
-
-            ToolResultBlock toolResult = splitResults.resultsById().get(toolUse.getId());
-            converted.add(convertToolResult(toolResult));
-        }
-
-        return converted;
-    }
-
-    private record SplitToolResultSequence(
-            Map<String, ToolResultBlock> resultsById, int consumedMessages) {}
-
-    /**
-     * Tool calls that are executed by the local toolkit (i.e. excluding provider server tools
-     * such as Anthropic's web_search, which are executed on the server side).
-     */
-    private List<ToolUseBlock> clientToolUses(Msg msg) {
-        return msg.getContentBlocks(ToolUseBlock.class).stream()
-                .filter(toolUse -> !toolUse.isServerTool())
-                .toList();
+    private boolean isPureClientToolResultMessage(Msg msg) {
+        return !msg.getContent().isEmpty()
+                && msg.getContent().stream()
+                        .allMatch(
+                                block -> block instanceof ToolResultBlock tr && !tr.isServerTool());
     }
 
     /**
@@ -274,12 +169,40 @@ public class AnthropicMessageConverter {
                         ContentBlockParam.ofText(
                                 TextBlockParam.builder().text(hb.getHint()).build()));
             } else if (block instanceof ThinkingBlock thinkingBlock) {
-                // Anthropic supports thinking blocks natively
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder()
-                                        .text(thinkingBlock.getThinking())
-                                        .build()));
+                // Anthropic supports thinking blocks natively. Redacted thinking is replayed as
+                // its native opaque block; with the preserved signature the block is replayed as
+                // a native thinking block (required for extended-thinking tool-use turns);
+                // foreign thinking blocks without a signature fall back to text.
+                Object redactedData =
+                        thinkingBlock.getMetadata() != null
+                                ? thinkingBlock
+                                        .getMetadata()
+                                        .get(ThinkingBlock.METADATA_ANTHROPIC_REDACTED_DATA)
+                                : null;
+                Object signature =
+                        thinkingBlock.getMetadata() != null
+                                ? thinkingBlock
+                                        .getMetadata()
+                                        .get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE)
+                                : null;
+                if (redactedData instanceof String data && !data.isEmpty()) {
+                    contentBlocks.add(
+                            ContentBlockParam.ofRedactedThinking(
+                                    RedactedThinkingBlockParam.builder().data(data).build()));
+                } else if (signature instanceof String sig && !sig.isEmpty()) {
+                    contentBlocks.add(
+                            ContentBlockParam.ofThinking(
+                                    ThinkingBlockParam.builder()
+                                            .thinking(thinkingBlock.getThinking())
+                                            .signature(sig)
+                                            .build()));
+                } else {
+                    contentBlocks.add(
+                            ContentBlockParam.ofText(
+                                    TextBlockParam.builder()
+                                            .text(thinkingBlock.getThinking())
+                                            .build()));
+                }
             } else if (block instanceof ImageBlock ib) {
                 try {
                     ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
@@ -349,9 +272,25 @@ public class AnthropicMessageConverter {
     }
 
     /**
-     * Convert tool result to separate user message.
+     * Convert tool results to a single user message with one tool_result block per result, the
+     * native Anthropic shape for a parallel tool batch.
      */
-    private MessageParam convertToolResult(ToolResultBlock toolResult) {
+    private MessageParam convertToolResults(List<ToolResultBlock> toolResults) {
+        List<ContentBlockParam> blockParams = new ArrayList<>();
+        for (ToolResultBlock toolResult : toolResults) {
+            blockParams.add(ContentBlockParam.ofToolResult(buildToolResultParam(toolResult)));
+        }
+
+        return MessageParam.builder()
+                .role(Role.USER)
+                .content(MessageParam.Content.ofBlockParams(blockParams))
+                .build();
+    }
+
+    /**
+     * Convert one tool result to its Anthropic tool_result block param.
+     */
+    private ToolResultBlockParam buildToolResultParam(ToolResultBlock toolResult) {
         // Convert output to content blocks
         List<ToolResultBlockParam.Content.Block> blocks = new ArrayList<>();
 
@@ -421,15 +360,7 @@ public class AnthropicMessageConverter {
             case ERROR, DENIED, INTERRUPTED -> resultBuilder.isError(true);
             default -> {}
         }
-        ToolResultBlockParam toolResultParam = resultBuilder.build();
-
-        // Wrap in user message
-        return MessageParam.builder()
-                .role(Role.USER)
-                .content(
-                        MessageParam.Content.ofBlockParams(
-                                List.of(ContentBlockParam.ofToolResult(toolResultParam))))
-                .build();
+        return resultBuilder.build();
     }
 
     /**
