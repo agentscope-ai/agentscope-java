@@ -247,7 +247,33 @@ public final class SessionRecorder {
     }
 
     public Mono<Void> flush() {
-        return Mono.<Void>fromRunnable(this::flushNow).subscribeOn(Schedulers.boundedElastic());
+        return uninterruptible(this::flushNow);
+    }
+
+    /**
+     * Runs storage work on the elastic pool without letting a downstream cancellation interrupt
+     * it.
+     *
+     * <p>{@code Mono.fromRunnable(work).subscribeOn(Schedulers.boundedElastic())} cancels the
+     * scheduled task when the subscription is disposed, and cancelling a running task interrupts
+     * its thread. A {@code renew} or {@code commit} interrupted in flight leaves the durable
+     * outcome unknown, and retrying a partially applied commit is not safe. The work is therefore
+     * submitted in a way that only the signal can be cancelled: the write always runs to
+     * completion.
+     */
+    private static Mono<Void> uninterruptible(Runnable work) {
+        return Mono.<Void>create(
+                sink ->
+                        Schedulers.boundedElastic()
+                                .schedule(
+                                        () -> {
+                                            try {
+                                                work.run();
+                                                sink.success();
+                                            } catch (Throwable error) {
+                                                sink.error(error);
+                                            }
+                                        }));
     }
 
     public synchronized void flushNow() {
@@ -495,12 +521,8 @@ public final class SessionRecorder {
                             }
                             return flush();
                         })
-                .then(Mono.<Void>fromRunnable(this::close).subscribeOn(Schedulers.boundedElastic()))
-                .onErrorResume(
-                        error ->
-                                Mono.<Void>fromRunnable(this::close)
-                                        .subscribeOn(Schedulers.boundedElastic())
-                                        .then(Mono.error(error)));
+                .then(uninterruptible(this::close))
+                .onErrorResume(error -> uninterruptible(this::close).then(Mono.error(error)));
     }
 
     public synchronized void close() {
