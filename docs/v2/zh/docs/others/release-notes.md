@@ -23,6 +23,7 @@ AgentScope Java 2.0.4 新增 OpenAI Responses API、重新设计的 AgentScope S
 - 公开详细的聊天 token 用量指标，以及模型回退的 failover 监听器（[#3215](https://github.com/agentscope-ai/agentscope-java/pull/3215)，[#3145](https://github.com/agentscope-ai/agentscope-java/pull/3145)）。
 - 支持 Anthropic Bearer Token 鉴权（[#3038](https://github.com/agentscope-ai/agentscope-java/pull/3038)）。
 - 新增类型安全的 Jev System One 客户端、Spring Boot Starter 和中间件示例（[#3240](https://github.com/agentscope-ai/agentscope-java/pull/3240)）。
+- 新增 `EventStreamingAgent`，以及会话级 `Agent.getAgentState` / `Agent.interrupt` 重载，便于协议适配器在不硬编码 `ReActAgent` / `HarnessAgent` 的情况下适配自定义 Agent；多会话包装类必须覆盖会话级 `interrupt` 方法（[#3098](https://github.com/agentscope-ai/agentscope-java/pull/3098)）。
 
 **Harness / 工具 / 存储**
 
