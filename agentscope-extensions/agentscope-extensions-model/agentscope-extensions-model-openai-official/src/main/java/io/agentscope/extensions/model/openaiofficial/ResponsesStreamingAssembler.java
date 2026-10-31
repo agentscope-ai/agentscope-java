@@ -41,6 +41,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.extensions.model.openaiofficial.tool.ResponsesServerToolHelper;
+import io.agentscope.extensions.model.openaiofficial.tool.ResponsesToolHelper;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -204,6 +205,12 @@ final class ResponsesStreamingAssembler {
 
         private List<ChatResponse> handleOutputItemDone(ResponseOutputItemDoneEvent event) {
             ResponseOutputItem item = event.item();
+            if (ResponsesToolHelper.isClientToolSearch(item)) {
+                return List.of(
+                        ChatResponse.builder()
+                                .content(List.of(ResponsesToolHelper.decodeClientToolSearch(item)))
+                                .build());
+            }
             String companionCallId = toolSearchPairing.companionCallId(item);
             return ResponsesServerToolHelper.decodeBlocks(item, companionCallId).stream()
                     .map(block -> ChatResponse.builder().content(List.of(block)).build())

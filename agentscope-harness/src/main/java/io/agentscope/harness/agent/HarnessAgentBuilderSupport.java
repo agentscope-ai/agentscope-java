@@ -94,14 +94,18 @@ final class HarnessAgentBuilderSupport {
 
             ## Rules
             1. **Stay focused** — Do your assigned task, nothing else
-            2. **Complete the task** — Your final message will be automatically reported to the main agent
+            2. **Complete the task** — Your final message is delivered to the main agent as the result of this invocation
             3. **Don't initiate** — No heartbeats, no proactive actions, no side quests
-            4. **Be ephemeral** — You may be terminated after task completion. That's fine.
+            4. **Finish in one run** — Follow-up messages may continue this session in supported setups, but don't count on them: finish completely in this run
             5. **Recover from truncated tool output** — If you see `[truncated: output exceeded context limit]`, re-read only what you need using smaller chunks (read with offset/limit, or targeted grep/head/tail) instead of full re-reads
+            6. **Land everything in your final message** — As you work, progress events may stream to the parent's observers, but that pathway is observability only: the main agent acts on your final message. Every conclusion, finding, and answer must be in it, and there must be no tool calls after it — your run ends there
+            7. **Cite evidence** — Back each claim with `path:line` references (e.g. `src/Main.java:42`) so the main agent can verify without re-reading
+            8. **No report files** — Your result travels as the final text message, not as a file; write files only when the task itself asks for them
 
             ## Output Format
-            When complete, your final response should include:
+            When complete, your final response should be self-sufficient and include:
             - What you accomplished or found
+            - What you actually verified (and how), plus limitations or anything left unverified
             - Any relevant details the main agent should know
             - Keep it concise but informative
 
@@ -114,6 +118,7 @@ final class HarnessAgentBuilderSupport {
 
     // @formatter:on
 
+    /** Identity line prepended to {@link #SUBAGENT_CONTEXT_SECTION} for the general-purpose subagent. */
     static final String GENERAL_PURPOSE_BASE_PROMPT =
             "You are a highly capable general-purpose subagent.";
 
@@ -330,7 +335,6 @@ final class HarnessAgentBuilderSupport {
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
         final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
-        final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
@@ -365,7 +369,7 @@ final class HarnessAgentBuilderSupport {
                             .name("general-purpose-subagent")
                             .enablePendingToolRecovery(capturedPendingToolRecovery)
                             .description("General-purpose subagent for isolated task execution")
-                            .sysPrompt(buildSubagentSysPrompt(null))
+                            .sysPrompt(buildSubagentSysPrompt(GENERAL_PURPOSE_BASE_PROMPT))
                             .model(capturedModel)
                             .toolkit(capturedParentToolkit.copy())
                             .workspace(workspace)
@@ -374,7 +378,6 @@ final class HarnessAgentBuilderSupport {
                             .environmentMemory(capturedEnvMemory)
                             .memory(capturedMemoryConfig)
                             .contextPolicy(capturedContextPolicy)
-                            .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .enableAgentTracingLog(capturedAgentTracingLogEnabled)
                             .maxContextTokens(capturedMaxContextTokens);
 
@@ -456,7 +459,6 @@ final class HarnessAgentBuilderSupport {
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
         final MemoryConfig capturedMemoryConfig = b.memoryConfig;
         final var capturedContextPolicy = b.contextPolicy;
-        final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
@@ -481,6 +483,8 @@ final class HarnessAgentBuilderSupport {
                 capturedLocalFilesystemSpec = b.localFilesystemSpec;
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
         final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
+        final CompactionConfig capturedCompactionConfig = b.compactionConfig;
+        final boolean capturedDisableCompaction = b.disableCompaction;
         // See buildGeneralPurposeFactory: propagate the parent's (distributed) state store so the
         // subagent's conversation survives cross-node re-materialization. Null in local defaults.
         final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
@@ -522,7 +526,6 @@ final class HarnessAgentBuilderSupport {
                             .asLeafSubagent()
                             .memory(capturedMemoryConfig)
                             .contextPolicy(capturedContextPolicy)
-                            .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .sysPrompt(buildSubagentSysPrompt(sysPromptBase));
 
             // Overlay declaration-specified temperature/topP on top of the parent's
@@ -563,6 +566,17 @@ final class HarnessAgentBuilderSupport {
 
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
+
+            CompactionConfig declaredCompactionConfig = decl.getCompactionConfig();
+            if (decl.isCompactionDisabled()) {
+                sub.disableCompaction();
+            } else if (declaredCompactionConfig != null) {
+                sub.compaction(declaredCompactionConfig);
+            } else if (capturedDisableCompaction) {
+                sub.disableCompaction();
+            } else if (capturedCompactionConfig != null) {
+                sub.compaction(capturedCompactionConfig);
+            }
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();

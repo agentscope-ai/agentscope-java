@@ -46,6 +46,53 @@ A2aAgent remote = A2aAgent.builder()
 Msg result = remote.call(new UserMessage("Translate to English: 你好")).block();
 ```
 
+### Stream the reply
+
+`streamEvents` streams the events of a call: the text and thinking the remote agent streams arrive as `TextBlockDeltaEvent` and `ThinkingBlockDeltaEvent`, then `AgentResultEvent` carries the same message `call()` returns. Tool calls and tool results are only in the result message.
+
+For completed tasks, the final result prefers output artifacts. When no artifacts are present, it uses the final status message, whether completion arrives as a full task or a streaming status update.
+
+```java
+remote.streamEvents(new UserMessage("Translate to English: 你好"))
+    .doOnNext(event -> {
+        if (event instanceof TextBlockDeltaEvent delta) {
+            System.out.print(delta.getDelta());
+        }
+    })
+    .blockLast();
+```
+
+### Sessions
+
+Each session, set by the user and session id of the `RuntimeContext`, keeps its own history in its `AgentState`, and its calls run one at a time; calls without a session id share the session named after the agent. `interrupt(RuntimeContext)` cancels the remote task of the call in progress in that session.
+
+```java
+RuntimeContext context = RuntimeContext.builder().userId("alice").sessionId("chat-1").build();
+Msg reply = remote.call(List.of(new UserMessage("Translate to English: 你好")), context).block();
+List<Msg> history = remote.getAgentState(context).getContext();
+```
+
+### Middleware
+
+`A2aAgent` runs `MiddlewareBase` at two points: `onAgent` wraps the whole call, and `onReasoning` wraps the exchange with the remote agent. The input messages of `onReasoning` are the messages sent to the remote agent, and its events are the text and thinking the remote agent streams. The other extension points do not apply to a remote agent.
+
+```java
+A2aAgent remote = A2aAgent.builder()
+    .name("remote")
+    .agentCardResolver(resolver)
+    .middleware(new MiddlewareBase() {
+        @Override
+        public Flux<AgentEvent> onAgent(
+                Agent agent, RuntimeContext ctx, AgentInput input,
+                Function<AgentInput, Flux<AgentEvent>> next) {
+            long start = System.currentTimeMillis();
+            return next.apply(input).doFinally(signal ->
+                    log.info("remote call took {} ms", System.currentTimeMillis() - start));
+        }
+    })
+    .build();
+```
+
 ### Auto-discover via well-known
 
 ```java
@@ -108,6 +155,14 @@ server.close();
 ```
 
 `AgentScopeA2aServer` does not bind a port or expose endpoints itself; it only assembles components and the request-handling chain. You wire transport into Spring Boot, Quarkus, Vert.x, etc. as you prefer.
+
+### Request session identifiers
+
+The server fills `AgentRequestOptions.sessionId` for the `AgentRunner` from the SDK-resolved A2A `contextId`. Clients can use the standard protocol field without adding a custom metadata key. If the client omits `contextId`, the SDK generates one.
+
+For compatibility, a non-null, non-blank `message.metadata["sessionId"]` overrides this mapping, even when it differs from `contextId`. This preserves existing session keys when the SDK generates a new context ID. Null, empty, or whitespace-only metadata values fall back to `contextId`. The protocol message's `contextId` is not changed.
+
+This mapping supplies the runner's request options; it does not automatically enable session persistence. A custom runner can use the identifier when setting up its runtime context or state store.
 
 ### Optional components
 

@@ -40,6 +40,8 @@ public class FilesystemTool {
     static final int DEFAULT_GREP_LIMIT = 100;
     static final int DEFAULT_GLOB_LIMIT = 200;
     static final int MAX_SEARCH_LIMIT = 1_000;
+    static final int DEFAULT_READ_CHARS = 16_000;
+    static final int MAX_READ_CHARS = 32_000;
 
     private final AbstractFilesystem abstractFilesystem;
     private final WorkspacePathNormalizer pathNormalizer;
@@ -112,8 +114,12 @@ public class FilesystemTool {
             name = "read_file",
             readOnly = true,
             description =
-                    "Read file content with line numbers. Supports pagination via offset and"
-                            + " limit.")
+                    "Read a file's content. Binary files come back base64-encoded. Paginate large"
+                        + " files with offset (0-indexed start line) and limit (max lines). Output"
+                        + " is also bounded by max_chars (Unicode code points). Continue with"
+                        + " char_offset, keeping path, offset and limit unchanged, instead of"
+                        + " reading everything at once; before editing, read the target region with"
+                        + " enough surrounding context so your edit matches the current content.")
     public ToolResultBlock readFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File path to read") String path,
@@ -126,7 +132,27 @@ public class FilesystemTool {
                             name = "limit",
                             description = "Max lines to return. Default: 0 (all lines)",
                             required = false)
-                    Integer limit) {
+                    Integer limit,
+            @ToolParam(
+                            name = "char_offset",
+                            description =
+                                    "Unicode code point offset within the selected line range."
+                                            + " Default: 0",
+                            required = false)
+                    Integer charOffset,
+            @ToolParam(
+                            name = "max_chars",
+                            description =
+                                    "Maximum Unicode code points per page. Default: 16000; hard"
+                                            + " maximum: 32000",
+                            required = false)
+                    Integer maxChars) {
+        int start = charOffset != null ? charOffset : 0;
+        int size = maxChars != null ? Math.min(maxChars, MAX_READ_CHARS) : DEFAULT_READ_CHARS;
+        if (start < 0 || size < 1) {
+            return ToolResultBlock.error(
+                    "char_offset must be non-negative and max_chars must be greater than 0");
+        }
         int off = offset != null ? offset : 0;
         int lim = limit != null ? limit : 0;
         ReadResult r =
@@ -134,12 +160,39 @@ public class FilesystemTool {
         if (!r.isSuccess()) {
             return ToolResultBlock.error(r.error());
         }
-        return ToolResultBlock.success(r.fileData() != null ? r.fileData().content() : "");
+        String content = r.fileData() != null ? r.fileData().content() : "";
+        int total = content.codePointCount(0, content.length());
+        if (start > total) {
+            return ToolResultBlock.error(
+                    "char_offset exceeds the selected content length: " + total);
+        }
+        int end = start + Math.min(size, total - start);
+        String page =
+                content.substring(
+                        content.offsetByCodePoints(0, start), content.offsetByCodePoints(0, end));
+        if (end < total) {
+            page +=
+                    "\n[Output truncated. Continue with char_offset="
+                            + end
+                            + " and the same path, offset and limit. Offsets count Unicode code"
+                            + " points within the selected line range.]";
+        }
+        return ToolResultBlock.success(page);
+    }
+
+    /** Read using the default character page size. */
+    public ToolResultBlock readFile(
+            RuntimeContext runtimeContext, String path, Integer offset, Integer limit) {
+        return readFile(runtimeContext, path, offset, limit, null, null);
     }
 
     @Tool(
             name = "write_file",
-            description = "Write content to a new file, creating parent directories if needed.")
+            description =
+                    "Create a new file with the given full content (parent directories are"
+                            + " created). Fails if the path already exists — read_file the"
+                            + " existing file and use edit_file to change it instead of"
+                            + " overwriting.")
     public ToolResultBlock writeFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Target file path") String path,
@@ -154,12 +207,22 @@ public class FilesystemTool {
     @Tool(
             name = "edit_file",
             description =
-                    "Perform exact string replacement in a file. The old_string must be unique"
-                            + " unless replace_all is true.")
+                    "Replace an exact text string in an existing file after line-ending"
+                            + " normalization; whitespace and indentation within lines must match."
+                            + " There is no fuzzy matching. If the string is not"
+                            + " found, read_file the region again and copy the exact text (with"
+                            + " surrounding context) instead of guessing variants; if it appears"
+                            + " more than once, add surrounding context to make it unique or set"
+                            + " replace_all=true.")
     public ToolResultBlock editFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File to edit") String path,
-            @ToolParam(name = "old_string", description = "Text to find") String oldString,
+            @ToolParam(
+                            name = "old_string",
+                            description =
+                                    "Text to find. Must match exactly once unless replace_all is"
+                                            + " true; otherwise the edit fails.")
+                    String oldString,
             @ToolParam(name = "new_string", description = "Replacement text") String newString,
             @ToolParam(
                             name = "replace_all",
@@ -184,8 +247,10 @@ public class FilesystemTool {
             name = "grep_files",
             readOnly = true,
             description =
-                    "Search file contents for a literal text pattern. Returns at most 100 matches"
-                            + " by default to keep tool output bounded.")
+                    "Search file contents for literal text, not a regular expression. Returns"
+                            + " path:line:text matches, at most 100 by default. Use glob_files for"
+                            + " file path/name patterns and read_file on a matched file for"
+                            + " surrounding context.")
     public ToolResultBlock grepFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Literal text pattern to search for")
@@ -194,7 +259,11 @@ public class FilesystemTool {
                     String path,
             @ToolParam(
                             name = "glob",
-                            description = "Optional file glob filter (e.g., *.java)",
+                            description =
+                                    "Optional file glob filter matched against the file name only"
+                                            + " (e.g., *.java). Path-based patterns such as"
+                                            + " **/*.java are not supported here; the search"
+                                            + " already recurses into subdirectories.",
                             required = false)
                     String glob,
             @ToolParam(
@@ -235,8 +304,10 @@ public class FilesystemTool {
             name = "glob_files",
             readOnly = true,
             description =
-                    "Find files matching a glob pattern. Returns at most 200 files by default to"
-                            + " keep tool output bounded.")
+                    "Find files by name using a glob pattern (e.g., **/*.java). Use this to locate"
+                            + " files by path/name; use grep_files instead to search file"
+                            + " contents. Returns at most 200 files by default to keep tool"
+                            + " output bounded.")
     public ToolResultBlock globFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Glob pattern (e.g., **/*.java)")

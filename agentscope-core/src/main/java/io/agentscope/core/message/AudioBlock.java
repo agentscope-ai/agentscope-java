@@ -65,6 +65,22 @@ public final class AudioBlock extends ContentBlock {
         return new Builder();
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof AudioBlock other)) {
+            return false;
+        }
+        return Objects.equals(source, other.source);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(source);
+    }
+
     /**
      * Builder for constructing AudioBlock instances.
      */

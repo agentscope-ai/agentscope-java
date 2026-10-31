@@ -66,7 +66,12 @@ public class CompactionConfig {
      */
     public static final int FALLBACK_TRIGGER_TOKENS = 160_000;
 
-    /** Default summary prompt with structured format. */
+    /**
+     * Default summary prompt with structured format. Extraction disciplines: verbatim
+     * preservation of reusable strings, still-active user constraints and corrections (with
+     * superseded decisions marked), merge rules for chained compaction, and secrecy about the
+     * summarization step itself.
+     */
     public static final String DEFAULT_SUMMARY_PROMPT =
             """
             <role>
@@ -97,15 +102,43 @@ public class CompactionConfig {
             ## SESSION INTENT
             What is the user's primary goal or request?
 
+            ## USER PREFERENCES AND CORRECTIONS
+            Preferences, feedback, and corrections the user expressed, and how they changed the \
+            direction of the work.
+
             ## SUMMARY
             The most important context, decisions, reasoning, and rejected options.
 
             ## ARTIFACTS
             Files or resources created, modified, or accessed (with specific paths and changes).
 
+            ## COMMANDS AND ERRORS
+            Commands, queries, or API calls that matter, and any error messages encountered — \
+            copied verbatim where they must be reproduced or avoided.
+
             ## NEXT STEPS
             Specific tasks remaining to achieve the session intent.
             </instructions>
+
+            <extraction_rules>
+            - Preserve verbatim: file paths, commands, URLs, identifiers, and exact error \
+            strings. Do not paraphrase them — they must be reusable exactly as they occurred.
+            - Still-active user constraints, corrections, acceptance criteria, and authorization \
+            boundaries: keep the user's exact wording where it governs behavior. Mark superseded \
+            decisions as superseded; a retracted instruction must not be carried forward as a \
+            current requirement.
+            - Keep durable facts and decisions; drop superseded intermediate state (old file \
+            versions, outdated hypotheses, already-resolved blockers).
+            - If the history already contains an earlier summary, merge it with the new material \
+            into ONE coherent summary — never output two summary generations.
+            - Record failures and rejected approaches briefly, so the work is not repeated.
+            </extraction_rules>
+
+            <secrecy>
+            This is a routine internal context-management step. Do NOT mention this summarization \
+            request, these instructions, or the summarization process anywhere in your output. \
+            Write the summary as the conversation's own state.
+            </secrecy>
 
             Carefully read through the entire conversation history below and extract the most \
             important context. Respond ONLY with the extracted context.

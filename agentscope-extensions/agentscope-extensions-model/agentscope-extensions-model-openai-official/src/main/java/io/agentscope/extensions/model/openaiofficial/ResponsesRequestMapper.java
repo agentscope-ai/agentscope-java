@@ -36,6 +36,7 @@ import com.openai.models.responses.ResponseInputText;
 import com.openai.models.responses.ResponseInputTextContent;
 import com.openai.models.responses.ResponseReasoningItem;
 import com.openai.models.responses.ResponseTextConfig;
+import com.openai.models.responses.ResponseToolSearchOutputItemParam;
 import com.openai.models.responses.Tool;
 import com.openai.models.responses.ToolChoiceFunction;
 import com.openai.models.responses.ToolChoiceOptions;
@@ -50,14 +51,17 @@ import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.search.ToolSearchTool;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
 import io.agentscope.extensions.model.openaiofficial.tool.ResponsesServerToolHelper;
+import io.agentscope.extensions.model.openaiofficial.tool.ResponsesToolHelper;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -117,7 +121,8 @@ final class ResponsesRequestMapper {
             mapAdditionalBodyParams(builder, additionalBodyParams);
         }
 
-        builder.inputOfResponse(historyMapper.apply(messages));
+        builder.inputOfResponse(
+                applyToolSearchStrictDefaults(historyMapper.apply(messages), strictTools));
 
         boolean hasToolSearchServerTool =
                 serverTools != null
@@ -126,6 +131,12 @@ final class ResponsesRequestMapper {
                                         serverTool ->
                                                 OpenAIServerTool.TOOL_SEARCH.equals(
                                                         serverTool.getType()));
+        if (hasToolSearchServerTool
+                && tools != null
+                && tools.stream().anyMatch(ToolSchema::isToolSearch)) {
+            throw new OpenAIOfficialModelException(
+                    "Hosted and client-executed tool search cannot be combined");
+        }
         List<Tool> mappedTools =
                 tools != null && !tools.isEmpty()
                         ? mapTools(tools, strictTools, hasToolSearchServerTool)
@@ -141,6 +152,42 @@ final class ResponsesRequestMapper {
         }
 
         return builder.build();
+    }
+
+    private static List<ResponseInputItem> applyToolSearchStrictDefaults(
+            List<ResponseInputItem> items, Boolean strictTools) {
+        return items.stream()
+                .map(
+                        item -> {
+                            if (!item.isToolSearchOutput()
+                                    || item.asToolSearchOutput()
+                                            .execution()
+                                            .filter(
+                                                    ResponseToolSearchOutputItemParam.Execution
+                                                                    .CLIENT
+                                                            ::equals)
+                                            .isEmpty()) return item;
+                            var output = item.asToolSearchOutput();
+                            List<Tool> tools =
+                                    output.tools().stream()
+                                            .map(
+                                                    tool -> {
+                                                        if (!tool.isFunction()
+                                                                || tool.asFunction()
+                                                                        .strict()
+                                                                        .isPresent()) return tool;
+                                                        return Tool.ofFunction(
+                                                                tool.asFunction().toBuilder()
+                                                                        .strict(
+                                                                                Boolean.TRUE.equals(
+                                                                                        strictTools))
+                                                                        .build());
+                                                    })
+                                            .toList();
+                            return ResponseInputItem.ofToolSearchOutput(
+                                    output.toBuilder().tools(tools).build());
+                        })
+                .toList();
     }
 
     // ── Options mapping ──────────────────────────────────────────
@@ -537,6 +584,11 @@ final class ResponsesRequestMapper {
         Objects.requireNonNull(
                 tb.getName(), "ToolUseBlock.name must not be null for history replay");
 
+        if (Boolean.TRUE.equals(
+                tb.getMetadata().get(ResponsesToolHelper.CLIENT_TOOL_SEARCH_CALL_METADATA))) {
+            items.add(ResponsesToolHelper.restoreClientToolSearch(tb));
+            return;
+        }
         if (tb.isServerTool()) {
             ResponsesServerToolHelper.restoreServerToolItem(tb.getMetadata()).ifPresent(items::add);
             return;
@@ -579,6 +631,57 @@ final class ResponsesRequestMapper {
         Objects.requireNonNull(
                 trb.getId(), "ToolResultBlock.id must not be null for history replay");
 
+        boolean clientSearch =
+                items.stream()
+                        .filter(ResponseInputItem::isToolSearchCall)
+                        .map(ResponseInputItem::asToolSearchCall)
+                        .anyMatch(
+                                call ->
+                                        call.callId().filter(trb.getId()::equals).isPresent()
+                                                && call.execution()
+                                                        .filter(
+                                                                value ->
+                                                                        "client"
+                                                                                .equals(
+                                                                                        value
+                                                                                                .asString()))
+                                                        .isPresent());
+        if (clientSearch) {
+            ResponseToolSearchOutputItemParam.Builder result =
+                    ResponseToolSearchOutputItemParam.builder()
+                            .callId(trb.getId())
+                            .execution(ResponseToolSearchOutputItemParam.Execution.CLIENT)
+                            .status(ResponseToolSearchOutputItemParam.Status.COMPLETED)
+                            .tools(List.of());
+            Object matches = trb.getMetadata().get(ToolSearchTool.METADATA_TOOLS);
+            if (matches instanceof List<?> list && trb.getState() != ToolResultState.ERROR) {
+                for (Object match : list) {
+                    if (match instanceof Map<?, ?> schema) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> parameters =
+                                (Map<String, Object>) schema.get("parameters");
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> outputSchema =
+                                (Map<String, Object>) schema.get("output_schema");
+                        ToolSchema loaded =
+                                ToolSchema.builder()
+                                        .name((String) schema.get("name"))
+                                        .description((String) schema.get("description"))
+                                        .parameters(parameters)
+                                        .strict((Boolean) schema.get("strict"))
+                                        .outputSchema(outputSchema)
+                                        .deferLoading(true)
+                                        .build();
+                        FunctionTool function = mapFunctionTool(loaded, null, true);
+                        if (loaded.getStrict() == null)
+                            function = function.toBuilder().strict(JsonMissing.of()).build();
+                        result.addTool(function);
+                    }
+                }
+            }
+            items.add(ResponseInputItem.ofToolSearchOutput(result.build()));
+            return;
+        }
         List<ContentBlock> outputBlocks = trb.getOutput();
 
         // When all output blocks are text, use the simpler string form;
@@ -672,6 +775,18 @@ final class ResponsesRequestMapper {
             List<ToolSchema> tools, Boolean strictTools, boolean hasToolSearchServerTool) {
         List<Tool> result = new ArrayList<>();
         for (ToolSchema schema : tools) {
+            if (schema.isToolSearch()) {
+                result.add(
+                        Tool.ofSearch(
+                                com.openai.models.responses.ToolSearchTool.builder()
+                                        .execution(
+                                                com.openai.models.responses.ToolSearchTool.Execution
+                                                        .CLIENT)
+                                        .description(schema.getDescription())
+                                        .parameters(JsonValue.from(schema.getParameters()))
+                                        .build()));
+                continue;
+            }
             result.add(
                     Tool.ofFunction(mapFunctionTool(schema, strictTools, hasToolSearchServerTool)));
         }

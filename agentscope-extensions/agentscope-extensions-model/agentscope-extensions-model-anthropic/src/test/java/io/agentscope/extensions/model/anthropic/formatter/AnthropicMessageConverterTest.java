@@ -31,12 +31,15 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /** Unit tests for AnthropicMessageConverter. */
 class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
@@ -230,6 +233,51 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals("call_123", toolUse.id());
         assertEquals("search", toolUse.name());
         // Note: input validation happens during API calls, not during conversion
+    }
+
+    @ParameterizedTest
+    @EnumSource(ToolResultState.class)
+    void toolResultFailureStatesReachProviderWithOriginalContent(ToolResultState state) {
+        var output =
+                List.<ContentBlock>of(
+                        TextBlock.builder().text("diagnostic").build(),
+                        ImageBlock.builder()
+                                .source(
+                                        Base64Source.builder()
+                                                .mediaType("image/png")
+                                                .data("aGVsbG8=")
+                                                .build())
+                                .build());
+        var msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_state")
+                                        .name("search")
+                                        .state(state)
+                                        .output(output)
+                                        .build())
+                        .build();
+        var converted =
+                converter
+                        .convert(List.of(msg))
+                        .get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asToolResult();
+        boolean failed =
+                state == ToolResultState.ERROR
+                        || state == ToolResultState.DENIED
+                        || state == ToolResultState.INTERRUPTED;
+        assertEquals(failed, converted.isError().orElse(false));
+        assertEquals(failed, converted.isError().isPresent());
+        assertEquals("call_state", converted.toolUseId());
+        var blocks = converted.content().orElseThrow().asBlocks();
+        assertEquals(2, blocks.size());
+        assertEquals("diagnostic", blocks.get(0).asText().text());
+        assertTrue(blocks.get(1).isImage());
     }
 
     @Test
