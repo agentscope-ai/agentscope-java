@@ -179,7 +179,9 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
             assertTrue(prompt.contains("retrieval work still needed"));
             assertTrue(prompt.contains("Use that backend's shell syntax, installed runtimes"));
             assertTrue(prompt.contains("The host workspace directory is:"));
-            assertTrue(prompt.contains("The host JVM temporary directory is:"));
+            assertFalse(prompt.contains("The host JVM temporary directory is:"));
+            assertTrue(
+                    prompt.contains("are not reported because a sandbox filesystem"), () -> prompt);
             assertFalse(prompt.contains("Local shell:"));
             assertFalse(prompt.contains("must** call deliver_artifact"));
             assertFalse(prompt.contains("upload/download tools"), () -> prompt);
@@ -225,7 +227,8 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
         assertFalse(a.contains("/sibling"));
         assertTrue(b.contains("Sandbox root: /second"));
         assertTrue(a.contains("Shell commands use the primary backend"));
-        assertTrue(a.contains("The host JVM temporary directory is:"));
+        assertFalse(a.contains("The host JVM temporary directory is:"));
+        assertTrue(a.contains("are not reported because a sandbox filesystem"), () -> a);
         assertFalse(a.contains("project's temporary directory"));
         first.get(SandboxAcquireResult.class).beginRelease();
         String released = WorkspacePromptTestSupport.render(middleware, first, "BASE");
