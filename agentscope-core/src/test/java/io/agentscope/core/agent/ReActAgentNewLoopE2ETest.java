@@ -166,6 +166,31 @@ class ReActAgentNewLoopE2ETest {
         }
     }
 
+    /** Same as {@link AlwaysAllowTool} but the {@code query} property is required. */
+    private static final class RequiredArgTool extends ToolBase {
+        RequiredArgTool(String name) {
+            super(name, "requires query", requiredSchema(), true, true, false, null, false, false);
+        }
+
+        private static Map<String, Object> requiredSchema() {
+            Map<String, Object> s = AlwaysAllowTool.schema();
+            s.put("required", List.of("query"));
+            return s;
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("ok"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            Object q = param.getInput() == null ? "" : param.getInput().get("query");
+            return Mono.just(ToolResultBlock.text(getName() + ":" + q));
+        }
+    }
+
     private static final class MetadataTool extends ToolBase {
         MetadataTool(String name) {
             super(
@@ -304,6 +329,129 @@ class ReActAgentNewLoopE2ETest {
                         .flatMap(m -> m.getContentBlocks(TextBlock.class).stream())
                         .anyMatch(tb -> tb.getText().equals("done-final"));
         assertTrue(hasFinalText, "final assistant text 'done-final' must be in state.context");
+    }
+
+    /**
+     * A provider that emits the complete tool call in one chunk without streamed argument
+     * fragments (content unset, parsed input only) must not lose its arguments: fabricated
+     * empty-object content used to mask the intact input for the content-first consumers —
+     * required-parameter validation rejected the call before execution.
+     */
+    @Test
+    void inputOnlySingleChunkToolCallWithRequiredArgsExecutes() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "search", "alpha")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new RequiredArgTool("search"));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("find alpha")
+                                                .build()))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+
+        events.stream()
+                .filter(e -> e instanceof ToolResultEndEvent)
+                .forEach(
+                        e ->
+                                assertEquals(
+                                        ToolResultState.SUCCESS,
+                                        ((ToolResultEndEvent) e).getState(),
+                                        () -> "events: " + events));
+
+        boolean executedWithArg =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .flatMap(
+                                b ->
+                                        b.getOutput() == null
+                                                ? java.util.stream.Stream.empty()
+                                                : b.getOutput().stream())
+                        .filter(b -> b instanceof TextBlock)
+                        .anyMatch(b -> ((TextBlock) b).getText().contains("search:alpha"));
+        assertTrue(executedWithArg, "the tool must run with the argument from the intact input");
+    }
+
+    /**
+     * An input map that cannot be serialized must not fail the reply stream: the accumulator
+     * falls back to empty-object content, so content-first consumers see empty arguments and
+     * the required-parameter validation rejects the call with the generic correction message
+     * (the pre-fix behavior for this edge, kept recoverable). The turn itself ends normally
+     * with a paired error result.
+     */
+    @Test
+    void unserializableInputCompletesTurnWithRecoverableErrorResult() {
+        Map<String, Object> in = new HashMap<>();
+        in.put("query", "alpha");
+        in.put("bad", new Object());
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                ChatResponse.builder()
+                                                        .content(
+                                                                List.<ContentBlock>of(
+                                                                        ToolUseBlock.builder()
+                                                                                .id("c1")
+                                                                                .name("search")
+                                                                                .input(in)
+                                                                                .build()))
+                                                        .build()),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new RequiredArgTool("search"));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("find alpha")
+                                                .build()))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+        assertTrue(
+                events.get(events.size() - 1) instanceof AgentEndEvent, () -> "events: " + events);
+        // The recoverable paired error result for c1 must actually exist.
+        ToolResultEndEvent paired =
+                events.stream()
+                        .filter(e -> e instanceof ToolResultEndEvent)
+                        .map(e -> (ToolResultEndEvent) e)
+                        .findFirst()
+                        .orElseThrow(() -> new AssertionError("no ToolResultEndEvent: " + events));
+        assertEquals(ToolResultState.ERROR, paired.getState(), () -> "events: " + events);
+        assertEquals("c1", paired.getToolCallId(), () -> "events: " + events);
+        boolean pairedInContext =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .anyMatch(b -> "c1".equals(b.getId()));
+        assertTrue(pairedInContext, "the context must carry the paired error result for c1");
     }
 
     @Test

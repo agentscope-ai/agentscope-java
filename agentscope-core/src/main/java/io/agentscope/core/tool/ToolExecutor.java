@@ -222,6 +222,20 @@ class ToolExecutor {
             requestConfig = ToolRequestConfig.NONE;
         }
         ToolUseBlock toolCall = param.getToolUseBlock();
+
+        // A malformed-arguments marker means the raw streamed arguments were truncated or
+        // corrupt. The agent loop refuses these calls before execution; this is the single
+        // funnel for direct Toolkit/executor paths too, and the merged input beside the
+        // marker can coincidentally look complete, so refuse here instead of executing it.
+        if (toolCall.hasMalformedArguments()) {
+            String errorMsg =
+                    "Tool call not executed: its arguments were marked malformed (truncated"
+                            + " or corrupt). Reissue the call with corrected JSON object"
+                            + " arguments.";
+            logger.warn(errorMsg);
+            return Mono.just(ToolResultBlock.error(errorMsg));
+        }
+
         AgentTool tool = resolveTool(toolCall.getName(), requestConfig);
 
         if (tool == null) {
