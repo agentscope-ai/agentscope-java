@@ -38,6 +38,11 @@ public class AgentRequestOptions {
      */
     private String userId;
 
+    /**
+     * Whether this request resumes an existing task that is waiting for input.
+     */
+    private boolean resume;
+
     public String getTaskId() {
         return taskId;
     }
@@ -60,5 +65,13 @@ public class AgentRequestOptions {
 
     public void setUserId(String userId) {
         this.userId = userId;
+    }
+
+    public boolean isResume() {
+        return resume;
+    }
+
+    public void setResume(boolean resume) {
+        this.resume = resume;
     }
 }

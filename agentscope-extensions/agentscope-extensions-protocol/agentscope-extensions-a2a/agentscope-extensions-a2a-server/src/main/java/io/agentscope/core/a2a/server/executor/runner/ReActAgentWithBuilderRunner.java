@@ -17,6 +17,7 @@
 package io.agentscope.core.a2a.server.executor.runner;
 
 import io.agentscope.core.ReActAgent;
+import java.time.Duration;
 
 /**
  * Default Implementation for {@link AgentRunner} by {@link ReActAgent}.
@@ -30,8 +31,9 @@ public class ReActAgentWithBuilderRunner extends BaseReActAgentRunner implements
 
     private final ReActAgent.Builder agentBuilder;
 
-    private ReActAgentWithBuilderRunner(ReActAgent.Builder agentBuilder) {
-        super();
+    private ReActAgentWithBuilderRunner(
+            ReActAgent.Builder agentBuilder, Duration pausedAgentRetention) {
+        super(pausedAgentRetention);
         this.agentBuilder = agentBuilder;
     }
 
@@ -47,6 +49,19 @@ public class ReActAgentWithBuilderRunner extends BaseReActAgentRunner implements
      * @return new {@link ReActAgentWithBuilderRunner} instance
      */
     public static ReActAgentWithBuilderRunner newInstance(ReActAgent.Builder agentBuilder) {
-        return new ReActAgentWithBuilderRunner(agentBuilder);
+        return newInstance(agentBuilder, Duration.ofMinutes(30));
+    }
+
+    /**
+     * Build a runner with a configurable retention for agents waiting for user confirmation.
+     *
+     * @param agentBuilder builder of {@link ReActAgent}
+     * @param pausedAgentRetention maximum time to retain an agent while its task waits for confirmation; must be at
+     *     least one millisecond
+     * @return new {@link ReActAgentWithBuilderRunner} instance
+     */
+    public static ReActAgentWithBuilderRunner newInstance(
+            ReActAgent.Builder agentBuilder, Duration pausedAgentRetention) {
+        return new ReActAgentWithBuilderRunner(agentBuilder, pausedAgentRetention);
     }
 }
