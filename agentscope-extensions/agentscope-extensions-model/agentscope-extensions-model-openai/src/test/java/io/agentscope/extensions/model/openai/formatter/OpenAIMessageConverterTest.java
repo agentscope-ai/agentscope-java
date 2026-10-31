@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -938,7 +939,10 @@ class OpenAIMessageConverterTest {
             assertNotNull(result);
             assertEquals("tool", result.getRole());
             assertEquals("call_123", result.getToolCallId());
-            assertTrue(result.isMultimodal());
+            assertFalse(
+                    result.isMultimodal(),
+                    "a tool message must not carry media; the media follows in a user message");
+            assertTrue(result.getContentAsString().contains("Screenshot taken"));
         }
 
         @Test

@@ -444,31 +444,49 @@ public class OpenAIMessageConverter {
     private OpenAIMessage convertToolMessage(Msg msg) {
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
         String toolCallId =
-                result != null && result.getId() != null
-                        ? result.getId()
+                result != null
+                        ? resolveToolCallId(result)
                         : "tool_call_" + System.currentTimeMillis();
 
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("tool").toolCallId(toolCallId);
 
-        // Check for multimodal content in tool result
-        if (result != null && hasMediaContent(result.getOutput())) {
-            List<OpenAIContentPart> parts = convertContentBlocks(result.getOutput());
-            builder.content(parts);
+        // Chat Completions does not accept medial parts inside a tool message, so media is
+        // rendered as a text reference here and delivered by convertToolMediaToUserMessage.
+        String content;
+        if (result != null) {
+            content = toolResultConverter.apply(result.getOutput());
         } else {
-            // Use provided converter for text-only or fallback
-            String content;
-            if (result != null) {
-                content = toolResultConverter.apply(result.getOutput());
-            } else {
-                content = textExtractor.apply(msg);
-            }
-            if (content == null) {
-                content = "";
-            }
-            builder.content(content);
+            content = textExtractor.apply(msg);
         }
+        builder.content(content == null ? "" : content);
 
         return builder.build();
+    }
+
+    /**
+     * Builds the user message that carries media a tool returned.
+     *
+     * <p>Chat Completions only accepts media parts in user messages, so a tool result with an
+     * image, audio or video block is split: the tool message keeps the text, and this message
+     * follows it with the media parts.
+     *
+     * @param msg the tool result message
+     * @return the user message, or {@code null} when the tool result carries no media
+     */
+    public OpenAIMessage convertToolMediaToUserMessage(Msg msg) {
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        if (result == null || !hasMediaContent(result.getOutput())) {
+            return null;
+        }
+        List<OpenAIContentPart> parts = new ArrayList<>();
+        parts.add(
+                OpenAIContentPart.text("Media returned by tool call " + resolveToolCallId(result)));
+        parts.addAll(convertContentBlocks(result.getOutput()));
+        return OpenAIMessage.builder().role("user").content(parts).build();
+    }
+
+    private static String resolveToolCallId(ToolResultBlock result) {
+        return result.getId() != null ? result.getId() : "tool_call_" + System.currentTimeMillis();
     }
 
     private boolean hasMediaContent(List<ContentBlock> blocks) {
