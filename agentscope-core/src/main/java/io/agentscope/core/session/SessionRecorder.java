@@ -83,11 +83,20 @@ public final class SessionRecorder {
     private final Set<String> inputMessages = new HashSet<>();
     private final Disposable heartbeat;
     private final SessionProjection initial;
+    private SessionPrefix prefixView;
     private final SessionLogExporter exporter;
     private static final Logger LOGGER = LoggerFactory.getLogger(SessionRecorder.class);
 
     public SessionRecorder(SessionLog log, String turnId) {
         this(log, turnId, null);
+    }
+
+    /** One replay of the prefix this recorder started from, reused by the execution that follows. */
+    SessionPrefix prefix() {
+        long head = log.head().seq();
+        return prefixView != null && prefixView.asOfSeq() == head
+                ? prefixView
+                : SessionPrefix.read(log, head);
     }
 
     public SessionRecorder(SessionLog log, String turnId, SessionExportSink sink) {
@@ -102,29 +111,25 @@ public final class SessionRecorder {
         this.log = log;
         this.turnId = turnId == null ? UUID.randomUUID().toString() : turnId;
         this.writer = log.acquire(runId, LEASE);
+        // Filled below from the single prefix replay; declared here because the writer is held.
+        this.prefixView = null;
         try {
-            initial = SessionProjection.read(log);
+            prefixView = SessionPrefix.read(log, log.head().seq());
+            initial = prefixView.projection();
             durableSeq = initial.asOfSeq();
-            boolean seenTurn = false;
-            for (var event : log.scan(0, durableSeq)) {
-                if (runId.equals(event.executionRunId()))
-                    throw new SessionLogException(
-                            "Run ID already used; prepare a new execution to resume");
-                if (!this.turnId.equals(event.turnId())) continue;
-                seenTurn = true;
-                if (event.type().equals("turn/completed")
-                        || (event.type().equals("turn/end")
-                                && "completed".equals(event.data().get("status"))))
-                    throw new SessionLogException("Turn already completed; use a new turn ID");
-            }
-            resumedTurn = seenTurn;
+            if (prefixView.runIds().contains(runId))
+                throw new SessionLogException(
+                        "Run ID already used; prepare a new execution to resume");
+            resumedTurn = prefixView.turnIds().contains(this.turnId);
+            if (prefixView.completedTurnIds().contains(this.turnId))
+                throw new SessionLogException("Turn already completed; use a new turn ID");
             if (!initial.uncertainToolCalls().isEmpty())
                 throw new SessionLogException(
                         "Explicit reconciliation required for unknown tool outcomes: "
                                 + initial.uncertainToolCalls());
             previousState = initial.stateJson();
             if (previousState != null) previousMessages = messageJson(initial.restore());
-            for (var message : SessionViews.transcript(log).messages())
+            for (var message : prefixView.transcript().messages())
                 recordedMessages.add(message.getId());
         } catch (RuntimeException e) {
             log.release(writer);

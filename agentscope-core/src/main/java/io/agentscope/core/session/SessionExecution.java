@@ -48,11 +48,13 @@ public final class SessionExecution {
     }
 
     public void prepare(SessionRecorder recorder) {
-        var view = SessionTurns.read(log);
+        var prefix =
+                recorder == null ? SessionPrefix.read(log, log.head().seq()) : recorder.prefix();
+        var view = prefix.turns();
         if (view.started().contains(command.id()))
             throw new IllegalStateException("Command already executed");
         var latest = view.latest();
-        var pending = SessionInteractions.pending(log);
+        var pending = prefix.pending();
         if (command.kind().equals("submit")) {
             if (latest != null && !latest.ended())
                 throw new IllegalStateException(

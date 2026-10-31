@@ -38,11 +38,19 @@ public record SessionTurns(
     }
 
     public static SessionTurns read(SessionLog log) {
-        var turns = new LinkedHashMap<String, Turn>();
-        var inputs = new LinkedHashMap<String, List<Msg>>();
-        var started = new LinkedHashSet<String>();
-        var applied = new LinkedHashSet<String>();
-        for (var event : log.scan(0, log.head().seq())) {
+        var builder = new Builder();
+        for (var event : log.scan(0, log.head().seq())) builder.accept(event);
+        return builder.build();
+    }
+
+    /** Accumulates the view from a single event pass shared with the other prefix views. */
+    static final class Builder {
+        private final Map<String, Turn> turns = new LinkedHashMap<>();
+        private final Map<String, List<Msg>> inputs = new LinkedHashMap<>();
+        private final Set<String> started = new LinkedHashSet<>();
+        private final Set<String> applied = new LinkedHashSet<>();
+
+        void accept(SessionEvent event) {
             var data = event.data();
             if (event.type().equals("state/restored")) {
                 turns.clear();
@@ -76,11 +84,14 @@ public record SessionTurns(
             if (event.type().equals("inbox/applied"))
                 for (var id : (List<?>) data.get("commandIds")) applied.add((String) id);
         }
-        inputs.replaceAll((id, messages) -> List.copyOf(messages));
-        return new SessionTurns(
-                List.copyOf(turns.values()),
-                Map.copyOf(inputs),
-                Set.copyOf(started),
-                Set.copyOf(applied));
+
+        SessionTurns build() {
+            inputs.replaceAll((id, messages) -> List.copyOf(messages));
+            return new SessionTurns(
+                    List.copyOf(turns.values()),
+                    Map.copyOf(inputs),
+                    Set.copyOf(started),
+                    Set.copyOf(applied));
+        }
     }
 }
