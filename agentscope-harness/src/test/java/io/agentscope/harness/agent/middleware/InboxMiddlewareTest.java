@@ -301,8 +301,23 @@ class InboxMiddlewareTest {
                             RuntimeContext.builder().sessionId("sched-1").build())
                     .block();
 
-            List<Msg> seen = model.getLastMessages();
-            assertNotNull(seen, "model must have been called");
+            // Background memory maintenance reuses this model for consolidation requests
+            // after the call returns, so the last recorded request races that pipeline
+            // under load; the reasoning request of this call is the one carrying the
+            // user message.
+            List<List<Msg>> requests = model.getRecordedMessages();
+            assertFalse(requests.isEmpty(), "model must have been called");
+            List<Msg> seen =
+                    requests.stream()
+                            .filter(
+                                    request ->
+                                            request.stream()
+                                                    .anyMatch(
+                                                            message ->
+                                                                    message.getTextContent()
+                                                                            .contains("hello")))
+                            .findFirst()
+                            .orElse(List.of());
             String combined =
                     seen.stream().map(Msg::getTextContent).collect(Collectors.joining("\n"));
             assertTrue(
