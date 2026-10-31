@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -113,6 +114,14 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
                         }
                         AsyncToolRecord rec = readRecord(fi.path());
                         if (rec == null) {
+                            continue;
+                        }
+                        // The directory is sanitize(sessionId), which collapses distinct ids
+                        // (e.g. "team/alpha" and "team_alpha") onto one directory, so listing
+                        // it is not the same as matching the session. Without this check the
+                        // scan hands another session's live tool call to the caller, which
+                        // then marks it TIMEOUT — it would report a tool it never ran.
+                        if (!Objects.equals(sessionId, rec.sessionId())) {
                             continue;
                         }
                         if (!rec.createdAt().isBefore(cutoff)) {
