@@ -35,6 +35,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -513,11 +514,17 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
             dockerState.setWorkspaceRootReady(false);
         }
 
-        createAndStartContainer();
+        createAndStartContainer(containerName());
     }
 
-    private void createAndStartContainer() throws Exception {
-        String containerName = "agentscope-sandbox-" + dockerState.getSessionId();
+    /**
+     * @return the deterministic container name for this session
+     */
+    private String containerName() {
+        return "agentscope-sandbox-" + dockerState.getSessionId();
+    }
+
+    private void createAndStartContainer(String containerName) throws Exception {
         dockerState.setContainerName(containerName);
 
         List<String> cmd = buildDockerRunCommand(containerName);
@@ -527,58 +534,23 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                 dockerState.getImage(),
                 containerName);
 
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        Process process = pb.start();
-
-        ExecutorService drainer =
-                Executors.newFixedThreadPool(
-                        2,
-                        r -> {
-                            Thread t =
-                                    new Thread(
-                                            r,
-                                            "sandbox-docker-create-" + dockerState.getSessionId());
-                            t.setDaemon(true);
-                            return t;
-                        });
-
-        Future<String> stdoutFuture =
-                drainer.submit(() -> readStream(process.getInputStream(), 64 * 1024));
-        Future<String> stderrFuture =
-                drainer.submit(() -> readStream(process.getErrorStream(), 64 * 1024));
-        drainer.shutdown();
-
-        boolean exited = process.waitFor(CONTAINER_START_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        if (!exited) {
-            process.destroyForcibly();
-            drainer.shutdownNow();
+        CliResult result =
+                runDockerCli(CONTAINER_START_TIMEOUT_SECONDS, cmd.toArray(new String[0]));
+        if (!result.succeeded()) {
             throw new SandboxException.SandboxRuntimeException(
                     SandboxErrorCode.WORKSPACE_START_ERROR,
-                    "docker run timed out for image: " + dockerState.getImage());
+                    "docker run failed (exit=" + result.exitCode() + "): " + result.stderr());
         }
-
-        int exitCode = process.exitValue();
-        String stdout = stdoutFuture.get().trim();
-        String stderr = stderrFuture.get().trim();
-
-        if (exitCode != 0) {
+        if (result.stdout().isBlank()) {
             throw new SandboxException.SandboxRuntimeException(
                     SandboxErrorCode.WORKSPACE_START_ERROR,
-                    "docker run failed (exit=" + exitCode + "): " + stderr);
+                    "docker run produced no container ID. stderr: " + result.stderr());
         }
 
-        // stdout is the new container ID
-        String newContainerId = stdout.isBlank() ? null : stdout;
-        if (newContainerId == null) {
-            throw new SandboxException.SandboxRuntimeException(
-                    SandboxErrorCode.WORKSPACE_START_ERROR,
-                    "docker run produced no container ID. stderr: " + stderr);
-        }
-
-        dockerState.setContainerId(newContainerId);
+        dockerState.setContainerId(result.stdout());
         log.info(
                 "[sandbox-docker] Container started: id={}, name={}",
-                newContainerId,
+                result.stdout(),
                 containerName);
     }
 
@@ -664,40 +636,46 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
     /**
      * Inspects a container and returns whether it is running, stopped, or unknown.
      */
-    private ContainerState inspectContainerState(String containerId) {
+    /**
+     * Inspects a container and reports whether it is running, stopped, missing, or unknown.
+     *
+     * <p>"Missing" and "unknown" are deliberately distinct: a missing container can be replaced,
+     * while an unanswered probe must not be treated as evidence that the container is gone.
+     */
+    private ContainerState inspectContainerState(String identifier) {
         try {
-            ProcessBuilder pb =
-                    new ProcessBuilder(
-                            "docker", "inspect", "-f", "{{.State.Running}}", containerId);
-            Process process = pb.start();
-
-            Future<String> stdoutFuture;
-            ExecutorService drainer =
-                    Executors.newSingleThreadExecutor(
-                            r -> {
-                                Thread t = new Thread(r, "sandbox-docker-inspect");
-                                t.setDaemon(true);
-                                return t;
-                            });
-            stdoutFuture = drainer.submit(() -> readStream(process.getInputStream(), 1024));
-            drainer.shutdown();
-
-            boolean exited = process.waitFor(10, TimeUnit.SECONDS);
-            if (!exited) {
-                process.destroyForcibly();
-                return ContainerState.UNKNOWN;
+            CliResult result =
+                    runDockerCli(10, "docker", "inspect", "-f", "{{.State.Running}}", identifier);
+            if (!result.succeeded()) {
+                return result.reportedMissing() ? ContainerState.MISSING : ContainerState.UNKNOWN;
             }
-            if (process.exitValue() != 0) {
-                return ContainerState.UNKNOWN;
-            }
-            String output = stdoutFuture.get().trim();
-            return "true".equals(output) ? ContainerState.RUNNING : ContainerState.STOPPED;
+            return "true".equals(result.stdout()) ? ContainerState.RUNNING : ContainerState.STOPPED;
         } catch (Exception e) {
             log.debug(
                     "[sandbox-docker] Failed to inspect container {}: {}",
-                    containerId,
+                    identifier,
                     e.getMessage());
             return ContainerState.UNKNOWN;
+        }
+    }
+
+    /**
+     * Resolves the id of a container by name.
+     *
+     * @param containerName the container name
+     * @return the container id, or {@code null} when it cannot be resolved
+     */
+    private String resolveContainerId(String containerName) {
+        try {
+            CliResult result =
+                    runDockerCli(10, "docker", "inspect", "-f", "{{.Id}}", containerName);
+            return result.succeeded() && !result.stdout().isBlank() ? result.stdout() : null;
+        } catch (Exception e) {
+            log.debug(
+                    "[sandbox-docker] Failed to resolve id of container {}: {}",
+                    containerName,
+                    e.getMessage());
+            return null;
         }
     }
 
@@ -710,7 +688,65 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
      */
     // Visible for testing so unit tests can intercept the docker CLI round trip
     // (upload/download temp-file plumbing) without a live Docker daemon.
-    void runDockerCliBlocking(int timeoutSeconds, String... command) throws Exception {
+    /**
+     * Result of one Docker CLI invocation.
+     *
+     * <p>Callers need the exit code and both streams separately: {@code docker inspect} reports a
+     * missing container as a plain non-zero exit, which has to be told apart from a transport
+     * failure.
+     */
+    static final class CliResult {
+
+        private final int exitCode;
+        private final String stdout;
+        private final String stderr;
+
+        CliResult(int exitCode, String stdout, String stderr) {
+            this.exitCode = exitCode;
+            this.stdout = stdout;
+            this.stderr = stderr;
+        }
+
+        int exitCode() {
+            return exitCode;
+        }
+
+        String stdout() {
+            return stdout;
+        }
+
+        String stderr() {
+            return stderr;
+        }
+
+        boolean succeeded() {
+            return exitCode == 0;
+        }
+
+        /**
+         * @return whether the daemon answered that the named object does not exist
+         */
+        boolean reportedMissing() {
+            if (succeeded() || stderr == null) {
+                return false;
+            }
+            String lower = stderr.toLowerCase(Locale.ROOT);
+            return lower.contains("no such object") || lower.contains("no such container");
+        }
+    }
+
+    /**
+     * Runs a Docker CLI command, blocking until completion.
+     *
+     * <p>Single entry point for every Docker CLI round trip so the container lifecycle can be
+     * exercised without a live daemon.
+     *
+     * @param timeoutSeconds maximum time to wait
+     * @param command        command and arguments
+     * @return the exit code and both streams
+     * @throws SandboxException.SandboxRuntimeException if the command times out
+     */
+    CliResult runDockerCli(int timeoutSeconds, String... command) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(command);
         Process process = pb.start();
 
@@ -722,9 +758,10 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                             t.setDaemon(true);
                             return t;
                         });
+        Future<String> stdoutFuture =
+                drainer.submit(() -> readStream(process.getInputStream(), 64 * 1024));
         Future<String> stderrFuture =
                 drainer.submit(() -> readStream(process.getErrorStream(), 64 * 1024));
-        drainer.submit(() -> readStream(process.getInputStream(), 64 * 1024));
         drainer.shutdown();
 
         boolean exited = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
@@ -735,12 +772,25 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                     SandboxErrorCode.WORKSPACE_START_ERROR,
                     "docker command timed out: " + command[0] + " " + command[1]);
         }
-        int exitCode = process.exitValue();
-        if (exitCode != 0) {
-            String stderr = stderrFuture.get();
+        return new CliResult(
+                process.exitValue(), stdoutFuture.get().trim(), stderrFuture.get().trim());
+    }
+
+    /**
+     * Runs a Docker CLI command, blocking until completion.
+     *
+     * @param timeoutSeconds maximum time to wait
+     * @param command        command and arguments
+     * @throws SandboxException.SandboxRuntimeException if the command fails or times out
+     */
+    // Visible for testing so unit tests can intercept the docker CLI round trip
+    // (upload/download temp-file plumbing) without a live Docker daemon.
+    void runDockerCliBlocking(int timeoutSeconds, String... command) throws Exception {
+        CliResult result = runDockerCli(timeoutSeconds, command);
+        if (!result.succeeded()) {
             throw new SandboxException.SandboxRuntimeException(
                     SandboxErrorCode.WORKSPACE_START_ERROR,
-                    "docker command failed (exit=" + exitCode + "): " + stderr);
+                    "docker command failed (exit=" + result.exitCode() + "): " + result.stderr());
         }
     }
 
@@ -770,6 +820,7 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
     private enum ContainerState {
         RUNNING,
         STOPPED,
+        MISSING,
         UNKNOWN
     }
 }
