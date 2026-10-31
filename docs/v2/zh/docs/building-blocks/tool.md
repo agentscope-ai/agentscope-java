@@ -384,7 +384,11 @@ AgentScope 集成 [Model Context Protocol (MCP)](https://modelcontextprotocol.io
 - **STDIO** —— 本地进程 stdin/stdout 通信
 - **SSE / Streamable HTTP** —— 远程 HTTP 长连接
 
-MCP tool 在 toolkit 中以 `mcp__{server_name}__{tool_name}` 命名，避免冲突；标注了 `readOnlyHint` 的 tool 会被权限系统自动放行。
+MCP tool 默认沿用服务端名称。可以启用 `{server_name}__` 这样的服务命名空间来避免冲突。启用命名空间后，AgentScope 会把名称中不属于 `[A-Za-z0-9_-]` 的字符替换掉；清洗或 64 字符上限改变名称时，会追加稳定的身份后缀；实际调用仍使用服务端原名。若名称冲突，注册会在加入该服务的任何 tool 前失败；多个 MCP client 并发注册时也遵循这一规则。标注了 `readOnlyHint` 的 tool 会被权限系统自动放行。
+
+<Warning>
+这是 MCP 注册行为的兼容性变更：无论是否启用前缀，模型侧名称重复时都会拒绝该 client 的注册，不再静默覆盖已有工具；此前注册的工具会保留。若应用原先依赖注册顺序覆盖工具，应使用不同名称，通过 `toolkit.registration().mcpClient(client).mcpToolNamePrefix("crm__").apply()` 配置前缀，或用 `enableTools` / `disableTools` 排除冲突的远端工具。这些服务级筛选项仍使用远端工具原名。重新注册一个工具仍留在 toolkit 中的 client（重连、重放场景）同样会被拒绝，需先调用 `removeMcpClient(name)` 移除先前的注册。
+</Warning>
 
 ### 注册 MCP Tool
 
@@ -458,6 +462,10 @@ toolkit.registerMcpClient(search).block();
 
 
 完整运行示例：`agentscope-examples/documentation/.../mcp/McpStdioExample.java`、`mcp/McpSseExample.java`、`mcp/McpStreamableHttpExample.java`。
+
+### MCP tool 结果
+
+MCP 结果状态由 `isError` 决定，与文本内容无关。错误响应会在错误文本之外保留结构化 JSON 和支持的非文本内容，供模型检查诊断信息。资源链接只展示名称、URI 和可选说明，不自动读取目标资源。协议 `_meta` 不进入模型可见输出。
 
 ## Skill
 

@@ -1442,15 +1442,13 @@ class McpClientManagerTest {
                                     tool,
                                     new RegisteredToolFunction(tool, null, clientName));
                             groups.addToolToGroup(groupName, tool.getName());
+                            throw new IllegalStateException("callback failed after publication");
                         });
-        AgentTool local = new SchemaOnlyTool("local", "Local", Map.of());
-        registry.registerTool("local", local, new RegisteredToolFunction(local, null, null));
         McpClientWrapper wrapper = mock(McpClientWrapper.class);
         when(wrapper.getName()).thenReturn("rollback-client");
         when(wrapper.initialize()).thenReturn(Mono.empty());
         McpSchema.Tool search = remoteToolMock("search");
-        McpSchema.Tool conflicting = remoteToolMock("local");
-        when(wrapper.listTools()).thenReturn(Mono.just(List.of(search, conflicting)));
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(search)));
 
         try {
             assertThrows(
