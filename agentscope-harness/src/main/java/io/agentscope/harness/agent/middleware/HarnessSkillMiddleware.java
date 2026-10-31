@@ -491,10 +491,12 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
     private void warnPlainEnumerationSkipped(AgentSkillRepository repo) {
         if (plainEnumerationWarned.add(repo)) {
             log.warn(
-                    "Skill repository {} is not context-scoped and the agent declares no"
-                            + " explicit skill selection; skipping it for serving — bind the"
-                            + " names to serve via SkillFilter.only(...), or serve dynamic"
-                            + " discovery from a RuntimeContextSkillRepository",
+                    "Skill repository {} is not context-scoped and its filter selects no names"
+                            + " for serving (a plain repository serves only an explicit"
+                            + " SkillFilter.only(...) whitelist — a blacklist, a wildcard, or"
+                            + " no filter at all selects nothing); skipping it for serving —"
+                            + " bind the names to serve via SkillFilter.only(...), or serve"
+                            + " dynamic discovery from a RuntimeContextSkillRepository",
                     repo.getClass().getSimpleName());
         }
     }

@@ -24,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.util.MarkdownSkillParser;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -488,9 +490,11 @@ class SkillMirrorStoreTest {
         try {
             System.setProperty("user.home", tempDir.toString());
             assertEquals(
-                    tempDir.resolve(".agentscope").resolve("skill-cache").resolve("repo_a"),
+                    tempDir.resolve(".agentscope").resolve("skill-cache"),
                     SkillMirrorStore.resolveBuiltinRoot(null, "repo_a"),
-                    "the default root lives under ~/.agentscope/skill-cache/<identity>");
+                    "the default root is identity-free — the store layout appends the"
+                            + " identity segment, so explicit and default roots share one"
+                            + " shape");
         } finally {
             System.setProperty("user.home", homePrevious == null ? "" : home);
             if (home == null) {
@@ -613,6 +617,45 @@ class SkillMirrorStoreTest {
         assertEquals("demo-skill", healed.getName());
         assertEquals("# fresh body", manifestBody(healed.getOriginDir().get().resolve("SKILL.md")));
         assertEquals(2, fetches.get(), "the corrupt entry must be evicted and re-fetched once");
+    }
+
+    @Test
+    @DisplayName("a competitor that completed the target during the fetch is adopted, not thrown")
+    void testCompetingInstallDuringFetchIsAdopted() throws Exception {
+        SkillMirrorStore store = new SkillMirrorStore(tempDir.resolve("root"));
+
+        // The fetcher "loses" a cross-process race: it materializes a complete target
+        // directory while the local install is still writing its temp sibling, so the
+        // atomic move collides (EEXIST on some filesystems, ENOTEMPTY on POSIX). The
+        // winner's complete directory must be adopted and served — never an exception.
+        Path winner =
+                tempDir.resolve("root")
+                        .resolve("repo_a")
+                        .resolve("demo-skill")
+                        .resolve(SkillMirrorStore.versionDirName("v1"));
+        AgentSkill served =
+                store.serve(
+                                "repo_a",
+                                "demo-skill",
+                                "v1",
+                                "src-x",
+                                () -> {
+                                    try {
+                                        Files.createDirectories(winner);
+                                        Files.writeString(
+                                                winner.resolve("SKILL.md"),
+                                                "---\nname: demo-skill\ndescription: Winner\n---\n"
+                                                        + "# winner body",
+                                                StandardCharsets.UTF_8);
+                                    } catch (IOException e) {
+                                        throw new UncheckedIOException(e);
+                                    }
+                                    return fetched(skill("demo-skill", "# loser body"));
+                                })
+                        .orElseThrow();
+
+        assertEquals(
+                "# winner body", manifestBody(served.getOriginDir().get().resolve("SKILL.md")));
     }
 
     @Test

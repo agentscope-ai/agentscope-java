@@ -23,6 +23,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -110,17 +111,15 @@ public class SkillMirrorStore {
     private final Path root;
 
     /**
-     * Creates a store bound to the given cache root, creating the directory as needed.
+     * Creates a store bound to the given cache root. Pure — the root directory is created
+     * lazily by the first install ({@code Files.createDirectories} on the version
+     * directory's parent), so acquiring a store per serve ({@link #of(Path)}) costs one
+     * allocation and zero filesystem calls.
      *
      * @param root the cache root directory (never null)
      */
     public SkillMirrorStore(Path root) {
         this.root = Objects.requireNonNull(root, "root must not be null");
-        try {
-            Files.createDirectories(root);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Cannot create mirror root: " + root, e);
-        }
     }
 
     /**
@@ -142,9 +141,12 @@ public class SkillMirrorStore {
 
     /**
      * Resolves the cache root for a repository: explicit {@code cacheDir} &gt; the {@value
-     * #CACHE_DIR_PROPERTY} system property &gt; {@code ~/.agentscope/skill-cache/<identity>/}.
-     * Pure — no disk access — so repositories can call it at construction, fail fast on an
-     * unresolvable root, and bind a store to the result lazily.
+     * #CACHE_DIR_PROPERTY} system property &gt; {@code ~/.agentscope/skill-cache/}. The root
+     * is identity-free on every path — the store layout itself appends {@code
+     * <repoIdentity>/<skill>/<version>}, so an explicit root and the default produce the
+     * same on-disk shape. Pure — no disk access — so repositories can call it at
+     * construction, fail fast on an unresolvable root, and bind a store to the result
+     * lazily.
      */
     public static Path resolveBuiltinRoot(Path explicitCacheDir, String repoIdentity) {
         if (explicitCacheDir != null) {
@@ -159,12 +161,14 @@ public class SkillMirrorStore {
         String home = System.getProperty("user.home");
         if (home == null || home.isBlank()) {
             throw new IllegalArgumentException(
-                    "Cannot resolve the default skill cache root: user.home is not set and"
-                            + " neither an explicit cacheDir nor the "
+                    "Cannot resolve the default skill cache root for repository '"
+                            + repoIdentity
+                            + "': user.home is not set and neither an explicit cacheDir nor"
+                            + " the "
                             + CACHE_DIR_PROPERTY
                             + " system property provides one");
         }
-        return Path.of(home, DEFAULT_CACHE_HOME.split("/")).resolve(repoIdentity);
+        return Path.of(home, DEFAULT_CACHE_HOME.split("/"));
     }
 
     /** Returns the cache root this store serves. */
@@ -521,16 +525,30 @@ public class SkillMirrorStore {
                 deleteRecursively(target);
             }
             Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (FileAlreadyExistsException e) {
-            if (isComplete(target)) {
-                // Another process won the atomic move; its directory is the cache entry.
-                return target;
-            }
-            throw new IllegalStateException(
-                    "Concurrent eviction while materializing (retry resolves it): " + target, e);
         } catch (AtomicMoveNotSupportedException e) {
             throw new UnsupportedOperationException(
                     "Mirror root does not support atomic moves (same-volume required): " + root, e);
+        } catch (FileSystemException e) {
+            // Both spellings of "something already sits at target": EEXIST maps to
+            // FileAlreadyExistsException, while POSIX rename(2) over a non-empty directory
+            // surfaces as ENOTEMPTY (a plain FileSystemException). A complete target means
+            // another process won the install — adopt its directory; an incomplete one is
+            // cleared and the move retried once before giving up.
+            if (isComplete(target)) {
+                return target;
+            }
+            deleteRecursively(target);
+            try {
+                Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
+                return target;
+            } catch (IOException retry) {
+                if (isComplete(target)) {
+                    return target;
+                }
+                throw new IllegalStateException(
+                        "Concurrent eviction while materializing (retry resolves it): " + target,
+                        retry);
+            }
         } catch (IOException e) {
             throw new UncheckedIOException("Cannot materialize skill version: " + target, e);
         } finally {

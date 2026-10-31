@@ -351,7 +351,8 @@ public class AgentSkillsController {
                                                 RuntimeContext.empty(),
                                                 "skills/" + targetName + "/SKILL.md",
                                                 markdown);
-                                Map<String, String> resources = skill.getResources();
+                                Map<String, String> resources =
+                                        SkillFileSystemHelper.readAllResources(skill);
                                 if (resources != null) {
                                     for (Map.Entry<String, String> e : resources.entrySet()) {
                                         String rel = e.getKey();

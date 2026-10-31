@@ -247,13 +247,20 @@ public final class SkillLoadTool implements AgentTool {
         // matches the bytes that skill_manage(action=patch) operates on. Returning body-only
         // (the previous behaviour) drove patch failures whenever the LLM tried to old_string
         // anything near the frontmatter boundary, since the parser eats that whitespace.
-        String body = skill.getSkillContent();
-        if (body == null && entry.lazyResources() != null) {
-            // Descriptor-form entry — the serving contract keeps bodies on disk, and the
-            // load tool is the designated on-demand body reader.
-            body = entry.lazyResources().read(SKILL_FILE).orElse(null);
+        String fullMarkdown;
+        if (skill.getSkillContent() == null && entry.lazyResources() != null) {
+            // Descriptor-form entry: the on-disk manifest already carries its frontmatter and
+            // is returned verbatim — it IS the byte-exact form patch operates on; wrapping it
+            // in a second generated frontmatter would corrupt both goals.
+            fullMarkdown = entry.lazyResources().read(SKILL_FILE).orElse(null);
+        } else {
+            fullMarkdown =
+                    MarkdownSkillParser.generate(skill.getMetadata(), skill.getSkillContent());
         }
-        String fullMarkdown = MarkdownSkillParser.generate(skill.getMetadata(), body);
+        if (fullMarkdown == null || fullMarkdown.isBlank()) {
+            fullMarkdown =
+                    MarkdownSkillParser.generate(skill.getMetadata(), skill.getSkillContent());
+        }
         String fence = contentFence(fullMarkdown);
         sb.append("\nContent (").append("SKILL.md").append("):\n");
         sb.append(fence).append("markdown\n");

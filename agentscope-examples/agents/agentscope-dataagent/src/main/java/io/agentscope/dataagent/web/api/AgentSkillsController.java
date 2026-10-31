@@ -385,7 +385,7 @@ public class AgentSkillsController {
                     WorkspaceManager wsm = ctx.workspaceManager();
                     wsm.writeUtf8WorkspaceRelative(
                             RuntimeContext.empty(), "skills/" + targetName + "/SKILL.md", markdown);
-                    writeResources(wsm, targetName, skill.getResources());
+                    writeResources(wsm, targetName, SkillFileSystemHelper.readAllResources(skill));
                     AgentSkillRepositoryInfo repoInfo = repo.getRepositoryInfo();
                     SkillMarketplaceMeta meta =
                             new SkillMarketplaceMeta(

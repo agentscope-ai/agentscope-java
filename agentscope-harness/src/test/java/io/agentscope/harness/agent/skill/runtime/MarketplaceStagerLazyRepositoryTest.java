@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.skill.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.AgentSkill;
@@ -50,8 +51,8 @@ class MarketplaceStagerLazyRepositoryTest {
     private static final String SKILL_NAME = "my-skill";
 
     @Test
-    @DisplayName("lazy repository reports NONE and stages no files")
-    void lazyRepositoryReportsNone(@TempDir Path tmp) throws IOException {
+    @DisplayName("lazy repository stages its on-disk tree and keeps a files-root")
+    void lazyRepositoryStagesFromOriginDir(@TempDir Path tmp) throws IOException {
         Path library = writeSkillLibrary(tmp);
         Path workspace = Files.createDirectories(tmp.resolve("workspace"));
         MarketplaceStager stager = new MarketplaceStager(workspace);
@@ -59,16 +60,28 @@ class MarketplaceStagerLazyRepositoryTest {
         AgentSkillRepository repo = new FileSystemSkillRepository(library, false, SOURCE_NS, true);
         AgentSkill skill = repo.getAllSkills().get(0);
         assertTrue(skill.getResources().isEmpty(), "a lazy repository must not preload resources");
+        assertTrue(skill.getOriginDir().isPresent(), "lazy summaries carry their originDir");
 
         StageResult result =
                 stager.stage(List.of(new RepoBound(skill, repo)), Map.of(repo, SOURCE_NS), SCOPE)
                         .get(SKILL_NAME);
 
-        assertInstanceOf(StageResult.None.class, result);
-        assertEquals(0, countRegularFiles(stagedDir(workspace)));
-        assertFalse(
-                Files.exists(stagedDir(workspace)),
-                "nothing was staged, so no staged directory may be left behind");
+        // The descriptor's tree is staged from originDir so shell and sandbox modes keep a
+        // <files-root> — the immutable source makes a complete copy the freshness check.
+        assertInstanceOf(StageResult.Cached.class, result);
+        assertTrue(
+                Files.isRegularFile(stagedDir(workspace).resolve("SKILL.md")),
+                "the on-disk manifest is staged verbatim");
+        assertNotNull(
+                ShellPathPolicy.localWithShell(workspace).resolve(SKILL_NAME, result),
+                "both shell modes resolve a files-root for the staged tree");
+
+        // A second pass over the unchanged tree is a pure reuse — still cached, files intact.
+        StageResult again =
+                stager.stage(List.of(new RepoBound(skill, repo)), Map.of(repo, SOURCE_NS), SCOPE)
+                        .get(SKILL_NAME);
+        assertInstanceOf(StageResult.Cached.class, again);
+        assertTrue(Files.isRegularFile(stagedDir(workspace).resolve("SKILL.md")));
     }
 
     @Test

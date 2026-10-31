@@ -332,10 +332,12 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 仓库技能的文件落在哪儿取决于后端：
 
-- **带缓存的后端（Git / 配置了版本的 Nacos / JDBC 系 / JAR 内 Classpath）**：每次按版本读取都由仓储自己物化成不可变、按版本键控的缓存目录——Maven local 风格，默认在 `~/.agentscope/skill-cache/<repoIdentity>/<skill>/<version>/`。对外返回的技能通过 `<files-root>`（originDir）直指该目录，harness 对它们零 staging。可在仓储构造参数里传 `cacheDir` 覆盖缓存根，测试/运维也可用系统属性 `agentscope.skill.cache.dir` 全局覆盖。该目录树跨进程共享，可随时被运维整棵删除——未命中只是按同版本确定性重拉，`close()` 永远不会删它。
-- **不带缓存的后端（FileSystem / Workspace，以及纯内存形态到达的技能）**：保持原有 staging 路径——harness 在每次 call 前（PreCall 阶段，与 `<available_skills>` 同一次 `onSystemPrompt`）把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`，文件级 SHA-256 去重、只重写变化过的文件；已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录会在同一次物化里顺手清掉。Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱。
+- **带缓存的后端（Git / 配置了版本的 Nacos / JDBC 系 / JAR 内 Classpath）**：每次按版本读取都由仓储自己物化成不可变、按版本键控的缓存目录——Maven local 风格，默认在 `~/.agentscope/skill-cache/<repoIdentity>/<skill>/<version>/`。可在仓储构造参数里传 `cacheDir` 覆盖缓存根，测试/运维也可用系统属性 `agentscope.skill.cache.dir` 全局覆盖。该目录树跨进程共享，可随时被运维整棵删除——未命中只是按同版本确定性重拉，`close()` 永远不会删它。`<files-root>` 方面，harness 会把该物化目录**按版本一次**地 stage 到 `<wsRoot>/.skills-cache/<source>/<name>/`（源不可变，完整的 staged 拷贝即被复用、绝不重写）——以此保证 shell 与沙箱两种模式路径可解析；未配置 shell 时完全跳过 staging。
+- **不带缓存的后端（Workspace，以及纯内存形态到达的技能）**：保持原有 staging 路径——harness 在每次 call 前（PreCall 阶段，与 `<available_skills>` 同一次 `onSystemPrompt`）把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`，文件级 SHA-256 去重、只重写变化过的文件；已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录会在同一次物化里顺手清掉。Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱。FileSystem 仓储以自身磁盘树作为 origin 目录，走与缓存后端相同的"按版本一次"拷贝 staging。
 
 沙箱注意事项：仓储缓存默认在宿主的 `~/.agentscope/skill-cache`。若沙箱内执行需要直接看到仓库技能文件，请把 `cacheDir` 指到会话可见卷（harness 侧构造注入），或走上面的 workspace staging 路径。
+
+plain（非 context）仓储只服务显式 `SkillFilter.only(...)` 选中的名字。黑名单基线、通配基线或不设 filter 都不会为它们选中任何名字——这样的仓储会被跳过服务并按仓储告警一次。请显式绑定要服务的名字，或使用 `RuntimeContextSkillRepository` 做请求作用域的动态发现。
 
 工作区 skill（Layer 3 / Layer 4）不需要 stage——它们本来就在工作区目录里。
 
