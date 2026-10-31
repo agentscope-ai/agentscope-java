@@ -731,7 +731,9 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         AbstractFilesystem.validatePath(toPath);
         String escapedFrom = FilesystemUtils.shellQuote(fromPath);
         String escapedTo = FilesystemUtils.shellQuote(toPath);
-        String cmd = "mkdir -p $(dirname " + escapedTo + ") && mv " + escapedFrom + " " + escapedTo;
+        String parent = quotedParentDir(toPath);
+        String mkdirPrefix = parent != null ? "mkdir -p " + parent + " 2>&1 && " : "";
+        String cmd = mkdirPrefix + "mv " + escapedFrom + " " + escapedTo;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         if (result.exitCode() != 0) {
             return WriteResult.fail(
@@ -771,11 +773,24 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
      * needs no parent creation.
      */
     private static String parentDirMkdir(String filePath) {
-        int slash = filePath.lastIndexOf('/');
-        if (slash <= 0) {
+        String parent = quotedParentDir(filePath);
+        if (parent == null) {
             return "";
         }
-        return "; mkdir -p " + FilesystemUtils.shellQuote(filePath.substring(0, slash)) + " 2>&1";
+        return "; mkdir -p " + parent + " 2>&1";
+    }
+
+    /**
+     * Returns the shell-quoted parent directory of {@code filePath}, or {@code null} when the
+     * path sits at the filesystem root or in the current directory and no parent creation is
+     * needed.
+     */
+    private static String quotedParentDir(String filePath) {
+        int slash = filePath.lastIndexOf('/');
+        if (slash <= 0) {
+            return null;
+        }
+        return FilesystemUtils.shellQuote(filePath.substring(0, slash));
     }
 
     /**
