@@ -40,9 +40,11 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.core.tool.Toolkit;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -108,6 +110,11 @@ class ReActAgentInterruptToolCallTest {
      */
     private static final class InterruptAfterModelCallMiddleware implements MiddlewareBase {
         private final AtomicBoolean fired = new AtomicBoolean();
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+        }
 
         @Override
         public Flux<AgentEvent> onModelCall(

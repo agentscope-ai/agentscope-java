@@ -53,9 +53,11 @@ import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -200,6 +202,11 @@ class ReActAgentNewLoopE2ETest {
         final List<String> trace = new ArrayList<>();
 
         @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_ACTING);
+        }
+
+        @Override
         public Flux<AgentEvent> onAgent(
                 Agent agent,
                 RuntimeContext ctx,
@@ -221,6 +228,11 @@ class ReActAgentNewLoopE2ETest {
     }
 
     private static final class StripToolEventContextMiddleware implements MiddlewareBase {
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_ACTING);
+        }
+
         @Override
         public Flux<AgentEvent> onActing(
                 Agent agent,

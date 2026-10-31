@@ -33,6 +33,7 @@ import io.agentscope.examples.documentation2.agui.tools.ExampleTools;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.spring.boot.agui.common.AguiAgentRegistryCustomizer;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -221,6 +222,11 @@ public class AgentConfiguration {
 
     private static MiddlewareBase exampleCustomEventMiddleware() {
         return new MiddlewareBase() {
+            @Override
+            public Set<ExtensionPoint> activePoints() {
+                return EnumSet.of(ExtensionPoint.ON_AGENT);
+            }
+
             @Override
             public Flux<AgentEvent> onAgent(
                     Agent agent,

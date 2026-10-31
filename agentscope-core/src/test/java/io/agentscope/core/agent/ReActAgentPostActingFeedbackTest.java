@@ -41,8 +41,10 @@ import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -161,6 +163,11 @@ class ReActAgentPostActingFeedbackTest {
         MockModel model = toolThenDoneModel();
         MiddlewareBase feedback =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onModelCall(
                             Agent agent,

@@ -29,8 +29,10 @@ import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.extensions.judge.jev.JevExecution;
 import java.time.Duration;
 import java.util.ArrayDeque;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
@@ -99,6 +101,12 @@ public final class JevSupervisionMiddleware implements MiddlewareBase {
         this.supervisor = Objects.requireNonNull(supervisor);
         this.schedule = Objects.requireNonNull(schedule);
         this.observer = Objects.requireNonNull(observer);
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
     }
 
     @Override

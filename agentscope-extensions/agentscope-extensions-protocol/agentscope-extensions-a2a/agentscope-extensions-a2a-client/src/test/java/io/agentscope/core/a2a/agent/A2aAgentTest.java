@@ -630,6 +630,11 @@ public class A2aAgentTest {
         MiddlewareBase rewriteInput =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_REASONING);
+                    }
+
+                    @Override
                     public Flux<AgentEvent> onReasoning(
                             Agent agent,
                             RuntimeContext ctx,
@@ -1324,6 +1329,11 @@ public class A2aAgentTest {
     private static MiddlewareBase onAgent(
             String name, int order, List<String> entered, String result) {
         return new MiddlewareBase() {
+            @Override
+            public Set<ExtensionPoint> activePoints() {
+                return EnumSet.of(ExtensionPoint.ON_AGENT);
+            }
+
             @Override
             public int order() {
                 return order;
