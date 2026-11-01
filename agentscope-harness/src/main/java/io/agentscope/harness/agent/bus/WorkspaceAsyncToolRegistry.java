@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -112,8 +113,19 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
                             continue;
                         }
                         AsyncToolRecord rec = readRecord(fi.path());
-                        if (rec != null
-                                && AsyncToolRecord.RUNNING.equals(rec.status())
+                        if (rec == null) {
+                            continue;
+                        }
+                        // The directory is sanitize(sessionId), which maps every character outside
+                        // [a-zA-Z0-9._-] to "_", so two different session ids can share one
+                        // directory ("team/alpha" and "team_alpha" do). Listing the directory is
+                        // therefore not the same as matching the session: without this check the
+                        // scan hands another session's running call to the caller, which then
+                        // reports to its model a tool it never invoked.
+                        if (!Objects.equals(sessionId, rec.sessionId())) {
+                            continue;
+                        }
+                        if (AsyncToolRecord.RUNNING.equals(rec.status())
                                 && rec.createdAt().isBefore(cutoff)) {
                             stale.add(rec);
                         }
