@@ -99,6 +99,8 @@ BaseStore store = JdbcStore.builder(dataSource)
 
 **并发安全**：`putIfVersion` 通过单语句 CAS `UPDATE ... WHERE version = ?` 实现，所有已支持数据库均可用。
 
+**列宽检查**：装配时会比对已有表的列名与当前 DDL，并对定长字符列比对声明长度。列宽小于 DDL 声明时会输出一条启动告警，指出列名并给出 `ALTER TABLE` 示例。装配过程不修改该列，因为框架不改变已有表。看到告警时请手工放宽一次；否则后续写入会以数据库长度错误失败（例如 `value too long for type character varying(255)`）。
+
 ### 3. JdbcSnapshotSpec
 
 沙箱快照以 BLOB 存储到数据库表（MySQL 为 LONGBLOB，PostgreSQL 为 BYTEA）。

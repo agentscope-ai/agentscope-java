@@ -21,9 +21,11 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
@@ -63,6 +65,15 @@ public final class TableSchemaValidator {
      */
     private static final Set<Integer> TABLE_MISSING_ERROR_CODES =
             Set.of(1146, 942, 208, -204, -206, -5501, -2106, 42102, 42104);
+
+    /**
+     * Declared character width of a column: {@code VARCHAR(n)}, {@code CHAR(n)} and their
+     * national variants, case-insensitive.
+     */
+    private static final Pattern CHAR_WIDTH =
+            Pattern.compile(
+                    "(?i)\\b(\\w+)\\s+(?:n?(?:var)?char|character"
+                            + " varying)\\s*\\(\\s*(\\d+)\\s*\\)");
 
     private TableSchemaValidator() {}
 
@@ -116,6 +127,116 @@ public final class TableSchemaValidator {
                             + " ALTER TABLE ... ADD COLUMN) based on the reference DDL:\n"
                             + referenceDdl(createTableDdls));
         }
+
+        for (String warning : narrowColumnWarnings(connection, tableName, createTableDdls)) {
+            LOG.warn("{}", warning);
+        }
+    }
+
+    /**
+     * Columns whose declared {@code VARCHAR}/{@code CHAR} length is smaller than the length the
+     * current DDL asks for.
+     *
+     * <p>A narrowed column recreates a failure that {@link #validate} cannot see: the name is
+     * present, so the check passes, and {@code CREATE TABLE IF NOT EXISTS} leaves the width
+     * untouched. Writes then fail at run time with a vendor length error, long after start-up and
+     * far from the schema. Reporting the width here turns that silent failure into one start-up
+     * warning naming the column and an {@code ALTER} example.
+     *
+     * <p>Columns without a declared character length (for example {@code TEXT}, {@code BIGINT}) and
+     * vendors that do not expose a size are skipped, so the check stays advisory: it never fails
+     * assembly, because the framework does not alter existing tables.
+     *
+     * @param connection an open connection; not closed by this method
+     * @param tableName the table to inspect
+     * @param createTableDdls the dialect's DDL statements for this table
+     * @return one message per narrowed column, in declared-column order; empty when none
+     */
+    static List<String> narrowColumnWarnings(
+            Connection connection, String tableName, List<String> createTableDdls) {
+        Map<String, Integer> declared = declaredCharWidths(createTableDdls);
+        if (declared.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Integer> actual = actualCharWidths(connection, tableName);
+        List<String> warnings = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : declared.entrySet()) {
+            Integer actualWidth = actual.get(entry.getKey());
+            if (actualWidth == null || actualWidth <= 0 || actualWidth >= entry.getValue()) {
+                continue;
+            }
+            warnings.add(
+                    "Column '"
+                            + entry.getKey()
+                            + "' of table '"
+                            + tableName
+                            + "' is VARCHAR("
+                            + actualWidth
+                            + ") but the current DDL declares VARCHAR("
+                            + entry.getValue()
+                            + "). Values longer than "
+                            + actualWidth
+                            + " characters fail at write time with a vendor length error, and"
+                            + " CREATE TABLE IF NOT EXISTS cannot widen an existing column."
+                            + " Widen it once by hand (PostgreSQL example: ALTER TABLE "
+                            + tableName
+                            + " ALTER COLUMN "
+                            + entry.getKey()
+                            + " TYPE VARCHAR("
+                            + entry.getValue()
+                            + "); adjust the syntax for your vendor). Reference DDL:\n"
+                            + referenceDdl(createTableDdls));
+        }
+        return warnings;
+    }
+
+    /**
+     * Character widths declared by the first DDL statement that names {@code VARCHAR(n)} or
+     * {@code CHAR(n)} columns.
+     *
+     * @param createTableDdls the dialect's DDL statements for the table
+     * @return column name (lower-cased) to declared width
+     */
+    private static Map<String, Integer> declaredCharWidths(List<String> createTableDdls) {
+        Map<String, Integer> widths = new LinkedHashMap<>();
+        for (String ddl : createTableDdls) {
+            Matcher matcher = CHAR_WIDTH.matcher(ddl);
+            while (matcher.find()) {
+                String column = matcher.group(1).toLowerCase(Locale.ROOT);
+                widths.putIfAbsent(column, Integer.valueOf(matcher.group(2)));
+            }
+            if (!widths.isEmpty()) {
+                return widths;
+            }
+        }
+        return widths;
+    }
+
+    /**
+     * Actual character widths of the table's columns, read from the probe's {@code
+     * ResultSetMetaData}. Columns the driver reports without a bounded size are omitted.
+     *
+     * @param connection an open connection
+     * @param tableName the table to probe
+     * @return column name (lower-cased) to actual width; empty when the table is unreadable
+     */
+    private static Map<String, Integer> actualCharWidths(Connection connection, String tableName) {
+        String probe = "SELECT * FROM " + tableName + " WHERE 1=0";
+        Map<String, Integer> widths = new LinkedHashMap<>();
+        try (Statement stmt = connection.createStatement();
+                ResultSet rs = stmt.executeQuery(probe)) {
+            ResultSetMetaData metaData = rs.getMetaData();
+            for (int i = 1; i <= metaData.getColumnCount(); i++) {
+                String label = metaData.getColumnLabel(i);
+                int size = metaData.getColumnDisplaySize(i);
+                if (label != null && size > 0) {
+                    widths.put(label.toLowerCase(Locale.ROOT), size);
+                }
+            }
+        } catch (SQLException e) {
+            LOG.debug("Skipping column-width check for '{}': {}", tableName, e.getMessage());
+        }
+        return widths;
     }
 
     /**

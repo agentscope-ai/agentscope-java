@@ -99,6 +99,8 @@ BaseStore store = JdbcStore.builder(dataSource)
 
 **Concurrency**: `putIfVersion` uses a single-statement CAS `UPDATE ... WHERE version = ?`, supported on all databases above.
 
+**Column widths**: assembly compares the column names of an existing table with the current DDL and, for bounded character columns, their declared lengths. A column that is narrower than the DDL declares produces one start-up warning that names the column and shows an `ALTER TABLE` example. Assembly does not change the column, because the framework never alters existing tables. Widen it once by hand when the warning appears; otherwise a write fails later with a vendor length error (for example `value too long for type character varying(255)`).
+
 ### 3. JdbcSnapshotSpec
 
 Sandbox snapshots stored as BLOBs (LONGBLOB on MySQL, BYTEA on PostgreSQL).
