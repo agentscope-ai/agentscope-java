@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.bus;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
@@ -149,5 +150,51 @@ class WorkspaceAsyncToolRegistryTest {
         List<AsyncToolRecord> stale = registry2.findStale("s1", Duration.ofMinutes(5)).block();
         assertEquals(1, stale.size());
         assertEquals("r1", stale.get(0).id());
+    }
+
+    /**
+     * Terminal records have no reader — {@link #findStale} only reports {@code RUNNING} — so
+     * keeping them forever just makes every later scan re-read the whole history. They are
+     * reclaimed once they age past the same TTL that already declares a {@code RUNNING} record
+     * dead.
+     */
+    @Test
+    void terminalRecordsAreReclaimedOncePastTheTtl() {
+        registry.register(
+                        new AsyncToolRecord(
+                                "r1",
+                                "s1",
+                                "tool",
+                                "tc1",
+                                AsyncToolRecord.RUNNING,
+                                Instant.now().minus(Duration.ofMinutes(30))))
+                .block();
+        registry.complete("r1", "done").block();
+        assertTrue(recordFile("s1", "r1").toFile().exists(), "precondition: record is on disk");
+
+        registry.findStale("s1", Duration.ofMinutes(5)).block();
+
+        assertFalse(
+                recordFile("s1", "r1").toFile().exists(),
+                "a finished record older than the TTL should be reclaimed");
+    }
+
+    @Test
+    void recentTerminalRecordsAreKept() {
+        registry.register(
+                        new AsyncToolRecord(
+                                "r1", "s1", "tool", "tc1", AsyncToolRecord.RUNNING, Instant.now()))
+                .block();
+        registry.complete("r1", "done").block();
+
+        registry.findStale("s1", Duration.ofMinutes(5)).block();
+
+        assertTrue(
+                recordFile("s1", "r1").toFile().exists(),
+                "a record inside the retention window should survive the scan");
+    }
+
+    private Path recordFile(String sessionId, String id) {
+        return tempDir.resolve("async-tools").resolve(sessionId).resolve(id + ".json");
     }
 }
