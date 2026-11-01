@@ -24,6 +24,9 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.session.SessionExecution;
+import io.agentscope.core.session.SessionExportSink;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
@@ -149,11 +152,29 @@ public class SubAgentTool implements AgentTool {
                         // Create agent for this session
                         final String finalSessionId = sessionId;
                         RuntimeContext parentContext = param.getRuntimeContext();
+                        // A child must not inherit the parent's active state or session execution.
                         RuntimeContext childContext =
                                 RuntimeContext.builder(parentContext)
                                         .sessionId(finalSessionId)
                                         .agentState(null)
                                         .build();
+                        childContext.put(SessionRecorder.CONTEXT_KEY, null);
+                        childContext.put(SessionRecorder.TURN_ID_KEY, null);
+                        childContext.put(SessionExportSink.CONTEXT_KEY, null);
+                        childContext.put(SessionExecution.CONTEXT_KEY, null);
+                        childContext.put(SessionRecorder.PARENT_KEY, null);
+                        SessionRecorder parentRecorder = SessionRecorder.from(parentContext);
+                        if (parentRecorder != null && parentContext.getSessionId() != null) {
+                            childContext.put(
+                                    SessionRecorder.PARENT_KEY,
+                                    Map.of(
+                                            "parentSessionId",
+                                            parentContext.getSessionId(),
+                                            "parentRunId",
+                                            parentRecorder.runId(),
+                                            "parentTurnId",
+                                            parentRecorder.turnId()));
+                        }
                         Agent agent = agentProvider.provide();
 
                         // Load existing state if continuing session
@@ -237,9 +258,8 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Loads sub-agent state for the conversation identified by {@code sessionId} from
-     * {@link SubAgentConfig#getStateStore()} and merges it into the live agent's
-     * {@link AgentState}. Errors are logged but do not interrupt execution.
+     * Loads sub-agent state for {@code sessionId} from {@link SubAgentConfig#getStateStore()} into
+     * the child session's {@link AgentState}. Errors are logged but do not interrupt execution.
      */
     private void loadAgentState(String sessionId, Agent agent, RuntimeContext childContext) {
         if (!(agent instanceof ReActAgent ra) || ra.sessionLogEnabled()) {
@@ -261,8 +281,8 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Saves the live {@link AgentState} for the conversation identified by {@code sessionId} into
-     * {@link SubAgentConfig#getStateStore()}. Errors are logged but do not interrupt execution.
+     * Saves the child session's {@link AgentState} for {@code sessionId} into {@link
+     * SubAgentConfig#getStateStore()}. Errors are logged but do not interrupt execution.
      */
     private void saveAgentState(String sessionId, Agent agent, RuntimeContext childContext) {
         if (!(agent instanceof ReActAgent ra) || ra.sessionLogEnabled()) {

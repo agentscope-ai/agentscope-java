@@ -16,16 +16,29 @@
 package io.agentscope.core.tool.subagent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.session.SessionExecution;
+import io.agentscope.core.session.SessionExportSink;
+import io.agentscope.core.session.SessionInbox;
+import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.session.SessionLog;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.Toolkit;
@@ -33,8 +46,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 
 class SubAgentToolSessionTest {
 
@@ -42,7 +57,12 @@ class SubAgentToolSessionTest {
     @ValueSource(booleans = {false, true})
     void continuesChildSessionWithoutUsingParentSession(boolean forwardEvents) {
         List<MockModel> models = new ArrayList<>();
-        SubAgentConfig config = SubAgentConfig.builder().forwardEvents(forwardEvents).build();
+        InMemoryAgentStateStore stateStore = spy(new InMemoryAgentStateStore());
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .forwardEvents(forwardEvents)
+                        .stateStore(stateStore)
+                        .build();
         SubAgentTool tool =
                 new SubAgentTool(
                         () -> {
@@ -65,8 +85,15 @@ class SubAgentToolSessionTest {
                 tool.callAsync(param("Remember this", null, firstParent))
                         .block(Duration.ofSeconds(10));
         String firstOutput = ((TextBlock) first.getOutput().get(0)).getText();
-        String childSessionId =
-                firstOutput.substring("session_id: ".length(), firstOutput.indexOf('\n'));
+        ArgumentCaptor<String> sessionIdCaptor = ArgumentCaptor.forClass(String.class);
+        verify(stateStore)
+                .save(
+                        eq(null),
+                        sessionIdCaptor.capture(),
+                        eq("agent_state"),
+                        any(AgentState.class));
+        String childSessionId = sessionIdCaptor.getValue();
+        assertTrue(firstOutput.contains("session_id: " + childSessionId));
         AgentState saved =
                 config.getStateStore()
                         .get(null, childSessionId, "agent_state", AgentState.class)
@@ -86,11 +113,65 @@ class SubAgentToolSessionTest {
                         .block(Duration.ofSeconds(10));
 
         assertTrue(((TextBlock) second.getOutput().get(0)).getText().contains(childSessionId));
+        // SubAgentTool creates one sample agent in its constructor, then one per call.
         assertEquals(3, models.size());
         assertTrue(
                 models.get(2).getLastMessages().stream()
                         .anyMatch(message -> "Remember this".equals(message.getTextContent())));
         assertSame(secondParentState, secondParent.getAgentState());
+    }
+
+    @Test
+    void nativeChildSessionDoesNotReuseParentExecutionOrTurn() {
+        InMemorySessionLogStore childStore = new InMemorySessionLogStore();
+        SubAgentTool tool =
+                new SubAgentTool(
+                        () ->
+                                ReActAgent.builder()
+                                        .name("child")
+                                        .model(new MockModel("OK"))
+                                        .sessionLogStore(childStore)
+                                        .build(),
+                        SubAgentConfig.builder().forwardEvents(false).build());
+        RuntimeContext parent =
+                RuntimeContext.builder().userId("merchant").sessionId("parent-session").build();
+        SessionLog parentLog =
+                new InMemorySessionLogStore()
+                        .open(new SessionKey("merchant", "parent", "parent-session"), parent);
+        SessionRecorder parentRecorder = new SessionRecorder(parentLog, "parent-turn");
+        SessionExecution parentExecution =
+                new SessionExecution(
+                        parentLog,
+                        new SessionInbox.Command(
+                                "parent-command", "resume", "parent-turn", List.of(), List.of()));
+        parent.put(SessionRecorder.CONTEXT_KEY, parentRecorder);
+        parent.put(SessionRecorder.TURN_ID_KEY, "parent-turn");
+        parent.put(SessionExportSink.CONTEXT_KEY, mock(SessionExportSink.class));
+        parent.put(SessionExecution.CONTEXT_KEY, parentExecution);
+        try {
+            ToolResultBlock result =
+                    tool.callAsync(param("hello", null, parent)).block(Duration.ofSeconds(10));
+            String output = ((TextBlock) result.getOutput().get(0)).getText();
+            assertTrue(output.contains("OK"), output);
+            String childSessionId =
+                    childStore.list(parent).stream()
+                            .filter(key -> "child".equals(key.agentId()))
+                            .findFirst()
+                            .orElseThrow()
+                            .sessionId();
+            assertTrue(output.contains("session_id: " + childSessionId));
+            SessionLog childLog =
+                    childStore.open(new SessionKey("merchant", "child", childSessionId), parent);
+            var events = childLog.readAfter(0, 1000);
+
+            assertTrue(events.stream().anyMatch(event -> event.turnId() != null));
+            assertFalse(events.stream().anyMatch(event -> "parent-turn".equals(event.turnId())));
+            assertTrue(events.stream().anyMatch(event -> "subagent/linked".equals(event.type())));
+            assertSame(parentRecorder, SessionRecorder.from(parent));
+            assertSame(parentExecution, SessionExecution.from(parent));
+        } finally {
+            parentRecorder.close();
+        }
     }
 
     private static ToolCallParam param(
