@@ -60,14 +60,12 @@ final class SubagentEventConverter implements AgentEventConverter {
                     custom(
                             context,
                             NAME_LIFECYCLE,
-                            withSubagentSessionId(
-                                    event,
-                                    value(
-                                            source,
-                                            "AGENT_START",
-                                            Map.of(
-                                                    "name", nullToEmpty(start.getName()),
-                                                    "replyId", nullToEmpty(start.getReplyId()))))));
+                            value(
+                                    source,
+                                    "AGENT_START",
+                                    Map.of(
+                                            "name", nullToEmpty(start.getName()),
+                                            "replyId", nullToEmpty(start.getReplyId())))));
             return;
         }
         if (event instanceof AgentEndEvent end) {
@@ -86,12 +84,10 @@ final class SubagentEventConverter implements AgentEventConverter {
                     custom(
                             context,
                             NAME_TEXT,
-                            withSubagentSessionId(
-                                    event,
-                                    value(
-                                            source,
-                                            "TEXT_BLOCK_DELTA",
-                                            Map.of("delta", nullToEmpty(text.getDelta()))))));
+                            value(
+                                    source,
+                                    "TEXT_BLOCK_DELTA",
+                                    Map.of("delta", nullToEmpty(text.getDelta())))));
             return;
         }
         if (event instanceof ThinkingBlockDeltaEvent thinking) {
@@ -153,24 +149,6 @@ final class SubagentEventConverter implements AgentEventConverter {
         value.put("type", type);
         if (extra != null) {
             value.putAll(extra);
-        }
-        return value;
-    }
-
-    /**
-     * Adds the subagent invocation's own session id to the emitted value when the event carries
-     * it as metadata. The {@code source} path is {@code parentSessionId/agentId}, so two spawned
-     * instances of the same subagent type share a source — the session id is the stable unique
-     * discriminator frontends need to group messages per instance (#3776).
-     */
-    private static Map<String, Object> withSubagentSessionId(
-            AgentEvent event, Map<String, Object> value) {
-        Object sessionId =
-                event.getMetadata() != null
-                        ? event.getMetadata().get(AgentEvent.METADATA_SUBAGENT_SESSION_ID)
-                        : null;
-        if (sessionId != null && !sessionId.toString().isBlank()) {
-            value.put("subagentSessionId", sessionId.toString());
         }
         return value;
     }

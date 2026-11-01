@@ -814,19 +814,8 @@ public class AgentSpawnTool {
                                 AgentEventEmitter parentEmitter = emitterOpt.get();
                                 String sourcePath = buildSourcePath(spawned, parentCtx);
                                 String replyId = UUID.randomUUID().toString().replace("-", "");
-                                // The source path is parentSessionId/agentId, so events from two
-                                // spawned instances of the same subagent type are
-                                // indistinguishable by source alone; thread the per-instance
-                                // session id as metadata so AG-UI consumers can group per
-                                // instance (#3776).
                                 AgentEventEmitter taggedEmitter =
-                                        event ->
-                                                parentEmitter.emit(
-                                                        event.withSource(sourcePath)
-                                                                .withMetadataEntry(
-                                                                        AgentEvent
-                                                                                .METADATA_SUBAGENT_SESSION_ID,
-                                                                        spawned.sessionId()));
+                                        event -> parentEmitter.emit(event.withSource(sourcePath));
 
                                 parentEmitter.emit(
                                         new AgentStartEvent(
@@ -1248,26 +1237,28 @@ public class AgentSpawnTool {
     }
 
     /**
-     * Builds a source path string for the {@link AgentEvent#withSource} tag. Uses the same
-     * parent-session / child-agent-id convention as {@link #buildChildSource}.
+     * Builds a source path string for the {@link AgentEvent#withSource} tag. The child's own
+     * session id is the final segment so consumers can distinguish multiple instances of the same
+     * subagent type within one parent session.
      */
     private String buildSourcePath(SpawnedAgent spawned, RuntimeContext parentCtx) {
         String parentName =
                 (parentCtx != null && parentCtx.getSessionId() != null)
                         ? parentCtx.getSessionId()
                         : "main";
-        return parentName + "/" + spawned.agentId();
+        return parentName + "/" + spawned.agentId() + "/" + spawned.sessionId();
     }
 
     /**
-     * Builds a {@code parentSession/agentId} source path for remote events forwarded into the
-     * parent's stream.
+     * Builds a {@code parentSession/agentId/taskId} source path for remote events forwarded into
+     * the parent's stream. The task id is the remote invocation discriminator.
      */
-    static String buildRemoteSourcePath(String parentSessionId, String agentId) {
+    static String buildRemoteSourcePath(String parentSessionId, String agentId, String taskId) {
         String parent =
                 parentSessionId != null && !parentSessionId.isBlank() ? parentSessionId : "main";
         String child = agentId != null && !agentId.isBlank() ? agentId : "remote";
-        return parent + "/" + child;
+        String invocation = taskId != null && !taskId.isBlank() ? taskId.trim() : "task";
+        return parent + "/" + child + "/" + invocation;
     }
 
     /**
@@ -1432,7 +1423,7 @@ public class AgentSpawnTool {
 
         RemoteTarget target = new RemoteTarget(decl.getUrl(), decl.getHeaders());
         RemoteSubagentTransport transport = this.remoteTransport;
-        String sourcePath = buildRemoteSourcePath(parentSessionId, agentId);
+        String sourcePath = buildRemoteSourcePath(parentSessionId, agentId, taskId);
         boolean wantStream = emitter != null && decl.isRemoteStreaming();
         AtomicBoolean autoDenied = new AtomicBoolean(false);
         AtomicBoolean resumedEpisode = new AtomicBoolean(false);

@@ -90,15 +90,6 @@ public abstract class AgentEvent {
     public static final String METADATA_PARENT_SESSION_ID = "parentSessionId";
 
     /**
-     * Well-known {@link #metadata} key carrying the subagent invocation's own session id. The
-     * {@link #source} path is {@code parentSessionId/agentId}, so events from two spawned
-     * instances of the same subagent type are indistinguishable by source alone; this key gives
-     * consumers (AG-UI frontends grouping messages per subagent instance) a stable unique
-     * discriminator — stable across {@code agent_send} follow-ups to the same instance (#3776).
-     */
-    public static final String METADATA_SUBAGENT_SESSION_ID = "subagentSessionId";
-
-    /**
      * Well-known {@link #metadata} key carrying the {@code GenerateReason} name behind a text
      * projection. Currently attached to the {@code TextBlock} events synthesized for a
      * {@code returnDirect} closing message, letting observers distinguish "the model said this"
@@ -149,8 +140,10 @@ public abstract class AgentEvent {
 
     /**
      * Returns the source path identifying the originating agent. {@code null} for events from the
-     * top-level (parent) agent; a slash-separated path (e.g. {@code "main/researcher"}) for events
-     * forwarded from a subagent.
+     * top-level (parent) agent; a slash-separated path for events forwarded from a subagent. Local
+     * subagent events use {@code parentSessionId/agentId/subagentSessionId}, so multiple instances
+     * of the same subagent type remain distinguishable. Remote subagent events use {@code
+     * parentSessionId/agentId/taskId}; the task id is the remote invocation discriminator.
      */
     public String getSource() {
         return source;

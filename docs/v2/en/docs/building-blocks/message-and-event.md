@@ -197,7 +197,7 @@ All events extend `AgentEvent` (`io.agentscope.core.event`), which exposes the c
 | `getId()` | `String` | Unique event identifier |
 | `getCreatedAt()` | `String` | ISO 8601 timestamp |
 | `getType()` | `AgentEventType` | Event type enum |
-| `getSource()` | `String` | Source path identifying the originating agent. `null` for top-level agent events; a slash-separated path (e.g. `"main/researcher"`) for events forwarded from a subagent |
+| `getSource()` | `String` | Source path identifying the originating agent. `null` for top-level agent events; local subagent events use `parentSessionId/agentId/subagentSessionId` (e.g. `"main/researcher/sub-1"`), and remote subagent events use `parentSessionId/agentId/taskId` |
 | `getMetadata()` | `Map<String, Object>` | Optional key/value bag. Remote subagent forwards also set `taskId` (`AgentEvent.METADATA_TASK_ID`) to the harness / Agent Protocol task id and `parentSessionId` (`AgentEvent.METADATA_PARENT_SESSION_ID`) to the parent session when events are task-backed |
 
 Events are grouped below; unless noted otherwise, every event also carries `getReplyId()` linking it to the message being assembled.
