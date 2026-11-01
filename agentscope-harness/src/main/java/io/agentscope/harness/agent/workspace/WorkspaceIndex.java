@@ -89,6 +89,9 @@ public class WorkspaceIndex implements AutoCloseable {
             Path dbFile = indexDir.resolve(INDEX_DB);
             String url = "jdbc:sqlite:" + dbFile.toAbsolutePath();
             Connection c = DriverManager.getConnection(url);
+            try (Statement st = c.createStatement()) {
+                st.execute("PRAGMA case_sensitive_like = ON");
+            }
             WorkspaceIndex idx = new WorkspaceIndex(c);
             idx.initSchema();
             return idx;

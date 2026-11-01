@@ -76,6 +76,15 @@ class WorkspaceIndexPrefixMatchTest {
     }
 
     @Test
+    void prefixMatchingIsCaseSensitive() {
+        index.upsert("agents/Bot_1/sessions/s_1/report.md", 7, null);
+
+        assertTrue(index.hasPrefix("agents/Bot_1/sessions/s_1/"));
+        assertFalse(index.hasPrefix("agents/bot_1/sessions/s_1/"));
+        assertEquals(List.of(), index.listByPrefix("agents/bot_1/sessions/s_1/"));
+    }
+
+    @Test
     void listByPrefixTreatsPercentLiterally() {
         index.upsert("agents/main/sessions/sess%2F1/notes.md", 3, null);
         // 'sess2F1' is what 'sess%2F1' collapses to when '%' matches the empty string.
