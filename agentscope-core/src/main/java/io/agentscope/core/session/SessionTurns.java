@@ -43,7 +43,6 @@ public record SessionTurns(
         var started = new LinkedHashSet<String>();
         var applied = new LinkedHashSet<String>();
         for (var event : log.scan(0, log.head().seq())) {
-            var data = event.data();
             if (event.type().equals("state/restored")) {
                 turns.clear();
                 inputs.clear();
@@ -63,8 +62,9 @@ public record SessionTurns(
                         new Turn(
                                 event.turnId(),
                                 event.executionRunId(),
-                                String.valueOf(data.get("status"))));
+                                String.valueOf(event.data().get("status"))));
             if (event.type().equals("input/received") && event.turnId() != null) {
+                var data = event.data();
                 var messages = inputs.computeIfAbsent(event.turnId(), ignored -> new ArrayList<>());
                 for (var value : (List<?>) data.get("messages")) {
                     Msg msg = JsonUtils.getJsonCodec().convertValue(value, Msg.class);
@@ -72,9 +72,12 @@ public record SessionTurns(
                         messages.add(msg);
                 }
             }
-            if (event.type().equals("inbox/started")) started.add((String) data.get("commandId"));
-            if (event.type().equals("inbox/applied"))
+            if (event.type().equals("inbox/started"))
+                started.add((String) event.data().get("commandId"));
+            if (event.type().equals("inbox/applied")) {
+                var data = event.data();
                 for (var id : (List<?>) data.get("commandIds")) applied.add((String) id);
+            }
         }
         inputs.replaceAll((id, messages) -> List.copyOf(messages));
         return new SessionTurns(
