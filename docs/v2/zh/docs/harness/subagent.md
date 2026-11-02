@@ -305,8 +305,11 @@ chat.sendStream(SendOptions.userId("user-1"), "派一个研究员调查 AI 趋�
     })
     .blockLast();
 
-// 直接向暴露的子 agent 发消息
-chat.sendToSubagent(subagentId, "重点关注 LLM agent").block();
+// 使用与父 agent 调用相同的用户身份继续暴露的会话
+chat.send(new ChatUiRequest(
+    "user-1", null, subagentId,
+    List.of(Msg.builder().role(MsgRole.USER)
+        .textContent("重点关注 LLM agent").build()))).block();
 ```
 
 适合"分支对话"场景：父 agent spawn 一个专家，用户独立地和那个专家继续交流。完整的 Channel 侧 API 见 [Channel — 与暴露的子 Agent 对话](/v2/zh/docs/harness/channel#与暴露的子-agent-对话)。

@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -31,8 +32,11 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
+import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiRequest;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +46,8 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * End-to-end coverage of the distributed exposed-subagent recovery chain introduced for the
@@ -102,8 +108,9 @@ class SubagentRegistryRecoveryIntegrationTest {
         return m != null ? m.getTextContent() : null;
     }
 
-    @Test
-    void exposedSubagentResolvesAndContinuesOnAnotherNode() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void exposedSubagentResolvesAndContinuesOnAnotherNode(boolean withUserContext) {
         // Shared "distributed store" primitives.
         BaseStore sharedBase = new InMemoryStore();
         AgentStateStore sharedState = new InMemoryAgentStateStore();
@@ -129,7 +136,11 @@ class SubagentRegistryRecoveryIntegrationTest {
             String subagentId = nodeA.exposeSubagent("echo", SUB_SESSION, liveSub, null);
             assertNotNull(subagentId);
 
-            Msg firstReply = nodeA.runSubagent(subagentId, List.of(ping())).block();
+            ChatUiRequest request = new ChatUiRequest("alice", null, subagentId, List.of(ping()));
+            Msg firstReply =
+                    withUserContext
+                            ? ChatUiChannel.create(nodeA).send(request).block(Duration.ofSeconds(5))
+                            : nodeA.runSubagent(subagentId, List.of(ping())).block();
             assertEquals("turns=1", text(firstReply), "node A sees exactly its own turn");
 
             // ---- Node B: a fresh gateway with an EMPTY live cache, sharing only the store. ----
@@ -137,7 +148,16 @@ class SubagentRegistryRecoveryIntegrationTest {
             nodeB.setSubagentRegistry(new StoreBackedSubagentRegistry(sharedBase));
             nodeB.setSubagentMaterializer((agentId, rc) -> Optional.of(subFactory.get()));
 
-            Msg secondReply = nodeB.runSubagent(subagentId, List.of(ping())).block();
+            Msg secondReply =
+                    withUserContext
+                            ? ChatUiChannel.create(nodeB)
+                                    .sendStream(
+                                            new ChatUiRequest(
+                                                    "alice", null, subagentId, List.of(ping())))
+                                    .ofType(AgentResultEvent.class)
+                                    .map(AgentResultEvent::getResult)
+                                    .blockLast(Duration.ofSeconds(5))
+                            : nodeB.runSubagent(subagentId, List.of(ping())).block();
             // turns=2 proves: (1) the subagentId was resolved from the shared registry on a node
             // that never exposed it, (2) the agent was re-materialized, and (3) node A's prior
             // turn was loaded from the shared state store by sessionId.

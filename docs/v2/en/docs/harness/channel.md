@@ -207,6 +207,22 @@ chat.sendToSubagentStream(subagentId, "Focus on LLM agents")
     .blockLast();
 ```
 
+For user-scoped conversations, include the same user identity used to start the parent turn. A `ChatUiRequest` with a `peerId` forwards that identity and Channel metadata to the exposed subagent:
+
+```java
+ChatUiRequest request = new ChatUiRequest(
+    userId, null, subagentId,
+    List.of(Msg.builder().role(MsgRole.USER).textContent("Focus on LLM agents").build()));
+RuntimeContext callerContext = RuntimeContext.builder().put("tenant", "acme").build();
+Msg reply = chat.send(request, callerContext).block();
+// Streaming uses the same context rules:
+Flux<AgentEvent> events = chat.sendStream(request, callerContext);
+```
+
+`HarnessGateway` retains the exposed subagent's existing `sessionId` and turn gate. It uses the normal Channel context merge rules: start with the caller context, replace it if `ChannelRuntimeContextResolver` returns a non-null value, then overlay Gateway identity and routing metadata. Both string-keyed and typed application attributes are preserved from the selected base. The caller's session id cannot redirect the turn. Internal parent-session execution fields are cleared from the child context so the subagent starts its own turn; the source context is not modified.
+
+The existing `sendToSubagent*` methods and peerless requests without caller context keep their context-free behavior and do not invoke the Channel resolver. A peerless request with caller context forwards that context without synthesizing a user identity or Channel envelope. Custom `Gateway` implementations can override the new `runSubagent` / `runSubagentStream` overloads to consume the metadata; their defaults delegate to the existing methods.
+
 ### SSE with subagent support
 
 A typical SSE controller handles both main-agent and subagent messages:
@@ -218,7 +234,9 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String userId,
                                           @RequestParam(required = false) String subagentId) {
     Flux<AgentEvent> events;
     if (subagentId != null) {
-        events = chat.sendToSubagentStream(subagentId, message);
+        events = chat.sendStream(new ChatUiRequest(
+            userId, null, subagentId,
+            List.of(Msg.builder().role(MsgRole.USER).textContent(message).build())));
     } else {
         events = chat.sendStream(SendOptions.userId(userId), message);
     }

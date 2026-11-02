@@ -156,8 +156,51 @@ public interface Gateway {
         return Mono.error(new UnsupportedOperationException("Subagent routing not supported"));
     }
 
+    /**
+     * Routes a turn to an exposed subagent with caller context and optional Channel metadata.
+     *
+     * <p>The exposed session's identity takes precedence over the caller's session id. Channel
+     * context is merged using the same rules as {@link #run(MsgContext, List, OutboundAddress,
+     * RuntimeContext, InboundMessage)}; it does not select a different agent or session.
+     * Parent session execution metadata is not inherited by the subagent turn.
+     *
+     * <p>The default implementation ignores the additional context and delegates to {@link
+     * #runSubagent(String, List)} for compatibility with existing implementations.
+     *
+     * @param subagentId the handle returned when exposing the subagent
+     * @param context optional routing identity; may be null
+     * @param messages the messages to send to the subagent
+     * @param outboundAddress optional outbound metadata; may be null
+     * @param callerContext optional application context to merge; may be null
+     * @param inboundMessage optional inbound envelope passed to the resolver; may be null
+     */
+    default Mono<Msg> runSubagent(
+            String subagentId,
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext,
+            InboundMessage inboundMessage) {
+        return runSubagent(subagentId, messages);
+    }
+
     /** Streaming variant of {@link #runSubagent(String, List)}. */
     default Flux<AgentEvent> runSubagentStream(String subagentId, List<Msg> messages) {
         return Flux.error(new UnsupportedOperationException("Subagent streaming not supported"));
+    }
+
+    /**
+     * Streaming variant of {@link #runSubagent(String, MsgContext, List, OutboundAddress,
+     * RuntimeContext, InboundMessage)}. The default implementation ignores the additional context
+     * and delegates to {@link #runSubagentStream(String, List)}.
+     */
+    default Flux<AgentEvent> runSubagentStream(
+            String subagentId,
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext,
+            InboundMessage inboundMessage) {
+        return runSubagentStream(subagentId, messages);
     }
 }

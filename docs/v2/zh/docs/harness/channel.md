@@ -207,6 +207,22 @@ chat.sendToSubagentStream(subagentId, "重点关注 LLM agent")
     .blockLast();
 ```
 
+对于按用户隔离的会话，应传入启动父 agent 调用时使用的同一用户身份。带有 `peerId` 的 `ChatUiRequest` 会把该身份和 Channel 元数据传给暴露的子 agent：
+
+```java
+ChatUiRequest request = new ChatUiRequest(
+    userId, null, subagentId,
+    List.of(Msg.builder().role(MsgRole.USER).textContent("重点关注 LLM agent").build()));
+RuntimeContext callerContext = RuntimeContext.builder().put("tenant", "acme").build();
+Msg reply = chat.send(request, callerContext).block();
+// 流式调用使用相同的上下文规则：
+Flux<AgentEvent> events = chat.sendStream(request, callerContext);
+```
+
+`HarnessGateway` 保留暴露子 agent 原有的 `sessionId` 和轮次锁，复用普通 Channel 调用的上下文合并规则：先使用调用方上下文；如果 `ChannelRuntimeContextResolver` 返回非空值，则用它替换基础上下文；最后覆盖 Gateway 的身份和路由元数据。选中的基础上下文中的字符串键业务属性和类型键业务属性都会保留，调用方的 session id 无法改变目标会话。子上下文会清除父会话内部的执行字段，使子 agent 开启自己的轮次，原始上下文不会被修改。
+
+原有 `sendToSubagent*` 方法，以及不带 peer 和调用方上下文的请求，保持无上下文行为，不调用 Channel resolver。没有 peer 但带有调用方上下文的请求会传递该上下文，不生成用户身份或 Channel 消息封装。自定义 `Gateway` 实现可以覆盖新增的 `runSubagent` / `runSubagentStream` 重载来处理元数据；默认实现仍委托给旧方法。
+
 ### 带子 Agent 支持的 SSE
 
 典型的 SSE controller 同时处理主 agent 和子 agent 消息：
@@ -218,7 +234,9 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String userId,
                                           @RequestParam(required = false) String subagentId) {
     Flux<AgentEvent> events;
     if (subagentId != null) {
-        events = chat.sendToSubagentStream(subagentId, message);
+        events = chat.sendStream(new ChatUiRequest(
+            userId, null, subagentId,
+            List.of(Msg.builder().role(MsgRole.USER).textContent(message).build())));
     } else {
         events = chat.sendStream(SendOptions.userId(userId), message);
     }

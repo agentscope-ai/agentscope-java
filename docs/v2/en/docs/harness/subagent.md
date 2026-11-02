@@ -313,8 +313,11 @@ chat.sendStream(SendOptions.userId("user-1"), "Spawn a researcher to investigate
     })
     .blockLast();
 
-// Send a message directly to the exposed subagent
-chat.sendToSubagent(subagentId, "Focus on LLM agents specifically").block();
+// Continue the exposed session with the same user identity as the parent turn
+chat.send(new ChatUiRequest(
+    "user-1", null, subagentId,
+    List.of(Msg.builder().role(MsgRole.USER)
+        .textContent("Focus on LLM agents specifically").build()))).block();
 ```
 
 This is useful for "branch-off" scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See [Channel — Talking to exposed subagents](/v2/en/docs/harness/channel#talking-to-exposed-subagents) for the full Channel-side API.

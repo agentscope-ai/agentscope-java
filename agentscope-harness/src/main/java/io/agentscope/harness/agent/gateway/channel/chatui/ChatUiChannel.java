@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.gateway.channel.chatui;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -306,11 +307,41 @@ public final class ChatUiChannel implements Channel {
 
     /** Sends a structured {@link ChatUiRequest} and returns the agent reply reactively. */
     public Mono<Msg> send(ChatUiRequest request) {
+        return send(request, null);
+    }
+
+    /**
+     * Sends a structured request with optional application context. Gateway identity fields take
+     * precedence over {@code callerContext}. For exposed subagents, a non-blank {@code peerId}
+     * supplies Channel metadata and user identity; without a peer, only the caller context is
+     * forwarded. Context-free subagent requests retain their original anonymous behavior.
+     */
+    public Mono<Msg> send(ChatUiRequest request, RuntimeContext callerContext) {
         Objects.requireNonNull(request, "request");
-        if (request.subagentId() != null) {
-            return resolveGateway().runSubagent(request.subagentId(), request.messages());
+        if (request.subagentId() != null
+                && (request.peerId() == null || request.peerId().isBlank())) {
+            return resolveGateway()
+                    .runSubagent(
+                            request.subagentId(),
+                            null,
+                            request.messages(),
+                            null,
+                            callerContext,
+                            null);
         }
-        return dispatch(buildInbound(request));
+        InboundMessage inbound = buildInbound(request).withRuntimeContext(callerContext);
+        if (request.subagentId() != null) {
+            RouteResult route = router.resolveRoute(config, inbound);
+            return resolveGateway()
+                    .runSubagent(
+                            request.subagentId(),
+                            route.context(),
+                            request.messages(),
+                            route.outboundAddress(),
+                            callerContext,
+                            inbound);
+        }
+        return dispatch(inbound);
     }
 
     // -----------------------------------------------------------------
@@ -410,11 +441,36 @@ public final class ChatUiChannel implements Channel {
 
     /** Streaming variant of {@link #send(ChatUiRequest)}. */
     public Flux<AgentEvent> sendStream(ChatUiRequest request) {
+        return sendStream(request, null);
+    }
+
+    /** Streaming variant of {@link #send(ChatUiRequest, RuntimeContext)}. */
+    public Flux<AgentEvent> sendStream(ChatUiRequest request, RuntimeContext callerContext) {
         Objects.requireNonNull(request, "request");
-        if (request.subagentId() != null) {
-            return resolveGateway().runSubagentStream(request.subagentId(), request.messages());
+        if (request.subagentId() != null
+                && (request.peerId() == null || request.peerId().isBlank())) {
+            return resolveGateway()
+                    .runSubagentStream(
+                            request.subagentId(),
+                            null,
+                            request.messages(),
+                            null,
+                            callerContext,
+                            null);
         }
-        return dispatchStream(buildInbound(request));
+        InboundMessage inbound = buildInbound(request).withRuntimeContext(callerContext);
+        if (request.subagentId() != null) {
+            RouteResult route = router.resolveRoute(config, inbound);
+            return resolveGateway()
+                    .runSubagentStream(
+                            request.subagentId(),
+                            route.context(),
+                            request.messages(),
+                            route.outboundAddress(),
+                            callerContext,
+                            inbound);
+        }
+        return dispatchStream(inbound);
     }
 
     // -----------------------------------------------------------------

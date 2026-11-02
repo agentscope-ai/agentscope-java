@@ -17,10 +17,14 @@ package io.agentscope.harness.agent.gateway;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.session.SessionExecution;
+import io.agentscope.core.session.SessionExportSink;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
@@ -483,13 +487,26 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
 
     @Override
     public Mono<Msg> runSubagent(String subagentId, List<Msg> messages) {
+        return runSubagent(subagentId, null, messages, null, null, null);
+    }
+
+    @Override
+    public Mono<Msg> runSubagent(
+            String subagentId,
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext,
+            InboundMessage inboundMessage) {
         ExposedSession session = resolveExposed(subagentId);
         if (session == null) {
             return Mono.error(new IllegalArgumentException("Unknown subagentId: " + subagentId));
         }
 
-        RuntimeContext rtc = RuntimeContext.builder().sessionId(session.sessionId()).build();
         String gateKey = "subagent:" + subagentId;
+        RuntimeContext rtc =
+                buildSubagentRuntimeContext(
+                        context, outboundAddress, callerContext, inboundMessage, session, gateKey);
 
         return withGatedTurn(gateKey, () -> invokeExposedAgent(session.agent(), messages, rtc))
                 .doOnNext(
@@ -538,15 +555,62 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
 
     @Override
     public Flux<AgentEvent> runSubagentStream(String subagentId, List<Msg> messages) {
+        return runSubagentStream(subagentId, null, messages, null, null, null);
+    }
+
+    @Override
+    public Flux<AgentEvent> runSubagentStream(
+            String subagentId,
+            MsgContext context,
+            List<Msg> messages,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext,
+            InboundMessage inboundMessage) {
         ExposedSession session = resolveExposed(subagentId);
         if (session == null) {
             return Flux.error(new IllegalArgumentException("Unknown subagentId: " + subagentId));
         }
 
-        RuntimeContext rtc = RuntimeContext.builder().sessionId(session.sessionId()).build();
         String gateKey = "subagent:" + subagentId;
+        RuntimeContext rtc =
+                buildSubagentRuntimeContext(
+                        context, outboundAddress, callerContext, inboundMessage, session, gateKey);
 
         return withGatedStream(gateKey, () -> streamExposedAgent(session.agent(), messages, rtc));
+    }
+
+    private RuntimeContext buildSubagentRuntimeContext(
+            MsgContext context,
+            OutboundAddress outboundAddress,
+            RuntimeContext callerContext,
+            InboundMessage inboundMessage,
+            ExposedSession session,
+            String gateKey) {
+        // Preserve context-free calls: they have no Channel metadata for the resolver.
+        if (context == null
+                && outboundAddress == null
+                && callerContext == null
+                && inboundMessage == null) {
+            return RuntimeContext.builder().sessionId(session.sessionId()).build();
+        }
+        RuntimeContext child =
+                buildRuntimeContext(
+                        context,
+                        outboundAddress,
+                        callerContext,
+                        inboundMessage,
+                        session.sessionId(),
+                        gateKey);
+        // A caller or resolver may supply a parent turn's context. Its execution state belongs
+        // to that session and must not be reused by a directly addressed subagent turn.
+        child.put(SessionRecorder.CONTEXT_KEY, null);
+        child.put(SessionRecorder.TURN_ID_KEY, null);
+        child.put(SessionRecorder.PARENT_KEY, null);
+        child.put(SessionExportSink.CONTEXT_KEY, null);
+        child.put(SessionExecution.CONTEXT_KEY, null);
+        child.put(ExecutionIdentity.CONTEXT_KEY, null);
+        child.setAgentState(null);
+        return child;
     }
 
     private Flux<AgentEvent> streamExposedAgent(
