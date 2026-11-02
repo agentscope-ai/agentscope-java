@@ -72,6 +72,42 @@ class OllamaModelProviderTest {
         assertEquals(128000, model.getContextWindowSize());
     }
 
+    @Test
+    void createHonorsNativeStructuredOutputOptions() {
+        OllamaModelProvider provider = new OllamaModelProvider();
+        ModelCreationContext nativeDisabledContext =
+                ModelCreationContext.builder()
+                        .option("nativeStructuredOutput", false)
+                        .option("nativeStructuredOutputWithTools", true)
+                        .build();
+        Model nativeDisabled = provider.create("ollama:llama3", nativeDisabledContext);
+
+        assertFalse(nativeDisabled.supportsNativeStructuredOutput());
+        assertFalse(nativeDisabled.supportsNativeStructuredOutputWithTools());
+
+        ModelCreationContext toolsDisabledContext =
+                ModelCreationContext.builder()
+                        .option("nativeStructuredOutput", true)
+                        .option("nativeStructuredOutputWithTools", false)
+                        .build();
+        Model toolsDisabled = provider.create("ollama:llama3", toolsDisabledContext);
+
+        assertTrue(toolsDisabled.supportsNativeStructuredOutput());
+        assertFalse(toolsDisabled.supportsNativeStructuredOutputWithTools());
+    }
+
+    @Test
+    void createRejectsInvalidNativeStructuredOutputOptions() {
+        OllamaModelProvider provider = new OllamaModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .option("nativeStructuredOutputWithTools", "yes")
+                        .build();
+
+        assertThrows(
+                IllegalArgumentException.class, () -> provider.create("ollama:llama3", context));
+    }
+
     /**
      * Verifies the provider honors {@link ModelCreationContext#getStream()}: when set to {@code
      * false}, the created model must be in non-streaming mode (so {@code

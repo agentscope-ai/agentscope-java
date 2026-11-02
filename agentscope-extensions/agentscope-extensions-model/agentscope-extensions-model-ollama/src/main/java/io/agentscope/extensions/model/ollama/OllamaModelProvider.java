@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.ollama;
 
+import static io.agentscope.core.model.ModelProviderSupport.booleanOption;
 import static io.agentscope.core.model.ModelProviderSupport.findAssignableComponent;
 import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
 import static io.agentscope.core.model.ModelProviderSupport.intOption;
@@ -37,6 +38,9 @@ public final class OllamaModelProvider implements ModelProvider {
     private static final String PREFIX = "ollama:";
     private static final Pattern MODEL_ID = Pattern.compile("ollama:.+");
     private static final String OPTION_CONTEXT_WINDOW_SIZE = "contextWindowSize";
+    private static final String OPTION_NATIVE_STRUCTURED_OUTPUT = "nativeStructuredOutput";
+    private static final String OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS =
+            "nativeStructuredOutputWithTools";
 
     @Override
     public String providerId() {
@@ -94,6 +98,15 @@ public final class OllamaModelProvider implements ModelProvider {
         Integer contextWindowSize = intOption(context, OPTION_CONTEXT_WINDOW_SIZE);
         if (contextWindowSize != null) {
             builder.contextWindowSize(contextWindowSize);
+        }
+        Boolean nativeStructuredOutput = booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT);
+        if (nativeStructuredOutput != null) {
+            builder.nativeStructuredOutput(nativeStructuredOutput);
+        }
+        Boolean nativeStructuredOutputWithTools =
+                booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS);
+        if (nativeStructuredOutputWithTools != null) {
+            builder.nativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
         }
     }
 }

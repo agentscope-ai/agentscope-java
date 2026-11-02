@@ -42,6 +42,7 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -140,6 +141,46 @@ class ReActAgentStructuredOutputWithToolsTest {
         boolean optionsHaveResponseFormat() {
             GenerateOptions opts = capturedOptions.get();
             return opts != null && opts.getResponseFormat() != null;
+        }
+    }
+
+    private static final class FailNativeThenFallbackModel implements Model {
+
+        private final RuntimeException nativeFailure;
+        private final AtomicInteger calls = new AtomicInteger();
+        private final List<List<Msg>> capturedMessages = new ArrayList<>();
+        private final List<List<ToolSchema>> capturedTools = new ArrayList<>();
+        private final List<GenerateOptions> capturedOptions = new ArrayList<>();
+
+        private FailNativeThenFallbackModel(RuntimeException nativeFailure) {
+            this.nativeFailure = nativeFailure;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            capturedMessages.add(List.copyOf(messages));
+            capturedTools.add(tools == null ? List.of() : List.copyOf(tools));
+            capturedOptions.add(options);
+            if (calls.incrementAndGet() == 1) {
+                return Flux.error(nativeFailure);
+            }
+            return Flux.fromIterable(fallbackResponder().apply(messages));
+        }
+
+        @Override
+        public String getModelName() {
+            return "fail-native-then-fallback";
+        }
+
+        @Override
+        public boolean supportsNativeStructuredOutput() {
+            return true;
+        }
+
+        @Override
+        public boolean supportsNativeStructuredOutputWithTools() {
+            return true;
         }
     }
 
@@ -334,6 +375,42 @@ class ReActAgentStructuredOutputWithToolsTest {
     }
 
     @Test
+    @DisplayName("No tools + native request failure → fallback path")
+    void noTools_nativeRequestFailure_fallsBack() {
+        FailNativeThenFallbackModel model =
+                new FailNativeThenFallbackModel(new RuntimeException("native request failed"));
+        ReActAgent agent =
+                ReActAgent.builder().name("test-agent").sysPrompt("test").model(model).build();
+
+        Msg result =
+                agent.call(userMsg(), WeatherInfo.class)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(result);
+        assertEquals(2, model.calls.get(), "Fallback should make exactly one replacement call");
+        assertNotNull(model.capturedOptions.get(0).getResponseFormat());
+        assertTrue(model.capturedTools.get(0).isEmpty());
+        assertNull(model.capturedOptions.get(1).getResponseFormat());
+        assertTrue(
+                model.capturedTools.get(1).stream()
+                        .anyMatch(tool -> "generate_response".equals(tool.getName())));
+        assertEquals(
+                1,
+                model.capturedMessages.get(1).stream()
+                        .flatMap(message -> message.getContent().stream())
+                        .filter(
+                                block ->
+                                        block instanceof TextBlock textBlock
+                                                && "What's the weather?"
+                                                        .equals(textBlock.getText()))
+                        .count(),
+                "Fallback must replay from the pre-native context without duplicating input");
+        WeatherInfo info = result.getStructuredData(WeatherInfo.class);
+        assertEquals("Shanghai", info.city);
+        assertEquals("32°C", info.temperature);
+    }
+
+    @Test
     @DisplayName("Has tools + supportsNativeStructuredOutputWithTools=true → native path")
     void hasTools_withToolsSupported_usesNativePath() {
         ConfigurableMockModel model = new ConfigurableMockModel(true, true, nativeResponder());
@@ -487,6 +564,29 @@ class ReActAgentStructuredOutputWithToolsTest {
         assertTrue(
                 tools.stream().anyMatch(t -> "getWeather".equals(t.getName())),
                 "Real tool should still be present alongside generate_response");
+    }
+
+    @Test
+    @DisplayName("Has tools + native SO disabled → fallback even when with-tools flag is true")
+    void hasTools_nativeDisabled_takesPrecedenceOverWithToolsFlag() {
+        ConfigurableMockModel model = new ConfigurableMockModel(false, true, fallbackResponder());
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new DummyTools());
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("test-agent")
+                        .sysPrompt("test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg result =
+                agent.call(userMsg(), WeatherInfo.class)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(result);
+        assertTrue(model.toolListContainsGenerateResponse());
+        assertFalse(model.optionsHaveResponseFormat());
     }
 
     @Test

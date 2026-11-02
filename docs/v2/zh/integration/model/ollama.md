@@ -39,6 +39,38 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## 结构化输出
+
+调用 `agent.call(messages, Output.class)` 时，Ollama provider 会通过 Ollama 原生 `format` 字段发送输出类的 JSON Schema。返回消息保留 JSON 文本，并可通过 `getStructuredData(Output.class)` 读取解析后的值。
+
+```java
+public record Weather(String city, double temperature) {}
+
+try (ReActAgent agent = ReActAgent.builder()
+        .name("weather")
+        .model(model)
+        .toolkit(toolkit)
+        .build()) {
+    Msg result = agent.call("当前温度是多少？", Weather.class).block();
+    Weather weather = result.getStructuredData(Weather.class);
+}
+```
+
+当 Agent 注册了业务工具时，原生结构化输出默认分两个阶段完成。工具推理请求只携带 `tools`，不携带 `format`，因此模型可以正常调用并串联多个工具。某一轮推理不再返回工具调用时，provider 会把该轮自然语言回答作为内部草稿，再发起一次只携带 `format` 且不携带 `tools` 和 `tool_choice` 的最终请求。这样最终请求可以把真实工具结果整理成目标结构，无需让 Ollama 在同一次请求中同时决定工具调用和 JSON 生成。
+
+终止推理轮会发起两次物理 Ollama 请求：第一次判断是否还需要工具，第二次生成结构化响应。在流式模式下，provider 会先缓冲工具阶段的响应，直到能够确定其中是否包含工具调用。内部草稿不会作为用户可见文本发出，只会流式输出最终结构化响应。更早返回工具调用的推理轮仍通过正常 ReAct 循环执行。
+
+如果需要使用合成的 `generate_response` 工具路径，可以这样配置：
+
+```java
+OllamaChatModel model = OllamaChatModel.builder()
+    .modelName("llama3")
+    .nativeStructuredOutputWithTools(false) // 注册业务工具时使用合成路径
+    .build();
+```
+
+设置 `nativeStructuredOutput(false)` 后，所有结构化输出调用都会使用合成路径，包括未注册业务工具的调用。`ModelCreationContext` 也支持 `nativeStructuredOutput` 和 `nativeStructuredOutputWithTools` 这两个选项。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 Ollama starter：
