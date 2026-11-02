@@ -16,11 +16,13 @@
 
 package io.agentscope.core.a2a.server.executor;
 
+import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentResultEvent;
@@ -78,10 +80,24 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private final AgentExecuteProperties agentExecuteProperties;
 
+    /** Deployment-side adjudication of the user identity, or {@code null} to trust the envelope. */
+    private final A2aContextResolver contextResolver;
+
+    /** Whether the unverified-identity warning was logged already; it fires once per executor. */
+    private final AtomicBoolean unverifiedIdentityWarned = new AtomicBoolean();
+
     public AgentScopeAgentExecutor(
             AgentRunner agentRunner, AgentExecuteProperties agentExecuteProperties) {
+        this(agentRunner, agentExecuteProperties, null);
+    }
+
+    public AgentScopeAgentExecutor(
+            AgentRunner agentRunner,
+            AgentExecuteProperties agentExecuteProperties,
+            A2aContextResolver contextResolver) {
         this.agentRunner = agentRunner;
         this.agentExecuteProperties = agentExecuteProperties;
+        this.contextResolver = contextResolver;
         this.subscriptions = new ConcurrentHashMap<>();
     }
 
@@ -134,14 +150,56 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         Message message = context.getMessage();
         AgentRequestOptions requestOptions = new AgentRequestOptions();
         requestOptions.setTaskId(context.getTaskId());
-        requestOptions.setUserId(getUserId(message));
+        requestOptions.setUserId(resolveUserId(context, message));
         requestOptions.setSessionId(getSessionId(context));
         return requestOptions;
     }
 
+    /**
+     * Resolves the user id of the call: the resolver's transport-verified identity wins over the
+     * envelope-asserted one, which wins over none. See {@link A2aContextResolver}.
+     */
+    private String resolveUserId(RequestContext context, Message message) {
+        String asserted = getUserId(message);
+        if (null == contextResolver) {
+            if (!asserted.isBlank() && unverifiedIdentityWarned.compareAndSet(false, true)) {
+                log.warn(
+                        "Using the envelope-asserted user id of A2A messages without a configured"
+                                + " {} — the identity is unverified and any caller can claim any"
+                                + " user id. Configure AgentScopeA2aServer.Builder#contextResolver"
+                                + " when the transport verifies callers.",
+                        A2aContextResolver.class.getSimpleName());
+            }
+            return asserted;
+        }
+        RuntimeContext adjudicated = contextResolver.resolve(context);
+        if (null == adjudicated
+                || null == adjudicated.getUserId()
+                || adjudicated.getUserId().isBlank()) {
+            return asserted;
+        }
+        String verified = adjudicated.getUserId();
+        if (!asserted.isBlank() && !verified.equals(asserted)) {
+            log.warn(
+                    "[{}] Transport-verified user id '{}' overrides the envelope-asserted '{}'.",
+                    context.getTaskId(),
+                    verified,
+                    asserted);
+        }
+        return verified;
+    }
+
     private String getUserId(Message message) {
-        if (message.metadata() != null && message.metadata().containsKey("userId")) {
-            return String.valueOf(message.metadata().get("userId"));
+        if (message.metadata() != null) {
+            Object envelopeValue = message.metadata().get(MessageConstants.USER_ID_METADATA_KEY);
+            if (envelopeValue != null) {
+                return String.valueOf(envelopeValue);
+            }
+            // Legacy flat key from callers that predate the envelope key; deprecated.
+            Object legacyValue = message.metadata().get("userId");
+            if (legacyValue != null) {
+                return String.valueOf(legacyValue);
+            }
         }
         return "";
     }

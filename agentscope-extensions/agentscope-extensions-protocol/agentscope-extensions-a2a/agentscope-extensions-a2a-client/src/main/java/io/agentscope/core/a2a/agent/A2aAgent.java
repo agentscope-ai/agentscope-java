@@ -411,8 +411,9 @@ public class A2aAgent extends AgentBase {
     }
 
     /**
-     * Sends {@code msgs} to the remote agent. Streams the text and thinking it replies with, and
-     * keeps its reply in {@code reply}.
+     * Sends {@code msgs} to the remote agent, carrying the user and session id of the call: the
+     * user id as an envelope-level metadata key and the session id as the A2A {@code contextId}.
+     * Streams the text and thinking it replies with, and keeps its reply in {@code reply}.
      */
     private Flux<AgentEvent> exchange(
             A2aCall call, List<Msg> msgs, ReplyEvents events, AtomicReference<Msg> reply) {
@@ -423,7 +424,12 @@ public class A2aAgent extends AgentBase {
                                     null == events ? call.requestId() : events.replyId(),
                                     sink::next);
                     Disposable disposable =
-                            doExecute(call, MessageConvertUtil.convertFromMsg(msgs))
+                            doExecute(
+                                            call,
+                                            MessageConvertUtil.convertFromMsg(
+                                                    msgs,
+                                                    call.session().userId(),
+                                                    call.session().sessionId()))
                                     .subscribe(
                                             msg -> {
                                                 reply.set(msg);

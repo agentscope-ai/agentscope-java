@@ -25,12 +25,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import java.util.ArrayList;
@@ -46,6 +49,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
@@ -170,7 +174,7 @@ class AgentRunnerTest {
         List<Msg> messages = List.of(mock(Msg.class));
 
         Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class))).thenReturn(mockFlux);
         when(mockFlux.doFinally(any())).thenReturn(mockFlux);
 
         // When
@@ -179,7 +183,49 @@ class AgentRunnerTest {
         // Then
         assertNotNull(result);
         verify(mockBuilder, times(1)).build();
-        verify(mockAgent, times(1)).streamEvents(messages);
+        verify(mockAgent, times(1)).streamEvents(eq(messages), any(RuntimeContext.class));
+    }
+
+    @Test
+    @DisplayName("Should pass the user and session id of the request to the agent context")
+    void testPassIdentityToAgentContext() {
+        // Given
+        requestOptions.setTaskId(UUID.randomUUID().toString());
+        requestOptions.setUserId("alice");
+        requestOptions.setSessionId("session-1");
+        List<Msg> messages = List.of(mock(Msg.class));
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.empty());
+
+        // When
+        runner.streamEvents(messages, requestOptions);
+
+        // Then
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(mockAgent).streamEvents(eq(messages), contextCaptor.capture());
+        assertEquals("alice", contextCaptor.getValue().getUserId());
+        assertEquals("session-1", contextCaptor.getValue().getSessionId());
+    }
+
+    @Test
+    @DisplayName("Should leave the agent context identity unset when options are blank")
+    void testBlankIdentityLeftUnsetInAgentContext() {
+        // Given
+        requestOptions.setTaskId(UUID.randomUUID().toString());
+        requestOptions.setUserId("  ");
+        requestOptions.setSessionId("");
+        List<Msg> messages = List.of(mock(Msg.class));
+        when(mockAgent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.empty());
+
+        // When
+        runner.streamEvents(messages, requestOptions);
+
+        // Then
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(mockAgent).streamEvents(eq(messages), contextCaptor.capture());
+        assertNull(contextCaptor.getValue().getUserId());
+        assertNull(contextCaptor.getValue().getSessionId());
     }
 
     @Test
@@ -192,7 +238,7 @@ class AgentRunnerTest {
         List<Msg> messages = List.of(mock(Msg.class));
 
         Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class))).thenReturn(mockFlux);
 
         // First call to populate the cache
         runner.streamEvents(messages, requestOptions);
@@ -210,8 +256,10 @@ class AgentRunnerTest {
         List<Msg> messages = List.of(mock(Msg.class));
         ReActAgent firstAgent = mock(ReActAgent.class);
         ReActAgent secondAgent = mock(ReActAgent.class);
-        when(firstAgent.streamEvents(messages)).thenReturn(Flux.never());
-        when(secondAgent.streamEvents(messages)).thenReturn(Flux.never());
+        when(firstAgent.streamEvents(eq(messages), any(RuntimeContext.class)))
+                .thenReturn(Flux.never());
+        when(secondAgent.streamEvents(eq(messages), any(RuntimeContext.class)))
+                .thenReturn(Flux.never());
         List<ReActAgent> agents = List.of(firstAgent, secondAgent);
         AtomicInteger nextAgent = new AtomicInteger();
         CyclicBarrier buildBarrier = new CyclicBarrier(2);
@@ -266,8 +314,10 @@ class AgentRunnerTest {
         ReActAgent firstAgent = mock(ReActAgent.class);
         ReActAgent secondAgent = mock(ReActAgent.class);
         Sinks.Empty<AgentEvent> firstCompletion = Sinks.empty();
-        when(firstAgent.streamEvents(messages)).thenReturn(firstCompletion.asMono().flux());
-        when(secondAgent.streamEvents(messages)).thenReturn(Flux.never());
+        when(firstAgent.streamEvents(eq(messages), any(RuntimeContext.class)))
+                .thenReturn(firstCompletion.asMono().flux());
+        when(secondAgent.streamEvents(eq(messages), any(RuntimeContext.class)))
+                .thenReturn(Flux.never());
         when(mockBuilder.build()).thenReturn(firstAgent, secondAgent);
 
         Disposable firstRun = runner.streamEvents(messages, requestOptions).subscribe();
@@ -295,7 +345,7 @@ class AgentRunnerTest {
         String taskId = UUID.randomUUID().toString();
         requestOptions.setTaskId(taskId);
         List<Msg> messages = List.of(mock(Msg.class));
-        when(mockAgent.streamEvents(messages))
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class)))
                 .thenThrow(new IllegalStateException("stream creation failed"))
                 .thenReturn(Flux.empty());
 
@@ -319,7 +369,7 @@ class AgentRunnerTest {
 
         // Setup mock flux that simulates completion
         Flux<AgentEvent> mockFlux = Flux.empty();
-        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class))).thenReturn(mockFlux);
 
         // When
         Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
@@ -349,7 +399,7 @@ class AgentRunnerTest {
         List<Msg> messages = List.of(mock(Msg.class));
 
         Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class))).thenReturn(mockFlux);
         when(mockFlux.doFinally(any())).thenReturn(mockFlux);
         runner.streamEvents(messages, requestOptions);
 

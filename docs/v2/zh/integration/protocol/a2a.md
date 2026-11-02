@@ -72,6 +72,8 @@ Msg reply = remote.call(List.of(new UserMessage("Translate to English: 你好"))
 List<Msg> history = remote.getAgentState(context).getContext();
 ```
 
+身份会随每次调用传到对端：会话 id 走 A2A 原生 `contextId` 字段，用户 id 走信封级 metadata 键 `_agentscope_user_id`——AgentScope 服务端会把两者还原进自己的 `RuntimeContext`。非 AgentScope 对端会忽略这个额外的 metadata 键；匿名调用（没有用户 id）则不会发送该键。
+
 ### Middleware
 
 `A2aAgent` 在两个位置执行 `MiddlewareBase`：`onAgent` 包住整次调用，`onReasoning` 包住和远端 Agent 的交互。`onReasoning` 的输入消息就是发给远端的消息，事件是远端流式返回的文本和思考。其他扩展点不适用于远端 Agent。
@@ -156,13 +158,32 @@ server.close();
 
 `AgentScopeA2aServer` 本身不监听端口、不暴露 endpoint，只负责构建组件、组装请求处理链；具体监听由你的 Web 框架完成。这样可以无缝接入 Spring Boot、Quarkus、Vert.x 等。
 
-### 请求的会话标识
+### 请求的身份与会话标识
 
 服务端使用 SDK 解析后的 A2A `contextId` 填充传给 `AgentRunner` 的 `AgentRequestOptions.sessionId`。客户端可以直接使用标准协议字段，无需额外添加自定义 metadata。客户端未传 `contextId` 时，SDK 会自动生成一个。
 
 为兼容已有客户端，非 null 且非空白的 `message.metadata["sessionId"]` 优先于该映射，即使它与 `contextId` 不同。这样，SDK 自动生成新的 context ID 时，已有会话键仍会保留。metadata 值为 null、空串或仅含空白时，回退到 `contextId`。协议消息本身的 `contextId` 不会被修改。
 
-这项映射只填充 Runner 的请求参数，不会自动启用会话持久化。自定义 Runner 可以使用该标识配置运行上下文或状态存储。
+`AgentRequestOptions.userId` 从信封级 metadata 键 `_agentscope_user_id` 读取，AgentScope 客户端会把自己的 `RuntimeContext` 用户 id 写入该键。扁平的 `message.metadata["userId"]` 键作为已废弃的兜底仍然有效，供旧客户端使用；两者都没有时用户 id 保持为空。
+
+内置的 `BaseReActAgentRunner` 实现会把这两个 id 传入 Agent 的 `RuntimeContext`，会话状态、会话日志和调用级中间件因此能看到调用者的 `(userId, sessionId)` 槽位。自定义 `AgentRunner` 通过 `AgentRequestOptions` 拿到 id，自行决定如何使用。
+
+信封用户 id 本质是委托声明——它只是调用方声称代表谁，任何客户端都可以设置。它会作为按用户区分的 Agent 状态、会话日志和工具可见身份的键，因此没有 resolver 时应将其视为不可信：调用方声称了别人的 id，就会落入那个用户的 `(userId, sessionId)` 槽位。当传输层已经验证了调用方身份（mTLS、OAuth）时，给服务端配置 resolver，让已验证身份优先——验证失败时应直接抛出异常以拒绝该调用：
+
+```java
+AgentScopeA2aServer server = AgentScopeA2aServer.builder()
+    .agentBuilder(agentBuilder)
+    .contextResolver(context -> {
+        String verified = verifiedUserIdOf(context.getCallContext()); // mTLS 证书 / OAuth token
+        return verified == null ? null
+            : RuntimeContext.builder().userId(verified).build();
+    })
+    .build();
+```
+
+优先级：resolver（传输层已验证）&gt; 信封声明的用户 id &gt; 无。resolver 返回 `null` 或不带用户 id 的上下文时，维持信封声明；两者不一致时服务端记录警告并采用已验证身份。
+
+这项映射只填充 Runner 的请求参数，不会自动启用会话持久化。自定义 Runner 可以使用这些标识配置运行上下文或状态存储。
 
 ### 可选组件
 

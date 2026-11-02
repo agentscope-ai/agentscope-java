@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +36,7 @@ import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
@@ -48,6 +50,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatUsage;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -244,6 +247,152 @@ class AgentScopeAgentExecutorTest {
             }
         } else {
             assertEquals(contextId, context.getContextId());
+        }
+    }
+
+    @Nested
+    @DisplayName("Resolve Runner User ID")
+    class ResolveRunnerUserIdTests {
+
+        private AgentRunner runner;
+
+        private EventQueue eventQueue;
+
+        @BeforeEach
+        void setUpRunner() {
+            runner = mock(AgentRunner.class);
+            eventQueue = mock(EventQueue.class);
+            // Rebind the inherited executor to this nested runner mock: the outer setUp() wired it
+            // to the outer mockAgentRunner.
+            executor =
+                    new AgentScopeAgentExecutor(runner, AgentExecuteProperties.builder().build());
+        }
+
+        private RequestContext contextWithMetadata(Map<String, Object> metadata) {
+            Message message =
+                    Message.builder()
+                            .role(Message.Role.ROLE_USER)
+                            .parts(new TextPart("hello"))
+                            .contextId("context-1")
+                            .metadata(metadata)
+                            .build();
+            ServerCallContext callContext = new ServerCallContext(null, Map.of(), Set.of());
+            return new RequestContext.Builder()
+                    .setParams(MessageSendParams.builder().message(message).build())
+                    .setServerCallContext(callContext)
+                    .build();
+        }
+
+        private AgentRequestOptions execute(RequestContext context) throws A2AError {
+            when(runner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(Flux.empty());
+            executor.execute(context, new AgentEmitter(context, eventQueue));
+            ArgumentCaptor<AgentRequestOptions> options =
+                    ArgumentCaptor.forClass(AgentRequestOptions.class);
+            verify(runner).streamEvents(anyList(), options.capture());
+            return options.getValue();
+        }
+
+        @Test
+        @DisplayName("Should prefer the envelope user id over the legacy flat key")
+        void testEnvelopeKeyBeatsLegacyKey() throws A2AError {
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(MessageConstants.USER_ID_METADATA_KEY, "alice");
+            metadata.put("userId", "legacy-bob");
+
+            AgentRequestOptions options = execute(contextWithMetadata(metadata));
+
+            assertEquals("alice", options.getUserId());
+        }
+
+        @Test
+        @DisplayName("Should fall back to the legacy flat userId key")
+        void testLegacyKeyFallback() throws A2AError {
+            AgentRequestOptions options =
+                    execute(contextWithMetadata(Map.of("userId", "legacy-bob")));
+
+            assertEquals("legacy-bob", options.getUserId());
+        }
+
+        @Test
+        @DisplayName("Should return empty user id without any assertion")
+        void testNoAssertion() throws A2AError {
+            AgentRequestOptions options = execute(contextWithMetadata(Map.of()));
+
+            assertEquals("", options.getUserId());
+        }
+
+        @Test
+        @DisplayName("Should let the resolver override the envelope-asserted user id")
+        void testResolverBeatsEnvelope() throws A2AError {
+            executor =
+                    new AgentScopeAgentExecutor(
+                            runner,
+                            agentExecuteProperties(),
+                            context -> RuntimeContext.builder().userId("verified").build());
+
+            AgentRequestOptions options =
+                    execute(
+                            contextWithMetadata(
+                                    Map.of(MessageConstants.USER_ID_METADATA_KEY, "alice")));
+
+            assertEquals("verified", options.getUserId());
+        }
+
+        @Test
+        @DisplayName(
+                "Should keep the envelope-asserted user id when the resolver does not adjudicate")
+        void testResolverWithoutUserIdKeepsEnvelope() throws A2AError {
+            executor =
+                    new AgentScopeAgentExecutor(
+                            runner,
+                            agentExecuteProperties(),
+                            context -> RuntimeContext.builder().build());
+
+            AgentRequestOptions options =
+                    execute(
+                            contextWithMetadata(
+                                    Map.of(MessageConstants.USER_ID_METADATA_KEY, "alice")));
+
+            assertEquals("alice", options.getUserId());
+        }
+
+        @Test
+        @DisplayName("Should keep the envelope-asserted user id when the resolver returns null")
+        void testNullResolverResultKeepsEnvelope() throws A2AError {
+            executor =
+                    new AgentScopeAgentExecutor(runner, agentExecuteProperties(), context -> null);
+
+            AgentRequestOptions options =
+                    execute(
+                            contextWithMetadata(
+                                    Map.of(MessageConstants.USER_ID_METADATA_KEY, "alice")));
+
+            assertEquals("alice", options.getUserId());
+        }
+
+        @Test
+        @DisplayName("Should reject the call when the resolver throws")
+        void testResolverThrowRejectsCall() throws A2AError {
+            executor =
+                    new AgentScopeAgentExecutor(
+                            runner,
+                            agentExecuteProperties(),
+                            context -> {
+                                throw new IllegalStateException("unverified caller");
+                            });
+            RequestContext context =
+                    contextWithMetadata(Map.of(MessageConstants.USER_ID_METADATA_KEY, "alice"));
+
+            executor.execute(context, new AgentEmitter(context, eventQueue));
+
+            // Fails closed: no agent run, and the request is answered with the failure.
+            verify(runner, never()).streamEvents(anyList(), any(AgentRequestOptions.class));
+            verify(eventQueue).enqueueEvent(any(Message.class));
+        }
+
+        private AgentExecuteProperties agentExecuteProperties() {
+            return AgentExecuteProperties.builder().build();
         }
     }
 
