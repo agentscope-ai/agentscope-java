@@ -17,6 +17,7 @@
 package io.agentscope.core.a2a.server.executor.runner;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
@@ -59,12 +60,28 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
             throw new IllegalStateException("Agent already exists for taskId: " + taskId);
         }
         try {
-            return agent.streamEvents(requestMessages)
+            return agent.streamEvents(requestMessages, buildRuntimeContext(options))
                     .doFinally(signal -> agentCache.remove(taskId, agent));
         } catch (RuntimeException | Error e) {
             agentCache.remove(taskId, agent);
             throw e;
         }
+    }
+
+    /**
+     * Builds the per-call {@link RuntimeContext} from the request options. Blank ids mean "not
+     * found" and are left unset, so an anonymous call keeps the null session fields the agent sees
+     * without a context.
+     */
+    private static RuntimeContext buildRuntimeContext(AgentRequestOptions options) {
+        RuntimeContext.Builder builder = RuntimeContext.builder();
+        if (null != options.getUserId() && !options.getUserId().isBlank()) {
+            builder.userId(options.getUserId());
+        }
+        if (null != options.getSessionId() && !options.getSessionId().isBlank()) {
+            builder.sessionId(options.getSessionId());
+        }
+        return builder.build();
     }
 
     @Override
