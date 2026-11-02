@@ -17,7 +17,9 @@
 package io.agentscope.core.nacos.prompt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -41,6 +43,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Verifies prompt selection, rendering, callback ordering, and subscription lifecycle contracts. */
 class NacosPromptCompatibilityTest {
@@ -167,6 +171,122 @@ class NacosPromptCompatibilityTest {
             verify(service).subscribePrompt(eq("concurrent"), any(), any(), any());
         } finally {
             pool.shutdownNow();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"other-name", "other-label", "other-version"})
+    void slowSubscriptionDoesNotBlockCachedSelections(String selection) throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(service.subscribePrompt(any(), any(), any(), any()))
+                .thenAnswer(
+                        call -> {
+                            if ("slow".equals(call.getArgument(0))
+                                    || "slow".equals(call.getArgument(1))
+                                    || "slow".equals(call.getArgument(2))) {
+                                entered.countDown();
+                                assertTrue(release.await(10, TimeUnit.SECONDS));
+                            }
+                            return new Prompt(call.getArgument(0), "1.0.0", "cached {{name}}");
+                        });
+        assertEquals(
+                "cached user",
+                prompts.getPrompt("shared", null, "prod", Map.of("name", "user"), null));
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var slow =
+                    pool.submit(
+                            () ->
+                                    prompts.getPrompt(
+                                            "other-name".equals(selection) ? "slow" : "shared",
+                                            "other-version".equals(selection) ? "slow" : null,
+                                            "other-version".equals(selection) ? null : "slow",
+                                            null,
+                                            null));
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            var cached =
+                    pool.submit(
+                            () ->
+                                    prompts.getPrompt(
+                                            "shared", null, "prod", Map.of("name", "user"), null));
+            assertEquals("cached user", cached.get(2, TimeUnit.SECONDS));
+            assertFalse(slow.isDone());
+            release.countDown();
+            slow.get(5, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+            prompts.close();
+        }
+    }
+
+    @Test
+    void workerCallbackCanRunBeforeSubscriptionReturns() throws Exception {
+        var pool = Executors.newSingleThreadExecutor();
+        when(service.subscribePrompt(eq("race"), any(), any(), any()))
+                .thenAnswer(
+                        call -> {
+                            AbstractNacosPromptListener callback = call.getArgument(3);
+                            pool.submit(
+                                            () ->
+                                                    callback.onEvent(
+                                                            new NacosPromptEvent(
+                                                                    "race",
+                                                                    new Prompt(
+                                                                            "race", "2.0.0",
+                                                                            "updated"))))
+                                    .get(5, TimeUnit.SECONDS);
+                            return new Prompt("race", "1.0.0", "stale");
+                        });
+        try {
+            assertEquals("updated", prompts.getPrompt("race"));
+        } finally {
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+            prompts.close();
+        }
+    }
+
+    @Test
+    void closeWaitsForSubscriptionAndCancelsItBeforeReturning() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch closing = new CountDownLatch(1);
+        when(service.subscribePrompt(eq("race"), any(), any(), any()))
+                .thenAnswer(
+                        call -> {
+                            entered.countDown();
+                            assertTrue(release.await(10, TimeUnit.SECONDS));
+                            return new Prompt("race", "1.0.0", "value");
+                        });
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var read = pool.submit(() -> prompts.getPrompt("race"));
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            var close =
+                    pool.submit(
+                            () -> {
+                                closing.countDown();
+                                prompts.close();
+                                return null;
+                            });
+            assertTrue(closing.await(5, TimeUnit.SECONDS));
+            assertThrows(
+                    java.util.concurrent.TimeoutException.class,
+                    () -> close.get(100, TimeUnit.MILLISECONDS));
+            release.countDown();
+            assertEquals("value", read.get(5, TimeUnit.SECONDS));
+            close.get(5, TimeUnit.SECONDS);
+            verify(service).unsubscribePrompt(eq("race"), any(), any(), any());
+            verify(service, org.mockito.Mockito.never()).shutdown();
+            assertThrows(IllegalStateException.class, () -> prompts.getPrompt("race"));
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+            prompts.close();
         }
     }
 

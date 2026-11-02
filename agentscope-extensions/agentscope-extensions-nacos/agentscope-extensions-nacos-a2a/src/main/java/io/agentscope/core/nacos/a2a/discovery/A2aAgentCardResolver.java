@@ -23,8 +23,8 @@ import com.alibaba.nacos.api.ai.model.a2a.AgentCardDetailInfo;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.exception.runtime.NacosRuntimeException;
 import io.agentscope.core.nacos.a2a.utils.AgentCardConverterUtil;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.a2aproject.sdk.spec.AgentCard;
 
 /**
@@ -35,16 +35,17 @@ import org.a2aproject.sdk.spec.AgentCard;
  * event does not invalidate the cache, preserving the legacy A2A discovery behavior. Protocol
  * adaptation and server capability negotiation remain the responsibility of the Nacos SDK.
  *
- * <p>The owning resolver serializes lookups and closure; each updater synchronizes cache access
- * with asynchronous callbacks. Closing this delegate cancels its subscriptions without shutting
- * down the supplied {@link AiService}.
+ * <p>Lookups initialize subscriptions independently for each agent. The initialization lock is
+ * separate from callback synchronization so callbacks can run while the SDK subscribes. The owning
+ * resolver excludes lookups during closure. Closing this delegate cancels its subscriptions without
+ * shutting down the supplied {@link AiService}.
  *
  * @see NacosAgentCardResolver
  * @see AiService#subscribeAgentCard(String, AbstractNacosAgentCardListener)
  */
 final class A2aAgentCardResolver implements NacosAgentCardResolver.Delegate {
     private final AiService service;
-    private final Map<String, CardUpdater> subscriptions = new HashMap<>();
+    private final Map<String, CardUpdater> subscriptions = new ConcurrentHashMap<>();
 
     /**
      * Creates an A2A discovery delegate using an existing Nacos AI service.
@@ -68,18 +69,20 @@ final class A2aAgentCardResolver implements NacosAgentCardResolver.Delegate {
     @Override
     public AgentCard getAgentCard(String agentName) {
         CardUpdater updater = subscriptions.computeIfAbsent(agentName, CardUpdater::new);
-        if (!updater.initialized) {
-            try {
-                AgentCardDetailInfo initial = service.subscribeAgentCard(agentName, updater);
-                synchronized (updater) {
-                    // Preserve a Card already supplied by a callback, as in the legacy cache.
-                    if (updater.card == null && initial != null) {
-                        updater.card = AgentCardConverterUtil.convertToA2aAgentCard(initial);
+        synchronized (updater.subscriptionLock) {
+            if (!updater.initialized) {
+                try {
+                    AgentCardDetailInfo initial = service.subscribeAgentCard(agentName, updater);
+                    synchronized (updater) {
+                        // Preserve a Card already supplied by a callback, as in the legacy cache.
+                        if (updater.card == null && initial != null) {
+                            updater.card = AgentCardConverterUtil.convertToA2aAgentCard(initial);
+                        }
                     }
+                    updater.initialized = true;
+                } catch (NacosException e) {
+                    throw new NacosRuntimeException(e.getErrCode(), e.getErrMsg(), e);
                 }
-                updater.initialized = true;
-            } catch (NacosException e) {
-                throw new NacosRuntimeException(e.getErrCode(), e.getErrMsg(), e);
             }
         }
         synchronized (updater) {
@@ -118,6 +121,7 @@ final class A2aAgentCardResolver implements NacosAgentCardResolver.Delegate {
     /** Keeps the last non-null Card for one legacy subscription and rejects callbacks after close. */
     private static final class CardUpdater extends AbstractNacosAgentCardListener {
         private final String agentName;
+        private final Object subscriptionLock = new Object();
         private AgentCard card;
         private boolean initialized;
         private boolean active = true;

@@ -25,7 +25,9 @@ import com.alibaba.nacos.api.exception.NacosException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,15 +39,17 @@ import org.slf4j.LoggerFactory;
  * Missing or deleted templates use the caller's fallback, or an empty string when none is supplied.
  * Nacos errors are propagated unless the caller supplies a fallback.
  *
- * <p>Calls to load templates and close the listener are serialized. Callbacks update the cached
- * templates independently. Call {@link #close()} when the listener is no longer needed; the supplied
- * {@link AiService} remains managed by its owner.
+ * <p>Different selections load and render concurrently; initialization is serialized only for the
+ * same selection. Callbacks update cached templates independently. Closing waits for in-flight reads
+ * before cancelling subscriptions. Call {@link #close()} when the listener is no longer needed;
+ * the supplied {@link AiService} remains managed by its owner.
  */
 public class NacosPromptListener implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(NacosPromptListener.class);
     private static final Prompt EMPTY_SENTINEL = new Prompt("", "", "");
     private final AiService aiService;
-    private final Map<SubscriptionKey, Subscription> subscriptions = new HashMap<>();
+    private final Map<SubscriptionKey, Subscription> subscriptions = new ConcurrentHashMap<>();
+    private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
     private boolean closed;
 
     /**
@@ -122,44 +126,60 @@ public class NacosPromptListener implements AutoCloseable {
      *     are specified
      * @throws IllegalStateException if this listener has been closed
      */
-    public synchronized String getPrompt(
+    public String getPrompt(
             String promptKey,
             String version,
             String label,
             Map<String, String> args,
             String defaultValue)
             throws NacosException {
-        if (closed) throw new IllegalStateException("Prompt listener is closed");
-        if (promptKey == null || promptKey.isBlank()) {
-            throw new IllegalArgumentException("Prompt key cannot be blank");
-        }
-        version = normalizeSelector(version);
-        label = normalizeSelector(label);
-        if (version != null && label != null) {
-            throw new IllegalArgumentException("Prompt version and label are mutually exclusive");
-        }
-        SubscriptionKey key = new SubscriptionKey(promptKey, version, label);
-        Subscription subscription = subscriptions.computeIfAbsent(key, Subscription::new);
-        if (!subscription.initialized) {
-            try {
-                Prompt initial = aiService.subscribePrompt(promptKey, version, label, subscription);
-                // A callback, including deletion, can precede the initial response.
-                subscription.value.compareAndSet(null, initial == null ? EMPTY_SENTINEL : initial);
-                subscription.initialized = true;
-            } catch (NacosException e) {
-                log.error(
-                        "Failed to load prompt {} (Nacos error {})", promptKey, e.getErrCode(), e);
-                if (defaultValue != null) return render(new Prompt(null, null, defaultValue), args);
-                throw e;
+        lifecycle.readLock().lock();
+        try {
+            if (closed) throw new IllegalStateException("Prompt listener is closed");
+            if (promptKey == null || promptKey.isBlank()) {
+                throw new IllegalArgumentException("Prompt key cannot be blank");
             }
+            version = normalizeSelector(version);
+            label = normalizeSelector(label);
+            if (version != null && label != null) {
+                throw new IllegalArgumentException(
+                        "Prompt version and label are mutually exclusive");
+            }
+            SubscriptionKey key = new SubscriptionKey(promptKey, version, label);
+            Subscription subscription = subscriptions.computeIfAbsent(key, Subscription::new);
+            synchronized (subscription) {
+                if (!subscription.initialized) {
+                    try {
+                        Prompt initial =
+                                aiService.subscribePrompt(promptKey, version, label, subscription);
+                        // A callback, including deletion, can precede the initial response.
+                        subscription.value.compareAndSet(
+                                null, initial == null ? EMPTY_SENTINEL : initial);
+                        subscription.initialized = true;
+                    } catch (NacosException e) {
+                        log.error(
+                                "Failed to load prompt {} (Nacos error {})",
+                                promptKey,
+                                e.getErrCode(),
+                                e);
+                        if (defaultValue != null)
+                            return render(new Prompt(null, null, defaultValue), args);
+                        throw e;
+                    }
+                }
+            }
+            Prompt prompt = subscription.value.get();
+            if (prompt == EMPTY_SENTINEL
+                    || prompt.getTemplate() == null
+                    || prompt.getTemplate().isEmpty()) {
+                return defaultValue == null
+                        ? ""
+                        : render(new Prompt(null, null, defaultValue), args);
+            }
+            return render(prompt, args);
+        } finally {
+            lifecycle.readLock().unlock();
         }
-        Prompt prompt = subscription.value.get();
-        if (prompt == EMPTY_SENTINEL
-                || prompt.getTemplate() == null
-                || prompt.getTemplate().isEmpty()) {
-            return defaultValue == null ? "" : render(new Prompt(null, null, defaultValue), args);
-        }
-        return render(prompt, args);
     }
 
     /**
@@ -167,31 +187,37 @@ public class NacosPromptListener implements AutoCloseable {
      *
      * <p>The supplied {@link AiService} is not shut down. Further calls to {@code getPrompt}
      * are rejected. If cancellation fails, a subsequent call to {@code close} retries the
-     * remaining subscriptions.
+     * remaining subscriptions. Closing waits for in-flight reads so a subscription being created
+     * concurrently is also cancelled before this method returns.
      *
      * @throws NacosException if any subscription cannot be cancelled; additional failures are
      *     attached as suppressed exceptions
      */
     @Override
-    public synchronized void close() throws NacosException {
-        closed = true;
-        NacosException failure = null;
-        var iterator = subscriptions.entrySet().iterator();
-        while (iterator.hasNext()) {
-            var entry = iterator.next();
-            SubscriptionKey key = entry.getKey();
-            Subscription subscription = entry.getValue();
-            subscription.active = false;
-            try {
-                aiService.unsubscribePrompt(
-                        key.promptKey(), key.version(), key.label(), subscription);
-                iterator.remove();
-            } catch (NacosException e) {
-                if (failure == null) failure = e;
-                else failure.addSuppressed(e);
+    public void close() throws NacosException {
+        lifecycle.writeLock().lock();
+        try {
+            closed = true;
+            NacosException failure = null;
+            var iterator = subscriptions.entrySet().iterator();
+            while (iterator.hasNext()) {
+                var entry = iterator.next();
+                SubscriptionKey key = entry.getKey();
+                Subscription subscription = entry.getValue();
+                subscription.active = false;
+                try {
+                    aiService.unsubscribePrompt(
+                            key.promptKey(), key.version(), key.label(), subscription);
+                    iterator.remove();
+                } catch (NacosException e) {
+                    if (failure == null) failure = e;
+                    else failure.addSuppressed(e);
+                }
             }
+            if (failure != null) throw failure;
+        } finally {
+            lifecycle.writeLock().unlock();
         }
-        if (failure != null) throw failure;
     }
 
     private static String normalizeSelector(String value) {

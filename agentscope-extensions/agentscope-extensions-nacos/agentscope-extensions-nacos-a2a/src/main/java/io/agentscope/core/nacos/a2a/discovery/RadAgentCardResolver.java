@@ -26,9 +26,9 @@ import com.alibaba.nacos.api.ai.model.agent.AgentReference;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.exception.runtime.NacosRuntimeException;
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -43,11 +43,10 @@ import org.a2aproject.sdk.spec.AgentCard;
  * cached Card; a later snapshot can populate it through the same subscription. Watch recovery is
  * managed by the Nacos SDK, and this delegate does not resubscribe on cache misses.
  *
- * <p>The owning resolver serializes lookups and closure; each updater synchronizes cache access
- * with asynchronous callbacks. Initial state and later updates use the same SDK callback channel.
- * Lookups wait for the first callback for a bounded duration; subsequent lookups use the latest
- * state immediately. Closing this delegate cancels its subscriptions without shutting down the
- * supplied {@link AiService}.
+ * <p>Subscription initialization is serialized per agent, independently of callback synchronization.
+ * Initial state and later updates use the same SDK callback channel. A lookup waiting for its first
+ * callback does not block other agents' lookups. The owning resolver excludes lookups during closure;
+ * closing this delegate cancels its subscriptions without shutting down the supplied {@link AiService}.
  *
  * @see NacosAgentCardResolver
  * @see RadAgentCardConverter
@@ -56,7 +55,7 @@ final class RadAgentCardResolver implements NacosAgentCardResolver.Delegate {
     private final AiService client;
     private final Duration initialTimeout;
     private final AgentDiscoveryFilter filter = new AgentDiscoveryFilter();
-    private final Map<String, CardUpdater> subscriptions = new HashMap<>();
+    private final Map<String, CardUpdater> subscriptions = new ConcurrentHashMap<>();
     private AgentService service;
 
     /**
@@ -98,14 +97,16 @@ final class RadAgentCardResolver implements NacosAgentCardResolver.Delegate {
      */
     @Override
     public AgentCard getAgentCard(String agentName) {
-        if (service == null) service = client.agent();
+        AgentService agentService = getService();
         CardUpdater updater = subscriptions.computeIfAbsent(agentName, CardUpdater::new);
-        if (!updater.initialized) {
-            try {
-                service.subscribeAgent(updater.reference, filter, updater);
-                updater.initialized = true;
-            } catch (NacosException e) {
-                throw new NacosRuntimeException(e.getErrCode(), e.getErrMsg(), e);
+        synchronized (updater.subscriptionLock) {
+            if (!updater.initialized) {
+                try {
+                    agentService.subscribeAgent(updater.reference, filter, updater);
+                    updater.initialized = true;
+                } catch (NacosException e) {
+                    throw new NacosRuntimeException(e.getErrCode(), e.getErrMsg(), e);
+                }
             }
         }
         try {
@@ -125,6 +126,11 @@ final class RadAgentCardResolver implements NacosAgentCardResolver.Delegate {
             if (updater.failure != null) throw updater.failure;
             return updater.card;
         }
+    }
+
+    private synchronized AgentService getService() {
+        if (service == null) service = client.agent();
+        return service;
     }
 
     /**
@@ -160,6 +166,7 @@ final class RadAgentCardResolver implements NacosAgentCardResolver.Delegate {
     /** Tracks snapshots and unavailability for one RAD subscription, including conversion failures. */
     private static final class CardUpdater extends AbstractNacosAgentDiscoveryListener {
         private final AgentReference reference = new AgentReference();
+        private final Object subscriptionLock = new Object();
         private AgentCard card;
         private RuntimeException failure;
         private final CountDownLatch firstEvent = new CountDownLatch(1);

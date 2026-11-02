@@ -26,6 +26,7 @@ import io.agentscope.core.a2a.agent.card.AgentCardResolver;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.a2aproject.sdk.spec.AgentCard;
 
 /**
@@ -69,6 +70,7 @@ public class NacosAgentCardResolver implements AgentCardResolver, AutoCloseable 
     private final AiService aiService;
     private final boolean ownsClient;
     private final String mode;
+    private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
     private Delegate delegate;
     private boolean closed;
 
@@ -130,8 +132,17 @@ public class NacosAgentCardResolver implements AgentCardResolver, AutoCloseable 
      * @throws IllegalArgumentException if the current RAD snapshot cannot be converted to a Card
      */
     @Override
-    public synchronized AgentCard getAgentCard(String agentName) {
-        if (closed) throw new IllegalStateException("Agent card resolver is closed");
+    public AgentCard getAgentCard(String agentName) {
+        lifecycle.readLock().lock();
+        try {
+            if (closed) throw new IllegalStateException("Agent card resolver is closed");
+            return getDelegate().getAgentCard(agentName);
+        } finally {
+            lifecycle.readLock().unlock();
+        }
+    }
+
+    private synchronized Delegate getDelegate() {
         if (delegate == null) {
             String selected = mode;
             if ("auto".equals(selected)) {
@@ -154,7 +165,7 @@ public class NacosAgentCardResolver implements AgentCardResolver, AutoCloseable 
                             ? new RadAgentCardResolver(aiService)
                             : new A2aAgentCardResolver(aiService);
         }
-        return delegate.getAgentCard(agentName);
+        return delegate;
     }
 
     /**
@@ -162,29 +173,35 @@ public class NacosAgentCardResolver implements AgentCardResolver, AutoCloseable 
      *
      * <p>Shuts down the Nacos AI service only when it was created by the {@link
      * #NacosAgentCardResolver(Properties)} constructor. Further lookups are rejected; repeated
-     * calls to {@code close} have no effect.
+     * calls to {@code close} have no effect. Closing waits for in-flight lookups to finish before
+     * cancelling subscriptions, so a concurrent first lookup cannot leave a subscription behind.
      *
      * @throws NacosException if unsubscribing or shutting down the service fails; additional
      *     failures are attached as suppressed exceptions
      */
     @Override
-    public synchronized void close() throws NacosException {
-        if (closed) return;
-        closed = true;
-        NacosException failure = null;
+    public void close() throws NacosException {
+        lifecycle.writeLock().lock();
         try {
-            if (delegate != null) delegate.close();
-        } catch (NacosException e) {
-            failure = e;
-        }
-        if (ownsClient) {
+            if (closed) return;
+            closed = true;
+            NacosException failure = null;
             try {
-                aiService.shutdown();
+                if (delegate != null) delegate.close();
             } catch (NacosException e) {
-                failure = accumulate(failure, e);
+                failure = e;
             }
+            if (ownsClient) {
+                try {
+                    aiService.shutdown();
+                } catch (NacosException e) {
+                    failure = accumulate(failure, e);
+                }
+            }
+            if (failure != null) throw failure;
+        } finally {
+            lifecycle.writeLock().unlock();
         }
-        if (failure != null) throw failure;
     }
 
     static NacosException accumulate(NacosException first, NacosException next) {
@@ -193,7 +210,7 @@ public class NacosAgentCardResolver implements AgentCardResolver, AutoCloseable 
         return first;
     }
 
-    /** Internal discovery strategy whose lookups and closure are serialized by this resolver. */
+    /** Internal strategy supporting concurrent lookups; the owner excludes lookups during closure. */
     interface Delegate extends AgentCardResolver {
         /**
          * Cancels this strategy's subscriptions without shutting down the shared Nacos client.

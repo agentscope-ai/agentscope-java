@@ -562,6 +562,229 @@ class NacosAgentCardResolverModeTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"a2a", "rad"})
+    void slowSubscriptionDoesNotBlockOtherCachedCards(String mode) throws Exception {
+        System.setProperty(MODE, mode);
+        when(client.agent()).thenReturn(agentService);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        if ("a2a".equals(mode)) {
+            when(client.subscribeAgentCard(anyString(), any()))
+                    .thenAnswer(
+                            call -> {
+                                if ("slow".equals(call.getArgument(0))) {
+                                    entered.countDown();
+                                    assertTrue(release.await(10, TimeUnit.SECONDS));
+                                }
+                                return card("1.0.0");
+                            });
+        } else {
+            doAnswer(
+                            call -> {
+                                AgentReference reference = call.getArgument(0);
+                                if ("slow".equals(reference.getAgentName())) {
+                                    entered.countDown();
+                                    assertTrue(release.await(10, TimeUnit.SECONDS));
+                                }
+                                AbstractNacosAgentDiscoveryListener callback = call.getArgument(2);
+                                callback.onEvent(
+                                        new NacosAgentDiscoveryEvent(
+                                                namedSnapshot(reference.getAgentName())));
+                                return null;
+                            })
+                    .when(agentService)
+                    .subscribeAgent(any(), any(), any());
+        }
+        resolver = new NacosAgentCardResolver(client);
+        AgentCard cached = resolver.getAgentCard("demo");
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var slow = pool.submit(() -> resolver.getAgentCard("slow"));
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            var fast = pool.submit(() -> resolver.getAgentCard("demo"));
+            assertSame(cached, fast.get(2, TimeUnit.SECONDS));
+            assertFalse(slow.isDone());
+            release.countDown();
+            assertNotNull(slow.get(5, TimeUnit.SECONDS));
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void waitingForInitialRadCallbackDoesNotBlockOtherCachedCards() throws Exception {
+        useRad(snapshot("1.0.0"));
+        AgentCard cached = resolver.getAgentCard("demo");
+        CountDownLatch subscribed = new CountDownLatch(1);
+        doAnswer(
+                        call -> {
+                            events.set(call.getArgument(2));
+                            subscribed.countDown();
+                            return null;
+                        })
+                .when(agentService)
+                .subscribeAgent(any(), any(), any());
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var slow = pool.submit(() -> resolver.getAgentCard("slow"));
+            assertTrue(subscribed.await(5, TimeUnit.SECONDS));
+            assertSame(
+                    cached,
+                    pool.submit(() -> resolver.getAgentCard("demo")).get(2, TimeUnit.SECONDS));
+            assertFalse(slow.isDone());
+            events.get().onEvent(new NacosAgentDiscoveryEvent(namedSnapshot("slow")));
+            assertNotNull(slow.get(5, TimeUnit.SECONDS));
+        } finally {
+            if (events.get() != null)
+                events.get().onEvent(NacosAgentDiscoveryEvent.unavailable(404, "missing"));
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"a2a", "rad"})
+    void concurrentFirstReadsShareSubscriptionAndAllowWorkerCallbacks(String mode)
+            throws Exception {
+        System.setProperty(MODE, mode);
+        when(client.agent()).thenReturn(agentService);
+        var callbacks = Executors.newSingleThreadExecutor();
+        var pool = Executors.newFixedThreadPool(8);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        if ("a2a".equals(mode)) {
+            when(client.subscribeAgentCard(eq("demo"), any()))
+                    .thenAnswer(
+                            call -> {
+                                entered.countDown();
+                                assertTrue(release.await(10, TimeUnit.SECONDS));
+                                AbstractNacosAgentCardListener callback = call.getArgument(1);
+                                callbacks
+                                        .submit(
+                                                () ->
+                                                        callback.onEvent(
+                                                                new NacosAgentCardEvent(
+                                                                        card("2.0.0"))))
+                                        .get(5, TimeUnit.SECONDS);
+                                return card("1.0.0");
+                            });
+        } else {
+            doAnswer(
+                            call -> {
+                                entered.countDown();
+                                assertTrue(release.await(10, TimeUnit.SECONDS));
+                                AbstractNacosAgentDiscoveryListener callback = call.getArgument(2);
+                                callbacks
+                                        .submit(
+                                                () ->
+                                                        callback.onEvent(
+                                                                new NacosAgentDiscoveryEvent(
+                                                                        snapshot("2.0.0"))))
+                                        .get(5, TimeUnit.SECONDS);
+                                return null;
+                            })
+                    .when(agentService)
+                    .subscribeAgent(any(), any(), any());
+        }
+        resolver = new NacosAgentCardResolver(client);
+        try {
+            List<java.util.concurrent.Future<AgentCard>> reads = new ArrayList<>();
+            for (int i = 0; i < 8; i++)
+                reads.add(
+                        pool.submit(
+                                () -> {
+                                    start.await();
+                                    return resolver.getAgentCard("demo");
+                                }));
+            start.countDown();
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            release.countDown();
+            for (var read : reads) assertEquals("2.0.0", read.get(5, TimeUnit.SECONDS).version());
+            if ("a2a".equals(mode)) verify(client).subscribeAgentCard(eq("demo"), any());
+            else verify(agentService).subscribeAgent(any(), any(), any());
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+            callbacks.shutdownNow();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+            assertTrue(callbacks.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"a2a", "rad"})
+    void closeWaitsForInFlightSubscriptionAndThenCancelsIt(String mode) throws Exception {
+        System.setProperty(MODE, mode);
+        when(client.agent()).thenReturn(agentService);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        if ("a2a".equals(mode)) {
+            when(client.subscribeAgentCard(eq("demo"), any()))
+                    .thenAnswer(
+                            call -> {
+                                entered.countDown();
+                                assertTrue(release.await(10, TimeUnit.SECONDS));
+                                return card("1.0.0");
+                            });
+        } else {
+            doAnswer(
+                            call -> {
+                                entered.countDown();
+                                assertTrue(release.await(10, TimeUnit.SECONDS));
+                                AbstractNacosAgentDiscoveryListener callback = call.getArgument(2);
+                                callback.onEvent(new NacosAgentDiscoveryEvent(snapshot("1.0.0")));
+                                return null;
+                            })
+                    .when(agentService)
+                    .subscribeAgent(any(), any(), any());
+        }
+        resolver = new NacosAgentCardResolver(client);
+        var pool = Executors.newFixedThreadPool(2);
+        CountDownLatch closing = new CountDownLatch(1);
+        try {
+            var reading = pool.submit(() -> resolver.getAgentCard("demo"));
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            var close =
+                    pool.submit(
+                            () -> {
+                                closing.countDown();
+                                resolver.close();
+                                return null;
+                            });
+            assertTrue(closing.await(5, TimeUnit.SECONDS));
+            assertThrows(
+                    java.util.concurrent.TimeoutException.class,
+                    () -> close.get(100, TimeUnit.MILLISECONDS));
+            release.countDown();
+            assertNotNull(reading.get(5, TimeUnit.SECONDS));
+            close.get(5, TimeUnit.SECONDS);
+            if ("a2a".equals(mode)) verify(client).unsubscribeAgentCard(eq("demo"), any());
+            else verify(agentService).unsubscribeAgent(any(), any(), any());
+            verify(client, never()).shutdown();
+            assertThrows(IllegalStateException.class, () -> resolver.getAgentCard("demo"));
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
+
+    private static AgentDiscoveryResult namedSnapshot(String name) {
+        AgentDiscoveryResult result = snapshot("1.0.0");
+        result.setAgentName(name);
+        Map<String, Object> descriptor =
+                new LinkedHashMap<>(
+                        (Map<String, Object>)
+                                result.getCallInterfaces().get(0).getNativeDescriptor());
+        descriptor.put("name", name);
+        result.getCallInterfaces().get(0).setNativeDescriptor(descriptor);
+        return result;
+    }
+
     private void useRad(AgentDiscoveryResult initial) throws NacosException {
         System.setProperty(MODE, "rad");
         when(client.agent()).thenReturn(agentService);
