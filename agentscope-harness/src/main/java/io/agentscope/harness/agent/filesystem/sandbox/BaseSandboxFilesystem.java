@@ -66,6 +66,14 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     private static final Logger log = LoggerFactory.getLogger(BaseSandboxFilesystem.class);
 
+    /**
+     * Caps raw command output embedded in a failure message the model sees. Sandbox commands can
+     * emit arbitrarily long stderr (a failed {@code grep} over a large tree, a stack trace), and
+     * tool results are exactly what overflows the context window, so error detail gets a tight
+     * local bound.
+     */
+    private static final int MAX_DETAIL_CHARS = 500;
+
     @Override
     public abstract String id();
 
@@ -217,7 +225,10 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + parentDirMkdir(filePath);
 
         ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
-        if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
+        // Fail closed on an unknown status too: write() is a mutation, so a null exit code must
+        // not read as success.
+        Integer checkExitCode = checkResult.exitCode();
+        if (checkExitCode == null || checkExitCode != 0) {
             if (checkResult.output() != null && checkResult.output().contains("EXISTS")) {
                 return WriteResult.fail(
                         "Cannot write to "
@@ -225,7 +236,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                                 + " because it already exists. Read and then make an"
                                 + " edit, or write to a new path.");
             }
-            return WriteResult.fail("Failed to write file '" + filePath + "'");
+            return WriteResult.fail(
+                    "Failed to write file '" + filePath + "': " + failureDetail(checkResult));
         }
 
         List<FileUploadResponse> responses =
@@ -719,8 +731,11 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String escapedPath = FilesystemUtils.shellQuote(path);
         String cmd = "rm -rf " + escapedPath;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
-        if (result.exitCode() != 0) {
-            return WriteResult.fail("Error deleting '" + path + "': " + result.output());
+        Integer exitCode = result.exitCode();
+        // Fail closed: a null exit code means the status is unknown (ExecuteResponse permits it),
+        // and a filesystem mutation must not report a success it cannot confirm.
+        if (exitCode == null || exitCode != 0) {
+            return WriteResult.fail("Error deleting '" + path + "': " + failureDetail(result));
         }
         return WriteResult.ok(path);
     }
@@ -735,9 +750,16 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String mkdirPrefix = parent != null ? "mkdir -p " + parent + " 2>&1 && " : "";
         String cmd = mkdirPrefix + "mv " + escapedFrom + " " + escapedTo;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
-        if (result.exitCode() != 0) {
+        Integer exitCode = result.exitCode();
+        // Same fail-closed contract as delete(): an unknown status must not read as success.
+        if (exitCode == null || exitCode != 0) {
             return WriteResult.fail(
-                    "Error moving '" + fromPath + "' to '" + toPath + "': " + result.output());
+                    "Error moving '"
+                            + fromPath
+                            + "' to '"
+                            + toPath
+                            + "': "
+                            + failureDetail(result));
         }
         return WriteResult.ok(toPath);
     }
@@ -760,11 +782,43 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
      */
     private static String executeFailureMessage(
             ExecuteResponse result, String operation, String target) {
-        String detail =
-                result.output() != null && !result.output().isBlank()
-                        ? result.output()
-                        : "exit code " + result.exitCode();
-        return "Error " + operation + " '" + target + "': " + detail;
+        return "Error " + operation + " '" + target + "': " + failureDetail(result);
+    }
+
+    /**
+     * Extracts a bounded, never-null diagnostic from a failing {@link ExecuteResponse}: the
+     * command's own output when there is any, the exit code when there is not, and an explicit
+     * note when the execution layer reported no status at all.
+     */
+    private static String failureDetail(ExecuteResponse result) {
+        Integer exitCode = result.exitCode();
+        if (exitCode == null) {
+            return "no exit status reported";
+        }
+        String output = result.output();
+        if (output == null || output.isBlank()) {
+            return "exit code " + exitCode;
+        }
+        return clampDetail(output);
+    }
+
+    /**
+     * Caps raw command output so a failure message cannot balloon a tool result. Keeps the tail:
+     * that is where shells put the actual error line after a command's own preamble.
+     */
+    private static String clampDetail(String output) {
+        String stripped = output.strip();
+        if (stripped.length() <= MAX_DETAIL_CHARS) {
+            return stripped;
+        }
+        int from = stripped.length() - MAX_DETAIL_CHARS;
+        // Slicing on UTF-16 code units can split a surrogate pair (emoji, CJK Extension B),
+        // leaving a lone surrogate in the JSON sent to the model — back off one char when the
+        // cut lands on a low surrogate.
+        if (Character.isLowSurrogate(stripped.charAt(from))) {
+            from++;
+        }
+        return "[output truncated] ..." + stripped.substring(from);
     }
 
     /**
