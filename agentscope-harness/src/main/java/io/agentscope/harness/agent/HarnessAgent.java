@@ -135,8 +135,10 @@ import io.agentscope.harness.agent.tool.ShellExecuteTool;
 import io.agentscope.harness.agent.tool.SkillManageConfig;
 import io.agentscope.harness.agent.tool.SkillManageTool;
 import io.agentscope.harness.agent.tool.WebTools;
+import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.McpServerRegistrar;
 import io.agentscope.harness.agent.tools.McpServerRegistrationListener;
+import io.agentscope.harness.agent.tools.McpToolManager;
 import io.agentscope.harness.agent.tools.ToolFilter;
 import io.agentscope.harness.agent.tools.ToolsConfig;
 import io.agentscope.harness.agent.tools.ToolsConfigLoader;
@@ -221,6 +223,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SkillAuditLog skillAuditLog;
     private final MemoryConfig memoryConfig;
     private final Toolkit ownedMcpToolkit;
+    private final McpToolManager mcpToolManager;
 
     /** The subagent middleware (either SubagentsMiddleware or DynamicSubagentsMiddleware). */
     private final Object subagentMiddleware;
@@ -255,9 +258,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
             Object subagentMiddleware,
             DistributedStore distributedStore,
             WorkspacePathNormalizer pathNormalizer,
-            Toolkit ownedMcpToolkit) {
+            Toolkit ownedMcpToolkit,
+            McpToolManager mcpToolManager) {
         this.delegate = delegate;
         this.ownedMcpToolkit = ownedMcpToolkit;
+        this.mcpToolManager = mcpToolManager;
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
         this.ownedWorkspaceIndex = ownedWorkspaceIndex;
@@ -531,6 +536,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     ownedWorkspaceIndex.close();
                 }
             } finally {
+                if (mcpToolManager != null) {
+                    mcpToolManager.close();
+                }
                 ownedMcpToolkit.closeMcpClients();
                 delegate.close();
             }
@@ -1015,6 +1023,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     public Toolkit getToolkit() {
         return delegate.getToolkit();
+    }
+
+    /**
+     * Runtime MCP tool manager of this agent.
+     *
+     * <p>Use it to add, remove, or reload MCP servers per {@link RuntimeContext} without rebuilding
+     * the agent. Each context sees the declarative baseline ({@code mcp.json} merged with {@code
+     * tools.json#mcpServers}) plus only the servers registered for that context; changes are
+     * persisted under {@code mcp/} in the workspace. Never {@code null}; closing the agent closes
+     * it.
+     */
+    public McpToolManager mcpTools() {
+        return mcpToolManager;
     }
 
     // ==================== Call/stream wrappers ====================
@@ -3091,11 +3112,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     resolvedToolsConfig = ToolsConfigLoader.load(wsManager).orElse(null);
                 }
             }
-            if (resolvedToolsConfig != null) {
+            // ---- workspace/mcp.json: declarative MCP baseline (wins over tools.json names) ----
+            Map<String, McpServerConfig> baselineMcpServers = new LinkedHashMap<>();
+            if (!disableToolsConfig && toolsConfigOverride == null && wsManager != null) {
+                baselineMcpServers.putAll(McpToolManager.loadDeclarative(wsManager));
+            }
+            if (resolvedToolsConfig != null && resolvedToolsConfig.getMcpServers() != null) {
+                baselineMcpServers.putAll(resolvedToolsConfig.getMcpServers());
+            }
+            if (!baselineMcpServers.isEmpty()) {
                 McpServerRegistrar.register(
-                        agentToolkit,
-                        resolvedToolsConfig.getMcpServers(),
-                        mcpServerRegistrationListener);
+                        agentToolkit, baselineMcpServers, mcpServerRegistrationListener);
             }
 
             Set<String> externalToolNames = agentToolkit.getToolNames();
@@ -3282,7 +3309,23 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // ---- Build inner ReActAgent ----
             inner.middleware(new HarnessToolBindings(Collections.unmodifiableMap(frameworkTools)));
             inner.toolkit(agentToolkit);
+            // Per-call MCP tool surface: the manager is installed right after the delegate exists,
+            // so before any call the selector resolves to "use the shared toolkit" (null).
+            java.util.concurrent.atomic.AtomicReference<McpToolManager> mcpToolManagerRef =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            inner.toolkitForContext(
+                    (callToolkit, context) -> {
+                        McpToolManager manager = mcpToolManagerRef.get();
+                        return manager == null ? null : manager.toolkitFor(context);
+                    });
             ReActAgent delegate = inner.build();
+            McpToolManager mcpToolManager =
+                    McpToolManager.create(
+                            delegate.getToolkit(),
+                            baselineMcpServers,
+                            wsManager,
+                            mcpServerRegistrationListener);
+            mcpToolManagerRef.set(mcpToolManager);
             // Core adds tools during build; finish ownership before exposing the agent.
             captureFrameworkTools(delegate.getToolkit(), coreInheritedNames, frameworkTools);
             frameworkTools
@@ -3310,7 +3353,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     capturedSubagentMw,
                     distributedStore,
                     pathNormalizer,
-                    agentToolkit);
+                    agentToolkit,
+                    mcpToolManager);
         }
     }
 }
