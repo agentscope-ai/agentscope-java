@@ -17,6 +17,8 @@ package io.agentscope.core.tool.subagent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,10 +28,14 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.session.SessionExecution;
 import io.agentscope.core.session.SessionExportSink;
@@ -46,6 +52,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -88,7 +95,7 @@ class SubAgentToolSessionTest {
         ArgumentCaptor<String> sessionIdCaptor = ArgumentCaptor.forClass(String.class);
         verify(stateStore)
                 .save(
-                        eq(null),
+                        eq("merchant"),
                         sessionIdCaptor.capture(),
                         eq("agent_state"),
                         any(AgentState.class));
@@ -96,7 +103,7 @@ class SubAgentToolSessionTest {
         assertTrue(firstOutput.contains("session_id: " + childSessionId));
         AgentState saved =
                 config.getStateStore()
-                        .get(null, childSessionId, "agent_state", AgentState.class)
+                        .get("merchant", childSessionId, "agent_state", AgentState.class)
                         .orElseThrow();
 
         assertTrue(
@@ -119,17 +126,46 @@ class SubAgentToolSessionTest {
                 models.get(2).getLastMessages().stream()
                         .anyMatch(message -> "Remember this".equals(message.getTextContent())));
         assertSame(secondParentState, secondParent.getAgentState());
+
+        RuntimeContext attacker =
+                RuntimeContext.builder().userId("attacker").sessionId("attacker-parent").build();
+        ToolResultBlock attackerResult =
+                tool.callAsync(param("Steal history", childSessionId, attacker))
+                        .block(Duration.ofSeconds(10));
+
+        assertTrue(
+                ((TextBlock) attackerResult.getOutput().get(0)).getText().contains(childSessionId));
+        assertEquals(4, models.size());
+        assertTrue(
+                models.get(3).getLastMessages().stream()
+                        .noneMatch(message -> "Remember this".equals(message.getTextContent())));
+        assertTrue(
+                saved.getContext().stream()
+                        .anyMatch(message -> "Remember this".equals(message.getTextContent())));
     }
 
     @Test
     void nativeChildSessionDoesNotReuseParentExecutionOrTurn() {
         InMemorySessionLogStore childStore = new InMemorySessionLogStore();
+        AtomicReference<ExecutionIdentity> childExecutionIdentity = new AtomicReference<>();
+        MiddlewareBase executionIdentityProbe =
+                new MiddlewareBase() {
+                    @Override
+                    public void onAgentStateReady(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            AgentState state,
+                            List<Msg> inputMessages) {
+                        childExecutionIdentity.set(ctx.get(ExecutionIdentity.CONTEXT_KEY));
+                    }
+                };
         SubAgentTool tool =
                 new SubAgentTool(
                         () ->
                                 ReActAgent.builder()
                                         .name("child")
                                         .model(new MockModel("OK"))
+                                        .middleware(executionIdentityProbe)
                                         .sessionLogStore(childStore)
                                         .build(),
                         SubAgentConfig.builder().forwardEvents(false).build());
@@ -148,6 +184,9 @@ class SubAgentToolSessionTest {
         parent.put(SessionRecorder.TURN_ID_KEY, "parent-turn");
         parent.put(SessionExportSink.CONTEXT_KEY, mock(SessionExportSink.class));
         parent.put(SessionExecution.CONTEXT_KEY, parentExecution);
+        ExecutionIdentity parentExecutionIdentity =
+                new ExecutionIdentity("parent", "parent-session", "parent-turn", "parent-run");
+        parent.put(ExecutionIdentity.CONTEXT_KEY, parentExecutionIdentity);
         try {
             ToolResultBlock result =
                     tool.callAsync(param("hello", null, parent)).block(Duration.ofSeconds(10));
@@ -167,8 +206,14 @@ class SubAgentToolSessionTest {
             assertTrue(events.stream().anyMatch(event -> event.turnId() != null));
             assertFalse(events.stream().anyMatch(event -> "parent-turn".equals(event.turnId())));
             assertTrue(events.stream().anyMatch(event -> "subagent/linked".equals(event.type())));
+            ExecutionIdentity childIdentity = childExecutionIdentity.get();
+            assertNotSame(parentExecutionIdentity, childIdentity);
+            assertEquals("child", childIdentity.agentId());
+            assertEquals(childSessionId, childIdentity.sessionId());
+            assertNotEquals("parent-turn", childIdentity.turnId());
             assertSame(parentRecorder, SessionRecorder.from(parent));
             assertSame(parentExecution, SessionExecution.from(parent));
+            assertSame(parentExecutionIdentity, parent.get(ExecutionIdentity.CONTEXT_KEY));
         } finally {
             parentRecorder.close();
         }
