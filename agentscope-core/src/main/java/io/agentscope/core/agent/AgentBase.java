@@ -345,6 +345,7 @@ public abstract class AgentBase implements Agent {
         // Per-subscription private mutable copy: input adjustments from per-call extension
         // points (e.g. onAgentStateReady middlewares) never touch the caller's list.
         List<Msg> msgs = new ArrayList<>(inputMsgs != null ? inputMsgs : List.of());
+        shutdown.bindRequestInputs(requestId, msgs);
         // Resolve session state only after admission. Retire before releasing the queue gate so a
         // retry cannot have its new registration removed by the preceding attempt's cleanup.
         Mono<Msg> lifecycle =
@@ -425,8 +426,10 @@ public abstract class AgentBase implements Agent {
         // Bind this call's resolved per-session state to the tracked shutdown request so graceful
         // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
         // no-arg "most-recently-active" accessors.
-        GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
+        GracefulShutdownManager shutdownManager = GracefulShutdownManager.getInstance();
+        shutdownManager.bindRequestState(requestId, stateForCall(scope));
         List<Msg> acceptedInputs = inputsForCall(scope, msgs);
+        shutdownManager.bindRequestInputs(requestId, acceptedInputs);
         Mono<Msg> body =
                 TracerRegistry.get()
                         .callAgent(
@@ -434,7 +437,12 @@ public abstract class AgentBase implements Agent {
                                 msgs,
                                 () ->
                                         notifyPreCall(acceptedInputs, scope)
-                                                .flatMap(doCallFn)
+                                                .flatMap(
+                                                        finalInputs -> {
+                                                            shutdownManager.bindRequestInputs(
+                                                                    requestId, finalInputs);
+                                                            return doCallFn.apply(finalInputs);
+                                                        })
                                                 .flatMap(this::notifyPostCall)
                                                 .onErrorResume(
                                                         createErrorHandler(

@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,9 +28,11 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -78,6 +81,25 @@ class ReActAgentPerSessionStateTest {
         @Override
         protected Flux<ChatResponse> doStream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.<ContentBlock>of(TextBlock.builder().text("ok").build()))
+                            .build());
+        }
+    }
+
+    private static final class CapturingModel extends ChatModelBase {
+        private List<Msg> receivedMessages = List.of();
+
+        @Override
+        public String getModelName() {
+            return "capturing";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            receivedMessages = List.copyOf(messages);
             return Flux.just(
                     ChatResponse.builder()
                             .content(List.<ContentBlock>of(TextBlock.builder().text("ok").build()))
@@ -525,6 +547,243 @@ class ReActAgentPerSessionStateTest {
                 otherSessionState.getContext().stream()
                         .anyMatch(msg -> "new prompt".equals(msg.getTextContent())),
                 "a default-session flag must not discard another session's input");
+    }
+
+    @Test
+    @DisplayName("shutdown recovery accepts a different new input after persisted-state reload")
+    void shutdownRecoveryAcceptsDifferentNewInputAfterReload(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent writer = agent(store);
+        AgentState interrupted = writer.getAgentState("u1", "sessA");
+        Msg interruptedInput = userMsg("interrupted prompt");
+        interrupted.contextMutable().add(interruptedInput);
+        interrupted.setShutdownInterrupted(true);
+        interrupted.setShutdownInputMessageIds(List.of(interruptedInput.getId()));
+        writer.saveAgentState("u1", "sessA");
+
+        CapturingModel model = new CapturingModel();
+        ReActAgent restarted =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+        RuntimeContext context = RuntimeContext.builder().userId("u1").sessionId("sessA").build();
+        Msg newInput = userMsg("different new prompt");
+
+        restarted
+                .streamEvents(List.of(newInput), context)
+                .collectList()
+                .block(Duration.ofSeconds(5));
+
+        assertTrue(
+                model.receivedMessages.stream()
+                        .anyMatch(msg -> "interrupted prompt".equals(msg.getTextContent())));
+        assertTrue(
+                model.receivedMessages.stream()
+                        .anyMatch(msg -> newInput.getId().equals(msg.getId())),
+                "a different new input must reach the model on the streamEvents path");
+
+        ReActAgent verifier = agent(store);
+        AgentState persisted = verifier.getAgentState("u1", "sessA");
+        assertFalse(persisted.isShutdownInterrupted());
+        assertNull(persisted.getShutdownInputMessageIds());
+        assertTrue(
+                persisted.getContext().stream()
+                        .anyMatch(msg -> newInput.getId().equals(msg.getId())),
+                "the different new input must also be saved after recovery");
+    }
+
+    @Test
+    @DisplayName(
+            "shutdown recovery deduplicates an exact retried input after persisted-state reload")
+    void shutdownRecoveryDeduplicatesExactRetriedInputAfterReload(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent writer = agent(store);
+        AgentState interrupted = writer.getAgentState("u1", "sessA");
+        Msg interruptedInput = userMsg("same prompt");
+        interrupted.contextMutable().add(interruptedInput);
+        interrupted.setShutdownInterrupted(true);
+        interrupted.setShutdownInputMessageIds(List.of(interruptedInput.getId()));
+        writer.saveAgentState("u1", "sessA");
+
+        CapturingModel model = new CapturingModel();
+        ReActAgent restarted =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+        RuntimeContext context = RuntimeContext.builder().userId("u1").sessionId("sessA").build();
+
+        restarted.call(List.of(interruptedInput), context).block(Duration.ofSeconds(5));
+
+        assertEquals(
+                1,
+                model.receivedMessages.stream()
+                        .filter(msg -> "same prompt".equals(msg.getTextContent()))
+                        .count(),
+                "an exact retry is not appended a second time");
+
+        ReActAgent verifier = agent(store);
+        AgentState persisted = verifier.getAgentState("u1", "sessA");
+        assertFalse(persisted.isShutdownInterrupted());
+        assertNull(persisted.getShutdownInputMessageIds());
+        assertEquals(
+                1,
+                persisted.getContext().stream()
+                        .filter(msg -> "same prompt".equals(msg.getTextContent()))
+                        .count(),
+                "persisted context also keeps one copy of the retried input");
+    }
+
+    @Test
+    @DisplayName("shutdown recovery accepts identical text with a new message ID")
+    void shutdownRecoveryAcceptsSameTextWithNewMessageId(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent writer = agent(store);
+        AgentState interrupted = writer.getAgentState("u1", "sessA");
+        Msg interruptedInput = userMsg("same text");
+        interrupted.contextMutable().add(interruptedInput);
+        interrupted.setShutdownInterrupted(true);
+        interrupted.setShutdownInputMessageIds(List.of(interruptedInput.getId()));
+        writer.saveAgentState("u1", "sessA");
+
+        CapturingModel model = new CapturingModel();
+        ReActAgent restarted =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+        Msg newInput = userMsg("same text");
+
+        restarted
+                .call(
+                        List.of(newInput),
+                        RuntimeContext.builder().userId("u1").sessionId("sessA").build())
+                .block(Duration.ofSeconds(5));
+
+        assertTrue(
+                model.receivedMessages.stream()
+                        .anyMatch(msg -> newInput.getId().equals(msg.getId())),
+                "content equality must not deduplicate a distinct message");
+        assertEquals(
+                2,
+                model.receivedMessages.stream()
+                        .filter(msg -> "same text".equals(msg.getTextContent()))
+                        .count());
+    }
+
+    @Test
+    @DisplayName("shutdown recovery accepts a mixed batch unless every ordered ID matches")
+    void shutdownRecoveryRequiresAnExactBatchIdMatch(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent writer = agent(store);
+        AgentState interrupted = writer.getAgentState("u1", "sessA");
+        Msg oldFirst = userMsg("first");
+        Msg oldSecond = userMsg("second");
+        interrupted.contextMutable().addAll(List.of(oldFirst, oldSecond));
+        interrupted.setShutdownInterrupted(true);
+        interrupted.setShutdownInputMessageIds(List.of(oldFirst.getId(), oldSecond.getId()));
+        writer.saveAgentState("u1", "sessA");
+
+        CapturingModel model = new CapturingModel();
+        ReActAgent restarted =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+        Msg newSecond = userMsg("second");
+
+        restarted
+                .call(
+                        List.of(oldFirst, newSecond),
+                        RuntimeContext.builder().userId("u1").sessionId("sessA").build())
+                .block(Duration.ofSeconds(5));
+
+        assertEquals(
+                2,
+                model.receivedMessages.stream()
+                        .filter(msg -> oldFirst.getId().equals(msg.getId()))
+                        .count(),
+                "a non-matching batch is accepted as a whole, including its retried message");
+        assertTrue(
+                model.receivedMessages.stream()
+                        .anyMatch(msg -> newSecond.getId().equals(msg.getId())));
+    }
+
+    @Test
+    @DisplayName("shutdown recovery deduplicates a multimodal retry by message ID")
+    void shutdownRecoveryDeduplicatesMultimodalRetryById(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent writer = agent(store);
+        AgentState interrupted = writer.getAgentState("u1", "sessA");
+        Msg multimodal =
+                Msg.builder()
+                        .id("multimodal-input")
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder().text("describe this").build(),
+                                ImageBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/image.png")
+                                                        .build())
+                                        .build())
+                        .build();
+        interrupted.contextMutable().add(multimodal);
+        interrupted.setShutdownInterrupted(true);
+        interrupted.setShutdownInputMessageIds(List.of(multimodal.getId()));
+        writer.saveAgentState("u1", "sessA");
+
+        CapturingModel model = new CapturingModel();
+        ReActAgent restarted =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .stateStore(store)
+                        .build();
+
+        restarted
+                .call(
+                        List.of(multimodal),
+                        RuntimeContext.builder().userId("u1").sessionId("sessA").build())
+                .block(Duration.ofSeconds(5));
+
+        assertEquals(
+                1,
+                model.receivedMessages.stream()
+                        .filter(msg -> multimodal.getId().equals(msg.getId()))
+                        .count());
+    }
+
+    @Test
+    @DisplayName("shutdown recovery clears an empty-input checkpoint")
+    void shutdownRecoveryClearsEmptyInputCheckpoint(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        ReActAgent writer = agent(store);
+        AgentState interrupted = writer.getAgentState("u1", "sessA");
+        interrupted.setShutdownInterrupted(true);
+        interrupted.setShutdownInputMessageIds(List.of());
+        writer.saveAgentState("u1", "sessA");
+
+        ReActAgent restarted = agent(store);
+        restarted
+                .call(List.of(), RuntimeContext.builder().userId("u1").sessionId("sessA").build())
+                .block(Duration.ofSeconds(5));
+
+        ReActAgent verifier = agent(store);
+        AgentState persisted = verifier.getAgentState("u1", "sessA");
+        assertFalse(persisted.isShutdownInterrupted());
+        assertNull(persisted.getShutdownInputMessageIds());
     }
 
     private static final class DelayedFirstChunkModel extends ChatModelBase {

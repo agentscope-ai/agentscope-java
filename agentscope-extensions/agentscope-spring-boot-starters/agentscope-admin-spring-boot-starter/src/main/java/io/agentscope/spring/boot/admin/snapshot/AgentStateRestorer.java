@@ -31,6 +31,7 @@ import io.agentscope.core.state.AgentState;
  *   <li>{@code replyId} — overwritten via setter
  *   <li>{@code curIter} — overwritten via setter
  *   <li>{@code shutdownInterrupted} — overwritten via setter
+ *   <li>{@code shutdownInputMessageIds} — overwritten via setter
  *   <li>{@code context} — cleared and refilled in-place
  * </ul>
  *
@@ -76,6 +77,7 @@ public final class AgentStateRestorer {
         live.setReplyId(snap.getReplyId());
         live.setCurIter(snap.getCurIter());
         live.setShutdownInterrupted(snap.isShutdownInterrupted());
+        live.setShutdownInputMessageIds(snap.getShutdownInputMessageIds());
         live.contextMutable().clear();
         live.contextMutable().addAll(snap.getContext());
     }
