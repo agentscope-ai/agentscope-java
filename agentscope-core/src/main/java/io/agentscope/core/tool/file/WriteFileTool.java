@@ -196,8 +196,7 @@ public class WriteFileTool {
 
                             // Get the content snippet to show
                             String showContent =
-                                    FileToolUtils.viewTextFile(
-                                            path.toString(), viewRange[0], viewRange[1]);
+                                    FileToolUtils.viewTextFile(path, viewRange[0], viewRange[1]);
 
                             return ToolResultBlock.text(
                                     String.format(
@@ -373,7 +372,7 @@ public class WriteFileTool {
                                 // Get content snippet
                                 String snippet =
                                         FileToolUtils.viewTextFile(
-                                                path.toString(), viewRange[0], viewRange[1]);
+                                                path, viewRange[0], viewRange[1]);
 
                                 return ToolResultBlock.text(
                                         String.format(
