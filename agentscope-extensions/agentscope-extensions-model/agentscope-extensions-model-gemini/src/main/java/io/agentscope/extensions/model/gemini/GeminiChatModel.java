@@ -288,8 +288,10 @@ public class GeminiChatModel extends ChatModelBase {
 
         if (tools != null && !tools.isEmpty()) {
             formatter.applyTools(configBuilder, tools);
-            if (options != null && options.getToolChoice() != null) {
-                formatter.applyToolChoice(configBuilder, options.getToolChoice());
+            GenerateOptions effectiveOptions =
+                    GenerateOptions.mergeOptions(options, defaultOptions);
+            if (effectiveOptions.getToolChoice() != null) {
+                formatter.applyToolChoice(configBuilder, effectiveOptions.getToolChoice());
             }
         }
 

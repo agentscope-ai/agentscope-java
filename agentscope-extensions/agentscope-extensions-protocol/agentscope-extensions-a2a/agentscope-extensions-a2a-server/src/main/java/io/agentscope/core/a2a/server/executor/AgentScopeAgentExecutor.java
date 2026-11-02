@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.a2aproject.sdk.server.ServerCallContext;
@@ -71,7 +72,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeAgentExecutor.class);
 
-    private final Map<String, Subscription> subscriptions;
+    private final ConcurrentMap<String, Subscription> subscriptions;
 
     private final AgentRunner agentRunner;
 
@@ -87,11 +88,11 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     @Override
     public void cancel(RequestContext context, AgentEmitter emitter) throws A2AError {
         String taskId = context.getTaskId();
+        Subscription subscription = subscriptions.remove(taskId);
         try {
             log.info("[{}] Start to Cancel Task", taskId);
             emitter.cancel();
             agentRunner.stop(taskId);
-            Subscription subscription = subscriptions.get(taskId);
             if (null == subscription) {
                 log.warn("[{}] Not found Subscription for Task.", taskId);
                 return;
@@ -189,13 +190,21 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             RequestContext context, AgentEmitter emitter, Task task, Flux<AgentEvent> resultFlux) {
         BlockingFluxEventHandler eventHandler =
                 new BlockingFluxEventHandler(context, agentExecuteProperties, emitter);
+        AtomicReference<Subscription> subscriptionRef = new AtomicReference<>();
         log.info("[{}] Starting blocking request processing", context.getTaskId());
         resultFlux
-                .doOnSubscribe(s -> saveSubscription(context.getTaskId(), s))
+                .doOnSubscribe(
+                        s -> {
+                            subscriptionRef.set(s);
+                            saveSubscription(context.getTaskId(), s);
+                        })
                 .doOnNext(eventHandler::doOnNext)
                 .doOnComplete(eventHandler::doOnComplete)
                 .doOnError(eventHandler::doOnError)
-                .doFinally(signal -> removeSubscription(context.getTaskId(), signal))
+                .doFinally(
+                        signal ->
+                                removeSubscription(
+                                        context.getTaskId(), subscriptionRef.get(), signal))
                 .blockLast();
     }
 
@@ -228,16 +237,21 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             Flux<AgentEvent> resultFlux, AgentEmitter emitter, RequestContext context) {
         StreamingFluxEventHandler eventHandler =
                 new StreamingFluxEventHandler(context, agentExecuteProperties, emitter);
+        AtomicReference<Subscription> subscriptionRef = new AtomicReference<>();
         resultFlux
                 .doOnSubscribe(
                         s -> {
+                            subscriptionRef.set(s);
                             saveSubscription(context.getTaskId(), s);
                             emitter.startWork();
                         })
                 .doOnNext(eventHandler::doOnNext)
                 .doOnComplete(eventHandler::doOnComplete)
                 .doOnError(eventHandler::doOnError)
-                .doFinally(signal -> removeSubscription(context.getTaskId(), signal))
+                .doFinally(
+                        signal ->
+                                removeSubscription(
+                                        context.getTaskId(), subscriptionRef.get(), signal))
                 .blockLast();
     }
 
@@ -246,9 +260,11 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         subscriptions.put(taskId, subscription);
     }
 
-    private void removeSubscription(String taskId, SignalType signal) {
+    private void removeSubscription(String taskId, Subscription subscription, SignalType signal) {
         log.info("[{}] Subscribe and process stream output terminated: {}", taskId, signal);
-        subscriptions.remove(taskId);
+        if (subscription != null) {
+            subscriptions.remove(taskId, subscription);
+        }
     }
 
     private abstract static class BaseFluxEventHandler {

@@ -29,6 +29,7 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -725,6 +726,89 @@ class BaseSandboxFilesystemTest {
             assertFalse(result.isSuccess());
             assertTrue(result.error().contains("not-json{{"));
         }
+
+        // ==================== Bug reproduction: double-quoted "$(dirname ...)" breaks docker
+        // exec on Windows hosts (#3850) ====================
+
+        @Test
+        void write_checkCommand_containsNoDoubleQuotesOrSubstitution() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            fs.write(RT, "/workspace/docs/new/notes.txt", "hello");
+
+            // The docker CLI on Windows hosts mangles arguments carrying double-quoted
+            // command substitution, so the check command must avoid the construct entirely.
+            assertFalse(
+                    fs.lastCommand.contains("\""),
+                    "double quotes break docker exec on Windows hosts: " + fs.lastCommand);
+            assertFalse(
+                    fs.lastCommand.contains("dirname"),
+                    "command substitution must not be used for the parent dir: " + fs.lastCommand);
+        }
+
+        @Test
+        void write_newNestedPath_mkdirsParentAsSingleQuotedLiteral() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.write(RT, "/workspace/my docs/new file.txt", "hello");
+
+            assertTrue(result.isSuccess(), "write should succeed: " + result.error());
+            assertTrue(
+                    fs.lastCommand.contains("mkdir -p '/workspace/my docs' 2>&1"),
+                    "parent with spaces must be created via a single-quoted literal: "
+                            + fs.lastCommand);
+        }
+
+        @Test
+        void write_rootLevelFile_needsNoParentMkdir() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.write(RT, "/notes.txt", "hello");
+
+            assertTrue(result.isSuccess(), "write should succeed: " + result.error());
+            assertFalse(
+                    fs.lastCommand.contains("mkdir"),
+                    "a root-level file needs no parent creation: " + fs.lastCommand);
+        }
+
+        @Test
+        void move_checkCommand_containsNoSubstitutionOrDoubleQuotes() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            fs.move(RT, "/workspace/docs/old.txt", "/workspace/docs/new/notes.txt");
+
+            assertFalse(
+                    fs.lastCommand.contains("dirname"),
+                    "command substitution must not be used for the parent dir: " + fs.lastCommand);
+            assertFalse(
+                    fs.lastCommand.contains("\""),
+                    "double quotes break docker exec on Windows hosts: " + fs.lastCommand);
+        }
+
+        @Test
+        void move_newNestedPath_mkdirsParentAsSingleQuotedLiteral() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.move(RT, "/tmp/src.txt", "/workspace/my docs/new file.txt");
+
+            assertTrue(result.isSuccess(), "move should succeed: " + result.error());
+            assertTrue(
+                    fs.lastCommand.startsWith("mkdir -p '/workspace/my docs' 2>&1 && mv "),
+                    "parent with spaces must be created via a single-quoted literal before mv: "
+                            + fs.lastCommand);
+        }
+
+        @Test
+        void move_rootLevelFile_needsNoParentMkdir() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.move(RT, "/tmp/src.txt", "/dst.txt");
+
+            assertTrue(result.isSuccess(), "move should succeed: " + result.error());
+            assertTrue(
+                    fs.lastCommand.startsWith("mv "),
+                    "a root-level target needs no parent creation: " + fs.lastCommand);
+        }
     }
 
     // ================================================================
@@ -1068,6 +1152,48 @@ class BaseSandboxFilesystemTest {
             assertFalse(Files.isSymbolicLink(link), "replacing upload replaces the link");
             assertEquals("Hello Java", Files.readString(link));
             assertEquals("Hello World", Files.readString(real), "original target untouched");
+        }
+
+        @Test
+        void write_pathWithSpaces_createsParentDirsAndWritesFile() throws IOException {
+            // Regression for #3850: the parent dir used to be created via double-quoted
+            // command substitution, which the docker CLI corrupts on Windows hosts. The
+            // single-quoted literal must survive real shell semantics, spaces included.
+            Path target = tmpDir.resolve("my docs/new file.txt");
+
+            WriteResult result =
+                    new LocalShellSandboxFilesystem().write(RT, target.toString(), "hello");
+
+            assertTrue(result.isSuccess(), "write with spaces should succeed: " + result.error());
+            assertEquals("hello", Files.readString(target));
+        }
+
+        @Test
+        void write_existingFile_failsWithExistsSignal() throws IOException {
+            Path target = tmpDir.resolve("exists.txt");
+            Files.writeString(target, "original");
+
+            WriteResult result =
+                    new LocalShellSandboxFilesystem().write(RT, target.toString(), "hello");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("already exists"));
+            assertEquals("original", Files.readString(target), "existing file must be untouched");
+        }
+
+        @Test
+        void move_pathWithSpaces_createsParentDirsAndMovesFile() throws IOException {
+            Path source = tmpDir.resolve("source.txt");
+            Files.writeString(source, "hello");
+            Path target = tmpDir.resolve("my docs/new file.txt");
+
+            WriteResult result =
+                    new LocalShellSandboxFilesystem()
+                            .move(RT, source.toString(), target.toString());
+
+            assertTrue(result.isSuccess(), "move with spaces should succeed: " + result.error());
+            assertEquals("hello", Files.readString(target));
+            assertFalse(Files.exists(source), "source must be moved, not copied");
         }
 
         @Test

@@ -510,6 +510,10 @@ workspace/
 
 所有文件工具都通过 `AbstractFilesystem` 接口调用，每次操作传入当前 `RuntimeContext`，由文件系统后端决定实际读写位置。agent 代码完全感知不到模式差异。
 
+`read_file` 默认每次最多返回 16,000 个 Unicode 码点，即使省略 `limit` 或单行内容很长也受此限制。可选参数 `max_chars` 可调整每页大小，硬上限为 32,000。`offset` 和 `limit` 仍按行选择内容；`char_offset` 从零开始，在**同一行范围返回的文本内**按字符分页。发生截断时，结果会给出下一页的 `char_offset`，继续读取时保持 path、`offset` 和 `limit` 不变。分页不会拆开 Unicode 代理对。拼接多页时应保持文件不变，偏移量不代表不可变快照。
+
+转存后的工具结果文件也受此限制。这是适用于所有文件系统后端的工具输出上限，不限制后端读取所选内容时的内存分配和 I/O。二进制文件按编码后的文本分页，需拼接完整内容后再解码。
+
 | 模式 | 读写行为 |
 |------|---------|
 | 本机 | `OverlayFilesystem`：写落 workspace（上层），读先 workspace 后 project（下层）。开启 `projectWritable(true)` 后，非元数据写入路由到项目目录 |

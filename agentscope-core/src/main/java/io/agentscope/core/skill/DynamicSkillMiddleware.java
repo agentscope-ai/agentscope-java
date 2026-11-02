@@ -59,6 +59,27 @@ import reactor.core.scheduler.Schedulers;
  * <p>Subclasses can plug runtime visibility logic (canary lists, environment gates, etc.) by
  * overriding {@link #filterVisible(List, RuntimeContext)} — the default implementation returns
  * the input list unchanged.
+ *
+ * <p>Contract:
+ * <ul>
+ *   <li>Construction performs no registration; the shared {@code load_skill_through_path}
+ *       tool is registered on the invoking agent's live toolkit at the first prompt pass —
+ *       before tool schemas are enumerated, so it is visible to the model within the same
+ *       call. {@link #registerSkillTools(Toolkit)} remains available for explicit manual
+ *       wiring.</li>
+ *   <li>Per-pass runtime objects resolve from the invoking agent: its live toolkit
+ *       ({@link Agent#getToolkit()}) flows into box construction, its filter baseline and
+ *       its stable work directory ({@link Agent#getSkillWorkDir()}) drive filtering and
+ *       materialisation. Instances hold no per-agent runtime references.</li>
+ *   <li>Same-signature cache hits share one materialised directory: skill-side modifications
+ *       stay visible to later calls with the same content; changed content materialises a
+ *       fresh, isolated directory.</li>
+ *   <li>The framework creates a fresh {@link RuntimeContext} per call; every pass overwrites
+ *       (or clears) the {@link SkillBox} binding.</li>
+ *   <li>The effective filter composes the per-call context overlay on the invoking agent's
+ *       baseline ({@link Agent#getSkillFilter()}), defaulting to {@link SkillFilter#all()}
+ *       when the agent exposes none.</li>
+ * </ul>
  */
 @SuppressWarnings("deprecation")
 public class DynamicSkillMiddleware implements MiddlewareBase {
@@ -67,60 +88,66 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
     private static final int MAX_CACHED_BOXES = 32;
 
     private final List<AgentSkillRepository> repositories;
-    private final Toolkit toolkit;
-    private final SkillFilter builderFilter;
+
     private final boolean codeExecutionEnabled;
 
     /**
-     * Stable root for content-addressed {@link SkillBox} directories. {@code null} means "mkdtemp once
-     * on first use and reuse." Fixed for the lifetime of the middleware so {@code uploadSkillFiles}
-     * no longer creates a fresh {@code agentscope-code-execution-*} directory every call.
+     * JVM-wide fallback root for materialising {@link SkillBox} directories when the invoking
+     * agent provides none. Allocated once and cleaned up by a shutdown hook at JVM exit —
+     * preserving the pre-refactor dir-handling behaviour; agent-provided roots are
+     * caller-managed.
      */
-    private volatile Path stableWorkDir;
+    private static volatile Path fallbackWorkDir;
 
     /** Content-addressed cache of materialised {@link SkillBox}es, keyed by the visible-view
      * signature. Boxes are immutable after build, so sharing them across sessions with identical
      * content is safe and skips re-running {@code uploadSkillFiles}. */
     private final Map<String, SkillBox> boxCache = new LinkedHashMap<>();
 
-    public DynamicSkillMiddleware(List<AgentSkillRepository> repositories, Toolkit toolkit) {
-        this(repositories, toolkit, null, false, null);
-    }
-
-    public DynamicSkillMiddleware(
-            List<AgentSkillRepository> repositories, Toolkit toolkit, SkillFilter builderFilter) {
-        this(repositories, toolkit, builderFilter, false, null);
+    /**
+     * Convenience constructor delegating to the full constructor with code execution disabled.
+     *
+     * @param repositories compose-ordered list (low-to-high priority); merged by skill name
+     */
+    public DynamicSkillMiddleware(List<AgentSkillRepository> repositories) {
+        this(repositories, false);
     }
 
     /**
-     * Full constructor.
+     * Full constructor. Performs pure field initialisation; the shared load tool is registered
+     * at wiring time via {@link #registerSkillTools(Toolkit)} (called by the agent builder), or
+     * lazily before the first prompt pass when the instance is used outside agent assembly.
+     * Per-pass runtime objects — the box-construction toolkit, the filter baseline and the
+     * materialisation root — are resolved from the invoking agent.
      *
-     * @param repositories        compose-ordered list (low-to-high priority); merged by skill name
-     * @param toolkit             toolkit to register {@code load_skill_through_path} on
-     * @param builderFilter       optional builder-time skill filter; null treated as {@link SkillFilter#all()}
+     * @param repositories         compose-ordered list (low-to-high priority); merged by skill name
      * @param codeExecutionEnabled when {@code true}, toggles the prompt provider's code-execution
      *                             block. Set this only when the agent has a shell-like tool wired
      *                             in; otherwise the prompt asks the model to do things it cannot.
-     * @param workDir              stable working directory for {@code uploadSkillFiles}; {@code null}
-     *                             ⇒ the middleware mkdtemps one on first reload and reuses it
      */
     public DynamicSkillMiddleware(
-            List<AgentSkillRepository> repositories,
-            Toolkit toolkit,
-            SkillFilter builderFilter,
-            boolean codeExecutionEnabled,
-            Path workDir) {
+            List<AgentSkillRepository> repositories, boolean codeExecutionEnabled) {
         this.repositories = repositories != null ? List.copyOf(repositories) : List.of();
-        if (toolkit != null) {
-            // Register the shared load_skill_through_path tool once at build time. It resolves the
-            // current per-call SkillBox from the RuntimeContext, so it is never re-registered and
-            // the shared toolkit is never mutated per call.
-            SkillToolFactory.registerRuntimeLoadTool(toolkit);
-        }
-        this.toolkit = toolkit;
-        this.builderFilter = builderFilter != null ? builderFilter : SkillFilter.all();
         this.codeExecutionEnabled = codeExecutionEnabled;
-        this.stableWorkDir = workDir;
+    }
+
+    /**
+     * Registers the shared {@code load_skill_through_path} tool on the given toolkit. Invoked
+     * per prompt pass with the invoking agent's live toolkit (before tool schemas are
+     * enumerated, so the tool is visible within the same call); also callable directly for
+     * explicit manual wiring. No-op for a {@code null} toolkit or when a same-named tool
+     * already exists (never overwritten); because the guard inspects the toolkit, a removed
+     * tool is re-registered on the next call.
+     *
+     * @param toolkit the toolkit to register the shared load tool on; may be {@code null}
+     */
+    public void registerSkillTools(Toolkit toolkit) {
+        if (toolkit == null || SkillToolFactory.isRuntimeLoadToolRegistered(toolkit)) {
+            return;
+        }
+        // The shared load tool resolves the current per-call SkillBox from the RuntimeContext,
+        // so the shared toolkit is never mutated per call.
+        SkillToolFactory.registerRuntimeLoadTool(toolkit);
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -140,7 +167,12 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
      * because the cache key (the content signature) is only known after the blocking repository
      * read, so the whole reload — including cache hits — moves to boundedElastic.
      *
-     * @param agent the agent whose system prompt is being composed; not used by this middleware
+     * <p>Agent contract: the framework invokes this hook with a non-null {@code agent}; direct
+     * callers must supply one or accept the degraded behaviour of a null one (tolerated, not
+     * contractual).
+     *
+     * @param agent the agent whose toolkit, skill-filter baseline and work dir drive this pass;
+     *     may be {@code null} for direct use outside agent assembly
      * @param ctx the per-call {@link RuntimeContext}; {@code null} is treated as an empty context
      * @param currentPrompt the system prompt composed so far by earlier middlewares
      * @return the prompt with this call's skill section appended, or {@code currentPrompt}
@@ -148,26 +180,34 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
      */
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
+        // The tool follows the middleware binding: register on the invoking agent's live
+        // toolkit before the first prompt pass (idempotent — a same-named tool present
+        // means already registered). Runs before tool schemas are enumerated, so the
+        // load tool is visible to the model within the same call.
+        if (agent != null) {
+            registerSkillTools(agent.getToolkit());
+        }
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         return Mono.fromCallable(
                         () -> {
-                            SkillBox box = reloadSkills(rc);
+                            SkillBox box = reloadSkills(agent, rc);
                             // Expose the current per-call SkillBox — or clear it when null — so
                             // the shared load tool resolves this call's skill view and a reused
                             // RuntimeContext never serves a stale box.
                             rc.put(SkillBox.class, box);
-                            return appendSkillPrompt(box, rc, currentPrompt);
+                            return appendSkillPrompt(agent, box, rc, currentPrompt);
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
     /** Returns {@code currentPrompt} with the box's rendered skill prompt appended, or {@code
      * currentPrompt} unchanged when {@code box} is {@code null} or renders no prompt. */
-    private String appendSkillPrompt(SkillBox box, RuntimeContext rc, String currentPrompt) {
+    private String appendSkillPrompt(
+            Agent agent, SkillBox box, RuntimeContext rc, String currentPrompt) {
         if (box == null) {
             return currentPrompt;
         }
-        SkillFilter effectiveFilter = resolveFilter(rc);
+        SkillFilter effectiveFilter = resolveFilter(agent, rc);
         String prompt = box.getSkillPrompt(effectiveFilter);
         if (prompt == null || prompt.isEmpty()) {
             return currentPrompt;
@@ -193,12 +233,19 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
         return raw;
     }
 
-    private SkillFilter resolveFilter(RuntimeContext rc) {
+    /** Effective filter = per-call context overlay on the invoking agent's baseline. */
+    private SkillFilter resolveFilter(Agent agent, RuntimeContext rc) {
+        SkillFilter baseline = resolveBaseline(agent);
         SkillFilter runtimeOverlay = rc != null ? rc.get(SkillFilter.class) : null;
-        return builderFilter.overlay(runtimeOverlay);
+        return baseline.overlay(runtimeOverlay);
     }
 
-    private SkillBox reloadSkills(RuntimeContext ctx) {
+    private SkillFilter resolveBaseline(Agent agent) {
+        SkillFilter fromAgent = agent != null ? agent.getSkillFilter() : null;
+        return fromAgent != null ? fromAgent : SkillFilter.all();
+    }
+
+    private SkillBox reloadSkills(Agent agent, RuntimeContext ctx) {
         if (repositories.isEmpty()) {
             return null;
         }
@@ -251,7 +298,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
         synchronized (boxCache) {
             SkillBox box = boxCache.get(signature);
             if (box == null) {
-                box = buildBox(visible, signature);
+                box = buildBox(agent, visible, signature);
                 if (boxCache.size() >= MAX_CACHED_BOXES) {
                     // Only bound retained boxes. Active requests may still reference evicted
                     // boxes and their files, so resource directories must remain available.
@@ -263,12 +310,12 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
         }
     }
 
-    private SkillBox buildBox(List<AgentSkill> visible, String signature) {
-        SkillBox box = new SkillBox(toolkit);
+    private SkillBox buildBox(Agent agent, List<AgentSkill> visible, String signature) {
+        SkillBox box = new SkillBox(agent != null ? agent.getToolkit() : null);
         // Each materialization owns its directory. After eviction, rebuilding the same
         // signature must not truncate files that an earlier request may still be reading.
         try {
-            Path root = ensureStableWorkDir();
+            Path root = ensureStableWorkDir(agent);
             Files.createDirectories(root);
             box.setWorkDir(Files.createTempDirectory(root, signature + "-"));
         } catch (IOException e) {
@@ -293,18 +340,23 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
     }
 
     /**
-     * Lazily allocates the stable workDir on first call when the caller didn't provide one.
-     * The directory is registered for shutdown cleanup. Resource trees remain available while
-     * the JVM runs, including after cache eviction; caller-supplied roots are caller-managed.
+     * Resolves the workDir for this pass: the invoking agent's stable directory when it
+     * provides one (caller-managed); otherwise the shared fallback root, lazily allocated on
+     * first call and registered for shutdown cleanup. Resource trees remain available while
+     * the JVM runs, including after cache eviction.
      */
-    private Path ensureStableWorkDir() {
-        Path dir = stableWorkDir;
+    private Path ensureStableWorkDir(Agent agent) {
+        Path fromAgent = agent != null ? agent.getSkillWorkDir() : null;
+        if (fromAgent != null) {
+            return fromAgent;
+        }
+        Path dir = fallbackWorkDir;
         if (dir != null) {
             return dir;
         }
-        synchronized (this) {
-            if (stableWorkDir != null) {
-                return stableWorkDir;
+        synchronized (DynamicSkillMiddleware.class) {
+            if (fallbackWorkDir != null) {
+                return fallbackWorkDir;
             }
             try {
                 Path created = Files.createTempDirectory("agentscope-skill-workdir-");
@@ -321,7 +373,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
                                                         e.getMessage());
                                             }
                                         }));
-                stableWorkDir = created;
+                fallbackWorkDir = created;
                 return created;
             } catch (IOException e) {
                 throw new IllegalStateException("Failed to allocate stable skill workDir", e);

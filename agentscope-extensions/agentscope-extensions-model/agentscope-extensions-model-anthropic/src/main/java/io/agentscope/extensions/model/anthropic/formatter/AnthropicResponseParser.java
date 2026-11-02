@@ -19,6 +19,7 @@ import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.RawMessageStreamEvent;
+import com.anthropic.models.messages.StopReason;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -132,6 +133,7 @@ public class AnthropicResponseParser {
                 .id(resolveMessageId(message))
                 .content(contentBlocks)
                 .usage(usage)
+                .finishReason(message.stopReason().map(StopReason::asString).orElse(null))
                 .build();
     }
 
@@ -182,6 +184,7 @@ public class AnthropicResponseParser {
         List<ContentBlock> contentBlocks = new ArrayList<>();
         ChatUsage usage = null;
         String messageId = null;
+        String finishReason = null;
 
         // Message start - record prompt usage (input tokens and cache read/creation tokens) so
         // the final usage emitted on message_delta can include it
@@ -297,6 +300,12 @@ public class AnthropicResponseParser {
         // Message delta - final usage information; combine the cumulative output tokens with
         // the prompt usage captured on message_start
         if (event.isMessageDelta()) {
+            finishReason =
+                    event.asMessageDelta()
+                            .delta()
+                            .stopReason()
+                            .map(StopReason::asString)
+                            .orElse(null);
             var deltaUsage = event.asMessageDelta().usage();
             long cacheReadTokens =
                     deltaUsage.cacheReadInputTokens().orElse((long) usageState.cachedTokens);
@@ -324,7 +333,12 @@ public class AnthropicResponseParser {
                             .build();
         }
 
-        return ChatResponse.builder().id(messageId).content(contentBlocks).usage(usage).build();
+        return ChatResponse.builder()
+                .id(messageId)
+                .content(contentBlocks)
+                .usage(usage)
+                .finishReason(finishReason)
+                .build();
     }
 
     /**

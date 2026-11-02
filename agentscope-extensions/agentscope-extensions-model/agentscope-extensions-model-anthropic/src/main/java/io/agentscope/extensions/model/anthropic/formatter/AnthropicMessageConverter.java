@@ -25,6 +25,7 @@ import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -32,7 +33,9 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.search.ToolSearchTool;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -308,6 +311,21 @@ public class AnthropicMessageConverter {
                                                             + "]")
                                             .build()));
                 }
+            } else if (block instanceof DocumentBlock db && msg.getRole() == MsgRole.USER) {
+                log.warn(
+                        "DocumentBlock is not supported by Anthropic; sending a text placeholder"
+                                + " instead of '{}'",
+                        db.getName() != null ? db.getName() : db.getId());
+                contentBlocks.add(
+                        ContentBlockParam.ofText(
+                                TextBlockParam.builder()
+                                        .text(
+                                                "[Document - not supported by Anthropic: "
+                                                        + (db.getName() != null
+                                                                ? db.getName()
+                                                                : db.getId())
+                                                        + "]")
+                                        .build()));
             } else if (block instanceof ToolUseBlock tub) {
                 if (tub.isServerTool()) {
                     // Server tool calls are echoed back as server_tool_use blocks
@@ -397,12 +415,29 @@ public class AnthropicMessageConverter {
                             TextBlockParam.builder().text(outputStr).build()));
         }
 
+        if ("DEFERRED".equals(toolResult.getMetadata().get(ToolSearchTool.METADATA_MODE))
+                && toolResult.getState() != ToolResultState.ERROR) {
+            Object matches = toolResult.getMetadata().get(ToolSearchTool.METADATA_TOOLS);
+            if (matches instanceof List<?> list) {
+                for (Object match : list) {
+                    if (match instanceof Map<?, ?> schema
+                            && schema.get("name") instanceof String name) {
+                        blocks.add(ToolResultBlockParam.Content.Block.ofToolReference(name));
+                    }
+                }
+            }
+        }
+
         // Create tool result block
-        ToolResultBlockParam toolResultParam =
+        var resultBuilder =
                 ToolResultBlockParam.builder()
                         .toolUseId(toolResult.getId())
-                        .content(ToolResultBlockParam.Content.ofBlocks(blocks))
-                        .build();
+                        .content(ToolResultBlockParam.Content.ofBlocks(blocks));
+        switch (toolResult.getState()) {
+            case ERROR, DENIED, INTERRUPTED -> resultBuilder.isError(true);
+            default -> {}
+        }
+        ToolResultBlockParam toolResultParam = resultBuilder.build();
 
         // Wrap in user message
         return MessageParam.builder()

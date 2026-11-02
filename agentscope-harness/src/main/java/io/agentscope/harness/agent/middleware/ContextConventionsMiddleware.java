@@ -22,10 +22,15 @@ import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /** Framework-owned, domain-neutral context instructions, loaded once from a versioned resource. */
 public final class ContextConventionsMiddleware implements HarnessRuntimeMiddleware {
+
+    private static final Logger LOGGER =
+            LoggerFactory.getLogger(ContextConventionsMiddleware.class);
     private static final String INSTRUCTIONS = load();
 
     private static String load() {
@@ -40,6 +45,16 @@ public final class ContextConventionsMiddleware implements HarnessRuntimeMiddlew
         }
     }
 
+    /**
+     * Runs before user middlewares: the per-call materials reset must happen
+     * before any user {@code WorkspaceContextMaterials.register(...)}, or those
+     * registrations are wiped by the reset (#3829).
+     */
+    @Override
+    public int order() {
+        return Integer.MAX_VALUE - 1000;
+    }
+
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext context, String prompt) {
         return Mono.fromSupplier(
@@ -48,6 +63,28 @@ public final class ContextConventionsMiddleware implements HarnessRuntimeMiddlew
                     // fresh snapshot, even when the caller reuses a RuntimeContext or a child
                     // inherits one. Disabled providers must not retain a previous agent's data.
                     RuntimeContext rc = context == null ? RuntimeContext.empty() : context;
+                    // The reset intentionally drops a previous call's leftovers — but if a
+                    // non-framework item is present here it was registered by another
+                    // middleware that ran before us (e.g. registration order placed it
+                    // ahead, or a yet-lower order); warn instead of silently discarding so
+                    // the loss is diagnosable (#3829).
+                    var previousMaterials = rc.get(WorkspaceContextMaterials.class);
+                    if (previousMaterials != null) {
+                        previousMaterials.items().stream()
+                                .filter(item -> !item.sourceId().startsWith("harness:"))
+                                .forEach(
+                                        item ->
+                                                LOGGER.warn(
+                                                        "Discarding non-framework context item"
+                                                                + " '{}' registered before the"
+                                                                + " per-call materials reset; use"
+                                                                + " a lower order() (< {}) so"
+                                                                + " this middleware runs after"
+                                                                + " the reset and the item"
+                                                                + " survives",
+                                                        item.sourceId(),
+                                                        order()));
+                    }
                     rc.put(
                             WorkspaceContextMaterials.class,
                             new WorkspaceContextMaterials(

@@ -20,8 +20,8 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import reactor.core.publisher.Flux;
 
 /**
@@ -32,7 +32,7 @@ import reactor.core.publisher.Flux;
  */
 public abstract class BaseReActAgentRunner implements AgentRunner {
 
-    private final Map<String, ReActAgent> agentCache;
+    private final ConcurrentMap<String, ReActAgent> agentCache;
 
     protected BaseReActAgentRunner() {
         this.agentCache = new ConcurrentHashMap<>();
@@ -50,14 +50,21 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
 
     @Override
     public Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options) {
-        if (agentCache.containsKey(options.getTaskId())) {
-            throw new IllegalStateException(
-                    "Agent already exists for taskId: " + options.getTaskId());
+        String taskId = options.getTaskId();
+        if (agentCache.containsKey(taskId)) {
+            throw new IllegalStateException("Agent already exists for taskId: " + taskId);
         }
         ReActAgent agent = buildReActAgent();
-        agentCache.put(options.getTaskId(), agent);
-        return agent.streamEvents(requestMessages)
-                .doFinally(signal -> agentCache.remove(options.getTaskId()));
+        if (agentCache.putIfAbsent(taskId, agent) != null) {
+            throw new IllegalStateException("Agent already exists for taskId: " + taskId);
+        }
+        try {
+            return agent.streamEvents(requestMessages)
+                    .doFinally(signal -> agentCache.remove(taskId, agent));
+        } catch (RuntimeException | Error e) {
+            agentCache.remove(taskId, agent);
+            throw e;
+        }
     }
 
     @Override

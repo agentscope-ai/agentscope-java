@@ -25,6 +25,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.extensions.judge.jev.JevExecution;
 import java.time.Duration;
 import java.util.ArrayDeque;
@@ -147,6 +148,7 @@ public final class JevSupervisionMiddleware implements MiddlewareBase {
         boolean truncated;
         boolean complete;
         boolean workerFailed;
+        boolean workerSuspended;
         boolean finalAssessed;
         boolean exhausted;
         boolean limitReported;
@@ -198,14 +200,20 @@ public final class JevSupervisionMiddleware implements MiddlewareBase {
             String type = event.getType().name();
             if (type.startsWith("THINKING_")) return;
             sequence++;
-            if (type.equals("EXCEED_MAX_ITERS")
-                    || type.equals("REQUEST_STOP")
-                    || type.equals("ALL_TOOLS_DENIED")) workerFailed = true;
+            boolean ownEvent = event.getSource() == null || event.getSource().isBlank();
+            if (ownEvent && type.equals("EXCEED_MAX_ITERS")) workerFailed = true;
             if (events.size() == 32) events.removeFirst();
             events.addLast(type);
             if (event instanceof TextBlockDeltaEvent delta) append(delta.getDelta());
             if (type.startsWith("DATA_BLOCK_")) truncated = true;
             if (event instanceof AgentResultEvent result) {
+                if (ownEvent) {
+                    // Phase boundaries are not terminal outcomes; use the Session lifecycle.
+                    String outcome =
+                            SessionRecorder.outcome(result.getResult().getGenerateReason());
+                    workerFailed = outcome.equals("failed") || outcome.equals("interrupted");
+                    workerSuspended = outcome.equals("suspended");
+                }
                 truncated |=
                         result.getResult().getContent().stream()
                                 .anyMatch(b -> !(b instanceof TextBlock));
@@ -272,7 +280,7 @@ public final class JevSupervisionMiddleware implements MiddlewareBase {
                                             task,
                                             output,
                                             List.copyOf(events),
-                                            !complete,
+                                            !complete || workerSuspended,
                                             workerFailed,
                                             truncated,
                                             TimeUnit.NANOSECONDS.toMillis(now - started),

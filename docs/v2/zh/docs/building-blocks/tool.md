@@ -124,7 +124,11 @@ toolkit.registerTool(new SimpleTools());
 
 #### 显式返回执行状态
 
+使用默认 converter 时，注解工具的 `void` 或 `Void` 返回值，以及成功完成的 `Mono<Void>`、`CompletableFuture<Void>`，会向模型返回 `(completed with no output)`，避免静默成功被误认为缺失的工具结果。普通 `null` 返回值仍为 `null`；错误和取消不会生成这条成功确认。
+
 工具调用成功时返回 `ToolResultBlock.success(text)`，失败时返回 `ToolResultBlock.error(message)`；两者既可直接返回，也可包装在 `Mono<ToolResultBlock>` 中。不要通过文本前缀判断失败。`ToolResultBlock.text(text)` 默认是 `RUNNING`；如需保留既有 JSON 或多行输出，请用 `withState(...)` 明确终态。
+
+对于普通客户端工具，Anthropic formatter 将 `ERROR`、`DENIED`、`INTERRUPTED` 映射为 `is_error: true`，同时保留调用 ID 和输出内容块。`SUCCESS`、`RUNNING`、`SUSPENDED` 不会被 formatter 判为错误。供应商执行的 server tool 仍使用独立的转换路径。
 
 内置工具已改为结构化结果。直接调用时用 `getState()` 判断状态，用 `getOutput()` 读取文本；`Toolkit` 注册方式不变。
 
@@ -225,6 +229,34 @@ public class HumanApprovalTool extends ToolBase {
 ```
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/ToolBaseExample.java`、`tool/ToolExecutionContextExample.java`。
+
+### 重名冲突与显式替换
+
+Tool 名字是下游一切逻辑的查找键——schema 生成、权限规则、Tool Group、确认处理都按名字解析一次调用。因此，注册一个名字已经被*另一个* tool 占用的工具会立刻抛出 `IllegalStateException`，而不是静默覆盖原有的注册：
+
+```java
+toolkit.registerTool(new LocalTools());   // @Tool(name = "dup", ...)
+toolkit.registerTool(new OtherTools());   // 同名、不同的 tool
+// IllegalStateException: Tool 'dup' is already registered and will not be silently replaced.
+```
+
+MCP tool 走同一道校验：远端工具与本地工具（或另一个 server 的工具）重名时，会在该 server 的工具注册当场报错。想两者共存，注册 client 时配置 `toolNamePrefix`，或给其中一个改名。
+
+重复注册*同一个*逻辑工具依然保持幂等，刷新类场景无需特殊处理：同一个被注解对象加同一个方法、同一个 MCP client 重新注册自己的工具（重连 / tool 列表刷新）、以及用 `registerSchema` 重新声明一份内容完全相同的外部工具 schema，都会被识别为刷新而放行。同名但内容*变了*的 schema 属于冲突：先移除旧注册，或换一个名字。
+
+如果就是要有意覆盖——在同一个名字下换一份实现——使用显式替换 API：
+
+```java
+toolkit.replaceAgentTool(newFallbackTool); // 替换掉已有的 "dup" 绑定
+```
+
+`replaceAgentTool` 是唯一的有意替换入口；其余所有注册路径（`registerTool`、`registerAgentTool`、`registerSchema`、sub-agent 与 MCP 注册）都经过 fail-fast 校验。
+
+注解工具通过 `getTool` 取得后，再用 `registerAgentTool` 或 `registerTool` 直接注册，也按源对象实例与 Java 方法判断同源；刷新会安装传入工具的注册配置。MCP 刷新要求 wrapper 实例和远端工具名同时相同；不同前缀映射得到相同本地名称，不代表远端目标同源。
+
+`HarnessAgent.Builder.fromAgent(source)` 会重建源 Harness 创建的工具，包括非活跃分组中的工具，并保留用户工具及显式替换的实现。如果保留的用户工具与 Harness 能力重名，可在新 builder 上禁用该能力，或使用不同的工具名。
+
+构建时需要重新绑定工具时，`Toolkit.copyExcludingTools(instances)` 仅排除指定的实例；同名工具已被替换为新实例时，会保留新绑定。副本保留工具分组关系及 Toolkit 配置，包括 `allowToolDeletion(false)`，源 Toolkit 不受影响。
 
 ## 接收 Context
 
@@ -632,6 +664,61 @@ Meta tool 的输入表示所有 group 的**最终状态**而非增量。任何�
 </Warning>
 
 
+## 按需搜索工具
+
+工具目录较大时，可以启用 `ToolSearchMiddleware`。它会注册只读工具
+`tool_search(query, limit)`，`limit` 默认值为 5。普通模型最初只看到搜索工具和配置为
+始终可见的工具。搜索后，命中的工具会在后续模型调用中可用，搜索本身不会执行它们。
+
+```java
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.search.ToolSearchMiddleware;
+
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new OrderTools());
+ToolSearchMiddleware search = new ToolSearchMiddleware(toolkit);
+
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .middleware(search)
+    .build();
+```
+
+默认的 `KeywordToolSearchStrategy` 不引入额外依赖，按关键词匹配工具名称和描述，
+名称匹配的排序权重更高。可以实现 `ToolSearchStrategy.search(ToolSearchRequest)`，
+接入语义检索或远程索引，并通过 `ToolSearchResult` 按相关性返回可用工具名称。
+结果在写入会话状态前会去重、限制数量；不属于候选集合的名称会被拒绝。
+候选集合遵守当前激活的工具组和请求级工具覆盖规则，未激活的组仍需通过现有工具组
+管理功能启用。
+
+需要保留控制工具，或强制使用普通函数调用时，可以使用完整构造方法：
+
+```java
+import io.agentscope.core.tool.search.KeywordToolSearchStrategy;
+import java.util.Set;
+
+new ToolSearchMiddleware(toolkit, new KeywordToolSearchStrategy(),
+    Set.of("reset_equipped_tools"), false);
+```
+
+最后一个参数为 `true` 时启用原生加载（默认值）。模型通过 `getToolSearchMode()`
+选择加载协议；自定义模型默认为 `FUNCTION`。`OpenAIResponsesChatModel` 使用原生
+client-executed 搜索，通过 `tool_search_output` 重放命中的工具定义；
+`AnthropicChatModel` 发送带有延迟加载标记的候选工具目录，并返回 `tool_reference`。
+这两种方式需要 provider 和模型支持对应的原生协议。不支持时，将参数设为 `false`，
+改用普通函数调用。不要将此 middleware 与 OpenAI hosted `tool_search` server tool 同时配置。
+
+发现结果保存在会话的 `ToolContextState` 中，支持通过状态存储恢复。每次请求都会按
+当前候选目录重新检查工具；搜索不会激活工具组或改变执行权限。显式指定调用的工具和
+结构化输出控制工具会保持可用。调用期间不会修改共享 Toolkit。原生加载保持初始工具
+声明稳定，通过会话历史保留已发现的工具。如果历史压缩删除了搜索结果，或模型切换了
+加载协议，则根据持久化的发现记录立即暴露对应定义，保证工具仍然可用。普通函数调用
+则在 `tools` 中累积已发现的定义。
+
+无需凭证即可运行的示例：
+[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java)。
 ## 工具调用拦截器
 
 `ToolCallInterceptor` 是 Toolkit 层、单次调用级的参数拦截扩展点。它运行在 JSON Schema 校验与预置参数合并**之后**、会话分发记录与真实执行**之前** —— 因此它能看到工具将收到的确切参数与调用者身份,并决定实际执行的内容。
