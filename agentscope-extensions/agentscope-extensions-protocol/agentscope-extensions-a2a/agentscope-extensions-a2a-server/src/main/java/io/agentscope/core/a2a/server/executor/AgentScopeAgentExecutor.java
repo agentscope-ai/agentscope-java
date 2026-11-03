@@ -573,6 +573,8 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         private final AtomicBoolean isFirstArtifact;
 
+        private Msg finalResult;
+
         private StreamingFluxEventHandler(
                 RequestContext context,
                 AgentExecuteProperties executeProperties,
@@ -588,6 +590,15 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             log.info(
                     "[{}] Process agent output for non-blocking request completed.",
                     context.getTaskId());
+            // A runner may emit only its final result. Wait for successful completion before
+            // publishing it, and do not append a snapshot to artifacts already streamed.
+            if (isFirstArtifact.get() && finalResult != null) {
+                List<Part<?>> parts = MessageConvertUtil.convertFromContentBlocks(finalResult);
+                if (!parts.isEmpty()) {
+                    addArtifact(finalResult, parts, true);
+                    accumulatedOutput.add(finalResult);
+                }
+            }
             Message completeMessage =
                     executeProperties.isCompleteWithMessage()
                             ? MessageConvertUtil.convertFromMsgToMessage(
@@ -600,19 +611,29 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         @Override
         protected void handleEvent(AgentEvent output, Msg responseMessage) {
+            if (output instanceof AgentResultEvent resultEvent) {
+                finalResult = resultEvent.getResult();
+                return;
+            }
             if (responseMessage == null) {
                 return;
             }
-            List<Part<?>> responseParts =
+            addArtifact(
+                    responseMessage,
                     MessageConvertUtil.convertFromContentBlocks(
-                            responseMessage, isStreamingChunk(output));
+                            responseMessage, isStreamingChunk(output)),
+                    false);
+        }
+
+        private void addArtifact(
+                Msg responseMessage, List<Part<?>> responseParts, boolean lastChunk) {
             emitter.addArtifact(
                     responseParts,
                     artifactId,
                     "agent-response",
                     MessageConvertUtil.convertMetadata(responseMessage),
                     !isFirstArtifact.getAndSet(false),
-                    false);
+                    lastChunk);
         }
 
         private boolean isStreamingChunk(AgentEvent output) {

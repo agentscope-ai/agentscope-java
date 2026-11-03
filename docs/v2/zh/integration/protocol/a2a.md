@@ -158,6 +158,8 @@ server.close();
 
 `AgentScopeA2aServer` 本身不监听端口、不暴露 endpoint，只负责构建组件、组装请求处理链；具体监听由你的 Web 框架完成。这样可以无缝接入 Spring Boot、Quarkus、Vert.x 等。
 
+对于流式请求及 `returnImmediately=true` 的请求，自定义 `AgentRunner` 可以只返回一个 `AgentResultEvent`。如果此前没有发送任何 artifact，服务端会在事件流正常完成时，将非空的最终消息作为一个完整 artifact 发出；如果已经发送过 artifact，则不会再次追加最终快照。设置 `completeWithMessage=true` 时，这种只有最终结果的消息也会包含在任务完成状态中。
+
 ### 请求的身份与会话标识
 
 服务端使用 SDK 解析后的 A2A `contextId` 填充传给 `AgentRunner` 的 `AgentRequestOptions.sessionId`。客户端可以直接使用标准协议字段，无需额外添加自定义 metadata。客户端未传 `contextId` 时，SDK 会自动生成一个。

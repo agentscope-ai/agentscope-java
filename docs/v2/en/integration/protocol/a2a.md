@@ -158,6 +158,8 @@ server.close();
 
 `AgentScopeA2aServer` does not bind a port or expose endpoints itself; it only assembles components and the request-handling chain. You wire transport into Spring Boot, Quarkus, Vert.x, etc. as you prefer.
 
+For streaming requests and requests with `returnImmediately=true`, a custom `AgentRunner` may return only an `AgentResultEvent`. If no artifact has been streamed, the server publishes a non-empty final message as one complete artifact when the event stream finishes successfully. If artifacts have already been streamed, the final snapshot is not appended again. With `completeWithMessage=true`, the final-only message is also included in the completed task status.
+
 ### Request identity and session identifiers
 
 The server fills `AgentRequestOptions.sessionId` for the `AgentRunner` from the SDK-resolved A2A `contextId`. Clients can use the standard protocol field without adding a custom metadata key. If the client omits `contextId`, the SDK generates one.
