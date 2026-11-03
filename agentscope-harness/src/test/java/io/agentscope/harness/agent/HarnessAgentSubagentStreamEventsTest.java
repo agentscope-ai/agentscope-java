@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -254,10 +256,12 @@ class HarnessAgentSubagentStreamEventsTest {
                 .thenReturn(Flux.just(stopChunk("c2", "second complete")))
                 .thenReturn(Flux.just(stopChunk("p3", "both complete")));
 
+        // Background memory calls must not consume this six-response conversation script.
         parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
+                        .disableMemoryHooks()
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
@@ -286,6 +290,20 @@ class HarnessAgentSubagentStreamEventsTest {
 
         List<AgentEvent> events = new ArrayList<>(firstTurn);
         events.addAll(secondTurn);
+
+        verify(model, times(6)).stream(anyList(), any(), any());
+        assertEquals(
+                1,
+                firstTurn.stream()
+                        .filter(e -> e instanceof AgentStartEvent && e.getSource() != null)
+                        .count(),
+                "first turn should start one child");
+        assertEquals(
+                1,
+                secondTurn.stream()
+                        .filter(e -> e instanceof AgentStartEvent && e.getSource() != null)
+                        .count(),
+                "second turn should start one child");
 
         assertNotNull(events);
         List<AgentStartEvent> childStarts =
