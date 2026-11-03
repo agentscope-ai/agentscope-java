@@ -39,10 +39,10 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * DashScope Chat Model using native HTTP API.
@@ -346,7 +346,7 @@ public class DashScopeChatModel extends ChatModelBase {
                     .map(response -> formatter.parseResponse(response, start));
         } else {
             // Non-streaming mode
-            return Flux.defer(
+            return ModelUtils.fromBlockingCallable(
                             () -> {
                                 try {
                                     DashScopeResponse response =
@@ -357,16 +357,14 @@ public class DashScopeChatModel extends ChatModelBase {
                                                     effectiveOptions.getAdditionalQueryParams());
                                     ChatResponse chatResponse =
                                             formatter.parseResponse(response, start);
-                                    return Flux.just(chatResponse);
+                                    return Objects.requireNonNull(chatResponse);
                                 } catch (Exception e) {
-                                    log.error("DashScope HTTP client error: {}", e.getMessage(), e);
-                                    return Flux.error(
-                                            new ModelException(
-                                                    "DashScope API call failed: " + e.getMessage(),
-                                                    e));
+                                    throw new ModelException(
+                                            "DashScope API call failed: " + e.getMessage(), e);
                                 }
                             })
-                    .subscribeOn(Schedulers.boundedElastic());
+                    .doOnError(e -> log.error("DashScope HTTP client error: {}", e.getMessage(), e))
+                    .flux();
         }
     }
 

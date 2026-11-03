@@ -332,63 +332,59 @@ public class GeminiChatModel extends ChatModelBase {
 
         return Flux.defer(
                         () -> {
-                            try {
-                                // Use formatter to convert Msg to Gemini
-                                // Content
-                                List<Content> formattedMessages = formatter.format(messages);
-
-                                GenerateContentConfig config =
-                                        buildGenerateContentConfig(tools, options);
-
-                                // Choose API based on streaming flag
-                                if (streamEnabled) {
-                                    // Use streaming API
-                                    ResponseStream<GenerateContentResponse> responseStream =
-                                            client.models.generateContentStream(
-                                                    modelName, formattedMessages, config);
-
-                                    // Convert ResponseStream to Flux
-                                    return Flux.fromIterable(responseStream)
-                                            .subscribeOn(Schedulers.boundedElastic())
-                                            .map(
-                                                    response ->
-                                                            formatter.parseResponse(
-                                                                    response, startTime))
-                                            .doFinally(
-                                                    signalType -> {
-                                                        // Close the stream
-                                                        // when done
-                                                        try {
-                                                            responseStream.close();
-                                                        } catch (Exception e) {
-                                                            log.warn(
-                                                                    "Error closing"
-                                                                            + " response"
-                                                                            + " stream: {}",
-                                                                    e.getMessage());
-                                                        }
-                                                    });
-                                } else {
-                                    // Use non-streaming API
-                                    GenerateContentResponse response =
-                                            client.models.generateContent(
-                                                    modelName, formattedMessages, config);
-
-                                    // Parse response using formatter
-                                    ChatResponse chatResponse =
-                                            formatter.parseResponse(response, startTime);
-
-                                    return Flux.just(chatResponse);
-                                }
-
-                            } catch (Exception e) {
-                                log.error("Gemini API call failed: {}", e.getMessage(), e);
-                                return Flux.error(
-                                        new ModelException(
-                                                "Gemini API call failed: " + e.getMessage(), e));
+                            List<Content> formattedMessages = formatter.format(messages);
+                            GenerateContentConfig config =
+                                    buildGenerateContentConfig(tools, options);
+                            if (streamEnabled) {
+                                return ModelUtils.fromBlockingCallable(
+                                                () ->
+                                                        client.models.generateContentStream(
+                                                                modelName,
+                                                                formattedMessages,
+                                                                config))
+                                        .flatMapMany(
+                                                responseStream ->
+                                                        Flux.fromIterable(responseStream)
+                                                                .subscribeOn(
+                                                                        Schedulers.boundedElastic())
+                                                                .map(
+                                                                        response ->
+                                                                                formatter
+                                                                                        .parseResponse(
+                                                                                                response,
+                                                                                                startTime))
+                                                                .doFinally(
+                                                                        signal ->
+                                                                                closeResponseStream(
+                                                                                        responseStream)))
+                                        .doOnDiscard(
+                                                ResponseStream.class, this::closeResponseStream);
                             }
+                            return ModelUtils.fromBlockingCallable(
+                                            () -> {
+                                                GenerateContentResponse response =
+                                                        client.models.generateContent(
+                                                                modelName,
+                                                                formattedMessages,
+                                                                config);
+                                                return Objects.requireNonNull(
+                                                        formatter.parseResponse(
+                                                                response, startTime));
+                                            })
+                                    .flux();
                         })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic())
+                .onErrorMap(e -> new ModelException("Gemini API call failed: " + e.getMessage(), e))
+                .doOnError(e -> log.error("Gemini API call failed: {}", e.getMessage(), e));
+    }
+
+    /** Closes SDK streams on termination or when acquisition finishes after cancellation. */
+    private void closeResponseStream(ResponseStream<?> responseStream) {
+        try {
+            responseStream.close();
+        } catch (Exception e) {
+            log.warn("Error closing response stream: {}", e.getMessage());
+        }
     }
 
     @Override
