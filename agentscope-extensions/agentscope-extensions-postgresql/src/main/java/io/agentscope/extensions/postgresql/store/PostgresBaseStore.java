@@ -262,7 +262,11 @@ public class PostgresBaseStore implements BaseStore {
                     return false;
                 }
                 throw new IllegalStateException(
-                        "PostgresBaseStore putIfVersion (insert) failed", e);
+                        "PostgresBaseStore putIfVersion (insert) failed [SQLState="
+                                + e.getSQLState()
+                                + "]: "
+                                + e.getMessage(),
+                        e);
             }
         }
 
@@ -275,7 +279,12 @@ public class PostgresBaseStore implements BaseStore {
             ps.setLong(5, expectedVersion);
             return ps.executeUpdate() == 1;
         } catch (SQLException e) {
-            throw new IllegalStateException("PostgresBaseStore putIfVersion (update) failed", e);
+            throw new IllegalStateException(
+                    "PostgresBaseStore putIfVersion (update) failed [SQLState="
+                            + e.getSQLState()
+                            + "]: "
+                            + e.getMessage(),
+                    e);
         }
     }
 
