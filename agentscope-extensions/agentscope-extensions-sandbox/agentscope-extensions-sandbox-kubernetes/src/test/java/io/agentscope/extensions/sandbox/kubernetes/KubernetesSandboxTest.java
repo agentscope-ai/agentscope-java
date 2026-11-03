@@ -33,6 +33,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.extensions.sandbox.kubernetes.client.CommandExecutor;
 import io.agentscope.extensions.sandbox.kubernetes.client.Filesystem;
 import io.agentscope.extensions.sandbox.kubernetes.client.Sandbox;
+import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxTimeoutException;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
@@ -104,6 +105,18 @@ class KubernetesSandboxTest {
         assertTrue(wrapped.endsWith("\n)"));
         String lastPayloadLine = command.substring(command.lastIndexOf('\n') + 1);
         assertFalse(wrapped.contains(lastPayloadLine + ")"));
+    }
+
+    @Test
+    void doExecMapsExchangeTimeoutToHarnessExecTimeout() throws Exception {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenThrow(new SandboxTimeoutException("Command exchange timed out", null));
+
+        SandboxException.ExecTimeoutException timeout =
+                assertThrows(
+                        SandboxException.ExecTimeoutException.class,
+                        () -> sandbox.doExec(null, "sleep 300", 30));
+        assertEquals("Command timed out after 30s", timeout.getMessage());
     }
 
     @Test
