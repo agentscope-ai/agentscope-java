@@ -62,10 +62,15 @@ class BotLoopGuardTest {
 
     @Test
     void idlePeersAreEvictedAfterWindowPlusCooldown() throws InterruptedException {
+        // A loaded runner can overshoot a 60ms sleep past a 160ms threshold (observed in CI),
+        // so the not-idle phase uses a threshold no realistic stall can cross, and the idle
+        // phase only relies on Thread.sleep never returning early. Total sleep stays 240ms.
+        BotLoopGuard notIdle = new BotLoopGuard(5, 60_000L, 60_000L);
+        assertTrue(notIdle.allow("peer-1"));
+        Thread.sleep(60);
+        assertEquals(0, notIdle.evictIdlePeers()); // not idle yet
         BotLoopGuard guard = new BotLoopGuard(5, 80L, 80L); // idle threshold: 160ms
         assertTrue(guard.allow("peer-1"));
-        Thread.sleep(60);
-        assertEquals(0, guard.evictIdlePeers()); // not idle yet
         Thread.sleep(180);
         assertEquals(1, guard.evictIdlePeers());
         assertEquals(0, guard.trackedPeers());
@@ -75,11 +80,18 @@ class BotLoopGuardTest {
 
     @Test
     void activePeersSurviveEvictionOfIdleOnes() throws InterruptedException {
-        BotLoopGuard guard = new BotLoopGuard(5, 500L, 500L); // idle threshold: 1000ms
+        // allow() piggybacks a sweep on the same windowMillis + cooldownMillis threshold that
+        // idle eviction uses, so a stall between the two allows can let that sweep evict the
+        // idle peer before the explicit evictIdlePeers() call. Each phase keeps a 400ms margin
+        // against a multi-hundred-ms runner stall: the first allow sits 600ms inside the 1000ms
+        // sweep threshold, the active peer is 600ms inside its idle threshold at both eviction
+        // points, and the explicit eviction only relies on Thread.sleep never returning early
+        // (1200ms slept vs the 1000ms threshold).
+        BotLoopGuard guard = new BotLoopGuard(5, 500L, 500L); // sweep/idle threshold: 1000ms
         assertTrue(guard.allow("idle-peer"));
-        Thread.sleep(300);
+        Thread.sleep(600);
         assertTrue(guard.allow("active-peer"));
-        Thread.sleep(800); // idle-peer idle ~1100ms; active-peer idle ~800ms
+        Thread.sleep(600); // idle-peer idle ~1200ms; active-peer idle ~600ms
         assertEquals(1, guard.evictIdlePeers());
         assertTrue(guard.allow("active-peer"));
         assertEquals(1, guard.trackedPeers());

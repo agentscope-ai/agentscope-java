@@ -1,5 +1,6 @@
 ---
 title: 架构
+en_link: /v1/en/docs/harness/architecture
 ---
 
 [概览](/v1/zh/docs/harness/overview) 从"解决什么问题"入手介绍 harness 的能力。本文换一个视角，**解释架构本身**：为什么这样设计、各层职责是什么、一次 `call()` 究竟经历了什么，以及状态如何在系统中流动。
@@ -172,7 +173,7 @@ sequenceDiagram
     end
 
     RA->>H: PostCallEvent
-    Note over H: Trace(0) · MemFlush(5): flush facts + offload JSONL<br/>MemMaint(6): requestConsolidation<br/>Session(900): saveTo(session, key)
+    Note over H: Trace(0) · MemFlush(5): flush facts<br/>MemMaint(6): requestConsolidation<br/>Session(900): saveTo(session, key)
 
     RA-->>HA: final Msg
     HA-->>User: ② final Msg
@@ -195,7 +196,7 @@ graph LR
 
     subgraph CROSSCALL["跨调用 (cross-call)\n同 sessionId 下持久"]
         SP["WorkspaceSession\nagents/&lt;id&gt;/context/&lt;sess&gt;/*.json\nMemory 快照 + StateModule"]
-        JSONL["sessions/&lt;sess&gt;.log.jsonl\n完整对话日志 (追加, 不压缩)"]
+        JNL[".agentscope-runtime/\nnative session journal\n(追加, 无损)"]
     end
 
     subgraph LONGTERM["长期记忆 (long-term)\n跨 session 积累"]
@@ -206,7 +207,7 @@ graph LR
 
     IM -- "PostCallEvent\nMemoryFlushHook.flush()" --> DAILY
     IM -- "PostCallEvent\nSessionPersistenceHook.saveTo()" --> SP
-    IM -- "压缩 / offload\nMemoryFlushHook.offload()" --> JSONL
+    IM -- "每一轮\n运行时 journal 追加" --> JNL
 
     DAILY -- "后台 6h\nMemoryConsolidator" --> MMEM
     DAILY -- "增量写入后\nMemoryIndex" --> FTS
@@ -258,7 +259,7 @@ sequenceDiagram
 graph TD
     A["对话累积 → CompactionHook 阈值触发"] --> B["ConversationCompactor.compactIfNeeded"]
     B --> C["MemoryFlushManager.flushMemories(prefix)\n→ LLM 提炼新事实"]
-    B --> D["offloadMessages\n→ sessions/&lt;sess&gt;.log.jsonl"]
+    B --> D["完整历史已在\nnative session journal 中（不动）"]
     B --> E["LLM distill summary\n→ 替换 Memory + setInputMessages"]
 
     C --> C1["append to memory/YYYY-MM-DD.md"]
@@ -277,7 +278,7 @@ graph TD
 graph LR
     subgraph T1["第一轮 call(msg1, ctx{sess=A})"]
         A1["bindRuntimeContext\nloadIfExists → Memory 为空（首次）"] --> B1["ReAct 循环"]
-        B1 --> C1["PostCallEvent\nMemoryFlushHook: flush + offload\nSessionPersistenceHook: saveTo → 写盘"]
+        B1 --> C1["PostCallEvent\nMemoryFlushMiddleware: flush facts\nruntime journal commit → 写盘"]
     end
 
     subgraph T2["第二轮 call(msg2, ctx{sess=A})"]

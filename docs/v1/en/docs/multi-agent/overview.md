@@ -1,5 +1,6 @@
 ---
 title: Overview
+zh_link: /v1/zh/docs/multi-agent/overview
 ---
 
 Multi-agent systems coordinate specialized agents or components to handle complex workflows. Not every complex task needs multiple agents—a single agent with the right tools and prompt can often suffice. This page summarizes when multi-agent patterns help and which patterns the project supports.

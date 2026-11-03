@@ -47,7 +47,14 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
             "io.agentscope.builder.web.managed",
             "io.agentscope.builder.web.persistence",
             "io.agentscope.builder.web.share",
-            "io.agentscope.builder.worker"
+            "io.agentscope.builder.worker",
+            // Channel callback controllers (Feishu, WeCom, GitHub, GitLab) live in the
+            // extensions packages; without them the callback paths /api/channels/...
+            // answer 404 with no trace, even though the channel itself starts fine.
+            "io.agentscope.extensions.channel.feishu",
+            "io.agentscope.extensions.channel.wecom",
+            "io.agentscope.extensions.channel.github",
+            "io.agentscope.extensions.channel.gitlab"
         })
 public class SchedulerApp {
     public static void main(String[] args) {

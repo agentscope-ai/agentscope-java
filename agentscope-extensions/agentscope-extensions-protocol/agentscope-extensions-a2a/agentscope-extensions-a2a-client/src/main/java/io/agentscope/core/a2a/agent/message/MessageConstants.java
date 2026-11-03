@@ -40,6 +40,13 @@ public class MessageConstants {
         public static final String TYPE_TOOL_RESULT = "tool_result";
     }
 
+    /**
+     * Envelope-level metadata key that carries the caller-asserted user id of a whole call. Unlike
+     * the per-message keys below, it is written to the top-level message metadata (never wrapped
+     * in the {@code <msgId, metadata>} structure), so the server can always read it flat.
+     */
+    public static final String USER_ID_METADATA_KEY = "_agentscope_user_id";
+
     public static final String SOURCE_NAME_METADATA_KEY = "_agentscope_msg_source";
 
     public static final String MSG_ID_METADATA_KEY = "_agentscope_msg_id";

@@ -1,5 +1,6 @@
 ---
 title: Coding with AI
+zh_link: /v1/zh/docs/task/ai-coding
 ---
 
 AgentScope Java documentation supports the [`llms.txt` standard](https://llmstxt.org/), providing a machine-readable index optimized for Large Language Models. This allows you to use the documentation as context in your AI-powered development environment.

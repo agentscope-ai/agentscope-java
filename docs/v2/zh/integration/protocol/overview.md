@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v2/en/integration/protocol/overview
 ---
 
 AgentScope 在 Java 侧提供了多种"让 Agent 与外部交互"的协议适配器。它们各自解决一个不同的问题：

@@ -16,8 +16,10 @@
 package io.agentscope.core.skill;
 
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
+import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.subagent.SubAgentConfig;
@@ -26,12 +28,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,13 +49,53 @@ public class SkillBox {
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private final AgentSkillPromptProvider skillPromptProvider;
     private final SkillToolFactory skillToolFactory;
-    private Toolkit toolkit;
+    private volatile Toolkit toolkit;
     private Path workDir;
     private Path uploadDir;
     private SkillFileFilter fileFilter;
     private boolean autoUploadSkill = true;
 
-    private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
+    /**
+     * Number of lock stripes guarding concurrent {@code uploadSkillFiles} writes. A fixed stripe
+     * table replaces the former per-path lock map, which accumulated one lock object per
+     * materialised path and never released them in long-lived processes. Mutual exclusion for a
+     * given path does not depend on this value (same path always maps to the same stripe); a
+     * collision only serialises one extra file write. 256 keeps worst-case stripe occupancy —
+     * storm-level materialisation bursts over digit-heavy path families, whose 31-polynomial
+     * hashes cluster more at smaller power-of-two moduli — below one waiting writer, with room
+     * for the longer write critical sections the planned temp-file-plus-rename convergence will
+     * introduce; the table costs a few KB.
+     */
+    static final int FILE_LOCK_STRIPES = 256;
+
+    private static final Object[] FILE_LOCK_TABLE = createFileLockTable();
+
+    private static Object[] createFileLockTable() {
+        Object[] table = new Object[FILE_LOCK_STRIPES];
+        for (int i = 0; i < FILE_LOCK_STRIPES; i++) {
+            table[i] = new Object();
+        }
+        return table;
+    }
+
+    /**
+     * Returns the lock stripe guarding writes to the given target path. The stripe index is
+     * {@code floorMod(pathHash, FILE_LOCK_STRIPES)}, so a given path always maps to the same
+     * stripe (mutual exclusion for that path is preserved) while the table stays fixed-size no
+     * matter how many distinct paths are written; unrelated paths colliding on a stripe are
+     * merely serialised behind each other, which does not affect correctness.
+     *
+     * <p>Callers must not hold more than one stripe at a time: acquire the stripe, finish the
+     * write, and release it before locking another path. Nested stripe acquisitions in
+     * differing orders can deadlock, and stripe collisions between unrelated paths only widen
+     * that hazard.
+     *
+     * @param path the target file path being written
+     * @return the stripe object to {@code synchronized} on for that path
+     */
+    static Object fileLockFor(Path path) {
+        return FILE_LOCK_TABLE[Math.floorMod(path.hashCode(), FILE_LOCK_STRIPES)];
+    }
 
     public SkillBox(Toolkit toolkit) {
         this(toolkit, null);
@@ -70,6 +111,30 @@ public class SkillBox {
         this.skillPromptProvider = new AgentSkillPromptProvider(skillRegistry, instruction);
         this.skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
         this.toolkit = toolkit;
+    }
+
+    private SkillBox(SkillBox source, Toolkit toolkit) {
+        for (String id : source.getAllSkillIds()) {
+            skillRegistry.registerSkill(id, source.getSkill(id));
+        }
+        skillPromptProvider = source.skillPromptProvider.copyFor(skillRegistry);
+        skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
+        this.toolkit = toolkit;
+        workDir = source.workDir;
+        uploadDir = source.uploadDir;
+        fileFilter = source.fileFilter;
+        autoUploadSkill = source.autoUploadSkill;
+    }
+
+    /**
+     * Creates an agent-owned registry, prompt provider and loader bound to the given toolkit.
+     * Registered skill values and caller-owned resource directories are shared.
+     *
+     * @param toolkit the agent's toolkit
+     * @return an independent skill box
+     */
+    public SkillBox copyForToolkit(Toolkit toolkit) {
+        return new SkillBox(this, java.util.Objects.requireNonNull(toolkit, "toolkit"));
     }
 
     /**
@@ -131,14 +196,7 @@ public class SkillBox {
     }
 
     /**
-     * Binds a toolkit to the skill box.
-     *
-     * <p>
-     * This method binds the toolkit to both the skill box and its internal skill
-     * tool factory.
-     * Since ReActAgent uses a deep copy of the Toolkit, rebinding is necessary to
-     * ensure the
-     * skill tool factory references the correct toolkit instance.
+     * Binds the shared toolkit to this skill box and its internal skill tool factory.
      *
      * @param toolkit The toolkit to bind to the skill box
      * @throws IllegalArgumentException if the toolkit is null
@@ -148,69 +206,7 @@ public class SkillBox {
             throw new IllegalArgumentException("Toolkit cannot be null");
         }
         this.toolkit = toolkit;
-        // ReActAgent uses a deep copy of Toolkit, so we need to rebind it here
         this.skillToolFactory.bindToolkit(toolkit);
-    }
-
-    /**
-     * Synchronize tool group states based on skill activation status with a specific toolkit.
-     *
-     * <p>Updates the toolkit's tool groups to reflect the current activation state of skills.
-     * Active skills will have their tool groups enabled, inactive skills will have their
-     * tool groups disabled.
-     */
-    public void syncToolGroupStates() {
-        if (toolkit == null) {
-            return;
-        }
-        List<String> inactiveSkillToolGroups = new ArrayList<>();
-        List<String> activeSkillToolGroups = new ArrayList<>();
-
-        // Dynamically update active/inactive tool groups based on skills' states
-        for (RegisteredSkill registeredSkill : skillRegistry.getAllRegisteredSkills().values()) {
-            // Name-convention path: skillId + "_skill_tools"
-            if (toolkit.getToolGroup(registeredSkill.getToolsGroupName()) != null) {
-                if (!registeredSkill.isActive()) {
-                    inactiveSkillToolGroups.add(registeredSkill.getToolsGroupName());
-                } else {
-                    activeSkillToolGroups.add(registeredSkill.getToolsGroupName());
-                }
-            }
-
-            // activateOnSkill path: scan SkillToolGroups bound to this skill's name
-            AgentSkill agentSkill = skillRegistry.getSkill(registeredSkill.getSkillId());
-            if (agentSkill != null) {
-                List<String> boundGroups =
-                        toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
-                for (String group : boundGroups) {
-                    if (!registeredSkill.isActive()) {
-                        inactiveSkillToolGroups.add(group);
-                    } else {
-                        activeSkillToolGroups.add(group);
-                    }
-                }
-            }
-        }
-        toolkit.updateToolGroups(inactiveSkillToolGroups, false);
-        toolkit.updateToolGroups(activeSkillToolGroups, true);
-        logger.debug(
-                "Active Skill Tool Groups updated {}, inactive Skill Tool Groups updated {}",
-                activeSkillToolGroups,
-                inactiveSkillToolGroups);
-    }
-
-    /**
-     * Where the skill is active. If a skill is active, this means skill is being using by LLM.
-     * LLM use load tool activate the skill.
-     * @param skillId
-     * @return true if the skill is active
-     */
-    public boolean isSkillActive(String skillId) {
-        RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
-        if (registeredSkill == null) {
-            return false;
-        }
-        return registeredSkill.isActive();
     }
 
     // ==================== Skill Management ====================
@@ -219,7 +215,8 @@ public class SkillBox {
      * Registers an agent skill.
      *
      * <p>Skills can be dynamically loaded by agents using skill access tools.
-     * When a skill is loaded, its associated tools become available to the agent.
+     * Loading a skill returns its content; activation of its tool groups is reflected in the
+     * per-session activated-groups state, not on this box.
      *
      * <p><b>Version Management:</b>
      * <ul>
@@ -230,10 +227,10 @@ public class SkillBox {
      *
      * <p><b>Usage example:</b>
      * <pre>{@code
-     * AgentSkill mySkill = new AgentSkill("my_skill", "Description", "Content", null);
+     * AgentSkill mySkill = new AgentSkill("my-skill", "Description", "Content", null);
      *
      * skillBox.registerSkill(mySkill);
-     * skillBox.registerSkill(my_skill); // do nothing
+     * skillBox.registerSkill(mySkill); // do nothing
      * }</pre>
      *
      * @param skill The agent skill to register
@@ -245,13 +242,7 @@ public class SkillBox {
         }
 
         String skillId = skill.getSkillId();
-
-        // Create registered wrapper
-        RegisteredSkill registered = new RegisteredSkill(skillId);
-
-        // Register in skillRegistry
-        skillRegistry.registerSkill(skillId, skill, registered);
-
+        skillRegistry.registerSkill(skillId, skill);
         logger.info("Registered skill '{}'", skillId);
     }
 
@@ -261,6 +252,28 @@ public class SkillBox {
      */
     public Set<String> getAllSkillIds() {
         return skillRegistry.getSkillIds();
+    }
+
+    /**
+     * Loads the skill resource identified by the given tool-call parameters. Package-private entry
+     * point used by the shared {@code load_skill_through_path} tool: skill activation is written to
+     * the per-session tool context, never to the shared group manager.
+     *
+     * @param param the tool call parameters carrying {@code skillId} and {@code path}
+     * @return the formatted resource content, or a message describing the failure
+     */
+    String loadSkillResource(ToolCallParam param) {
+        Map<String, Object> input = param.getInput();
+        String skillId = (String) input.get("skillId");
+        if (skillId == null || skillId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Missing or empty required parameter: skillId");
+        }
+        String path = (String) input.get("path");
+        if (path == null || path.trim().isEmpty()) {
+            throw new IllegalArgumentException("Missing or empty required parameter: path");
+        }
+        return skillToolFactory.loadSkillResourceImpl(
+                skillId, path, skillToolFactory.resolveToolContext(param));
     }
 
     /**
@@ -303,73 +316,6 @@ public class SkillBox {
             throw new IllegalArgumentException("Skill ID cannot be null");
         }
         return skillRegistry.exists(skillId);
-    }
-
-    /**
-     * Sets the activation state of a specific skill.
-     *
-     * <p>When a skill is set to inactive, its associated tool group will be disabled
-     * in the underlying toolkit, preventing the agent from accessing its tools until
-     * it is activated again.
-     *
-     * <p>This method automatically synchronizes the state change with the bound toolkit.
-     *
-     * <p><b>Warning on Deactivation:</b> Setting a skill to inactive only unbinds its associated
-     * tool group. It does not automatically remove the skill's context or prompt instructions
-     * from the agent's memory. This is a risky operation, as the agent might still attempt to
-     * invoke the inactive tool based on its retained memory context, leading to execution failures.
-     * For a complete and ideal deactivation, it is recommended to implement custom hooks to unbind
-     * both the tool group and its associated context from memory.
-     *
-     * @param skillId The ID of the skill to modify
-     * @param active  true to activate the skill, false to deactivate
-     * @throws IllegalArgumentException if skillId is null or the skill does not exist
-     */
-    public void setSkillActive(String skillId, boolean active) {
-        if (skillId == null) {
-            throw new IllegalArgumentException("Skill ID cannot be null");
-        }
-
-        if (!exists(skillId)) {
-            throw new IllegalArgumentException("Skill ID does not exist: " + skillId);
-        }
-
-        skillRegistry.setSkillActive(skillId, active);
-
-        // sync ToolGroup state — name-convention path
-        RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
-        if (registeredSkill != null) {
-            String toolGroupName = registeredSkill.getToolsGroupName();
-            if (this.toolkit.getToolGroup(toolGroupName) != null) {
-                this.toolkit.updateToolGroups(List.of(toolGroupName), active);
-            }
-        }
-
-        // sync ToolGroup state — activateOnSkill path
-        AgentSkill agentSkill = skillRegistry.getSkill(skillId);
-        if (agentSkill != null && this.toolkit != null) {
-            List<String> boundGroups =
-                    this.toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
-            if (!boundGroups.isEmpty()) {
-                this.toolkit.updateToolGroups(boundGroups, active);
-            }
-        }
-
-        logger.debug("Skill '{}' active state set to {}", skillId, active);
-    }
-
-    /**
-     * Deactivates all skills.
-     *
-     * <p>This method sets all registered skills to inactive state, which means their associated
-     * tool groups will not be available to the agent until the skills are accessed again
-     * via skill access tools.
-     *
-     * <p>This is typically called at the start of each agent call to ensure a clean state.
-     */
-    public void deactivateAllSkills() {
-        skillRegistry.setAllSkillsActive(false);
-        logger.debug("Deactivated all skills");
     }
 
     /**
@@ -638,16 +584,19 @@ public class SkillBox {
             throw new IllegalArgumentException("Toolkit cannot be null");
         }
 
-        if (toolkit.getToolGroup("skill-build-in-tools") == null) {
-            toolkit.createToolGroup(
-                    "skill-build-in-tools",
-                    "skill build-in tools, could contain(load_skill_through_path)");
+        if (toolkit.getTool(SkillToolFactory.LOAD_TOOL_NAME) != null) {
+            // Already registered by another path (e.g. the dynamic-skill middleware); avoid
+            // silently overwriting it. Mixing static skillBox() with dynamic skillRepositories()
+            // is not supported, so surface it for diagnosis.
+            logger.warn(
+                    "load_skill_through_path already registered; skipping (a same-named tool is"
+                            + " already present on this toolkit)");
+            return;
         }
 
-        toolkit.registration()
-                .agentTool(skillToolFactory.createSkillAccessToolAgentTool())
-                .group("skill-build-in-tools")
-                .apply();
+        // Registered ungrouped so it is always visible/callable and is never dropped by the
+        // META-scoped reset_equipped_tools replacement.
+        toolkit.registration().agentTool(skillToolFactory.createSkillAccessToolAgentTool()).apply();
 
         logger.info("Registered skill load tools to toolkit");
     }
@@ -780,6 +729,12 @@ public class SkillBox {
      *   <li>Otherwise, use workDir/skills (workDir may be a temporary directory).</li>
      * </ul>
      *
+     * <p>Security gate: the skill directory (derived from the skill id, whose source part is
+     * free-form) and every resource path must pass {@link SkillUtil#resolveContainedPath(Path,
+     * String)} — an absolute or traversal-shaped segment would otherwise resolve outside the
+     * upload directory and is skipped with a warning. Skill names themselves are already
+     * validated at construction.
+     *
      * <p>If a file already exists, it will be overwritten.
      *
      */
@@ -804,7 +759,15 @@ public class SkillBox {
                 continue;
             }
 
-            Path skillDir = targetDir.resolve(skillId);
+            Optional<Path> skillDir = SkillUtil.resolveContainedPath(targetDir, skillId);
+            if (skillDir.isEmpty()) {
+                logger.warn(
+                        "Refusing to materialize skill '{}': resolved directory escapes the"
+                                + " target directory '{}'",
+                        skillId,
+                        targetDir);
+                continue;
+            }
 
             for (String resourcePath : resourcePaths) {
                 if (!filter.accept(resourcePath)) {
@@ -817,21 +780,20 @@ public class SkillBox {
                     continue;
                 }
 
-                Path targetPath = skillDir.resolve(resourcePath).normalize();
-
-                // Security check: Prevent path traversal attacks
-                if (!targetPath.startsWith(skillDir)) {
+                Optional<Path> containedPath =
+                        SkillUtil.resolveContainedPath(skillDir.get(), resourcePath);
+                if (containedPath.isEmpty()) {
                     logger.warn("Skipping file with invalid path: {}", resourcePath);
                     continue;
                 }
+                Path targetPath = containedPath.get();
 
                 try {
                     if (targetPath.getParent() != null) {
                         Files.createDirectories(targetPath.getParent());
                     }
 
-                    Object lock =
-                            FILE_LOCKS.computeIfAbsent(targetPath.toString(), k -> new Object());
+                    Object lock = fileLockFor(targetPath);
                     synchronized (lock) {
                         if (content.startsWith(BASE64_PREFIX)) {
                             String encoded = content.substring(BASE64_PREFIX.length());

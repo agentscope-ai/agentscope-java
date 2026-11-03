@@ -1,5 +1,6 @@
 ---
 title: 可观测与调试
+en_link: /v1/en/docs/task/observability
 ---
 
 AgentScope Java 提供了多种机制来观测和调试智能体的执行过程：

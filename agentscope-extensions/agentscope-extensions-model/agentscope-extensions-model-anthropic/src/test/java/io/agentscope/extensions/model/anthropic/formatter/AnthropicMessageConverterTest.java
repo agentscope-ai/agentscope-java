@@ -25,18 +25,23 @@ import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /** Unit tests for AnthropicMessageConverter. */
 class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
@@ -78,6 +83,35 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, blocks.size());
         assertTrue(blocks.get(0).isText());
         assertEquals("Hello", blocks.get(0).asText().text());
+    }
+
+    @Test
+    void testDocumentBlockBecomesTextPlaceholder() {
+        Msg msg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("anthropic")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        // An all-document message must not collapse into an empty (dropped) message.
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(1, blocks.size());
+        assertTrue(blocks.get(0).isText());
+        assertTrue(blocks.get(0).asText().text().contains("Document - not supported by Anthropic"));
+        assertTrue(blocks.get(0).asText().text().contains("report.pdf"));
     }
 
     @Test
@@ -230,6 +264,51 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals("call_123", toolUse.id());
         assertEquals("search", toolUse.name());
         // Note: input validation happens during API calls, not during conversion
+    }
+
+    @ParameterizedTest
+    @EnumSource(ToolResultState.class)
+    void toolResultFailureStatesReachProviderWithOriginalContent(ToolResultState state) {
+        var output =
+                List.<ContentBlock>of(
+                        TextBlock.builder().text("diagnostic").build(),
+                        ImageBlock.builder()
+                                .source(
+                                        Base64Source.builder()
+                                                .mediaType("image/png")
+                                                .data("aGVsbG8=")
+                                                .build())
+                                .build());
+        var msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_state")
+                                        .name("search")
+                                        .state(state)
+                                        .output(output)
+                                        .build())
+                        .build();
+        var converted =
+                converter
+                        .convert(List.of(msg))
+                        .get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asToolResult();
+        boolean failed =
+                state == ToolResultState.ERROR
+                        || state == ToolResultState.DENIED
+                        || state == ToolResultState.INTERRUPTED;
+        assertEquals(failed, converted.isError().orElse(false));
+        assertEquals(failed, converted.isError().isPresent());
+        assertEquals("call_state", converted.toolUseId());
+        var blocks = converted.content().orElseThrow().asBlocks();
+        assertEquals(2, blocks.size());
+        assertEquals("diagnostic", blocks.get(0).asText().text());
+        assertTrue(blocks.get(1).isImage());
     }
 
     @Test
@@ -649,5 +728,211 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.size());
         // TOOL role should be converted to USER
         assertEquals(MessageParam.Role.USER, result.get(0).role());
+    }
+
+    // ==================== Server tools ====================
+
+    private static ToolUseBlock serverToolUseBlock(String id) {
+        return ToolUseBlock.builder()
+                .id(id)
+                .name("web_search")
+                .input(Map.of("query", "AgentScope"))
+                .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                .build();
+    }
+
+    private static ToolResultBlock serverToolResultBlock(String id) {
+        String rawJson =
+                "{\"type\":\"web_search_tool_result\",\"tool_use_id\":\""
+                        + id
+                        + "\",\"content\":[{\"type\":\"web_search_result\","
+                        + "\"url\":\"https://example.com\",\"title\":\"Example\","
+                        + "\"encrypted_content\":\"enc_abc123\",\"page_age\":\"2 days\"}]}";
+        return ToolResultBlock.builder()
+                .id(id)
+                .name("web_search")
+                .output(TextBlock.builder().text("Example (https://example.com)").build())
+                .metadata(
+                        Map.of(
+                                ToolResultBlock.METADATA_SERVER_TOOL,
+                                true,
+                                AnthropicServerToolHelper.RESULT_METADATA,
+                                rawJson))
+                .build();
+    }
+
+    @Test
+    void testServerToolBlocksStayInlineInAssistantMessage() {
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        serverToolUseBlock("srvtoolu_01"),
+                                        serverToolResultBlock("srvtoolu_01"),
+                                        TextBlock.builder().text("Based on the search...").build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(assistantMsg));
+
+        // Server tool blocks must NOT be split into separate user messages
+        assertEquals(1, result.size());
+        MessageParam param = result.get(0);
+        assertEquals(MessageParam.Role.ASSISTANT, param.role());
+
+        List<ContentBlockParam> blocks = param.content().asBlockParams();
+        assertEquals(3, blocks.size());
+
+        // server_tool_use echoed with original id and input
+        assertTrue(blocks.get(0).isServerToolUse());
+        assertEquals("srvtoolu_01", blocks.get(0).asServerToolUse().id());
+
+        // web_search_tool_result echoed verbatim from the raw JSON in metadata
+        assertTrue(blocks.get(1).isWebSearchToolResult());
+        var resultParam = blocks.get(1).asWebSearchToolResult();
+        assertEquals("srvtoolu_01", resultParam.toolUseId());
+        var items = resultParam.content().asItem();
+        assertEquals(1, items.size());
+        assertEquals("https://example.com", items.get(0).url());
+        assertEquals("Example", items.get(0).title());
+        assertEquals("enc_abc123", items.get(0).encryptedContent());
+        assertEquals("2 days", items.get(0).pageAge().orElseThrow());
+
+        assertTrue(blocks.get(2).isText());
+    }
+
+    @Test
+    void testServerToolErrorResultEchoedAsRequestError() {
+        String errorJson =
+                "{\"type\":\"web_search_tool_result\",\"tool_use_id\":\"srvtoolu_err\","
+                        + "\"content\":{\"type\":\"web_search_tool_result_error\","
+                        + "\"error_code\":\"max_uses_exceeded\"}}";
+        ToolResultBlock errorResult =
+                ToolResultBlock.builder()
+                        .id("srvtoolu_err")
+                        .name("web_search")
+                        .output(TextBlock.builder().text("[ERROR] Web search failed").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        AnthropicServerToolHelper.RESULT_METADATA,
+                                        errorJson))
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        serverToolUseBlock("srvtoolu_err"),
+                                        errorResult,
+                                        TextBlock.builder().text("Search failed.").build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(assistantMsg));
+
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertTrue(blocks.get(1).isWebSearchToolResult());
+        var resultParam = blocks.get(1).asWebSearchToolResult();
+        assertTrue(resultParam.content().isRequestError());
+    }
+
+    @Test
+    void testCodeExecutionServerToolResultEchoed() {
+        String rawJson =
+                "{\"type\":\"code_execution_tool_result\",\"tool_use_id\":\"srvtoolu_code\","
+                        + "\"content\":{\"type\":\"code_execution_result\",\"stdout\":\"42\\n\","
+                        + "\"stderr\":\"\",\"return_code\":0,\"content\":[]}}";
+        ToolResultBlock codeResult =
+                ToolResultBlock.builder()
+                        .id("srvtoolu_code")
+                        .name("code_execution")
+                        .output(TextBlock.builder().text("42").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        AnthropicServerToolHelper.RESULT_METADATA,
+                                        rawJson))
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("srvtoolu_code")
+                                                .name("code_execution")
+                                                .input(Map.of("code", "print(42)"))
+                                                .metadata(
+                                                        Map.of(
+                                                                ToolUseBlock.METADATA_SERVER_TOOL,
+                                                                true))
+                                                .build(),
+                                        codeResult))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(assistantMsg));
+
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(2, blocks.size());
+        assertTrue(blocks.get(0).isServerToolUse());
+        assertTrue(blocks.get(1).isCodeExecutionToolResult());
+        assertEquals("srvtoolu_code", blocks.get(1).asCodeExecutionToolResult().toolUseId());
+    }
+
+    @Test
+    void testServerToolBlocksDoNotBreakClientToolResultSplitting() {
+        // Assistant message: server tool call + inline result + client tool call
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        serverToolUseBlock("srvtoolu_02"),
+                                        serverToolResultBlock("srvtoolu_02"),
+                                        ToolUseBlock.builder()
+                                                .id("call_client")
+                                                .name("weather")
+                                                .input(Map.of("city", "Hangzhou"))
+                                                .build()))
+                        .build();
+        // Client tool result arrives as separate TOOL message
+        Msg toolResultMsg =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_client")
+                                                .name("weather")
+                                                .output(TextBlock.builder().text("Sunny").build())
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(assistantMsg, toolResultMsg));
+
+        assertEquals(2, result.size());
+
+        // Assistant message keeps server tool blocks inline plus the client tool_use
+        List<ContentBlockParam> assistantBlocks = result.get(0).content().asBlockParams();
+        assertEquals(3, assistantBlocks.size());
+        assertTrue(assistantBlocks.get(0).isServerToolUse());
+        assertTrue(assistantBlocks.get(1).isWebSearchToolResult());
+        assertTrue(assistantBlocks.get(2).isToolUse());
+        assertEquals("call_client", assistantBlocks.get(2).asToolUse().id());
+
+        // Client tool result becomes a separate user message with tool_result
+        assertEquals(MessageParam.Role.USER, result.get(1).role());
+        List<ContentBlockParam> userBlocks = result.get(1).content().asBlockParams();
+        assertTrue(userBlocks.get(0).isToolResult());
+        assertEquals("call_client", userBlocks.get(0).asToolResult().toolUseId());
     }
 }

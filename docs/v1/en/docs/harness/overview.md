@@ -1,5 +1,6 @@
 ---
 title: Overview
+zh_link: /v1/zh/docs/harness/overview
 ---
 
 `agentscope-harness` builds a production-grade runtime infrastructure on top of `agentscope-core`'s `ReActAgent`, through two extension channels: **Hooks** and **Toolkits**. Your entry point is one class: `HarnessAgent`.

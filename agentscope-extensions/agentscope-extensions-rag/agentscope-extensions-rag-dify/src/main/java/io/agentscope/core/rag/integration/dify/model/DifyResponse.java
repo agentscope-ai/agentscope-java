@@ -17,10 +17,14 @@ package io.agentscope.core.rag.integration.dify.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.util.List;
 
 /**
  * Response model for Dify knowledge base retrieval API.
+ *
+ * <p>Depending on the deployment, the top-level {@code query} field is either a bare string
+ * (Dify Cloud) or an object (self-hosted Dify); see {@link DifyQueryDeserializer}.
  *
  * <p>This class maps the JSON response from Dify's retrieve endpoint:
  * <pre>{@code
@@ -65,8 +69,12 @@ public class DifyResponse {
 
     /**
      * Query information from the response.
+     *
+     * <p>Dify Cloud returns {@code "query": "..."} while self-hosted Dify returns
+     * {@code "query": {"content": "..."}}; both shapes are handled by {@link DifyQueryDeserializer}.
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonDeserialize(using = DifyQueryDeserializer.class)
     public static class Query {
         private String content;
 

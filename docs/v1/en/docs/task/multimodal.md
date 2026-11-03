@@ -1,5 +1,6 @@
 ---
 title: Multimodal
+zh_link: /v1/zh/docs/task/multimodal
 ---
 
 Multimodal capabilities enable Agents to understand and generate images, audio, video, and other media content.

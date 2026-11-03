@@ -1,5 +1,6 @@
 ---
 title: Examples
+zh_link: /v1/zh/docs/harness/example/index
 ---
 
 This section tracks runnable Harness examples and scenario walkthroughs.

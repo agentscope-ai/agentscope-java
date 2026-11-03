@@ -1,6 +1,7 @@
 ---
 title: 技能（Skill）
 description: 四层技能合成、技能市场、自学习闭环
+en_link: /v2/en/docs/harness/skill
 ---
 
 一个 skill 就是一份写好的能力包：一个目录里放一份 `SKILL.md`（说明用途、给 agent 看的指令），可以再带一些参考文档、脚本或样例。写好后丢给 agent，它会在合适的时候自己用。
@@ -22,6 +23,12 @@ code-reviewer/
 └── scripts/           # 可选，agent 可以通过 shell 调用的脚本
     └── run-checks.sh
 ```
+
+`SKILL.md` 使用 UTF-8 编码，支持在开头的 `---` 前带有字节顺序标记（BOM）。
+
+使用不带缩进、仅包含 `---` 及可选空格或制表符的一行结束 YAML frontmatter。描述中的 `---` 或 YAML 缩进块标量中的 `---` 仍属于元数据。
+
+技能名必须匹配 `^[a-z0-9][a-z0-9-]*$` 且不超过 64 个字符（仅小写字母、数字和连字符，不含下划线和点），该规则遵循行业对 Agent Skills 的 name 格式规范与命名标准。名字会原样用作目录键与技能标识，不符合规范的名称会在构造或加载技能时被拒绝。
 
 SKILL.md 写法：
 
@@ -173,7 +180,7 @@ workspace/
 这里的 `workspace/<userId>/skills/` 是一个**逻辑路径**，不等于"一定是本机磁盘上的目录"。技能文件的读写统一走 `AbstractFilesystem` 抽象，实际落在哪儿由你配的[文件系统模式](/v2/zh/docs/harness/filesystem)决定，所以"按用户隔离 skill"这个能力跟具体存储后端解耦：
 
 - **本机 + shell** —— 就是宿主磁盘上的 `workspace/alice/skills/...`；
-- **共享存储（remote filesystem）** —— `skills/` 前缀被路由到 KV，用户隔离体现为命名空间键 `agents/<agentId>/users/alice/skills/...`，多副本之间一致；管理台改完下一轮推理即可生效；
+- **共享存储（remote filesystem）** —— `skills/` 前缀被路由到 KV，用户隔离体现为命名空间键 `agents/<agentId>/users/alice/skills/...`，多副本之间一致；管理台改完下一次 call 即可生效；
 - **沙箱（sandbox filesystem）** —— 宿主侧的用户目录在沙箱启动时通过 workspace projection 注入容器的 `/workspace`，agent 在沙箱里读到的是同一份。
 
 不管跑在哪种模式，`<userId>/skills/` 都按同样的优先级覆盖共用版。各模式下的隔离键、物理表现以及 `userId` 的作用，详见[文件系统](/v2/zh/docs/harness/filesystem#多用户隔离怎么实现)。
@@ -200,11 +207,11 @@ workspace/
 | `skillRepository(repo)` | 追加一个市场；可重复调用 |
 | `skillRepositories(list)` | 一次性替换所有市场 |
 | `projectGlobalSkillsDir(path)` | 启用项目全局目录；目录不存在则跳过 |
-| `disableDynamicSkills()` | 关掉"每次推理前重新合并"，改成 build 时合并一次 |
+| `disableDynamicSkills()` | 关掉"每次 call 前重新合并"，改成 build 时合并一次 |
 
 子 agent 自动继承父的市场列表和项目全局目录，不用重复配。
 
-什么时候用 `disableDynamicSkills()`：单次任务，跑完就退出；或市场后端慢、不想每轮拉。平时不用动这个开关。
+什么时候用 `disableDynamicSkills()`：单次任务，跑完就退出；或市场后端慢、不想每次 call 都重新拉。平时不用动这个开关。
 
 ## 自学习闭环（可选）
 
@@ -271,7 +278,7 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 ## Agent 是怎么读取和执行 skill 的
 
-每轮推理时，agent 会在 system prompt 里看到一个 `<available_skills>` 块，列出当前可见的所有 skill：
+agent 每次 call 时，harness 会构建一个 `<available_skills>` 块，列出当前可见的所有 skill。这个块每次 call 只构建一次（在 PreCall 阶段，随 system message 一起 seed），作为按 call 的 runtime material 渲染在对话之后，因此在该 call 的每一轮推理里都原样可见，也不会改变 system prompt 前缀——不是每轮重新构建：
 
 ```xml
 <available_skills>
@@ -287,11 +294,13 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 每个条目只携带最少的元数据，方便 agent 判断要不要加载详情。`<files-root>`（如果有）是 agent 通过 shell 执行该 skill 脚本时使用的绝对路径，详见下面。
 
+目录只含摘要，不等于 skill 指令。用户点名某个 skill，或任务明显匹配描述时，prompt 要求 agent 在行动前用准确的 `<skill-id>` 加载 `SKILL.md`。完整正文仍在对话中时可以复用，支持文件按需读取。没有 `<files-root>` 的条目通过 loader 读取，不能因为另一条目有该字段就为它编造 shell 路径。
+
 ### 读 SKILL.md 和资源文件
 
 加载某个 skill 时 agent 会调用内置工具 `load_skill_through_path`：
 
-- `load_skill_through_path(skillId, path="SKILL.md")` 返回 markdown 正文
+- `load_skill_through_path(skillId, path="SKILL.md")` 返回 YAML frontmatter 和 markdown 正文；根据内容选择围栏长度，保留内嵌代码块
 - `load_skill_through_path(skillId, path="references/style-guide.md")` 返回该 skill 目录下的任意文件
 
 具体怎么取文件，取决于 skill 来自哪里：
@@ -303,11 +312,11 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 | `workspace/skills/` 共用（Layer 3） | 注册时预载到内存 |
 | `<userId>/skills/` 用户隔离（Layer 4） | SKILL.md 预载；其它文件按需通过 `AbstractFilesystem` 读取（自动遵循 per-user namespace + sandbox 路由） |
 
-agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。底层查找顺序是"内存命中 → 文件系统读取 → 找不到时返回所有真正可用的路径列表"，所以传错 path 也只会拿到清单而不是死路。
+agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。底层顺序是"内存命中 → 来源提供的资源读取器 → 找不到时返回可用路径列表"。只预载 `SKILL.md` 的文件系统技能，可以从原始目录按需读取支持文件；仓库自身的 lazy reader 优先，不会绕过它回退到原始目录，也不会因此获得 shell 路径。
 
 ### `<files-root>` 和 shell 执行
 
-当一个 skill 自带脚本（例如 `scripts/run-checks.sh`），agent 需要绝对路径才能通过 `execute_shell_command` 调用它。这个绝对路径就是 skill 条目里的 `<files-root>`。它怎么算出来取决于文件系统模式：
+当一个 skill 自带脚本（例如 `scripts/run-checks.sh`），agent 需要绝对路径才能通过 `execute` 调用它。这个绝对路径就是 skill 条目里的 `<files-root>`。它怎么算出来取决于文件系统模式：
 
 | 文件系统模式（是否有 shell） | 工作区 skill 的 `<files-root>` | 市场 skill 的 `<files-root>` |
 |---------------------------|----------------------------|---------------------------|
@@ -315,14 +324,16 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 | Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
 | Local 不带 shell / Composite | （不渲染——没注册 shell 工具） | （不渲染） |
 
-所以 agent 发出来的 shell 命令永远是 `execute_shell_command("python3 <files-root>/scripts/foo.py")`——不用猜路径，不用记每种来源对应哪个前缀。
+`<files-root>` 是执行环境中的原始绝对路径，空格也原样保留。agent 以它为基准解析脚本路径，再按该环境的 shell 语法引用。本地 Windows 使用 `cmd.exe`，本地 POSIX 使用 `sh`，Docker 和 Kubernetes 在各自沙箱里执行。宿主 JVM 的系统、路径和已安装运行时不代表沙箱。应按已加载 skill 的脚本说明，使用命令执行环境中实际可用的解释器，不再假定 `ls` 或 `python3` 存在。只有可见技能中至少一个带 `<files-root>` 时，才会提供执行指引。
 
 ### 市场 skill 文件实际落在哪儿
 
-市场 skill 的资源最初只在内存里。要让 shell 能跑它们，harness 在每轮推理前把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`：
+仓库技能没有实际物化的附属资源时（例如仅提供内联正文的技能），staging 返回 `NONE`，不公布 `<files-root>`；技能仍可通过 `load_skill_through_path(..., path="SKILL.md")` 加载。混合技能目录中，只有提供 `<files-root>` 的条目才支持按该路径列文件或执行脚本。
+
+市场 skill 的资源最初只在内存里。要让 shell 能跑它们，harness 在每次 call 前（PreCall 阶段，与 `<available_skills>` 同一次 `onSystemPrompt`）把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`：
 
 - 文件级 SHA-256 去重，只重写变化过的文件
-- 已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录，会在同一轮顺手清掉
+- 已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录，会在同一次物化里顺手清掉
 - Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱
 
 工作区 skill（Layer 3 / Layer 4）不需要 stage——它们本来就在工作区目录里。
@@ -344,10 +355,10 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 ### 第一步：把市场 skill 物化到宿主
 
-市场 skill 的资源拿到时只是内存里的字节，shell 没法直接执行。每轮推理前，`MarketplaceStager` 把它们写到宿主的 `<wsRoot>/.skills-cache/<source>/<name>/`：
+市场 skill 的资源拿到时只是内存里的字节，shell 没法直接执行。每次 call 前（PreCall 阶段），`MarketplaceStager` 把它们写到宿主的 `<wsRoot>/.skills-cache/<source>/<name>/`：
 
 - **文件级 SHA-256 去重** —— 只重写变化过的文件，没变的跳过；
-- **孤儿清理** —— 已下架的 skill、或从 builder 里移除的整个仓库，留下的目录在同一轮顺手删掉；
+- **孤儿清理** —— 已下架的 skill、或从 builder 里移除的整个仓库，留下的目录在同一次物化里顺手删掉；
 - **恢复执行位** —— 资源在入库时被转成字符串，POSIX 权限丢了，所以 stager 用启发式补回 `+x`：文件开头是 shebang（`#!`），或后缀是已知脚本类型（`.sh`/`.bash`/`.py`/`.rb`/`.pl`/`.js`/`.mjs`），就加上可执行位（按 `chmod +x` 的语义，只给本来有读权限的位加执行位）。纯静态资产（`.json`/`.md`/`.txt`）保持 644。
 
 工作区 skill（Layer 3 / Layer 4）跳过这一步——它们本来就在工作区目录里。
@@ -378,10 +389,10 @@ AGENTS.md  skills/  subagents/  knowledge/  .skills-cache/
 | 工作区 skill | `/workspace/skills/<name>` |
 | 市场 skill | `/workspace/.skills-cache/<source>/<name>` |
 
-于是 agent 直接发：
+以默认 `/workspace` 根目录、沙箱已安装 `sh` 为例，agent 可以用以下参数调用 `execute`：
 
-```
-execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <目标路径>")
+```json
+{"command": "sh '/workspace/skills/code-reviewer/scripts/run-checks.sh' '<目标路径>'"}
 ```
 
 这条命令在容器里跑，读到的就是投影进来的那份文件。agent 不用知道 skill 来自哪一层，前缀由框架算好。
@@ -414,4 +425,4 @@ execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-check
 
 - [工作区](/v2/zh/docs/harness/workspace) — `skills/` 目录的整体布局
 - [文件系统](/v2/zh/docs/harness/filesystem) — 多租户隔离与按用户切目录
-- [架构](/v2/zh/docs/harness/architecture) — skill 集合是怎么每轮重新合成的
+- [架构](/v2/zh/docs/harness/architecture) — skill 集合是怎么每次 call 重新合成的

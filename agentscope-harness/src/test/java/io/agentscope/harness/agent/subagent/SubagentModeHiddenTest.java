@@ -20,15 +20,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.agent.Agent;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
-import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Phase A {@code mode} + {@code hidden} semantics: schema parsing, LLM-facing visibility
- * filtering, and spawn-rejection of PRIMARY-only declarations.
+ * Phase A {@code mode} + {@code hidden} semantics: schema parsing and spawn-rejection of
+ * PRIMARY-only declarations. LLM-facing visibility filtering is covered by the middleware-package
+ * tail-message tests ({@code SubagentsMiddlewareHeadStabilityTest}).
  */
 class SubagentModeHiddenTest {
 
@@ -92,61 +91,6 @@ class SubagentModeHiddenTest {
         SubagentDeclaration decl = AgentSpecLoader.parse(md, "x", null);
         assertNotNull(decl);
         assertEquals(SubagentDeclaration.Mode.ALL, decl.getMode());
-    }
-
-    @Test
-    void renderSubagentSection_hidesHiddenAndPrimaryOnly() {
-        SubagentDeclaration plain =
-                SubagentDeclaration.builder()
-                        .name("plain")
-                        .description("public agent")
-                        .inlineAgentsBody("b")
-                        .build();
-        SubagentDeclaration hidden =
-                SubagentDeclaration.builder()
-                        .name("secret")
-                        .description("internal use only")
-                        .inlineAgentsBody("b")
-                        .hidden(true)
-                        .build();
-        SubagentDeclaration primaryOnly =
-                SubagentDeclaration.builder()
-                        .name("compaction")
-                        .description("Compacts conversations")
-                        .inlineAgentsBody("b")
-                        .mode(SubagentDeclaration.Mode.PRIMARY)
-                        .build();
-
-        SubagentFactory noopFactory = (rc) -> (Agent) null;
-        List<SubagentEntry> entries =
-                List.of(
-                        new SubagentEntry("plain", plain.getDescription(), noopFactory, plain),
-                        new SubagentEntry("secret", hidden.getDescription(), noopFactory, hidden),
-                        new SubagentEntry(
-                                "compaction",
-                                primaryOnly.getDescription(),
-                                noopFactory,
-                                primaryOnly));
-
-        String rendered = SubagentsMiddleware.renderSubagentSection(entries, false);
-
-        // Use the rendered line prefix `- \`<name>\`` so we don't false-match on words that
-        // appear inside the static section template body (e.g. "compaction" in the
-        // "after conversation compaction" guidance line).
-        assertTrue(rendered.contains("- `plain`:"), "public agent should be listed");
-        assertFalse(rendered.contains("- `secret`:"), "hidden agent must not be listed");
-        assertFalse(
-                rendered.contains("- `compaction`:"),
-                "PRIMARY-only declaration must not appear in spawnable list");
-    }
-
-    @Test
-    void renderSubagentSection_programmaticEntriesAlwaysShown() {
-        SubagentFactory noopFactory = (rc) -> (Agent) null;
-        // declaration == null path — programmatic registration via the 3-arg constructor.
-        SubagentEntry entry = new SubagentEntry("bare", "Bare programmatic", noopFactory);
-        String rendered = SubagentsMiddleware.renderSubagentSection(List.of(entry), false);
-        assertTrue(rendered.contains("bare"));
     }
 
     @Test

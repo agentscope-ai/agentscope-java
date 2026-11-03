@@ -1,6 +1,7 @@
 ---
 title: Permission System
 description: 精细控制 agent 可以执行哪些 tool、何时执行
+en_link: /v2/en/docs/building-blocks/permission-system
 ---
 
 ## 概述
@@ -87,6 +88,13 @@ flowchart TD
 Deny 规则与危险路径检查是**不可绕过的** —— 即使在 `BYPASS` 模式下也照常生效。
 
 </Note>
+
+
+### 拦截器与权限引擎
+
+对单次调用的具体参数做业务规则(沙箱、租户隔离、审计)→ [工具调用拦截器](/v2/zh/docs/building-blocks/tool#工具调用拦截器)(`ToolkitConfig.interceptor(...)`);人审策略(ALLOW/ASK/DENY)→ 权限引擎。
+
+两层协同:权限引擎判定模型原始输入(ASK 确认框展示的也是原始参数);拦截器随后作用于最终参数,因此改写发生在用户批准*之后* —— 若安全敏感参数(路径、SQL、URL)改写后的最终值需要用户确认,应在拦截器中挂起人审而非静默改写。拦截器拒绝一个已获批准的调用属预期行为:拒绝结果直接回馈模型,不触发二次人审。
 
 
 ## Permission Mode
@@ -203,13 +211,12 @@ PermissionContextState permCtx =
 ```java
 import io.agentscope.core.event.ConfirmResult;
 
-// ASK 决策中包含基于本次调用生成的 suggestedRules（位于 ToolUseBlock 上）。
-// 接受建议时，把它放入结果即可：
+// ASK 决策会把建议规则挂在 PermissionDecision 上（权限钩子可见），而不是 ToolUseBlock 上。
+// 恢复层可以直接放行，也可以显式传入规则，让今后相同的调用自动放行：
 ConfirmResult result =
         new ConfirmResult(
                 /* confirmed = */ true,
-                /* toolCall  = */ toolCall,
-                /* rules     = */ toolCall.getSuggestedRules());
+                /* toolCall  = */ toolCall);
 ```
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/PermissionContextExample.java`、`hitl/PermissionHITLExample.java`。

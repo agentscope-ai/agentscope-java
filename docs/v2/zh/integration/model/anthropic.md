@@ -1,5 +1,6 @@
 ---
 title: Anthropic
+en_link: /v2/en/integration/model/anthropic
 ---
 
 `agentscope-extensions-model-anthropic` 接入 Anthropic Claude Model，并提供 Anthropic 专属 formatter 和请求 DTO 支持。
@@ -39,6 +40,27 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
+## 服务端工具
+
+Anthropic 内置工具由 Anthropic 在模型服务端执行，不会进入 AgentScope 本地 Toolkit。使用 SDK
+的强类型工具定义构造 `ToolUnion`，再交给 `AnthropicServerTool.of(...)` 包装：
+
+```java
+import com.anthropic.models.messages.ToolUnion;
+import com.anthropic.models.messages.WebSearchTool20250305;
+import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
+
+AnthropicChatModel model = AnthropicChatModel.builder()
+    .apiKey(System.getenv("ANTHROPIC_API_KEY"))
+    .modelName("claude-sonnet-4.5")
+    .addServerTool(AnthropicServerTool.of(
+        ToolUnion.ofWebSearchTool20250305(WebSearchTool20250305.builder().build())))
+    .build();
+```
+
+服务端工具可以与本地 function tools 同时配置；Anthropic 按工具名称选择工具，因此两者名称冲突时会快速
+失败。`AnthropicServerTool.of(...)` 只接受 SDK 内置工具定义，不接受自定义 client tool。
+
 ### Bearer Token 鉴权
 
 对于需要 `Authorization: Bearer <token>` 的 Anthropic 兼容网关，通过模型 builder 设置
@@ -56,6 +78,15 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 `authToken` 设置 `Authorization`；两者只能配置一个，同时配置会在创建模型时抛出
 `IllegalArgumentException`。
 这些鉴权请求头由 SDK 管理，请通过 builder 配置，不要通过 `GenerateOptions.additionalHeaders` 添加。
+
+## 客户端工具搜索
+
+在 agent 上注册 `ToolSearchMiddleware`，即可使用自定义客户端搜索策略和原生加载。
+适配层将候选工具标记为 `defer_loading: true`，搜索工具和始终可见的工具不延迟加载。
+搜索结果包含 `tool_reference`，Anthropic 根据请求 `tools` 数组中的完整定义展开引用。
+延迟定义仍需每次发送，但只在加载后进入模型上下文。提示缓存标记放在最后一个不延迟
+加载的客户端工具上，不会放在延迟工具上。请使用支持该协议的模型，或选择普通函数
+调用回退方式。详见[按需搜索工具](/v2/zh/docs/building-blocks/tool#按需搜索工具)。
 
 ## Spring Boot
 

@@ -1,5 +1,6 @@
 ---
 title: 生态扩展
+en_link: /v2/en/integration/ecosystem/index
 ---
 
 选择下方指南，了解生态扩展的配置与使用。

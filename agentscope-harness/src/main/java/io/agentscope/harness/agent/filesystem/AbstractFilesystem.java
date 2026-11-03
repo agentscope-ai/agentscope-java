@@ -27,9 +27,8 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.UploadMode;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
-import java.nio.ByteBuffer;
+import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import java.nio.charset.CharacterCodingException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +47,11 @@ import java.util.Objects;
  * should pass {@link RuntimeContext#empty()}.
  */
 public interface AbstractFilesystem {
+    /** Optional durable atomic storage capability. No silent fallback to local or unversioned writes. */
+    default io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext context) {
+        throw new UnsupportedOperationException(
+                "Filesystem does not support durable session storage: " + getClass().getName());
+    }
 
     /**
      * List all files in a directory with metadata.
@@ -165,11 +169,7 @@ public interface AbstractFilesystem {
             }
             String content;
             try {
-                content =
-                        StandardCharsets.UTF_8
-                                .newDecoder()
-                                .decode(ByteBuffer.wrap(file.getValue()))
-                                .toString();
+                content = FilesystemUtils.decodeUtf8Strict(file.getValue());
             } catch (CharacterCodingException e) {
                 responses.add(
                         FileUploadResponse.fail(

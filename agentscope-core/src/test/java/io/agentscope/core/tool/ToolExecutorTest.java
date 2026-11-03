@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.test.SampleTools;
@@ -100,6 +101,27 @@ class ToolExecutorTest {
         assertNotNull(concatResponse, "Concat tool response should be present");
         assertEquals(
                 "\"HelloWorld\"", extractFirstText(concatResponse), "Concat tool result mismatch");
+    }
+
+    @Test
+    @DisplayName("Should execute input-only tool call when raw content is absent")
+    void shouldExecuteInputOnlyToolCallWithoutContent() {
+        ToolUseBlock addCall =
+                ToolUseBlock.builder()
+                        .id("call-input-only")
+                        .name("add")
+                        .input(Map.of("a", 10, "b", 20))
+                        .build();
+
+        ToolResultBlock response =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(addCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(response, "Executor should return a response for input-only calls");
+        assertEquals(
+                "30",
+                extractFirstText(response),
+                "Schema validation must validate the parsed input when raw content is absent");
     }
 
     @Test
@@ -208,7 +230,10 @@ class ToolExecutorTest {
         assertEquals("call-external", response.getId(), "Response should keep tool call id");
         assertEquals("external_api", response.getName(), "Response should keep tool name");
         assertTrue(response.isSuspended(), "External tool should surface as suspended");
-        assertEquals("[Awaiting external execution]", extractFirstText(response));
+        assertEquals(ToolResultState.SUSPENDED, response.getState());
+        assertTrue(
+                response.getOutput().isEmpty(),
+                "External tool suspension must not fabricate output");
     }
 
     @Test

@@ -1,5 +1,6 @@
 ---
 title: AgentScope 2.0 生产可用，企业级 Harness 技术全解析
+en_link: /v2/en/blogs/agentscope-v2-explained
 ---
 
 <font style="color:rgb(44, 44, 43);">AgentScope Java 2.0 的核心思路，是基于 </font>`<font style="color:rgb(44, 44, 43);">ReActAgent</font>`<font style="color:rgb(44, 44, 43);"> 推理内核基础上，增加 </font>`<font style="color:rgb(44, 44, 43);">Harness</font>`<font style="color:rgb(44, 44, 43);"> 工程化层。开发者既可以继续使用轻量的 ReAct 循环，也可以按需启用 Workspace、持久记忆、Session、Sandbox、Skill 和 Subagent 等能力，将同一套 Agent 逻辑落地部署到企业级分布式服务中。</font>

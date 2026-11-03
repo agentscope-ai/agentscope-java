@@ -1,5 +1,6 @@
 ---
 title: 工作区
+en_link: /v1/en/docs/harness/workspace
 ---
 
 ## 作用
@@ -14,7 +15,7 @@ agent 每次推理时，工作区里的几个关键文件会被自动注入到 s
 |------|------|
 | `HarnessAgent.build()` | `WorkspaceManager.validate()` 检查目录与 `AGENTS.md` 是否存在，缺失只 warn |
 | 每次 `call()` 推理前 | `WorkspaceContextHook` 读 `AGENTS.md` / `MEMORY.md` / `knowledge/` / 额外文件并注入 system prompt |
-| 压缩 / 调用结束 | `MemoryFlushHook`、`SessionPersistenceHook` 等通过 `WorkspaceManager` 写回 `memory/`、`agents/.../sessions/` |
+| 压缩 / 调用结束 | `MemoryFlushMiddleware` 通过 `WorkspaceManager` 写回 `memory/`；运行时向 `.agentscope-runtime/` 追加会话 journal |
 
 ## 目录结构
 
@@ -30,12 +31,11 @@ workspace/                           ← 默认 .agentscope/workspace
 │   └── .consolidation_state         ← MemoryConsolidator 内部状态
 ├── skills/<skill-name>/SKILL.md     ← 自定义技能
 ├── subagents/<id>.md                ← 子 agent 声明（文件名=agent_id，自动发现）
-└── agents/<agentId>/
-    ├── workspace/                   ← isolated 子 agent 的运行时根（无 workspace.path 时自动创建）
-    └── sessions/
-        ├── sessions.json            ← 会话索引（id / summary / updatedAt）
-        ├── <sessionId>.jsonl        ← LLM 可见的压缩上下文
-        └── <sessionId>.log.jsonl   ← 完整对话日志（追加）
+├── agents/<agentId>/workspace/      ← isolated 子 agent 的运行时根（无 workspace.path 时自动创建）
+└── .agentscope-runtime/             ← 运行时私有的 native session journal（模型不可见）
+    └── agents/<agentId>/sessions/<userId>/<sessionId>/
+        ├── session.json             ← 会话头
+        └── …                        ← hash 链式 commit 与 payload 对象
 ```
 
 > 子 agent 三层模型（声明 / 定义 / 运行时）详见 [子 Agent](/v1/zh/docs/harness/subagent)。
@@ -96,7 +96,6 @@ wm.listMemoryFilePaths();
 wm.listSessionLogFiles();
 
 wm.appendUtf8WorkspaceRelative(rel, content);  // 走 AbstractFilesystem
-wm.updateSessionIndex(agentId, sessionId, summary); // 维护 sessions.json
 ```
 
 ## 配置
