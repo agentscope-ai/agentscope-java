@@ -433,7 +433,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.sessionLogStore = builder.sessionLogStore;
         this.sessionHistoryMode = builder.sessionHistoryMode;
         this.sessionLogAgentId =
-                builder.sessionLogAgentId == null ? getName() : builder.sessionLogAgentId;
+                builder.sessionLogAgentId != null
+                        ? builder.sessionLogAgentId
+                        : (getName() != null && !getName().isBlank() ? getName() : getAgentId());
         this.conflictPolicy =
                 builder.conflictPolicy != null ? builder.conflictPolicy : ConflictPolicy.OVERWRITE;
         this.defaultSessionId =
