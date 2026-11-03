@@ -16,9 +16,9 @@
 
 package io.agentscope.spring.boot.a2a.controller;
 
+import io.a2a.json.JsonUtil;
 import io.a2a.spec.JSONRPCResponse;
 import io.a2a.spec.TransportProtocol;
-import io.a2a.util.Utils;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.Map;
@@ -76,7 +76,7 @@ public class A2aJsonRpcController {
 
     private ServerSentEvent<String> convertToSse(JSONRPCResponse<?> response) {
         try {
-            String data = Utils.OBJECT_MAPPER.writeValueAsString(response);
+            String data = JsonUtil.toJson(response);
             ServerSentEvent.Builder<String> builder =
                     ServerSentEvent.<String>builder().data(data).event("jsonrpc");
             if (response.getId() != null) {

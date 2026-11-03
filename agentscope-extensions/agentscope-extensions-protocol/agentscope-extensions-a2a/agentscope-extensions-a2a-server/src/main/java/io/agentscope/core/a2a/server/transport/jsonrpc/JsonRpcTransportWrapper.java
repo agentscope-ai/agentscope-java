@@ -16,9 +16,12 @@
 
 package io.agentscope.core.a2a.server.transport.jsonrpc;
 
-import com.fasterxml.jackson.core.JsonParseException;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
+import io.a2a.json.JsonProcessingException;
+import io.a2a.json.JsonUtil;
 import io.a2a.server.ServerCallContext;
 import io.a2a.spec.CancelTaskRequest;
 import io.a2a.spec.DeleteTaskPushNotificationConfigRequest;
@@ -47,7 +50,6 @@ import io.a2a.spec.TransportProtocol;
 import io.a2a.spec.UnsupportedOperationError;
 import io.a2a.transport.jsonrpc.context.JSONRPCContextKeys;
 import io.a2a.transport.jsonrpc.handler.JSONRPCHandler;
-import io.a2a.util.Utils;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.transport.TransportWrapper;
 import java.time.Duration;
@@ -144,9 +146,14 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
 
     private boolean isStreamingRequest(String requestBody, ServerCallContext context) {
         try {
-            JsonNode node = Utils.OBJECT_MAPPER.readTree(requestBody);
-            JsonNode method = node != null ? node.get("method") : null;
-            String methodName = method != null ? method.asText() : null;
+            JsonElement element = JsonParser.parseString(requestBody);
+            if (!element.isJsonObject()) {
+                return false;
+            }
+            JsonObject node = element.getAsJsonObject();
+            JsonElement method = node.get("method");
+            String methodName =
+                    method != null && method.isJsonPrimitive() ? method.getAsString() : null;
             if (methodName != null) {
                 context.getState().put(JSONRPCContextKeys.METHOD_NAME_KEY, methodName);
                 return SendStreamingMessageRequest.METHOD.equals(methodName)
@@ -160,8 +167,13 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
 
     private Flux<? extends JSONRPCResponse<?>> handleStreamRequest(
             String body, ServerCallContext context) throws JsonProcessingException {
-        StreamingJSONRPCRequest<?> request =
-                Utils.OBJECT_MAPPER.readValue(body, StreamingJSONRPCRequest.class);
+        String methodName = (String) context.getState().get(JSONRPCContextKeys.METHOD_NAME_KEY);
+        StreamingJSONRPCRequest<?> request;
+        if (SendStreamingMessageRequest.METHOD.equals(methodName)) {
+            request = readRequest(body, SendStreamingMessageRequest.class);
+        } else {
+            request = readRequest(body, TaskResubscriptionRequest.class);
+        }
         Flow.Publisher<? extends JSONRPCResponse<?>> publisher;
         if (request instanceof SendStreamingMessageRequest req) {
             publisher = jsonRpcHandler.onMessageSendStream(req, context);
@@ -205,8 +217,8 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
 
     private JSONRPCResponse<?> handleNonStreamRequest(String body, ServerCallContext context)
             throws JsonProcessingException {
-        NonStreamingJSONRPCRequest<?> request =
-                Utils.OBJECT_MAPPER.readValue(body, NonStreamingJSONRPCRequest.class);
+        String methodName = (String) context.getState().get(JSONRPCContextKeys.METHOD_NAME_KEY);
+        NonStreamingJSONRPCRequest<?> request = deserializeNonStreamingRequest(body, methodName);
         if (request instanceof GetTaskRequest req) {
             return jsonRpcHandler.onGetTask(req, context);
         } else if (request instanceof SendMessageRequest req) {
@@ -226,10 +238,52 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
         }
     }
 
+    private NonStreamingJSONRPCRequest<?> deserializeNonStreamingRequest(
+            String body, String methodName) throws JsonProcessingException {
+        if (methodName == null) {
+            // Mirror the SDK's previous Jackson behaviour: malformed JSON maps to a
+            // parse error, a well-formed request without a method maps to an
+            // invalid-request error.
+            try {
+                JsonParser.parseString(body);
+            } catch (JsonSyntaxException e) {
+                throw new JsonProcessingException("Failed to parse JSON", e);
+            }
+            throw new IdJsonMappingException("Missing or invalid 'method' field", null);
+        }
+        return switch (methodName) {
+            case GetTaskRequest.METHOD -> readRequest(body, GetTaskRequest.class);
+            case SendMessageRequest.METHOD -> readRequest(body, SendMessageRequest.class);
+            case CancelTaskRequest.METHOD -> readRequest(body, CancelTaskRequest.class);
+            case GetTaskPushNotificationConfigRequest.METHOD ->
+                    readRequest(body, GetTaskPushNotificationConfigRequest.class);
+            case SetTaskPushNotificationConfigRequest.METHOD ->
+                    readRequest(body, SetTaskPushNotificationConfigRequest.class);
+            case ListTaskPushNotificationConfigRequest.METHOD ->
+                    readRequest(body, ListTaskPushNotificationConfigRequest.class);
+            case DeleteTaskPushNotificationConfigRequest.METHOD ->
+                    readRequest(body, DeleteTaskPushNotificationConfigRequest.class);
+            default ->
+                    throw new MethodNotFoundJsonMappingException(
+                            "Method not found: " + methodName, null);
+        };
+    }
+
+    private <T> T readRequest(String body, Class<T> type) throws JsonProcessingException {
+        try {
+            return JsonUtil.fromJson(body, type);
+        } catch (RuntimeException e) {
+            // Gson reports missing required request fields (e.g. via constructor
+            // validation) as plain runtime exceptions; surface them as invalid
+            // params like the Jackson-based SDK did.
+            throw new InvalidParamsJsonMappingException(e.getMessage(), null);
+        }
+    }
+
     private JSONRPCErrorResponse handleError(JsonProcessingException exception) {
         Object id = null;
         JSONRPCError jsonRpcError = null;
-        if (exception instanceof JsonParseException) {
+        if (exception.getCause() instanceof JsonSyntaxException) {
             jsonRpcError = new JSONParseError(exception.getMessage());
         } else if (exception instanceof MethodNotFoundJsonMappingException err) {
             id = err.getId();
