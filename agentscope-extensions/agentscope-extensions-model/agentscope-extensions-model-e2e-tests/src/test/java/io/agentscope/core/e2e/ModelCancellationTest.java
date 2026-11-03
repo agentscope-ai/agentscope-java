@@ -16,8 +16,14 @@
 package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.anthropic.errors.BadRequestException;
+import com.fasterxml.jackson.core.JsonParseException;
+import com.google.genai.errors.ClientException;
+import com.google.genai.errors.GenAiIOException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -25,6 +31,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.transport.HttpTransportConfig;
 import io.agentscope.core.model.transport.JdkHttpTransport;
 import io.agentscope.extensions.model.anthropic.AnthropicChatModel;
@@ -44,6 +51,7 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -153,6 +161,79 @@ class ModelCancellationTest {
                         .map(TextBlock.class::cast)
                         .anyMatch(text -> "hello".equals(text.getText())));
         assertTrue(dropped.isEmpty(), () -> "Unexpected dropped errors: " + dropped);
+    }
+
+    @Test
+    void anthropicStreamAcquisitionFailureKeepsModelExceptionContext() {
+        server.enqueue(
+                new MockResponse()
+                        .setResponseCode(400)
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                """
+                                {"type":"error","error":{"type":"invalid_request_error","message":"test invalid request"}}
+                                """));
+        Model model = model("anthropic", true);
+
+        ModelException error = assertThrows(ModelException.class, () -> singleAttempt(model));
+
+        assertEquals("test-model", error.getModelName());
+        assertEquals("anthropic", error.getProvider());
+        assertInstanceOf(BadRequestException.class, error.getCause());
+        assertEquals(1, server.getRequestCount());
+        assertTrue(dropped.isEmpty());
+    }
+
+    @Test
+    void geminiStreamAcquisitionFailureKeepsModelException() {
+        server.enqueue(
+                new MockResponse()
+                        .setResponseCode(400)
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                """
+                                {"error":{"code":400,"message":"test invalid request","status":"INVALID_ARGUMENT"}}
+                                """));
+        GeminiChatModel model = (GeminiChatModel) model("gemini", true);
+        try {
+            ModelException error = assertThrows(ModelException.class, () -> singleAttempt(model));
+
+            assertInstanceOf(ClientException.class, error.getCause());
+            assertEquals(1, server.getRequestCount());
+            assertTrue(dropped.isEmpty());
+        } finally {
+            model.close();
+        }
+    }
+
+    @Test
+    void geminiStreamConsumptionFailureKeepsSdkException() {
+        server.enqueue(
+                new MockResponse()
+                        .setHeader("Content-Type", "text/event-stream")
+                        .setBody("data: {invalid}\n\n"));
+        GeminiChatModel model = (GeminiChatModel) model("gemini", true);
+        try {
+            GenAiIOException error =
+                    assertThrows(GenAiIOException.class, () -> singleAttempt(model));
+
+            assertInstanceOf(JsonParseException.class, error.getCause());
+            assertEquals(1, server.getRequestCount());
+            assertTrue(dropped.isEmpty());
+        } finally {
+            model.close();
+        }
+    }
+
+    private List<ChatResponse> singleAttempt(Model model) {
+        return model.stream(
+                        List.of(Msg.builder().role(MsgRole.USER).textContent("hello").build()),
+                        null,
+                        GenerateOptions.builder()
+                                .executionConfig(ExecutionConfig.builder().maxAttempts(1).build())
+                                .build())
+                .collectList()
+                .block(Duration.ofSeconds(10));
     }
 
     private Model model(String provider, boolean stream) {

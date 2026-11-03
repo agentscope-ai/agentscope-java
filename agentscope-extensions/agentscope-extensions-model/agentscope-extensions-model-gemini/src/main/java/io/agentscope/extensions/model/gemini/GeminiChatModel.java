@@ -330,52 +330,54 @@ public class GeminiChatModel extends ChatModelBase {
                 tools != null && !tools.isEmpty(),
                 streamEnabled);
 
-        return Flux.defer(
+        if (streamEnabled) {
+            return ModelUtils.fromBlockingCallable(
+                            () -> {
+                                List<Content> formattedMessages = formatter.format(messages);
+                                GenerateContentConfig config =
+                                        buildGenerateContentConfig(tools, options);
+                                return client.models.generateContentStream(
+                                        modelName, formattedMessages, config);
+                            })
+                    .onErrorMap(
+                            e -> new ModelException("Gemini API call failed: " + e.getMessage(), e))
+                    .doOnError(e -> log.error("Gemini API call failed: {}", e.getMessage(), e))
+                    .flatMapMany(
+                            responseStream -> {
+                                try {
+                                    return Flux.fromIterable(responseStream)
+                                            .subscribeOn(Schedulers.boundedElastic())
+                                            .map(
+                                                    response ->
+                                                            formatter.parseResponse(
+                                                                    response, startTime))
+                                            .doFinally(
+                                                    signal -> closeResponseStream(responseStream));
+                                } catch (Exception e) {
+                                    closeResponseStream(responseStream);
+                                    log.error("Gemini API call failed: {}", e.getMessage(), e);
+                                    return Flux.error(
+                                            new ModelException(
+                                                    "Gemini API call failed: " + e.getMessage(),
+                                                    e));
+                                }
+                            })
+                    .doOnDiscard(ResponseStream.class, this::closeResponseStream);
+        }
+        return ModelUtils.fromBlockingCallable(
                         () -> {
                             List<Content> formattedMessages = formatter.format(messages);
                             GenerateContentConfig config =
                                     buildGenerateContentConfig(tools, options);
-                            if (streamEnabled) {
-                                return ModelUtils.fromBlockingCallable(
-                                                () ->
-                                                        client.models.generateContentStream(
-                                                                modelName,
-                                                                formattedMessages,
-                                                                config))
-                                        .flatMapMany(
-                                                responseStream ->
-                                                        Flux.fromIterable(responseStream)
-                                                                .subscribeOn(
-                                                                        Schedulers.boundedElastic())
-                                                                .map(
-                                                                        response ->
-                                                                                formatter
-                                                                                        .parseResponse(
-                                                                                                response,
-                                                                                                startTime))
-                                                                .doFinally(
-                                                                        signal ->
-                                                                                closeResponseStream(
-                                                                                        responseStream)))
-                                        .doOnDiscard(
-                                                ResponseStream.class, this::closeResponseStream);
-                            }
-                            return ModelUtils.fromBlockingCallable(
-                                            () -> {
-                                                GenerateContentResponse response =
-                                                        client.models.generateContent(
-                                                                modelName,
-                                                                formattedMessages,
-                                                                config);
-                                                return Objects.requireNonNull(
-                                                        formatter.parseResponse(
-                                                                response, startTime));
-                                            })
-                                    .flux();
+                            GenerateContentResponse response =
+                                    client.models.generateContent(
+                                            modelName, formattedMessages, config);
+                            return Objects.requireNonNull(
+                                    formatter.parseResponse(response, startTime));
                         })
-                .subscribeOn(Schedulers.boundedElastic())
                 .onErrorMap(e -> new ModelException("Gemini API call failed: " + e.getMessage(), e))
-                .doOnError(e -> log.error("Gemini API call failed: {}", e.getMessage(), e));
+                .doOnError(e -> log.error("Gemini API call failed: {}", e.getMessage(), e))
+                .flux();
     }
 
     /** Closes SDK streams on termination or when acquisition finishes after cancellation. */

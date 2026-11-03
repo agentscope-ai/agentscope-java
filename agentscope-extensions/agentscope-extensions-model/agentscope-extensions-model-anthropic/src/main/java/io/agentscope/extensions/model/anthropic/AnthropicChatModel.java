@@ -333,9 +333,19 @@ public class AnthropicChatModel extends ChatModelBase {
                                 if (streamEnabled) {
                                     return ModelUtils.fromBlockingCallable(
                                                     () -> client.messages().createStreaming(params))
+                                            .onErrorMap(
+                                                    e ->
+                                                            new ModelException(
+                                                                    "Failed to stream Anthropic"
+                                                                            + " API: "
+                                                                            + e.getMessage(),
+                                                                    e,
+                                                                    modelName,
+                                                                    "anthropic"))
                                             .flatMapMany(
-                                                    streamResponse ->
-                                                            AnthropicResponseParser
+                                                    streamResponse -> {
+                                                        try {
+                                                            return AnthropicResponseParser
                                                                     .parseStreamEvents(
                                                                             Flux.fromStream(
                                                                                             streamResponse
@@ -347,7 +357,20 @@ public class AnthropicChatModel extends ChatModelBase {
                                                                     .doFinally(
                                                                             signal ->
                                                                                     closeStreamResponse(
-                                                                                            streamResponse)))
+                                                                                            streamResponse));
+                                                        } catch (Exception e) {
+                                                            closeStreamResponse(streamResponse);
+                                                            return Flux.error(
+                                                                    new ModelException(
+                                                                            "Failed to stream"
+                                                                                + " Anthropic API: "
+                                                                                    + e
+                                                                                            .getMessage(),
+                                                                            e,
+                                                                            modelName,
+                                                                            "anthropic"));
+                                                        }
+                                                    })
                                             .doOnDiscard(
                                                     StreamResponse.class,
                                                     this::closeStreamResponse);

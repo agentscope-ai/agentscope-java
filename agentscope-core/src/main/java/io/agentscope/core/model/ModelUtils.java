@@ -29,9 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.context.Context;
 import reactor.util.retry.Retry;
 
 /**
@@ -66,25 +64,23 @@ public final class ModelUtils {
      */
     public static <T> Mono<T> fromBlockingCallable(Callable<T> callable) {
         Objects.requireNonNull(callable, "callable");
-        return Mono.<T>create(
-                        sink -> {
+        // Defer preserves the callable's cancellation/discard path instead of subscribeOn's
+        // optimized callable subscription, which does not discard late results.
+        return Mono.defer(
+                        () -> {
                             AtomicBoolean cancelled = new AtomicBoolean();
-                            sink.onCancel(() -> cancelled.set(true));
-                            if (cancelled.get()) {
-                                return;
-                            }
-                            try {
-                                sink.success(callable.call());
-                            } catch (Exception error) {
-                                if (cancelled.get()) {
-                                    if (!isInterruption(error)) {
-                                        Operators.onErrorDropped(
-                                                error, Context.of(sink.contextView()));
-                                    }
-                                } else {
-                                    sink.error(error);
-                                }
-                            }
+                            return Mono.<T>fromCallable(
+                                            () -> {
+                                                try {
+                                                    return callable.call();
+                                                } catch (Exception error) {
+                                                    if (cancelled.get() && isInterruption(error)) {
+                                                        return null;
+                                                    }
+                                                    throw error;
+                                                }
+                                            })
+                                    .doOnCancel(() -> cancelled.set(true));
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }

@@ -24,17 +24,6 @@ A **Credential** carries a provider's API auth fields (`apiKey`, `baseUrl`, …)
 
 This layering matches the natural UX in a frontend — register the credential first, then pick a model under it — so the UI authenticates once and shows everything that provider supports.
 
-## Blocking calls and cancellation
-
-Blocking provider calls and SDK stream acquisition run on Reactor's bounded elastic scheduler.
-When a model timeout or caller cancellation interrupts one of these calls, the expected interruption
-of that cancelled subscription is not reported as an undeliverable error. The configured timeout
-and retry policy still determines whether the model request is retried or fails.
-
-Active-request failures and unrelated errors remain observable. SDK streams acquired after
-cancellation are closed rather than leaked. This behavior does not guarantee that the provider
-stops processing a remote request that has already been sent.
-
 ## Model extension modules
 
 Provider-specific model implementations have been moved out of `agentscope-core` into independent extension modules. Each provider module owns its chat model, credential, formatter, DTO, exception, and SDK/API client, etc.
