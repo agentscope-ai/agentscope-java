@@ -316,6 +316,8 @@ Input record types per hook (under `io.agentscope.core.middleware`):
 
 To replace fields flowing into the next layer, construct a new input record, then call `next.apply(...)`.
 
+Changes made through `onModelCall` affect that model request; they do not automatically rewrite stored conversation history. For the legacy `PostActingEvent`, `setToolResult(...)` updates the tool message stored for the next reasoning step. An explicitly replaced `Msg` takes precedence, and the original tool-call identity is preserved. `returnDirect` retains its direct-return behavior; replacing a result does not rewrite streaming deltas already emitted.
+
 Runnable examples: `agentscope-examples/documentation/.../middleware/CustomizedMiddlewareExample.java`, `middleware/ModelCallMiddlewareExample.java`, `middleware/SystemPromptMiddlewareExample.java`.
 
 ### State-ready notification
@@ -440,6 +442,10 @@ onAgent
         │     └── onModelCall
         └── onActing (per tool call)
 ```
+
+### `onActing` or tool call interceptors?
+
+Use `onActing` to manipulate the event stream, gate a whole batch of tool calls, or handle turn-level output. Use [tool call interceptors](/v2/en/docs/building-blocks/tool#tool-call-interceptors) to validate / rewrite / deny a single call's final arguments, including on paths that never enter an agent loop (direct `Toolkit#callTool`, subagent Toolkits). The two can be used together.
 
 ### Extension point participation (`activePoints()`)
 

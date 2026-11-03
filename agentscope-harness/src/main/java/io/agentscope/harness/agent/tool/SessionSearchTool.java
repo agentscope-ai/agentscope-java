@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.session.SessionKey;
 import io.agentscope.core.session.SessionLogStore;
 import io.agentscope.core.session.SessionViews;
@@ -33,6 +34,13 @@ import java.util.function.Predicate;
 
 /** Read-only session discovery and full conversation views from the authoritative native log. */
 public class SessionSearchTool {
+    /**
+     * Hard ceiling for model-supplied result limits. The tool is excluded from
+     * {@code ToolResultEvictionConfig} on the "bounded results" rationale, so nothing
+     * downstream trims an oversized result — the clamp has to happen here (#3270).
+     */
+    private static final int MAX_RESULTS_CEILING = 100;
+
     private final SessionLogStore store;
 
     public SessionSearchTool(WorkspaceManager workspace) {
@@ -48,7 +56,7 @@ public class SessionSearchTool {
         this(store == null ? new WorkspaceSessionLogStore(workspace) : store);
     }
 
-    public String sessionSearch(
+    public ToolResultBlock sessionSearch(
             RuntimeContext runtimeContext, String query, String agentId, Integer maxResults) {
         return sessionSearch(runtimeContext, query, agentId, maxResults, null);
     }
@@ -59,7 +67,7 @@ public class SessionSearchTool {
             description =
                     "Search native session conversation messages, tool calls and results for a"
                             + " keyword or phrase.")
-    public String sessionSearch(
+    public ToolResultBlock sessionSearch(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "query",
@@ -75,7 +83,7 @@ public class SessionSearchTool {
                     String agentId,
             @ToolParam(
                             name = "maxResults",
-                            description = "Maximum number of results (default: 10)",
+                            description = "Maximum number of results (default: 10, capped at 100)",
                             required = false)
                     Integer maxResults,
             @ToolParam(
@@ -86,7 +94,7 @@ public class SessionSearchTool {
                                             + " message. Case-insensitive literal matching.",
                             required = false)
                     String matchMode) {
-        if (query == null || query.isBlank()) return "Error: query is required";
+        if (query == null || query.isBlank()) return ToolResultBlock.error("query is required");
         RuntimeContext rc = context(runtimeContext);
         int limit = positiveLimit(maxResults, 10);
         Predicate<String> matcher;
@@ -100,7 +108,7 @@ public class SessionSearchTool {
                                 return text -> text.contains(lowerTerm);
                             });
         } catch (IllegalArgumentException error) {
-            return "Error: " + error.getMessage();
+            return ToolResultBlock.error(error.getMessage());
         }
         var matches = new ArrayList<Map<String, Object>>();
         for (SessionKey key : sessions(rc, agentId)) {
@@ -120,11 +128,12 @@ public class SessionSearchTool {
                                     view.asOfSeq(),
                                     "message",
                                     message));
-                    if (matches.size() >= limit) return JsonUtils.getJsonCodec().toJson(matches);
+                    if (matches.size() >= limit)
+                        return ToolResultBlock.success(JsonUtils.getJsonCodec().toJson(matches));
                 }
             }
         }
-        return JsonUtils.getJsonCodec().toJson(matches);
+        return ToolResultBlock.success(JsonUtils.getJsonCodec().toJson(matches));
     }
 
     @Tool(
@@ -133,13 +142,14 @@ public class SessionSearchTool {
             description =
                     "List native sessions for an agent in the caller's workspace storage"
                             + " namespace.")
-    public String sessionList(
+    public ToolResultBlock sessionList(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID to list sessions for")
                     String agentId) {
-        if (agentId == null || agentId.isBlank()) return "Error: agentId is required";
+        if (agentId == null || agentId.isBlank())
+            return ToolResultBlock.error("agentId is required");
         RuntimeContext rc = context(runtimeContext);
-        return JsonUtils.getJsonCodec().toJson(sessions(rc, agentId));
+        return ToolResultBlock.success(JsonUtils.getJsonCodec().toJson(sessions(rc, agentId)));
     }
 
     @Tool(
@@ -148,35 +158,37 @@ public class SessionSearchTool {
             description =
                     "Read committed conversation history including messages before context"
                             + " compaction.")
-    public String sessionHistory(
+    public ToolResultBlock sessionHistory(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID") String agentId,
             @ToolParam(name = "sessionId", description = "Session ID") String sessionId,
             @ToolParam(
                             name = "lastN",
-                            description = "Number of recent messages (default: 20)",
+                            description = "Number of recent messages (default: 20, capped at 100)",
                             required = false)
                     Integer lastN) {
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
-            return "Error: agentId and sessionId are required";
+            return ToolResultBlock.error("agentId and sessionId are required");
         }
         RuntimeContext rc = context(runtimeContext);
         RuntimeContext sessionContext = RuntimeContext.builder(rc).sessionId(sessionId).build();
         var log = store.open(new SessionKey(rc.getUserId(), agentId, sessionId), sessionContext);
-        if (log.head().seq() == 0) return "Session not found: " + sessionId;
+        if (log.head().seq() == 0) return ToolResultBlock.error("Session not found: " + sessionId);
         var view = SessionViews.transcript(log);
         var messages = view.messages();
         int limit = positiveLimit(lastN, 20);
-        return JsonUtils.getJsonCodec()
-                .toJson(
-                        Map.of(
-                                "asOfSeq",
-                                view.asOfSeq(),
-                                "totalMessages",
-                                messages.size(),
-                                "messages",
-                                messages.subList(
-                                        Math.max(0, messages.size() - limit), messages.size())));
+        return ToolResultBlock.success(
+                JsonUtils.getJsonCodec()
+                        .toJson(
+                                Map.of(
+                                        "asOfSeq",
+                                        view.asOfSeq(),
+                                        "totalMessages",
+                                        messages.size(),
+                                        "messages",
+                                        messages.subList(
+                                                Math.max(0, messages.size() - limit),
+                                                messages.size()))));
     }
 
     private List<SessionKey> sessions(RuntimeContext rc, String agentId) {
@@ -202,6 +214,6 @@ public class SessionSearchTool {
     }
 
     private static int positiveLimit(Integer value, int fallback) {
-        return value == null || value <= 0 ? fallback : value;
+        return value == null || value <= 0 ? fallback : Math.min(value, MAX_RESULTS_CEILING);
     }
 }

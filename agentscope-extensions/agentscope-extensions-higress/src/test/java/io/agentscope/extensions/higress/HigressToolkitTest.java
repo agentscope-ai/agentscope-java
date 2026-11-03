@@ -27,6 +27,7 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
@@ -92,7 +93,9 @@ class HigressToolkitTest {
 
         McpClientWrapper mockDelegateClient = mock(McpClientWrapper.class);
         McpSchema.Tool tool =
-                new McpSchema.Tool("test_tool", "Title", "Description", null, null, null, null);
+                McpSchema.Tool.builder("test_tool", Map.of("type", "object"))
+                        .description("Description")
+                        .build();
         when(mockDelegateClient.initialize()).thenReturn(Mono.empty());
         when(mockDelegateClient.listTools()).thenReturn(Mono.just(List.of(tool)));
         when(mockDelegateClient.isInitialized()).thenReturn(true);

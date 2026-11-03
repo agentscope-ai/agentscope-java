@@ -16,10 +16,6 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.FileContent;
-import io.a2a.spec.FilePart;
-import io.a2a.spec.FileWithBytes;
-import io.a2a.spec.FileWithUri;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -27,6 +23,10 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import org.a2aproject.sdk.spec.FileContent;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.FileWithBytes;
+import org.a2aproject.sdk.spec.FileWithUri;
 
 /**
  * Parser for {@link FilePart} to {@link ContentBlock}.
@@ -41,7 +41,7 @@ public class FilePartParser implements PartParser<FilePart> {
 
     @Override
     public ContentBlock parse(FilePart part) {
-        FileContent file = part.getFile();
+        FileContent file = part.file();
         return switch (getPrimaryType(file.mimeType())) {
             case MessageConstants.BlockContent.TYPE_IMAGE -> parseToImageBlock(file);
             case MessageConstants.BlockContent.TYPE_AUDIO -> parseToAudioBlock(file);

@@ -291,7 +291,8 @@ public class DockerSandboxClientOptions extends SandboxClientOptions {
     }
 
     /**
-     * Sets the additional raw arguments appended to {@code docker run}.
+     * Sets the additional raw arguments appended to {@code docker run}, replacing any previously
+     * configured arguments.
      *
      * @param additionalRunArgs additional docker run arguments
      */

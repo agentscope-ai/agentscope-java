@@ -244,7 +244,7 @@ Skills compose from low to high priority (details in [Skill](/v2/en/docs/harness
 |-----------|--------|-------|----------|
 | `GitSkillRepository` | `agentscope-extensions-skill-git-repository` | team git repo; pulls only when HEAD changes; read-only distribution | early stage / small teams; review skill changes via PR |
 | `MysqlSkillRepository` | `agentscope-extensions-skill-mysql-repository` | `DataSource`-driven; `writeable(true/false)` toggle; agent can write back | platform-side central governance; multi-team multi-agent |
-| `NacosSkillRepository` | `agentscope-extensions-nacos-skill` | online distribution + config-center change subscription; `AutoCloseable` | Aliyun ecosystem; "change once, take effect fleet-wide" |
+| `NacosSkillRepository` | `agentscope-extensions-nacos-skill` | load Skills from Nacos by version or label | central management of Skill versions and labels |
 | `ClasspathSkillRepository` | `agentscope-core` | shipped with the JAR; Spring Boot fat-JAR compatible | hard-bound capabilities baked into the product |
 
 ```java
@@ -267,7 +267,7 @@ HarnessAgent agent = HarnessAgent.builder()
 - **Prefer `MysqlSkillRepository(writeable=false)` or `NacosSkillRepository`** — platform-side central governance, agents read-only; write-backs go through an admin console + review flow.
 - Don't want the agent to see `workspace/skills/`? `.disableDefaultWorkspaceSkills()`.
 - When `enableSkillManageTool` lets the agent draft new skills, **always** pair it with `enableSkillPromotionGate(...)`; never `autoPromote=true` in production.
-- `NacosSkillRepository` is `AutoCloseable` — close it from Spring `@PreDestroy` or a `try-with-resources`, otherwise subscriptions leak.
+- With `NacosSkillRepository`, pin a version or use a production label to keep test versions from affecting live Agents. Reload Skills after an update; see the [Nacos Skill repository](/v2/en/integration/infrastructure/nacos#skill-repository) for configuration.
 
 ## 5. When you need shell: pick a Sandbox + mandatory Snapshot
 
@@ -483,7 +483,6 @@ try (HarnessAgent agent = agentBuilder.build()) {
 - **`tools.json`'s `allow` filters built-in tools too** — when whitelisting, keep `read_file` / `memory_search` / `agent_spawn` and friends in the list, or every built-in gets stripped.
 - **`IsolationScope` changes do not migrate existing data** — pin it before launch. Changing it post-launch is equivalent to switching to a new namespace.
 - **Local `AgentStateStore` single-machine constraint**: a K8s multi-replica build that pairs a distributed filesystem with a local `JsonFileAgentStateStore` throws `IllegalStateException` on the very first `build()`. **This is intentional** — you can't park agent state on one pod's local disk.
-- **`NacosSkillRepository` not closed** — subscriptions leak; at fleet scale Nacos complains. Use Spring `@PreDestroy` or `destroyMethod="close"`.
 - **OSS / NAS without IAM** — `OssSnapshotSpec` takes platform AK/SK; RAM Role + STS temporary credentials is more robust.
 - **Local `AgentStateStore` with sandbox mode is dev-only** — the build-time warning is intentional; don't ignore it in production.
 

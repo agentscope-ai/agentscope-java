@@ -361,6 +361,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope OpenAI Decisions Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-openai-decisions</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope OpenAI Model Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -471,6 +478,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-jev-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope OpenAI Decisions Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-openai-decisions-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

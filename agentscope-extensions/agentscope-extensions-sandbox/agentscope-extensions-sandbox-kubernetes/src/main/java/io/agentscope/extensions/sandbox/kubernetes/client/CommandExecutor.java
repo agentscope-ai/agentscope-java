@@ -17,10 +17,12 @@ package io.agentscope.extensions.sandbox.kubernetes.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxRequestException;
+import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxTimeoutException;
 import io.agentscope.extensions.sandbox.kubernetes.client.internal.SandboxConnector;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
@@ -30,6 +32,9 @@ public class CommandExecutor {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
+
+    /** Slack added to the command timeout when forming the HTTP exchange deadline. */
+    private static final Duration EXCHANGE_TIMEOUT_MARGIN = Duration.ofSeconds(30);
 
     private final SandboxConnector connector;
 
@@ -48,19 +53,28 @@ public class CommandExecutor {
     }
 
     /**
-     * Runs a command with the given timeout.
+     * Runs a command with the given timeout. The timeout plus a transport slack bounds the
+     * whole HTTP exchange (response headers and body), so a sandbox whose response stalls
+     * cannot block the caller forever; on expiry a {@link SandboxTimeoutException} is thrown.
      *
      * @param command shell command
-     * @param timeout request timeout (currently used as retry budget hint)
+     * @param timeout command timeout budget
      * @return execution result
      */
     public ExecutionResult run(String command, Duration timeout) {
+        Duration effectiveTimeout = timeout != null ? timeout : DEFAULT_TIMEOUT;
         try {
             String json = MAPPER.writeValueAsString(Map.of("command", command));
             HttpRequest.BodyPublisher body =
                     HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8);
             HttpResponse<String> resp =
-                    connector.sendRequest("POST", "execute", body, "application/json", 1);
+                    connector.sendRequest(
+                            "POST",
+                            "execute",
+                            body,
+                            "application/json",
+                            1,
+                            effectiveTimeout.plus(EXCHANGE_TIMEOUT_MARGIN));
 
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
                 throw new SandboxRequestException(
@@ -73,6 +87,14 @@ public class CommandExecutor {
             return MAPPER.readValue(resp.body(), ExecutionResult.class);
         } catch (SandboxRequestException e) {
             throw e;
+        } catch (HttpTimeoutException e) {
+            throw new SandboxTimeoutException(
+                    "Command exchange timed out after "
+                            + effectiveTimeout.toSeconds()
+                            + "s (+"
+                            + EXCHANGE_TIMEOUT_MARGIN.toSeconds()
+                            + "s transport slack)",
+                    e);
         } catch (Exception e) {
             throw new SandboxRequestException(
                     "Failed to execute command: " + e.getMessage(), null, e);
