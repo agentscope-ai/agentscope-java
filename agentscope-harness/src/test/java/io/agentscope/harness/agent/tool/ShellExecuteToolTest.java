@@ -74,7 +74,9 @@ class ShellExecuteToolTest {
                         .toString()
                         .contains("this command only, relative to the shell's starting directory"));
         assertEquals(
-                "Timeout in seconds (default: 30)", properties.get("timeout").get("description"));
+                "Positive timeout in seconds (default: 30). Unsupported values are rejected before"
+                        + " execution.",
+                properties.get("timeout").get("description"));
     }
 
     /** Extracts the concatenated text output of a tool result. */
@@ -93,6 +95,15 @@ class ShellExecuteToolTest {
         assertEquals(ToolResultState.SUCCESS, result.getState());
         assertEquals("ls", sandbox.command);
         assertEquals(30, sandbox.timeoutSeconds);
+    }
+
+    @Test
+    void invalidTimeoutDoesNotExecuteCommand() {
+        for (int timeout : new int[] {0, -1}) {
+            ToolResultBlock result = tool.execute(RT, "side-effect", null, timeout);
+            assertEquals(ToolResultState.ERROR, result.getState());
+            assertEquals(null, sandbox.command);
+        }
     }
 
     @Test

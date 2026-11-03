@@ -68,7 +68,9 @@ public class ShellExecuteTool {
                     String workingDirectory,
             @ToolParam(
                             name = "timeout",
-                            description = "Timeout in seconds (default: 30)",
+                            description =
+                                    "Positive timeout in seconds (default: 30). Unsupported values"
+                                            + " are rejected before execution.",
                             required = false)
                     Integer timeout) {
         String effectiveCommand = command;
@@ -88,7 +90,10 @@ public class ShellExecuteTool {
                                     System.getProperty("os.name").toLowerCase().contains("win")));
         }
 
-        int timeoutSeconds = timeout != null && timeout > 0 ? timeout : 30;
+        if (timeout != null && timeout <= 0) {
+            return ToolResultBlock.error("timeout must be a positive number of seconds.");
+        }
+        int timeoutSeconds = timeout != null ? timeout : 30;
         ExecuteResponse result = sandbox.execute(runtimeContext, effectiveCommand, timeoutSeconds);
 
         StringBuilder sb = new StringBuilder();

@@ -104,6 +104,8 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
             ExecResult result = active.exec(runtimeContext, command, timeoutSeconds);
             return new ExecuteResponse(
                     result.combinedOutput(), result.exitCode(), result.truncated());
+        } catch (SandboxException.ExecStatusUnknownException e) {
+            return new ExecuteResponse(e.getMessage(), null, false);
         } catch (SandboxException.ExecTimeoutException e) {
             return new ExecuteResponse(e.getMessage(), 124, false);
         } catch (SandboxException.ExecException e) {

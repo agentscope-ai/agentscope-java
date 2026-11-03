@@ -215,6 +215,14 @@ public class SandboxException extends RuntimeException {
         }
     }
 
+    /** Command submission was attempted, but its completion and exit code cannot be confirmed. */
+    public static class ExecStatusUnknownException extends SandboxException {
+
+        public ExecStatusUnknownException(String message, Throwable cause) {
+            super(SandboxErrorCode.EXEC_STATUS_UNKNOWN, message, cause);
+        }
+    }
+
     /**
      * Thrown when a sandbox command exits with a non-zero exit code.
      */

@@ -67,6 +67,7 @@ public class SandboxConnector {
     private final Duration requestTimeout;
     private final Duration perAttemptTimeout;
     private final HttpClient httpClient;
+    private final HttpClient commandHttpClient;
     private final Supplier<String> podIpSupplier;
 
     private volatile String baseURL;
@@ -98,6 +99,11 @@ public class SandboxConnector {
         this.podIpSupplier = podIpSupplier;
         this.strategy =
                 createStrategy(connectionConfig, k8sHelper, sandboxId, namespace, podIpSupplier);
+        this.commandHttpClient =
+                HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(30))
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .build();
         this.httpClient =
                 HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(30))
@@ -124,6 +130,11 @@ public class SandboxConnector {
         this.requestTimeout = Duration.ofSeconds(180);
         this.perAttemptTimeout = Duration.ofSeconds(60);
         this.podIpSupplier = null;
+        this.commandHttpClient =
+                HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(30))
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .build();
         this.httpClient =
                 HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(30))
@@ -203,6 +214,11 @@ public class SandboxConnector {
         return sendRequest(method, endpoint, body, contentType, maxRetries, null);
     }
 
+    /** Returns the configured per-attempt transport timeout. */
+    public Duration getPerAttemptTimeout() {
+        return perAttemptTimeout;
+    }
+
     /**
      * Sends an HTTP request with retry logic and an exchange deadline shared by HTTP
      * attempts, backoff, and the full response body read.
@@ -231,7 +247,8 @@ public class SandboxConnector {
         IOException lastException = null;
 
         for (int attempt = 0; attempt < limit; attempt++) {
-            HttpRequest.Builder reqBuilder = buildRequest(endpoint, contentType, perAttemptTimeout);
+            Duration requestBudget = exchangeTimeout != null ? exchangeTimeout : perAttemptTimeout;
+            HttpRequest.Builder reqBuilder = buildRequest(endpoint, contentType, requestBudget);
             if (body == null) {
                 reqBuilder.GET();
             } else {
@@ -239,8 +256,13 @@ public class SandboxConnector {
             }
 
             try {
+                HttpClient client =
+                        "POST".equalsIgnoreCase(method) && "execute".equals(endpoint)
+                                ? commandHttpClient
+                                : httpClient;
                 HttpResponse<String> resp =
                         sendAwait(
+                                client,
                                 reqBuilder.build(),
                                 HttpResponse.BodyHandlers.ofString(),
                                 remainingBudget(deadlineNanos, endpoint));
@@ -328,6 +350,7 @@ public class SandboxConnector {
             reqBuilder.method(method, body);
         }
         return sendAwait(
+                httpClient,
                 reqBuilder.build(),
                 HttpResponse.BodyHandlers.ofByteArray(),
                 remainingBudget(deadlineNanos, endpoint));
@@ -360,9 +383,12 @@ public class SandboxConnector {
      * which closes the stalled exchange, and an {@link HttpTimeoutException} is thrown.
      */
     private <T> HttpResponse<T> sendAwait(
-            HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler, Duration budget)
+            HttpClient client,
+            HttpRequest request,
+            HttpResponse.BodyHandler<T> bodyHandler,
+            Duration budget)
             throws IOException, InterruptedException {
-        CompletableFuture<HttpResponse<T>> future = httpClient.sendAsync(request, bodyHandler);
+        CompletableFuture<HttpResponse<T>> future = client.sendAsync(request, bodyHandler);
         try {
             return future.get(budget.toMillis(), TimeUnit.MILLISECONDS);
         } catch (ExecutionException e) {

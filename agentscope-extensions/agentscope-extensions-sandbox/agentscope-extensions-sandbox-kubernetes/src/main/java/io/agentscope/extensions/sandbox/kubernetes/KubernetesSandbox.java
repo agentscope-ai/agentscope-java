@@ -17,7 +17,7 @@ package io.agentscope.extensions.sandbox.kubernetes;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.extensions.sandbox.kubernetes.client.Sandbox;
-import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxTimeoutException;
+import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxRequestException;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
 import io.agentscope.harness.agent.sandbox.AbstractBaseSandbox;
 import io.agentscope.harness.agent.sandbox.ExecResult;
@@ -102,9 +102,11 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
                     sdkSandbox
                             .commands()
                             .run(wrapped, Duration.ofSeconds(Math.max(timeoutSeconds, 1)));
-        } catch (SandboxTimeoutException e) {
-            // Surface an exchange timeout through the existing harness timeout contract.
-            throw new SandboxException.ExecTimeoutException(command, timeoutSeconds);
+        } catch (SandboxRequestException e) {
+            if (e.isExecutionOutcomeUnknown()) {
+                throw new SandboxException.ExecStatusUnknownException(e.getMessage(), e);
+            }
+            throw e;
         }
 
         boolean truncated = false;
@@ -181,7 +183,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     protected void doHydrateWorkspace(InputStream archive) throws Exception {
         requireActiveConnection();
         String root = k8sState.getWorkspaceRoot();
-        sdkSandbox.commands().run("mkdir -p " + shellQuote(root));
+        createWorkspaceDirectory(root);
 
         byte[] tarBytes = archive.readAllBytes();
         if (fileApiEnabled()) {
@@ -243,7 +245,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     protected void doSetupWorkspace() throws Exception {
-        sdkSandbox.commands().run("mkdir -p " + shellQuote(k8sState.getWorkspaceRoot()));
+        createWorkspaceDirectory(k8sState.getWorkspaceRoot());
     }
 
     @Override
@@ -291,7 +293,12 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
             if (mkdir.getExitCode() != 0) {
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_START_ERROR,
-                        "mkdir failed for " + absolutePath + ": " + mkdir.getStderr());
+                        "mkdir failed (exit="
+                                + mkdir.getExitCode()
+                                + ") for "
+                                + absolutePath
+                                + ": "
+                                + mkdir.getStderr());
             }
         }
         sdkSandbox.files().write(rel, content);
@@ -301,6 +308,20 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     public byte[] downloadFile(String absolutePath) throws Exception {
         requireActiveConnection();
         return sdkSandbox.files().read(requireFileApiRelative(absolutePath));
+    }
+
+    private void createWorkspaceDirectory(String directory) {
+        ExecutionResult result = sdkSandbox.commands().run("mkdir -p " + shellQuote(directory));
+        if (result.getExitCode() != 0) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_START_ERROR,
+                    "mkdir failed (exit="
+                            + result.getExitCode()
+                            + ") for "
+                            + directory
+                            + ": "
+                            + result.getStderr());
+        }
     }
 
     private void requireActiveConnection() {
