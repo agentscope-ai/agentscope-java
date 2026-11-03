@@ -185,6 +185,8 @@ The parent creates a subagent with `agent_spawn`; the key knob is `timeout_secon
 - `timeout_seconds > 0` (default 30, max 600) — **synchronous** call; the parent blocks on this step, result returns as the tool result. By default, when the wait expires the in-flight run is **promoted** to a background task (`status: timeout_promoted` + `task_id`) and keeps running.
 - `timeout_seconds = 0` — **background** call; returns a `task_id` immediately, subagent runs in the background.
 
+With `OtelTracingMiddleware` configured on both agents, local background calls retain the OpenTelemetry context active at task submission. The child stays in the submitting tool call's trace even if the parent finishes first; each follow-up `agent_send` inherits its own caller's context.
+
 **Force sync via `RuntimeContext`.** Application code can put `AgentSpawnTool.CTX_FORCE_SYNC = true` on the current call's `RuntimeContext` to override the LLM's async choice, and optionally `CTX_FORCE_SYNC_TIMEOUT_SECONDS` for a hard wait budget (seconds):
 
 ```java
