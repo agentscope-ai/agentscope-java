@@ -372,6 +372,9 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
      * user content cannot break out of its argument). The file itself never crosses the
      * boundary. Falls back to download → Java replacement → re-upload when {@code python3} is
      * missing or the native write fails.
+     * A timeout, transport error, or missing result marker leaves the native edit's outcome
+     * unknown: it may already have committed, so it is not retried through file transfer.
+     * Read the file before deciding whether to retry such an edit.
      *
      * <p>Arguments so large that the command would exceed {@link #MAX_INLINE_COMMAND_BYTES} are
      * rejected with a diagnostic instead of being transferred: {@code old}/{@code new} are edit
@@ -424,8 +427,14 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         try {
             execResult = execute(runtimeContext, cmd, null);
         } catch (Exception e) {
-            log.warn("[sandbox-fs] native edit execute failed, falling back to transfer", e);
-            return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
+            log.warn("[sandbox-fs] native edit execute failed; outcome is unknown", e);
+            return EditResult.fail(
+                    "Error editing '"
+                            + filePath
+                            + "': "
+                            + e.getMessage()
+                            + ". The native edit may have completed; read the file before"
+                            + " retrying.");
         }
         String output = execResult.output() != null ? execResult.output() : "";
         int marker = output.indexOf(EDIT_RESULT_MARKER);
@@ -446,15 +455,12 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if (isPythonMissing(execResult)) {
             return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
         }
-        // No __RESULT__ marker: the native command may have failed before Python started
-        // (e.g. heredoc mangled by the transport layer, shell syntax error). Fall back to
-        // the transfer path, which uses the filesystem REST API and is independent of shell.
-        log.warn(
-                "[sandbox-fs] native edit returned no result marker (exit={}), falling back"
-                        + " to transfer: {}",
-                execResult.exitCode(),
-                output.length() > 200 ? output.substring(0, 200) + "..." : output);
-        return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
+        // A missing result does not prove the target is untouched: the process may have
+        // committed before a timeout or lost/truncated response. Replaying the replacement
+        // could apply it twice. Preserve the execution diagnostic and let the caller inspect.
+        return EditResult.fail(
+                executeFailureMessage(execResult, "editing", filePath)
+                        + ". The native edit may have completed; read the file before retrying.");
     }
 
     /**

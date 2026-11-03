@@ -311,27 +311,27 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
-        void edit_executeFailure_shouldFallBackToTransfer() {
+        void edit_executeFailure_shouldPreserveCause() {
             EditResult result =
                     new FixedResponseFilesystem(sandboxRequestFailed())
                             .edit(RT, "/workspace/file.txt", "old", "new", false);
 
-            assertFalse(result.isSuccess(), "edit should fail when transfer also fails");
+            assertFalse(result.isSuccess(), "an unknown native outcome should fail");
             assertTrue(
-                    result.error().contains("Could not read file"),
-                    "error should come from the transfer fallback, not the execute layer");
+                    result.error().contains("status=504"),
+                    "error should preserve the execute-layer cause");
         }
 
         @Test
-        void edit_executeFailure_nullOutput_shouldFallBackToTransfer() {
+        void edit_executeFailure_nullOutput_shouldPreserveExitCode() {
             EditResult result =
                     new FixedResponseFilesystem(new ExecuteResponse(null, -1, false))
                             .edit(RT, "/workspace/file.txt", "old", "new", false);
 
-            assertFalse(result.isSuccess(), "edit should fail when transfer also fails");
+            assertFalse(result.isSuccess(), "an unknown native outcome should fail");
             assertTrue(
-                    result.error().contains("Could not read file"),
-                    "error should come from the transfer fallback, not the execute layer");
+                    result.error().contains("exit code -1"),
+                    "error should preserve the exit code when there is no output");
         }
 
         @Test

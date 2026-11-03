@@ -219,6 +219,8 @@ sh -c 'echo ok' && { python3 --version 2>/dev/null || echo 'python3 absent; edit
 
 `edit_file` rejects a command whose complete encoded arguments and script exceed 112 KiB; split unusually large edits into smaller calls. The limit applies to the whole command, not independently to `oldString` and `newString`.
 
+If a native edit times out, loses its execution response, or returns no result marker, the file may already have changed. `edit_file` returns the execution diagnostic without replaying the edit through download/upload. Read the file before retrying. Transfer fallback still applies when Python is unavailable or the native helper explicitly reports a write failure that left the target unchanged.
+
 ### Additional contract for Kubernetes (agent-sandbox)
 
 The agent-sandbox backend does not `kubectl exec` into the container; it talks to an HTTP API exposed by the runtime container (default port 8888). The runtime service in your image must implement:

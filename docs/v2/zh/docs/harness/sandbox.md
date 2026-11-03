@@ -218,6 +218,8 @@ sh -c 'echo ok' && { python3 --version 2>/dev/null || echo 'python3 缺失；edi
 
 `edit_file` 会拒绝完整命令（包括编码后的参数与脚本）超过 112 KiB 的请求；异常大的编辑应拆成多次调用。该限制针对整条命令，而不是分别限制 `oldString` 和 `newString`。
 
+原生编辑超时、执行响应丢失或未返回结果标记时，文件可能已经改变。`edit_file` 会返回执行诊断，不会通过下载/上传再次执行编辑；重试前应先读取文件。Python 不可用，或原生辅助脚本明确报告未改变目标的写入失败时，仍会使用传输回退路径。
+
 ### Kubernetes（agent-sandbox）附加约束
 
 agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时容器暴露的 HTTP API（默认端口 8888）。镜像里的运行时服务必须实现：
