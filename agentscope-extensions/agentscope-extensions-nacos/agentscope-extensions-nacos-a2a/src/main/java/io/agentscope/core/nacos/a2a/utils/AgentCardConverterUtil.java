@@ -24,6 +24,8 @@ import com.alibaba.nacos.api.ai.model.a2a.AgentSkill;
 import com.alibaba.nacos.api.ai.model.a2a.SecurityScheme;
 import com.alibaba.nacos.common.utils.JacksonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.google.gson.reflect.TypeToken;
+import io.a2a.json.JsonUtil;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -87,7 +89,16 @@ public class AgentCardConverterUtil {
             return null;
         }
         String securitySchemesJson = JacksonUtils.toJson(securitySchemes);
-        return JacksonUtils.toObj(securitySchemesJson, new TypeReference<>() {});
+        // Deserialize A2A SecurityScheme types with the SDK's own JSON support: since
+        // a2a-java 0.3.4 these types are Gson-mapped (polymorphic, no default
+        // constructors) and can no longer be constructed by Jackson.
+        try {
+            return JsonUtil.fromJson(
+                    securitySchemesJson,
+                    new TypeToken<Map<String, io.a2a.spec.SecurityScheme>>() {}.getType());
+        } catch (io.a2a.json.JsonProcessingException e) {
+            throw new IllegalStateException("Failed to convert security schemes", e);
+        }
     }
 
     private static io.a2a.spec.AgentProvider convertToA2aAgentProvider(AgentProvider provider) {
@@ -237,7 +248,15 @@ public class AgentCardConverterUtil {
         if (securitySchemes == null) {
             return null;
         }
-        String originalJson = JacksonUtils.toJson(securitySchemes);
+        // Serialize A2A SecurityScheme types with the SDK's own JSON support so the
+        // emitted shape follows the A2A spec, then build the plain Nacos beans with
+        // Jackson as before.
+        String originalJson;
+        try {
+            originalJson = JsonUtil.toJson(securitySchemes);
+        } catch (io.a2a.json.JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize security schemes", e);
+        }
         return JacksonUtils.toObj(originalJson, new TypeReference<>() {});
     }
 }
