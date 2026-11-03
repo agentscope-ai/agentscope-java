@@ -179,7 +179,7 @@ public class ReasoningContext {
 
         // Add text content if present
         if (textAcc.hasContent()) {
-            blocks.addAll(textAcc.buildAggregatedBlocks());
+            blocks.add(textAcc.buildAggregated());
         }
 
         // Add all tool calls, placing server tool results right after their calls

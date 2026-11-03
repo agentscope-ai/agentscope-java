@@ -16,7 +16,7 @@
 package io.agentscope.extensions.model.anthropic.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.anthropic.models.messages.CitationCharLocation;
@@ -25,15 +25,14 @@ import com.anthropic.models.messages.CitationsDelta;
 import com.anthropic.models.messages.CitationsSearchResultLocation;
 import com.anthropic.models.messages.CitationsWebSearchResultLocation;
 import com.anthropic.models.messages.TextCitation;
-import io.agentscope.core.message.Citation;
-import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class AnthropicCitationConverterTest {
 
     @Test
-    void charLocationRoundTrip() {
+    void charLocationBecomesProviderMetadata() {
         CitationCharLocation providerCitation =
                 CitationCharLocation.builder()
                         .citedText("source text")
@@ -44,29 +43,23 @@ class AnthropicCitationConverterTest {
                         .endCharIndex(15)
                         .build();
 
-        Citation.CharLocation coreCitation =
-                assertInstanceOf(
-                        Citation.CharLocation.class,
-                        AnthropicCitationConverter.convert(
-                                        TextCitation.ofCharLocation(providerCitation))
-                                .orElseThrow());
-        var convertedBack =
-                AnthropicCitationConverter.convertToParams(List.of(coreCitation))
-                        .get(0)
-                        .asCharLocation();
+        Map<String, Object> citation =
+                AnthropicCitationConverter.convert(TextCitation.ofCharLocation(providerCitation), 3)
+                        .orElseThrow();
 
-        assertEquals("source text", coreCitation.citedText());
-        assertEquals("guide.txt", coreCitation.documentTitle());
-        assertEquals(4, coreCitation.startCharIndex());
-        assertEquals(15, coreCitation.endCharIndex());
-        assertEquals(coreCitation.citedText(), convertedBack.citedText());
-        assertEquals(coreCitation.documentIndex(), convertedBack.documentIndex());
-        assertEquals(coreCitation.startCharIndex(), convertedBack.startCharIndex());
-        assertEquals(coreCitation.endCharIndex(), convertedBack.endCharIndex());
+        assertEquals("anthropic.citations", AnthropicCitationConverter.MD_CITATIONS);
+        assertEquals("char_location", citation.get("type"));
+        assertEquals(3L, citation.get("block_index"));
+        assertEquals("source text", citation.get("cited_text"));
+        assertEquals(1L, citation.get("document_index"));
+        assertEquals("guide.txt", citation.get("document_title"));
+        assertEquals(4L, citation.get("start_char_index"));
+        assertEquals(15L, citation.get("end_char_index"));
+        assertFalse(citation.containsKey("file_id"));
     }
 
     @Test
-    void contentBlockLocationRoundTrip() {
+    void contentBlockLocationBecomesProviderMetadata() {
         CitationContentBlockLocation providerCitation =
                 CitationContentBlockLocation.builder()
                         .citedText("source blocks")
@@ -77,24 +70,19 @@ class AnthropicCitationConverterTest {
                         .endBlockIndex(6)
                         .build();
 
-        Citation.ContentBlockLocation coreCitation =
-                assertInstanceOf(
-                        Citation.ContentBlockLocation.class,
-                        AnthropicCitationConverter.convert(
-                                        TextCitation.ofContentBlockLocation(providerCitation))
-                                .orElseThrow());
-        var convertedBack =
-                AnthropicCitationConverter.convertToParams(List.of(coreCitation))
-                        .get(0)
-                        .asContentBlockLocation();
+        Map<String, Object> citation =
+                AnthropicCitationConverter.convert(
+                                CitationsDelta.Citation.ofContentBlockLocation(providerCitation), 4)
+                        .orElseThrow();
 
-        assertEquals("file-2", coreCitation.fileId());
-        assertEquals(3, coreCitation.startBlockIndex());
-        assertEquals(6, coreCitation.endBlockIndex());
-        assertEquals(coreCitation.citedText(), convertedBack.citedText());
-        assertEquals(coreCitation.documentIndex(), convertedBack.documentIndex());
-        assertEquals(coreCitation.startBlockIndex(), convertedBack.startBlockIndex());
-        assertEquals(coreCitation.endBlockIndex(), convertedBack.endBlockIndex());
+        assertEquals("content_block_location", citation.get("type"));
+        assertEquals(4L, citation.get("block_index"));
+        assertEquals("source blocks", citation.get("cited_text"));
+        assertEquals(2L, citation.get("document_index"));
+        assertEquals("file-2", citation.get("file_id"));
+        assertEquals(3L, citation.get("start_block_index"));
+        assertEquals(6L, citation.get("end_block_index"));
+        assertFalse(citation.containsKey("document_title"));
     }
 
     @Test
@@ -118,11 +106,11 @@ class AnthropicCitationConverterTest {
 
         assertTrue(
                 AnthropicCitationConverter.convert(
-                                TextCitation.ofWebSearchResultLocation(webSearchCitation))
+                                TextCitation.ofWebSearchResultLocation(webSearchCitation), 0)
                         .isEmpty());
         assertTrue(
                 AnthropicCitationConverter.convert(
-                                CitationsDelta.Citation.ofSearchResultLocation(searchCitation))
+                                CitationsDelta.Citation.ofSearchResultLocation(searchCitation), 0)
                         .isEmpty());
     }
 }

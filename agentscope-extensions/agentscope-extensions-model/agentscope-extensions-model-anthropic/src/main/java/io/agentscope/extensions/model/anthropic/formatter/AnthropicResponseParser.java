@@ -20,7 +20,6 @@ import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.StopReason;
-import io.agentscope.core.message.Citation;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -54,6 +53,7 @@ public class AnthropicResponseParser {
      */
     public static ChatResponse parseMessage(Message message, Instant startTime) {
         List<ContentBlock> contentBlocks = new ArrayList<>();
+        List<Map<String, Object>> citations = new ArrayList<>();
 
         // Process content blocks
         for (int index = 0; index < message.content().size(); index++) {
@@ -63,17 +63,16 @@ public class AnthropicResponseParser {
             block.text()
                     .ifPresent(
                             textBlock -> {
-                                List<Citation> citations =
-                                        textBlock
-                                                .citations()
-                                                .map(AnthropicCitationConverter::convert)
-                                                .orElse(List.of());
+                                textBlock
+                                        .citations()
+                                        .ifPresent(
+                                                providerCitations ->
+                                                        citations.addAll(
+                                                                AnthropicCitationConverter.convert(
+                                                                        providerCitations,
+                                                                        blockIndex)));
                                 contentBlocks.add(
-                                        TextBlock.builder()
-                                                .text(textBlock.text())
-                                                .citations(citations)
-                                                .providerBlockIndex(blockIndex)
-                                                .build());
+                                        TextBlock.builder().text(textBlock.text()).build());
                             });
 
             // Tool use block
@@ -142,12 +141,17 @@ public class AnthropicResponseParser {
                         .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                         .build();
 
-        return ChatResponse.builder()
-                .id(resolveMessageId(message))
-                .content(contentBlocks)
-                .usage(usage)
-                .finishReason(message.stopReason().map(StopReason::asString).orElse(null))
-                .build();
+        ChatResponse.Builder response =
+                ChatResponse.builder()
+                        .id(resolveMessageId(message))
+                        .content(contentBlocks)
+                        .usage(usage)
+                        .finishReason(message.stopReason().map(StopReason::asString).orElse(null));
+        if (!citations.isEmpty()) {
+            response.metadata(
+                    Map.of(AnthropicCitationConverter.MD_CITATIONS, List.copyOf(citations)));
+        }
+        return response.build();
     }
 
     /**
@@ -158,6 +162,7 @@ public class AnthropicResponseParser {
         int inputTokens;
         int cachedTokens;
         int cacheCreationTokens;
+        final List<Map<String, Object>> citations = new ArrayList<>();
     }
 
     /**
@@ -198,6 +203,7 @@ public class AnthropicResponseParser {
         ChatUsage usage = null;
         String messageId = null;
         String finishReason = null;
+        Map<String, Object> metadata = null;
 
         // Message start - record prompt usage (input tokens and cache read/creation tokens) so
         // the final usage emitted on message_delta can include it
@@ -226,24 +232,16 @@ public class AnthropicResponseParser {
                     .ifPresent(
                             textDelta ->
                                     contentBlocks.add(
-                                            TextBlock.builder()
-                                                    .text(textDelta.text())
-                                                    .providerBlockIndex(deltaEvent.index())
-                                                    .build()));
+                                            TextBlock.builder().text(textDelta.text()).build()));
 
             deltaEvent
                     .delta()
                     .citations()
                     .flatMap(
                             citationsDelta ->
-                                    AnthropicCitationConverter.convert(citationsDelta.citation()))
-                    .ifPresent(
-                            citation ->
-                                    contentBlocks.add(
-                                            TextBlock.builder()
-                                                    .citations(List.of(citation))
-                                                    .providerBlockIndex(deltaEvent.index())
-                                                    .build()));
+                                    AnthropicCitationConverter.convert(
+                                            citationsDelta.citation(), deltaEvent.index()))
+                    .ifPresent(usageState.citations::add);
 
             deltaEvent
                     .delta()
@@ -361,12 +359,19 @@ public class AnthropicResponseParser {
                             .reasoningTokens((int) reasoningTokens)
                             .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                             .build();
+            if (!usageState.citations.isEmpty()) {
+                metadata =
+                        Map.of(
+                                AnthropicCitationConverter.MD_CITATIONS,
+                                List.copyOf(usageState.citations));
+            }
         }
 
         return ChatResponse.builder()
                 .id(messageId)
                 .content(contentBlocks)
                 .usage(usage)
+                .metadata(metadata)
                 .finishReason(finishReason)
                 .build();
     }

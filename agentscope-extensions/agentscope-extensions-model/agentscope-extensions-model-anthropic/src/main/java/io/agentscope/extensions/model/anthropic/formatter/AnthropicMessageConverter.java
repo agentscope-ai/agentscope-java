@@ -296,8 +296,8 @@ public class AnthropicMessageConverter {
                 }
             } else if (block instanceof DataBlock db) {
                 try {
-                    ContentBlockParam converted = mediaConverter.convertDataBlockContent(db);
-                    contentBlocks.add(converted);
+                    ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
+                    contentBlocks.add(ContentBlockParam.ofImage(imageParam));
                 } catch (Exception e) {
                     log.warn("Failed to process DataBlock: {}", e.getMessage());
                     contentBlocks.add(
@@ -309,21 +309,14 @@ public class AnthropicMessageConverter {
                                                             + "]")
                                             .build()));
                 }
-            } else if (block instanceof DocumentBlock db && msg.getRole() == MsgRole.USER) {
-                log.warn(
-                        "DocumentBlock is not supported by Anthropic; sending a text placeholder"
-                                + " instead of '{}'",
-                        db.getName() != null ? db.getName() : db.getId());
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder()
-                                        .text(
-                                                "[Document - not supported by Anthropic: "
-                                                        + (db.getName() != null
-                                                                ? db.getName()
-                                                                : db.getId())
-                                                        + "]")
-                                        .build()));
+            } else if (block instanceof DocumentBlock db) {
+                try {
+                    contentBlocks.add(
+                            ContentBlockParam.ofDocument(mediaConverter.convertDocumentBlock(db)));
+                } catch (Exception e) {
+                    throw new IllegalArgumentException(
+                            "Failed to process DocumentBlock: " + db.getId(), e);
+                }
             } else if (block instanceof ToolUseBlock tub) {
                 if (tub.isServerTool()) {
                     // Server tool calls are echoed back as server_tool_use blocks
@@ -390,19 +383,19 @@ public class AnthropicMessageConverter {
                         }
                     } else if (cb instanceof DataBlock db) {
                         try {
-                            ContentBlockParam converted =
-                                    mediaConverter.convertDataBlockContent(db);
-                            if (converted.isImage()) {
-                                blocks.add(
-                                        ToolResultBlockParam.Content.Block.ofImage(
-                                                converted.asImage()));
-                            } else if (converted.isDocument()) {
-                                blocks.add(
-                                        ToolResultBlockParam.Content.Block.ofDocument(
-                                                converted.asDocument()));
-                            }
+                            blocks.add(
+                                    ToolResultBlockParam.Content.Block.ofImage(
+                                            mediaConverter.convertDataBlock(db)));
                         } catch (Exception e) {
                             log.warn("Failed to process DataBlock in tool result: {}", e);
+                        }
+                    } else if (cb instanceof DocumentBlock db) {
+                        try {
+                            blocks.add(
+                                    ToolResultBlockParam.Content.Block.ofDocument(
+                                            mediaConverter.convertDocumentBlock(db)));
+                        } catch (Exception e) {
+                            log.warn("Failed to process DocumentBlock in tool result: {}", e);
                         }
                     }
                 }
@@ -454,12 +447,7 @@ public class AnthropicMessageConverter {
     }
 
     private TextBlockParam convertTextBlock(TextBlock textBlock) {
-        TextBlockParam.Builder builder = TextBlockParam.builder().text(textBlock.getText());
-        var citations = AnthropicCitationConverter.convertToParams(textBlock.getCitations());
-        if (!citations.isEmpty()) {
-            builder.citations(citations);
-        }
-        return builder.build();
+        return TextBlockParam.builder().text(textBlock.getText()).build();
     }
 
     /**

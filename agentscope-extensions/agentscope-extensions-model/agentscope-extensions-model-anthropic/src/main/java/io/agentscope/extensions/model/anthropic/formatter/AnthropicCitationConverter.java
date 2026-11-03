@@ -16,145 +16,130 @@
 package io.agentscope.extensions.model.anthropic.formatter;
 
 import com.anthropic.models.messages.CitationCharLocation;
-import com.anthropic.models.messages.CitationCharLocationParam;
 import com.anthropic.models.messages.CitationContentBlockLocation;
-import com.anthropic.models.messages.CitationContentBlockLocationParam;
 import com.anthropic.models.messages.CitationPageLocation;
-import com.anthropic.models.messages.CitationPageLocationParam;
 import com.anthropic.models.messages.CitationsDelta;
 import com.anthropic.models.messages.TextCitation;
-import com.anthropic.models.messages.TextCitationParam;
-import io.agentscope.core.message.Citation;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Converts Anthropic document citation unions to provider-neutral AgentScope citations. */
+/** Converts Anthropic document citations to provider-specific response metadata. */
 final class AnthropicCitationConverter {
+
+    static final String MD_CITATIONS = "anthropic.citations";
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicCitationConverter.class);
 
     private AnthropicCitationConverter() {}
 
-    static List<Citation> convert(List<TextCitation> citations) {
+    static List<Map<String, Object>> convert(List<TextCitation> citations, long blockIndex) {
         if (citations == null || citations.isEmpty()) {
             return List.of();
         }
         return citations.stream()
-                .map(AnthropicCitationConverter::convert)
+                .map(citation -> convert(citation, blockIndex))
                 .flatMap(Optional::stream)
                 .toList();
     }
 
-    static Optional<Citation> convert(TextCitation citation) {
+    static Optional<Map<String, Object>> convert(TextCitation citation, long blockIndex) {
         if (citation == null) {
             return Optional.empty();
         }
         if (citation.isPageLocation()) {
-            return Optional.of(convert(citation.asPageLocation()));
+            return Optional.of(convert(citation.asPageLocation(), blockIndex));
         }
         if (citation.isCharLocation()) {
-            return Optional.of(convert(citation.asCharLocation()));
+            return Optional.of(convert(citation.asCharLocation(), blockIndex));
         }
         if (citation.isContentBlockLocation()) {
-            return Optional.of(convert(citation.asContentBlockLocation()));
+            return Optional.of(convert(citation.asContentBlockLocation(), blockIndex));
         }
         logUnsupportedCitation(
                 citation.isWebSearchResultLocation(), citation.isSearchResultLocation());
         return Optional.empty();
     }
 
-    static Optional<Citation> convert(CitationsDelta.Citation citation) {
+    static Optional<Map<String, Object>> convert(
+            CitationsDelta.Citation citation, long blockIndex) {
         if (citation == null) {
             return Optional.empty();
         }
         if (citation.isPageLocation()) {
-            return Optional.of(convert(citation.asPageLocation()));
+            return Optional.of(convert(citation.asPageLocation(), blockIndex));
         }
         if (citation.isCharLocation()) {
-            return Optional.of(convert(citation.asCharLocation()));
+            return Optional.of(convert(citation.asCharLocation(), blockIndex));
         }
         if (citation.isContentBlockLocation()) {
-            return Optional.of(convert(citation.asContentBlockLocation()));
+            return Optional.of(convert(citation.asContentBlockLocation(), blockIndex));
         }
         logUnsupportedCitation(
                 citation.isWebSearchResultLocation(), citation.isSearchResultLocation());
         return Optional.empty();
     }
 
-    static List<TextCitationParam> convertToParams(List<Citation> citations) {
-        if (citations == null || citations.isEmpty()) {
-            return List.of();
-        }
-        return citations.stream()
-                .map(AnthropicCitationConverter::convertToParam)
-                .flatMap(Optional::stream)
-                .toList();
-    }
-
-    private static Optional<TextCitationParam> convertToParam(Citation citation) {
-        if (citation instanceof Citation.PageLocation page) {
-            CitationPageLocationParam.Builder builder =
-                    CitationPageLocationParam.builder()
-                            .citedText(page.citedText())
-                            .documentIndex(page.documentIndex())
-                            .documentTitle(Optional.ofNullable(page.documentTitle()))
-                            .startPageNumber(page.startPageNumber())
-                            .endPageNumber(page.endPageNumber());
-            return Optional.of(TextCitationParam.ofPageLocation(builder.build()));
-        }
-        if (citation instanceof Citation.CharLocation character) {
-            CitationCharLocationParam.Builder builder =
-                    CitationCharLocationParam.builder()
-                            .citedText(character.citedText())
-                            .documentIndex(character.documentIndex())
-                            .documentTitle(Optional.ofNullable(character.documentTitle()))
-                            .startCharIndex(character.startCharIndex())
-                            .endCharIndex(character.endCharIndex());
-            return Optional.of(TextCitationParam.ofCharLocation(builder.build()));
-        }
-        if (citation instanceof Citation.ContentBlockLocation contentBlock) {
-            CitationContentBlockLocationParam.Builder builder =
-                    CitationContentBlockLocationParam.builder()
-                            .citedText(contentBlock.citedText())
-                            .documentIndex(contentBlock.documentIndex())
-                            .documentTitle(Optional.ofNullable(contentBlock.documentTitle()))
-                            .startBlockIndex(contentBlock.startBlockIndex())
-                            .endBlockIndex(contentBlock.endBlockIndex());
-            return Optional.of(TextCitationParam.ofContentBlockLocation(builder.build()));
-        }
-        return Optional.empty();
-    }
-
-    private static Citation.PageLocation convert(CitationPageLocation citation) {
-        return new Citation.PageLocation(
+    private static Map<String, Object> convert(CitationPageLocation citation, long blockIndex) {
+        Map<String, Object> metadata = baseMetadata("page_location", blockIndex);
+        populateDocumentMetadata(
+                metadata,
                 citation.citedText(),
                 citation.documentIndex(),
-                citation.documentTitle().orElse(null),
-                citation.fileId().orElse(null),
-                citation.startPageNumber(),
-                citation.endPageNumber());
+                citation.documentTitle(),
+                citation.fileId());
+        metadata.put("start_page_number", citation.startPageNumber());
+        metadata.put("end_page_number", citation.endPageNumber());
+        return metadata;
     }
 
-    private static Citation.CharLocation convert(CitationCharLocation citation) {
-        return new Citation.CharLocation(
+    private static Map<String, Object> convert(CitationCharLocation citation, long blockIndex) {
+        Map<String, Object> metadata = baseMetadata("char_location", blockIndex);
+        populateDocumentMetadata(
+                metadata,
                 citation.citedText(),
                 citation.documentIndex(),
-                citation.documentTitle().orElse(null),
-                citation.fileId().orElse(null),
-                citation.startCharIndex(),
-                citation.endCharIndex());
+                citation.documentTitle(),
+                citation.fileId());
+        metadata.put("start_char_index", citation.startCharIndex());
+        metadata.put("end_char_index", citation.endCharIndex());
+        return metadata;
     }
 
-    private static Citation.ContentBlockLocation convert(CitationContentBlockLocation citation) {
-        return new Citation.ContentBlockLocation(
+    private static Map<String, Object> convert(
+            CitationContentBlockLocation citation, long blockIndex) {
+        Map<String, Object> metadata = baseMetadata("content_block_location", blockIndex);
+        populateDocumentMetadata(
+                metadata,
                 citation.citedText(),
                 citation.documentIndex(),
-                citation.documentTitle().orElse(null),
-                citation.fileId().orElse(null),
-                citation.startBlockIndex(),
-                citation.endBlockIndex());
+                citation.documentTitle(),
+                citation.fileId());
+        metadata.put("start_block_index", citation.startBlockIndex());
+        metadata.put("end_block_index", citation.endBlockIndex());
+        return metadata;
+    }
+
+    private static Map<String, Object> baseMetadata(String type, long blockIndex) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("type", type);
+        metadata.put("block_index", blockIndex);
+        return metadata;
+    }
+
+    private static void populateDocumentMetadata(
+            Map<String, Object> metadata,
+            String citedText,
+            long documentIndex,
+            Optional<String> documentTitle,
+            Optional<String> fileId) {
+        metadata.put("cited_text", citedText);
+        metadata.put("document_index", documentIndex);
+        documentTitle.ifPresent(value -> metadata.put("document_title", value));
+        fileId.ifPresent(value -> metadata.put("file_id", value));
     }
 
     private static void logUnsupportedCitation(boolean webSearchResult, boolean searchResult) {

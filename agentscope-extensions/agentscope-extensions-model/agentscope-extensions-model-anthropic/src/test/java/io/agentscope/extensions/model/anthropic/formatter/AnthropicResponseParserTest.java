@@ -46,7 +46,6 @@ import com.anthropic.models.messages.WebSearchResultBlock;
 import com.anthropic.models.messages.WebSearchToolResultBlock;
 import com.anthropic.models.messages.WebSearchToolResultError;
 import com.anthropic.models.messages.WebSearchToolResultErrorCode;
-import io.agentscope.core.message.Citation;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
@@ -177,13 +176,20 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
 
         TextBlock parsed = assertInstanceOf(TextBlock.class, response.getContent().get(0));
-        assertEquals(0L, parsed.getProviderBlockIndex());
-        Citation.PageLocation citation =
-                assertInstanceOf(Citation.PageLocation.class, parsed.getCitations().get(0));
-        assertEquals("PDF source text", citation.citedText());
-        assertEquals("guide.pdf", citation.documentTitle());
-        assertEquals(2, citation.startPageNumber());
-        assertEquals(3, citation.endPageNumber());
+        assertEquals("The feature is supported.", parsed.getText());
+        List<Map<String, Object>> citations =
+                (List<Map<String, Object>>)
+                        response.getMetadata().get(AnthropicCitationConverter.MD_CITATIONS);
+        assertNotNull(citations);
+        assertEquals(1, citations.size());
+        Map<String, Object> citation = citations.get(0);
+        assertEquals("page_location", citation.get("type"));
+        assertEquals(0L, citation.get("block_index"));
+        assertEquals("PDF source text", citation.get("cited_text"));
+        assertEquals(0L, citation.get("document_index"));
+        assertEquals("guide.pdf", citation.get("document_title"));
+        assertEquals(2L, citation.get("start_page_number"));
+        assertEquals(3L, citation.get("end_page_number"));
     }
 
     @Test
@@ -466,7 +472,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    void testParseStreamEventCitationDelta() throws Exception {
+    void testParseStreamEventsAccumulateCitationsUntilMessageDelta() {
         CitationPageLocation providerCitation =
                 CitationPageLocation.builder()
                         .citedText("Streamed PDF source")
@@ -476,24 +482,50 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                         .startPageNumber(4)
                         .endPageNumber(5)
                         .build();
-        RawContentBlockDeltaEvent deltaEvent =
+        RawContentBlockDeltaEvent citationDelta =
                 RawContentBlockDeltaEvent.builder()
                         .index(2)
                         .citationsDelta(providerCitation)
                         .build();
 
-        ChatResponse response =
-                invokeParseStreamEvent(
-                        RawMessageStreamEvent.ofContentBlockDelta(deltaEvent), Instant.now());
+        RawMessageStreamEvent citationEvent =
+                RawMessageStreamEvent.ofContentBlockDelta(citationDelta);
 
-        TextBlock parsed = assertInstanceOf(TextBlock.class, response.getContent().get(0));
-        assertEquals("", parsed.getText());
-        assertEquals(1, parsed.getCitations().size());
-        assertEquals(2L, parsed.getProviderBlockIndex());
-        Citation.PageLocation citation =
-                assertInstanceOf(Citation.PageLocation.class, parsed.getCitations().get(0));
-        assertEquals("Streamed PDF source", citation.citedText());
-        assertEquals(4, citation.startPageNumber());
+        RawMessageStreamEvent terminalEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+        when(terminalEvent.isMessageDelta()).thenReturn(true);
+        when(terminalEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(messageDelta.delta()).thenReturn(mock(RawMessageDeltaEvent.Delta.class));
+        when(deltaUsage.outputTokens()).thenReturn(12L);
+        when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(
+                        Flux.just(citationEvent, terminalEvent), Instant.now());
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        response -> {
+                            List<Map<String, Object>> citations =
+                                    (List<Map<String, Object>>)
+                                            response.getMetadata()
+                                                    .get(AnthropicCitationConverter.MD_CITATIONS);
+                            assertNotNull(citations);
+                            assertEquals(1, citations.size());
+                            Map<String, Object> citation = citations.get(0);
+                            assertEquals("page_location", citation.get("type"));
+                            assertEquals(2L, citation.get("block_index"));
+                            assertEquals("Streamed PDF source", citation.get("cited_text"));
+                            assertEquals(1L, citation.get("document_index"));
+                            assertEquals(4L, citation.get("start_page_number"));
+                            assertEquals(5L, citation.get("end_page_number"));
+                        })
+                .verifyComplete();
     }
 
     @Test

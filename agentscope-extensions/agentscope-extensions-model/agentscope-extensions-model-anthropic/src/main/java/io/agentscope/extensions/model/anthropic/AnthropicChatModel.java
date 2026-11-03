@@ -308,8 +308,7 @@ public class AnthropicChatModel extends ChatModelBase {
                                 // Use formatter to convert Msg to Anthropic
                                 // MessageParam
                                 List<MessageParam> formattedMessages =
-                                        formatter.format(
-                                                conversationMessages, options, defaultOptions);
+                                        formatter.format(conversationMessages);
 
                                 // Apply automatic cache control strategy
                                 // (marks the last message to cache the conversation prefix)

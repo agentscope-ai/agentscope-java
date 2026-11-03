@@ -560,8 +560,6 @@ public class Msg implements State {
      * Extracts plain text content from this message.
      *
      * <p>This method concatenates all text blocks in the message, joined by newlines.
-     * When any text block has citations, blocks are joined without added separators to preserve
-     * the original text across citation boundaries.
      * If the message contains no text blocks, an empty string is returned.
      *
      * @return The concatenated text content from all text blocks, or empty string if none
@@ -569,12 +567,11 @@ public class Msg implements State {
     @Transient
     @JsonIgnore
     public String getTextContent() {
-        List<TextBlock> textBlocks = getContentBlocks(TextBlock.class);
-        boolean hasCitations =
-                textBlocks.stream().anyMatch(block -> !block.getCitations().isEmpty());
-        return textBlocks.stream()
+        return content.stream()
+                .filter(TextBlock.class::isInstance)
+                .map(TextBlock.class::cast)
                 .map(TextBlock::getText)
-                .collect(Collectors.joining(hasCitations ? "" : "\n"));
+                .collect(Collectors.joining("\n"));
     }
 
     /**
