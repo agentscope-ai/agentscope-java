@@ -1165,6 +1165,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 memoryConfig.flushPrompt() != null
                         ? memoryConfig.flushPrompt()
                         : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
+        // Overflow recovery summarizes through the agent's build-time default model, never the
+        // per-call model that just overflowed (same rule as CompactionMiddleware#overflowRecovery).
         MemoryFlushManager fm =
                 new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
         ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
@@ -2874,6 +2876,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
             if (memoryModel != null && !disableMemoryHooks) {
+                // Flush middleware gets the dedicated config model only (may be null): without
+                // one it resolves the executing agent's per-call model at flush time. The
+                // consolidator below still uses the resolved memoryModel.
                 IsolationScope effectiveIsolationScope = fsIsolationScope;
 
                 String effectiveFlushPrompt =
@@ -2883,7 +2888,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(
                         new MemoryFlushMiddleware(
                                 wsManager,
-                                memoryModel,
+                                memoryConfig.model(),
                                 effectiveFlushPrompt,
                                 memoryConfig.flushTrigger(),
                                 effectiveIsolationScope,
@@ -2914,8 +2919,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 Model compactionModel =
                         compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
                 if (compactionModel != null) {
+                    // The middleware receives the dedicated config model only (may be null):
+                    // without one it resolves the executing agent's per-call model at compaction
+                    // time. The gate above still requires a dedicated or default model to exist.
                     compactionHook =
-                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
+                            new CompactionMiddleware(
+                                    wsManager, compactionConfig.getModel(), compactionConfig);
                     inner.middleware(compactionHook.overflowRecovery());
                 }
             }
