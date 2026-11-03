@@ -26,7 +26,7 @@ At call entry, the Agent restores the session's committed working state and acce
 
 Background notifications reach the next model request as separate user-role context messages in inbox order. Each message identifies the automated source and carries the original notification ID and source in metadata; receiving a notification does not grant user approval. File references such as `@./README.md` append a preview alongside the original message's text and images. Line or character limits are marked so the agent can read the original path for the rest.
 
-When a model stops at its output limit, incomplete tool-call starts receive error results instead of executing with empty arguments. Complete calls in the same batch remain executable, and malformed JSON is rejected even when it begins with a valid object. Output-limit errors ask the model to split large work or shorten the arguments rather than repeat the same call.
+When a model stops at its output limit, incomplete tool-call starts receive error results instead of executing with empty arguments. Complete calls in the same batch remain executable, and malformed JSON is rejected even when it begins with a valid object. Output-limit errors ask the model to split large work or shorten the arguments rather than repeat the same call. Anthropic history replay preserves native content-block order, each thinking block's corresponding signature, and redacted thinking blocks.
 
 Configure a shared Builder at application startup. Build and close an Agent for each direct request, keeping the same identity and storage configuration when continuing a conversation:
 
