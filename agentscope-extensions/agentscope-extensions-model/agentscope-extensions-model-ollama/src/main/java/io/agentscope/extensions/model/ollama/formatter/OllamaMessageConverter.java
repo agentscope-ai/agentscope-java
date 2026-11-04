@@ -15,7 +15,9 @@
  */
 package io.agentscope.extensions.model.ollama.formatter;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -126,6 +128,30 @@ public class OllamaMessageConverter {
                     // For now, logging error and skipping to avoid crashing the whole request,
                     // but usually image is important context.
                 }
+            } else if (block instanceof DocumentBlock documentBlock) {
+                if (msg.getRole() == MsgRole.USER) {
+                    log.warn(
+                            "DocumentBlock is not supported by Ollama; sending a text"
+                                    + " placeholder instead of '{}'",
+                            documentBlock.getName() != null
+                                    ? documentBlock.getName()
+                                    : documentBlock.getId());
+                    if (textContent.length() > 0) {
+                        textContent.append("\n");
+                    }
+                    textContent.append(OllamaChatFormatter.documentPlaceholder(documentBlock));
+                } else {
+                    // returnDirect tool deliveries put documents on assistant turns; the
+                    // history keeps a reference there instead of losing the attachment.
+                    log.debug(
+                            "Rendering a text reference for a DocumentBlock outside a user"
+                                    + " message for Ollama: {}",
+                            documentBlock.getId());
+                    if (textContent.length() > 0) {
+                        textContent.append("\n");
+                    }
+                    textContent.append(DocumentReferenceRenderer.render(documentBlock));
+                }
             } else if (block instanceof ToolUseBlock) {
                 ToolUseBlock toolUse = (ToolUseBlock) block;
                 // Convert ToolUseBlock to OllamaToolCall
@@ -178,8 +204,10 @@ public class OllamaMessageConverter {
                                 return Stream.of(hb.getHint());
                             } else if (block instanceof ToolResultBlock toolResult) {
                                 return toolResult.getOutput().stream()
-                                        .filter(output -> output instanceof TextBlock)
-                                        .map(output -> ((TextBlock) output).getText());
+                                        .map(OllamaMessageConverter::toolOutputText)
+                                        .filter(text -> !text.isEmpty());
+                            } else if (block instanceof DocumentBlock document) {
+                                return Stream.of(OllamaChatFormatter.documentPlaceholder(document));
                             }
                             return Stream.empty();
                         })
@@ -202,8 +230,10 @@ public class OllamaMessageConverter {
                                 return Stream.of(hb.getHint());
                             } else if (block instanceof ToolResultBlock toolResult) {
                                 return toolResult.getOutput().stream()
-                                        .filter(output -> output instanceof TextBlock)
-                                        .map(output -> ((TextBlock) output).getText());
+                                        .map(OllamaMessageConverter::toolOutputText)
+                                        .filter(text -> !text.isEmpty());
+                            } else if (block instanceof DocumentBlock document) {
+                                return Stream.of(OllamaChatFormatter.documentPlaceholder(document));
                             }
                             return Stream.empty();
                         })
@@ -234,5 +264,21 @@ public class OllamaMessageConverter {
         }
 
         return imagePaths;
+    }
+
+    /**
+     * Render one tool output block as text.
+     *
+     * @param output Block produced by the tool
+     * @return Text for text blocks, a document placeholder for documents, empty otherwise
+     */
+    private static String toolOutputText(ContentBlock output) {
+        if (output instanceof TextBlock tb) {
+            return tb.getText();
+        }
+        if (output instanceof DocumentBlock document) {
+            return OllamaChatFormatter.documentPlaceholder(document);
+        }
+        return "";
     }
 }

@@ -40,11 +40,13 @@ import com.openai.models.responses.ResponseToolSearchOutputItemParam;
 import com.openai.models.responses.Tool;
 import com.openai.models.responses.ToolChoiceFunction;
 import com.openai.models.responses.ToolChoiceOptions;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.Source;
@@ -68,6 +70,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Maps AgentScope inputs to OpenAI Responses API {@link ResponseCreateParams}.
@@ -76,6 +80,8 @@ import java.util.function.Function;
  * tool definition mapping, and all fail-fast validation for unsupported fields.
  */
 final class ResponsesRequestMapper {
+
+    private static final Logger log = LoggerFactory.getLogger(ResponsesRequestMapper.class);
 
     private ResponsesRequestMapper() {}
 
@@ -496,6 +502,21 @@ final class ResponsesRequestMapper {
                                         .imageUrl(imageUrl)
                                         .detail(ResponseInputImage.Detail.of("auto"))
                                         .build()));
+            } else if (block instanceof DocumentBlock db) {
+                log.warn(
+                        "DocumentBlock is not supported by the OpenAI Responses client; sending"
+                                + " a text placeholder instead of '{}'",
+                        db.getName() != null ? db.getName() : db.getId());
+                parts.add(
+                        ResponseInputContent.ofInputText(
+                                ResponseInputText.builder()
+                                        .text(
+                                                "[Document - not supported by OpenAI: "
+                                                        + (db.getName() != null
+                                                                ? db.getName()
+                                                                : db.getId())
+                                                        + "]")
+                                        .build()));
             } else {
                 throw new OpenAIOfficialModelException(
                         "Unsupported content block in user message: "
@@ -528,6 +549,16 @@ final class ResponsesRequestMapper {
         }
 
         String text = collectText(msg);
+        // returnDirect tool deliveries put documents on assistant turns; the history keeps a
+        // reference there instead of losing the attachment.
+        List<DocumentBlock> documents = msg.getContentBlocks(DocumentBlock.class);
+        if (!documents.isEmpty()) {
+            String references =
+                    documents.stream()
+                            .map(DocumentReferenceRenderer::render)
+                            .collect(java.util.stream.Collectors.joining("\n"));
+            text = text == null || text.isEmpty() ? references : text + "\n" + references;
+        }
         if (text != null && !text.isEmpty()) {
             items.add(
                     ResponseInputItem.ofEasyInputMessage(
@@ -551,6 +582,13 @@ final class ResponsesRequestMapper {
                                 "Cannot map ThinkingBlock to a Responses reasoning"
                                         + " input item without encrypted_content.");
                     }
+                } else if (block instanceof DocumentBlock db) {
+                    // Handled above: the reference travels inside the assistant text. Anything
+                    // reaching this point is only logged for visibility.
+                    log.debug(
+                            "DocumentBlock in an assistant message is carried as a text reference"
+                                    + " for the OpenAI Responses client: {}",
+                            db.getName() != null ? db.getName() : db.getId());
                 } else if (!(block instanceof TextBlock)) {
                     throw new OpenAIOfficialModelException(
                             "Unsupported content block in assistant message: "
@@ -724,6 +762,19 @@ final class ResponsesRequestMapper {
                 result.add(buildImageOutputItem(resolveImageUrl(ib.getSource())));
             } else if (block instanceof DataBlock db) {
                 result.add(buildImageOutputItem(resolveDataBlockImageUrl(db)));
+            } else if (block instanceof DocumentBlock db) {
+                // The Responses API cannot carry a document inside a tool output; keep a
+                // placeholder instead of failing the whole request.
+                result.add(
+                        ResponseFunctionCallOutputItem.ofInputText(
+                                ResponseInputTextContent.builder()
+                                        .text(
+                                                "[Document - not supported by OpenAI: "
+                                                        + (db.getName() != null
+                                                                ? db.getName()
+                                                                : db.getId())
+                                                        + "]")
+                                        .build()));
             } else {
                 throw new OpenAIOfficialModelException(
                         "Unsupported output block in ToolResultBlock: "

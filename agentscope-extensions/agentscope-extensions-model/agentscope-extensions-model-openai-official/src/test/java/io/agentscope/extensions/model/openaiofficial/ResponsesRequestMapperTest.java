@@ -38,6 +38,8 @@ import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.SystemMessage;
@@ -592,11 +594,86 @@ class ResponsesRequestMapperTest {
         }
 
         @Test
+        void userDocumentMappedAsPlaceholderText() {
+            List<Msg> messages =
+                    List.of(
+                            UserMessage.builder()
+                                    .content(
+                                            text("Summarise this"),
+                                            DocumentBlock.builder()
+                                                    .source(
+                                                            FileIdSource.builder()
+                                                                    .provider("dashscope")
+                                                                    .fileId("file-abc")
+                                                                    .build())
+                                                    .name("report.pdf")
+                                                    .build())
+                                    .build());
+
+            ResponseCreateParams params = mapHistory(baseOptions(), messages);
+
+            assertTrue(
+                    params.input()
+                            .orElseThrow()
+                            .toString()
+                            .contains("[Document - not supported by OpenAI: report.pdf]"));
+        }
+
+        @Test
         void assistantTextMappedAsAssistantMessage() {
             List<Msg> messages =
                     List.of(AssistantMessage.builder().content(text("I can help.")).build());
             ResponseCreateParams params = mapHistory(baseOptions(), messages);
             assertNotNull(params.input());
+        }
+
+        @Test
+        void assistantDocumentTravelsAsATextReference() {
+            List<Msg> messages =
+                    List.of(
+                            AssistantMessage.builder()
+                                    .content(
+                                            text("Here is the report."),
+                                            DocumentBlock.builder()
+                                                    .source(
+                                                            FileIdSource.builder()
+                                                                    .provider("dashscope")
+                                                                    .fileId("file-abc")
+                                                                    .build())
+                                                    .name("report.pdf")
+                                                    .build())
+                                    .build());
+
+            ResponseCreateParams params = mapHistory(baseOptions(), messages);
+
+            String input = params.input().orElseThrow().toString();
+            assertTrue(input.contains("Here is the report."));
+            // returnDirect tool deliveries put documents on assistant turns; the reference
+            // survives so the next round of conversation still names the attachment.
+            assertTrue(input.contains("[document: report.pdf"), input);
+        }
+
+        @Test
+        void documentOnlyAssistantMessageStillProducesAnAssistantItem() {
+            List<Msg> messages =
+                    List.of(
+                            AssistantMessage.builder()
+                                    .content(
+                                            DocumentBlock.builder()
+                                                    .source(
+                                                            FileIdSource.builder()
+                                                                    .provider("dashscope")
+                                                                    .fileId("file-abc")
+                                                                    .build())
+                                                    .name("report.pdf")
+                                                    .build())
+                                    .build());
+
+            ResponseCreateParams params = mapHistory(baseOptions(), messages);
+
+            String input = params.input().orElseThrow().toString();
+            assertTrue(input.contains("[document: report.pdf"), input);
+            assertTrue(input.contains("role=assistant"), input);
         }
 
         @Test
@@ -630,6 +707,41 @@ class ResponsesRequestMapperTest {
                                     .build());
             ResponseCreateParams params = mapHistory(baseOptions(), messages);
             assertNotNull(params.input());
+        }
+
+        @Test
+        void toolResultWithDocumentKeepsPlaceholder() {
+            List<Msg> messages =
+                    List.of(
+                            ToolResultMessage.builder()
+                                    .content(
+                                            ToolResultBlock.builder()
+                                                    .id("call_1")
+                                                    .name("report")
+                                                    .output(
+                                                            List.of(
+                                                                    text("generated"),
+                                                                    DocumentBlock.builder()
+                                                                            .source(
+                                                                                    FileIdSource
+                                                                                            .builder()
+                                                                                            .provider(
+                                                                                                    "dashscope")
+                                                                                            .fileId(
+                                                                                                    "file-abc")
+                                                                                            .build())
+                                                                            .name("report.pdf")
+                                                                            .build()))
+                                                    .build())
+                                    .build());
+
+            ResponseCreateParams params = mapHistory(baseOptions(), messages);
+
+            assertTrue(
+                    params.input()
+                            .orElseThrow()
+                            .toString()
+                            .contains("[Document - not supported by OpenAI: report.pdf]"));
         }
 
         @Test

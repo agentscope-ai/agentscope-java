@@ -47,6 +47,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Unit tests for OpenAIMessageConverter.
@@ -135,6 +136,49 @@ class OpenAIMessageConverterTest {
         assertEquals(1, parts.size());
         assertTrue(parts.get(0).getText().contains("Document - not supported by OpenAI"));
         assertTrue(parts.get(0).getText().contains("report.pdf"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = MsgRole.class,
+            names = {"ASSISTANT", "TOOL"})
+    @DisplayName("Should retain document-only assistant and bare tool messages")
+    void testDocumentReferenceWithoutText(MsgRole role) {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("dashscope", "file-123"))
+                        .name("report.pdf")
+                        .build();
+        Msg msg = Msg.builder().role(role).content(document).build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, false);
+
+        assertEquals(
+                "[document: report.pdf, provider file id: file-123 (dashscope)]",
+                result.getContentAsString());
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = MsgRole.class,
+            names = {"ASSISTANT", "TOOL"})
+    @DisplayName("Should render each document even when text already contains its reference")
+    void testDocumentReferencesAreIndependentOfText(MsgRole role) {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("dashscope", "file-123"))
+                        .name("report.pdf")
+                        .build();
+        String reference = "[document: report.pdf, provider file id: file-123 (dashscope)]";
+        Msg msg =
+                Msg.builder()
+                        .role(role)
+                        .content(TextBlock.builder().text(reference).build(), document, document)
+                        .build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, false);
+
+        assertEquals(reference + "\n" + reference + "\n" + reference, result.getContentAsString());
     }
 
     // Note: ImageBlock and AudioBlock constructors require non-null source,

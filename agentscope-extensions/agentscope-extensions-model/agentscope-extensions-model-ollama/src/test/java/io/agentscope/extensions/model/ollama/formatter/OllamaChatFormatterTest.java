@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -41,6 +43,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -599,8 +602,134 @@ class OllamaChatFormatterTest {
         assertTrue(json.contains("\"thinking\":\"I should call the weather tool.\""));
     }
 
+    @Test
+    @DisplayName("Should keep a document placeholder instead of dropping the block")
+    void testDocumentBlockKeepsPlaceholder() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                Arrays.asList(
+                                        TextBlock.builder().text("Summarise this").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("dashscope")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(List.of(msg));
+
+        assertEquals(1, formatted.size());
+        assertTrue(formatted.get(0).getContent().contains("Summarise this"));
+        assertTrue(
+                formatted
+                        .get(0)
+                        .getContent()
+                        .contains("[Document - not supported by Ollama: report.pdf]"),
+                formatted.get(0).getContent());
+    }
+
+    @Test
+    @DisplayName("Should keep a document-only message instead of dropping the turn")
+    void testDocumentOnlyMessageIsNotDropped() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .source(
+                                                FileIdSource.builder()
+                                                        .provider("dashscope")
+                                                        .fileId("file-abc")
+                                                        .build())
+                                        .name("report.pdf")
+                                        .build())
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(List.of(msg));
+
+        assertEquals(1, formatted.size());
+        assertEquals(
+                "[Document - not supported by Ollama: report.pdf]",
+                formatted.get(0).getContent().strip(),
+                "a document-only turn must still produce the placeholder");
+    }
+
+    @Test
+    @DisplayName("Should keep a document placeholder in a tool result")
+    void testDocumentInToolResultKeepsPlaceholder() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .name("report_tool")
+                        .content(
+                                ToolResultBlock.of(
+                                        "1",
+                                        "report_tool",
+                                        Arrays.asList(
+                                                TextBlock.builder().text("Generated.").build(),
+                                                DocumentBlock.builder()
+                                                        .source(
+                                                                FileIdSource.builder()
+                                                                        .provider("dashscope")
+                                                                        .fileId("file-abc")
+                                                                        .build())
+                                                        .name("report.pdf")
+                                                        .build())))
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(List.of(msg));
+
+        assertEquals(1, formatted.size());
+        assertEquals("tool", formatted.get(0).getRole());
+        assertTrue(formatted.get(0).getContent().contains("Generated."));
+        assertTrue(
+                formatted
+                        .get(0)
+                        .getContent()
+                        .contains("[Document - not supported by Ollama: report.pdf]"),
+                formatted.get(0).getContent());
+    }
+
     // Helper method to concatenate lists
     private <T> List<T> concatLists(List<T>... lists) {
         return Arrays.stream(lists).flatMap(List::stream).toList();
+    }
+
+    @Test
+    @DisplayName("An assistant turn with text, a document and a tool call keeps all three")
+    void assistantDocumentKeepsReference() {
+        Msg assistant =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder().text("Generated the report").build(),
+                                DocumentBlock.builder()
+                                        .name("report.pdf")
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/report.pdf")
+                                                        .build())
+                                        .build(),
+                                ToolUseBlock.builder()
+                                        .id("call-1")
+                                        .name("generate_report")
+                                        .input(Map.of("file", "report.pdf"))
+                                        .build())
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(List.of(assistant));
+
+        assertEquals(1, formatted.size());
+        assertEquals("assistant", formatted.get(0).getRole());
+        String content = formatted.get(0).getContent();
+        assertTrue(content.contains("Generated the report"), content);
+        assertTrue(content.contains("[document: report.pdf"), content);
+        assertNotNull(formatted.get(0).getToolCalls());
+        assertEquals(1, formatted.get(0).getToolCalls().size());
     }
 }

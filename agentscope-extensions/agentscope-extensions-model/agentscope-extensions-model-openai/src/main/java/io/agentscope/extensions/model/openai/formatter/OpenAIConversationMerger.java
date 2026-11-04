@@ -20,6 +20,7 @@ import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -318,6 +319,17 @@ public class OpenAIConversationMerger {
                             .append(errorMsg)
                             .append("]\n");
                 }
+
+            } else if (block instanceof DocumentBlock doc) {
+                // The merged history is always sent as a user message, so the source role does
+                // not matter here: keep a placeholder rather than dropping the block.
+                if (includePrefix) {
+                    appendNamePrefix(textBuffer, agentName);
+                }
+                textBuffer
+                        .append("[Document - not supported by OpenAI: ")
+                        .append(doc.getName() != null ? doc.getName() : doc.getId())
+                        .append("]\n");
 
             } else if (block instanceof ThinkingBlock thinkingBlock) {
                 // Include ThinkingBlock in conversation history for models that support reasoning

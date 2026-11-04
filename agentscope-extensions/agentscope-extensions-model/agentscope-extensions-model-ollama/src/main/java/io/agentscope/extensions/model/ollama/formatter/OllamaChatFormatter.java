@@ -16,7 +16,9 @@
 package io.agentscope.extensions.model.ollama.formatter;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -89,7 +91,7 @@ public class OllamaChatFormatter
      */
     private void processMessage(Msg msg, List<OllamaMessage> result) {
         // Separate content blocks by type
-        MessageContent messageContent = separateContentBlocks(msg.getContent());
+        MessageContent messageContent = separateContentBlocks(msg.getContent(), msg.getRole());
 
         // Handle tool result blocks first (they are added directly to the result)
         if (messageContent.toolResultBlocks != null) {
@@ -125,9 +127,10 @@ public class OllamaChatFormatter
      * Separate content blocks into different types for easier processing.
      *
      * @param contentBlocks the list of content blocks to separate
+     * @param role the role of the message the blocks belong to
      * @return a MessageContent object containing separated blocks
      */
-    private MessageContent separateContentBlocks(List<ContentBlock> contentBlocks) {
+    private MessageContent separateContentBlocks(List<ContentBlock> contentBlocks, MsgRole role) {
         MessageContent messageContent = new MessageContent();
 
         for (ContentBlock block : contentBlocks) {
@@ -141,6 +144,23 @@ public class OllamaChatFormatter
                 messageContent.toolResultBlocks.add(block);
             } else if (block instanceof ImageBlock) {
                 processImageBlock((ImageBlock) block, messageContent.images);
+            } else if (block instanceof DocumentBlock documentBlock) {
+                // Ollama has no document channel anywhere; every role gets the same reference.
+                // returnDirect tool deliveries put documents on assistant turns, and dropping
+                // them there would erase the attachment after a single round.
+                log.debug(
+                        "DocumentBlock is not supported by Ollama; rendering a text reference"
+                                + " for '{}'",
+                        documentBlock.getName() != null
+                                ? documentBlock.getName()
+                                : documentBlock.getId());
+                messageContent.textBlocks.add(
+                        TextBlock.builder()
+                                .text(
+                                        role == MsgRole.USER
+                                                ? documentPlaceholder(documentBlock)
+                                                : DocumentReferenceRenderer.render(documentBlock))
+                                .build());
             } else {
                 log.warn(
                         "Unsupported block type {} in the message, skipped.",
@@ -191,6 +211,11 @@ public class OllamaChatFormatter
                 textualOutput.append(((TextBlock) outputBlock).getText());
             } else if (outputBlock instanceof ImageBlock) {
                 multimodalData.add(outputBlock);
+            } else if (outputBlock instanceof DocumentBlock documentBlock) {
+                if (textualOutput.length() > 0) {
+                    textualOutput.append("\n");
+                }
+                textualOutput.append(documentPlaceholder(documentBlock));
             }
         }
 
@@ -487,5 +512,17 @@ public class OllamaChatFormatter
         List<ContentBlock> toolUseBlocks = new ArrayList<>();
         List<ContentBlock> toolResultBlocks = new ArrayList<>();
         List<String> images = new ArrayList<>();
+    }
+
+    /**
+     * Placeholder used in place of a document block, which Ollama cannot consume.
+     *
+     * @param document Document block being replaced
+     * @return Text naming the document
+     */
+    static String documentPlaceholder(DocumentBlock document) {
+        return "[Document - not supported by Ollama: "
+                + (document.getName() != null ? document.getName() : document.getId())
+                + "]";
     }
 }
