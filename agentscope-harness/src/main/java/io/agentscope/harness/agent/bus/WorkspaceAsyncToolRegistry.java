@@ -177,7 +177,11 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
             if (!sessionDir.isDirectory()) {
                 continue;
             }
-            String candidate = sessionDir.path() + "/" + id + ".json";
+            String sessionPath = sessionDir.path();
+            if (sessionPath.endsWith("/")) {
+                sessionPath = sessionPath.substring(0, sessionPath.length() - 1);
+            }
+            String candidate = sessionPath + "/" + id + ".json";
             if (fs.exists(RC, candidate)) {
                 return candidate;
             }
