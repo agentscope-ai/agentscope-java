@@ -27,8 +27,12 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.harness.agent.bus.AsyncToolRecord;
 import io.agentscope.harness.agent.bus.MessageBus;
+import io.agentscope.harness.agent.bus.WorkspaceAsyncToolRegistry;
 import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -182,6 +186,40 @@ class InboxMiddlewareTest {
         assertEquals(2, allHints.size());
         assertEquals("existing hint", allHints.get(0).getHint());
         assertEquals("new hint", allHints.get(1).getHint());
+    }
+
+    @Test
+    void staleAsyncToolHintUsesAccurateWording() {
+        io.agentscope.harness.agent.filesystem.local.LocalFilesystem fs =
+                new io.agentscope.harness.agent.filesystem.local.LocalFilesystem(tempDir, true, 10);
+        WorkspaceAsyncToolRegistry registry =
+                new WorkspaceAsyncToolRegistry(fs, "/async-tools");
+
+        AsyncToolRecord rec =
+                new AsyncToolRecord(
+                        "rec-1",
+                        "session-1",
+                        "long-runner",
+                        "call-abc",
+                        AsyncToolRecord.RUNNING,
+                        Instant.now().minus(Duration.ofMinutes(15)));
+        registry.register(rec).block();
+
+        InboxMiddleware mw = new InboxMiddleware(bus, 100, registry, Duration.ofSeconds(1));
+        ReasoningInput input = new ReasoningInput(List.of(), List.of(), null);
+
+        List<AgentEvent> events =
+                mw.onReasoning(stubAgent(), ctx, input, next -> Flux.empty())
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(1, events.size());
+        HintBlockEvent evt = (HintBlockEvent) events.get(0);
+        assertTrue(evt.getHint().contains("has not completed within"));
+        assertTrue(evt.getHint().contains("may still be running"));
+        assertTrue(evt.getHint().contains("long-runner"));
+        assertTrue(evt.getHint().contains("call-abc"));
     }
 
     private static io.agentscope.core.agent.Agent stubAgent() {

@@ -31,6 +31,7 @@ import io.agentscope.harness.agent.bus.AsyncToolRegistry;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -115,6 +116,11 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                             List<HintBlock> hints = new ArrayList<>();
                                             for (AsyncToolRecord rec : staleRecords) {
                                                 asyncToolRegistry.markTimeout(rec.id()).subscribe();
+                                                long elapsed =
+                                                        Duration.between(
+                                                                        rec.createdAt(),
+                                                                        Instant.now())
+                                                                .toMinutes();
                                                 hints.add(
                                                         new HintBlock(
                                                                 UUID.randomUUID()
@@ -124,11 +130,15 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                                                         + rec.toolName()
                                                                         + "' (id="
                                                                         + rec.toolCallId()
-                                                                        + ") did not complete"
-                                                                        + " (process crash or"
-                                                                        + " timeout). You may"
-                                                                        + " retry or proceed"
-                                                                        + " without the result."
+                                                                        + ") has not completed"
+                                                                        + " within "
+                                                                        + elapsed
+                                                                        + " minutes. It may still"
+                                                                        + " be running, or the"
+                                                                        + " process that started"
+                                                                        + " it may have died."
+                                                                        + " Verify its status"
+                                                                        + " before retrying."
                                                                         + "</system-notification>",
                                                                 "system"));
                                             }
