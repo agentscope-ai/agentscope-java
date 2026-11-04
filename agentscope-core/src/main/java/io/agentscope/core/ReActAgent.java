@@ -3303,18 +3303,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     parentCtx -> {
                                                         List<Msg> chunkMsgs =
                                                                 context.processChunk(chunk);
-                                                        for (Msg msg : chunkMsgs) {
-                                                            hookDispatcher
-                                                                    .fireReasoningChunk(
-                                                                            msg,
-                                                                            context,
-                                                                            mci.model()
-                                                                                    .getModelName())
-                                                                    .contextWrite(
-                                                                            ctx ->
-                                                                                    ctx.putAll(
-                                                                                            parentCtx))
-                                                                    .subscribe();
+                                                        if (hookDispatcher.hasHooks()) {
+                                                            for (Msg msg : chunkMsgs) {
+                                                                hookDispatcher
+                                                                        .fireReasoningChunk(
+                                                                                msg,
+                                                                                context,
+                                                                                mci.model()
+                                                                                        .getModelName())
+                                                                        .contextWrite(
+                                                                                ctx ->
+                                                                                        ctx.putAll(
+                                                                                                parentCtx))
+                                                                        .subscribe();
+                                                            }
                                                         }
 
                                                         List<AgentEvent> events = new ArrayList<>();
@@ -4772,19 +4774,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     parentCtx -> {
                                                         List<Msg> chunkMsgs =
                                                                 context.processChunk(chunk);
-                                                        for (Msg msg : chunkMsgs) {
-                                                            hookDispatcher
-                                                                    .fireSummaryChunk(
-                                                                            msg,
-                                                                            context,
-                                                                            hookOptions,
-                                                                            mci.model()
-                                                                                    .getModelName())
-                                                                    .contextWrite(
-                                                                            ctx ->
-                                                                                    ctx.putAll(
-                                                                                            parentCtx))
-                                                                    .subscribe();
+                                                        if (hookDispatcher.hasHooks()) {
+                                                            for (Msg msg : chunkMsgs) {
+                                                                hookDispatcher
+                                                                        .fireSummaryChunk(
+                                                                                msg,
+                                                                                context,
+                                                                                hookOptions,
+                                                                                mci.model()
+                                                                                        .getModelName())
+                                                                        .contextWrite(
+                                                                                ctx ->
+                                                                                        ctx.putAll(
+                                                                                                parentCtx))
+                                                                        .subscribe();
+                                                            }
                                                         }
 
                                                         List<AgentEvent> events = new ArrayList<>();
