@@ -220,32 +220,23 @@ ConfirmResult result =
 
 Runnable examples: `agentscope-examples/documentation/.../tool/PermissionContextExample.java`, `hitl/PermissionHITLExample.java`.
 
-### Rule changes and existing sessions
+### Permission contexts and existing sessions
 
-Rules passed at init time reach a session **when its slot is first created**: the context is copied into the session's `AgentState`, and later calls rebuild the engine from that copy. On a deployment that persists sessions (Redis, JDBC, a JSON file), a rule changed in code therefore does not reach sessions that already exist.
+A non-null `permissionContext` replaces a slot's persisted permission context when the current agent instance loads that slot for the first time. Passing `null` leaves an existing slot's context untouched.
 
-- A tool moved from `ALLOW` to `ASK` keeps running without confirmation, and a newly added `DENY` is not enforced, for as long as the session lives.
-- A tool added in a later release, with an `ALLOW` rule, keeps asking in existing sessions.
-
-Set `permissionRulesAuthoritative(true)` to make the declared rules apply on every call:
+This also applies when rebuilding an agent against the same state store. To preserve runtime permission state across a rebuild, read the old context first and construct the new one from it:
 
 ```java
-ReActAgent agent =
-        ReActAgent.builder()
-                .name("assistant")
-                .model(model)
-                .permissionContext(permCtx)
-                .permissionRulesAuthoritative(true)
+PermissionContextState old =
+        agent.getAgentState(userId, sessionId).getPermissionContext();
+PermissionContextState next =
+        PermissionContextState.builder()
+                .mode(old.getMode())
+                // carry over working directories and rules you want to keep
                 .build();
 ```
 
-With it enabled, the engine is composed from the declared rules for every tool the declaration mentions, so a tightened rule takes effect on the next call. The session keeps its own rules **only for the tools the declaration says nothing about**, which is what keeps a stale persisted `ALLOW` from relaxing a newer `ASK` or `DENY`. The session's mode and working directories are still the session's, so `setPermissionMode` continues to apply.
-
-Nothing about what is persisted changes, so existing stores stay readable, and an agent that does not set this keeps its previous behaviour exactly.
-
-<Note>
-`ConfirmResult` rules accepted at runtime are written into the live engine only and are not persisted, so they do not survive the next call — that is unchanged by this option and tracked separately.
-</Note>
+A non-null `PermissionContextState.builder().build()` is a valid trivial context, not a no-op: it replaces the old context with the default mode and no rules. Use `null` when you want to leave the existing context unchanged.
 
 ## Built-in checks
 

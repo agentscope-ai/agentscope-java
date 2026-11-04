@@ -221,32 +221,23 @@ ConfirmResult result =
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/PermissionContextExample.java`、`hitl/PermissionHITLExample.java`。
 
-### 规则变更与已存在的会话
+### 权限上下文与已存在的会话
 
-初始化时传入的规则只在**会话槽位首次创建时**生效：该上下文被复制进会话的 `AgentState`，之后每次调用都从这份副本重建引擎。因此在持久化会话的部署里（Redis、JDBC、JSON 文件），代码里改动的规则**到不了已存在的会话**：
+非空的 `permissionContext` 会在当前 agent 实例第一次加载某个会话槽位时，替换该槽位已持久化的权限上下文。传入 `null` 时，已有槽位的上下文保持不变。
 
-- 从 `ALLOW` 改为 `ASK` 的工具会继续免确认执行，新增的 `DENY` 也不会生效，直到会话被重建。
-- 后续版本新增并配了 `ALLOW` 的工具，在老会话里仍会弹确认。
-
-设置 `permissionRulesAuthoritative(true)` 可让声明的规则在每次调用都生效：
+重建 agent 并复用同一个 state store 时，这个规则同样适用。如果希望保留运行时的权限状态，请先读取旧上下文，再基于它构造新的上下文：
 
 ```java
-ReActAgent agent =
-        ReActAgent.builder()
-                .name("assistant")
-                .model(model)
-                .permissionContext(permCtx)
-                .permissionRulesAuthoritative(true)
+PermissionContextState old =
+        agent.getAgentState(userId, sessionId).getPermissionContext();
+PermissionContextState next =
+        PermissionContextState.builder()
+                .mode(old.getMode())
+                // 按需保留工作目录和规则
                 .build();
 ```
 
-开启后，引擎会以声明的规则构成**声明过的每一个工具**；会话自己的规则**只对声明里没提到的工具**保留 —— 这正是「陈旧的持久化 `ALLOW` 无法放宽更新的 `ASK`/`DENY`」的依据。会话的 mode 与工作目录仍以会话为准，因此 `setPermissionMode` 照常生效。
-
-持久化的内容没有任何变化，现有 store 保持可读；没有开启该选项的 agent 行为与之前**完全一致**。
-
-<Note>
-运行时通过 `ConfirmResult` 接受的规则只写进当前引擎、不会被持久化，因此跨不过下一次调用 —— 这一点不受本选项影响，另行跟进。
-</Note>
+非空的 `PermissionContextState.builder().build()` 是合法的 trivial context，不是“空”或“不做任何事”：它会用默认 mode 和空规则替换旧上下文。若希望保持旧上下文不变，请传 `null`。
 
 ## Built-in Checks
 

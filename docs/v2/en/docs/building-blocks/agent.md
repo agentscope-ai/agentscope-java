@@ -185,8 +185,7 @@ The `ModelRegistry` string form (`<provider>:<model>`) requires the matching mod
 | `middlewares` | `List<? extends MiddlewareBase>` | `List.of()` | Applied to agent / reasoning / acting / model call / system prompt hooks |
 | `stateStore` | `AgentStateStore` | `null` (no persistence) | When set, agent automatically loads/saves `AgentState` on every `call`, keyed by the `(userId, sessionId)` of the call's `RuntimeContext` |
 | `defaultSessionId` | `String` | agent `name` | Fallback `sessionId` used when a call's `RuntimeContext` carries none |
-| `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules, see [Permission System](/v2/en/docs/building-blocks/permission-system) |
-| `permissionRulesAuthoritative` | `boolean` | `false` | When `true`, the rules declared through `permissionContext` apply on every call rather than only to sessions created after they are declared, see [Permission System](/v2/en/docs/building-blocks/permission-system) |
+| `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules; a non-null context replaces a slot's persisted context on activation, see [Permission System](/v2/en/docs/building-blocks/permission-system) |
 | `maxIters` | `int` | `10` | Max iterations of the ReAct main loop |
 
 ## Running an agent
