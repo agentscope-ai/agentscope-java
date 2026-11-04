@@ -1165,6 +1165,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 memoryConfig.flushPrompt() != null
                         ? memoryConfig.flushPrompt()
                         : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
+        // Overflow recovery summarizes through the agent's build-time default model, never the
+        // per-call model that just overflowed (same rule as CompactionMiddleware#overflowRecovery).
         MemoryFlushManager fm =
                 new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
         ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
@@ -2615,17 +2617,44 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Builds a fresh runtime from this reusable configuration. Configure the builder before
          * sharing it; builds are serialized, while the resulting agents can execute concurrently.
+         * If a build fails, auto-wired state-store and filesystem configuration is restored so
+         * the same builder can be corrected and reused.
          */
         public synchronized HarnessAgent build() {
             var configuredMessageBus = messageBus;
             var configuredAsyncToolRegistry = asyncToolRegistry;
+            var configuredStateStoreOverride = stateStoreOverride;
+            var configuredRemoteStore =
+                    remoteFilesystemSpec != null ? remoteFilesystemSpec.store() : null;
+            var configuredSandboxSnapshotSpec =
+                    sandboxFilesystemSpec != null
+                            ? sandboxFilesystemSpec.getSnapshotSpecOverride()
+                            : null;
+            var configuredSandboxExecutionGuard =
+                    sandboxFilesystemSpec != null
+                            ? sandboxFilesystemSpec.getExecutionGuard()
+                            : null;
+            var successfulBuild = false;
             try {
-                return buildInstance(inner.copy());
+                var agent = buildInstance(inner.copy());
+                successfulBuild = true;
+                return agent;
             } finally {
                 // Workspace-derived collaborators belong to this build's filesystem, especially
                 // when sandbox bindings or workspace indexes have per-agent lifetimes.
                 messageBus = configuredMessageBus;
                 asyncToolRegistry = configuredAsyncToolRegistry;
+                if (!successfulBuild) {
+                    stateStoreOverride = configuredStateStoreOverride;
+                    if (remoteFilesystemSpec != null) {
+                        remoteFilesystemSpec.restoreAutoInjectedStore(configuredRemoteStore);
+                    }
+                    if (sandboxFilesystemSpec != null) {
+                        sandboxFilesystemSpec
+                                .snapshotSpec(configuredSandboxSnapshotSpec)
+                                .executionGuard(configuredSandboxExecutionGuard);
+                    }
+                }
             }
         }
 
@@ -2847,6 +2876,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
             if (memoryModel != null && !disableMemoryHooks) {
+                // Flush middleware gets the dedicated config model only (may be null): without
+                // one it resolves the executing agent's per-call model at flush time. The
+                // consolidator below still uses the resolved memoryModel.
                 IsolationScope effectiveIsolationScope = fsIsolationScope;
 
                 String effectiveFlushPrompt =
@@ -2856,7 +2888,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(
                         new MemoryFlushMiddleware(
                                 wsManager,
-                                memoryModel,
+                                memoryConfig.model(),
                                 effectiveFlushPrompt,
                                 memoryConfig.flushTrigger(),
                                 effectiveIsolationScope,
@@ -2887,8 +2919,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 Model compactionModel =
                         compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
                 if (compactionModel != null) {
+                    // The middleware receives the dedicated config model only (may be null):
+                    // without one it resolves the executing agent's per-call model at compaction
+                    // time. The gate above still requires a dedicated or default model to exist.
                     compactionHook =
-                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
+                            new CompactionMiddleware(
+                                    wsManager, compactionConfig.getModel(), compactionConfig);
                     inner.middleware(compactionHook.overflowRecovery());
                 }
             }

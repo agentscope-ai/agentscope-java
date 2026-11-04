@@ -55,7 +55,7 @@ With the right environment variables set, you can use these id forms (with `reso
 | `dashscope:qwen-max` | `DASHSCOPE_API_KEY` | Alibaba DashScope / Bailian |
 | Any id starting with `qwen-`, e.g. `qwen-max` | `DASHSCOPE_API_KEY` | Uses the whole string as the DashScope `modelName` |
 | `anthropic:claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY` (optional; SDK may read from the environment) | Anthropic Claude |
-| `gemini:gemini-2.5-flash` | `GEMINI_API_KEY` | Google Gemini API |
+| `gemini:gemini-3.8-flash` | `GEMINI_API_KEY` | Google Gemini API |
 | `ollama:llama3` | `OLLAMA_BASE_URL` (optional, default `http://localhost:11434`) | Local Ollama |
 
 Within one process, repeated `resolve` of the **same** factory-based id returns a **cached** `Model` instance. **Named** registrations are not cached that way.
@@ -254,7 +254,7 @@ Google's Gemini series models, supporting both Gemini API and Vertex AI.
 ```java
 GeminiChatModel model = GeminiChatModel.builder()
         .apiKey(System.getenv("GEMINI_API_KEY"))
-        .modelName("gemini-2.5-flash")  // Default
+        .modelName("gemini-3.8-flash")  // Default
         .baseUrl("https://your-gateway.example")  // Optional
         .build();
 ```
@@ -277,7 +277,7 @@ GeminiChatModel model = GeminiChatModel.builder()
 |--------|-------------|
 | `apiKey` | Gemini API key |
 | `baseUrl` | Custom Gemini API endpoint (optional) |
-| `modelName` | Model name, default `gemini-2.5-flash` |
+| `modelName` | Model name, default `gemini-3.8-flash` |
 | `project` | GCP project ID (Vertex AI) |
 | `location` | GCP region (Vertex AI) |
 | `vertexAI` | Whether to use Vertex AI |

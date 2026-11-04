@@ -249,6 +249,10 @@ public abstract class AnthropicBaseFormatter
             return ContentBlockParam.ofText(
                     block.asText().toBuilder().cacheControl(cacheControl).build());
         }
+        if (block.isDocument()) {
+            return ContentBlockParam.ofDocument(
+                    block.asDocument().toBuilder().cacheControl(cacheControl).build());
+        }
         if (block.isImage()) {
             return ContentBlockParam.ofImage(
                     block.asImage().toBuilder().cacheControl(cacheControl).build());

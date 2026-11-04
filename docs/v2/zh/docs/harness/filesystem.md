@@ -55,6 +55,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addSharedPrefix(String)` | 额外的工作区相对路径前缀也路由到 KV（例如 `"prompts/"` / `"configs/"`） | 无 |
 | `workspaceIndex(WorkspaceIndex)` | 加速远端 ls/glob/grep 的 SQLite 索引 | 不加索引，走全量扫描 |
 
+可选的本地索引无法初始化时（例如 `.index/workspace.db` 已损坏），`WorkspaceIndex.open(workspaceRoot)` 返回 `null`，并关闭本次尝试中已经获取的连接。调用方可以回退到远端扫描，不会保留这条初始化失败的连接。成功返回的索引会持有连接，直到调用 `close()`。
+
 #### 内置路由规则
 
 框架自动把以下路径路由到共享 KV，每个路径段各自独立命名空间，不会互相污染：

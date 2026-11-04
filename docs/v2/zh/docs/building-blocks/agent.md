@@ -602,6 +602,8 @@ System.out.println(weather.temperature());   // "18°C"
 
 无论哪条路径，调用方的代码完全相同——路径选择对用户透明。
 
+配置 `ModelRequestPreparer`（包括 Harness 的上下文编译器）后，工具提醒和必要的 `generate_response` schema 会在最终准备前完成组装。模型使用准备后的消息、工具和调用选项。提醒是仅属于当前请求的投影，因此会纳入预算检查，同时不改写持久用户消息、不进入对话历史。切换到备用模型时，会按该模型的限制重新准备请求。
+
 ```
 ┌─── call(msgs, Schema.class) ───┐
 │                                │
