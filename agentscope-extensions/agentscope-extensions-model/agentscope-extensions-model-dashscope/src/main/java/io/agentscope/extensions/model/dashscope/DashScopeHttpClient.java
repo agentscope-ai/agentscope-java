@@ -206,6 +206,7 @@ public class DashScopeHttpClient {
             Map<String, String> additionalHeaders,
             Map<String, Object> additionalBodyParams,
             Map<String, String> additionalQueryParams) {
+        rejectSkillOutsideStreaming(request, additionalBodyParams);
         EndpointType endpointType =
                 request.getEndpointType() != null ? request.getEndpointType() : EndpointType.AUTO;
         String endpoint = selectEndpoint(request.getModel(), endpointType);
@@ -630,6 +631,33 @@ public class DashScopeHttpClient {
                             + URLEncoder.encode(value, StandardCharsets.UTF_8));
         }
         return url + joiner.toString();
+    }
+
+    /** Error message for a {@code skill} outside streaming mode, shared with the model layer. */
+    static final String SKILL_STREAM_REQUIREMENT_MESSAGE =
+            "DashScope `skill` (e.g. PPT generation on qwen-doc-turbo) is only supported in stream"
+                    + " mode; build the model with .stream(true)";
+
+    /**
+     * Reject a {@code skill} on the non-streaming call path.
+     *
+     * <p>DashScope rejects the parameter with {@code The parameter skill is only supported in
+     * stream mode}. The streaming path is unaffected; this guard catches callers that reach the
+     * client directly (without {@code DashScopeChatModel}'s earlier check) so the failure names
+     * the fix instead of surfacing the provider error.
+     *
+     * @param request the request whose parameters may carry a skill
+     * @param additionalBodyParams additional body params that will be merged into the parameters
+     */
+    private static void rejectSkillOutsideStreaming(
+            DashScopeRequest request, Map<String, Object> additionalBodyParams) {
+        boolean viaParameters =
+                request.getParameters() != null && request.getParameters().getSkill() != null;
+        boolean viaAdditionalParams =
+                additionalBodyParams != null && additionalBodyParams.containsKey("skill");
+        if (viaParameters || viaAdditionalParams) {
+            throw new IllegalStateException(SKILL_STREAM_REQUIREMENT_MESSAGE);
+        }
     }
 
     /**

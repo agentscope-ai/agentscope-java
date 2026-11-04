@@ -18,12 +18,14 @@ package io.agentscope.extensions.model.dashscope.formatter;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeContentPart;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
@@ -85,8 +87,9 @@ public class DashScopeConversationMerger {
         }
         textAccumulator.append(HISTORY_START_TAG).append("\n");
 
-        // Collect images separately for multimodal support
+        // Collect media separately for multimodal support
         List<DashScopeContentPart> imageContents = new ArrayList<>();
+        List<DashScopeContentPart> docUrlContents = new ArrayList<>();
 
         for (Msg msg : msgs) {
             String name = nameExtractor.apply(msg);
@@ -136,6 +139,25 @@ public class DashScopeConversationMerger {
                         textAccumulator.append(name).append(": [Data - processing failed]\n");
                     }
 
+                } else if (block instanceof DocumentBlock documentBlock
+                        && documentBlock.getSource() instanceof URLSource) {
+                    // Document-capable models read the URL from a doc_url part on the merged
+                    // user message; the reference alone would leave the document unread.
+                    docUrlContents.add(
+                            DashScopeContentPart.docUrl(
+                                    List.of(DashScopeChatFormatter.documentUrl(documentBlock)),
+                                    DashScopeChatFormatter.fileParsingStrategy(documentBlock)));
+                    textAccumulator.append(name).append(": [Document]\n");
+
+                } else if (block instanceof DocumentBlock documentBlock) {
+                    // The merged history is always sent as a user message, so the source role
+                    // does not matter here.
+                    textAccumulator
+                            .append(name)
+                            .append(": ")
+                            .append(DashScopeChatFormatter.documentReference(documentBlock))
+                            .append("\n");
+
                 } else if (block instanceof ThinkingBlock) {
                     log.debug("Skipping ThinkingBlock in multi-agent conversation");
 
@@ -158,18 +180,26 @@ public class DashScopeConversationMerger {
         textAccumulator.append(HISTORY_END_TAG);
 
         // Build the message with multimodal content if needed
-        if (imageContents.isEmpty()) {
-            // No images - use simple text format
+        if (imageContents.isEmpty() && docUrlContents.isEmpty()) {
+            // No media - use simple text format
             return DashScopeMessage.builder()
                     .role("user")
                     .content(textAccumulator.toString())
                     .build();
         } else {
-            // Has images - use multimodal format with content list
+            // Has media - use multimodal format with content list
             List<DashScopeContentPart> contents = new ArrayList<>();
             // First add the text conversation history
-            contents.add(DashScopeContentPart.text(textAccumulator.toString()));
-            // Then add all images
+            DashScopeContentPart historyPart =
+                    DashScopeContentPart.text(textAccumulator.toString());
+            // Document-capable models require a type discriminator on every part of a turn
+            // that carries doc_url parts.
+            if (!docUrlContents.isEmpty()) {
+                historyPart.setType(DashScopeContentPart.TYPE_TEXT);
+            }
+            contents.add(historyPart);
+            // Then the document URLs, then images
+            contents.addAll(docUrlContents);
             contents.addAll(imageContents);
 
             return DashScopeMessage.builder().role("user").content(contents).build();
@@ -288,6 +318,14 @@ public class DashScopeConversationMerger {
                                 DashScopeContentPart.text(
                                         "[Media - processing failed: " + e.getMessage() + "]"));
                     }
+
+                } else if (block instanceof DocumentBlock documentBlock) {
+                    // URL documents never reach this multimodal merge: formatMultiModal rejects
+                    // them up front because the multimodal endpoint has no doc_url channel. File
+                    // ids ride on the injected fileid:// system message, so the reference keeps
+                    // the transcript line in step with what the model actually receives.
+                    accumulatedText.add(
+                            name + ": " + DashScopeChatFormatter.documentReference(documentBlock));
 
                 } else if (block instanceof ThinkingBlock) {
                     log.debug("Skipping ThinkingBlock in multi-agent multimodal formatting");

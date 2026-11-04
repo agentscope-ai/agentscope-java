@@ -34,6 +34,8 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * DashScope formatter for multi-agent conversations.
@@ -45,6 +47,8 @@ import java.util.List;
  */
 public class DashScopeMultiAgentFormatter
         extends AbstractBaseFormatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> {
+
+    private static final Logger log = LoggerFactory.getLogger(DashScopeMultiAgentFormatter.class);
 
     private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
             "# Conversation History\n"
@@ -140,6 +144,7 @@ public class DashScopeMultiAgentFormatter
         }
 
         DashScopeChatFormatter.applyAutomaticCacheControl(result, cacheDirectives, options);
+        DashScopeChatFormatter.validateDocumentUrlLimit(result);
         return result;
     }
 
@@ -204,6 +209,7 @@ public class DashScopeMultiAgentFormatter
      * @return List of DashScopeMessage objects with multimodal content
      */
     public List<DashScopeMessage> formatMultiModal(List<Msg> msgs, GenerateOptions options) {
+        DashScopeChatFormatter.checkDocumentUrlsForMultimodalEndpoint(msgs);
         List<DashScopeMessage> result = new ArrayList<>();
         List<Boolean> cacheDirectives = new ArrayList<>();
         int startIndex = 0;
@@ -256,6 +262,7 @@ public class DashScopeMultiAgentFormatter
         }
 
         DashScopeChatFormatter.applyAutomaticCacheControl(result, cacheDirectives, options);
+        DashScopeChatFormatter.validateDocumentUrlLimit(result);
         return result;
     }
 
@@ -337,10 +344,10 @@ public class DashScopeMultiAgentFormatter
         List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
         if (!toolBlocks.isEmpty()) {
             builder.toolCalls(toolsHelper.convertToolCalls(toolBlocks));
-            String textContent = extractTextContent(msg);
+            String textContent = messageConverter.extractTextContent(msg);
             builder.content(textContent.isEmpty() ? "" : textContent);
         } else {
-            builder.content(extractTextContent(msg));
+            builder.content(messageConverter.extractTextContent(msg));
         }
 
         DashScopeMessage result = builder.build();
@@ -367,7 +374,7 @@ public class DashScopeMultiAgentFormatter
                     DashScopeMessage.builder()
                             .role("tool")
                             .toolCallId("tool_call_" + System.currentTimeMillis())
-                            .content(extractTextContent(msg))
+                            .content(messageConverter.extractTextContent(msg))
                             .build();
         }
         messageConverter.applyCacheControlFromMetadata(msg, message);
