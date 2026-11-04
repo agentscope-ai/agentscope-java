@@ -19,6 +19,7 @@ package io.agentscope.core.a2a.agent.message;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
@@ -63,6 +64,8 @@ public class ContentBlockParserRouter {
             return new ToolUseBlockParser().parse(toolUseBlock);
         } else if (contentBlock instanceof ToolResultBlock toolResultBlock) {
             return new ToolResultBlockParser().parse(toolResultBlock);
+        } else if (contentBlock instanceof DocumentBlock documentBlock) {
+            return new DocumentBlockParser().parse(documentBlock);
         }
         LoggerUtil.warn(
                 log,

@@ -35,6 +35,8 @@ public class MessageConstants {
 
         public static final String TYPE_VIDEO = "video";
 
+        public static final String TYPE_DOCUMENT = "document";
+
         public static final String TYPE_TOOL_USE = "tool_use";
 
         public static final String TYPE_TOOL_RESULT = "tool_result";

@@ -11,13 +11,13 @@ zh_link: /v2/zh/integration/protocol/agui
 
 `AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
 
-Multimodal input supports image/audio/video/document. Document parts are converted to `DocumentBlock`; model providers that cannot consume a document report an error instead of silently dropping the content.
+Multimodal input supports text, image, audio, video, and document. A document with a URL, inline-data, or file source becomes a `DocumentBlock`; a file source maps onto a `FileIdSource` with the protocol's `provider` naming who issued the handle. Every source variant carries an optional `name` extension field, so a document's display name travels with the source and user metadata is never used for transport.
 
-`RUN_STARTED.input` retains the original request, so consumers that log or forward events must redact sensitive input themselves.
+`RUN_STARTED.input` retains the original request, including any document content. Consumers that log or forward events must redact sensitive input themselves.
 
 `AguiMessageConverter.toAguiMessageList()` expands a TOOL `Msg` containing multiple `ToolResultBlock`s into one AG-UI tool message per tool result. `toAguiMessage()` remains for messages with at most one tool result and rejects a multi-result TOOL message; use `toAguiMessages()` for the expanded form.
 
-On the outbound path, URL-backed `ImageBlock` / `AudioBlock` / `VideoBlock` / `DocumentBlock` content is serialized into AG-UI `MessageContent.Blocks` (`image` / `audio` / `video` / `document`); URL-backed `DataBlock` is routed by its resolved MIME type. Base64 media sources are skipped on outbound conversion for now.
+On the outbound path, URL-backed `ImageBlock` / `AudioBlock` / `VideoBlock` content is serialized into AG-UI `MessageContent.Blocks` (`image` / `audio` / `video`); a URL-backed `DataBlock` is routed by its resolved MIME type; a `DocumentBlock` is serialized from its URL, inline-data, or file source, with the document name carried on the source's `name` field. Base64 sources of image, audio, video, and `DataBlock` are skipped on outbound conversion for now.
 
 When an assistant message contains reasoning and supported URL media without text, `toAguiMessages()` and `toAguiMessageList()` preserve both as a reasoning message followed by an assistant message containing the media.
 

@@ -33,6 +33,7 @@ import io.agentscope.core.agui.model.DocumentInputContent;
 import io.agentscope.core.agui.model.ImageInputContent;
 import io.agentscope.core.agui.model.InputContent;
 import io.agentscope.core.agui.model.InputContentDataSource;
+import io.agentscope.core.agui.model.InputContentFileSource;
 import io.agentscope.core.agui.model.InputContentSource;
 import io.agentscope.core.agui.model.InputContentUrlSource;
 import io.agentscope.core.agui.model.MessageContent;
@@ -40,12 +41,14 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.TextInputContent;
 import io.agentscope.core.agui.model.VideoInputContent;
 import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -86,6 +89,9 @@ public class AguiMessageConverter {
 
     /** AG-UI resume payload key: optional reason supplied when denying the tool call. */
     private static final String RESUME_PAYLOAD_REASON = "reason";
+
+    /** Provider name for a protocol file handle that arrived without one. */
+    private static final String AGUI_FILE_PROVIDER = "agui";
 
     /**
      * Creates a new AguiMessageConverter
@@ -185,16 +191,17 @@ public class AguiMessageConverter {
                 if (inputContent != null) {
                     inputContents.add(inputContent);
                 }
-            } else if (block instanceof DocumentBlock db
-                    && db.getSource() instanceof URLSource urlSource) {
-                String mimeType =
-                        db.getMimeType() != null ? db.getMimeType() : urlSource.getMimeType();
-                inputContents.add(
-                        new DocumentInputContent(
-                                new InputContentUrlSource(urlSource.getUrl(), mimeType),
-                                db.getMetadata() == null
-                                        ? Collections.emptyMap()
-                                        : db.getMetadata()));
+            } else if (block instanceof DocumentBlock db) {
+                // Documents travel on every role, like the other media kinds: an assistant turn
+                // can carry a generated file for display. Inbound structured blocks remain
+                // user-only, so this is an outbound representation; only a source the protocol
+                // cannot express falls back to a visible text reference.
+                InputContent attachment = toDocumentInputContent(db);
+                if (attachment != null) {
+                    inputContents.add(attachment);
+                } else {
+                    appendContent(content, DocumentReferenceRenderer.render(db));
+                }
             }
         }
 
@@ -234,6 +241,52 @@ public class AguiMessageConverter {
                         toolCallId,
                         error));
         return List.copyOf(messages);
+    }
+
+    /**
+     * Maps a document block onto the AG-UI content model.
+     *
+     * <p>The protocol can carry a URL source, inline data, or a provider file handle. {@code null}
+     * tells the caller to fall back to a text reference.
+     *
+     * @param block document block
+     * @return AG-UI content part, or {@code null} when the source cannot be expressed
+     */
+    private static InputContent toDocumentInputContent(DocumentBlock block) {
+        Source source = block.getSource();
+        // User metadata travels with the part untouched: round-tripping a file_parsing_strategy
+        // or a custom tag through history must not silently reset it. The document name rides
+        // on the source record itself, so it can never collide with a user metadata key.
+        Map<String, Object> metadata = block.getMetadata();
+        String name = block.getName();
+        if (source instanceof URLSource url) {
+            String mimeType = block.getMimeType() != null ? block.getMimeType() : url.getMimeType();
+            return new DocumentInputContent(
+                    new InputContentUrlSource(url.getUrl(), mimeType, name), metadata);
+        }
+        if (source instanceof Base64Source base64) {
+            String mimeType =
+                    block.getMimeType() != null ? block.getMimeType() : base64.getMediaType();
+            return new DocumentInputContent(
+                    new InputContentDataSource(base64.getData(), mimeType, name), metadata);
+        }
+        if (source instanceof FileIdSource fileId) {
+            // The protocol's file source carries an opaque provider handle, which is exactly what
+            // a FileIdSource is; the peer resolves it against the named provider. The name and the
+            // MIME type travel along: the handle alone leaves the peer without a type to infer.
+            String mimeType = block.getMimeType();
+            if (mimeType == null || mimeType.isBlank()) {
+                String inferred = name != null ? MediaUtils.determineMediaType(name) : null;
+                if (inferred != null && !"application/octet-stream".equals(inferred)) {
+                    mimeType = inferred;
+                }
+            }
+            return new DocumentInputContent(
+                    new InputContentFileSource(
+                            fileId.getFileId(), fileId.getProvider(), mimeType, name),
+                    metadata);
+        }
+        return null;
     }
 
     /**
@@ -449,13 +502,16 @@ public class AguiMessageConverter {
     }
 
     /**
-     * Join the text blocks of a tool result into a single string
+     * Join the text blocks of a tool result into a single string, keeping a reference for
+     * documents because a tool message carries text only.
      */
     private static String toolResultText(ToolResultBlock trb) {
         StringBuilder text = new StringBuilder();
         for (ContentBlock output : trb.getOutput()) {
             if (output instanceof TextBlock tb) {
                 appendContent(text, tb.getText());
+            } else if (output instanceof DocumentBlock db) {
+                appendContent(text, DocumentReferenceRenderer.render(db));
             }
         }
         return text.toString();
@@ -503,15 +559,65 @@ public class AguiMessageConverter {
             return VideoBlock.builder().source(toSource(video.source())).build();
         }
         if (input instanceof DocumentInputContent document) {
-            return DocumentBlock.builder()
-                    .source(toSource(document.source()))
-                    .mimeType(sourceMimeType(document.source()))
-                    .metadata(document.metadata())
-                    .build();
+            DocumentBlock.Builder builder =
+                    DocumentBlock.builder().source(toSource(document.source()));
+            String mimeType = mimeTypeOf(document.source());
+            if (mimeType != null && !mimeType.isBlank()) {
+                builder.mimeType(mimeType);
+            }
+            // Every source variant carries an optional name field: the file handle natively,
+            // URL and inline data as protocol extensions. User metadata passes through
+            // untouched, so a reserved-looking key can never shadow the name or be eaten.
+            String name = nameOf(document.source());
+            if (name != null && !name.isBlank()) {
+                builder.name(name);
+            }
+            if (document.metadata() != null && !document.metadata().isEmpty()) {
+                builder.metadata(document.metadata());
+            }
+            return builder.build();
         }
         throw new IllegalStateException(
                 "Unhandled InputContent type: "
                         + (input == null ? "null" : input.getClass().getSimpleName()));
+    }
+
+    /**
+     * Reads the MIME type an AG-UI content source declares, if any.
+     *
+     * @param inputSource the AG-UI protocol source
+     * @return declared MIME type, or {@code null}
+     */
+    private static String mimeTypeOf(InputContentSource inputSource) {
+        if (inputSource instanceof InputContentUrlSource url) {
+            return url.mimeType();
+        }
+        if (inputSource instanceof InputContentDataSource data) {
+            return data.mimeType();
+        }
+        if (inputSource instanceof InputContentFileSource file) {
+            return file.mimeType();
+        }
+        return null;
+    }
+
+    /**
+     * Reads the display name an AG-UI content source carries, if any.
+     *
+     * @param inputSource the AG-UI protocol source
+     * @return declared name, or {@code null}
+     */
+    private static String nameOf(InputContentSource inputSource) {
+        if (inputSource instanceof InputContentUrlSource url) {
+            return url.name();
+        }
+        if (inputSource instanceof InputContentDataSource data) {
+            return data.name();
+        }
+        if (inputSource instanceof InputContentFileSource file) {
+            return file.name();
+        }
+        return null;
     }
 
     /**
@@ -521,6 +627,9 @@ public class AguiMessageConverter {
      * <ul>
      *   <li>{@link InputContentUrlSource} (type:"url", value) &rarr; {@link URLSource} (url)</li>
      *   <li>{@link InputContentDataSource} (type:"data", value) &rarr; {@link Base64Source} (data)</li>
+     *   <li>{@link InputContentFileSource} (type:"file", value, provider) &rarr; {@link FileIdSource}
+     *       (fileId, provider); a handle without a provider keeps the round trip with the neutral
+     *       {@code agui} provider name, since {@link FileIdSource} requires one</li>
      * </ul>
      *
      * @param inputSource the AG-UI protocol source
@@ -533,17 +642,11 @@ public class AguiMessageConverter {
         if (inputSource instanceof InputContentDataSource data) {
             return new Base64Source(data.mimeType(), data.value());
         }
+        if (inputSource instanceof InputContentFileSource file) {
+            return new FileIdSource(
+                    file.provider() != null ? file.provider() : AGUI_FILE_PROVIDER, file.value());
+        }
         throw new IllegalStateException("Unhandled InputContentSource type: " + inputSource);
-    }
-
-    private static String sourceMimeType(InputContentSource source) {
-        if (source instanceof InputContentUrlSource url) {
-            return url.mimeType();
-        }
-        if (source instanceof InputContentDataSource data) {
-            return data.mimeType();
-        }
-        return null;
     }
 
     private static InputContentUrlSource toInputContentUrlSource(URLSource source) {
