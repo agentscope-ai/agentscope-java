@@ -879,7 +879,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         callContext.get(SessionRecorder.PARENT_KEY));
                             try {
                                 SessionExecution execution = SessionExecution.from(callContext);
-                                if (execution != null) execution.prepare(recorder);
+                                if (execution != null) execution.prepare(recorder, msgs);
                                 CallExecution acquired =
                                         (CallExecution)
                                                 beforeAgentExecution(msgs, callContext, control);
@@ -895,11 +895,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         scope -> {
                             CallExecution ce = (CallExecution) scope;
                             return SessionRecorder.from(ce.rc)
-                                    .start(
-                                            SessionExecution.from(ce.rc) == null
-                                                    ? msgs
-                                                    : SessionExecution.from(ce.rc).inputs(),
-                                            ce.state)
+                                    .start(msgs, ce.state)
                                     .thenReturn(scope)
                                     .doOnError(error -> closeFailedSessionExecution(ce.rc, error));
                         })
@@ -1021,8 +1017,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     protected List<Msg> inputsForCall(Object scope, List<Msg> inputs) {
-        if (scope instanceof CallExecution ce && SessionExecution.from(ce.rc) != null)
-            inputs = SessionExecution.from(ce.rc).inputs();
         if (!(scope instanceof CallExecution ce)
                 || SessionRecorder.from(ce.rc) == null
                 || inputs == null) return inputs;

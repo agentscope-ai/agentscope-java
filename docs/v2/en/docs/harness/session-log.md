@@ -41,6 +41,8 @@ System.out.println(task.turnId());
 
 Return the task receipt from the HTTP handler. `submit` durably accepts the input and allocates a `turnId`; execution can still be queued, so its `runId` may be absent. Retry a failed submission request with the same request key and identical input to obtain the existing receipt. A different task needs a different key.
 
+When a submitted task executes, changes from `onAgent` and `onAgentStateReady` middleware reach the model and execution history. For example, with local `@path` expansion enabled, `submit("Read @./notes.txt")` includes the file preview just as a direct call does. The accepted inbox command keeps the original input for idempotent submission; resuming restores the recorded execution input before `onAgentStateReady` and skips messages already consumed into the conversation.
+
 Keep the Agent alive after that response: closing it stops scheduling and interrupts active work. Close it when its owning session manager shuts down or deliberately releases the runtime. This differs from ordinary direct requests, whose caller builds and closes the Agent per request; see [Instance lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle).
 
 Further submissions queue in acceptance order while the session is busy. Interruption or pending human input parks the queue until the unfinished task continues. To observe a task from a CLI or worker:
