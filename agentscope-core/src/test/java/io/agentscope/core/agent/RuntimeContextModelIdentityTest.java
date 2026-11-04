@@ -22,57 +22,57 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** {@link RuntimeContext#getModelId()} storage and derivation semantics. */
-@DisplayName("RuntimeContext modelId")
-class RuntimeContextModelIdTest {
+/** {@link RuntimeContext#getModelIdentity()} storage and derivation semantics. */
+@DisplayName("RuntimeContext modelIdentity")
+class RuntimeContextModelIdentityTest {
 
     @Test
-    @DisplayName("builder stores the modelId; default is null")
+    @DisplayName("builder stores the modelIdentity; default is null")
     void builderStoresModelId() {
-        assertNull(RuntimeContext.builder().build().getModelId());
+        assertNull(RuntimeContext.builder().build().getModelIdentity());
         assertEquals(
                 "deepseek:v4",
-                RuntimeContext.builder().modelId("deepseek:v4").build().getModelId());
+                RuntimeContext.builder().modelIdentity("deepseek:v4").build().getModelIdentity());
     }
 
     @Test
-    @DisplayName("derived contexts keep the modelId (internal per-run derivations need it)")
+    @DisplayName("derived contexts keep the modelIdentity (internal per-run derivations need it)")
     void derivedContextKeepsModelId() {
         RuntimeContext parent =
                 RuntimeContext.builder()
                         .userId("u1")
                         .sessionId("s1")
-                        .modelId("deepseek:v4")
+                        .modelIdentity("deepseek:v4")
                         .put("kept", "attribute")
                         .build();
         RuntimeContext derived = RuntimeContext.builder(parent).build();
-        assertEquals("deepseek:v4", derived.getModelId());
+        assertEquals("deepseek:v4", derived.getModelIdentity());
         assertEquals("u1", derived.getUserId());
         assertEquals("s1", derived.getSessionId());
         assertEquals(parent.getRunId(), derived.getRunId());
         assertEquals("attribute", derived.get("kept"));
-        assertEquals("deepseek:v4", parent.getModelId(), "source is unaffected");
+        assertEquals("deepseek:v4", parent.getModelIdentity(), "source is unaffected");
     }
 
     @Test
-    @DisplayName("a derived context can clear the modelId (subagent boundary semantics)")
+    @DisplayName("a derived context can clear the modelIdentity (subagent boundary semantics)")
     void derivedContextCanClearModelId() {
         RuntimeContext parent =
                 RuntimeContext.builder()
                         .userId("u1")
                         .sessionId("s1")
-                        .modelId("deepseek:v4")
+                        .modelIdentity("deepseek:v4")
                         .build();
-        RuntimeContext child = RuntimeContext.builder(parent).modelId(null).build();
-        assertNull(child.getModelId(), "subagents keep their build-time model contract");
-        assertEquals("deepseek:v4", parent.getModelId(), "source is unaffected");
+        RuntimeContext child = RuntimeContext.builder(parent).modelIdentity(null).build();
+        assertNull(child.getModelIdentity(), "subagents keep their build-time model contract");
+        assertEquals("deepseek:v4", parent.getModelIdentity(), "source is unaffected");
     }
 
     @Test
-    @DisplayName("modelId is not an attribute and stays invisible to the attribute bag")
-    void modelIdIsNotAnAttribute() {
-        RuntimeContext ctx = RuntimeContext.builder().modelId("m").build();
-        assertNull(ctx.get("modelId"));
+    @DisplayName("modelIdentity is not an attribute and stays invisible to the attribute bag")
+    void modelIdentityIsNotAnAttribute() {
+        RuntimeContext ctx = RuntimeContext.builder().modelIdentity("m").build();
+        assertNull(ctx.get("modelIdentity"));
         assertEquals(Map.of(), ctx.getExtra());
     }
 }

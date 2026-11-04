@@ -409,10 +409,13 @@ public class SubAgentTool implements AgentTool {
      * Drops the caller's per-call model choice before handing the context to a subagent: a
      * subagent's model is a build-time contract and must not be overridden by the caller's
      * runtime selection. The derived copy keeps everything else (ids, attributes, run
-     * correlation); when no model id is set the original context is passed through unchanged.
+     * correlation); when no model identity is set the original context is passed through
+     * unchanged.
      */
     private static RuntimeContext stripCallerModel(RuntimeContext rc) {
-        return rc.getModelId() == null ? rc : RuntimeContext.builder(rc).modelId(null).build();
+        return rc.getModelIdentity() == null
+                ? rc
+                : RuntimeContext.builder(rc).modelIdentity(null).build();
     }
 
     /**

@@ -45,6 +45,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.SessionHistoryMode;
 import io.agentscope.core.session.SessionRecorder;
@@ -1247,6 +1248,33 @@ class HarnessAgentTest {
                 ConflictPolicy.APPEND_MERGE,
                 wrapped.getDelegate().getConflictPolicy(),
                 "a conflict policy set on the source agent must survive being wrapped");
+    }
+
+    @Test
+    void fromAgent_modelStringRefSource_pinsCurrentInstance() {
+        Model registered = stubModel("ref-pinned");
+        ModelRegistry.register("from-agent-ref", registered);
+        try {
+            ReActAgent source =
+                    ReActAgent.builder()
+                            .name("source")
+                            .model("from-agent-ref")
+                            .toolkit(new Toolkit())
+                            .build();
+
+            HarnessAgent wrapped =
+                    HarnessAgent.Builder.fromAgent(source)
+                            .workspace(workspace)
+                            .abstractFilesystem(new LocalFilesystem(workspace))
+                            .build();
+
+            assertSame(
+                    registered,
+                    wrapped.getModel(),
+                    "a string-reference source must be pinned to its current instance");
+        } finally {
+            ModelRegistry.reset();
+        }
     }
 
     @Test

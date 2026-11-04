@@ -261,6 +261,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     private final String sysPrompt;
     private final Model model;
+
+    /**
+     * Model identity string set by {@link Builder#model(String)}; resolved lazily through
+     * {@link ModelRegistry} on every call. Either the composite form {@code contextId@modelId}
+     * (e.g. {@code mytokenplan01@dashscope:qwen-plus}) or a plain registry string (named
+     * binding, bare modelId, user factory). {@code null} when the agent was given a {@link
+     * Model} instance.
+     */
+    private final String modelIdentity;
+
     private final int maxIters;
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
@@ -414,6 +424,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.skillWorkDir = builder.skillWorkDir;
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
+        this.modelIdentity = builder.modelIdentity;
         this.maxIters = builder.maxIters;
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
@@ -2917,7 +2928,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // (soTool != null), where nativeResponseFormat is always null.
                                 if (soForceToolChoiceCount > 0
                                         && soTool != null
-                                        && model.supportsToolChoiceSpecific()) {
+                                        && getModel(rc).supportsToolChoiceSpecific()) {
                                     options =
                                             GenerateOptions.mergeOptions(
                                                     GenerateOptions.builder()
@@ -5311,25 +5322,50 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return sysPrompt;
     }
 
+    /**
+     * Plain accessor for the builder-configured {@link Model} instance: performs no resolution
+     * and no fallback, and returns {@code null} when the agent was configured with a model
+     * identity string ({@link Builder#model(String)}). For the model effective on a call use
+     * {@link #getModel(RuntimeContext)}; for the configured identity use {@link
+     * #getModelIdentity()}.
+     */
     public Model getModel() {
         return model;
     }
 
     /**
-     * Returns the model effective for a call carrying {@code ctx}: the context's {@code modelId}
-     * resolved through {@link ModelRegistry#resolve} when set, otherwise this agent's default
-     * model. A set-but-blank or unresolvable id throws {@link IllegalArgumentException} — an
-     * explicit per-call model choice fails loudly rather than silently falling back to the
-     * default (wrong model, wrong credentials in multi-tenant setups).
+     * Returns the builder-configured model identity string, or {@code null} when a {@link
+     * Model} instance was configured directly.
      *
-     * @param ctx the per-call runtime context (may be {@code null}, meaning the default model)
+     * @see Builder#model(String)
+     */
+    public String getModelIdentity() {
+        return modelIdentity;
+    }
+
+    /**
+     * Returns the model effective for a call carrying {@code ctx}, by priority: the context's
+     * {@code modelIdentity}, then this agent's identity string (both resolved through {@link
+     * ModelRegistry} on every call), then the configured {@link Model} instance. A set-but-blank
+     * or unresolvable identity throws {@link IllegalArgumentException} — an explicit model
+     * choice fails loudly rather than silently falling back (wrong model, wrong credentials in
+     * multi-tenant setups).
+     *
+     * @param ctx the per-call runtime context (may be {@code null}, meaning no per-call
+     *     override)
      */
     public Model getModel(RuntimeContext ctx) {
-        String modelId = ctx != null ? ctx.getModelId() : null;
-        if (modelId != null) {
-            return ModelRegistry.resolve(modelId);
+        String identity =
+                ctx != null && ctx.getModelIdentity() != null
+                        ? ctx.getModelIdentity()
+                        : modelIdentity;
+        if (identity != null) {
+            // Composite contextId@modelId and legacy-chain strings both resolve here; a named
+            // reference carries its own (contextId, modelId) pairing, so cross-provider
+            // per-call switching needs no agent-level context assumptions.
+            return ModelRegistry.resolve(identity);
         }
-        return model;
+        return Objects.requireNonNull(model, "agent has neither a model nor a modelIdentity");
     }
 
     public int getMaxIters() {
@@ -5906,6 +5942,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String description;
         String sysPrompt;
         Model model;
+        String modelIdentity;
         Toolkit toolkit = new Toolkit();
 
         int maxIters = 10;
@@ -6023,6 +6060,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             copy.description = this.description;
             copy.sysPrompt = this.sysPrompt;
             copy.model = this.model;
+            copy.modelIdentity = this.modelIdentity;
             copy.toolkit = this.toolkit;
             copy.maxIters = this.maxIters;
             copy.modelExecutionConfig = this.modelExecutionConfig;
@@ -6115,29 +6153,46 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Sets the language model for this agent.
+         * Sets the language model for this agent. This overload and {@link #model(String)} are
+         * two forms of one configuration slot: the last setter wins, and this call clears any
+         * previously configured identity string. At runtime an identity string outranks the
+         * instance wherever both could apply ({@link #getModel(RuntimeContext)}), but the
+         * mutual clearing means only the last setting is ever active.
          *
          * @param model The language model to use for reasoning, must not be null
          * @return This builder instance for method chaining
          */
         public Builder model(Model model) {
             this.model = model;
+            this.modelIdentity = null;
             return this;
         }
 
         /**
-         * Configures the model from a string id resolved via {@link ModelRegistry}: a named
-         * registration ({@link ModelRegistry#register(String, Model)}) or an extension provider
-         * pattern such as {@code openai:gpt-5.5}, {@code dashscope:qwen-max}, {@code
-         * anthropic:claude-sonnet-4-5}, {@code gemini:gemini-2.0-flash}, or {@code ollama:llama3}.
-         * Extension modules read API keys from their standard environment variables when auto-created.
+         * Sets the model by identity string, resolved lazily via {@link ModelRegistry} on every
+         * call. Accepted forms: the composite {@code contextId@modelId} (e.g. {@code
+         * mytokenplan01@dashscope:qwen-plus}, pairing a creation context registered via {@code
+         * ModelRegistry#registerCreationContext} with the model id — the credentials/endpoint
+         * travel with the identity itself), or a plain registry string (modelInstanceId,
+         * bare modelId, user factory match). Registration state at call time applies, so
+         * re-registering a binding, context, or factory takes effect for calls that start
+         * afterwards; an unresolvable identity fails the call with {@link
+         * IllegalArgumentException} instead of silently falling back.
          *
-         * @param modelId registry id or {@code provider:model} string
+         * <p>This overload and {@link #model(Model)} are two forms of one configuration slot:
+         * the last setter wins, and this call clears any previously configured {@link Model}
+         * instance. Runtime precedence is {@code RuntimeContext.modelIdentity} &gt; this
+         * identity &gt; a configured instance — but the mutual clearing means only the last
+         * setting is ever active.
+         *
+         * @param modelIdentity a composite {@code contextId@modelId}, a modelId, a
+         *     modelInstanceId, or a factory-matched string; resolved via ModelRegistry; itself never a
+         *     {@link Model} instance
          * @return this builder
-         * @throws IllegalArgumentException if the id cannot be resolved
          */
-        public Builder model(String modelId) {
-            this.model = ModelRegistry.resolve(modelId);
+        public Builder model(String modelIdentity) {
+            this.modelIdentity = modelIdentity;
+            this.model = null;
             return this;
         }
 
@@ -6428,8 +6483,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * Convenience overload that resolves {@code modelId} via
-         * {@link ModelRegistry#resolve(String)} (named registration or
+         * {@link ModelRegistry#resolve(String)} (a modelInstanceId or
          * {@code provider:model} pattern like {@code openai:gpt-5.5}, {@code dashscope:qwen-max}).
+         *
+         * <p>Legacy eager semantics: resolution happens once at build time, unlike the lazy
+         * string reference of {@link #model(String)}.
          *
          * @throws IllegalArgumentException if the id cannot be resolved
          */
@@ -6657,6 +6715,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             b.description = agent.getDescription();
             b.sysPrompt = agent.getSysPrompt();
             b.model = agent.getModel();
+            b.modelIdentity = agent.getModelIdentity();
             b.maxIters = agent.getMaxIters();
             b.generateOptions = agent.getGenerateOptions();
             ModelConfig srcModelConfig = agent.getModelConfig();

@@ -38,7 +38,7 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
 /**
- * Per-call model selection via {@link RuntimeContext#getModelId()}: routing, isolation, fail-fast
+ * Per-call model selection via {@link RuntimeContext#getModelIdentity()}: routing, isolation, fail-fast
  * on unresolvable ids, and interaction with the configured fallback model.
  */
 @DisplayName("ReActAgent per-call model selection")
@@ -96,8 +96,8 @@ class ReActAgentPerCallModelTest {
     }
 
     @Test
-    @DisplayName("a context modelId routes the call through the registered model")
-    void modelIdRoutesThroughRegistryModel() {
+    @DisplayName("a context modelIdentity routes the call through the registered model")
+    void modelIdentityRoutesThroughRegistryModel() {
         CountingModel defaultModel = new CountingModel("default");
         CountingModel perCall = new CountingModel("per-call");
         ReActAgent agent = agent(defaultModel);
@@ -107,7 +107,7 @@ class ReActAgentPerCallModelTest {
                     RuntimeContext.builder()
                             .userId("u1")
                             .sessionId("sessA")
-                            .modelId("test:per-call")
+                            .modelIdentity("test:per-call")
                             .build();
             agent.call(List.of(userMsg("hello")), ctx).block(Duration.ofSeconds(10));
 
@@ -120,7 +120,7 @@ class ReActAgentPerCallModelTest {
     }
 
     @Test
-    @DisplayName("without a modelId the agent's default model serves the call")
+    @DisplayName("without a modelIdentity the agent's default model serves the call")
     void nullModelIdUsesDefaultModel() {
         CountingModel defaultModel = new CountingModel("default");
         ReActAgent agent = agent(defaultModel);
@@ -144,7 +144,7 @@ class ReActAgentPerCallModelTest {
                             RuntimeContext.builder()
                                     .userId("u1")
                                     .sessionId("sessA")
-                                    .modelId("test:a")
+                                    .modelIdentity("test:a")
                                     .build())
                     .block(Duration.ofSeconds(10));
             agent.call(
@@ -152,7 +152,7 @@ class ReActAgentPerCallModelTest {
                             RuntimeContext.builder()
                                     .userId("u1")
                                     .sessionId("sessB")
-                                    .modelId("test:b")
+                                    .modelIdentity("test:b")
                                     .build())
                     .block(Duration.ofSeconds(10));
 
@@ -165,7 +165,7 @@ class ReActAgentPerCallModelTest {
     }
 
     @Test
-    @DisplayName("an unresolvable modelId fails the call instead of falling back silently")
+    @DisplayName("an unresolvable modelIdentity fails the call instead of falling back silently")
     void unresolvableModelIdFailsCall() {
         CountingModel defaultModel = new CountingModel("default");
         ReActAgent agent = agent(defaultModel);
@@ -173,7 +173,7 @@ class ReActAgentPerCallModelTest {
                 RuntimeContext.builder()
                         .userId("u1")
                         .sessionId("sessA")
-                        .modelId("test:does-not-exist")
+                        .modelIdentity("test:does-not-exist")
                         .build();
         assertThrows(
                 IllegalArgumentException.class,
@@ -182,12 +182,12 @@ class ReActAgentPerCallModelTest {
     }
 
     @Test
-    @DisplayName("a blank modelId fails the call (caller bug, not an unset choice)")
+    @DisplayName("a blank modelIdentity fails the call (caller bug, not an unset choice)")
     void blankModelIdFailsCall() {
         CountingModel defaultModel = new CountingModel("default");
         ReActAgent agent = agent(defaultModel);
         RuntimeContext ctx =
-                RuntimeContext.builder().userId("u1").sessionId("sessA").modelId(" ").build();
+                RuntimeContext.builder().userId("u1").sessionId("sessA").modelIdentity(" ").build();
         assertThrows(
                 IllegalArgumentException.class,
                 () -> agent.call(List.of(userMsg("hello")), ctx).block(Duration.ofSeconds(10)));
@@ -214,7 +214,7 @@ class ReActAgentPerCallModelTest {
                     RuntimeContext.builder()
                             .userId("u1")
                             .sessionId("sessA")
-                            .modelId("test:failing")
+                            .modelIdentity("test:failing")
                             .build();
             agent.call(List.of(userMsg("hello")), ctx).block(Duration.ofSeconds(10));
 
