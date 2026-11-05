@@ -33,7 +33,14 @@ import java.util.Objects;
  * that tool. The engine evaluates {@code denyRules} first, then {@code askRules}, then tool
  * self-check, then {@code allowRules}; see the {@code PermissionEngine} javadoc for full ordering.
  */
-@JsonPropertyOrder({"mode", "working_directories", "allow_rules", "deny_rules", "ask_rules"})
+@JsonPropertyOrder({
+    "mode",
+    "working_directories",
+    "allow_rules",
+    "deny_rules",
+    "ask_rules",
+    "escalation_enabled"
+})
 public final class PermissionContextState {
 
     private final PermissionMode mode;
@@ -41,6 +48,7 @@ public final class PermissionContextState {
     private final Map<String, List<PermissionRule>> allowRules;
     private final Map<String, List<PermissionRule>> denyRules;
     private final Map<String, List<PermissionRule>> askRules;
+    private final boolean escalationEnabled;
 
     private PermissionContextState(Builder builder) {
         this.mode = builder.mode == null ? PermissionMode.DEFAULT : builder.mode;
@@ -49,6 +57,7 @@ public final class PermissionContextState {
         this.allowRules = freeze(builder.allowRules);
         this.denyRules = freeze(builder.denyRules);
         this.askRules = freeze(builder.askRules);
+        this.escalationEnabled = builder.escalationEnabled;
     }
 
     @JsonCreator
@@ -58,7 +67,8 @@ public final class PermissionContextState {
                     Map<String, AdditionalWorkingDirectory> workingDirectories,
             @JsonProperty("allow_rules") Map<String, List<PermissionRule>> allowRules,
             @JsonProperty("deny_rules") Map<String, List<PermissionRule>> denyRules,
-            @JsonProperty("ask_rules") Map<String, List<PermissionRule>> askRules) {
+            @JsonProperty("ask_rules") Map<String, List<PermissionRule>> askRules,
+            @JsonProperty("escalation_enabled") Boolean escalationEnabled) {
         Builder b = builder();
         if (mode != null) {
             b.mode(mode);
@@ -69,6 +79,9 @@ public final class PermissionContextState {
         copyInto(allowRules, b::addAllowRule);
         copyInto(denyRules, b::addDenyRule);
         copyInto(askRules, b::addAskRule);
+        if (escalationEnabled != null) {
+            b.escalationEnabled(escalationEnabled);
+        }
         return b.build();
     }
 
@@ -112,6 +125,19 @@ public final class PermissionContextState {
                 && askRules.isEmpty();
     }
 
+    /**
+     * Whether model-requested permission escalation is enabled on this agent. When {@code true},
+     * tools may declare optional {@code sandbox_permissions} + {@code justification} arguments;
+     * a valid, strictly-wider request is routed through the user-confirmation flow before
+     * anything executes. The flag deliberately does NOT affect {@link #isTrivial()}: enabling
+     * escalation leaves calls without escalation arguments on exactly their previous evaluation
+     * path — only calls that actually carry the arguments engage the permission engine.
+     */
+    @JsonProperty("escalation_enabled")
+    public boolean isEscalationEnabled() {
+        return escalationEnabled;
+    }
+
     @JsonProperty("working_directories")
     public Map<String, AdditionalWorkingDirectory> getWorkingDirectories() {
         return workingDirectories;
@@ -150,7 +176,23 @@ public final class PermissionContextState {
         if (newMode == this.mode) {
             return this;
         }
-        Builder b = builder().mode(newMode);
+        Builder b = builder().mode(newMode).escalationEnabled(escalationEnabled);
+        workingDirectories.forEach(b::addWorkingDirectory);
+        copyInto(allowRules, b::addAllowRule);
+        copyInto(denyRules, b::addDenyRule);
+        copyInto(askRules, b::addAskRule);
+        return b.build();
+    }
+
+    /**
+     * Returns a copy of this context with the escalation flag replaced and every mode, working
+     * directory, and rule preserved (returns {@code this} when the flag is unchanged).
+     */
+    public PermissionContextState withEscalationEnabled(boolean newEscalationEnabled) {
+        if (newEscalationEnabled == this.escalationEnabled) {
+            return this;
+        }
+        Builder b = builder().mode(mode).escalationEnabled(newEscalationEnabled);
         workingDirectories.forEach(b::addWorkingDirectory);
         copyInto(allowRules, b::addAllowRule);
         copyInto(denyRules, b::addDenyRule);
@@ -167,6 +209,7 @@ public final class PermissionContextState {
             return false;
         }
         return mode == other.mode
+                && escalationEnabled == other.escalationEnabled
                 && Objects.equals(workingDirectories, other.workingDirectories)
                 && Objects.equals(allowRules, other.allowRules)
                 && Objects.equals(denyRules, other.denyRules)
@@ -175,7 +218,8 @@ public final class PermissionContextState {
 
     @Override
     public int hashCode() {
-        return Objects.hash(mode, workingDirectories, allowRules, denyRules, askRules);
+        return Objects.hash(
+                mode, workingDirectories, allowRules, denyRules, askRules, escalationEnabled);
     }
 
     @Override
@@ -190,6 +234,8 @@ public final class PermissionContextState {
                 + denyRules
                 + ", askRules="
                 + askRules
+                + ", escalationEnabled="
+                + escalationEnabled
                 + '}';
     }
 
@@ -200,6 +246,7 @@ public final class PermissionContextState {
 
     public static final class Builder {
         private PermissionMode mode = PermissionMode.DEFAULT;
+        private boolean escalationEnabled = false;
         private final Map<String, AdditionalWorkingDirectory> workingDirectories =
                 new LinkedHashMap<>();
         private final Map<String, List<PermissionRule>> allowRules = new LinkedHashMap<>();
@@ -210,6 +257,12 @@ public final class PermissionContextState {
 
         public Builder mode(PermissionMode mode) {
             this.mode = Objects.requireNonNull(mode, "mode must not be null");
+            return this;
+        }
+
+        /** Enables model-requested permission escalation on the built context. */
+        public Builder escalationEnabled(boolean escalationEnabled) {
+            this.escalationEnabled = escalationEnabled;
             return this;
         }
 
