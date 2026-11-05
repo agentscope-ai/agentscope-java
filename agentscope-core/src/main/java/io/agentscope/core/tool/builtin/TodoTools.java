@@ -153,10 +153,23 @@ public class TodoTools {
             if (priority != null) {
                 metadata.put("priority", priority);
             }
+            if (item.getExpectedOutcome() != null && !item.getExpectedOutcome().isBlank()) {
+                metadata.put("expectedOutcome", item.getExpectedOutcome());
+            }
+            if (item.getOutcome() != null && !item.getOutcome().isBlank()) {
+                metadata.put("outcome", item.getOutcome());
+            }
+            if (item.getMetadata() != null) {
+                metadata.putAll(item.getMetadata());
+            }
+            String taskDesc =
+                    (item.getDescription() != null && !item.getDescription().isBlank())
+                            ? item.getDescription()
+                            : item.getContent();
             Task.Builder b =
                     Task.builder()
                             .subject(item.getContent())
-                            .description(item.getContent())
+                            .description(taskDesc)
                             .state(parsed)
                             .metadata(metadata.isEmpty() ? null : metadata);
             if (prior != null) {
@@ -229,15 +242,27 @@ public class TodoTools {
         private final String content;
         private final String status;
         private final String priority;
+        private final String description;
+        private final String expectedOutcome;
+        private final String outcome;
+        private final Map<String, Object> metadata;
 
         @JsonCreator
         public TodoItem(
                 @JsonProperty("content") String content,
                 @JsonProperty("status") String status,
-                @JsonProperty("priority") String priority) {
+                @JsonProperty("priority") String priority,
+                @JsonProperty("description") String description,
+                @JsonProperty("expectedOutcome") String expectedOutcome,
+                @JsonProperty("outcome") String outcome,
+                @JsonProperty("metadata") Map<String, Object> metadata) {
             this.content = content;
             this.status = status;
             this.priority = priority;
+            this.description = description;
+            this.expectedOutcome = expectedOutcome;
+            this.outcome = outcome;
+            this.metadata = metadata;
         }
 
         @JsonProperty("content")
@@ -256,6 +281,30 @@ public class TodoTools {
         @JsonPropertyDescription("Optional priority: high, medium, or low.")
         public String getPriority() {
             return priority;
+        }
+
+        @JsonProperty("description")
+        @JsonPropertyDescription("Optional UI-facing explanation of this step.")
+        public String getDescription() {
+            return description;
+        }
+
+        @JsonProperty("expectedOutcome")
+        @JsonPropertyDescription("Optional: what this step is expected to produce.")
+        public String getExpectedOutcome() {
+            return expectedOutcome;
+        }
+
+        @JsonProperty("outcome")
+        @JsonPropertyDescription("Optional: what this step actually produced after completion.")
+        public String getOutcome() {
+            return outcome;
+        }
+
+        @JsonProperty("metadata")
+        @JsonPropertyDescription("Optional arbitrary application-specific structured data.")
+        public Map<String, Object> getMetadata() {
+            return metadata;
         }
     }
 }

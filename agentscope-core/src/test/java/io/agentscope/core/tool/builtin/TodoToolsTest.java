@@ -35,9 +35,12 @@ class TodoToolsTest {
         String out =
                 tool.todoWrite(
                         List.of(
-                                new TodoItem("Investigate bug", "in_progress", "high"),
-                                new TodoItem("Write fix", "pending", null),
-                                new TodoItem("Add test", "pending", "low")),
+                                new TodoItem(
+                                        "Investigate bug", "in_progress", "high", null, null, null,
+                                        null),
+                                new TodoItem("Write fix", "pending", null, null, null, null, null),
+                                new TodoItem(
+                                        "Add test", "pending", "low", null, null, null, null)),
                         state);
 
         List<Task> tasks = state.getTasksContext().getTasks();
@@ -53,10 +56,11 @@ class TodoToolsTest {
         AgentState state = AgentState.builder().build();
         tool.todoWrite(
                 List.of(
-                        new TodoItem("A", "completed", null),
-                        new TodoItem("B", "in_progress", null)),
+                        new TodoItem("A", "completed", null, null, null, null, null),
+                        new TodoItem("B", "in_progress", null, null, null, null, null)),
                 state);
-        tool.todoWrite(List.of(new TodoItem("B", "completed", null)), state);
+        tool.todoWrite(
+                List.of(new TodoItem("B", "completed", null, null, null, null, null)), state);
 
         List<Task> tasks = state.getTasksContext().getTasks();
         assertEquals(1, tasks.size());
@@ -67,10 +71,13 @@ class TodoToolsTest {
     @Test
     void preservesIdAcrossRewritesWhenContentMatches() {
         AgentState state = AgentState.builder().build();
-        tool.todoWrite(List.of(new TodoItem("Stable", "pending", null)), state);
+        tool.todoWrite(
+                List.of(new TodoItem("Stable", "pending", null, null, null, null, null)), state);
         String firstId = state.getTasksContext().getTasks().get(0).getId();
 
-        tool.todoWrite(List.of(new TodoItem("Stable", "in_progress", null)), state);
+        tool.todoWrite(
+                List.of(new TodoItem("Stable", "in_progress", null, null, null, null, null)),
+                state);
         String secondId = state.getTasksContext().getTasks().get(0).getId();
 
         assertEquals(firstId, secondId);
@@ -82,8 +89,8 @@ class TodoToolsTest {
         String out =
                 tool.todoWrite(
                         List.of(
-                                new TodoItem("A", "in_progress", null),
-                                new TodoItem("B", "in_progress", null)),
+                                new TodoItem("A", "in_progress", null, null, null, null, null),
+                                new TodoItem("B", "in_progress", null, null, null, null, null)),
                         state);
         assertTrue(out.toLowerCase().contains("at most one"));
         // State must be left untouched on rejection.
@@ -93,7 +100,9 @@ class TodoToolsTest {
     @Test
     void rejectsInvalidStatus() {
         AgentState state = AgentState.builder().build();
-        String out = tool.todoWrite(List.of(new TodoItem("A", "doing", null)), state);
+        String out =
+                tool.todoWrite(
+                        List.of(new TodoItem("A", "doing", null, null, null, null, null)), state);
         assertTrue(out.toLowerCase().contains("invalid status"));
         assertTrue(state.getTasksContext().getTasks().isEmpty());
     }
@@ -101,7 +110,8 @@ class TodoToolsTest {
     @Test
     void clearingListWithEmptyInput() {
         AgentState state = AgentState.builder().build();
-        tool.todoWrite(List.of(new TodoItem("A", "pending", null)), state);
+        tool.todoWrite(
+                List.of(new TodoItem("A", "pending", null, null, null, null, null)), state);
         String out = tool.todoWrite(List.of(), state);
         assertTrue(state.getTasksContext().getTasks().isEmpty());
         assertTrue(out.toLowerCase().contains("cleared"));
@@ -109,8 +119,91 @@ class TodoToolsTest {
 
     @Test
     void missingStateReturnsError() {
-        String out = tool.todoWrite(List.of(new TodoItem("A", "pending", null)), null);
+        String out =
+                tool.todoWrite(
+                        List.of(new TodoItem("A", "pending", null, null, null, null, null)), null);
         assertFalse(out.isBlank());
         assertTrue(out.toLowerCase().contains("error"));
+    }
+
+    @Test
+    void descriptionMapsToTaskDescription() {
+        AgentState state = AgentState.builder().build();
+        tool.todoWrite(
+                List.of(
+                        new TodoItem(
+                                "Query Anhui notices",
+                                "pending",
+                                null,
+                                "Retrieve current Anhui market notice list.",
+                                null,
+                                null,
+                                null)),
+                state);
+        Task task = state.getTasksContext().getTasks().get(0);
+        assertEquals("Query Anhui notices", task.getSubject());
+        assertEquals("Retrieve current Anhui market notice list.", task.getDescription());
+    }
+
+    @Test
+    void nullDescriptionFallsBackToContent() {
+        AgentState state = AgentState.builder().build();
+        tool.todoWrite(
+                List.of(new TodoItem("Do something", "pending", null, null, null, null, null)),
+                state);
+        Task task = state.getTasksContext().getTasks().get(0);
+        assertEquals("Do something", task.getDescription());
+    }
+
+    @Test
+    void expectedOutcomeAndOutcomeStoredInMetadata() {
+        AgentState state = AgentState.builder().build();
+        tool.todoWrite(
+                List.of(
+                        new TodoItem(
+                                "Compare notices",
+                                "completed",
+                                null,
+                                null,
+                                "A list of differences",
+                                "Found 3 key differences",
+                                null)),
+                state);
+        Task task = state.getTasksContext().getTasks().get(0);
+        assertEquals("A list of differences", task.getMetadata().get("expectedOutcome"));
+        assertEquals("Found 3 key differences", task.getMetadata().get("outcome"));
+    }
+
+    @Test
+    void extraMetadataMergedIntoTaskMetadata() {
+        AgentState state = AgentState.builder().build();
+        tool.todoWrite(
+                List.of(
+                        new TodoItem(
+                                "Summarize",
+                                "pending",
+                                "high",
+                                null,
+                                null,
+                                null,
+                                java.util.Map.of("region", "Anhui", "source", "official"))),
+                state);
+        Task task = state.getTasksContext().getTasks().get(0);
+        assertEquals("high", task.getMetadata().get("priority"));
+        assertEquals("Anhui", task.getMetadata().get("region"));
+        assertEquals("official", task.getMetadata().get("source"));
+    }
+
+    @Test
+    void blankOutcomeNotStoredInMetadata() {
+        AgentState state = AgentState.builder().build();
+        tool.todoWrite(
+                List.of(
+                        new TodoItem(
+                                "Step A", "pending", null, null, "expected result", "   ", null)),
+                state);
+        Task task = state.getTasksContext().getTasks().get(0);
+        assertEquals("expected result", task.getMetadata().get("expectedOutcome"));
+        assertFalse(task.getMetadata().containsKey("outcome"));
     }
 }
