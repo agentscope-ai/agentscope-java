@@ -67,7 +67,16 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
 
 模型返回的内置工具调用和结果会保留为 server-tool 标记的 `ToolUseBlock` / `ToolResultBlock`，并将原始 Responses item 存至 metadata 在后续轮次回放。
 
-`tool_search` 仅支持 "Hosted" 模式，暂不支持 "Client-executed" 模式。 可为单个本地函数工具标注 `@Tool(deferLoading = true)`，其参数 schema 会延迟到模型通过 hosted tool search 加载时才进入上下文。未标注的工具保持立即可用；配置了 `deferLoading` 但未启用 `tool_search` server tool 时会快速失败。
+Hosted `tool_search` 通过 `OpenAIServerTool` 配置。可为单个本地函数工具标注
+`@Tool(deferLoading = true)`，延迟加载其参数 schema。未标注的工具保持立即可用；
+配置了 `deferLoading` 但未启用 hosted 搜索声明时会快速失败。
+
+使用 client-executed 搜索时，在 agent 上注册 `ToolSearchMiddleware`。
+Middleware 调用配置的 `ToolSearchStrategy`；模型适配层声明原生客户端搜索，将
+`tool_search_call` 交给现有权限和执行链处理，并通过 `tool_search_output` 重放命中的
+工具定义。流式与非流式响应使用相同的调用表示。同一请求不能同时声明 hosted 和
+client-executed 搜索。
+配置与普通函数调用回退方式见[按需搜索工具](/v2/zh/docs/building-blocks/tool#按需搜索工具)。
 
 消息 annotations（包括 `container_file_citation`）会保留在 `openai.response.citations` 响应 metadata 中。Code Interpreter 的图片输出会表示为带 `URLSource` 的 `DataBlock`，容器 ID 会保留在工具结果 metadata 中。
 

@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.anthropic.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.anthropic.models.messages.ContentBlockParam;
@@ -25,18 +26,23 @@ import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /** Unit tests for AnthropicMessageConverter. */
 class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
@@ -81,6 +87,59 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testDocumentBlockWithAnthropicFileIdBecomesDocumentBlock() {
+        Msg msg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("anthropic")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(1, blocks.size());
+        assertTrue(blocks.get(0).isDocument());
+        assertEquals("file-abc", blocks.get(0).asDocument().source().asFile().fileId());
+        assertEquals("report.pdf", blocks.get(0).asDocument().title().orElseThrow());
+    }
+
+    @Test
+    void testDocumentBlockRejectsNonAnthropicFileIdProvider() {
+        Msg msg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("dashscope")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        IllegalArgumentException error =
+                assertThrows(IllegalArgumentException.class, () -> converter.convert(List.of(msg)));
+
+        assertTrue(error.getMessage().contains("Failed to process DocumentBlock"));
+        assertTrue(error.getCause().getMessage().contains("Anthropic file id"));
+    }
+
+    @Test
     void testConvertAssistantMessage() {
         Msg msg =
                 Msg.builder()
@@ -94,6 +153,30 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.size());
         MessageParam param = result.get(0);
         assertEquals(MessageParam.Role.ASSISTANT, param.role());
+    }
+
+    @Test
+    void testAssistantCitationMetadataIsNotReplayed() {
+        Msg msg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Cited answer").build())
+                        .metadata(
+                                Map.of(
+                                        AnthropicCitationConverter.MD_CITATIONS,
+                                        List.of(
+                                                Map.of(
+                                                        "type",
+                                                        "page_location",
+                                                        "cited_text",
+                                                        "Source text"))))
+                        .build();
+
+        ContentBlockParam converted =
+                converter.convert(List.of(msg)).get(0).content().asBlockParams().get(0);
+
+        assertTrue(converted.asText().citations().isEmpty());
     }
 
     @Test
@@ -232,6 +315,51 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         // Note: input validation happens during API calls, not during conversion
     }
 
+    @ParameterizedTest
+    @EnumSource(ToolResultState.class)
+    void toolResultFailureStatesReachProviderWithOriginalContent(ToolResultState state) {
+        var output =
+                List.<ContentBlock>of(
+                        TextBlock.builder().text("diagnostic").build(),
+                        ImageBlock.builder()
+                                .source(
+                                        Base64Source.builder()
+                                                .mediaType("image/png")
+                                                .data("aGVsbG8=")
+                                                .build())
+                                .build());
+        var msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_state")
+                                        .name("search")
+                                        .state(state)
+                                        .output(output)
+                                        .build())
+                        .build();
+        var converted =
+                converter
+                        .convert(List.of(msg))
+                        .get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asToolResult();
+        boolean failed =
+                state == ToolResultState.ERROR
+                        || state == ToolResultState.DENIED
+                        || state == ToolResultState.INTERRUPTED;
+        assertEquals(failed, converted.isError().orElse(false));
+        assertEquals(failed, converted.isError().isPresent());
+        assertEquals("call_state", converted.toolUseId());
+        var blocks = converted.content().orElseThrow().asBlocks();
+        assertEquals(2, blocks.size());
+        assertEquals("diagnostic", blocks.get(0).asText().text());
+        assertTrue(blocks.get(1).isImage());
+    }
+
     @Test
     void testConvertToolResultBlockString() {
         Msg msg =
@@ -320,6 +448,42 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.size());
         List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
         assertTrue(blocks.get(0).isToolResult());
+    }
+
+    @Test
+    void testConvertToolResultBlockWithPdfDocumentBlock() {
+        DocumentBlock pdf =
+                DocumentBlock.builder()
+                        .name("tool-output.pdf")
+                        .mimeType("application/pdf")
+                        .source(
+                                Base64Source.builder()
+                                        .data("JVBERi0xLjQK")
+                                        .mediaType("application/pdf")
+                                        .build())
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_pdf")
+                                        .name("read_pdf")
+                                        .output(List.of(pdf))
+                                        .build())
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        ToolResultBlockParam toolResult =
+                result.get(0).content().asBlockParams().get(0).asToolResult();
+        var toolContent = toolResult.content().orElseThrow().asBlocks();
+        assertEquals(1, toolContent.size());
+        assertTrue(toolContent.get(0).isDocument());
+        assertEquals("JVBERi0xLjQK", toolContent.get(0).asDocument().source().asBase64().data());
+        assertTrue(
+                toolContent.get(0).asDocument().citations().orElseThrow().enabled().orElseThrow());
     }
 
     @Test

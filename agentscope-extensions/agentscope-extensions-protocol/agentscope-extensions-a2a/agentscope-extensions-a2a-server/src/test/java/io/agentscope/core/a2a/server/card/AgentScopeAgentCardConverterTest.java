@@ -253,6 +253,28 @@ class AgentScopeAgentCardConverterTest {
     }
 
     @Test
+    @DisplayName("Should bracket IPv6 hosts in generated agent URLs")
+    void testCreateAgentCardWithIpv6Host() {
+        TransportProperties ipv6Transport = mock(TransportProperties.class);
+        when(ipv6Transport.transportType()).thenReturn(TransportProtocol.JSONRPC.asString());
+        when(ipv6Transport.host()).thenReturn("::1");
+        when(ipv6Transport.port()).thenReturn(8080);
+        when(ipv6Transport.path()).thenReturn("/a2a");
+        when(ipv6Transport.supportTls()).thenReturn(false);
+
+        when(configurableAgentCard.getName()).thenReturn("Test Agent");
+        when(configurableAgentCard.getDescription()).thenReturn("Test Description");
+        when(configurableAgentCard.getAdditionalInterfaces()).thenReturn(null);
+        when(configurableAgentCard.getPreferredTransport()).thenReturn(null);
+        when(configurableAgentCard.getUrl()).thenReturn(null);
+
+        AgentCard agentCard =
+                builder.createAgentCard(configurableAgentCard, agentRunner, Set.of(ipv6Transport));
+
+        assertEquals("http://[::1]:8080/a2a", agentCard.supportedInterfaces().get(0).url());
+    }
+
+    @Test
     @DisplayName("Should create agent card with explicit URL and preferred transport")
     void testCreateAgentCardWithExplicitUrlAndPreferredTransport() {
         // Given

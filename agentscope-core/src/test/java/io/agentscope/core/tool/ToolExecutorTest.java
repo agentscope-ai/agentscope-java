@@ -104,6 +104,27 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should execute input-only tool call when raw content is absent")
+    void shouldExecuteInputOnlyToolCallWithoutContent() {
+        ToolUseBlock addCall =
+                ToolUseBlock.builder()
+                        .id("call-input-only")
+                        .name("add")
+                        .input(Map.of("a", 10, "b", 20))
+                        .build();
+
+        ToolResultBlock response =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(addCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(response, "Executor should return a response for input-only calls");
+        assertEquals(
+                "30",
+                extractFirstText(response),
+                "Schema validation must validate the parsed input when raw content is absent");
+    }
+
+    @Test
     @DisplayName("Should wrap tool errors inside executor response")
     void shouldReturnErrorWhenToolThrows() {
         Map<String, Object> errorInput = Map.of("message", "test failure");

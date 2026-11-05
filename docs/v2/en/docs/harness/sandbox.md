@@ -205,17 +205,19 @@ The image must provide:
 | Text/search | `sed`, `grep` (with `-rHnF`, `--include`), `find` | `read_file` pagination, `grep_files`, `glob_files` |
 | Metadata | GNU-style `stat -c` (not BSD `stat -f`) | `list_files`, `glob_files` |
 | Archive/encoding | `tar`, `base64` (encode + `-d` decode) | snapshot persist/hydrate, file upload/download |
-| Interpreter | `python3` | `edit_file` (exact string replacement) |
+| Interpreter | Optional: `python3` | `edit_file` native fast path; without it, `edit_file` falls back to download/replace/upload |
 | Filesystem | writable workspace root (default `/workspace`) | everything |
 
-Images based on `ubuntu:24.04` or `debian` qualify out of the box (`python3` may need installing); `alpine` (BusyBox `stat` / `grep` behave differently) and distroless images do **not**.
+Images based on `ubuntu:24.04` or `debian` qualify out of the box; `python3` is optional and only enables the native `edit_file` fast path. Without an executable `python3`, editing still works through a transfer fallback, but may be slower because the file is transferred through the host. `alpine` (BusyBox `stat` / `grep` behave differently) and distroless images do **not** satisfy the other baseline requirements.
 
 Quick conformance check (run inside the image; all must succeed):
 
 ```bash
-sh -c 'echo ok' && python3 --version && tar --version \
+sh -c 'echo ok' && { python3 --version 2>/dev/null || echo 'python3 absent; edit_file uses transfer fallback'; } && tar --version \
   && printf x | base64 | base64 -d && stat -c %Y /tmp && grep -rHnF --include='*.txt' x /tmp; true
 ```
+
+`edit_file` rejects a command whose complete encoded arguments and script exceed 112 KiB; split unusually large edits into smaller calls. The limit applies to the whole command, not independently to `oldString` and `newString`.
 
 ### Additional contract for Kubernetes (agent-sandbox)
 
@@ -237,6 +239,14 @@ The agent-sandbox backend does not `kubectl exec` into the container; it talks t
 The `Sandbox` abstraction's primary data-plane entry point is `exec(command)`. This is deliberate — tool semantics like `edit_file` / `grep_files` (regex, string replacement, globbing) cannot be expressed through a small set of file-API endpoints; running shell scripts against a standard toolchain inside the image is the only portable answer. The file API (upload/download) handles pure byte transfer only: workspace snapshots and single-file upload/download go through it (backends declare the capability by implementing the optional `SandboxFileTransfer` interface); everything else goes through `execute`. Which also means: **the image contract is part of the sandbox interface** — run the conformance check above before switching images.
 
 **Crossing the boundary from the model's point of view.** The file API (upload/download) above is an internal mechanism — invisible to the LLM, and `FilesystemTool` exposes no transfer tools. The supported way for a sandboxed agent to hand an artifact it produced to a destination outside the sandbox is the generic **`deliver_artifact`** tool. It is registered only when you configure an `ArtifactDeliveryTarget` via `HarnessAgent.builder().artifactDeliveryTarget(...)`. The SPI stays business-agnostic — `deliver(RuntimeContext, ArtifactDeliveryRequest) -> ArtifactDeliveryResult` — so destination logic (e.g. WebDAV upload) lives in your application. The tool downloads the file bytes from the sandbox workspace and delegates the transport to the target. Without a configured target, the sandbox workspace prompt states plainly that files cannot leave the container.
+
+## Kubernetes HTTP exchange timeouts
+
+Kubernetes sandbox requests bound the wait for both response headers and the complete response body. A server that sends headers and then stalls cannot keep the caller waiting indefinitely. Command requests use the requested timeout plus 30 seconds for transport (60 + 30 seconds by default). Existing request timeouts can fail earlier. An expired command exchange raises `SandboxTimeoutException`, which the Harness maps to `SandboxException.ExecTimeoutException`.
+
+File uploads and downloads default to a 10-minute exchange budget. Directory listing and existence checks default to 60 seconds. The client methods accepting a `Duration` use that value as the exchange budget; retries and backoff share it.
+
+These deadlines bound HTTP waits. Connection discovery and pod IP lookup retain their own timeout behavior. Cancelling the client exchange does not guarantee that the remote command has stopped; use runtime-side process limits when remote termination is required.
 
 ## Kubernetes state persistence: PVC is the first layer
 
@@ -284,6 +294,15 @@ spec:
 One more reminder: the `SandboxState` identity layer is never optional — in multi-replica deployments configure a distributed `AgentStateStore`, otherwise other replicas can't learn the claimName and the data on the PVC is unreachable no matter how intact it is.
 
 ## How the workspace maps into the sandbox
+
+For a shared Kubernetes PVC, pass a stable directory from authenticated identity at Claim creation:
+
+```java
+.claimEnv(List.of(new SandboxClaimSpec.EnvVar(
+    "WORKSPACE_SUBPATH", "users/1001/2001", "python-runtime")))
+```
+
+`KubernetesFilesystemSpec.claimEnv` forwards these entries to `SandboxClaim.spec.env`. The cluster template must allow env injection and use `subPathExpr: $(WORKSPACE_SUBPATH)` for the external PVC mounted at `/workspace`. Provision storage permissions in the cluster. In agent-sandbox v0.5.4, a Claim with env bypasses prewarmed instances; the replacement sandbox can reuse the same directory on the retained PVC. Per-call `null` env inherits client defaults; an empty list clears them.
 
 Host-side key files under `workspace/` (`AGENTS.md`, `skills/`, `subagents/`, `knowledge/`) are synced into the sandbox at each start, content-hash-gated — unchanged content is skipped.
 

@@ -44,6 +44,11 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 class ChannelWorkBridgeTest {
     private static final ObjectMapper JSON = new ObjectMapper();
+    // Loopback HTTP round-trips (token fetch + send) can be starved for many seconds on
+    // Windows runners when -T1C builds sibling modules in parallel; 5s proved too tight.
+    // The Feishu clients' internal 10s default once fired before this outer bound could help
+    // (PR #3757, 2026-10-26), so the test configures both to the same CI-grade bound.
+    private static final Duration CALL_TIMEOUT = Duration.ofSeconds(30);
     private static final String EVENT =
             """
             {"header":{"tenant_key":"org","token":"verify"},"event":{
@@ -73,7 +78,7 @@ class ChannelWorkBridgeTest {
                     new ChannelWorkBridge(
                             WebClient.create(url(server)), chat, new ChannelManager());
             var in = new FeishuInboundMapper("channel").map(JSON.readTree(EVENT)).orElseThrow();
-            assertNull(bridge.receive(in).block(Duration.ofSeconds(5)));
+            assertNull(bridge.receive(in).block(CALL_TIMEOUT));
             assertEquals("human", received.get().path("senderId").asText());
             assertEquals("org", received.get().path("accountId").asText());
             assertEquals("om-inbound", received.get().path("messageId").asText());
@@ -115,34 +120,30 @@ class ChannelWorkBridgeTest {
             var client =
                     new FeishuOutboundClient(
                             url(server),
-                            new FeishuAccessTokenProvider(url(server), "app", "secret"));
+                            new FeishuAccessTokenProvider(
+                                    url(server), "app", "secret", CALL_TIMEOUT),
+                            CALL_TIMEOUT);
             var address = new OutboundAddress("channel", "org", "channel:GROUP:room", "om-root");
             var msg = Msg.builder().role(MsgRole.ASSISTANT).textContent("result").build();
             assertEquals(
                     "om-out",
-                    client.sendWithReceipt(address, msg, "stable-id").block(Duration.ofSeconds(5)));
+                    client.sendWithReceipt(address, msg, "stable-id").block(CALL_TIMEOUT));
             assertEquals("stable-id", sent.get().path("uuid").asText());
             assertTrue(sent.get().path("reply_in_thread").asBoolean());
             assertEquals("/open-apis/im/v1/messages/om-root/reply", path.get());
             providerResponse.set("{\"code\":230001,\"msg\":\"permission denied\"}");
             assertThrows(
                     IllegalStateException.class,
-                    () ->
-                            client.sendWithReceipt(address, msg, "stable-id")
-                                    .block(Duration.ofSeconds(5)));
+                    () -> client.sendWithReceipt(address, msg, "stable-id").block(CALL_TIMEOUT));
             assertEquals("stable-id", sent.get().path("uuid").asText());
             providerResponse.set("{\"code\":0}");
             assertThrows(
                     IllegalStateException.class,
-                    () ->
-                            client.sendWithReceipt(address, msg, "stable-id")
-                                    .block(Duration.ofSeconds(5)));
+                    () -> client.sendWithReceipt(address, msg, "stable-id").block(CALL_TIMEOUT));
             providerResponse.set("{}");
             assertThrows(
                     IllegalStateException.class,
-                    () ->
-                            client.sendWithReceipt(address, msg, "stable-id")
-                                    .block(Duration.ofSeconds(5)));
+                    () -> client.sendWithReceipt(address, msg, "stable-id").block(CALL_TIMEOUT));
         } finally {
             server.stop(0);
         }

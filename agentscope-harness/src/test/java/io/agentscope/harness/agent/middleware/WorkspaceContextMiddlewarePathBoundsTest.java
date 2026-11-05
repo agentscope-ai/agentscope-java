@@ -113,7 +113,8 @@ class WorkspaceContextMiddlewarePathBoundsTest {
 
         assertNotNull(prompt);
         Path effectiveWorkspace = workspace.resolve("session-1").toAbsolutePath();
-        assertTrue(prompt.contains("The workspace directory is: " + effectiveWorkspace + "\n"));
+        assertTrue(
+                prompt.contains("The host workspace directory is: " + effectiveWorkspace + "\n"));
         assertTrue(
                 prompt.contains(
                         "Workspace (your home base — memory, sessions, skills, runtime data): "
@@ -121,7 +122,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
                                 + "\n"));
         assertFalse(
                 prompt.contains(
-                        "The workspace directory is: " + workspace.toAbsolutePath() + "\n"));
+                        "The host workspace directory is: " + workspace.toAbsolutePath() + "\n"));
         assertTrue(prompt.contains(project.toAbsolutePath().toString()));
         assertFalse(prompt.contains("Additional roots: " + workspace.toAbsolutePath()));
     }

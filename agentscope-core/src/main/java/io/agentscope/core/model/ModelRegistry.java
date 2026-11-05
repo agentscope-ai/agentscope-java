@@ -21,12 +21,16 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Pattern;
@@ -48,8 +52,19 @@ public final class ModelRegistry {
     private static final ConcurrentHashMap<String, Model> namedModels = new ConcurrentHashMap<>();
     private static final CopyOnWriteArrayList<ProviderEntry> userFactories =
             new CopyOnWriteArrayList<>();
-    private static final ConcurrentHashMap<ModelCacheKey, Model> resolvedCache =
+
+    /**
+     * Factory-created instances. Each entry is published before creation starts, so concurrent
+     * first resolutions of the same key wait for one creation instead of each creating (and
+     * orphaning) their own instance.
+     */
+    private static final ConcurrentHashMap<ModelCacheKey, CompletableFuture<Model>> resolvedCache =
             new ConcurrentHashMap<>();
+
+    /** Cache keys the current thread is creating, to fail fast on recursive self-resolution. */
+    private static final ThreadLocal<Set<ModelCacheKey>> CREATING =
+            ThreadLocal.withInitial(HashSet::new);
+
     private static volatile List<ModelProvider> serviceProviders;
 
     private ModelRegistry() {}
@@ -62,6 +77,24 @@ public final class ModelRegistry {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(model, "model");
         namedModels.put(name, model);
+    }
+
+    /**
+     * Removes the named registration for {@code name}, the inverse of {@link #register(String,
+     * Model)}. Subsequent resolutions of this id follow the regular resolution order (cache,
+     * user factories, SPI providers).
+     *
+     * <p>Factory-created instances cached before the named registration remain cached and become
+     * reachable again once the name is removed; call {@link #evictResolvedCache(ModelCreationContext,
+     * String)} with a {@code null} context to also force fresh creation. The removed instance is
+     * not closed: the registry does not own it, and
+     * callers that already hold one may still be using it.
+     *
+     * @return the removed instance, or {@code null} if nothing was registered under this name
+     */
+    public static Model unregister(String name) {
+        Objects.requireNonNull(name, "name");
+        return namedModels.remove(name);
     }
 
     /**
@@ -84,6 +117,10 @@ public final class ModelRegistry {
      * {@link Pattern#matches}. Newly registered factories are consulted before older user
      * registrations and before SPI providers.
      *
+     * <p>Cached instances whose model id matches the new pattern are evicted, so the next
+     * {@link #resolve} of such an id is served by this factory. Evicted instances are not closed:
+     * the registry does not own them, and callers that already hold one may still be using it.
+     *
      * @param modelNameRegex regex with semantics of Pattern#matches(CharSequence) on the
      *     full model id
      * @param factory creates a {@link Model} from the full model id and creation context
@@ -92,7 +129,58 @@ public final class ModelRegistry {
         Objects.requireNonNull(modelNameRegex, "modelNameRegex");
         Objects.requireNonNull(factory, "factory");
         Pattern pattern = Pattern.compile(modelNameRegex);
+        // Add first, then evict: resolve() publishes its cache entry before it looks up a
+        // factory, so a resolution that raced past the add and picked an older factory has
+        // already published its entry by the time we evict, and that entry is removed here.
         userFactories.add(0, new ProviderEntry(pattern, factory));
+        resolvedCache.keySet().removeIf(key -> pattern.matcher(key.modelId()).matches());
+    }
+
+    /**
+     * Evicts cached factory-created instances selected by creation context and model id, either
+     * of which may be {@code null} as a wildcard, but not both.
+     *
+     * <p>A {@code null} context matches every cache identity, so {@code (null, modelId)} evicts
+     * all cached entries of that id. A {@code null} or blank model id matches every id, so
+     * {@code (context, null)} evicts all instances cached under the context's identity. Both
+     * present evicts the precise {@code (identity, id)} entry; both absent is rejected.
+     *
+     * <p>The identity is derived with the same rules as {@link #resolve(String,
+     * ModelCreationContext)}: the empty context selects the {@code resolve(String)} entries,
+     * {@code cacheId(...)} selects explicit identities, and other enabled contexts select the
+     * standard field fingerprint, so the same field values that created the entries must be
+     * passed. Contexts that are never cached ({@link CachePolicy#DISABLED} or non-empty {@link
+     * CachePolicy#DEFAULT}) have no entries, so the call is a no-op. A model id is trimmed and
+     * matched exactly; a blank id is treated as absent.
+     *
+     * <p>Named registrations and user factories are not affected; a resolution whose creation is
+     * still in flight when this method runs may publish a cache entry afterwards, created under
+     * the current registry state. Evicted instances are not closed: the registry does not own
+     * them, and callers that already hold one may still be using it.
+     */
+    public static void evictResolvedCache(ModelCreationContext context, String modelId) {
+        String raw = modelId == null ? null : modelId.trim();
+        String trimmed = raw == null || raw.isEmpty() ? null : raw;
+        if (context == null && trimmed == null) {
+            throw new IllegalArgumentException("context and modelId must not both be null");
+        }
+        if (context != null && trimmed != null) {
+            // Precise selection: compute the same key resolve would use and remove it directly.
+            ModelCacheKey key = cacheKey(trimmed, context);
+            if (key != null) {
+                resolvedCache.remove(key);
+            }
+            return;
+        }
+        if (context != null) {
+            String identity = cacheIdentity(context);
+            if (identity == null) {
+                return; // such contexts are never cached
+            }
+            resolvedCache.keySet().removeIf(key -> key.cacheIdentity().equals(identity));
+            return;
+        }
+        resolvedCache.keySet().removeIf(key -> key.modelId().equals(trimmed));
     }
 
     /**
@@ -112,6 +200,9 @@ public final class ModelRegistry {
      * <p>Non-empty context resolution is not cached unless the context uses
      * {@link CachePolicy#ENABLED}.
      *
+     * <p>For cached resolutions, concurrent first calls with the same key share a single creation
+     * and receive the same instance. A failed creation is not cached.
+     *
      * @throws IllegalArgumentException if the id cannot be resolved, the context cannot be safely
      * cached, or creation fails
      */
@@ -129,13 +220,50 @@ public final class ModelRegistry {
         }
 
         ModelCacheKey cacheKey = cacheKey(trimmed, context);
-        if (cacheKey != null) {
-            Model cached = resolvedCache.get(cacheKey);
-            if (cached != null) {
-                return cached;
-            }
+        if (cacheKey == null) {
+            return create(trimmed, context);
         }
+        CompletableFuture<Model> pending = new CompletableFuture<>();
+        CompletableFuture<Model> existing = resolvedCache.putIfAbsent(cacheKey, pending);
+        if (existing != null) {
+            if (!existing.isDone() && CREATING.get().contains(cacheKey)) {
+                // A factory resolving its own id would otherwise wait on itself forever.
+                throw new IllegalStateException(
+                        "Recursive resolution of model id while it is being created: " + trimmed);
+            }
+            return awaitCached(existing);
+        }
+        Set<ModelCacheKey> creating = CREATING.get();
+        creating.add(cacheKey);
+        try {
+            Model created = create(trimmed, context);
+            pending.complete(created);
+            return created;
+        } catch (RuntimeException | Error e) {
+            // Do not cache failures: waiters see this error, later callers retry creation.
+            resolvedCache.remove(cacheKey, pending);
+            pending.completeExceptionally(e);
+            throw e;
+        } finally {
+            creating.remove(cacheKey);
+        }
+    }
 
+    private static Model awaitCached(CompletableFuture<Model> future) {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof RuntimeException cause) {
+                throw cause;
+            }
+            if (e.getCause() instanceof Error cause) {
+                throw cause;
+            }
+            throw e;
+        }
+    }
+
+    private static Model create(String trimmed, ModelCreationContext context) {
         ProviderEntry entry = findMatchingUserEntry(trimmed);
         ModelProvider provider = entry == null ? findServiceProvider(trimmed, context) : null;
         if (entry == null && provider == null) {
@@ -155,9 +283,6 @@ public final class ModelRegistry {
                                 + provider.providerId()
                                 + " returned null for: "
                                 + trimmed);
-            }
-            if (cacheKey != null) {
-                resolvedCache.put(cacheKey, created);
             }
             return created;
         } catch (RuntimeException e) {
@@ -268,7 +393,17 @@ public final class ModelRegistry {
     }
 
     /**
-     * Builds the registry cache key for a model resolution.
+     * Builds the registry cache key for a model resolution, or {@code null} when the context is
+     * not cacheable.
+     */
+    private static ModelCacheKey cacheKey(String modelId, ModelCreationContext context) {
+        String identity = cacheIdentity(context);
+        return identity == null ? null : new ModelCacheKey(modelId, identity);
+    }
+
+    /**
+     * Derives the cache identity for a creation context, or {@code null} when such contexts are
+     * never cached.
      *
      * <p>The rules intentionally avoid treating arbitrary context objects as comparable:
      *
@@ -280,9 +415,9 @@ public final class ModelRegistry {
      *       components are opaque and must not rely on deep hashing or object {@code hashCode()}.
      * </ul>
      */
-    private static ModelCacheKey cacheKey(String modelId, ModelCreationContext context) {
+    private static String cacheIdentity(ModelCreationContext context) {
         if (context.isEmpty()) {
-            return new ModelCacheKey(modelId, "legacy");
+            return "legacy";
         }
         if (context.getCachePolicy() == CachePolicy.DISABLED
                 || context.getCachePolicy() == CachePolicy.DEFAULT) {
@@ -291,14 +426,14 @@ public final class ModelRegistry {
 
         String cacheId = context.getCacheId();
         if (cacheId != null) {
-            return new ModelCacheKey(modelId, "explicit:" + cacheId);
+            return "explicit:" + cacheId;
         }
         if (context.hasOpaqueCacheInputs()) {
             throw new IllegalArgumentException(
                     "ModelCreationContext cachePolicy(ENABLED) with options or components "
                             + "requires an explicit cacheId");
         }
-        return new ModelCacheKey(modelId, "standard:" + standardContextFingerprint(context));
+        return "standard:" + standardContextFingerprint(context);
     }
 
     /**

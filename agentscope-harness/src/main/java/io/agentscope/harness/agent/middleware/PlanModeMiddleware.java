@@ -147,7 +147,10 @@ public class PlanModeMiddleware implements HarnessRuntimeMiddleware {
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT, ExtensionPoint.ON_ACTING);
+        return EnumSet.of(
+                ExtensionPoint.ON_SYSTEM_PROMPT,
+                ExtensionPoint.ON_ACTING,
+                ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override

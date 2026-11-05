@@ -104,7 +104,8 @@ import reactor.core.scheduler.Schedulers;
  * <p>Note: The location parameter can be:
  * <ul>
  *   <li>HTTP URL: "http://localhost:6333" - will use gRPC on port 6334</li>
- *   <li>gRPC URL: "localhost:6334" - direct gRPC connection</li>
+ *   <li>gRPC address: "localhost:6334", "127.0.0.1:6334" or "[::1]:6334" - direct gRPC
+ *       connection</li>
  *   <li>Local path: "file:///path/to/qdrant" - local Qdrant instance</li>
  *   <li>Memory mode: ":memory:" - in-memory Qdrant (requires local Qdrant)</li>
  * </ul>
@@ -809,7 +810,10 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
         }
 
         try {
-            URI uri = URI.create(location);
+            // A location without a scheme is a gRPC "host[:port]". Parse it as an authority:
+            // on its own, "127.0.0.1:6334" is not a valid URI (a scheme can't start with a digit)
+            String uriText = location.contains("://") ? location : "grpc://" + location;
+            URI uri = URI.create(uriText);
             String host = uri.getHost();
             int port = uri.getPort();
 
@@ -820,7 +824,8 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
                 }
             }
 
-            // If no port specified and no scheme, assume it's a direct gRPC connection
+            // URI couldn't extract a host (e.g. "my_host:6334" or a non-numeric port), so
+            // fall back to splitting the raw location as host:port
             if (host == null && port == -1) {
                 // Try parsing as host:port
                 if (location.contains(":")) {

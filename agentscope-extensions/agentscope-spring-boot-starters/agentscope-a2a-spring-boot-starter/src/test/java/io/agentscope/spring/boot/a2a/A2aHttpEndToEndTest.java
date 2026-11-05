@@ -323,6 +323,34 @@ class A2aHttpEndToEndTest {
     }
 
     @Test
+    void streamingCallReturnsFinalResultWithoutDeltas() {
+        runner.script(messages -> reply("final-only answer"));
+
+        Msg result = newAgent(null).call(userMsg("hi")).block(TIMEOUT);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTextContent()).isEqualTo("final-only answer");
+    }
+
+    @Test
+    void streamingEventsReturnFinalResultWithoutDeltas() {
+        runner.script(messages -> reply("final-only answer"));
+
+        List<AgentEvent> events =
+                newAgent(null).streamEvents(userMsg("hi")).collectList().block(TIMEOUT);
+
+        assertThat(events).isNotNull();
+        assertThat(events)
+                .filteredOn(AgentResultEvent.class::isInstance)
+                .extracting(event -> ((AgentResultEvent) event).getResult().getTextContent())
+                .containsExactly("final-only answer");
+        assertThat(events)
+                .filteredOn(TextBlockDeltaEvent.class::isInstance)
+                .extracting(event -> ((TextBlockDeltaEvent) event).getDelta())
+                .containsExactly("final-only answer");
+    }
+
+    @Test
     void streamingCallDeliversToolResults() {
         runner.script(
                 messages ->

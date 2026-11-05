@@ -19,6 +19,7 @@ package io.agentscope.core.a2a.server;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.AgentScopeAgentCardConverter;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
+import io.agentscope.core.a2a.server.executor.A2aContextResolver;
 import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.AgentScopeAgentExecutor;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
@@ -244,6 +245,8 @@ public class AgentScopeA2aServer implements AutoCloseable {
 
         private AgentExecuteProperties agentExecuteProperties;
 
+        private A2aContextResolver contextResolver;
+
         private Builder(AgentRunner agentRunner) {
             this.agentRunner = agentRunner;
             this.supportedTransports = new HashSet<>();
@@ -401,6 +404,21 @@ public class AgentScopeA2aServer implements AutoCloseable {
         }
 
         /**
+         * Set the deployment-side adjudication of the user identity of each call, for example from
+         * an mTLS certificate or an OAuth token in {@link
+         * org.a2aproject.sdk.server.ServerCallContext}. A transport-verified user id overrides the
+         * one the client asserts in the message envelope; without a resolver the asserted one is
+         * used as-is.
+         *
+         * @param contextResolver the resolver, or {@code null} to trust the envelope assertion
+         * @return builder instance of {@link AgentScopeA2aServer}
+         */
+        public Builder contextResolver(A2aContextResolver contextResolver) {
+            this.contextResolver = contextResolver;
+            return this;
+        }
+
+        /**
          * Build a new instance of {@link AgentScopeA2aServer}.
          *
          * <p> This Builder will build with follow steps:
@@ -422,7 +440,8 @@ public class AgentScopeA2aServer implements AutoCloseable {
                 agentExecuteProperties = AgentExecuteProperties.builder().build();
             }
             AgentScopeAgentExecutor agentExecutor =
-                    new AgentScopeAgentExecutor(agentRunner, agentExecuteProperties);
+                    new AgentScopeAgentExecutor(
+                            agentRunner, agentExecuteProperties, contextResolver);
             AgentScopeA2aRequestHandler requestHandler =
                     AgentScopeA2aRequestHandler.builder()
                             .agentExecutor(agentExecutor)
