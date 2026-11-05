@@ -52,6 +52,10 @@ Msg result = remote.call(new UserMessage("Translate to English: 你好")).block(
 
 任务完成时，最终结果优先使用输出 artifacts。没有 artifacts 时，使用最终状态消息；通过完整任务或流式状态更新完成时均遵循此规则。
 
+远端任务停下来等调用方（`TASK_STATE_INPUT_REQUIRED` 或 `TASK_STATE_AUTH_REQUIRED`）时，调用以任务的状态消息结束，通常就是远端提的问题。结果消息的 metadata 里，`MessageConstants.TASK_ID_METADATA_KEY` 是任务 id，`MessageConstants.TASK_STATE_METADATA_KEY` 是状态。远端的任务不会被关闭。
+
+不走流式时（客户端配置或 AgentCard 不支持流式），如果返回的任务仍是 `SUBMITTED` 或 `WORKING`，调用会以 `IllegalStateException` 失败，因为 `A2aAgent` 不轮询任务。
+
 ```java
 remote.streamEvents(new UserMessage("Translate to English: 你好"))
     .doOnNext(event -> {
