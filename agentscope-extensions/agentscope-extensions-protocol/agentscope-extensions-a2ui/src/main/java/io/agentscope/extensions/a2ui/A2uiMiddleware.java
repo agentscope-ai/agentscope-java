@@ -19,18 +19,32 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.a2ui.catalog.A2uiCatalog;
+import io.agentscope.extensions.a2ui.envelope.A2uiConstants;
+import io.agentscope.extensions.a2ui.envelope.A2uiEnvelope;
+import io.agentscope.extensions.a2ui.envelope.A2uiEnvelopeUtils;
+import io.agentscope.extensions.a2ui.state.A2uiRunState;
 import io.agentscope.extensions.a2ui.state.A2uiSurfaceRegistry;
 import io.agentscope.extensions.a2ui.tool.A2uiRenderTool;
 import io.agentscope.extensions.a2ui.tool.AskUserQuestionTool;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -57,7 +71,8 @@ import reactor.core.publisher.Mono;
  * <p>Uses only existing public surfaces: {@link #installTools} as the install point (the assembler
  * calls it once per agent build, after {@code build()}, against the agent's own deep-copied {@link
  * Toolkit} — the framework no longer callbacks into middleware to install tools), {@link #onAgent}
- * to capture the agent-resolved {@link AgentStateStore} and model lazily.
+ * to capture the agent-resolved {@link AgentStateStore} and model lazily, and {@link #onReasoning}
+ * to keep the envelope JSON out of the model's memory.
  *
  * <p>The render model is the one passed to {@link #A2uiMiddleware(A2uiConfig, Model)} — for a
  * lighter/cheaper UI model than the conversation model — or, when {@code null}, the hosting
@@ -150,11 +165,106 @@ public final class A2uiMiddleware implements MiddlewareBase, ToolInstallingMiddl
             stateStore.compareAndSet(null, react.getStateStore());
             renderModel.compareAndSet(null, react.getModel());
         }
+        // The run's surface ownership and "already delivered" flag live in a reference holder:
+        // the framework derives a shallow copy of the context per tool call, so a scalar rc.put
+        // would only ever be visible to that one call.
+        A2uiRunState.install(ctx);
         return next.apply(input);
     }
 
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         return Mono.just(currentPrompt + SYSTEM_PROMPT_APPEND + config.preferenceBlock());
+    }
+
+    /**
+     * Display/memory split: the envelope JSON is a render instruction, not something the
+     * model can act on, yet it is re-sent on every later turn of the session. Only the copy handed
+     * to this model call is replaced — the persisted context keeps the envelope verbatim, so AG-UI
+     * (event stream) and session-history replay (stored messages) both still get the full UI.
+     */
+    @Override
+    public Flux<AgentEvent> onReasoning(
+            Agent agent,
+            RuntimeContext ctx,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next) {
+        return next.apply(
+                new ReasoningInput(
+                        summarizeRenderedSurfaces(input.messages()),
+                        input.tools(),
+                        input.options()));
+    }
+
+    private static List<Msg> summarizeRenderedSurfaces(List<Msg> messages) {
+        if (messages == null) {
+            return List.of();
+        }
+        List<Msg> out = new ArrayList<>(messages.size());
+        for (Msg msg : messages) {
+            out.add(summarizeWithin(msg));
+        }
+        return out;
+    }
+
+    /** @return the message with each successful {@code a2ui_render} result replaced by prose */
+    private static Msg summarizeWithin(Msg msg) {
+        if (msg == null || msg.getContent() == null) {
+            return msg;
+        }
+        List<ContentBlock> content = msg.getContent();
+        List<ContentBlock> rebuilt = null;
+        for (int i = 0; i < content.size(); i++) {
+            if (!(content.get(i) instanceof ToolResultBlock result)
+                    || !A2uiConstants.TOOL_RENDER.equals(result.getName())) {
+                continue;
+            }
+            Optional<A2uiEnvelope> envelope = A2uiEnvelopeUtils.extractEnvelope(result);
+            if (envelope.isEmpty()) {
+                continue; // error results and non-A2UI text stay as they are
+            }
+            if (rebuilt == null) {
+                rebuilt = new ArrayList<>(content);
+            }
+            rebuilt.set(
+                    i,
+                    ToolResultBlock.builder()
+                            .id(result.getId())
+                            .name(result.getName())
+                            .metadata(result.getMetadata())
+                            .state(result.getState())
+                            .executionDetails(result.getExecutionDetails())
+                            .output(TextBlock.builder().text(describe(envelope.get())).build())
+                            .build());
+        }
+        return rebuilt == null ? msg : msg.withContent(rebuilt);
+    }
+
+    private static String describe(A2uiEnvelope envelope) {
+        List<Map<String, Object>> components =
+                envelope.components() == null ? List.of() : envelope.components();
+        String names =
+                components.stream()
+                        .map(c -> String.valueOf(c.get("component")))
+                        .distinct()
+                        .limit(12)
+                        .collect(Collectors.joining(", "));
+        StringBuilder sb = new StringBuilder();
+        if (A2uiConstants.MESSAGE_TYPE_CREATE_SURFACE.equals(envelope.messageType())) {
+            sb.append("Displayed a new A2UI surface ");
+        } else {
+            sb.append("Updated the A2UI surface ");
+        }
+        sb.append(envelope.surfaceId())
+                .append(" (")
+                .append(components.size())
+                .append(" components: ")
+                .append(names)
+                .append("). It is on the user's screen: do not restate it, and reuse the same")
+                .append(" surface for later changes to this UI.");
+        if (envelope.note() != null && !envelope.note().isBlank()) {
+            sb.append(' ').append(envelope.note());
+        }
+        return sb.toString();
     }
 }

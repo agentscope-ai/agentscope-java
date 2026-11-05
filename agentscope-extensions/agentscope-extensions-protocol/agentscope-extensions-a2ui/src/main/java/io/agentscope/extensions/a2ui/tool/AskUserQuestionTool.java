@@ -40,11 +40,19 @@ import reactor.core.publisher.Mono;
  * {@code false} suspends with the canonical {@code {"questions":[…]}} JSON so a plain AG-UI
  * frontend can render a native text question card (registered by {@link
  * io.agentscope.extensions.a2ui.ClarificationMiddleware}, no renderer required).
+ *
+ * <p>The declaration is a form spec, not a widget list: each question states the answer key, label,
+ * widget type and choices, and the optional {@code title}, {@code description} and {@code submitText}
+ * frame the form around them. Only {@link #toFormComponents} knows which A2UI component a widget
+ * type compiles to, so a host can swap the catalog without touching this tool's schema.
  */
 public class AskUserQuestionTool implements AgentTool {
 
     private static final Set<String> QUESTION_TYPES =
-            Set.of("text", "select", "multi_select", "confirm");
+            Set.of("text", "textarea", "select", "multi_select", "radio", "checkbox", "confirm");
+
+    /** Types whose answer comes from a list the model must therefore supply. */
+    private static final Set<String> OPTION_TYPES = Set.of("select", "multi_select", "radio");
 
     private final A2uiRenderer renderer;
     private final boolean enableA2ui;
@@ -72,8 +80,11 @@ public class AskUserQuestionTool implements AgentTool {
     public String getDescription() {
         return "Ask the user one or more structured questions and wait for the answer. Use this"
                 + " instead of plain-text follow-up questions whenever input collection benefits"
-                + " from widgets. The tool suspends until the user submits; the returned value is"
-                + " a JSON object mapping question id to answer."
+                + " from widgets. Declare each question (answer key, label, widget type, choices,"
+                + " required) and frame the form with an optional title, description and submit"
+                + " label; the UI is compiled from that spec, you never name components. The tool"
+                + " suspends until the user submits; the returned value is a JSON object mapping"
+                + " question id to answer (multi_select gives an array, checkbox a boolean)."
                 + (enableA2ui
                         ? " Questions are rendered as an A2UI form."
                         : " Questions are rendered as a plain-text question card.");
@@ -109,7 +120,7 @@ public class AskUserQuestionTool implements AgentTool {
                                                         "type",
                                                         "string",
                                                         "description",
-                                                        "Question text."),
+                                                        "Field label / question text."),
                                                 "type",
                                                 Map.of(
                                                         "type",
@@ -117,11 +128,20 @@ public class AskUserQuestionTool implements AgentTool {
                                                         "enum",
                                                         List.of(
                                                                 "text",
+                                                                "textarea",
                                                                 "select",
                                                                 "multi_select",
+                                                                "radio",
+                                                                "checkbox",
                                                                 "confirm"),
                                                         "description",
-                                                        "Answer widget type."),
+                                                        "Answer widget: text single line,"
+                                                                + " textarea multi-line, select"
+                                                                + " one of options, multi_select"
+                                                                + " several of options, radio"
+                                                                + " exclusive choices, checkbox"
+                                                                + " one boolean, confirm a"
+                                                                + " yes/no question."),
                                                 "options",
                                                 Map.of(
                                                         "type",
@@ -130,7 +150,13 @@ public class AskUserQuestionTool implements AgentTool {
                                                         Map.of("type", "string"),
                                                         "description",
                                                         "Choices; required for"
-                                                                + " select/multi_select."),
+                                                                + " select/multi_select/radio."),
+                                                "placeholder",
+                                                Map.of(
+                                                        "type",
+                                                        "string",
+                                                        "description",
+                                                        "Input hint shown while empty."),
                                                 "required",
                                                 Map.of(
                                                         "type",
@@ -138,7 +164,21 @@ public class AskUserQuestionTool implements AgentTool {
                                                         "description",
                                                         "Whether an answer is mandatory.")),
                                         "required",
-                                        List.of("id", "question", "type")))),
+                                        List.of("id", "question", "type"))),
+                        "title",
+                        Map.of("type", "string", "description", "Optional heading above the form."),
+                        "description",
+                        Map.of(
+                                "type",
+                                "string",
+                                "description",
+                                "Optional line under the title explaining why you are asking."),
+                        "submitText",
+                        Map.of(
+                                "type",
+                                "string",
+                                "description",
+                                "Optional submit button label, default \"Submit\".")),
                 "required",
                 List.of("questions"));
     }
@@ -161,7 +201,7 @@ public class AskUserQuestionTool implements AgentTool {
                                     enableA2ui
                                             ? renderer.renderEnvelope(
                                                     param.getRuntimeContext(),
-                                                    toFormComponents(questions))
+                                                    toFormComponents(input, questions))
                                             : JsonUtils.getJsonCodec()
                                                     .toJson(Map.of("questions", questions)));
                         })
@@ -213,8 +253,7 @@ public class AskUserQuestionTool implements AgentTool {
                         + ").";
             }
             List<Object> options = listOf(question.get("options"));
-            if (("select".equals(type) || "multi_select".equals(type))
-                    && (options == null || options.isEmpty())) {
+            if (OPTION_TYPES.contains(type) && (options == null || options.isEmpty())) {
                 return "Error: question \""
                         + id
                         + "\" of type \""
@@ -225,8 +264,16 @@ public class AskUserQuestionTool implements AgentTool {
         return null;
     }
 
-    private static List<Map<String, Object>> toFormComponents(List<Map<String, Object>> questions) {
+    /**
+     * Compiles the declarative form spec into the flat component list: the optional frame fields
+     * first, then one catalogued input per question, then the submit button. Answer keys are the
+     * question ids, so the resume payload the frontend sends back maps id → answer.
+     */
+    private static List<Map<String, Object>> toFormComponents(
+            Map<String, Object> input, List<Map<String, Object>> questions) {
         List<Map<String, Object>> components = new ArrayList<>();
+        addTextComponent(components, "a2ui_title", "Heading", stringOf(input.get("title")));
+        addTextComponent(components, "a2ui_desc", "Text", stringOf(input.get("description")));
         for (Map<String, Object> question : questions) {
             String id = stringOf(question.get("id"));
             String type = stringOf(question.get("type"));
@@ -247,27 +294,47 @@ public class AskUserQuestionTool implements AgentTool {
                     props.put("options", listOf(question.get("options")));
                     props.put("multiple", true);
                 }
+                case "radio" -> {
+                    component = "RadioGroup";
+                    props.put("options", listOf(question.get("options")));
+                }
+                case "checkbox" -> component = "Checkbox";
+                case "textarea" -> component = "TextArea";
                 case "confirm" -> {
                     component = "RadioGroup";
                     props.put("options", List.of("yes", "no"));
                 }
-                default -> component = "TextInput";
+                default -> {
+                    component = "TextInput";
+                    String placeholder = stringOf(question.get("placeholder"));
+                    if (placeholder != null && !placeholder.isBlank()) {
+                        props.put("placeholder", placeholder);
+                    }
+                }
             }
-            components.add(
-                    Map.of(
-                            "id", "q_" + id,
-                            "component", component,
-                            "props", props));
+            components.add(Map.of("id", "q_" + id, "component", component, "props", props));
         }
+        String submitText = stringOf(input.get("submitText"));
         components.add(
                 Map.of(
-                        "id", "a2ui_submit",
-                        "component", "Button",
+                        "id",
+                        "a2ui_submit",
+                        "component",
+                        "Button",
                         "props",
-                                Map.of(
-                                        "text", "Submit",
-                                        "action", "submit")));
+                        Map.of(
+                                "text",
+                                submitText == null || submitText.isBlank() ? "Submit" : submitText,
+                                "action",
+                                "submit")));
         return components;
+    }
+
+    private static void addTextComponent(
+            List<Map<String, Object>> components, String id, String component, String text) {
+        if (text != null && !text.isBlank()) {
+            components.add(Map.of("id", id, "component", component, "props", Map.of("text", text)));
+        }
     }
 
     @SuppressWarnings("unchecked")

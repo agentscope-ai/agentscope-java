@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.a2ui;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -24,9 +25,13 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
@@ -40,6 +45,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -151,6 +157,67 @@ class A2uiMiddlewareTest {
 
         assertInstanceOf(ForeignAskTool.class, toolkit.getTool("ask_user_question"));
         assertInstanceOf(A2uiRenderTool.class, toolkit.getTool("a2ui_render"));
+    }
+
+    @Test
+    void reasoningSeesProseWhereTheModelNeverNeedsTheEnvelope() {
+        String envelope =
+                "{\"protocolVersion\":\"1.0\",\"messageType\":\"updateComponents\","
+                        + "\"surfaceId\":\"s-abcd1234\",\"catalogId\":\"c\",\"components\":["
+                        + "{\"id\":\"h1\",\"component\":\"Heading\",\"props\":{\"text\":\"Hi\"}},"
+                        + "{\"id\":\"t1\",\"component\":\"Text\",\"props\":{\"text\":\"body\"}}],"
+                        + "\"note\":\"Already delivered; stop.\"}";
+        Msg ui = toolResultMsg("a2ui_render", envelope);
+        Msg failure = toolResultMsg("a2ui_render", "Error: A2UI render failed: boom");
+        Msg ask = toolResultMsg("ask_user_question", envelope);
+        Msg user =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("show the report").build())
+                        .build();
+
+        AtomicReference<ReasoningInput> seen = new AtomicReference<>();
+        new A2uiMiddleware()
+                .onReasoning(
+                        null,
+                        RuntimeContext.empty(),
+                        new ReasoningInput(List.of(user, ui, failure, ask), List.of(), null),
+                        input -> {
+                            seen.set(input);
+                            return Flux.empty();
+                        })
+                .blockLast();
+
+        assertTrue(resultText(ui).contains("protocolVersion"), "history keeps the envelope");
+        String shownUi = resultText(seen.get().messages().get(1));
+        assertFalse(shownUi.contains("protocolVersion"), shownUi);
+        assertTrue(shownUi.contains("s-abcd1234"), shownUi);
+        assertTrue(shownUi.contains("Heading"), shownUi);
+        assertTrue(shownUi.contains("Already delivered; stop."), shownUi);
+        assertEquals("Error: A2UI render failed: boom", resultText(seen.get().messages().get(2)));
+        assertTrue(
+                resultText(seen.get().messages().get(3)).contains("protocolVersion"),
+                "only the render tool's result is the UI envelope");
+        assertEquals("show the report", seen.get().messages().get(0).getTextContent());
+    }
+
+    private static Msg toolResultMsg(String toolName, String output) {
+        return Msg.builder()
+                .role(MsgRole.TOOL)
+                .content(
+                        ToolResultBlock.builder()
+                                .id("call-" + toolName)
+                                .name(toolName)
+                                .output(TextBlock.builder().text(output).build())
+                                .build())
+                .build();
+    }
+
+    private static String resultText(Msg msg) {
+        return msg.getContentBlocks(ToolResultBlock.class).get(0).getOutput().stream()
+                .filter(block -> block instanceof TextBlock)
+                .map(block -> ((TextBlock) block).getText())
+                .collect(java.util.stream.Collectors.joining());
     }
 
     /** A host tool that happens to occupy the A2UI ask name. */

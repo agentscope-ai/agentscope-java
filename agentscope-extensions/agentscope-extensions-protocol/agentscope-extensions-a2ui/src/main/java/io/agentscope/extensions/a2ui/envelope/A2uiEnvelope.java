@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.a2ui.envelope;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 import java.util.Map;
 
@@ -27,10 +28,13 @@ import java.util.Map;
  * @param surfaceId system-generated, stable within a session
  * @param catalogId component catalog this envelope was validated against
  * @param components flat list of {@code {id, component, props}} objects
+ * @param note optional instruction for the model, emitted only when set; renderers ignore it
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record A2uiEnvelope(
         String protocolVersion,
         String messageType,
         String surfaceId,
         String catalogId,
-        List<Map<String, Object>> components) {}
+        List<Map<String, Object>> components,
+        String note) {}

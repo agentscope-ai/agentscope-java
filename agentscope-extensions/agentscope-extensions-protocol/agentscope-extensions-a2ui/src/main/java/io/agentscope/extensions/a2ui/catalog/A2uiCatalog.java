@@ -25,12 +25,22 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Component catalog loaded from a classpath JSON resource (format: {@code a2ui/basic-catalog.json}
- * in the A2UI spec §6.4). Doubles as the validation whitelist and the guide text the render
- * sub-agent is prompted with ({@link #guideText()}, composed into its SYSTEM prompt unless {@code
- * catalogInPrompt} is off, in which case the {@code a2ui_catalog} tool serves it on demand).
+ * Component catalog loaded from a classpath JSON resource, an {@code http(s)} URL or a local file
+ * (format: {@code a2ui/basic-catalog.json} in the A2UI spec §6.4). A remote/file source that cannot
+ * be reached falls back to the built-in catalog; a missing classpath resource fails fast. Doubles as
+ * the validation whitelist and the guide text the render sub-agent is prompted with ({@link
+ * #guideText()}, composed into its SYSTEM prompt unless {@code catalogInPrompt} is off, in which
+ * case the {@code a2ui_catalog} tool serves it on demand).
  */
 public final class A2uiCatalog {
+
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(A2uiCatalog.class);
+
+    /** Fallback used when a remote/file catalog source cannot be reached. */
+    private static final String BUILT_IN_RESOURCE = "a2ui/basic-catalog.json";
+
+    private static final java.time.Duration REMOTE_TIMEOUT = java.time.Duration.ofSeconds(5);
 
     /** One catalogued component: description, JSON-Schema-ish prop map, required prop names. */
     public record ComponentDef(
@@ -52,15 +62,103 @@ public final class A2uiCatalog {
      */
     @SuppressWarnings("unchecked")
     public static A2uiCatalog load(String resourcePath, String configuredCatalogId) {
+        String spec = resourcePath == null ? "" : resourcePath.trim();
+        if (isRemote(spec)) {
+            try {
+                return parse(readRemote(spec), configuredCatalogId);
+            } catch (Exception e) {
+                log.warn(
+                        "A2UI catalog source {} is unreachable ({}); falling back to the built-in"
+                                + " basic catalog",
+                        spec,
+                        e.getMessage());
+                return parse(readClasspath(BUILT_IN_RESOURCE), configuredCatalogId);
+            }
+        }
+        if (isFile(spec)) {
+            try {
+                return parse(readFile(spec), configuredCatalogId);
+            } catch (Exception e) {
+                log.warn(
+                        "A2UI catalog file {} could not be read ({}); falling back to the built-in"
+                                + " basic catalog",
+                        spec,
+                        e.getMessage());
+                return parse(readClasspath(BUILT_IN_RESOURCE), configuredCatalogId);
+            }
+        }
+        return parse(readClasspath(stripClasspathPrefix(spec)), configuredCatalogId);
+    }
+
+    private static boolean isRemote(String spec) {
+        String lower = spec.toLowerCase(java.util.Locale.ROOT);
+        return lower.startsWith("http://") || lower.startsWith("https://");
+    }
+
+    private static boolean isFile(String spec) {
+        return spec.startsWith("file:") || spec.startsWith("/") || spec.matches("^[A-Za-z]:.*");
+    }
+
+    private static String stripClasspathPrefix(String spec) {
+        return spec.startsWith("classpath:") ? spec.substring("classpath:".length()) : spec;
+    }
+
+    private static byte[] readClasspath(String resourcePath) {
         try (InputStream in =
                 A2uiCatalog.class.getClassLoader().getResourceAsStream(resourcePath)) {
             if (in == null) {
                 throw new IllegalStateException(
                         "A2UI catalog resource not found on classpath: " + resourcePath);
             }
+            return in.readAllBytes();
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Failed to load A2UI catalog from classpath:" + resourcePath, e);
+        }
+    }
+
+    private static byte[] readFile(String spec) {
+        try {
+            java.nio.file.Path path =
+                    spec.startsWith("file:")
+                            ? java.nio.file.Paths.get(java.net.URI.create(spec))
+                            : java.nio.file.Paths.get(spec);
+            return java.nio.file.Files.readAllBytes(path);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to read A2UI catalog file " + spec, e);
+        }
+    }
+
+    private static byte[] readRemote(String spec) {
+        try {
+            java.net.HttpURLConnection conn =
+                    (java.net.HttpURLConnection) new java.net.URI(spec).toURL().openConnection();
+            conn.setConnectTimeout(
+                    REMOTE_TIMEOUT.toMillis() < Integer.MAX_VALUE
+                            ? (int) REMOTE_TIMEOUT.toMillis()
+                            : Integer.MAX_VALUE);
+            conn.setReadTimeout(conn.getConnectTimeout());
+            conn.setRequestProperty("Accept", "application/json");
+            if (conn.getResponseCode() != 200) {
+                throw new IllegalStateException("HTTP " + conn.getResponseCode());
+            }
+            try (InputStream in = conn.getInputStream()) {
+                return in.readAllBytes();
+            }
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to fetch A2UI catalog " + spec, e);
+        }
+    }
+
+    private static A2uiCatalog parse(byte[] json, String configuredCatalogId) {
+        try {
             ObjectMapper mapper = new ObjectMapper();
             Map<String, Object> root =
-                    mapper.readValue(in, new TypeReference<Map<String, Object>>() {});
+                    mapper.readValue(json, new TypeReference<Map<String, Object>>() {});
             String catalogId =
                     configuredCatalogId != null && !configuredCatalogId.isBlank()
                             ? configuredCatalogId
@@ -80,11 +178,8 @@ public final class A2uiCatalog {
                                 (List<String>) def.getOrDefault("required", List.of())));
             }
             return new A2uiCatalog(catalogId, version, defs);
-        } catch (IllegalStateException e) {
-            throw e;
         } catch (Exception e) {
-            throw new IllegalStateException(
-                    "Failed to load A2UI catalog from classpath:" + resourcePath, e);
+            throw new IllegalStateException("Failed to parse A2UI catalog JSON", e);
         }
     }
 

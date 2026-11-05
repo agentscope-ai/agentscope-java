@@ -53,7 +53,15 @@ final class A2uiIntentSchema {
                                 "string",
                                 "description",
                                 "Optional supporting data the UI must display (records,"
-                                        + " numbers, prior answers).")),
+                                        + " numbers, prior answers)."),
+                        "force",
+                        Map.of(
+                                "type",
+                                "boolean",
+                                "description",
+                                "Set true only when the user explicitly asked for a different UI;"
+                                        + " by default a turn renders at most one surface and a"
+                                        + " repeated call returns the delivered one.")),
                 "required",
                 List.of("description"));
     }
@@ -72,8 +80,9 @@ final class A2uiIntentSchema {
                                                         + " natural-language UI spec."));
                             }
                             String context = input == null ? null : asText(input.get("context"));
+                            boolean force = Boolean.TRUE.equals(input.get("force"));
                             return renderer.renderFromIntent(
-                                            param.getRuntimeContext(), description, context)
+                                            param.getRuntimeContext(), description, context, force)
                                     .map(ToolResultBlock::text);
                         })
                 .onErrorResume(

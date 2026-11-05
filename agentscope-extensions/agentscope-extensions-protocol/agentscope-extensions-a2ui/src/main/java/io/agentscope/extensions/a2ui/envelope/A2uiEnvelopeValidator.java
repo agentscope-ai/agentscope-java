@@ -45,7 +45,11 @@ public final class A2uiEnvelopeValidator {
                             + components.size()
                             + " entries but at most "
                             + maxComponents
-                            + " are allowed.");
+                            + " are allowed per surface. Collapse repeated detail into one Table's"
+                            + " rows/columns rather than one component per item; if the surface"
+                            + " still does not fit, render the most important sections and add a"
+                            + " Text stating how many entries were omitted — do not resubmit the"
+                            + " same oversized tree.");
         }
         Set<String> ids = new HashSet<>();
         for (int i = 0; i < components.size(); i++) {

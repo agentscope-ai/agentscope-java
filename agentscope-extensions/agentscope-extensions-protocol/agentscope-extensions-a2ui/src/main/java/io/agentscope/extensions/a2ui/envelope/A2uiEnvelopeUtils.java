@@ -47,11 +47,19 @@ public final class A2uiEnvelopeUtils {
             return Optional.empty();
         }
         List<ToolResultBlock> results = msg.getContentBlocks(ToolResultBlock.class);
-        if (results.isEmpty()) {
+        return results.isEmpty()
+                ? Optional.empty()
+                : extractEnvelope(results.get(results.size() - 1));
+    }
+
+    /** Extracts the envelope from a single tool result; same lenient contract as {@link
+     * #extractEnvelope(Msg)}. */
+    public static Optional<A2uiEnvelope> extractEnvelope(ToolResultBlock result) {
+        if (result == null || result.getOutput() == null) {
             return Optional.empty();
         }
         String text =
-                results.get(results.size() - 1).getOutput().stream()
+                result.getOutput().stream()
                         .filter(block -> block instanceof TextBlock)
                         .map(block -> ((TextBlock) block).getText())
                         .collect(Collectors.joining());
@@ -60,7 +68,9 @@ public final class A2uiEnvelopeUtils {
         }
         try {
             A2uiEnvelope envelope = MAPPER.readValue(text, A2uiEnvelope.class);
-            if (!A2uiConstants.PROTOCOL_VERSION.equals(envelope.protocolVersion())
+            // Other A2UI producers write the same version as "v1.0"; accept both spellings on read.
+            if (envelope.protocolVersion() == null
+                    || !A2uiConstants.PROTOCOL_VERSION_ALIASES.contains(envelope.protocolVersion())
                     || envelope.messageType() == null) {
                 return Optional.empty();
             }

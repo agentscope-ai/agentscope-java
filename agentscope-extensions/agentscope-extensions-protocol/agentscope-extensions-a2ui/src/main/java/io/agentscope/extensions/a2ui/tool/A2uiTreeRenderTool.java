@@ -34,17 +34,28 @@ import reactor.core.publisher.Mono;
  * tool can return it verbatim without parsing the child's reply text.
  *
  * <p>Deliberately named {@code a2ui_present}, not the parent's {@code a2ui_render}: sharing one
- * name made parent/child events and validation errors indistinguishable in logs and in the stop
- * hook, which matches tool results by name.
+ * name made parent/child events and validation errors indistinguishable in logs.
  */
 public class A2uiTreeRenderTool implements AgentTool {
 
     private final A2uiRenderer renderer;
     private final Consumer<String> envelopeSink;
+    private final Consumer<String> rejectionSink;
 
     public A2uiTreeRenderTool(A2uiRenderer renderer, Consumer<String> envelopeSink) {
+        this(renderer, envelopeSink, null);
+    }
+
+    /**
+     * @param envelopeSink receives the accepted envelope JSON
+     * @param rejectionSink receives the prose of the latest rejected submission (validation error);
+     *     {@code null} to ignore it
+     */
+    public A2uiTreeRenderTool(
+            A2uiRenderer renderer, Consumer<String> envelopeSink, Consumer<String> rejectionSink) {
         this.renderer = renderer;
         this.envelopeSink = envelopeSink;
+        this.rejectionSink = rejectionSink;
     }
 
     @Override
@@ -73,8 +84,13 @@ public class A2uiTreeRenderTool implements AgentTool {
                             // error results are "Error: ..." prose. (ToolResultBlock.text() keeps
                             // the default RUNNING state, so the shape check is the marker.)
                             String text = textOf(result);
-                            if (text != null && text.startsWith("{")) {
+                            if (text == null) {
+                                return;
+                            }
+                            if (text.startsWith("{")) {
                                 envelopeSink.accept(text);
+                            } else if (rejectionSink != null) {
+                                rejectionSink.accept(text);
                             }
                         });
     }

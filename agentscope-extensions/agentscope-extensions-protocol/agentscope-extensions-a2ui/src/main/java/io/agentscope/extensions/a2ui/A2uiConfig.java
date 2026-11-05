@@ -15,6 +15,8 @@
  */
 package io.agentscope.extensions.a2ui;
 
+import java.time.Duration;
+
 /**
  * Configuration for the A2UI capability. Passed to the {@link A2uiMiddleware} constructor
  * (plain-middleware wiring, no builder API on the framework side); all fields carry sensible
@@ -28,6 +30,7 @@ public final class A2uiConfig {
     private final boolean surfacePersistEnabled;
     private final String renderPrompt;
     private final int renderMaxIters;
+    private final Duration renderTimeout;
     private final boolean catalogInPrompt;
     private final String appendPreference;
 
@@ -38,6 +41,7 @@ public final class A2uiConfig {
         this.surfacePersistEnabled = builder.surfacePersistEnabled;
         this.renderPrompt = builder.renderPrompt;
         this.renderMaxIters = builder.renderMaxIters;
+        this.renderTimeout = builder.renderTimeout;
         this.catalogInPrompt = builder.catalogInPrompt;
         this.appendPreference = builder.appendPreference;
     }
@@ -89,6 +93,15 @@ public final class A2uiConfig {
     }
 
     /**
+     * Wall-clock budget for one render sub-agent run. {@link #renderMaxIters()} bounds iterations
+     * only, so without this a stuck child burns the framework's default tool timeout and the host
+     * sees only {@code Tool execution timeout after PT5M}.
+     */
+    public Duration renderTimeout() {
+        return renderTimeout;
+    }
+
+    /**
      * User UI preference appended to both the hosting agent's system prompt and the render
      * sub-agent's system prompt; {@code null}/blank = none.
      */
@@ -120,6 +133,7 @@ public final class A2uiConfig {
         private boolean surfacePersistEnabled = true;
         private String renderPrompt = null;
         private int renderMaxIters = 6;
+        private Duration renderTimeout = Duration.ofSeconds(90);
         private boolean catalogInPrompt = true;
         private String appendPreference = null;
 
@@ -152,6 +166,19 @@ public final class A2uiConfig {
 
         public Builder renderMaxIters(int renderMaxIters) {
             this.renderMaxIters = renderMaxIters;
+            return this;
+        }
+
+        /**
+         * Wall-clock budget for one render run; {@code null}/non-positive falls back to 90s. Keep it
+         * below the framework's per-tool execution timeout so the failure carries the render agent's
+         * last rejection instead of a bare {@code PT5M}.
+         */
+        public Builder renderTimeout(Duration renderTimeout) {
+            this.renderTimeout =
+                    renderTimeout == null || renderTimeout.isZero() || renderTimeout.isNegative()
+                            ? Duration.ofSeconds(90)
+                            : renderTimeout;
             return this;
         }
 

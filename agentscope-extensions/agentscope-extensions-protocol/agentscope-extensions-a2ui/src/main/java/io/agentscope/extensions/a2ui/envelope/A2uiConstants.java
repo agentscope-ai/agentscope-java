@@ -19,6 +19,14 @@ package io.agentscope.extensions.a2ui.envelope;
 public final class A2uiConstants {
 
     public static final String PROTOCOL_VERSION = "1.0";
+
+    /**
+     * Protocol versions accepted when reading an envelope: other A2UI producers write the same
+     * version as {@code v1.0}. We always emit {@link #PROTOCOL_VERSION}.
+     */
+    public static final java.util.List<String> PROTOCOL_VERSION_ALIASES =
+            java.util.List.of(PROTOCOL_VERSION, "v" + PROTOCOL_VERSION);
+
     public static final String MESSAGE_TYPE_CREATE_SURFACE = "createSurface";
     public static final String MESSAGE_TYPE_UPDATE_COMPONENTS = "updateComponents";
 
@@ -37,8 +45,11 @@ public final class A2uiConstants {
     /** {@code AgentStateStore} key under which session surfaces are persisted. */
     public static final String STATE_STORE_KEY_SURFACES = "a2ui_surfaces";
 
-    /** RuntimeContext key caching the surface id created during a single run. */
-    public static final String RC_KEY_RUN_SURFACE = "a2ui.runSurfaceId";
+    /**
+     * RuntimeContext key holding the run's mutable {@code A2uiRunState} holder. A holder object (not
+     * a plain value) is stored so that per-call shallow context copies still share one view.
+     */
+    public static final String RC_KEY_RUN_STATE = "a2ui.runState";
 
     private A2uiConstants() {}
 }

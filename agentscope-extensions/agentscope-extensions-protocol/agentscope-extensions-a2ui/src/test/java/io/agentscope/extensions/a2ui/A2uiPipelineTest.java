@@ -35,9 +35,12 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolSuspendException;
 import io.agentscope.extensions.a2ui.catalog.A2uiCatalog;
 import io.agentscope.extensions.a2ui.envelope.A2uiEnvelopeValidator;
+import io.agentscope.extensions.a2ui.envelope.A2uiValidationException;
+import io.agentscope.extensions.a2ui.state.A2uiRunState;
 import io.agentscope.extensions.a2ui.tool.A2uiRenderTool;
 import io.agentscope.extensions.a2ui.tool.A2uiTreeRenderTool;
 import io.agentscope.extensions.a2ui.tool.AskUserQuestionTool;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -69,6 +72,20 @@ class A2uiPipelineTest {
     }
 
     /** Replays one scripted {@link ChatResponse} per model call; empty text when exhausted. */
+    /** Stream that never emits: exercises the render wall-clock budget. */
+    private static final class NeverModel extends ChatModelBase {
+        @Override
+        public String getModelName() {
+            return "never";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.never();
+        }
+    }
+
     private static final class ScriptedModel extends ChatModelBase {
         private final List<ChatResponse> script;
         private final AtomicInteger idx = new AtomicInteger();
@@ -309,6 +326,133 @@ class A2uiPipelineTest {
     }
 
     @Test
+    void repeatedIntentInSameRunReplaysTheDeliveredSurfaceWithoutRenderingAgain() {
+        ScriptedModel child =
+                new ScriptedModel(
+                        List.of(
+                                toolUse(
+                                        "t1",
+                                        "a2ui_present",
+                                        Map.of(
+                                                "components",
+                                                List.of(
+                                                        comp(
+                                                                "c1",
+                                                                "Heading",
+                                                                Map.of(
+                                                                        "text", "Hi", "level",
+                                                                        2))))),
+                                textResponse("done")));
+        A2uiRenderTool tool = new A2uiRenderTool(renderer(A2uiConfig.defaults(), child));
+        RuntimeContext rc = RuntimeContext.builder().sessionId("run-once").build();
+        A2uiRunState.install(rc);
+
+        String first =
+                textOf(
+                        tool.callAsync(
+                                        ToolCallParam.builder()
+                                                .runtimeContext(rc)
+                                                .input(Map.of("description", "Show a greeting"))
+                                                .build())
+                                .block());
+        String second =
+                textOf(
+                        tool.callAsync(
+                                        ToolCallParam.builder()
+                                                .runtimeContext(rc)
+                                                .input(Map.of("description", "Show a greeting"))
+                                                .build())
+                                .block());
+
+        assertTrue(first.contains("\"messageType\":\"createSurface\""), first);
+        assertTrue(second.contains("\"messageType\":\"createSurface\""), second);
+        assertTrue(second.contains("force=true"), second);
+        assertEquals(
+                second.replaceAll(".*\"surfaceId\":\"(s-[0-9a-f]+)\".*", "$1"),
+                first.replaceAll(".*\"surfaceId\":\"(s-[0-9a-f]+)\".*", "$1"));
+        assertEquals(2, child.calls.get(), "repeated intent must not render a second time");
+    }
+
+    @Test
+    void forcedIntentInSameRunRendersAgain() {
+        ScriptedModel child =
+                new ScriptedModel(
+                        List.of(
+                                toolUse(
+                                        "t1",
+                                        "a2ui_present",
+                                        Map.of(
+                                                "components",
+                                                List.of(
+                                                        comp(
+                                                                "c1",
+                                                                "Heading",
+                                                                Map.of(
+                                                                        "text", "Hi", "level",
+                                                                        2))))),
+                                textResponse("done"),
+                                toolUse(
+                                        "t2",
+                                        "a2ui_present",
+                                        Map.of(
+                                                "components",
+                                                List.of(
+                                                        comp(
+                                                                "c1",
+                                                                "Text",
+                                                                Map.of("text", "again"))))),
+                                textResponse("done")));
+        A2uiRenderTool tool = new A2uiRenderTool(renderer(A2uiConfig.defaults(), child));
+        RuntimeContext rc = RuntimeContext.builder().sessionId("run-forced").build();
+        A2uiRunState.install(rc);
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .runtimeContext(rc)
+                                .input(Map.of("description", "Show a greeting"))
+                                .build())
+                .block();
+
+        String forced =
+                textOf(
+                        tool.callAsync(
+                                        ToolCallParam.builder()
+                                                .runtimeContext(rc)
+                                                .input(
+                                                        Map.of(
+                                                                "description",
+                                                                "Show a greeting",
+                                                                "force",
+                                                                true))
+                                                .build())
+                                .block());
+
+        assertEquals(4, child.calls.get(), "force=true must render again");
+        assertTrue(forced.contains("\"messageType\":\"updateComponents\""), forced);
+    }
+
+    @Test
+    void runSurfaceSurvivesDerivedContextCopies() {
+        RuntimeContext rc = RuntimeContext.builder().sessionId("run-copies").build();
+        A2uiRunState.install(rc);
+        A2uiRenderer renderer = renderer(A2uiConfig.defaults(), new ScriptedModel(List.of()));
+
+        String first =
+                renderer.renderEnvelope(
+                        RuntimeContext.builder(rc).build(),
+                        List.of(comp("c1", "Text", Map.of("text", "a"))));
+        String second =
+                renderer.renderEnvelope(
+                        RuntimeContext.builder(rc).build(),
+                        List.of(comp("c1", "Text", Map.of("text", "b"))));
+
+        assertTrue(first.contains("\"messageType\":\"createSurface\""), first);
+        assertTrue(
+                second.contains("\"messageType\":\"updateComponents\""),
+                "the framework hands each tool call a derived copy of the context; the run's"
+                        + " surface must survive it");
+    }
+
+    @Test
     void childAgentSelfCorrectsValidationErrorsInsideItsLoop() {
         ScriptedModel child =
                 new ScriptedModel(
@@ -338,6 +482,54 @@ class A2uiPipelineTest {
         assertEquals(ToolResultState.RUNNING, result.getState(), textOf(result));
         assertTrue(textOf(result).contains("\"messageType\":\"createSurface\""));
         assertEquals(3, child.calls.get());
+    }
+
+    @Test
+    void renderPromptCarriesComponentBudgetCeiling() {
+        A2uiRenderManager defaults =
+                new A2uiRenderManager(
+                        A2uiConfig.defaults(), CATALOG, new ScriptedModel(List.of()), null);
+        assertTrue(defaults.renderPrompt().contains("at most 50 components"));
+
+        A2uiRenderManager tight =
+                new A2uiRenderManager(
+                        A2uiConfig.builder().maxComponents(3).build(),
+                        CATALOG,
+                        new ScriptedModel(List.of()),
+                        null);
+        assertTrue(tight.renderPrompt().contains("at most 3 components"));
+
+        // 上限是服务端硬约束：宿主换掉提示词也必须带上
+        A2uiRenderManager overridden =
+                new A2uiRenderManager(
+                        A2uiConfig.defaults(),
+                        CATALOG,
+                        new ScriptedModel(List.of()),
+                        null,
+                        "CUSTOM");
+        assertTrue(overridden.renderPrompt().startsWith("CUSTOM"));
+        assertTrue(overridden.renderPrompt().contains("at most 50 components"));
+    }
+
+    @Test
+    void renderTimeoutFailsWithOurReasonInsteadOfTheFrameworkToolTimeout() {
+        A2uiConfig config = A2uiConfig.builder().renderTimeout(Duration.ofMillis(300)).build();
+        A2uiRenderManager manager =
+                new A2uiRenderManager(config, CATALOG, new NeverModel(), renderer(config), null);
+
+        A2uiValidationException failure =
+                assertThrows(
+                        A2uiValidationException.class,
+                        () ->
+                                manager.generate(
+                                                RuntimeContext.builder()
+                                                        .sessionId("render-timeout")
+                                                        .build(),
+                                                "Show a dashboard",
+                                                null)
+                                        .block());
+        assertTrue(failure.getMessage().contains("timed out after PT0.3S"), failure.getMessage());
+        assertFalse(failure.getMessage().contains("PT5M"), failure.getMessage());
     }
 
     @Test
@@ -442,6 +634,66 @@ class A2uiPipelineTest {
         assertTrue(envelope.contains("\"component\":\"Select\""));
         assertTrue(envelope.contains("\"name\":\"q1\""));
         assertTrue(envelope.contains("\"action\":\"submit\""));
+    }
+
+    @Test
+    void askUserQuestionCompilesTheDeclarativeFormSpec() {
+        AskUserQuestionTool tool = new AskUserQuestionTool(renderer(A2uiConfig.defaults()), true);
+        Map<String, Object> form =
+                Map.of(
+                        "title", "Order details",
+                        "description", "Needed before checkout",
+                        "submitText", "Confirm",
+                        "questions",
+                                List.of(
+                                        Map.of(
+                                                "id",
+                                                "note",
+                                                "question",
+                                                "Notes",
+                                                "type",
+                                                "textarea"),
+                                        Map.of(
+                                                "id",
+                                                "cutlery",
+                                                "question",
+                                                "Cutlery?",
+                                                "type",
+                                                "checkbox"),
+                                        Map.of(
+                                                "id",
+                                                "size",
+                                                "question",
+                                                "Size",
+                                                "type",
+                                                "radio",
+                                                "options",
+                                                List.of("M", "L")),
+                                        Map.of(
+                                                "id",
+                                                "addr",
+                                                "question",
+                                                "Address",
+                                                "type",
+                                                "text",
+                                                "placeholder",
+                                                "Street")));
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .runtimeContext(RuntimeContext.builder().sessionId("form").build())
+                        .input(form)
+                        .build();
+
+        ToolSuspendException suspend =
+                assertThrows(ToolSuspendException.class, () -> tool.callAsync(param).block());
+        String envelope = suspend.getReason();
+        assertTrue(envelope.contains("\"component\":\"Heading\""), envelope);
+        assertTrue(envelope.contains("Order details"), envelope);
+        assertTrue(envelope.contains("\"component\":\"TextArea\""), envelope);
+        assertTrue(envelope.contains("\"component\":\"Checkbox\""), envelope);
+        assertTrue(envelope.contains("\"component\":\"RadioGroup\""), envelope);
+        assertTrue(envelope.contains("\"placeholder\":\"Street\""), envelope);
+        assertTrue(envelope.contains("\"text\":\"Confirm\""), envelope);
     }
 
     @Test

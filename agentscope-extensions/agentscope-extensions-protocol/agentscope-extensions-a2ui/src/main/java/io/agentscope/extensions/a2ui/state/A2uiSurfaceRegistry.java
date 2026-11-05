@@ -26,10 +26,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Two-tier surface registry (spec §7): a run-scoped cache on {@link RuntimeContext} plus a
- * session-scoped list persisted through {@link AgentStateStore} when one is available. Surface
- * ids are system-generated ({@code "s-" + sha1(sessionId + ":" + ordinal) first 8 hex chars}) and
- * never exposed to the LLM schema.
+ * Two-tier surface registry (spec §7): a run-scoped {@link A2uiRunState} holder carried by {@link
+ * RuntimeContext} plus a session-scoped list persisted through {@link AgentStateStore} when one is
+ * available. Surface ids are system-generated ({@code "s-" + sha1(sessionId + ":" + ordinal) first
+ * 8 hex chars}) and never exposed to the LLM schema.
  */
 public final class A2uiSurfaceRegistry {
 
@@ -47,19 +47,16 @@ public final class A2uiSurfaceRegistry {
     }
 
     public SurfaceRef resolveOrCreate(RuntimeContext rc) {
-        String runSurface =
-                rc == null ? null : rc.get(A2uiConstants.RC_KEY_RUN_SURFACE, String.class);
-        if (runSurface != null) {
-            return new SurfaceRef(runSurface, false);
+        A2uiRunState run = A2uiRunState.install(rc);
+        if (run.surfaceId() != null) {
+            return new SurfaceRef(run.surfaceId(), false);
         }
         String userId = rc == null ? null : rc.getUserId();
         String sessionId = rc == null || rc.getSessionId() == null ? "default" : rc.getSessionId();
         A2uiSurfaceState state = loadState(userId, sessionId);
         String surfaceId = generateSurfaceId(sessionId, state.surfaceIds().size());
-        if (rc != null) {
-            rc.put(A2uiConstants.RC_KEY_RUN_SURFACE, surfaceId);
-        }
         saveState(userId, sessionId, state.withAdded(surfaceId));
+        run.surfaceId(surfaceId);
         return new SurfaceRef(surfaceId, true);
     }
 

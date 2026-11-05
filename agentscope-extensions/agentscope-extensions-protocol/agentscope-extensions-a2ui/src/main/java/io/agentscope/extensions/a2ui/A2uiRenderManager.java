@@ -27,6 +27,7 @@ import io.agentscope.extensions.a2ui.envelope.A2uiValidationException;
 import io.agentscope.extensions.a2ui.tool.A2uiCatalogTool;
 import io.agentscope.extensions.a2ui.tool.A2uiTreeRenderTool;
 import java.util.List;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
@@ -105,7 +106,24 @@ public final class A2uiRenderManager {
         this.catalog = catalog;
         this.model = model;
         this.renderer = renderer;
-        this.renderPrompt = catalogBlock(renderPrompt, catalog, config) + config.preferenceBlock();
+        this.renderPrompt =
+                catalogBlock(renderPrompt, catalog, config)
+                        + budgetBlock(config.maxComponents())
+                        + config.preferenceBlock();
+    }
+
+    /**
+     * The surface component ceiling, appended even to a host-overridden render prompt: the limit is
+     * enforced server-side, so the child must know it up front instead of rediscovering it by
+     * resubmitting an oversized tree until its iterations run out.
+     */
+    private static String budgetBlock(int maxComponents) {
+        return "\n\nComponent budget: a surface accepts at most "
+                + maxComponents
+                + " components. Plan before submitting — repeated detail belongs in one Table's"
+                + " rows/columns, not one component per item. If the request cannot fit, render"
+                + " the most important sections and state how many entries were omitted. Never"
+                + " resubmit the same oversized tree.\n";
     }
 
     /** The render sub-agent's base SYSTEM prompt plus the catalog block it needs to submit. */
@@ -135,11 +153,13 @@ public final class A2uiRenderManager {
         return Mono.defer(
                 () -> {
                     AtomicReference<String> submitted = new AtomicReference<>();
+                    AtomicReference<String> lastRejection = new AtomicReference<>();
                     Toolkit toolkit = new Toolkit();
                     if (!config.catalogInPrompt()) {
                         toolkit.registerTool(new A2uiCatalogTool(catalog));
                     }
-                    toolkit.registerTool(new A2uiTreeRenderTool(renderer, submitted::set));
+                    toolkit.registerTool(
+                            new A2uiTreeRenderTool(renderer, submitted::set, lastRejection::set));
                     ReActAgent renderAgent =
                             ReActAgent.builder()
                                     .name("a2ui_render_agent")
@@ -190,7 +210,26 @@ public final class A2uiRenderManager {
                                         if (signal == SignalType.CANCEL) {
                                             renderAgent.interrupt(runtimeContext);
                                         }
-                                    });
+                                    })
+                            // Downstream of the guard on purpose: the timeout cancels upstream, so
+                            // the child is interrupted before the failure is reported.
+                            .timeout(config.renderTimeout())
+                            .onErrorResume(
+                                    TimeoutException.class,
+                                    e ->
+                                            Mono.error(
+                                                    new A2uiValidationException(
+                                                            "A2UI render timed out after "
+                                                                    + config.renderTimeout()
+                                                                    + " without an accepted"
+                                                                    + " component submission"
+                                                                    + (lastRejection.get() == null
+                                                                            ? ""
+                                                                            : "; last rejection: "
+                                                                                    + lastRejection
+                                                                                            .get())
+                                                                    + ". Shrink the UI or raise"
+                                                                    + " maxComponents.")));
                 });
     }
 

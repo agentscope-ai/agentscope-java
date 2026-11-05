@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.a2ui;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.model.Model;
 import io.agentscope.extensions.a2ui.catalog.A2uiCatalog;
@@ -22,7 +23,9 @@ import io.agentscope.extensions.a2ui.envelope.A2uiConstants;
 import io.agentscope.extensions.a2ui.envelope.A2uiEnvelope;
 import io.agentscope.extensions.a2ui.envelope.A2uiEnvelopeUtils;
 import io.agentscope.extensions.a2ui.envelope.A2uiEnvelopeValidator;
+import io.agentscope.extensions.a2ui.envelope.A2uiTreeNormalizer;
 import io.agentscope.extensions.a2ui.envelope.A2uiValidationException;
+import io.agentscope.extensions.a2ui.state.A2uiRunState;
 import io.agentscope.extensions.a2ui.state.A2uiSurfaceRegistry;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +41,12 @@ import reactor.core.publisher.Mono;
  * envelope pipeline.
  */
 public final class A2uiRenderer {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final String ALREADY_DELIVERED_NOTE =
+            "This turn already delivered its UI surface; end the turn now. Call again with"
+                    + " force=true only if the user explicitly asked for a different UI.";
 
     private final A2uiConfig config;
     private final A2uiCatalog catalog;
@@ -65,12 +74,43 @@ public final class A2uiRenderer {
      * accepted submission already went through {@link #renderEnvelope}, so the returned JSON is the
      * final envelope.
      *
+     * <p>Idempotent per run: once the run has delivered a surface, a repeated request returns that
+     * same envelope (with {@code note} explaining why) instead of paying for another render, unless
+     * the caller passes {@code force}. Without this, a model that distrusts a successful result
+     * re-issues the identical call and each attempt costs tens of seconds (observed in production:
+     * five identical calls in one turn, the last two failing on the framework tool timeout).
+     *
      * @return Mono of the envelope JSON tool result text; fails with
      *     {@link A2uiValidationException} or {@link IllegalStateException} (no render model).
      */
     public Mono<String> renderFromIntent(
-            RuntimeContext runtimeContext, String description, String context) {
-        return Mono.defer(() -> renderManager().generate(runtimeContext, description, context));
+            RuntimeContext runtimeContext, String description, String context, boolean force) {
+        return Mono.defer(
+                () -> {
+                    A2uiRunState run = A2uiRunState.of(runtimeContext);
+                    String delivered = run == null ? null : run.deliveredEnvelope();
+                    if (!force && delivered != null) {
+                        return Mono.just(withNote(delivered, ALREADY_DELIVERED_NOTE));
+                    }
+                    return renderManager().generate(runtimeContext, description, context);
+                });
+    }
+
+    /** @return the run's delivered envelope with an added {@code note} field, or the original */
+    private static String withNote(String envelope, String note) {
+        try {
+            A2uiEnvelope parsed = MAPPER.readValue(envelope, A2uiEnvelope.class);
+            return A2uiEnvelopeUtils.toJson(
+                    new A2uiEnvelope(
+                            parsed.protocolVersion(),
+                            parsed.messageType(),
+                            parsed.surfaceId(),
+                            parsed.catalogId(),
+                            parsed.components(),
+                            note));
+        } catch (Exception e) {
+            return envelope;
+        }
     }
 
     private A2uiRenderManager renderManager() {
@@ -110,15 +150,19 @@ public final class A2uiRenderer {
                                 : A2uiConstants.MESSAGE_TYPE_UPDATE_COMPONENTS,
                         surface.surfaceId(),
                         catalog.catalogId(),
-                        components);
-        return A2uiEnvelopeUtils.toJson(envelope);
+                        components,
+                        null);
+        String json = A2uiEnvelopeUtils.toJson(envelope);
+        A2uiRunState.install(runtimeContext).delivered(surface.surfaceId(), json);
+        return json;
     }
 
-    @SuppressWarnings("unchecked")
+    /**
+     * @return the flat component list of a submission, accepting either the flat array or a nested
+     *     {@code root}/{@code children} tree (see {@link A2uiTreeNormalizer}); {@code null} when the
+     *     input is neither
+     */
     public static List<Map<String, Object>> componentsOf(Object raw) {
-        if (raw instanceof List<?> list) {
-            return (List<Map<String, Object>>) list;
-        }
-        return null;
+        return A2uiTreeNormalizer.normalize(raw);
     }
 }
