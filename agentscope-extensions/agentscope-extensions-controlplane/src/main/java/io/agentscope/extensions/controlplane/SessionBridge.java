@@ -997,8 +997,8 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             }
             session.put("effectiveMessageCount", tracker.getEffectiveMessageCount());
             out.add(session);
-    }
-    return out;
+        }
+        return out;
     }
 
     @Override
