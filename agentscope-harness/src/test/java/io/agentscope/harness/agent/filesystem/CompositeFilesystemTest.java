@@ -19,16 +19,23 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileData;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.workspace.LocalFsMode;
+import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -213,5 +220,46 @@ class CompositeFilesystemTest {
         assertTrue(jsonPaths.contains("tools.json"));
         assertFalse(
                 jsonPaths.contains("AGENTS.md"), "AGENTS.md must not match *.json: " + jsonPaths);
+    }
+
+    /**
+     * Host mounts such as {@code /knowledge} share a basename with composite routes ({@code
+     * knowledge/}). After {@code routeForPath} strips the leading slash, {@code
+     * /knowledge/services.md} is stolen by that route. Extra {@link PathPolicy} roots outside the
+     * workspace must stay on the default backend; workspace-relative {@code knowledge/...} must
+     * keep using the route.
+     */
+    @Test
+    void absoluteHostMount_isNotHijackedBySameNamedRoute() throws Exception {
+        Path workspace = tmp.resolve("workspace");
+        Files.createDirectories(workspace);
+
+        AbstractFilesystem knowledgeRoute = mock(AbstractFilesystem.class);
+        when(knowledgeRoute.read(any(), eq("/services.md"), anyInt(), anyInt()))
+                .thenReturn(ReadResult.fail("hijacked-by-knowledge-route"));
+        when(knowledgeRoute.read(any(), eq("/routed.md"), anyInt(), anyInt()))
+                .thenReturn(ReadResult.success(new FileData("from-knowledge-route", "utf-8")));
+
+        LocalFilesystem defaultBackend =
+                new LocalFilesystem(
+                        workspace,
+                        LocalFsMode.ROOTED,
+                        PathPolicy.of(workspace, Path.of("/knowledge")),
+                        10,
+                        null);
+        CompositeFilesystem composite =
+                new CompositeFilesystem(defaultBackend, Map.of("knowledge/", knowledgeRoute));
+
+        ReadResult hostRead = composite.read(CTX, "/knowledge/services.md", 0, Integer.MAX_VALUE);
+        verify(knowledgeRoute, never()).read(any(), eq("/services.md"), anyInt(), anyInt());
+        assertTrue(
+                hostRead.error() == null
+                        || !hostRead.error().contains("hijacked-by-knowledge-route"),
+                "absolute /knowledge mount must not be forwarded to the knowledge/ route: "
+                        + hostRead.error());
+
+        ReadResult routed = composite.read(CTX, "knowledge/routed.md", 0, Integer.MAX_VALUE);
+        assertTrue(routed.isSuccess(), "workspace-relative knowledge/ must still hit the route");
+        assertEquals("from-knowledge-route", routed.fileData().content());
     }
 }
