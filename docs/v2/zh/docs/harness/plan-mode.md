@@ -162,6 +162,32 @@ Plan Mode 与 `todo_write`（core 提供）是两个**独立但常常一起用**
 
 ⚠ 不要和子 agent 的**后台任务**（`task_output` / `task_cancel` / `task_list`）混淆——那是另一回事，详见 [子 Agent](/v2/zh/docs/harness/subagent)。
 
+### 可选展示字段
+
+每个 `todo_write` 条目可以包含 `description`、`expectedOutcome`、`outcome` 和
+`metadata`，用于前端展示执行计划。这些可选字段不改变任务状态、优先级校验或全量替换语义：
+
+```json
+{
+  "content": "Compare notices",
+  "status": "completed",
+  "priority": "high",
+  "description": "Compare Anhui and Nanjing notices",
+  "expectedOutcome": "A concise comparison",
+  "outcome": "Found two differences",
+  "metadata": { "region": "east" }
+}
+```
+
+`description` 保存到 `Task.description`；`expectedOutcome` 和 `outcome` 与应用自定义元数据
+一起保存在 `Task.metadata` 的同名键中。工具文本回执包含描述和预期、实际结果；任意应用元数据
+可从任务状态读取。这些值可随状态序列化保存和恢复。原有的三参数 Java `TodoItem` 构造方法仍然可用。
+
+当 content 匹配已有任务时，省略展示字段会保留原值。新任务未提供 description 时默认使用 content。
+可传入空字符串清空描述或结果。应用 metadata 采用合并方式，值为 null 表示删除该键。
+顶层结果字段优先于 metadata 中的同名键。`metadata.priority` 会被忽略，优先级应使用经过校验的
+顶层 `priority` 字段。要移除任务，请从完整列表中省略该任务。
+
 ## 查看任务列表
 
 任务列表保存在 `AgentState.tasksContext` 中，每次 `call()` 后自动持久化。在业务代码中读取：
