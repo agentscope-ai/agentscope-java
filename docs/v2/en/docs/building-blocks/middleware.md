@@ -67,6 +67,22 @@ ReActAgent agent =
 
 `middleware(...)` (singular) adds one; `middlewares(...)` accepts `List<? extends MiddlewareBase>`. Hooks not implemented by a middleware are skipped at zero cost.
 
+<Tip>
+
+**Spring Boot auto-assembly.** When using `agentscope-spring-boot-starter`, declare middleware as beans and they will be auto-injected into the agent builder, ordered by `@Order` — no manual `builder.middleware(...)` needed:
+
+```java
+@Bean
+@Order(100)
+public MiddlewareBase timingMiddleware() { return new TimingMiddleware(); }
+```
+
+This works via `AgentBuilderCustomizer`, an SPI that mirrors `ChatModelBuilderCustomizer`. Similarly, a unique `PermissionContextState` bean (if present) is auto-applied to the builder; when two or more are present, none is injected and a warning is logged. User-defined `AgentBuilderCustomizer` beans run after the auto-configured ones, so they can always override.
+
+Auto-assembly is additive: if you also call `builder.middleware(...)` yourself, the same middleware runs twice. Either declare the middleware only as a `@Bean`, or set `agentscope.agent.auto-assemble-middleware=false` and wire it manually. Hooks are opt-in (the API is deprecated): enable auto-attach with `agentscope.agent.auto-assemble-hooks=true`.
+
+</Tip>
+
 ## Built-in middlewares
 
 ### OtelTracingMiddleware
