@@ -329,11 +329,6 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     private static final String EDIT_HEREDOC_DELIMITER = "__AGENTSCOPE_EDIT_PY__";
 
-    // Pre-encoded script for the single-line command form (no heredoc, no newlines in the
-    // shell command string). The base64 alphabet contains no shell metacharacters.
-    private static final String EDIT_SCRIPT_B64 =
-            Base64.getEncoder().encodeToString(EDIT_SCRIPT.getBytes(StandardCharsets.UTF_8));
-
     private static final String EDIT_RESULT_MARKER = "__RESULT__";
 
     /**
@@ -446,15 +441,9 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if (isPythonMissing(execResult)) {
             return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
         }
-        // No __RESULT__ marker: the native command may have failed before Python started
-        // (e.g. heredoc mangled by the transport layer, shell syntax error). Fall back to
-        // the transfer path, which uses the filesystem REST API and is independent of shell.
-        log.warn(
-                "[sandbox-fs] native edit returned no result marker (exit={}), falling back"
-                        + " to transfer: {}",
-                execResult.exitCode(),
-                output.length() > 200 ? output.substring(0, 200) + "..." : output);
-        return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
+        // No __RESULT__ line and python3 did run: an execution-layer failure (timeout, transport,
+        // interpreter crash). Same convention as ls/read/grep/glob.
+        return EditResult.fail(executeFailureMessage(execResult, "editing", filePath));
     }
 
     /**
@@ -471,19 +460,20 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     private static String nativeEditCommand(
             String filePath, String oldString, String newString, boolean replaceAll) {
-        // Single-line command: the script travels as base64 inside a double-quoted Python -c
-        // argument, avoiding heredoc and multi-line shell syntax entirely. This makes the
-        // command robust against transport layers that mangle newlines or split arguments.
-        return "python3 -c \"exec(__import__('base64').b64decode(b'"
-                + EDIT_SCRIPT_B64
-                + "').decode())\" "
+        return "python3 - "
                 + FilesystemUtils.shellQuote(filePath)
                 + " "
                 + FilesystemUtils.shellQuote(encodeBase64(oldString))
                 + " "
                 + FilesystemUtils.shellQuote(encodeBase64(newString))
                 + " "
-                + (replaceAll ? "true" : "false");
+                + (replaceAll ? "true" : "false")
+                + " <<'"
+                + EDIT_HEREDOC_DELIMITER
+                + "'\n"
+                + EDIT_SCRIPT
+                + EDIT_HEREDOC_DELIMITER
+                + "\n__ec=$?; exit $__ec";
     }
 
     private static String encodeBase64(String value) {
