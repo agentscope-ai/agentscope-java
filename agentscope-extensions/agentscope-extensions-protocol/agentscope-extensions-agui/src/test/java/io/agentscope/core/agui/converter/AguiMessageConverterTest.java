@@ -43,6 +43,7 @@ import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -907,12 +908,13 @@ class AguiMessageConverterTest {
                                                         .mimeType("video/mp4")
                                                         .build())
                                         .build(),
-                                DataBlock.builder()
+                                DocumentBlock.builder()
                                         .source(
                                                 URLSource.builder()
                                                         .url("https://example.com/doc.pdf")
                                                         .mimeType("application/pdf")
                                                         .build())
+                                        .metadata(Map.of("sourcePage", 3))
                                         .build())
                         .build();
 
@@ -925,23 +927,27 @@ class AguiMessageConverterTest {
         ImageInputContent image = assertInstanceOf(ImageInputContent.class, blocks.parts().get(0));
         assertEquals(
                 "https://example.com/img.png", ((InputContentUrlSource) image.source()).value());
-        assertEquals(Map.of("mimeType", "image/png"), image.metadata());
+        assertEquals("image/png", ((InputContentUrlSource) image.source()).mimeType());
+        assertEquals(Collections.emptyMap(), image.metadata());
 
         AudioInputContent audio = assertInstanceOf(AudioInputContent.class, blocks.parts().get(1));
         assertEquals(
                 "https://example.com/audio.mp3", ((InputContentUrlSource) audio.source()).value());
-        assertEquals(Map.of("mimeType", "audio/mpeg"), audio.metadata());
+        assertEquals("audio/mpeg", ((InputContentUrlSource) audio.source()).mimeType());
+        assertEquals(Collections.emptyMap(), audio.metadata());
 
         VideoInputContent video = assertInstanceOf(VideoInputContent.class, blocks.parts().get(2));
         assertEquals(
                 "https://example.com/video.mp4", ((InputContentUrlSource) video.source()).value());
-        assertEquals(Map.of("mimeType", "video/mp4"), video.metadata());
+        assertEquals("video/mp4", ((InputContentUrlSource) video.source()).mimeType());
+        assertEquals(Collections.emptyMap(), video.metadata());
 
         DocumentInputContent document =
                 assertInstanceOf(DocumentInputContent.class, blocks.parts().get(3));
         assertEquals(
                 "https://example.com/doc.pdf", ((InputContentUrlSource) document.source()).value());
-        assertEquals(Map.of("mimeType", "application/pdf"), document.metadata());
+        assertEquals("application/pdf", ((InputContentUrlSource) document.source()).mimeType());
+        assertEquals(Map.of("sourcePage", 3), document.metadata());
 
         TextInputContent text = assertInstanceOf(TextInputContent.class, blocks.parts().get(4));
         assertEquals("Describe these", text.text());
@@ -969,7 +975,42 @@ class AguiMessageConverterTest {
         assertEquals(1, blocks.parts().size());
         ImageInputContent image = assertInstanceOf(ImageInputContent.class, blocks.parts().get(0));
         assertEquals(Collections.emptyMap(), image.metadata());
+        assertNull(((InputContentUrlSource) image.source()).mimeType());
         assertNull(aguiMsg.getTextContent());
+    }
+
+    @Test
+    void testConvertDataBlockRoutesByMimeType() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-data-block")
+                        .role(MsgRole.USER)
+                        .content(
+                                DataBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/generated.png")
+                                                        .mimeType("image/png")
+                                                        .build())
+                                        .build(),
+                                DataBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/report.pdf")
+                                                        .mimeType("application/pdf")
+                                                        .build())
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessages(msg).get(0);
+
+        MessageContent.Blocks blocks = (MessageContent.Blocks) aguiMsg.getContent();
+        ImageInputContent image = assertInstanceOf(ImageInputContent.class, blocks.parts().get(0));
+        assertEquals("image/png", ((InputContentUrlSource) image.source()).mimeType());
+
+        DocumentInputContent document =
+                assertInstanceOf(DocumentInputContent.class, blocks.parts().get(1));
+        assertEquals("application/pdf", ((InputContentUrlSource) document.source()).mimeType());
     }
 
     @Test
@@ -1111,39 +1152,100 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertDocumentInputContentIsRejectedForUrlSource() {
+    void testConvertDocumentInputContentWithUrlSource() {
         AguiMessage aguiMsg =
                 AguiMessage.userMessage(
                         "msg-1",
                         List.of(
                                 new DocumentInputContent(
-                                        new InputContentUrlSource("https://example.com/doc.pdf"),
-                                        Map.of("private", "private-metadata"))));
+                                        new InputContentUrlSource(
+                                                "https://example.com/doc.pdf", "application/pdf"),
+                                        Map.of("sourcePage", 3))));
 
-        IllegalStateException exception =
-                assertThrows(IllegalStateException.class, () -> converter.toMsg(aguiMsg));
-        assertEquals(
-                "Unsupported AG-UI input content type 'document': document input is not supported"
-                        + " yet",
-                exception.getMessage());
+        Msg msg = converter.toMsg(aguiMsg);
+
+        DocumentBlock document = msg.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(document);
+        assertEquals("application/pdf", document.getMimeType());
+        assertEquals(Map.of("sourcePage", 3), document.getMetadata());
+
+        URLSource source = (URLSource) document.getSource();
+        assertEquals("https://example.com/doc.pdf", source.getUrl());
+        assertEquals("application/pdf", source.getMimeType());
     }
 
     @Test
-    void testConvertDocumentInputContentIsRejectedForDataSource() {
+    void testConvertDocumentInputContentWithDataSource() {
         AguiMessage aguiMsg =
                 AguiMessage.userMessage(
                         "msg-1",
                         List.of(
                                 new DocumentInputContent(
                                         new InputContentDataSource("dGVzdA==", "application/pdf"),
-                                        Map.of("private", "private-metadata"))));
+                                        Map.of("sourcePage", 3))));
 
-        IllegalStateException exception =
-                assertThrows(IllegalStateException.class, () -> converter.toMsg(aguiMsg));
-        assertEquals(
-                "Unsupported AG-UI input content type 'document': document input is not supported"
-                        + " yet",
-                exception.getMessage());
+        Msg msg = converter.toMsg(aguiMsg);
+
+        DocumentBlock document = msg.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(document);
+        assertEquals("application/pdf", document.getMimeType());
+        assertEquals(Map.of("sourcePage", 3), document.getMetadata());
+
+        Base64Source source = (Base64Source) document.getSource();
+        assertEquals("application/pdf", source.getMediaType());
+        assertEquals("dGVzdA==", source.getData());
+    }
+
+    @Test
+    void testDocumentUrlRoundTripPreservesMimeTypeAndMetadata() {
+        Msg original =
+                Msg.builder()
+                        .id("msg-doc-round-trip")
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/report.pdf")
+                                                        .mimeType("application/pdf")
+                                                        .build())
+                                        .mimeType("application/pdf")
+                                        .metadata(Map.of("sourcePage", 3))
+                                        .build())
+                        .build();
+
+        AguiMessage wire = converter.toAguiMessages(original).get(0);
+        Msg restored = converter.toMsg(wire);
+
+        DocumentBlock document = restored.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(document);
+        assertEquals("application/pdf", document.getMimeType());
+        assertEquals(Map.of("sourcePage", 3), document.getMetadata());
+
+        URLSource source = (URLSource) document.getSource();
+        assertEquals("https://example.com/report.pdf", source.getUrl());
+        assertEquals("application/pdf", source.getMimeType());
+    }
+
+    @Test
+    void testUrlSourceWithoutMimeTypeIsOmittedFromJson() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-no-mime-json")
+                        .role(MsgRole.USER)
+                        .content(
+                                ImageBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/img.png")
+                                                        .build())
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessages(msg).get(0);
+        String json = JsonUtils.getJsonCodec().toJson(aguiMsg);
+
+        assertFalse(json.contains("\"mimeType\""));
     }
 
     @Test

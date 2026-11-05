@@ -40,10 +40,12 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.TextInputContent;
 import io.agentscope.core.agui.model.VideoInputContent;
 import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -64,7 +66,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -77,19 +78,13 @@ import java.util.stream.Collectors;
  */
 public class AguiMessageConverter {
 
-    /**
-     * AG-UI resume payload key: user approved the tool call.
-     */
+    /** AG-UI resume payload key: user approved the tool call. */
     private static final String RESUME_PAYLOAD_APPROVED = "approved";
 
-    /**
-     * AG-UI resume payload key: full replacement tool arguments.
-     */
+    /** AG-UI resume payload key: full replacement tool arguments. */
     private static final String RESUME_PAYLOAD_EDITED_ARGS = "editedArgs";
 
-    /**
-     * AG-UI resume payload key: optional reason supplied when denying the tool call.
-     */
+    /** AG-UI resume payload key: optional reason supplied when denying the tool call. */
     private static final String RESUME_PAYLOAD_REASON = "reason";
 
     /**
@@ -103,7 +98,7 @@ public class AguiMessageConverter {
      * @param msg The AgentScope message to convert
      * @return The converted AG-UI message
      * @deprecated Use {@link #toAguiMessages(Msg)} instead. The list-returning method preserves
-     * mixed reasoning content and expands multiple tool results without throwing.
+     *     mixed reasoning content and expands multiple tool results without throwing.
      */
     @Deprecated
     public AguiMessage toAguiMessage(Msg msg) {
@@ -159,7 +154,6 @@ public class AguiMessageConverter {
         String error = null;
         boolean toolMessage = msg.getRole() == MsgRole.TOOL;
         String reasoningContent = thinkingContent(msg);
-
         List<InputContent> inputContents = new ArrayList<>();
 
         for (ContentBlock block : msg.getContent()) {
@@ -177,46 +171,33 @@ public class AguiMessageConverter {
                     && ib.getSource() instanceof URLSource urlSource) {
                 inputContents.add(
                         new ImageInputContent(
-                                new InputContentUrlSource(urlSource.getUrl()),
-                                Optional.ofNullable(urlSource.getMimeType())
-                                        .map(
-                                                mimeType ->
-                                                        Map.<String, Object>of(
-                                                                "mimeType", mimeType))
-                                        .orElse(Collections.emptyMap())));
+                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
             } else if (block instanceof AudioBlock ab
                     && ab.getSource() instanceof URLSource urlSource) {
                 inputContents.add(
                         new AudioInputContent(
-                                new InputContentUrlSource(urlSource.getUrl()),
-                                Optional.ofNullable(urlSource.getMimeType())
-                                        .map(
-                                                mimeType ->
-                                                        Map.<String, Object>of(
-                                                                "mimeType", mimeType))
-                                        .orElse(Collections.emptyMap())));
+                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
             } else if (block instanceof VideoBlock vb
                     && vb.getSource() instanceof URLSource urlSource) {
                 inputContents.add(
                         new VideoInputContent(
-                                new InputContentUrlSource(urlSource.getUrl()),
-                                Optional.ofNullable(urlSource.getMimeType())
-                                        .map(
-                                                mimeType ->
-                                                        Map.<String, Object>of(
-                                                                "mimeType", mimeType))
-                                        .orElse(Collections.emptyMap())));
+                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
             } else if (block instanceof DataBlock db
                     && db.getSource() instanceof URLSource urlSource) {
+                InputContent inputContent = dataBlockInputContent(urlSource);
+                if (inputContent != null) {
+                    inputContents.add(inputContent);
+                }
+            } else if (block instanceof DocumentBlock db
+                    && db.getSource() instanceof URLSource urlSource) {
+                String mimeType =
+                        db.getMimeType() != null ? db.getMimeType() : urlSource.getMimeType();
                 inputContents.add(
                         new DocumentInputContent(
-                                new InputContentUrlSource(urlSource.getUrl()),
-                                Optional.ofNullable(urlSource.getMimeType())
-                                        .map(
-                                                mimeType ->
-                                                        Map.<String, Object>of(
-                                                                "mimeType", mimeType))
-                                        .orElse(Collections.emptyMap())));
+                                new InputContentUrlSource(urlSource.getUrl(), mimeType),
+                                db.getMetadata() == null
+                                        ? Collections.emptyMap()
+                                        : db.getMetadata()));
             }
         }
 
@@ -349,7 +330,7 @@ public class AguiMessageConverter {
      * confirm resumes still produce a USER {@link ConfirmResult} message and are never skipped on
      * that basis.
      *
-     * @param input            The AG-UI run input
+     * @param input The AG-UI run input
      * @param resumeInterrupts Mapping from interrupt ID to the originating interrupt
      * @return The converted AgentScope messages
      */
@@ -411,8 +392,8 @@ public class AguiMessageConverter {
     /**
      * Add a text content block for the given text, wrapping in a ToolResultBlock for tool messages.
      *
-     * @param blocks      the target block list
-     * @param text        the text content
+     * @param blocks the target block list
+     * @param text the text content
      * @param aguiMessage the source message (for role/tool-call-id context)
      */
     private void addTextBlock(List<ContentBlock> blocks, String text, AguiMessage aguiMessage) {
@@ -543,10 +524,12 @@ public class AguiMessageConverter {
         if (input instanceof VideoInputContent video) {
             return VideoBlock.builder().source(toSource(video.source())).build();
         }
-        if (input instanceof DocumentInputContent) {
-            throw new IllegalStateException(
-                    "Unsupported AG-UI input content type 'document': document input is not"
-                            + " supported yet");
+        if (input instanceof DocumentInputContent document) {
+            return DocumentBlock.builder()
+                    .source(toSource(document.source()))
+                    .mimeType(sourceMimeType(document.source()))
+                    .metadata(document.metadata())
+                    .build();
         }
         throw new IllegalStateException(
                 "Unhandled InputContent type: "
@@ -573,6 +556,41 @@ public class AguiMessageConverter {
             return new Base64Source(data.mimeType(), data.value());
         }
         throw new IllegalStateException("Unhandled InputContentSource type: " + inputSource);
+    }
+
+    private static String sourceMimeType(InputContentSource source) {
+        if (source instanceof InputContentUrlSource url) {
+            return url.mimeType();
+        }
+        if (source instanceof InputContentDataSource data) {
+            return data.mimeType();
+        }
+        return null;
+    }
+
+    private static InputContentUrlSource toInputContentUrlSource(URLSource source) {
+        return new InputContentUrlSource(source.getUrl(), source.getMimeType());
+    }
+
+    private static InputContent dataBlockInputContent(URLSource source) {
+        String mimeType;
+        try {
+            mimeType = MediaUtils.resolveMimeType(source);
+        } catch (IllegalArgumentException unreadableMimeType) {
+            return null;
+        }
+
+        InputContentUrlSource inputSource = new InputContentUrlSource(source.getUrl(), mimeType);
+        if (mimeType.startsWith("image/")) {
+            return new ImageInputContent(inputSource, Collections.emptyMap());
+        }
+        if (mimeType.startsWith("audio/")) {
+            return new AudioInputContent(inputSource, Collections.emptyMap());
+        }
+        if (mimeType.startsWith("video/")) {
+            return new VideoInputContent(inputSource, Collections.emptyMap());
+        }
+        return new DocumentInputContent(inputSource, Collections.emptyMap());
     }
 
     /**
@@ -668,9 +686,9 @@ public class AguiMessageConverter {
      * non-null, avoiding the {@code "argument content is null"} bug in
      * {@code ReActAgent.applyConfirmResults}.
      *
-     * @param resume     the AG-UI resume entry
+     * @param resume the AG-UI resume entry
      * @param toolCallId the resolved tool call ID
-     * @param interrupt  the originating interrupt containing tool metadata
+     * @param interrupt the originating interrupt containing tool metadata
      * @return a USER-role Msg with the confirmation result
      */
     private Msg toConfirmResultMsg(
