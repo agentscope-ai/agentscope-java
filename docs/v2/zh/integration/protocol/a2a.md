@@ -151,8 +151,8 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 
 server.postEndpointReady();   // Web 服务监听端口后再调用，触发注册等动作
 
-// 关闭时：停止请求处理器的线程。正在运行的执行会被要求停止（中断），close() 不等待它们结束。
-// 使用 Spring Boot Starter 时会自动调用。
+// 关闭时：停止请求处理器的线程和 server 自己创建的线程池。正在运行的执行会被要求停止（中断），
+// close() 不等待它们结束；通过 executor(...) 传入的执行器由你自己管理。使用 Spring Boot Starter 时会自动调用。
 server.close();
 ```
 
