@@ -241,7 +241,7 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 
 ## Kubernetes HTTP 交换超时
 
-Kubernetes 沙箱请求同时限制响应头和完整响应体的等待时间。即使服务端发送响应头后停止发送响应体，调用方也能超时返回。命令请求使用传入的超时时间加上 30 秒传输余量（默认 60 + 30 秒）；已有的请求超时可能更早触发。命令交换超时抛出 `SandboxTimeoutException`，Harness 将其映射为 `SandboxException.ExecTimeoutException`。
+Kubernetes 沙箱请求同时限制响应头和完整响应体的等待时间。即使服务端发送响应头后停止发送响应体，调用方也能超时返回。命令请求使用传入的超时时间加上 30 秒传输余量（默认 60 + 30 秒），该期限也限制响应头等待时间。命令交换超时抛出 `SandboxTimeoutException`，Harness 将其映射为 `SandboxException.ExecTimeoutException` 并保留原始异常作为 cause。
 
 文件上传和下载默认使用 10 分钟交换预算；目录列表和存在性检查默认使用 60 秒。接受 `Duration` 的客户端方法使用传入值作为交换预算，重试和退避共享这份预算。
 

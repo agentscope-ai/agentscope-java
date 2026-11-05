@@ -117,6 +117,7 @@ class KubernetesSandboxTest {
                         SandboxException.ExecTimeoutException.class,
                         () -> sandbox.doExec(null, "sleep 300", 30));
         assertEquals("Command timed out after 30s", timeout.getMessage());
+        assertTrue(timeout.getCause() instanceof SandboxTimeoutException);
     }
 
     @Test

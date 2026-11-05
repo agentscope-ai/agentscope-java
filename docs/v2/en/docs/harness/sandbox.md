@@ -242,7 +242,7 @@ The `Sandbox` abstraction's primary data-plane entry point is `exec(command)`. T
 
 ## Kubernetes HTTP exchange timeouts
 
-Kubernetes sandbox requests bound the wait for both response headers and the complete response body. A server that sends headers and then stalls cannot keep the caller waiting indefinitely. Command requests use the requested timeout plus 30 seconds for transport (60 + 30 seconds by default). Existing request timeouts can fail earlier. An expired command exchange raises `SandboxTimeoutException`, which the Harness maps to `SandboxException.ExecTimeoutException`.
+Kubernetes sandbox requests bound the wait for both response headers and the complete response body. A server that sends headers and then stalls cannot keep the caller waiting indefinitely. Command requests use the requested timeout plus 30 seconds for transport (60 + 30 seconds by default), including the wait for response headers. An expired command exchange raises `SandboxTimeoutException`, which the Harness maps to `SandboxException.ExecTimeoutException` and retains as its cause.
 
 File uploads and downloads default to a 10-minute exchange budget. Directory listing and existence checks default to 60 seconds. The client methods accepting a `Duration` use that value as the exchange budget; retries and backoff share it.
 

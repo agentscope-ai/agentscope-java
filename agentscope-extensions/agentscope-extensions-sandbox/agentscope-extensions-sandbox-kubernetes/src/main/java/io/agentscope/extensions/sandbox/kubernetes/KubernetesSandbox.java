@@ -104,7 +104,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
                             .run(wrapped, Duration.ofSeconds(Math.max(timeoutSeconds, 1)));
         } catch (SandboxTimeoutException e) {
             // Surface an exchange timeout through the existing harness timeout contract.
-            throw new SandboxException.ExecTimeoutException(command, timeoutSeconds);
+            throw new SandboxException.ExecTimeoutException(command, timeoutSeconds, e);
         }
 
         boolean truncated = false;
