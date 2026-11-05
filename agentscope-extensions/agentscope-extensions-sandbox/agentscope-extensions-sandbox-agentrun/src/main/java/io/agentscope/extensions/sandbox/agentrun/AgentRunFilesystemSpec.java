@@ -105,7 +105,9 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    @Override
     public AgentRunFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
+        super.snapshotSpec(snapshotSpec);
         this.snapshotSpec = snapshotSpec;
         return this;
     }

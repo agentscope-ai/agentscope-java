@@ -31,6 +31,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec;
+import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Path;
 import java.util.List;
@@ -72,8 +73,14 @@ class HarnessAgentDistributedSandboxTest {
     }
 
     @Test
-    void sandboxMode_snapshotSpecOnFilesystemSpec() {
+    void sandboxMode_explicitSnapshotSpecOverridesDistributedStore() {
         AgentStateStore distributedSession = mock(AgentStateStore.class);
+        DistributedStore distributedStore =
+                DistributedStore.builder()
+                        .agentStateStore(distributedSession)
+                        .baseStore(mock(BaseStore.class))
+                        .sandboxSnapshotSpec(new NoopSnapshotSpec())
+                        .build();
         DockerFilesystemSpec spec = new DockerFilesystemSpec();
         spec.isolationScope(IsolationScope.AGENT);
         spec.snapshotSpec(new LocalSnapshotSpec(workspace.resolve("snapshots")));
@@ -84,11 +91,12 @@ class HarnessAgentDistributedSandboxTest {
                                 .name("agent")
                                 .model(stubModel("ok"))
                                 .workspace(workspace)
-                                .stateStore(distributedSession)
+                                .distributedStore(distributedStore)
                                 .filesystem(spec)
                                 .build());
 
         assertEquals(IsolationScope.AGENT, spec.getIsolationScope());
+        assertInstanceOf(LocalSnapshotSpec.class, spec.getSnapshotSpecOverride());
         assertInstanceOf(LocalSnapshotSpec.class, spec.toSandboxContext().getSnapshotSpec());
     }
 
