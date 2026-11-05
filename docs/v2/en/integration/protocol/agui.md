@@ -15,7 +15,9 @@ Multimodal input supports text, image, audio, and video. Document input is not s
 
 This protection applies only to the `RUN_ERROR` message, not to the entire event stream. The preceding `RUN_STARTED.input` retains the original request, including rejected document content. Consumers that log or forward events must redact sensitive input themselves.
 
-`AguiMessageConverter.toAguiMessageList()` expands a TOOL `Msg` containing multiple `ToolResultBlock`s into one AG-UI tool message per tool result. `toAguiMessage()` remains for messages with at most one tool result and rejects a multi-result TOOL message; use `toAguiMessages()` for the expanded form. It currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.
+`AguiMessageConverter.toAguiMessageList()` expands a TOOL `Msg` containing multiple `ToolResultBlock`s into one AG-UI tool message per tool result. `toAguiMessage()` remains for messages with at most one tool result and rejects a multi-result TOOL message; use `toAguiMessages()` for the expanded form.
+
+On the outbound path, URL-backed `ImageBlock` / `AudioBlock` / `VideoBlock` / `DataBlock` content is serialized into AG-UI `MessageContent.Blocks` (`image` / `audio` / `video` / `document`). Text-only messages stay on `MessageContent.Text`. Base64 media sources are skipped on outbound conversion for now.
 
 ## When To Use
 
