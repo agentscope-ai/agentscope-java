@@ -43,6 +43,7 @@ import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -63,6 +64,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -75,13 +77,19 @@ import java.util.stream.Collectors;
  */
 public class AguiMessageConverter {
 
-    /** AG-UI resume payload key: user approved the tool call. */
+    /**
+     * AG-UI resume payload key: user approved the tool call.
+     */
     private static final String RESUME_PAYLOAD_APPROVED = "approved";
 
-    /** AG-UI resume payload key: full replacement tool arguments. */
+    /**
+     * AG-UI resume payload key: full replacement tool arguments.
+     */
     private static final String RESUME_PAYLOAD_EDITED_ARGS = "editedArgs";
 
-    /** AG-UI resume payload key: optional reason supplied when denying the tool call. */
+    /**
+     * AG-UI resume payload key: optional reason supplied when denying the tool call.
+     */
     private static final String RESUME_PAYLOAD_REASON = "reason";
 
     /**
@@ -95,7 +103,7 @@ public class AguiMessageConverter {
      * @param msg The AgentScope message to convert
      * @return The converted AG-UI message
      * @deprecated Use {@link #toAguiMessages(Msg)} instead. The list-returning method preserves
-     *     mixed reasoning content and expands multiple tool results without throwing.
+     * mixed reasoning content and expands multiple tool results without throwing.
      */
     @Deprecated
     public AguiMessage toAguiMessage(Msg msg) {
@@ -152,6 +160,8 @@ public class AguiMessageConverter {
         boolean toolMessage = msg.getRole() == MsgRole.TOOL;
         String reasoningContent = thinkingContent(msg);
 
+        List<InputContent> inputContents = new ArrayList<>();
+
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof TextBlock tb) {
                 appendContent(content, tb.getText());
@@ -163,6 +173,50 @@ public class AguiMessageConverter {
                     error = toolResultText(trb);
                 }
                 appendContent(content, toolResultText(trb));
+            } else if (block instanceof ImageBlock ib
+                    && ib.getSource() instanceof URLSource urlSource) {
+                inputContents.add(
+                        new ImageInputContent(
+                                new InputContentUrlSource(urlSource.getUrl()),
+                                Optional.ofNullable(urlSource.getMimeType())
+                                        .map(
+                                                mimeType ->
+                                                        Map.<String, Object>of(
+                                                                "mimeType", mimeType))
+                                        .orElse(Collections.emptyMap())));
+            } else if (block instanceof AudioBlock ab
+                    && ab.getSource() instanceof URLSource urlSource) {
+                inputContents.add(
+                        new AudioInputContent(
+                                new InputContentUrlSource(urlSource.getUrl()),
+                                Optional.ofNullable(urlSource.getMimeType())
+                                        .map(
+                                                mimeType ->
+                                                        Map.<String, Object>of(
+                                                                "mimeType", mimeType))
+                                        .orElse(Collections.emptyMap())));
+            } else if (block instanceof VideoBlock vb
+                    && vb.getSource() instanceof URLSource urlSource) {
+                inputContents.add(
+                        new VideoInputContent(
+                                new InputContentUrlSource(urlSource.getUrl()),
+                                Optional.ofNullable(urlSource.getMimeType())
+                                        .map(
+                                                mimeType ->
+                                                        Map.<String, Object>of(
+                                                                "mimeType", mimeType))
+                                        .orElse(Collections.emptyMap())));
+            } else if (block instanceof DataBlock db
+                    && db.getSource() instanceof URLSource urlSource) {
+                inputContents.add(
+                        new DocumentInputContent(
+                                new InputContentUrlSource(urlSource.getUrl()),
+                                Optional.ofNullable(urlSource.getMimeType())
+                                        .map(
+                                                mimeType ->
+                                                        Map.<String, Object>of(
+                                                                "mimeType", mimeType))
+                                        .orElse(Collections.emptyMap())));
             }
         }
 
@@ -176,13 +230,28 @@ public class AguiMessageConverter {
 
         // The protocol lists `content` as required on a tool message and does not accept null
         String contentText = content.toString();
-        MessageContent wireContent =
-                contentText.isEmpty() && !toolMessage ? null : new MessageContent.Text(contentText);
 
+        if (inputContents.isEmpty()) {
+            MessageContent wireContent =
+                    contentText.isEmpty() && !toolMessage
+                            ? null
+                            : new MessageContent.Text(contentText);
+            return new AguiMessage(
+                    generatedMessageId(msg),
+                    role,
+                    wireContent,
+                    toolCalls.isEmpty() ? null : toolCalls,
+                    toolCallId,
+                    error);
+        }
+
+        if (!contentText.isEmpty() || toolMessage) {
+            inputContents.add(new TextInputContent(contentText));
+        }
         return new AguiMessage(
                 generatedMessageId(msg),
                 role,
-                wireContent,
+                new MessageContent.Blocks(inputContents),
                 toolCalls.isEmpty() ? null : toolCalls,
                 toolCallId,
                 error);
@@ -280,7 +349,7 @@ public class AguiMessageConverter {
      * confirm resumes still produce a USER {@link ConfirmResult} message and are never skipped on
      * that basis.
      *
-     * @param input The AG-UI run input
+     * @param input            The AG-UI run input
      * @param resumeInterrupts Mapping from interrupt ID to the originating interrupt
      * @return The converted AgentScope messages
      */
@@ -342,8 +411,8 @@ public class AguiMessageConverter {
     /**
      * Add a text content block for the given text, wrapping in a ToolResultBlock for tool messages.
      *
-     * @param blocks the target block list
-     * @param text the text content
+     * @param blocks      the target block list
+     * @param text        the text content
      * @param aguiMessage the source message (for role/tool-call-id context)
      */
     private void addTextBlock(List<ContentBlock> blocks, String text, AguiMessage aguiMessage) {
@@ -599,9 +668,9 @@ public class AguiMessageConverter {
      * non-null, avoiding the {@code "argument content is null"} bug in
      * {@code ReActAgent.applyConfirmResults}.
      *
-     * @param resume the AG-UI resume entry
+     * @param resume     the AG-UI resume entry
      * @param toolCallId the resolved tool call ID
-     * @param interrupt the originating interrupt containing tool metadata
+     * @param interrupt  the originating interrupt containing tool metadata
      * @return a USER-role Msg with the confirmation result
      */
     private Msg toConfirmResultMsg(
