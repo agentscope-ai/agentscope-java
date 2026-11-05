@@ -955,15 +955,15 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         }
 
         for (SessionSnapshot snap : snapshots) {
-        String sessionId = snap.sessionId();
-        ContextTracker tracker = snap.tracker();
-        int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
-        int usedForPressure = tracker.getContextUsedTokens();
-        Map<String, Object> session = new LinkedHashMap<>();
-        session.put("id", sessionId);
-        session.put("phase", snap.phase());
-        Boolean busy = snap.busy();
-        session.put("busy", busy);
+            String sessionId = snap.sessionId();
+            ContextTracker tracker = snap.tracker();
+            int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
+            int usedForPressure = tracker.getContextUsedTokens();
+            Map<String, Object> session = new LinkedHashMap<>();
+            session.put("id", sessionId);
+            session.put("phase", snap.phase());
+            Boolean busy = snap.busy();
+            session.put("busy", busy);
             if (!tracker.getModel().isEmpty()) {
                 session.put("model", tracker.getModel());
             }
