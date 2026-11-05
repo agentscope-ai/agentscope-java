@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryRequest;
@@ -79,7 +81,7 @@ public class ArtifactDeliveryTool {
                         + " whether the file should be delivered. Deliver silently: the tool call"
                         + " itself lets the user see and retrieve the artifact, so do not mention"
                         + " the delivery or this tool in your reply to the user.")
-    public String deliverArtifact(
+    public ToolResultBlock deliverArtifact(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "filePath",
@@ -109,30 +111,30 @@ public class ArtifactDeliveryTool {
                             required = false)
                     Boolean force) {
         if (filePath == null || filePath.isBlank()) {
-            return "Error: filePath must not be blank";
+            return ToolResultBlock.error("filePath must not be blank");
         }
         String normalized = norm(filePath, runtimeContext);
         String effectiveFileName =
                 fileName == null || fileName.isBlank() ? basename(normalized) : fileName;
         if (effectiveFileName.isBlank()) {
-            return "Error: unable to determine a target file name from filePath '" + filePath + "'";
+            return ToolResultBlock.error(
+                    "unable to determine a target file name from filePath '" + filePath + "'");
         }
         if (!isPlainFileName(effectiveFileName)) {
-            return "Error: fileName must be a plain file name without path separators, '.' or '..'";
+            return ToolResultBlock.error(
+                    "fileName must be a plain file name without path separators, '.' or '..'");
         }
         boolean effectiveForce = Boolean.TRUE.equals(force);
 
         List<FileDownloadResponse> responses =
                 filesystem.downloadFiles(runtimeContext, List.of(normalized));
         if (responses.isEmpty()) {
-            return "Error: no download response for " + filePath;
+            return ToolResultBlock.error("no download response for " + filePath);
         }
         FileDownloadResponse response = responses.get(0);
         if (!response.isSuccess()) {
-            return "Error: failed to read '"
-                    + filePath
-                    + "' from the workspace: "
-                    + response.error();
+            return ToolResultBlock.error(
+                    "failed to read '" + filePath + "' from the workspace: " + response.error());
         }
 
         ArtifactDeliveryRequest request =
@@ -144,24 +146,29 @@ public class ArtifactDeliveryTool {
                         effectiveForce);
         ArtifactDeliveryResult result = target.deliver(runtimeContext, request);
         if (result == null) {
-            return "Error: artifact delivery target returned no result";
+            return ToolResultBlock.error("artifact delivery target returned no result");
         }
         if (result.conflict()) {
-            return "The artifact '"
-                    + filePath
-                    + "' was not delivered: a file named '"
-                    + effectiveFileName
-                    + "' already exists at the destination. Retry deliver_artifact with a new"
-                    + " fileName, or set force=true to overwrite the existing artifact.";
+            return ToolResultBlock.text(
+                            "The artifact '"
+                                    + filePath
+                                    + "' was not delivered: a file named '"
+                                    + effectiveFileName
+                                    + "' already exists at the destination. Retry"
+                                    + " deliver_artifact with a new fileName, or set force=true"
+                                    + " to overwrite the existing artifact.")
+                    .withState(ToolResultState.ERROR);
         }
         if (!result.successful()) {
-            return "Error: artifact delivery failed: "
-                    + (result.error() != null ? result.error() : "unknown error");
+            return ToolResultBlock.error(
+                    "artifact delivery failed: "
+                            + (result.error() != null ? result.error() : "unknown error"));
         }
         String message = result.message();
-        return message != null && !message.isBlank()
-                ? "Delivered " + filePath + " to the configured destination: " + message
-                : "Delivered " + filePath + " to the configured destination";
+        return ToolResultBlock.success(
+                message != null && !message.isBlank()
+                        ? "Delivered " + filePath + " to the configured destination: " + message
+                        : "Delivered " + filePath + " to the configured destination");
     }
 
     private static boolean isPlainFileName(String name) {

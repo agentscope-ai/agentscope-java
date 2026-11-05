@@ -53,6 +53,34 @@ class OpenAIModelProviderTest {
     }
 
     @Test
+    void createDefaultsToSpecificToolChoiceSupport() {
+        OpenAIModelProvider provider = new OpenAIModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-openai-key")
+                        .baseUrl(OpenAIClient.DEFAULT_BASE_URL_WITH_VERSION)
+                        .build();
+
+        Model model = provider.create("openai:gpt-4o-mini", context);
+
+        assertTrue(model.supportsToolChoiceSpecific());
+    }
+
+    @Test
+    void createDoesNotAssumeSpecificToolChoiceSupportForCustomBaseUrl() {
+        OpenAIModelProvider provider = new OpenAIModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-openai-key")
+                        .baseUrl("https://gateway.example.com/v1")
+                        .build();
+
+        Model model = provider.create("openai:gpt-4o-mini", context);
+
+        assertFalse(model.supportsToolChoiceSpecific());
+    }
+
+    @Test
     void createUsesModelCreationContext() {
         OpenAIModelProvider provider = new OpenAIModelProvider();
         ModelCreationContext context =
@@ -66,6 +94,8 @@ class OpenAIModelProviderTest {
                         .option("contextWindowSize", 128000)
                         .option("nativeStructuredOutput", false)
                         .option("nativeStructuredOutputWithTools", true)
+                        .option("supportsToolChoiceSpecific", false)
+                        .option("strictJsonSchema", true)
                         .build();
 
         Model model = provider.create("openai:gpt-4o-mini", context);
@@ -74,6 +104,8 @@ class OpenAIModelProviderTest {
         assertTrue(model.getModelName().equals("gpt-4o-mini"));
         assertEquals(128000, model.getContextWindowSize());
         assertFalse(model.supportsNativeStructuredOutput());
+        assertFalse(model.supportsToolChoiceSpecific());
+        assertEquals(Boolean.TRUE, ((OpenAIChatModel) model).getStrictJsonSchema());
     }
 
     @Test

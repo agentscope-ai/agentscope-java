@@ -59,7 +59,7 @@ class GatewayRouteTableTest {
                                     .isEqualTo(URI.create("http://scheduler:8083"));
                             assertThat(find(routes, "scheduler-channel-callbacks").getUri())
                                     .isEqualTo(URI.create("http://scheduler:8083"));
-                            assertThat(find(routes, "endpoint-invocation").getUri())
+                            assertThat(find(routes, "agent-session-lifecycle").getUri())
                                     .isEqualTo(URI.create("http://control:8081"));
                             assertThat(find(routes, "reject-internal").getOrder())
                                     .isLessThan(find(routes, "data-session-turn").getOrder());
@@ -67,7 +67,7 @@ class GatewayRouteTableTest {
                                     .isLessThan(find(routes, "control-api").getOrder());
                             assertThat(find(routes, "scheduler-channel-callbacks").getOrder())
                                     .isLessThan(find(routes, "control-api").getOrder());
-                            assertThat(find(routes, "endpoint-invocation").getOrder())
+                            assertThat(find(routes, "agent-session-lifecycle").getOrder())
                                     .isLessThan(find(routes, "control-api").getOrder());
                         })
                 .verifyComplete();
@@ -87,6 +87,35 @@ class GatewayRouteTableTest {
                                                                         MockServerHttpRequest.post(
                                                                                 "/hooks/v1/automations/rule/trigger")))))
                 .expectNext(true)
+                .verifyComplete();
+    }
+
+    @Test
+    void allPublicSessionResourcesUseTheControlPlane() {
+        for (String path :
+                List.of(
+                        "/api/v1/agent-sessions",
+                        "/api/v1/agent-sessions/session/turns",
+                        "/api/v1/agent-sessions/session/events/stream",
+                        "/api/v1/agent-sessions/session/files/file/content")) {
+            StepVerifier.create(
+                            routeLocator
+                                    .getRoutes()
+                                    .filter(
+                                            route ->
+                                                    "agent-session-lifecycle".equals(route.getId()))
+                                    .flatMap(
+                                            route ->
+                                                    route.getPredicate()
+                                                            .apply(
+                                                                    MockServerWebExchange.from(
+                                                                            MockServerHttpRequest
+                                                                                    .get(path)))))
+                    .expectNext(true)
+                    .verifyComplete();
+        }
+        StepVerifier.create(routeLocator.getRoutes().map(Route::getId).collectList())
+                .assertNext(ids -> assertThat(ids).doesNotContain("endpoint-invocation"))
                 .verifyComplete();
     }
 

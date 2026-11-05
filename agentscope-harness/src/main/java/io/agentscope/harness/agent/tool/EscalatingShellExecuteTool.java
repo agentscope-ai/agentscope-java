@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.permission.PermissionEscalation;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -55,7 +56,7 @@ public class EscalatingShellExecuteTool {
                         + " sandbox_permissions (one of: workspace-write, danger-full-access)"
                         + " together with a justification sentence; the user approves or denies the"
                         + " request before anything executes.")
-    public String execute(
+    public ToolResultBlock execute(
             RuntimeContext runtimeContext,
             @ToolParam(name = "command", description = "Shell command to execute") String command,
             @ToolParam(

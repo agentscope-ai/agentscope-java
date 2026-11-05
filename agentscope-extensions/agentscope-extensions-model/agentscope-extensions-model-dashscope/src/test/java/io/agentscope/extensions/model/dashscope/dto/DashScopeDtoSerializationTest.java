@@ -361,6 +361,22 @@ class DashScopeDtoSerializationTest {
     }
 
     @Test
+    void testDashScopeParametersReasoningEffort() {
+        DashScopeParameters params = DashScopeParameters.builder().reasoningEffort("high").build();
+
+        assertEquals("high", params.getReasoningEffort());
+
+        String json = jsonCodec.toJson(params);
+        assertTrue(json.contains("\"reasoning_effort\":\"high\""));
+
+        DashScopeParameters deserialized = jsonCodec.fromJson(json, DashScopeParameters.class);
+        assertEquals("high", deserialized.getReasoningEffort());
+
+        String emptyJson = jsonCodec.toJson(DashScopeParameters.builder().build());
+        assertFalse(emptyJson.contains("reasoning_effort"));
+    }
+
+    @Test
     void testDashScopeContentPartWithImagePixels() throws Exception {
         DashScopeContentPart imagePart =
                 DashScopeContentPart.builder()

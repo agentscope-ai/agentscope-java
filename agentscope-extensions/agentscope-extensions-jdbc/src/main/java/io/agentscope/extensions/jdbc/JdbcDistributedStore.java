@@ -62,11 +62,9 @@ public class JdbcDistributedStore implements DistributedStore {
     private final DataSource dataSource;
     private final AbstractJdbcDialect dialect;
 
-    // Lazily cached components. The DistributedStore contract does not bound the number of
-    // calls to the accessor methods; building each component eagerly on every call would
-    // re-run CREATE TABLE IF NOT EXISTS DDL and allocate throwaway instances. The first
-    // call creates the component (with schema init) and subsequent calls reuse it. The
-    // volatile write makes the publish safe across threads.
+    // Lazily cached: the DistributedStore contract does not bound accessor calls, and
+    // component construction is schema-free (tables are created and validated once by the
+    // dialect builder), so the volatile write publishes plain value objects safely.
     private volatile AgentStateStore agentStateStore;
     private volatile BaseStore baseStore;
     private volatile SandboxSnapshotSpec sandboxSnapshotSpec;
@@ -89,7 +87,9 @@ public class JdbcDistributedStore implements DistributedStore {
     }
 
     /**
-     * Creates a JDBC distributed store with an explicitly provided dialect.
+     * Creates a JDBC distributed store with an explicitly provided dialect, which must
+     * come from {@code AbstractJdbcDialect.from(dataSource).build()} — schema creation
+     * and validation happen there and only there; this path touches no schema.
      *
      * @param dataSource the JDBC data source
      * @param dialect the pre-built dialect (skips auto-detection)
@@ -106,7 +106,7 @@ public class JdbcDistributedStore implements DistributedStore {
             synchronized (this) {
                 store = this.agentStateStore;
                 if (store == null) {
-                    store = new JdbcAgentStateStore(dataSource, dialect, true);
+                    store = new JdbcAgentStateStore(dataSource, dialect);
                     this.agentStateStore = store;
                 }
             }
@@ -121,11 +121,7 @@ public class JdbcDistributedStore implements DistributedStore {
             synchronized (this) {
                 store = this.baseStore;
                 if (store == null) {
-                    store =
-                            JdbcStore.builder(dataSource)
-                                    .dialect(dialect)
-                                    .initializeSchema(true)
-                                    .build();
+                    store = JdbcStore.builder(dataSource).dialect(dialect).build();
                     this.baseStore = store;
                 }
             }
@@ -140,7 +136,7 @@ public class JdbcDistributedStore implements DistributedStore {
             synchronized (this) {
                 spec = this.sandboxSnapshotSpec;
                 if (spec == null) {
-                    spec = new JdbcSnapshotSpec(dataSource, dialect, true);
+                    spec = new JdbcSnapshotSpec(dataSource, dialect);
                     this.sandboxSnapshotSpec = spec;
                 }
             }

@@ -22,13 +22,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxRequestException;
 import io.agentscope.extensions.sandbox.kubernetes.client.internal.SandboxConnector;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -72,7 +76,10 @@ class FilesystemTest {
         doReturn(200).when(resp).statusCode();
         doReturn("{\"exists\":true}").when(resp).body();
 
-        doReturn(resp).when(connector).sendRequest(eq("GET"), anyString(), any(), any(), anyInt());
+        doReturn(resp)
+                .when(connector)
+                .sendRequest(
+                        eq("GET"), anyString(), any(), any(), anyInt(), eq(Duration.ofSeconds(60)));
 
         assertTrue(filesystem.exists("workspace/file.txt"));
     }
@@ -83,7 +90,10 @@ class FilesystemTest {
         doReturn(200).when(resp).statusCode();
         doReturn("{\"exists\":false}").when(resp).body();
 
-        doReturn(resp).when(connector).sendRequest(eq("GET"), anyString(), any(), any(), anyInt());
+        doReturn(resp)
+                .when(connector)
+                .sendRequest(
+                        eq("GET"), anyString(), any(), any(), anyInt(), eq(Duration.ofSeconds(60)));
 
         assertFalse(filesystem.exists("workspace/missing.txt"));
     }
@@ -94,7 +104,10 @@ class FilesystemTest {
         doReturn(200).when(resp).statusCode();
         doReturn("file content".getBytes()).when(resp).body();
 
-        doReturn(resp).when(connector).sendRequestForBytes(eq("GET"), anyString(), any(), any());
+        doReturn(resp)
+                .when(connector)
+                .sendRequestForBytes(
+                        eq("GET"), anyString(), any(), any(), eq(Duration.ofMinutes(10)));
 
         byte[] data = filesystem.read("workspace/file.txt");
         assertEquals("file content", new String(data));
@@ -105,8 +118,29 @@ class FilesystemTest {
         HttpResponse<byte[]> resp = mock(HttpResponse.class);
         doReturn(404).when(resp).statusCode();
 
-        doReturn(resp).when(connector).sendRequestForBytes(eq("GET"), anyString(), any(), any());
+        doReturn(resp)
+                .when(connector)
+                .sendRequestForBytes(
+                        eq("GET"), anyString(), any(), any(), eq(Duration.ofMinutes(10)));
 
         assertThrows(SandboxRequestException.class, () -> filesystem.read("workspace/missing.txt"));
+    }
+
+    @Test
+    void write_postsUploadWithTransferBudget() throws Exception {
+        HttpResponse<String> resp = mock(HttpResponse.class);
+        doReturn(200).when(resp).statusCode();
+
+        doReturn(resp)
+                .when(connector)
+                .sendRequest(
+                        eq("POST"),
+                        eq("upload"),
+                        any(HttpRequest.BodyPublisher.class),
+                        contains("multipart/form-data"),
+                        eq(3),
+                        eq(Duration.ofMinutes(10)));
+
+        filesystem.write("workspace/file.txt", "hello".getBytes(StandardCharsets.UTF_8));
     }
 }

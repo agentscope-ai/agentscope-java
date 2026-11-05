@@ -76,6 +76,7 @@ Spring Boot 应用应使用对应模型提供商的 starter，而不是依赖 co
 | 模型提供商 | Spring Boot starter |
 |---|---|
 | OpenAI | `agentscope-openai-spring-boot-starter` |
+| OpenAI Official | `agentscope-openai-official-spring-boot-starter` |
 | DashScope | `agentscope-dashscope-spring-boot-starter` |
 | Gemini | `agentscope-gemini-spring-boot-starter` |
 | Anthropic | `agentscope-anthropic-spring-boot-starter` |
@@ -177,7 +178,7 @@ Middleware 从 `GlobalOpenTelemetry` 读取 SDK，因此必须先注册 SDK，�
 
 整个 `io.agentscope.core.hook` 包 —— 包括 `Hook` 接口、`HookEvent`、`HookEventType` 与所有 `*Event` 类 —— 均标 `@Deprecated(forRemoval = true, since = "2.0.0")`。原有 import 仍能编译，`Builder.hook(...)` / `.hooks(...)` 仍可调用（由 `LegacyHookDispatcher` 桥接），v1 代码不会立刻 break。推荐改用 `io.agentscope.core.middleware`：
 
-- `MiddlewareBase` 提供 5 个 stage：洋葱型 `onAgent` / `onReasoning` / `onActing` / `onModelCall`，管道型 `onSystemPrompt`
+- `MiddlewareBase` 提供 6 个 stage：洋葱型 `onAgent` / `onReasoning` / `onActing` / `onModelCall`，管道型 `onSystemPrompt`，通知型 `onAgentStateReady`
 - Builder：`.middleware(MiddlewareBase)` 与 `.middlewares(List<? extends MiddlewareBase>)`
 - 内置：`TaskReminderMiddleware`（与 `TodoTools` 配合，在每个 reasoning step 前注入任务提醒）
 

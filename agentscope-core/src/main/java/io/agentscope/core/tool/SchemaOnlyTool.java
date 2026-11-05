@@ -56,11 +56,13 @@ import reactor.core.publisher.Mono;
 public class SchemaOnlyTool extends ToolBase {
 
     private final Boolean strict;
+    private final Boolean deferLoading;
 
     /**
      * Creates a new SchemaOnlyTool from a ToolSchema.
      *
-     * @param schema The tool schema containing name, description, parameters, and strict mode
+     * @param schema The tool schema containing name, description, parameters, strict mode, and
+     *     deferred loading configuration
      * @throws NullPointerException if schema is null
      */
     public SchemaOnlyTool(ToolSchema schema) {
@@ -68,7 +70,8 @@ public class SchemaOnlyTool extends ToolBase {
                 Objects.requireNonNull(schema, "schema cannot be null").getName(),
                 schema.getDescription(),
                 schema.getParameters(),
-                schema.getStrict());
+                schema.getStrict(),
+                schema.getDeferLoading());
     }
 
     /**
@@ -96,10 +99,16 @@ public class SchemaOnlyTool extends ToolBase {
      * @param description The tool description
      * @param parameters The tool parameters schema
      * @param strict Whether the tool should use strict schema validation (null if unspecified)
+     * @param deferLoading Whether to defer loading this tool's schema until tool search (null if
+     *     unspecified)
      * @throws NullPointerException if name or description is null
      */
     public SchemaOnlyTool(
-            String name, String description, Map<String, Object> parameters, Boolean strict) {
+            String name,
+            String description,
+            Map<String, Object> parameters,
+            Boolean strict,
+            Boolean deferLoading) {
         super(
                 ToolBase.builder()
                         .name(Objects.requireNonNull(name, "name cannot be null"))
@@ -113,11 +122,34 @@ public class SchemaOnlyTool extends ToolBase {
                         .readOnly(false)
                         .concurrencySafe(true));
         this.strict = strict;
+        this.deferLoading = deferLoading;
+    }
+
+    /**
+     * Creates a new SchemaOnlyTool with the specified name, description, parameters, and strict
+     * mode configuration.
+     *
+     * <p>Deferred loading is set to null (unspecified).
+     *
+     * @param name The tool name
+     * @param description The tool description
+     * @param parameters The tool parameters schema
+     * @param strict Whether the tool should use strict schema validation (null if unspecified)
+     * @throws NullPointerException if name or description is null
+     */
+    public SchemaOnlyTool(
+            String name, String description, Map<String, Object> parameters, Boolean strict) {
+        this(name, description, parameters, strict, null);
     }
 
     @Override
     public Boolean getStrict() {
         return strict;
+    }
+
+    @Override
+    public Boolean getDeferLoading() {
+        return deferLoading;
     }
 
     /**

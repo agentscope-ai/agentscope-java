@@ -31,8 +31,13 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,6 +53,12 @@ public class SandboxConnector {
     private static final long BASE_BACKOFF_MS = 500;
     private static final long MAX_BACKOFF_MS = 8000;
     private static final Set<Integer> RETRYABLE_STATUS = Set.of(500, 502, 503, 504);
+
+    /**
+     * Default HTTP exchange budget, shared by retry attempts and backoff. Connection
+     * discovery and pod IP lookup retain their own timeout behavior.
+     */
+    private static final Duration DEFAULT_EXCHANGE_TIMEOUT = Duration.ofMinutes(10);
 
     private final ConnectionStrategy strategy;
     private final String sandboxId;
@@ -189,6 +200,32 @@ public class SandboxConnector {
             String contentType,
             int maxRetries)
             throws IOException, InterruptedException {
+        return sendRequest(method, endpoint, body, contentType, maxRetries, null);
+    }
+
+    /**
+     * Sends an HTTP request with retry logic and an exchange deadline shared by HTTP
+     * attempts, backoff, and the full response body read.
+     * The per-attempt request timeout alone only bounds the wait for response headers, so a
+     * sandbox that sends headers and then stalls the body would otherwise block forever.
+     *
+     * @param method HTTP method
+     * @param endpoint path relative to base URL
+     * @param body request body, or null for GET
+     * @param contentType content type header
+     * @param maxRetries max attempts (0 = default)
+     * @param exchangeTimeout HTTP exchange budget; null uses the connector default
+     * @return HTTP response
+     */
+    public HttpResponse<String> sendRequest(
+            String method,
+            String endpoint,
+            HttpRequest.BodyPublisher body,
+            String contentType,
+            int maxRetries,
+            Duration exchangeTimeout)
+            throws IOException, InterruptedException {
+        long deadlineNanos = deadline(exchangeTimeout);
         ensureConnected();
         int limit = maxRetries > 0 ? maxRetries : MAX_ATTEMPTS;
         IOException lastException = null;
@@ -203,31 +240,42 @@ public class SandboxConnector {
 
             try {
                 HttpResponse<String> resp =
-                        httpClient.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
+                        sendAwait(
+                                reqBuilder.build(),
+                                HttpResponse.BodyHandlers.ofString(),
+                                remainingBudget(deadlineNanos, endpoint));
 
                 if (resp.statusCode() >= 200 && resp.statusCode() < 300) {
                     return resp;
                 }
 
                 if (RETRYABLE_STATUS.contains(resp.statusCode()) && attempt < limit - 1) {
+                    long backoffMs = backoff(attempt);
+                    if (!backoffFits(deadlineNanos, backoffMs)) {
+                        return resp;
+                    }
                     log.debug(
                             "[sandbox-client] Retryable status {}, attempt {}/{}",
                             resp.statusCode(),
                             attempt + 1,
                             limit);
-                    sleep(backoff(attempt));
+                    sleep(backoffMs);
                     continue;
                 }
                 return resp;
             } catch (IOException e) {
                 lastException = e;
                 if (attempt < limit - 1) {
+                    long backoffMs = backoff(attempt);
+                    if (!backoffFits(deadlineNanos, backoffMs)) {
+                        break;
+                    }
                     log.debug(
                             "[sandbox-client] Request failed, attempt {}/{}: {}",
                             attempt + 1,
                             limit,
                             e.getMessage());
-                    sleep(backoff(attempt));
+                    sleep(backoffMs);
                 }
             }
         }
@@ -250,6 +298,28 @@ public class SandboxConnector {
     public HttpResponse<byte[]> sendRequestForBytes(
             String method, String endpoint, HttpRequest.BodyPublisher body, String contentType)
             throws IOException, InterruptedException {
+        return sendRequestForBytes(method, endpoint, body, contentType, null);
+    }
+
+    /**
+     * Sends a request and returns the raw byte response (for file downloads), bounded by a
+     * wall-clock exchange deadline that covers response headers and the full body read.
+     *
+     * @param method HTTP method
+     * @param endpoint path relative to base URL
+     * @param body request body, or null for GET
+     * @param contentType content type header
+     * @param exchangeTimeout HTTP exchange budget; null uses the connector default
+     * @return byte response
+     */
+    public HttpResponse<byte[]> sendRequestForBytes(
+            String method,
+            String endpoint,
+            HttpRequest.BodyPublisher body,
+            String contentType,
+            Duration exchangeTimeout)
+            throws IOException, InterruptedException {
+        long deadlineNanos = deadline(exchangeTimeout);
         ensureConnected();
         HttpRequest.Builder reqBuilder = buildRequest(endpoint, contentType, requestTimeout);
         if (body == null) {
@@ -257,7 +327,71 @@ public class SandboxConnector {
         } else {
             reqBuilder.method(method, body);
         }
-        return httpClient.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
+        return sendAwait(
+                reqBuilder.build(),
+                HttpResponse.BodyHandlers.ofByteArray(),
+                remainingBudget(deadlineNanos, endpoint));
+    }
+
+    /** Starts the exchange deadline from the given budget, or the connector default. */
+    private static long deadline(Duration exchangeTimeout) {
+        Duration budget = exchangeTimeout != null ? exchangeTimeout : DEFAULT_EXCHANGE_TIMEOUT;
+        return System.nanoTime() + budget.toNanos();
+    }
+
+    /** Returns the budget still available, or throws once the deadline has passed. */
+    private static Duration remainingBudget(long deadlineNanos, String endpoint)
+            throws IOException {
+        long remainingNanos = deadlineNanos - System.nanoTime();
+        if (remainingNanos <= 0) {
+            throw new HttpTimeoutException(
+                    "Sandbox exchange budget exhausted before completing request: /" + endpoint);
+        }
+        return Duration.ofNanos(remainingNanos);
+    }
+
+    private static boolean backoffFits(long deadlineNanos, long backoffMs) {
+        return (deadlineNanos - System.nanoTime()) / 1_000_000 > backoffMs;
+    }
+
+    /**
+     * Sends the request asynchronously and blocks until the exchange completes — response
+     * headers and body — within {@code budget}. On expiry the underlying future is cancelled,
+     * which closes the stalled exchange, and an {@link HttpTimeoutException} is thrown.
+     */
+    private <T> HttpResponse<T> sendAwait(
+            HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler, Duration budget)
+            throws IOException, InterruptedException {
+        CompletableFuture<HttpResponse<T>> future = httpClient.sendAsync(request, bodyHandler);
+        try {
+            return future.get(budget.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (ExecutionException e) {
+            throw asIOException(request, e);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw exchangeTimeout(request, budget);
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            throw e;
+        }
+    }
+
+    private static IOException asIOException(HttpRequest request, ExecutionException e) {
+        Throwable cause = e.getCause() != null ? e.getCause() : e;
+        if (cause instanceof IOException ioException) {
+            return ioException;
+        }
+        return new IOException("Sandbox request failed for " + request.uri(), cause);
+    }
+
+    private static HttpTimeoutException exchangeTimeout(HttpRequest request, Duration budget) {
+        return new HttpTimeoutException(
+                "Sandbox exchange timed out after "
+                        + budget.toMillis()
+                        + "ms without a complete response: "
+                        + request.method()
+                        + " "
+                        + request.uri());
     }
 
     private void ensureConnected() throws IOException {

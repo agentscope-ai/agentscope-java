@@ -27,8 +27,8 @@ import java.util.Objects;
  * <p>JSON form: {@code {"type": "document", "source": {"type": "url", "value": "..."}, "metadata": {...}}}
  *
  * <p>Shares the same structure as {@link ImageInputContent}, {@link AudioInputContent},
- * and {@link VideoInputContent} (source + metadata). Maps to AgentScope's
- * {@link io.agentscope.core.message.DataBlock} during conversion.
+ * and {@link VideoInputContent} (source + metadata). Document input is currently rejected
+ * by the AG-UI message converter; this type represents the protocol payload only.
  *
  * @param source the document source (URL or data), must not be null
  * @param metadata optional metadata, may be null

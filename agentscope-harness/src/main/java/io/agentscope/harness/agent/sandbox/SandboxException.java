@@ -270,19 +270,23 @@ public class SandboxException extends RuntimeException {
 
     /**
      * Thrown when a sandbox command times out.
+     *
+     * <p>The message carries only the timeout duration, never the command text: commands
+     * are model-generated and may inline secrets, while the caller already holds the
+     * command in its own context. This matches the official E2B SDKs' fixed timeout
+     * wording.
      */
     public static class ExecTimeoutException extends SandboxException {
 
         /**
          * Creates an exec timeout exception.
          *
-         * @param command the command that timed out
+         * @param command the command that timed out (retained for signature
+         *     compatibility; not included in the message)
          * @param timeoutSeconds the timeout that was exceeded
          */
         public ExecTimeoutException(String command, int timeoutSeconds) {
-            super(
-                    SandboxErrorCode.EXEC_TIMEOUT,
-                    "Command timed out after " + timeoutSeconds + "s: " + command);
+            super(SandboxErrorCode.EXEC_TIMEOUT, "Command timed out after " + timeoutSeconds + "s");
         }
     }
 

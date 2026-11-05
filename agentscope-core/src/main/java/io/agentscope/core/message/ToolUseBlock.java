@@ -21,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Represents a tool use request within a message.
@@ -45,6 +46,13 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public static final String METADATA_SERVER_TOOL = "serverTool";
 
+    /**
+     * Metadata key marking a streamed tool call whose accumulated raw arguments never formed a
+     * valid JSON object (Boolean value) — typically truncated by the output token limit. Such a
+     * call must not be executed with empty arguments.
+     */
+    public static final String METADATA_MALFORMED_ARGUMENTS = "malformedArguments";
+
     private final String id;
     private final String name;
     private final Map<String, Object> input;
@@ -53,7 +61,7 @@ public final class ToolUseBlock extends ContentBlock {
     private final ToolCallState state;
 
     /**
-     * Creates a new tool use block for JSON deserialization.
+     * Creates a new tool use block with metadata (convenience constructor).
      *
      * @param id Unique identifier for this tool call
      * @param name Name of the tool to execute
@@ -196,6 +204,17 @@ public final class ToolUseBlock extends ContentBlock {
     }
 
     /**
+     * Checks whether this tool call's streamed arguments never formed a valid JSON object
+     * (marked via {@link #METADATA_MALFORMED_ARGUMENTS}), e.g. truncated mid-arguments.
+     *
+     * @return true if the accumulated arguments were malformed
+     */
+    @JsonIgnore
+    public boolean hasMalformedArguments() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_MALFORMED_ARGUMENTS));
+    }
+
+    /**
      * Returns a copy of this block with a replaced input map (used by permission decisions
      * that rewrite arguments). All other fields — including streaming {@code content} and
      * provider-specific {@code metadata} — are preserved, matching {@link #withState}'s
@@ -226,6 +245,28 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof ToolUseBlock other)) {
+            return false;
+        }
+        return Objects.equals(id, other.id)
+                && Objects.equals(name, other.name)
+                && ValueEquality.equal(input, other.input)
+                && Objects.equals(content, other.content)
+                && ValueEquality.equal(metadata, other.metadata)
+                && state == other.state;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                id, name, ValueEquality.hash(input), content, ValueEquality.hash(metadata), state);
     }
 
     /**

@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.TextPart;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import org.a2aproject.sdk.spec.TextPart;
 
 /**
  * Parser for {@link TextPart} to {@link TextBlock} or
@@ -30,24 +30,17 @@ public class TextPartParser implements PartParser<TextPart> {
 
     @Override
     public ContentBlock parse(TextPart part) {
-        String blockType = getMetadataValue(part, MessageConstants.BLOCK_TYPE_METADATA_KEY);
+        String blockType =
+                MetadataUtil.metadataValue(part, MessageConstants.BLOCK_TYPE_METADATA_KEY);
         if (MessageConstants.BlockContent.TYPE_THINKING.equals(blockType)) {
-            return ThinkingBlock.builder().thinking(part.getText()).build();
+            return ThinkingBlock.builder().thinking(part.text()).build();
         }
         if (MessageConstants.BlockContent.TYPE_HINT.equals(blockType)) {
             return new HintBlock(
-                    getMetadataValue(part, MessageConstants.HINT_ID_METADATA_KEY),
-                    part.getText(),
-                    getMetadataValue(part, MessageConstants.HINT_SOURCE_METADATA_KEY));
+                    MetadataUtil.metadataValue(part, MessageConstants.HINT_ID_METADATA_KEY),
+                    part.text(),
+                    MetadataUtil.metadataValue(part, MessageConstants.HINT_SOURCE_METADATA_KEY));
         }
-        return TextBlock.builder().text(part.getText()).build();
-    }
-
-    private String getMetadataValue(TextPart part, String key) {
-        if (part.getMetadata() == null) {
-            return null;
-        }
-        Object value = part.getMetadata().get(key);
-        return value == null ? null : value.toString();
+        return TextBlock.builder().text(part.text()).build();
     }
 }

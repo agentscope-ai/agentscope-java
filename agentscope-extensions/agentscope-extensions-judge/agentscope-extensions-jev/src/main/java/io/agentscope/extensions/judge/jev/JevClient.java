@@ -49,7 +49,13 @@ public final class JevClient {
     public static final String DEFAULT_MODEL = "jev-latest";
     public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(5);
     private static final String SYSTEM_ONE_ENDPOINT = "/v1/systemone";
-    private static final double PROBABILITY_SUM_TOLERANCE_PER_OPTION = 0.000001;
+
+    /**
+     * The System One API returns probabilities rounded to 4 decimal places, so each value
+     * carries up to 5e-5 of rounding error. The sum of n values may therefore drift from 1
+     * by up to n * 5e-5 without any individual probability being wrong.
+     */
+    private static final double PROBABILITY_SUM_TOLERANCE_PER_OPTION = 0.00005;
 
     static final ObjectMapper MAPPER =
             new ObjectMapper()
@@ -252,6 +258,19 @@ public final class JevClient {
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("timeout must be positive");
         }
+    }
+
+    /** Validates typed questions for custom offline or online evaluation backends. */
+    public static void validateEvaluationRequest(SystemOneRequest request) {
+        validateRequest(Objects.requireNonNull(request));
+    }
+
+    /** Applies the HTTP client's response contract to injected evaluation backends. */
+    public static void validateResponse(SystemOneRequest request, SystemOneResult result) {
+        validateRequest(Objects.requireNonNull(request));
+        validateResult(request, Objects.requireNonNull(result));
+        if (result.usage().inputTokens() < 0 || result.usage().outputTokens() < 0)
+            throw new JevException("System One usage must not be negative");
     }
 
     private static void validateRequest(SystemOneRequest request) {

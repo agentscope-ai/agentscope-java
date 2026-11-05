@@ -1,0 +1,31 @@
+{
+  "suite" : "refund-guard-v1",
+  "startedAt" : "2026-09-26T12:47:16.406729Z",
+  "dataSha256" : "69759aede0714e949efaa08017e45c55b25ad7914255b6b5f72ee992ca9fd2fa",
+  "runnerClassSha256" : "e95dd5b5e42dc6faa47e622a352452afae84f9378eb21f01e9a9843fecbeb811",
+  "middlewareClassSha256" : "d4ddd9da26c982ea31a5019763957b0372be0956b9e500a176df95f20b3810af",
+  "textAdapterClassSha256" : "424a17bda0803613c859bc1e4f53b4ede231e42710792a5605b28f9bc8bdc051",
+  "split" : "test",
+  "fixtures" : 120,
+  "threshold" : 0.8,
+  "budgetMillis" : 60000,
+  "repeats" : 1,
+  "warmupsPerBackend" : 1,
+  "seed" : 426,
+  "concurrency" : 1,
+  "retries" : 0,
+  "qwenTemperature" : 0,
+  "qwenEnableThinking" : false,
+  "backends" : [ {
+    "requestedModel" : "jev-latest",
+    "name" : "jev"
+  }, {
+    "requestedModel" : "qwen3.8-max",
+    "name" : "qwen"
+  } ],
+  "scope" : "fixed pre-dispatch snapshots; real middleware and permission engine; simulated execution; no generation model or payment API",
+  "javaVersion" : "21.0.2",
+  "os" : "Mac OS X aarch64",
+  "complete" : true,
+  "finishedAt" : "2026-09-26T12:50:16.123933Z"
+}

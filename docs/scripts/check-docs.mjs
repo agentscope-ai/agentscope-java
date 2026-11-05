@@ -156,6 +156,7 @@ export function checkSite(docs) {
     const pathname = decodeURIComponent(url.pathname);
     const target = resolve(pathname);
     if (target === null) { errors.push(`${from}: redirect cycle at ${link}`); return; }
+    if (/^https?:\/\//i.test(target)) return;
     const page = pages.get(target);
     if (page) {
       if (url.hash && !page.anchors.has(decodeURIComponent(url.hash.slice(1)))) errors.push(`${from}: missing anchor ${link}`);
