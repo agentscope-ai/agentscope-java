@@ -25,6 +25,7 @@ import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -266,9 +267,7 @@ public class AnthropicMessageConverter {
 
         for (ContentBlock block : blocks) {
             if (block instanceof TextBlock tb) {
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder().text(tb.getText()).build()));
+                contentBlocks.add(ContentBlockParam.ofText(convertTextBlock(tb)));
             } else if (block instanceof HintBlock hb) {
                 contentBlocks.add(
                         ContentBlockParam.ofText(
@@ -309,6 +308,14 @@ public class AnthropicMessageConverter {
                                                             + e.getMessage()
                                                             + "]")
                                             .build()));
+                }
+            } else if (block instanceof DocumentBlock db) {
+                try {
+                    contentBlocks.add(
+                            ContentBlockParam.ofDocument(mediaConverter.convertDocumentBlock(db)));
+                } catch (Exception e) {
+                    throw new IllegalArgumentException(
+                            "Failed to process DocumentBlock: " + db.getId(), e);
                 }
             } else if (block instanceof ToolUseBlock tub) {
                 if (tub.isServerTool()) {
@@ -366,9 +373,7 @@ public class AnthropicMessageConverter {
             for (Object item : outputList) {
                 if (item instanceof ContentBlock cb) {
                     if (cb instanceof TextBlock tb) {
-                        blocks.add(
-                                ToolResultBlockParam.Content.Block.ofText(
-                                        TextBlockParam.builder().text(tb.getText()).build()));
+                        blocks.add(ToolResultBlockParam.Content.Block.ofText(convertTextBlock(tb)));
                     } else if (cb instanceof ImageBlock ib) {
                         try {
                             ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
@@ -378,10 +383,19 @@ public class AnthropicMessageConverter {
                         }
                     } else if (cb instanceof DataBlock db) {
                         try {
-                            ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
-                            blocks.add(ToolResultBlockParam.Content.Block.ofImage(imageParam));
+                            blocks.add(
+                                    ToolResultBlockParam.Content.Block.ofImage(
+                                            mediaConverter.convertDataBlock(db)));
                         } catch (Exception e) {
                             log.warn("Failed to process DataBlock in tool result: {}", e);
+                        }
+                    } else if (cb instanceof DocumentBlock db) {
+                        try {
+                            blocks.add(
+                                    ToolResultBlockParam.Content.Block.ofDocument(
+                                            mediaConverter.convertDocumentBlock(db)));
+                        } catch (Exception e) {
+                            log.warn("Failed to process DocumentBlock in tool result: {}", e);
                         }
                     }
                 }
@@ -430,6 +444,10 @@ public class AnthropicMessageConverter {
                         MessageParam.Content.ofBlockParams(
                                 List.of(ContentBlockParam.ofToolResult(toolResultParam))))
                 .build();
+    }
+
+    private TextBlockParam convertTextBlock(TextBlock textBlock) {
+        return TextBlockParam.builder().text(textBlock.getText()).build();
     }
 
     /**

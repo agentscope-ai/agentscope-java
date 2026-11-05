@@ -207,6 +207,21 @@ If `CachePolicy.ENABLED` is used with `option(...)` or `component(...)`, the use
 
 Calling `registerFactory` evicts cached instances whose model id matches the new pattern, so the next resolution of those ids uses the new factory. Evicted instances are not closed, since callers may still hold them. Concurrent first resolutions of the same cached id share one creation and receive the same instance.
 
+### Registry lifecycle
+
+`unregister(name)` removes the named registration created by `register(name, model)` and returns the removed instance, or `null` if the name was never registered.
+
+Both methods only change registry mappings: instances already held by callers keep working unchanged and are never closed by the registry.
+
+`evictResolvedCache(ModelCreationContext, String modelId)` evicts instances cached by `resolve(...)`: a `null` context matches every cache identity, a `null` or blank model id matches every id under the context's identity, and both present evicts one precise entry; both null is rejected.
+
+```java
+Model removed = ModelRegistry.unregister("my-gpt4o"); // null if never registered
+ModelRegistry.evictResolvedCache(null, "openai:gpt-4.1-mini"); // all entries with a matching modelId
+ModelRegistry.evictResolvedCache(context, null); // all ids cached for this context
+ModelRegistry.evictResolvedCache(context, "openai:gpt-4.1-mini"); // one precise entry
+```
+
 ### ModelProvider SPI
 
 Provider extension modules are discovered with Java SPI through `META-INF/services/io.agentscope.core.model.spi.ModelProvider`. A provider can implement `supports(String, ModelCreationContext)` and `create(String, ModelCreationContext)` to consume context values. Simple providers can keep implementing the original `supports(String)` and `create(String)` methods because the context-aware methods have compatible defaults.

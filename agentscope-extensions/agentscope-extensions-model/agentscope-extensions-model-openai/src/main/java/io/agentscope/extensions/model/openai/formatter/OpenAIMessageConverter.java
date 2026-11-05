@@ -20,6 +20,7 @@ import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -296,6 +297,16 @@ public class OpenAIMessageConverter {
                             OpenAIContentPart.text(
                                     "[Media - processing failed: " + errorMsg + "]"));
                 }
+            } else if (block instanceof DocumentBlock db) {
+                log.warn(
+                        "DocumentBlock is not supported by OpenAI; sending a text placeholder"
+                                + " instead of '{}'",
+                        db.getName() != null ? db.getName() : db.getId());
+                contentParts.add(
+                        OpenAIContentPart.text(
+                                "[Document - not supported by OpenAI: "
+                                        + (db.getName() != null ? db.getName() : db.getId())
+                                        + "]"));
             } else if (block instanceof ToolUseBlock) {
                 log.warn("ToolUseBlock is not supported in user messages");
             } else if (block instanceof ToolResultBlock) {

@@ -17,6 +17,7 @@ package io.agentscope.extensions.sandbox.kubernetes;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.extensions.sandbox.kubernetes.client.Sandbox;
+import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxTimeoutException;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
 import io.agentscope.harness.agent.sandbox.AbstractBaseSandbox;
 import io.agentscope.harness.agent.sandbox.ExecResult;
@@ -95,8 +96,16 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
         }
         String wrapped =
                 "cd " + shellQuote(k8sState.getWorkspaceRoot()) + " && (\n" + command + "\n)";
-        ExecutionResult result =
-                sdkSandbox.commands().run(wrapped, Duration.ofSeconds(Math.max(timeoutSeconds, 1)));
+        ExecutionResult result;
+        try {
+            result =
+                    sdkSandbox
+                            .commands()
+                            .run(wrapped, Duration.ofSeconds(Math.max(timeoutSeconds, 1)));
+        } catch (SandboxTimeoutException e) {
+            // Surface an exchange timeout through the existing harness timeout contract.
+            throw new SandboxException.ExecTimeoutException(command, timeoutSeconds);
+        }
 
         boolean truncated = false;
         String stdout = result.getStdout() != null ? result.getStdout() : "";

@@ -164,6 +164,33 @@ public class A2aAgentTest {
     }
 
     @Test
+    @DisplayName("Should send the user and session id of the call on the wire")
+    void testSendCallIdentityOnWire() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+
+        doAnswer(mockSuccessMessage())
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        RuntimeContext context =
+                RuntimeContext.builder().userId("alice").sessionId("session-1").build();
+        Msg result =
+                agent.call(List.of(Msg.builder().textContent("test").build()), context).block();
+
+        assertNotNull(result);
+        ArgumentCaptor<Message> sent = ArgumentCaptor.forClass(Message.class);
+        verify(a2aClient).sendMessage(sent.capture(), anyList(), any());
+        assertEquals("session-1", sent.getValue().contextId());
+        assertEquals(
+                "alice", sent.getValue().metadata().get(MessageConstants.USER_ID_METADATA_KEY));
+    }
+
+    @Test
     @DisplayName("Should prefer artifacts over the status message of a completed task")
     void testCompletedTaskPrefersArtifacts() {
         A2aAgent agent =
