@@ -220,7 +220,6 @@ public class DashScopeHttpClient {
                 encryptionContext = encryptionResult.context;
             }
             final EncryptionContext finalEncryptionContext = encryptionContext;
-            log.debug("DashScope request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
@@ -240,7 +239,6 @@ public class DashScopeHttpClient {
             }
 
             String responseBody = httpResponse.getBody();
-            log.debug("DashScope response: {}", responseBody);
 
             // Decrypt response if encryption is enabled
             if (finalEncryptionContext != null) {
@@ -298,7 +296,6 @@ public class DashScopeHttpClient {
                 encryptionContext = encryptionResult.context;
             }
             final EncryptionContext finalEncryptionContext = encryptionContext;
-            log.debug("DashScope streaming request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
