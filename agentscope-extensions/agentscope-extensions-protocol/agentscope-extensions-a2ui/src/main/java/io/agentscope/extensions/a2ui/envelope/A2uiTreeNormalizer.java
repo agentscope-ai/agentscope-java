@@ -29,7 +29,9 @@ import java.util.Map;
  *       props written inline beside `component` are grouped the same way);
  *   <li>nested — {@code {root: {component, children: [...], ...props}}}, optionally wrapped in a
  *       {@code content} envelope, the shape modelled UI generators tend to produce because it maps
- *       to how they describe layout.
+ *       to how they describe layout;
+ *   <li>JSON-encoded — the same two shapes handed over as a string, which is how an untyped tool
+ *       property reaches us.
  * </ul>
  *
  * <p>Props may sit either under a {@code props} key or directly beside {@code component}; nesting
@@ -39,10 +41,25 @@ import java.util.Map;
  */
 public final class A2uiTreeNormalizer {
 
+    private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
     private A2uiTreeNormalizer() {}
 
     /** @return the flat component list, or {@code null} when the input is not a component tree */
     public static List<Map<String, Object>> normalize(Object raw) {
+        if (raw instanceof String s) {
+            // A submission can arrive JSON-encoded; treat it as the tree it spells out.
+            String text = s.strip();
+            if (!text.startsWith("[") && !text.startsWith("{")) {
+                return null;
+            }
+            try {
+                return normalize(MAPPER.readValue(text, Object.class));
+            } catch (Exception e) {
+                return null;
+            }
+        }
         if (raw instanceof List<?> list) {
             List<Map<String, Object>> flat = new ArrayList<>();
             for (Object node : list) {

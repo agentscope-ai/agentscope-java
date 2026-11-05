@@ -16,6 +16,7 @@
 package io.agentscope.extensions.a2ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -148,32 +149,53 @@ class A2uiInteropTest {
         assertEquals(Map.of("text", "Hi", "level", 2), componentsOf(envelope).get(0).get("props"));
     }
 
+    /**
+     * 回归护栏：`components` 必须留 array 类型。v1.14 一度把它放开成无类型，线上七次提交全被判成
+     * "must be a non-empty array" —— provider 对无类型属性把值当字符串交进来，归一化根本收不到列表。
+     */
     @Test
-    void presentToolSchemaPassesFrameworkArgumentValidationForBothShapes() {
+    void presentToolSchemaKeepsComponentsTypedAndAcceptsNestedChildren() {
         Map<String, Object> params = new A2uiTreeRenderTool(renderer(), null).getParameters();
 
-        assertNull(
-                ToolValidator.validateInput(
-                        JsonUtils.getJsonCodec()
-                                .toJson(
-                                        Map.of(
-                                                "components",
-                                                List.of(Map.of("id", "c", "component", "Text")))),
-                        params));
-        assertNull(
-                ToolValidator.validateInput(
-                        JsonUtils.getJsonCodec()
-                                .toJson(
-                                        Map.of(
-                                                "components",
+        Map<String, Object> flat =
+                Map.of(
+                        "components",
+                        List.of(Map.of("component", "Heading", "props", Map.of("text", "Hi"))));
+        Map<String, Object> nested =
+                Map.of(
+                        "components",
+                        List.of(
+                                Map.of(
+                                        "component",
+                                        "Card",
+                                        "children",
+                                        List.of(
                                                 Map.of(
-                                                        "root",
-                                                        Map.of(
-                                                                "component",
-                                                                "Card",
-                                                                "children",
-                                                                List.of())))),
+                                                        "component",
+                                                        "Text",
+                                                        "props",
+                                                        Map.of("text", "body"))))));
+
+        assertNull(ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(flat), params));
+        assertNull(ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(nested), params));
+        // 顶层对象形态不再是从归一化进来的入口，会被框架的 schema 门挡下
+        assertNotNull(
+                ToolValidator.validateInput(
+                        JsonUtils.getJsonCodec()
+                                .toJson(
+                                        Map.of(
+                                                "components",
+                                                Map.of("root", Map.of("component", "Card")))),
                         params));
+    }
+
+    @Test
+    void stringifiedTreeSubmissionIsParsedBeforeValidation() {
+        String envelope =
+                present("[{\"component\":\"Heading\",\"props\":{\"text\":\"Hi\",\"level\":2}}]");
+
+        assertEquals(List.of("c1"), idsOf(componentsOf(envelope)));
+        assertEquals(List.of("Heading"), namesOf(componentsOf(envelope)));
     }
 
     @Test

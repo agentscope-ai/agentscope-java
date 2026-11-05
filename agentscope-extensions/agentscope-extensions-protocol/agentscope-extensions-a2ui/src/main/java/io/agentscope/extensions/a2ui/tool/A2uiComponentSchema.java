@@ -33,13 +33,50 @@ final class A2uiComponentSchema {
     private A2uiComponentSchema() {}
 
     /**
-     * Deliberately loose on the tree's shape: the framework validates tool arguments against this
-     * schema before we see them, so a typed array here would reject the nested {@code root /
-     * children} form that some models produce. The shape is accepted first and then checked against
-     * the catalog by {@link io.agentscope.extensions.a2ui.envelope.A2uiEnvelopeValidator}, whose
-     * errors the child self-corrects against.
+     * {@code components} keeps an explicit array type on purpose: with an untyped property the
+     * provider hands us the value as a JSON <em>string</em>, and every submission then fails the
+     * catalog check (observed in production right after this was loosened). Nested trees are
+     * tolerated where they cost nothing — {@code children} is an ordinary item property and {@code
+     * id} is optional, because {@link io.agentscope.extensions.a2ui.envelope.A2uiTreeNormalizer}
+     * generates missing ids.
      */
     static Map<String, Object> componentsSchema() {
+        Map<String, Object> item =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of(
+                                "id",
+                                Map.of(
+                                        "type",
+                                        "string",
+                                        "description",
+                                        "Unique id within this submission; generated when"
+                                                + " omitted."),
+                                "component",
+                                Map.of(
+                                        "type",
+                                        "string",
+                                        "description",
+                                        "Component name from the" + " catalog."),
+                                "props",
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "description",
+                                        "Component properties per catalog entry. Props written"
+                                                + " directly beside `component` are collected the"
+                                                + " same way."),
+                                "children",
+                                Map.of(
+                                        "type",
+                                        "array",
+                                        "description",
+                                        "Nested child components; the tree is flattened before"
+                                                + " validation.")),
+                        "required",
+                        List.of("component"));
         return Map.of(
                 "type",
                 "object",
@@ -47,12 +84,14 @@ final class A2uiComponentSchema {
                 Map.of(
                         "components",
                         Map.of(
+                                "type",
+                                "array",
                                 "description",
-                                "The A2UI tree: prefer a flat array of {id, component, props}"
-                                        + " objects per the component catalog. A nested"
-                                        + " {root: {component, props, children: [...]}} tree is"
-                                        + " also accepted and flattened; ids are generated when"
-                                        + " omitted.")),
+                                "The A2UI tree as a list of {component, props} objects per the"
+                                        + " component catalog; `children` nests sub-components and"
+                                        + " is flattened here.",
+                                "items",
+                                item)),
                 "required",
                 List.of("components"));
     }
