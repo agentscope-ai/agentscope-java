@@ -1414,6 +1414,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         ArtifactDeliveryTarget artifactDeliveryTarget;
         boolean disableFilesystemTools = false;
+        int readFileMaxChars = FilesystemTool.DEFAULT_MAX_READ_CHARS;
         boolean disableShellTool = false;
         boolean disableWebTools = false;
 
@@ -1559,7 +1560,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *   <li>Workspace &amp; filesystem: {@link #workspace(Path)}, {@link #filesystem(SandboxFilesystemSpec)},
          *       {@link #filesystem(LocalFilesystemSpec)}, {@link #filesystem(RemoteFilesystemSpec)},
          *       {@link #abstractFilesystem(AbstractFilesystem)},
-         *       {@link #environmentMemory(String)}</li>
+         *       {@link #environmentMemory(String)}, {@link #readFileMaxChars(int)}</li>
          *   <li>Subagents: {@link #subagent(SubagentDeclaration)}, {@link #subagents(List)},
          *       {@link #subagentFactory(String, Function)},
          *       {@link #subagentFactory(SubagentDeclaration, SubagentFactory)},
@@ -2332,6 +2333,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Sets the maximum Unicode code points returned by a {@code read_file} page.
+         *
+         * <p>Defaults to {@link FilesystemTool#DEFAULT_MAX_READ_CHARS}. Must be at least {@link
+         * FilesystemTool#DEFAULT_READ_CHARS}, which remains the page size when the tool call omits
+         * {@code max_chars}. Automatically constructed subagents inherit this limit.
+         *
+         * @throws IllegalArgumentException if the limit is smaller than the default page size
+         */
+        public Builder readFileMaxChars(int maxChars) {
+            if (maxChars < FilesystemTool.DEFAULT_READ_CHARS) {
+                throw new IllegalArgumentException(
+                        "readFileMaxChars must be at least " + FilesystemTool.DEFAULT_READ_CHARS);
+            }
+            this.readFileMaxChars = maxChars;
+            return this;
+        }
+
         /** Skips registration of {@link FilesystemTool}. */
         public Builder disableFilesystemTools() {
             this.disableFilesystemTools = true;
@@ -3047,7 +3066,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());
             }
             if (!disableFilesystemTools) {
-                agentToolkit.registerTool(new FilesystemTool(filesystem, pathNormalizer));
+                agentToolkit.registerTool(
+                        new FilesystemTool(filesystem, pathNormalizer, readFileMaxChars));
             }
             if (artifactDeliveryEnabled) {
                 agentToolkit.registerTool(
