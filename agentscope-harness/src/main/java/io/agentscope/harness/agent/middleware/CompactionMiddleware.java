@@ -36,6 +36,7 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
+import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -44,6 +45,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.ToLongFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -105,8 +107,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             RuntimeContext ctx,
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
-        Model executionModel = agent instanceof ReActAgent react ? react.getModel() : model;
-        if (executionModel == null) executionModel = model;
+        Model executionModel = effectiveModel(agent, ctx);
         int window = executionModel.getContextWindowSize();
         int budget =
                 window > 0
@@ -125,6 +126,26 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                 prepared.messages(),
                                                 prepared.tools(),
                                                 prepared.options())));
+    }
+
+    /**
+     * Resolves the model that will actually process this conversation, so the trigger budget is
+     * derived from the effective model's context window: a dedicated {@link
+     * CompactionConfig#getModel()} when configured, else the executing {@link ReActAgent}'s
+     * per-call model (the {@link RuntimeContext} model id when set, else its build-time
+     * default). Wiring guarantees one of the two exists.
+     */
+    private Model effectiveModel(Agent agent, RuntimeContext ctx) {
+        if (model != null) {
+            return model;
+        }
+        if (agent instanceof ReActAgent react) {
+            Model perCall = ctx != null ? react.getModel(ctx) : react.getModel();
+            if (perCall != null) {
+                return perCall;
+            }
+        }
+        return null;
     }
 
     /** Retry provider context overflow inside the same execution, before its recorder is closed. */
@@ -258,6 +279,30 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             ModelCallInput input,
             int conversationBudget,
             List<Msg> canonical) {
+        return prepareCandidate(
+                agent,
+                ctx,
+                input,
+                conversationBudget,
+                canonical,
+                TokenCounterUtil::calculateToken,
+                message -> TokenCounterUtil.calculateToken(List.of(message)));
+    }
+
+    /**
+     * Prepares a candidate using the final request compiler's conversation token counter.
+     * The counter excludes fixed inputs already deducted from {@code conversationBudget}.
+     * The separate tool-result counter prices one result without unrelated projections or
+     * fixed request overhead, using the same estimation rules.
+     */
+    public Mono<Candidate> prepareCandidate(
+            Agent agent,
+            RuntimeContext ctx,
+            ModelCallInput input,
+            int conversationBudget,
+            List<Msg> canonical,
+            ToLongFunction<List<Msg>> tokenCounter,
+            ToLongFunction<Msg> toolResultTokenCounter) {
         return Mono.defer(
                 () -> {
                     RuntimeContext rc = ctx == null ? RuntimeContext.empty() : ctx;
@@ -289,9 +334,22 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             config.withEffective(
                                     Math.max(1, trigger),
                                     Math.min(keep, Math.max(0, conversationBudget / 2)));
+                    // Dedicated compaction model when configured; otherwise the executing
+                    // agent's per-call model (RuntimeContext modelId when set, else its
+                    // default), so the summary follows the model serving the conversation.
+                    Model compactModel = model;
+                    if (compactModel == null && agent instanceof ReActAgent react) {
+                        compactModel = react.getModel(rc);
+                    }
+                    if (compactModel == null) {
+                        compactModel = input.model();
+                    }
                     ConversationCompactor compactor =
                             new ConversationCompactor(
-                                    model, new MemoryFlushManager(workspaceManager, model));
+                                    compactModel,
+                                    new MemoryFlushManager(workspaceManager, compactModel),
+                                    tokenCounter,
+                                    toolResultTokenCounter);
                     // Copies may retain message IDs. Only an unchanged view can become durable;
                     // matching IDs alone must not persist hook-edited content or metadata.
                     boolean canCommit = sameSerializedHistory(canonical, conversation);

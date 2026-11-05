@@ -55,6 +55,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addSharedPrefix(String)` | 额外的工作区相对路径前缀也路由到 KV（例如 `"prompts/"` / `"configs/"`） | 无 |
 | `workspaceIndex(WorkspaceIndex)` | 加速远端 ls/glob/grep 的 SQLite 索引 | 不加索引，走全量扫描 |
 
+可选的本地索引无法初始化时（例如 `.index/workspace.db` 已损坏），`WorkspaceIndex.open(workspaceRoot)` 返回 `null`，并关闭本次尝试中已经获取的连接。调用方可以回退到远端扫描，不会保留这条初始化失败的连接。成功返回的索引会持有连接，直到调用 `close()`。
+
 #### 内置路由规则
 
 框架自动把以下路径路由到共享 KV，每个路径段各自独立命名空间，不会互相污染：
@@ -509,6 +511,10 @@ workspace/
 ### 文件工具（read_file / write_file / edit_file / ...）
 
 所有文件工具都通过 `AbstractFilesystem` 接口调用，每次操作传入当前 `RuntimeContext`，由文件系统后端决定实际读写位置。agent 代码完全感知不到模式差异。
+
+`read_file` 默认每次最多返回 16,000 个 Unicode 码点，即使省略 `limit` 或单行内容很长也受此限制。可选参数 `max_chars` 可调整每页大小，硬上限为 32,000。`offset` 和 `limit` 仍按行选择内容；`char_offset` 从零开始，在**同一行范围返回的文本内**按字符分页。发生截断时，结果会给出下一页的 `char_offset`，继续读取时保持 path、`offset` 和 `limit` 不变。分页不会拆开 Unicode 代理对。拼接多页时应保持文件不变，偏移量不代表不可变快照。
+
+转存后的工具结果文件也受此限制。这是适用于所有文件系统后端的工具输出上限，不限制后端读取所选内容时的内存分配和 I/O。二进制文件按编码后的文本分页，需拼接完整内容后再解码。
 
 | 模式 | 读写行为 |
 |------|---------|

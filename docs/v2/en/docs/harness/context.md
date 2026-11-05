@@ -187,6 +187,10 @@ agentBuilder.contextPolicy(new ContextPolicy(
 
 At the final reasoning boundary, Harness first offloads oversized tool results. If the request is still too large, it removes optional memory material, then optional knowledge, then other optional sources. It computes the remaining conversation allowance after fixed material and tool schemas, runs conversation reduction, and projects current task/plan state into the result. It finally validates tool-call/result pairing and the complete request budget.
 
+The estimator configured in `ContextPolicy` also governs compaction triggers, token-based retention, and lightweight reductions. Each candidate is measured with its request materials, tools, model, and options; fixed costs are deducted once from the available input space. Images therefore participate in the compaction decision under the same estimation rules as the final check, including when you supply a custom estimator. These remain estimates rather than provider-reported usage.
+
+Tool-output protection and pruning thresholds count the individual result, excluding unrelated task projections and fixed request overhead. Keeping fewer messages can require projecting task state again, so retained suffixes are checked after projection.
+
 System instructions and `required()` materials are not directly evicted. If the resulting request still exceeds the allowance, preparation raises `ContextBudgetExceededException`. Reducing history cannot solve a request whose instructions, schemas, or required materials already fill the available space.
 
 <span id="2-large-tool-result-eviction-toolresultevictionmiddleware" />
@@ -194,6 +198,8 @@ System instructions and `required()` materials are not directly evicted. If the 
 ### Offload a large tool result
 
 An export diagnostic may produce a huge log in a single tool result. Harness's default offloading pass runs **before the next model reasoning call**. It writes oversized text to workspace storage, then replaces it in working context with a head/tail preview and a path the Agent can read on demand. A failed write does not replace the original with a broken pointer.
+
+Only text is offloaded. Images, audio, and other non-text blocks stay in the tool result in their original order, with retained text on the same side of each block. The preview allowance applies across all text blocks in that result; the saved file contains the complete text. Storage still uses the configured Workspace Filesystem, including remote backends.
 
 ```java
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
@@ -214,6 +220,8 @@ These are the defaults: results exceeding 80,000 characters are eligible, and th
 
 Conversation compaction addresses repeated rounds of work. Its lightweight passes first truncate old tool arguments when configured and prune sufficiently large aggregates of older tool output. If the remaining history meets the message or token trigger, it summarizes a prefix and keeps a recent tail, preserving tool-call/result boundaries.
 
+Tool-result pruning also shortens only text, keeping non-text blocks and retained text in their original order. Each result shares one head/tail text allowance and keeps its tool-call ID, tool name, metadata, state, and execution details. Pruning does not create a recovery file for each result; use Session Log to retrieve the original evidence when enabled. Retained media still counts toward the final request budget.
+
 Argument truncation preserves message IDs, timestamps, metadata and usage, as well as tool-call metadata and execution state. When formatting requests, raw argument JSON is regenerated from the truncated input. Provider server-tool calls are left unchanged because their provider-owned replay metadata may be authoritative.
 
 ```java
@@ -231,6 +239,8 @@ agentBuilder.compaction(CompactionConfig.builder()
 ```
 
 The standard summary records session intent, decisions, artifacts, and next steps. The working conversation becomes the summary plus recent messages; exact tail boundaries can expand to keep tool exchanges intact. Summarization and truncation are lossy. Keep critical requirements in explicit state, store important artifacts, and retrieve original evidence when needed.
+
+A summary replaces the conversation only when it is complete and actually smaller. Output stopped at a provider token limit, tool-call output, or empty text is rejected; a missing finish reason is accepted so providers that do not report one keep working. The complete candidate — the summary wrapper, merged prior summaries, and the kept tail — is measured with the same configured estimator as the final request check, and a candidate that is not strictly smaller keeps the current conversation. A rejected summary leaves the already-applied lightweight reductions in place; model errors and cancellation still propagate unchanged.
 
 <span id="coordination-with-memory" />
 

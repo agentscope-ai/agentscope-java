@@ -7,7 +7,7 @@ zh_link: /v2/zh/docs/harness/subagent
 
 ## Role
 
-Let the parent delegate "independent, context-heavy, parallelizable" tasks so it doesn't bloat its own loop. Each subagent is a transient instance (a local `HarnessAgent` or a remote stub), with its own session, returning a result via tool result.
+Let the parent delegate "independent, context-heavy, parallelizable" tasks so it doesn't bloat its own loop. Each subagent (a local `HarnessAgent` or a remote stub) runs its own conversation, separate from the parent's: every invocation — a spawn with a task, or a follow-up `agent_send` — runs to completion and returns that invocation's result (as the sync tool result, or pushed back for background tasks). A live local subagent keeps its own history across follow-up sends; remote backends may start a new conversation for each send. Session persistence and later resumption depend on the declaration (`persistSession`) and the backend — see [Persistent sessions](#persistent-sessions).
 
 ## A minimal example
 
@@ -197,11 +197,13 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 When enabled:
 
-1. If `CTX_FORCE_SYNC_TIMEOUT_SECONDS` is set, it **fully replaces** the LLM's `timeout_seconds` (`<= 0` falls back to 30s; max 600s).
+1. If `CTX_FORCE_SYNC_TIMEOUT_SECONDS` is set, it **fully replaces** the LLM's `timeout_seconds` (`<= 0` falls back to 30s; positive application values have no 600s ceiling).
 2. Without that override, an LLM-supplied `timeout_seconds=0` is coerced to the default sync timeout (30s) — **no** background task is submitted — while a positive LLM timeout is preserved.
 3. If the sync wait expires, the tool returns `status: timeout` and interrupts the subagent — it is **not** promoted to a background `task_id`.
 
 `agent_send` honors the same switch. Multiple force-sync `agent_spawn` calls in one turn still run in parallel under the Toolkit default.
+
+`agent_spawn` and `agent_send` manage their own wait timeout, independently of the ordinary tool timeout in `ExecutionConfig`. Tools called by the subagent still use their normal tool timeout. Cancelling the parent call still cancels synchronous subagent execution.
 
 If a goal can be split into independent subtasks that do not conflict on resources, the parent can issue multiple synchronous subagent calls in the same reasoning turn. Toolkit defaults to parallel tool execution (`ToolkitConfig.parallel=true`), so those synchronous calls advance in parallel on both `ReActAgent` and `HarnessAgent`; the parent enters the next reasoning step only after that batch of tool results has returned, forming a synchronous fan-out / fan-in barrier. To serialize tool calls, pass a custom `Toolkit` built with `ToolkitConfig.builder().parallel(false).build()`.
 
@@ -496,7 +498,7 @@ When the parent is in Plan Mode, spawned subagents **automatically inherit the r
 
 > New code should use `streamEvents()` (returns `Flux<AgentEvent>`). The legacy `stream()` family (`Flux<Event>`) is `@Deprecated(forRemoval = true)` since 2.0.0 — see [Message & Event](/v2/en/docs/building-blocks/message-and-event) and [V1 Migration Guide B.4](/v2/en/docs/change-log).
 
-When the parent calls a synchronous subagent via `agent_spawn` / `agent_send`, the child's intermediate events are **forwarded live** into the parent's `streamEvents()` stream. Each child event carries a `source` field (a `/`-separated path like `"main/researcher"`) so you can tell parent events (`source == null`) from child events. Remote Agent Protocol children additionally set `metadata.taskId` (`AgentEvent.METADATA_TASK_ID`) to the harness task id and `metadata.parentSessionId` (`AgentEvent.METADATA_PARENT_SESSION_ID`) to the parent session, so two concurrent / same-turn calls to the same remote agent remain distinguishable even when they share a `source` path.
+When the parent calls a synchronous local subagent via `agent_spawn` / `agent_send`, the child's intermediate events are **forwarded live** into the parent's `streamEvents()` stream. Each child event carries a `source` field in the form `parentSessionId/agentId/subagentSessionId` (for example, `"main/researcher/sub-1"`). The final segment is the spawned instance's own session id, so multiple instances of the same subagent type remain distinguishable. Remote Agent Protocol children use `parentSessionId/agentId/taskId` and additionally set `metadata.taskId` (`AgentEvent.METADATA_TASK_ID`) to the harness task id and `metadata.parentSessionId` (`AgentEvent.METADATA_PARENT_SESSION_ID`) to the parent session, so two concurrent / same-turn calls to the same remote agent remain distinguishable.
 
 ```
 caller
@@ -507,11 +509,11 @@ caller
         ├─ TOOL_CALL_START "agent_spawn"
         │
         │  [child spawned]
-        ├─ AGENT_START          (source="main/researcher")  ← child starts
-        ├─ TEXT_BLOCK_DELTA …   (source="main/researcher")  ← child reasoning
-        ├─ TOOL_CALL_START …    (source="main/researcher")
-        ├─ TOOL_RESULT_END …   (source="main/researcher")
-        ├─ AGENT_END            (source="main/researcher")  ← child done
+        ├─ AGENT_START          (source="main/researcher/sub-1")  ← child starts
+        ├─ TEXT_BLOCK_DELTA …   (source="main/researcher/sub-1")  ← child reasoning
+        ├─ TOOL_CALL_START …    (source="main/researcher/sub-1")
+        ├─ TOOL_RESULT_END …   (source="main/researcher/sub-1")
+        ├─ AGENT_END            (source="main/researcher/sub-1")  ← child done
         │  [agent_spawn returns; child result → parent TOOL_RESULT]
         │
         ├─ TOOL_RESULT_END                        ← parent receives tool result

@@ -25,6 +25,7 @@ import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -32,7 +33,9 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.search.ToolSearchTool;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -264,9 +267,7 @@ public class AnthropicMessageConverter {
 
         for (ContentBlock block : blocks) {
             if (block instanceof TextBlock tb) {
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder().text(tb.getText()).build()));
+                contentBlocks.add(ContentBlockParam.ofText(convertTextBlock(tb)));
             } else if (block instanceof HintBlock hb) {
                 contentBlocks.add(
                         ContentBlockParam.ofText(
@@ -307,6 +308,14 @@ public class AnthropicMessageConverter {
                                                             + e.getMessage()
                                                             + "]")
                                             .build()));
+                }
+            } else if (block instanceof DocumentBlock db) {
+                try {
+                    contentBlocks.add(
+                            ContentBlockParam.ofDocument(mediaConverter.convertDocumentBlock(db)));
+                } catch (Exception e) {
+                    throw new IllegalArgumentException(
+                            "Failed to process DocumentBlock: " + db.getId(), e);
                 }
             } else if (block instanceof ToolUseBlock tub) {
                 if (tub.isServerTool()) {
@@ -364,9 +373,7 @@ public class AnthropicMessageConverter {
             for (Object item : outputList) {
                 if (item instanceof ContentBlock cb) {
                     if (cb instanceof TextBlock tb) {
-                        blocks.add(
-                                ToolResultBlockParam.Content.Block.ofText(
-                                        TextBlockParam.builder().text(tb.getText()).build()));
+                        blocks.add(ToolResultBlockParam.Content.Block.ofText(convertTextBlock(tb)));
                     } else if (cb instanceof ImageBlock ib) {
                         try {
                             ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
@@ -376,10 +383,19 @@ public class AnthropicMessageConverter {
                         }
                     } else if (cb instanceof DataBlock db) {
                         try {
-                            ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
-                            blocks.add(ToolResultBlockParam.Content.Block.ofImage(imageParam));
+                            blocks.add(
+                                    ToolResultBlockParam.Content.Block.ofImage(
+                                            mediaConverter.convertDataBlock(db)));
                         } catch (Exception e) {
                             log.warn("Failed to process DataBlock in tool result: {}", e);
+                        }
+                    } else if (cb instanceof DocumentBlock db) {
+                        try {
+                            blocks.add(
+                                    ToolResultBlockParam.Content.Block.ofDocument(
+                                            mediaConverter.convertDocumentBlock(db)));
+                        } catch (Exception e) {
+                            log.warn("Failed to process DocumentBlock in tool result: {}", e);
                         }
                     }
                 }
@@ -397,12 +413,29 @@ public class AnthropicMessageConverter {
                             TextBlockParam.builder().text(outputStr).build()));
         }
 
+        if ("DEFERRED".equals(toolResult.getMetadata().get(ToolSearchTool.METADATA_MODE))
+                && toolResult.getState() != ToolResultState.ERROR) {
+            Object matches = toolResult.getMetadata().get(ToolSearchTool.METADATA_TOOLS);
+            if (matches instanceof List<?> list) {
+                for (Object match : list) {
+                    if (match instanceof Map<?, ?> schema
+                            && schema.get("name") instanceof String name) {
+                        blocks.add(ToolResultBlockParam.Content.Block.ofToolReference(name));
+                    }
+                }
+            }
+        }
+
         // Create tool result block
-        ToolResultBlockParam toolResultParam =
+        var resultBuilder =
                 ToolResultBlockParam.builder()
                         .toolUseId(toolResult.getId())
-                        .content(ToolResultBlockParam.Content.ofBlocks(blocks))
-                        .build();
+                        .content(ToolResultBlockParam.Content.ofBlocks(blocks));
+        switch (toolResult.getState()) {
+            case ERROR, DENIED, INTERRUPTED -> resultBuilder.isError(true);
+            default -> {}
+        }
+        ToolResultBlockParam toolResultParam = resultBuilder.build();
 
         // Wrap in user message
         return MessageParam.builder()
@@ -411,6 +444,10 @@ public class AnthropicMessageConverter {
                         MessageParam.Content.ofBlockParams(
                                 List.of(ContentBlockParam.ofToolResult(toolResultParam))))
                 .build();
+    }
+
+    private TextBlockParam convertTextBlock(TextBlock textBlock) {
+        return TextBlockParam.builder().text(textBlock.getText()).build();
     }
 
     /**

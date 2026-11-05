@@ -29,6 +29,7 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -284,61 +285,53 @@ class BaseSandboxFilesystemTest {
             assertEquals(1, result.occurrences());
             // no staging directory and no file transfer at all
             assertTrue(fs.uploadedFiles.isEmpty());
-            assertTrue(fs.lastCommand.contains("python3 - "));
+            assertTrue(fs.lastCommand.contains("python3 -c "));
             assertTrue(fs.lastCommand.contains("'/workspace/f.txt'"));
             assertTrue(fs.lastCommand.contains("'" + base64("World") + "'"));
             assertTrue(fs.lastCommand.contains("'" + base64("Java") + "'"));
-            assertTrue(fs.lastCommand.contains("__AGENTSCOPE_EDIT_PY__"));
-            // python's exit status must reach Java (else 127 never surfaces as a fallback)
-            assertTrue(
-                    fs.lastCommand.contains("exit $__ec"),
-                    "exit code passthrough required: " + fs.lastCommand);
         }
 
-        // ==================== Bug reproduction: edit program collapsed into one line
-        // (#2571) ====================
+        // ==================== Command format: base64-encoded script avoids heredoc
+        // ====================
 
         @Test
-        void edit_generatedPythonProgram_isSeparatedByRealLineFeeds() {
+        void edit_commandIsSingleLine_noHeredoc() {
             FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
 
             filesystem.edit(RT, "/workspace/file.txt", "old", "new", false);
 
             String cmd = filesystem.lastCommand;
             assertTrue(
-                    cmd.startsWith("python3 - "),
-                    "edit should drive the replacement through a python3 program");
-            // The regression was a program collapsed onto one line, so the invariant is that
-            // statements are separated by real line feeds. A backslash-n may still appear inside
-            // the program's own string literals (the CRLF normalizer), which is harmless.
-            assertTrue(
-                    cmd.contains("import base64, os, sys, json, uuid\ntarget"),
-                    "the python program must be separated by real line feeds");
-            assertTrue(
-                    cmd.contains("\ncount = text.count(old)"),
-                    "every statement must be on its own line, not joined by an escape");
+                    cmd.startsWith("python3 -c "),
+                    "edit should use python3 -c with base64-encoded script");
+            assertFalse(cmd.contains("<<"), "command must not use heredoc syntax");
+            // The script travels as base64 inside the -c argument; the command string itself
+            // must be a single line so transport layers that mangle newlines cannot break it.
+            assertFalse(cmd.contains("\n"), "command must be a single line (no embedded newlines)");
         }
 
         @Test
-        void edit_executeFailure_shouldFailWithCause() {
+        void edit_executeFailure_shouldFallBackToTransfer() {
             EditResult result =
                     new FixedResponseFilesystem(sandboxRequestFailed())
                             .edit(RT, "/workspace/file.txt", "old", "new", false);
 
-            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
-            assertTrue(result.error().contains("status=504"), "error should carry the cause");
+            assertFalse(result.isSuccess(), "edit should fail when transfer also fails");
+            assertTrue(
+                    result.error().contains("Could not read file"),
+                    "error should come from the transfer fallback, not the execute layer");
         }
 
         @Test
-        void edit_executeFailure_nullOutput_shouldFailWithExitCodeFallback() {
+        void edit_executeFailure_nullOutput_shouldFallBackToTransfer() {
             EditResult result =
                     new FixedResponseFilesystem(new ExecuteResponse(null, -1, false))
                             .edit(RT, "/workspace/file.txt", "old", "new", false);
 
-            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
+            assertFalse(result.isSuccess(), "edit should fail when transfer also fails");
             assertTrue(
-                    result.error().contains("exit code -1"),
-                    "error should fall back to the exit code when no diagnostic output exists");
+                    result.error().contains("Could not read file"),
+                    "error should come from the transfer fallback, not the execute layer");
         }
 
         @Test
@@ -725,6 +718,89 @@ class BaseSandboxFilesystemTest {
             assertFalse(result.isSuccess());
             assertTrue(result.error().contains("not-json{{"));
         }
+
+        // ==================== Bug reproduction: double-quoted "$(dirname ...)" breaks docker
+        // exec on Windows hosts (#3850) ====================
+
+        @Test
+        void write_checkCommand_containsNoDoubleQuotesOrSubstitution() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            fs.write(RT, "/workspace/docs/new/notes.txt", "hello");
+
+            // The docker CLI on Windows hosts mangles arguments carrying double-quoted
+            // command substitution, so the check command must avoid the construct entirely.
+            assertFalse(
+                    fs.lastCommand.contains("\""),
+                    "double quotes break docker exec on Windows hosts: " + fs.lastCommand);
+            assertFalse(
+                    fs.lastCommand.contains("dirname"),
+                    "command substitution must not be used for the parent dir: " + fs.lastCommand);
+        }
+
+        @Test
+        void write_newNestedPath_mkdirsParentAsSingleQuotedLiteral() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.write(RT, "/workspace/my docs/new file.txt", "hello");
+
+            assertTrue(result.isSuccess(), "write should succeed: " + result.error());
+            assertTrue(
+                    fs.lastCommand.contains("mkdir -p '/workspace/my docs' 2>&1"),
+                    "parent with spaces must be created via a single-quoted literal: "
+                            + fs.lastCommand);
+        }
+
+        @Test
+        void write_rootLevelFile_needsNoParentMkdir() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.write(RT, "/notes.txt", "hello");
+
+            assertTrue(result.isSuccess(), "write should succeed: " + result.error());
+            assertFalse(
+                    fs.lastCommand.contains("mkdir"),
+                    "a root-level file needs no parent creation: " + fs.lastCommand);
+        }
+
+        @Test
+        void move_checkCommand_containsNoSubstitutionOrDoubleQuotes() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            fs.move(RT, "/workspace/docs/old.txt", "/workspace/docs/new/notes.txt");
+
+            assertFalse(
+                    fs.lastCommand.contains("dirname"),
+                    "command substitution must not be used for the parent dir: " + fs.lastCommand);
+            assertFalse(
+                    fs.lastCommand.contains("\""),
+                    "double quotes break docker exec on Windows hosts: " + fs.lastCommand);
+        }
+
+        @Test
+        void move_newNestedPath_mkdirsParentAsSingleQuotedLiteral() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.move(RT, "/tmp/src.txt", "/workspace/my docs/new file.txt");
+
+            assertTrue(result.isSuccess(), "move should succeed: " + result.error());
+            assertTrue(
+                    fs.lastCommand.startsWith("mkdir -p '/workspace/my docs' 2>&1 && mv "),
+                    "parent with spaces must be created via a single-quoted literal before mv: "
+                            + fs.lastCommand);
+        }
+
+        @Test
+        void move_rootLevelFile_needsNoParentMkdir() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.move(RT, "/tmp/src.txt", "/dst.txt");
+
+            assertTrue(result.isSuccess(), "move should succeed: " + result.error());
+            assertTrue(
+                    fs.lastCommand.startsWith("mv "),
+                    "a root-level target needs no parent creation: " + fs.lastCommand);
+        }
     }
 
     // ================================================================
@@ -902,10 +978,8 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
-        void edit_pathContainingHeredocDelimiter_doesNotTruncateCommand() throws IOException {
-            // A newline inside the single-quoted target argument stays part of the argument: it
-            // does not terminate the command line, and the heredoc body is only read afterwards.
-            // So a path whose own line equals the delimiter cannot close the heredoc early.
+        void edit_pathContainingDelimiterString_stillWorks() throws IOException {
+            // The old heredoc delimiter appearing in a path must not break the command.
             Path dir = Files.createDirectory(tmpDir.resolve("dir__AGENTSCOPE_EDIT_PY__"));
             Path file = dir.resolve("f.txt");
             Files.writeString(file, "Hello World");
@@ -919,7 +993,7 @@ class BaseSandboxFilesystemTest {
             assertEquals("Hello Java", Files.readString(file));
         }
 
-        // ==================== heredoc quoting edges — the file path is the last piece of
+        // ==================== shell quoting edges — the file path is the last piece of
         // user input that still passes through shell quoting ====================
 
         @Test
@@ -1068,6 +1142,48 @@ class BaseSandboxFilesystemTest {
             assertFalse(Files.isSymbolicLink(link), "replacing upload replaces the link");
             assertEquals("Hello Java", Files.readString(link));
             assertEquals("Hello World", Files.readString(real), "original target untouched");
+        }
+
+        @Test
+        void write_pathWithSpaces_createsParentDirsAndWritesFile() throws IOException {
+            // Regression for #3850: the parent dir used to be created via double-quoted
+            // command substitution, which the docker CLI corrupts on Windows hosts. The
+            // single-quoted literal must survive real shell semantics, spaces included.
+            Path target = tmpDir.resolve("my docs/new file.txt");
+
+            WriteResult result =
+                    new LocalShellSandboxFilesystem().write(RT, target.toString(), "hello");
+
+            assertTrue(result.isSuccess(), "write with spaces should succeed: " + result.error());
+            assertEquals("hello", Files.readString(target));
+        }
+
+        @Test
+        void write_existingFile_failsWithExistsSignal() throws IOException {
+            Path target = tmpDir.resolve("exists.txt");
+            Files.writeString(target, "original");
+
+            WriteResult result =
+                    new LocalShellSandboxFilesystem().write(RT, target.toString(), "hello");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("already exists"));
+            assertEquals("original", Files.readString(target), "existing file must be untouched");
+        }
+
+        @Test
+        void move_pathWithSpaces_createsParentDirsAndMovesFile() throws IOException {
+            Path source = tmpDir.resolve("source.txt");
+            Files.writeString(source, "hello");
+            Path target = tmpDir.resolve("my docs/new file.txt");
+
+            WriteResult result =
+                    new LocalShellSandboxFilesystem()
+                            .move(RT, source.toString(), target.toString());
+
+            assertTrue(result.isSuccess(), "move with spaces should succeed: " + result.error());
+            assertEquals("hello", Files.readString(target));
+            assertFalse(Files.exists(source), "source must be moved, not copied");
         }
 
         @Test

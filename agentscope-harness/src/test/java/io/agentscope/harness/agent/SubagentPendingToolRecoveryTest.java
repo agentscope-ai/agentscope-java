@@ -69,8 +69,12 @@ import reactor.core.publisher.Flux;
 class SubagentPendingToolRecoveryTest {
 
     private static final String CALL_ID = "interrupted-call";
-    private static final RuntimeContext CONTEXT =
-            RuntimeContext.builder().userId("user").sessionId("child-session").build();
+
+    /** A fresh context per execution: one runId belongs to exactly one agent call. */
+    private static RuntimeContext context() {
+        return RuntimeContext.builder().userId("user").sessionId("child-session").build();
+    }
+
     // One child call serializes ~30 SQLite journal commits (connection-per-op, DELETE journal,
     // synchronous=EXTRA). Windows CI's parallel builds plus real-time AV scans of the fresh
     // -journal files can stall those fsyncs for tens of seconds — a 2026-10-23 run (PR #3731)
@@ -120,7 +124,7 @@ class SubagentPendingToolRecoveryTest {
                         .filter(candidate -> "worker".equals(candidate.name()))
                         .findFirst()
                         .orElseThrow();
-        try (HarnessAgent child = (HarnessAgent) entry.factory().create(CONTEXT)) {
+        try (HarnessAgent child = (HarnessAgent) entry.factory().create(context())) {
             assertEquals(override, child.getDelegate().isPendingToolRecoveryEnabled());
         }
     }
@@ -190,12 +194,12 @@ class SubagentPendingToolRecoveryTest {
 
         SessionKey childKey;
         try (HarnessAgent child = child(failingParent, declared)) {
-            childKey = child.sessionKey(CONTEXT);
+            childKey = child.sessionKey(context());
             assertSame(
                     failure,
                     assertThrows(
                             IllegalStateException.class,
-                            () -> child.call(List.of(user("start")), CONTEXT).block(TIMEOUT)));
+                            () -> child.call(List.of(user("start")), context()).block(TIMEOUT)));
         }
 
         // Reopen the native journal and rebuild the child; a legacy state store cannot hide the
@@ -203,7 +207,7 @@ class SubagentPendingToolRecoveryTest {
         JsonFileAgentStateStore reopenedStore = new JsonFileAgentStateStore(stateDirectory);
         var reopenedLog =
                 new WorkspaceSessionLogStore(new LocalFilesystem(workspace.resolve("journal")))
-                        .open(childKey, CONTEXT);
+                        .open(childKey, context());
         AgentState persisted = SessionProjection.read(reopenedLog).restore();
         assertTrue(
                 persisted.getContext().stream()
@@ -220,7 +224,7 @@ class SubagentPendingToolRecoveryTest {
                         assertThrows(
                                 IllegalStateException.class,
                                 () ->
-                                        child.call(List.of(user("continue")), CONTEXT)
+                                        child.call(List.of(user("continue")), context())
                                                 .block(TIMEOUT));
                 assertTrue(
                         thrown.getMessage().contains("Pending tool calls exist without results"));
@@ -235,7 +239,9 @@ class SubagentPendingToolRecoveryTest {
             }
             assertEquals(
                     "recovered",
-                    child.call(List.of(user("continue")), CONTEXT).block(TIMEOUT).getTextContent());
+                    child.call(List.of(user("continue")), context())
+                            .block(TIMEOUT)
+                            .getTextContent());
             List<ToolResultBlock> patchedResults = results(recoveryModel.getLastMessages());
             assertEquals(1, patchedResults.size());
             assertEquals(CALL_ID, patchedResults.get(0).getId());
@@ -297,8 +303,8 @@ class SubagentPendingToolRecoveryTest {
                                 });
         try (HarnessAgent child = child(parent, declared)) {
             // Establish a reusable native session, then interrupt during acting.
-            child.call(List.of(user("initialize")), CONTEXT).block(TIMEOUT);
-            Disposable subscription = child.call(List.of(user("start")), CONTEXT).subscribe();
+            child.call(List.of(user("initialize")), context()).block(TIMEOUT);
+            Disposable subscription = child.call(List.of(user("start")), context()).subscribe();
             try {
                 assertTrue(actingSubscribed.await(10, TimeUnit.SECONDS));
             } finally {
@@ -309,8 +315,8 @@ class SubagentPendingToolRecoveryTest {
             Flux.interval(Duration.ZERO, Duration.ofMillis(10))
                     .filter(
                             ignored ->
-                                    child.sessionLog(CONTEXT).head().owner() == null
-                                            && SessionProjection.read(child.sessionLog(CONTEXT))
+                                    child.sessionLog(context()).head().owner() == null
+                                            && SessionProjection.read(child.sessionLog(context()))
                                                     .activeRuns()
                                                     .isEmpty())
                     .next()
@@ -324,7 +330,9 @@ class SubagentPendingToolRecoveryTest {
 
             assertEquals(
                     "recovered",
-                    child.call(List.of(user("continue")), CONTEXT).block(TIMEOUT).getTextContent());
+                    child.call(List.of(user("continue")), context())
+                            .block(TIMEOUT)
+                            .getTextContent());
             assertEquals(3, model.getCallCount());
             assertEquals(ToolResultState.ERROR, results(model.getLastMessages()).get(0).getState());
             assertEquals(
@@ -370,7 +378,7 @@ class SubagentPendingToolRecoveryTest {
                         .filter(candidate -> name.equals(candidate.name()))
                         .findFirst()
                         .orElseThrow();
-        return (HarnessAgent) entry.factory().create(CONTEXT);
+        return (HarnessAgent) entry.factory().create(context());
     }
 
     private static List<ToolResultBlock> results(List<Msg> messages) {
