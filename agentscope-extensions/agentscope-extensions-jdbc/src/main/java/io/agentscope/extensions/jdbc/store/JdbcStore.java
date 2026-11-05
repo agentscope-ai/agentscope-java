@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
 import io.agentscope.extensions.jdbc.dialect.table.StoreDialect;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BulkReadableStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -27,6 +28,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -44,12 +48,15 @@ import org.slf4j.LoggerFactory;
  *
  * @author shanhongyu
  */
-public class JdbcStore implements BaseStore {
+public class JdbcStore implements BulkReadableStore {
 
     private static final Logger LOG = LoggerFactory.getLogger(JdbcStore.class);
 
     /** ASCII unit separator (U+001F) between namespace segments. */
     private static final String NS_SEPARATOR = "";
+
+    /** Bound on {@code IN (...)} parameters for a single batch read. */
+    private static final int GET_ALL_CHUNK = 256;
 
     private final DataSource dataSource;
     private final StoreDialect dialect;
@@ -88,6 +95,40 @@ public class JdbcStore implements BaseStore {
         } catch (SQLException e) {
             throw new IllegalStateException("JdbcStore get failed", e);
         }
+    }
+
+    @Override
+    public Map<String, StoreItem> getAll(List<String> namespace, Collection<String> keys) {
+        var unique = new LinkedHashSet<String>();
+        for (String key : keys) {
+            validateKey(key);
+            unique.add(key);
+        }
+        if (unique.isEmpty()) return Map.of();
+        String nsPath = namespacePath(namespace);
+        var result = new HashMap<String, StoreItem>();
+        var list = new ArrayList<>(unique);
+        try (Connection c = dataSource.getConnection()) {
+            for (int start = 0; start < list.size(); start += GET_ALL_CHUNK) {
+                var chunk = list.subList(start, Math.min(start + GET_ALL_CHUNK, list.size()));
+                BoundSql boundSql = dialect.storeSelectMany(nsPath, chunk);
+                try (PreparedStatement ps = c.prepareStatement(boundSql.sql())) {
+                    bindParams(ps, boundSql.params());
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            String key = rs.getString(1);
+                            result.put(
+                                    key,
+                                    new StoreItem(
+                                            key, deserialize(rs.getString(2)), rs.getLong(3)));
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("JdbcStore getAll failed", e);
+        }
+        return result;
     }
 
     @Override

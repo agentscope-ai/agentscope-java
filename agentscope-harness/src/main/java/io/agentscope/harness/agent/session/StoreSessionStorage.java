@@ -18,8 +18,13 @@ package io.agentscope.harness.agent.session;
 import io.agentscope.core.session.AtomicSessionStorage;
 import io.agentscope.core.session.SessionLogException;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BulkReadableStore;
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
@@ -52,9 +57,54 @@ public final class StoreSessionStorage implements AtomicSessionStorage {
     }
 
     @Override
+    public Map<String, Value> readAll(Collection<String> paths) {
+        var wanted = new HashSet<>(paths);
+        if (wanted.isEmpty()) return Map.of();
+        if (wanted.size() == 1) return mergeMissing(new HashMap<>(), wanted);
+        if (store instanceof BulkReadableStore bulk) {
+            var result = new HashMap<String, Value>();
+            for (var entry : bulk.getAll(namespace, wanted).entrySet())
+                result.put(entry.getKey(), toValue(entry.getValue()));
+            return result;
+        }
+        return readWithSearch(wanted);
+    }
+
+    private Map<String, Value> readWithSearch(Collection<String> wanted) {
+        var result = new HashMap<String, Value>();
+        final int pageSize = 256;
+        try {
+            for (int offset = 0; ; offset += pageSize) {
+                var page = store.search(namespace, pageSize, offset);
+                for (var item : page)
+                    if (wanted.contains(item.key()) && !result.containsKey(item.key()))
+                        result.put(item.key(), toValue(item));
+                if (result.size() == wanted.size()) return result;
+                // A short page is not proof that the listing ended: stores such as Redis may
+                // skip stale index entries, so keep paging until a page is actually empty.
+                if (page.isEmpty()) return mergeMissing(result, wanted);
+            }
+        } catch (UnsupportedOperationException ignored) {
+            return mergeMissing(new HashMap<>(), wanted);
+        }
+    }
+
+    private Map<String, Value> mergeMissing(Map<String, Value> result, Collection<String> wanted) {
+        for (String path : wanted) {
+            if (result.containsKey(path)) continue;
+            var value = read(path);
+            if (value != null) result.put(path, value);
+        }
+        return result;
+    }
+
+    @Override
     public Value read(String path) {
         var item = store.get(namespace, path);
-        if (item == null) return null;
+        return item == null ? null : toValue(item);
+    }
+
+    private static Value toValue(StoreItem item) {
         if (item.version() < 1)
             throw new SessionLogException("Workspace store returned an unversioned journal object");
         Object value = item.value().get("bytes");
