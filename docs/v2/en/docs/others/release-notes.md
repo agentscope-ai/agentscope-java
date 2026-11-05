@@ -23,6 +23,7 @@ AgentScope Java 2.0.4 adds OpenAI Responses API support, a redesigned AgentScope
 - Expose detailed chat usage token metrics and model-fallback failover listeners ([#3215](https://github.com/agentscope-ai/agentscope-java/pull/3215), [#3145](https://github.com/agentscope-ai/agentscope-java/pull/3145)).
 - Support Anthropic bearer token authentication ([#3038](https://github.com/agentscope-ai/agentscope-java/pull/3038)).
 - Add a type-safe Jev System One client, Spring Boot starter, and example middlewares ([#3240](https://github.com/agentscope-ai/agentscope-java/pull/3240)).
+- Add `EventStreamingAgent` and session-scoped `Agent.getAgentState` / `Agent.interrupt` overloads so protocol adapters can adapt custom agents without hard-coding `ReActAgent` / `HarnessAgent`; multi-session wrappers must override the session-scoped `interrupt` methods ([#3098](https://github.com/agentscope-ai/agentscope-java/pull/3098)).
 
 **Harness / Tools / Storage**
 

@@ -35,10 +35,11 @@ import reactor.core.publisher.Flux;
  *
  * @deprecated since 2.0.0, for removal in a future minor release. Every {@code stream(...)}
  *     method on this interface returns the coarse-grained {@link Event} type, which is a v1
- *     carry-over. Use {@code ReActAgent#streamEvents(...)} instead — it returns
- *     {@code Flux<io.agentscope.core.event.AgentEvent>}, the fine-grained event hierarchy that
- *     covers the full agent lifecycle (28 typed events including HITL) and is the single
- *     streaming surface going forward. See the v2 changelog section B.4 for migration details.
+ *     carry-over. Prefer {@link EventStreamingAgent#streamEvents(java.util.List)} (and overloads)
+ *     — it returns {@code Flux<io.agentscope.core.event.AgentEvent>}, the fine-grained event
+ *     hierarchy that covers the full agent lifecycle and is the streaming surface going forward.
+ *     Built-in agents such as {@code ReActAgent} / {@code HarnessAgent} already implement
+ *     {@link EventStreamingAgent}. See the v2 changelog section B.4 for migration details.
  */
 @Deprecated(since = "2.0.0", forRemoval = true)
 public interface StreamableAgent {
