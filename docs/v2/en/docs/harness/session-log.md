@@ -53,6 +53,8 @@ session.transcript().messages().forEach(msg -> System.out.println(msg.getTextCon
 
 `await` observes the submitted command's execution until completion, suspension, interruption or failure. It does not start, retry or cancel execution; a suspended task still needs an answer. `respond` and `resume` return new receipts to observe with `await`. Use `session.tasks()` to query task state. Disconnecting an observer does not cancel background work.
 
+If a worker exits before recording the run's outcome, `await` returns `interrupted` once its writer lease expires. Another worker does not need to take over first. An execution with a still-valid writer lease continues to wait for that writer to finish releasing ownership.
+
 Choose one execution entry for a conversation: application-owned `call` / `streamEvents`, or `AgentSession` scheduling. Reading a submitted task's log observes it; calling `streamEvents` would start another execution. Obtaining `agent.session(ctx)` or reading history never starts inference, and the transcript includes earlier direct calls made with the same identity.
 
 <span id="scenario-2-guide-execution-and-reconnect-the-frontend" />
