@@ -37,7 +37,7 @@ AI coding instructions for AgentScope Java.
 - `agentscope-core/` — core agent APIs, ReAct loop, messages, events, tools, middleware, state.
 - `agentscope-harness/` — workspace, memory, subagents, channels, `HarnessAgent`.
 - `agentscope-extensions/` — model, storage, protocol, channel, sandbox, framework integrations.
-- `agentscope-service/` — Java services; `aistio/` is Go, `frontend/` is React.
+- `agentscope-service/` — Java services; `service-controlplane/` is Go, `frontend/` is React.
 - `agentscope-examples/` — runnable examples.
 - `agentscope-dependencies-bom/` — third-party versions.
 - `agentscope-distribution/` — published BOM and aggregate distribution.
@@ -82,23 +82,23 @@ AI coding instructions for AgentScope Java.
 - Prefer JUnit 5, Mockito, Reactor `StepVerifier`, fakes, and local fixtures.
 - Use temporary directories and portable paths; do not use real credentials or provider services.
 - Do not weaken assertions for Windows-only flakes; mirror the production guard in the test.
-- Edit UI source in `agentscope-service/frontend/`; do not hand-edit generated `agentscope-service/aistio/ui/`.
+- Edit UI source in `agentscope-service/frontend/`; do not hand-edit generated `agentscope-service/service-controlplane/ui/`.
 - Keep English and Chinese docs aligned; follow `.editorconfig`.
 
 ## 4. Commands
 
 ### Java
 
-- Run from the repository root with `-T1`.
-- Module tests: `mvn -T1 -pl <module> -am test`.
+- Run from the repository root with `-T1C`.
+- Module tests: `mvn -T1C -pl <module> -am test`.
 - One test: add `-Dtest=<TestClass>` and confirm it ran.
-- Format: `mvn -T1 -pl <module> -am spotless:check`.
-- Full check: `mvn -B -T1 clean verify`.
+- Format: `mvn -T1C -pl <module> -am spotless:check`.
+- Full check: `mvn -B -T1C clean verify`.
 
 ### Service and docs
 
 - UI: `cd agentscope-service/frontend; npm test; npm run lint; npm run build`.
-- Go: `cd agentscope-service/aistio; make build; make test`.
+- Go: `cd agentscope-service/service-controlplane; make build; make test`.
 - Docs: `cd docs; npm test; npm run validate; npm run broken-links`.
 - Packaging/deployment: run the relevant release and source checks too.
 

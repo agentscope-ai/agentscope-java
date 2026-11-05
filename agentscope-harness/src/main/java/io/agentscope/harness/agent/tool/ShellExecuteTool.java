@@ -16,8 +16,15 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolExecutionDetails;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 
@@ -43,17 +50,20 @@ public class ShellExecuteTool {
      */
     @Tool(
             description =
-                    "Execute a shell command. Use for git, npm, build, test, and other terminal"
-                        + " operations. Returns combined output and exit code. If a dedicated tool"
-                        + " exists (e.g., read_file, write_file), you MUST use it instead of shell"
-                        + " commands.")
-    public String execute(
+                    "Execute a command using the configured execution environment's shell. Use for"
+                        + " git, builds, tests, and other terminal operations. Returns combined"
+                        + " output and exit code. Each call starts a new shell; working directory"
+                        + " and environment changes are scoped to that call. Prefer dedicated file"
+                        + " tools when they support the operation; use shell for other operations.")
+    public ToolResultBlock execute(
             RuntimeContext runtimeContext,
-            @ToolParam(name = "command", description = "Shell command to execute") String command,
+            @ToolParam(name = "command", description = "Command in the environment's shell syntax")
+                    String command,
             @ToolParam(
                             name = "working_directory",
                             description =
-                                    "Working directory (relative to workspace root, optional)",
+                                    "Working directory for this command only, relative to the"
+                                            + " shell's starting directory (optional)",
                             required = false)
                     String workingDirectory,
             @ToolParam(
@@ -65,14 +75,17 @@ public class ShellExecuteTool {
         if (workingDirectory != null && !workingDirectory.isBlank()) {
             String wd = workingDirectory.strip();
             if (wd.startsWith("/") || wd.startsWith("~") || wd.contains("..")) {
-                return "Error: working_directory must be a relative path within the workspace"
-                        + " (absolute paths, '~', and '..' are not allowed).";
+                return ToolResultBlock.error(
+                        "working_directory must be a relative path within the workspace"
+                                + " (absolute paths, '~', and '..' are not allowed).");
             }
             effectiveCommand =
                     commandWithWorkingDirectory(
                             wd,
                             command,
-                            System.getProperty("os.name").toLowerCase().contains("win"));
+                            usesWindowsShell(
+                                    sandbox,
+                                    System.getProperty("os.name").toLowerCase().contains("win")));
         }
 
         int timeoutSeconds = timeout != null && timeout > 0 ? timeout : 30;
@@ -86,7 +99,27 @@ public class ShellExecuteTool {
         if (result.truncated()) {
             sb.append("\n(output was truncated)");
         }
-        return sb.toString();
+        ToolExecutionDetails.Outcome outcome =
+                result.exitCode() == null
+                        ? ToolExecutionDetails.Outcome.UNKNOWN
+                        : result.isSuccess()
+                                ? ToolExecutionDetails.Outcome.SUCCEEDED
+                                : ToolExecutionDetails.Outcome.FAILED;
+        return ToolResultBlock.text(sb.toString())
+                .withExecutionDetails(
+                        new ToolExecutionDetails(
+                                "shell", outcome, result.exitCode(), result.truncated()))
+                .withState(result.isSuccess() ? ToolResultState.SUCCESS : ToolResultState.ERROR);
+    }
+
+    static boolean usesWindowsShell(AbstractFilesystem filesystem, boolean windowsHost) {
+        if (filesystem instanceof OverlayFilesystem overlay) {
+            return usesWindowsShell(overlay.getUpper(), windowsHost);
+        }
+        if (filesystem instanceof RoutedSandboxFilesystem routed) {
+            return usesWindowsShell(routed.primary(), windowsHost);
+        }
+        return windowsHost && filesystem instanceof LocalFilesystemWithShell;
     }
 
     static String commandWithWorkingDirectory(

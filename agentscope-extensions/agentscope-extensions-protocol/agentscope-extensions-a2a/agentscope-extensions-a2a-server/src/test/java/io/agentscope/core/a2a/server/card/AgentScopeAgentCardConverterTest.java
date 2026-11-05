@@ -24,19 +24,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.AgentProvider;
-import io.a2a.spec.AgentSkill;
-import io.a2a.spec.MutualTLSSecurityScheme;
-import io.a2a.spec.SecurityScheme;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentProvider;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.MutualTLSSecurityScheme;
+import org.a2aproject.sdk.spec.SecurityRequirement;
+import org.a2aproject.sdk.spec.SecurityScheme;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -81,7 +82,7 @@ class AgentScopeAgentCardConverterTest {
         List<String> defaultOutputModes = List.of("text", "audio");
         List<AgentSkill> skills =
                 List.of(
-                        new AgentSkill.Builder()
+                        AgentSkill.builder()
                                 .id("skill1")
                                 .name("Skill 1")
                                 .description("Skill 1")
@@ -121,7 +122,9 @@ class AgentScopeAgentCardConverterTest {
         assertNotNull(agentCard);
         assertEquals(name, agentCard.name());
         assertEquals(description, agentCard.description());
-        assertEquals(url, agentCard.url());
+        assertEquals(
+                List.of(new AgentInterface(preferredTransport, url), additionalInterfaces.get(0)),
+                agentCard.supportedInterfaces());
         assertEquals(provider, agentCard.provider());
         assertEquals(version, agentCard.version());
         assertEquals(documentationUrl, agentCard.documentationUrl());
@@ -129,12 +132,14 @@ class AgentScopeAgentCardConverterTest {
         assertEquals(defaultOutputModes, agentCard.defaultOutputModes());
         assertEquals(skills, agentCard.skills());
         assertEquals(securitySchemes, agentCard.securitySchemes());
-        assertEquals(security, agentCard.security());
+        assertEquals(
+                List.of(new SecurityRequirement(Map.of("basic", List.of("read")))),
+                agentCard.securityRequirements());
         assertEquals(iconUrl, agentCard.iconUrl());
-        assertEquals(additionalInterfaces, agentCard.additionalInterfaces());
-        assertEquals(preferredTransport, agentCard.preferredTransport());
-        assertEquals("0.3.0", agentCard.protocolVersion());
-        assertFalse(agentCard.supportsAuthenticatedExtendedCard());
+        agentCard
+                .supportedInterfaces()
+                .forEach(each -> assertEquals("1.0", each.protocolVersion()));
+        assertFalse(agentCard.capabilities().extendedAgentCard());
     }
 
     @Test
@@ -165,15 +170,18 @@ class AgentScopeAgentCardConverterTest {
         assertNotNull(agentCard);
         assertEquals(runnerName, agentCard.name());
         assertEquals(runnerDescription, agentCard.description());
-        assertNotNull(agentCard.url()); // Should be derived from transport properties
         assertEquals("1.0.0", agentCard.version());
         assertEquals(List.of("text"), agentCard.defaultInputModes());
         assertEquals(List.of("text"), agentCard.defaultOutputModes());
         assertEquals(List.of(), agentCard.skills()); // Empty list as default
-        assertNotNull(agentCard.additionalInterfaces());
-        assertFalse(agentCard.additionalInterfaces().isEmpty());
-        assertEquals(TransportProtocol.JSONRPC.asString(), agentCard.preferredTransport());
-        assertEquals("0.3.0", agentCard.protocolVersion());
+        // Derived from the transport properties, listed once
+        assertEquals(
+                List.of(
+                        new AgentInterface(
+                                TransportProtocol.JSONRPC.asString(),
+                                "http://localhost:8080/jsonrpc")),
+                agentCard.supportedInterfaces());
+        assertEquals("1.0", agentCard.supportedInterfaces().get(0).protocolVersion());
     }
 
     @Test
@@ -205,10 +213,8 @@ class AgentScopeAgentCardConverterTest {
 
         // Then
         assertNotNull(agentCard);
-        assertTrue(agentCard.url().startsWith("https://"));
-        assertNotNull(agentCard.additionalInterfaces());
-        assertFalse(agentCard.additionalInterfaces().isEmpty());
-        AgentInterface interfaceFound = agentCard.additionalInterfaces().get(0);
+        assertFalse(agentCard.supportedInterfaces().isEmpty());
+        AgentInterface interfaceFound = agentCard.supportedInterfaces().get(0);
         assertTrue(interfaceFound.url().startsWith("https://"));
     }
 
@@ -241,11 +247,31 @@ class AgentScopeAgentCardConverterTest {
 
         // Then
         assertNotNull(agentCard);
-        assertTrue(agentCard.url().endsWith("/custom/path"));
-        assertNotNull(agentCard.additionalInterfaces());
-        assertFalse(agentCard.additionalInterfaces().isEmpty());
-        AgentInterface interfaceFound = agentCard.additionalInterfaces().get(0);
+        assertFalse(agentCard.supportedInterfaces().isEmpty());
+        AgentInterface interfaceFound = agentCard.supportedInterfaces().get(0);
         assertTrue(interfaceFound.url().endsWith("/custom/path"));
+    }
+
+    @Test
+    @DisplayName("Should bracket IPv6 hosts in generated agent URLs")
+    void testCreateAgentCardWithIpv6Host() {
+        TransportProperties ipv6Transport = mock(TransportProperties.class);
+        when(ipv6Transport.transportType()).thenReturn(TransportProtocol.JSONRPC.asString());
+        when(ipv6Transport.host()).thenReturn("::1");
+        when(ipv6Transport.port()).thenReturn(8080);
+        when(ipv6Transport.path()).thenReturn("/a2a");
+        when(ipv6Transport.supportTls()).thenReturn(false);
+
+        when(configurableAgentCard.getName()).thenReturn("Test Agent");
+        when(configurableAgentCard.getDescription()).thenReturn("Test Description");
+        when(configurableAgentCard.getAdditionalInterfaces()).thenReturn(null);
+        when(configurableAgentCard.getPreferredTransport()).thenReturn(null);
+        when(configurableAgentCard.getUrl()).thenReturn(null);
+
+        AgentCard agentCard =
+                builder.createAgentCard(configurableAgentCard, agentRunner, Set.of(ipv6Transport));
+
+        assertEquals("http://[::1]:8080/a2a", agentCard.supportedInterfaces().get(0).url());
     }
 
     @Test
@@ -270,8 +296,14 @@ class AgentScopeAgentCardConverterTest {
 
         // Then
         assertNotNull(agentCard);
-        assertEquals(explicitUrl, agentCard.url());
-        assertEquals(preferredTransport, agentCard.preferredTransport());
+        // The configured interface comes first, then the one derived from the transport
+        assertEquals(
+                List.of(
+                        new AgentInterface(preferredTransport, explicitUrl),
+                        new AgentInterface(
+                                TransportProtocol.JSONRPC.asString(),
+                                "http://localhost:8080/jsonrpc")),
+                agentCard.supportedInterfaces());
     }
 
     @Test

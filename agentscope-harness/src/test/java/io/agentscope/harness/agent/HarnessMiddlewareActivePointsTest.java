@@ -79,22 +79,23 @@ class HarnessMiddlewareActivePointsTest {
                     }
                 };
 
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("composed")
                         .model(new FixedTextModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .middleware(selective)
-                        .build();
+                        .build()) {
 
-        assertTrue(agent.getDelegate().getMiddlewares().contains(selective));
-        agent.getDelegate().streamEvents(List.of()).collectList().block();
+            assertTrue(agent.getDelegate().getMiddlewares().contains(selective));
+            agent.getDelegate().streamEvents(List.of()).collectList().block();
 
-        assertEquals(
-                List.of("onReasoning"),
-                trace,
-                "undeclared points must stay inactive after harness composition");
+            assertEquals(
+                    List.of("onReasoning"),
+                    trace,
+                    "undeclared points must stay inactive after harness composition");
+        }
     }
 
     private static final class FixedTextModel implements Model {

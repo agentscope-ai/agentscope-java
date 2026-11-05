@@ -3,12 +3,12 @@
 # dev-up.sh - start the AgentScope Service stack locally.
 #
 #   Gateway    :18080
-#   aistiod    :8081  (Go control plane: /api/*, /api/v1/*, console SPA)
+#   service-controlplane    :8081  (Go control plane: /api/*, /api/v1/*, console SPA)
 #   Data       :8082
 #   Scheduler  :8083
 #   Postgres   :5432  (schemas cp + rt + dp; via Docker)
 #
-# aistiod runs standalone here (AISTIO_ENABLE_KUBERNETES=false), so no
+# service-controlplane runs standalone here (CONTROL_PLANE_ENABLE_KUBERNETES=false), so no
 # reconcilers, CRD-backed APIs, or ASDP gRPC listener are started.
 #
 # Usage:
@@ -49,8 +49,8 @@ export BUILDER_JWT_SECRET="${BUILDER_JWT_SECRET:-builder-default-dev-secret-chan
 export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-jdbc}"
 
 DB_URL="jdbc:postgresql://localhost:${PG_PORT}/builder?currentSchema=dp"
-AISTIO_DSN="postgres://builder:builder@localhost:${PG_PORT}/builder?sslmode=disable"
-AISTIO_RUNTIME_DSN="${AISTIO_DSN}&search_path=rt"
+CONTROL_PLANE_DSN="postgres://builder:builder@localhost:${PG_PORT}/builder?sslmode=disable"
+CONTROL_PLANE_RUNTIME_DSN="${CONTROL_PLANE_DSN}&search_path=rt"
 
 jar_of() {
     find "$ROOT/$1/target" -maxdepth 1 -name "$1-*.jar" \
@@ -62,7 +62,7 @@ managed_plane_name() {
     command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
     [ -n "$command" ] || return 1
     case "$command" in
-        *"$ROOT/aistio/bin/aistiod"*) echo control ;;
+        *"$ROOT/service-controlplane/bin/service-controlplane"*) echo control ;;
         *"$ROOT/service-dataplane/target/service-dataplane-"*.jar*) echo data ;;
         *"$ROOT/service-scheduler/target/service-scheduler-"*.jar*) echo scheduler ;;
         *"$ROOT/service-gateway/target/service-gateway-"*.jar*) echo gateway ;;
@@ -181,16 +181,16 @@ fi
 
 # ---------------------------------------------------------------- build console
 # Generated UI assets are no longer tracked; a fresh clone must build the SPA.
-if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -f "$ROOT/aistio/ui/index.html" ]; then
+if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -f "$ROOT/service-controlplane/ui/index.html" ]; then
     echo "==> Building console from frontend sources"
     (cd "$ROOT/frontend" && npm ci && npm run build)
 fi
 
-# ---------------------------------------------------------------- build aistiod
-AISTIO_BIN="$ROOT/aistio/bin/aistiod"
-if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -x "$AISTIO_BIN" ]; then
-    echo "==> Building aistiod"
-    (cd "$ROOT/aistio" && mkdir -p bin && go build -o bin/aistiod ./cmd/aistiod)
+# ---------------------------------------------------------------- build service-controlplane
+CONTROL_PLANE_BIN="$ROOT/service-controlplane/bin/service-controlplane"
+if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -x "$CONTROL_PLANE_BIN" ]; then
+    echo "==> Building service-controlplane"
+    (cd "$ROOT/service-controlplane" && mkdir -p bin && go build -o bin/service-controlplane ./cmd/service-controlplane)
 fi
 
 # ---------------------------------------------------------------- postgres
@@ -230,7 +230,7 @@ done
 
 # v4 intentionally has no compatibility migration from the unpublished legacy
 # Issue/OrchestrationRun/AgentTask/ExecutionAttempt schema. A full local rebuild therefore recreates the
-# disposable development schemas before either Hibernate or aistiod starts.
+# disposable development schemas before either Hibernate or service-controlplane starts.
 # Set BUILDER_RESET_DB=0 explicitly when the current v4 development data should be kept.
 if [ "$RESET_DB" = "1" ]; then
     echo "==> Resetting disposable Postgres schemas cp, rt, dp"
@@ -256,19 +256,19 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 echo "==> Starting planes (Postgres: ${DB_URL})"
 
 start control "$PID_DIR/control.pid" \
-    env AISTIO_ENABLE_KUBERNETES=false \
-        AISTIO_PRODUCT_DSN="$AISTIO_DSN" \
-        AISTIO_HTTP_BIND=":${CONTROL_PORT}" \
+    env CONTROL_PLANE_ENABLE_KUBERNETES=false \
+        CONTROL_PLANE_PRODUCT_DSN="$CONTROL_PLANE_DSN" \
+        CONTROL_PLANE_HTTP_BIND=":${CONTROL_PORT}" \
         BUILDER_JWT_SECRET="$BUILDER_JWT_SECRET" \
         BUILDER_INTERNAL_TOKEN="$BUILDER_INTERNAL_TOKEN" \
         BUILDER_DATA_URL="http://localhost:${DATA_PORT}" \
         BUILDER_ALLOW_LOCAL_ENVIRONMENT=true \
-        AISTIO_WORKSPACE_ROOT="$RUN_DIR/workspaces" \
-        AISTIO_ARTIFACT_ROOT="$RUN_DIR/artifacts" \
-        AISTIO_STATIC_DIR="$ROOT/aistio/ui" \
-    "$AISTIO_BIN" \
+        CONTROL_PLANE_WORKSPACE_ROOT="$RUN_DIR/workspaces" \
+        CONTROL_PLANE_ARTIFACT_ROOT="$RUN_DIR/artifacts" \
+        CONTROL_PLANE_STATIC_DIR="$ROOT/service-controlplane/ui" \
+    "$CONTROL_PLANE_BIN" \
         --storage-driver=postgres \
-        --storage-dsn="$AISTIO_RUNTIME_DSN" \
+        --storage-dsn="$CONTROL_PLANE_RUNTIME_DSN" \
         --log-format=console
 
 start data "$PID_DIR/data.pid" \
@@ -317,7 +317,7 @@ STARTUP_SUCCEEDED=1
 
 cat <<EOF
 
-==> AgentScope Service stack is up (aistiod + Java DP)
+==> AgentScope Service stack is up (service-controlplane + Java DP)
 
   Console (SPA via gateway):  http://localhost:${GATEWAY_PORT}/
   Default login:              admin / admin

@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.filesystem;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.session.AtomicSessionStorage;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
@@ -46,6 +47,11 @@ public final class BakedContextFilesystem implements AbstractFilesystem {
     public BakedContextFilesystem(AbstractFilesystem delegate, RuntimeContext bakedRc) {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
         this.bakedRc = bakedRc != null ? bakedRc : RuntimeContext.empty();
+    }
+
+    @Override
+    public AtomicSessionStorage sessionStorage(RuntimeContext runtimeContext) {
+        return delegate.sessionStorage(bakedRc);
     }
 
     @Override

@@ -60,14 +60,11 @@ public final class MemoryConfig {
     /** Default retention before a daily ledger is archived. */
     public static final int DEFAULT_DAILY_FILE_RETENTION_DAYS = 90;
 
-    /** Default retention before a session JSONL log is pruned. */
-    public static final int DEFAULT_SESSION_RETENTION_DAYS = 180;
-
     /** Strategy for the per-call flush hook. See {@link FlushTrigger}. */
     public enum FlushMode {
         /** Flush after every agent call. */
         ALWAYS,
-        /** Disable per-call flush entirely (offload still runs). */
+        /** Disable per-call memory extraction (native session logging still runs). */
         NEVER,
         /** Flush at most once per {@link FlushTrigger#minGap()}. */
         THROTTLED
@@ -153,7 +150,6 @@ public final class MemoryConfig {
     private final int consolidationMaxTokens;
     private final Duration consolidationMinGap;
     private final int dailyFileRetentionDays;
-    private final int sessionRetentionDays;
     private final FlushTrigger flushTrigger;
 
     private MemoryConfig(Builder b) {
@@ -163,7 +159,6 @@ public final class MemoryConfig {
         this.consolidationMaxTokens = b.consolidationMaxTokens;
         this.consolidationMinGap = b.consolidationMinGap;
         this.dailyFileRetentionDays = b.dailyFileRetentionDays;
-        this.sessionRetentionDays = b.sessionRetentionDays;
         this.flushTrigger = b.flushTrigger;
     }
 
@@ -211,10 +206,6 @@ public final class MemoryConfig {
         return dailyFileRetentionDays;
     }
 
-    public int sessionRetentionDays() {
-        return sessionRetentionDays;
-    }
-
     public FlushTrigger flushTrigger() {
         return flushTrigger;
     }
@@ -236,7 +227,6 @@ public final class MemoryConfig {
         private int consolidationMaxTokens = DEFAULT_CONSOLIDATION_MAX_TOKENS;
         private Duration consolidationMinGap = DEFAULT_CONSOLIDATION_MIN_GAP;
         private int dailyFileRetentionDays = DEFAULT_DAILY_FILE_RETENTION_DAYS;
-        private int sessionRetentionDays = DEFAULT_SESSION_RETENTION_DAYS;
         private FlushTrigger flushTrigger = FlushTrigger.always();
 
         /**
@@ -326,16 +316,6 @@ public final class MemoryConfig {
                         "dailyFileRetentionDays must be positive, got " + dailyFileRetentionDays);
             }
             this.dailyFileRetentionDays = dailyFileRetentionDays;
-            return this;
-        }
-
-        /** Days before a session JSONL log is pruned. */
-        public Builder sessionRetentionDays(int sessionRetentionDays) {
-            if (sessionRetentionDays <= 0) {
-                throw new IllegalArgumentException(
-                        "sessionRetentionDays must be positive, got " + sessionRetentionDays);
-            }
-            this.sessionRetentionDays = sessionRetentionDays;
             return this;
         }
 

@@ -17,6 +17,10 @@ State is addressed by `(userId, sessionId)`:
 - `sessionId` — required, non-blank, identifies a session.
 - `userId` — optional. `null` means anonymous / single-tenant (CLI, tests, etc.).
 
+## Native Session Log is a separate contract
+
+This page covers AgentStateStore. HarnessAgent defaults to EVENT_LOG recovery through SessionLogStore; changing stateStore alone does not migrate/share native history. LEGACY still use this interface. A file-capable BaseStore does not necessarily offer journal CAS: current OSS/COS need a separate native backend. See [Session logs](/v2/en/docs/harness/session-log).
+
 ## Available Implementations
 
 | Implementation | Module | When to use |

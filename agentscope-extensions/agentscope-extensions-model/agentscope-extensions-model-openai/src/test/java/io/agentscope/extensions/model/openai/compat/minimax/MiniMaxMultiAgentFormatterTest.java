@@ -139,6 +139,23 @@ class MiniMaxMultiAgentFormatterTest {
     }
 
     @Test
+    @DisplayName("Should remove tools for tool_choice None to keep the no-tool-call contract")
+    void shouldRemoveToolsForToolChoiceNone() {
+        OpenAIRequest request =
+                OpenAIRequest.builder().model("MiniMax-M3").messages(List.of()).build();
+        ToolSchema tool = ToolSchema.builder().name("test_tool").description("Test tool").build();
+        formatter.applyTools(request, List.of(tool));
+        assertNotNull(request.getTools());
+
+        formatter.applyToolChoice(request, new ToolChoice.None());
+
+        // Omitting tool_choice alone means "auto", which would still let the model call
+        // tools, so the definitions have to go for None to mean what it says.
+        assertNull(request.getTools());
+        assertNull(request.getToolChoice());
+    }
+
+    @Test
     @DisplayName("Should not include strict parameter in tool definitions")
     void shouldNotIncludeStrictParameterInToolDefinitions() {
         OpenAIRequest request =

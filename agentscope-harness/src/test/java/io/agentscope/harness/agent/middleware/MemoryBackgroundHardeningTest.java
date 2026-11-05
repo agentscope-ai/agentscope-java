@@ -276,70 +276,21 @@ class MemoryBackgroundHardeningTest {
     }
 
     /**
-     * F1 thread placement: the {@code then(...)} continuation subscribes on the thread that
-     * emitted the previous stage's terminal signal — for {@code consolidate()} that is the
-     * model HTTP client's I/O thread. The retention sweeps are blocking filesystem work and
-     * must never run there (they would stall the event loop every other in-flight request
-     * shares). Modeled with a consolidator that completes on a dedicated "model-io" thread,
-     * asserting both sweeps observe {@code boundedElastic}.
+     * Records the calling thread of the retention glob; matches nothing, sweeps no files. The
+     * session-prune sweep this fake also recorded was removed upstream (maintenance now runs
+     * expire + consolidation only), so only the expire glob remains to be hooked.
      */
-    @Test
-    void maintenanceRetentionSweeps_neverRunOnTheModelEmittingThread() throws Exception {
-        RecordingThreadFs fs = new RecordingThreadFs();
-        WorkspaceManager wsm = mock(WorkspaceManager.class);
-        when(wsm.getFilesystem()).thenReturn(fs);
-        MemoryConsolidator consolidator = mock(MemoryConsolidator.class);
-        // One scheduler, disposed after the test — the assertion needs the completion
-        // thread only, never a fresh scheduler per invocation.
-        reactor.core.scheduler.Scheduler modelIo =
-                reactor.core.scheduler.Schedulers.newSingle("model-io");
-        try {
-            when(consolidator.consolidate(any()))
-                    .thenAnswer(inv -> Mono.<Void>empty().subscribeOn(modelIo));
-
-            MemoryMaintenanceMiddleware mw = new MemoryMaintenanceMiddleware(wsm, consolidator);
-            AgentInput input = new AgentInput(List.of(userMsg("hi")));
-
-            mw.onAgent((Agent) null, RuntimeContext.empty(), input, in -> Flux.<AgentEvent>empty())
-                    .collectList()
-                    .block(Duration.ofSeconds(5));
-
-            assertTrue(fs.done.await(5, TimeUnit.SECONDS), "both retention sweeps must run");
-            assertTrue(
-                    fs.expireThread != null && fs.pruneThread != null,
-                    "both retention sweeps must run (expire on: "
-                            + fs.expireThread
-                            + ", prune on: "
-                            + fs.pruneThread
-                            + ")");
-            assertTrue(
-                    fs.expireThread.startsWith("boundedElastic-"),
-                    "the expire sweep must stay on boundedElastic, ran on: " + fs.expireThread);
-            assertTrue(
-                    fs.pruneThread.startsWith("boundedElastic-"),
-                    "the prune sweep must stay on boundedElastic even when consolidate()"
-                            + " completes on the model client's I/O thread, ran on: "
-                            + fs.pruneThread);
-        } finally {
-            modelIo.dispose();
-        }
-    }
-
-    /** Records the calling thread of each retention glob; matches nothing, sweeps no files. */
     private static class RecordingThreadFs
             implements io.agentscope.harness.agent.filesystem.AbstractFilesystem {
         volatile String expireThread;
-        volatile String pruneThread;
         private final java.util.concurrent.CountDownLatch done =
-                new java.util.concurrent.CountDownLatch(2);
+                new java.util.concurrent.CountDownLatch(1);
 
         @Override
         public io.agentscope.harness.agent.filesystem.model.GlobResult glob(
                 RuntimeContext rc, String pattern, String path) {
             if ("*.md".equals(pattern)) {
                 expireThread = Thread.currentThread().getName();
-            } else {
-                pruneThread = Thread.currentThread().getName();
             }
             done.countDown();
             return io.agentscope.harness.agent.filesystem.model.GlobResult.success(List.of());

@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -52,7 +53,7 @@ public class MemorySaveTool {
                         + " to remember something, or when you observe important preferences,"
                         + " decisions, or context worth keeping across conversations. Do NOT use"
                         + " write_file or edit_file on MEMORY.md — always use this tool instead.")
-    public String memorySave(
+    public ToolResultBlock memorySave(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "content",
@@ -63,26 +64,27 @@ public class MemorySaveTool {
                                             + "- Project deadline is 2026-07-01")
                     String content) {
         if (content == null || content.isBlank()) {
-            return "Error: content is required";
+            return ToolResultBlock.error("content is required");
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
 
         String section = "\n" + content.strip() + "\n";
 
-        workspaceManager.appendUtf8WorkspaceRelative(rc, WorkspaceConstants.MEMORY_MD, section);
+        workspaceManager.appendMemoryFileUtf8(rc, WorkspaceConstants.MEMORY_MD, section);
 
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
         String dailyPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
         String dailyEntry =
                 String.format(
                         "\n## Memory Save — %s\n%s\n", Instant.now().toString(), content.strip());
-        workspaceManager.appendUtf8WorkspaceRelative(rc, dailyPath, dailyEntry);
+        workspaceManager.appendMemoryFileUtf8(rc, dailyPath, dailyEntry);
 
         long count = content.strip().lines().filter(l -> l.stripLeading().startsWith("-")).count();
         if (count == 0) {
             count = 1;
         }
-        return "Saved " + count + " memor" + (count == 1 ? "y" : "ies") + " to MEMORY.md";
+        return ToolResultBlock.success(
+                "Saved " + count + " memor" + (count == 1 ? "y" : "ies") + " to MEMORY.md");
     }
 }

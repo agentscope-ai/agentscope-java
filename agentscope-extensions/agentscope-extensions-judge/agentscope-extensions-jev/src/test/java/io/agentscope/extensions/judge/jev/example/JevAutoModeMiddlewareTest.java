@@ -28,6 +28,7 @@ import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -69,6 +70,13 @@ class JevAutoModeMiddlewareTest {
                                     calls.incrementAndGet();
                                     return Mono.error(new IllegalStateException("should not call"));
                                 })
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
                         .guardedTool(GUARDED_TOOL)
                         .build();
 
@@ -98,6 +106,13 @@ class JevAutoModeMiddlewareTest {
         JevAutoModeMiddleware middleware =
                 JevAutoModeMiddleware.builder(
                                 request -> Mono.just(result(Map.of("tool_0", noul(0.9)))))
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
                         .guardedTool(GUARDED_TOOL)
                         .build();
 
@@ -126,6 +141,13 @@ class JevAutoModeMiddlewareTest {
         JevAutoModeMiddleware middleware =
                 JevAutoModeMiddleware.builder(
                                 request -> Mono.just(result(Map.of("tool_0", noul(0.1)))))
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
                         .guardedTool(GUARDED_TOOL)
                         .build();
 
@@ -174,6 +196,13 @@ class JevAutoModeMiddlewareTest {
                                                         Map.of(
                                                                 "tool_0", noul(0.1),
                                                                 "tool_1", noul(0.9)))))
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
                         .guardedTool(GUARDED_TOOL)
                         .build();
 
@@ -217,6 +246,13 @@ class JevAutoModeMiddlewareTest {
                                                             "tool_0", noul(0.9),
                                                             "tool_1", noul(0.1))));
                                 })
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
                         .guardedTool(GUARDED_TOOL)
                         .build();
 
@@ -255,6 +291,13 @@ class JevAutoModeMiddlewareTest {
                                     calls.incrementAndGet();
                                     return Mono.error(new IllegalStateException("should not call"));
                                 })
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
                         .guardedTool(GUARDED_TOOL)
                         .build();
 
@@ -280,12 +323,19 @@ class JevAutoModeMiddlewareTest {
     }
 
     @Test
-    void failsOpenByDefault() {
+    void errorBlocksGuardedCalls() {
         AgentState state = state();
         RuntimeContext ctx = ctx(state);
         JevAutoModeMiddleware middleware =
                 JevAutoModeMiddleware.builder(
                                 request -> Mono.error(new IllegalStateException("offline")))
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
                         .guardedTool(GUARDED_TOOL)
                         .build();
 
@@ -302,8 +352,7 @@ class JevAutoModeMiddlewareTest {
                 .then()
                 .block();
 
-        assertEquals(1, captured.get().toolCalls().size());
-        assertEquals(GUARDED_TOOL, captured.get().toolCalls().get(0).getName());
+        assertEquals(null, captured.get());
     }
 
     @Test
@@ -313,8 +362,14 @@ class JevAutoModeMiddlewareTest {
         JevAutoModeMiddleware middleware =
                 JevAutoModeMiddleware.builder(
                                 request -> Mono.error(new IllegalStateException("offline")))
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
                         .guardedTool(GUARDED_TOOL)
-                        .failOpen(false)
                         .build();
 
         AtomicReference<Throwable> error = new AtomicReference<>();
@@ -329,11 +384,12 @@ class JevAutoModeMiddlewareTest {
                 .onErrorComplete()
                 .block();
 
-        assertTrue(error.get() instanceof IllegalStateException);
+        assertEquals(null, error.get());
+        assertEquals(1, state.contextMutable().size());
     }
 
     @Test
-    void passesThroughWithoutAgentState() {
+    void missingStateBlocksGuardedCalls() {
         RuntimeContext ctx = RuntimeContext.empty();
         AtomicInteger calls = new AtomicInteger();
         JevAutoModeMiddleware middleware =
@@ -342,6 +398,13 @@ class JevAutoModeMiddlewareTest {
                                     calls.incrementAndGet();
                                     return Mono.error(new IllegalStateException("should not call"));
                                 })
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
                         .guardedTool(GUARDED_TOOL)
                         .build();
 
@@ -359,7 +422,7 @@ class JevAutoModeMiddlewareTest {
                 .block();
 
         assertEquals(0, calls.get());
-        assertEquals(1, captured.get().toolCalls().size());
+        assertEquals(null, captured.get());
     }
 
     @Test
@@ -369,6 +432,13 @@ class JevAutoModeMiddlewareTest {
         JevAutoModeMiddleware middleware =
                 JevAutoModeMiddleware.builder(
                                 request -> Mono.just(result(Map.of("tool_0", noul(0.7)))))
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
                         .guardedTool(GUARDED_TOOL)
                         .safetyThreshold(0.8)
                         .build();
@@ -391,7 +461,7 @@ class JevAutoModeMiddlewareTest {
     }
 
     @Test
-    void treatsUnexpectedAnswerAsSafe() {
+    void treatsUnexpectedAnswerAsDenied() {
         AgentState state = state();
         RuntimeContext ctx = ctx(state);
         JevAutoModeMiddleware middleware =
@@ -406,6 +476,13 @@ class JevAutoModeMiddlewareTest {
                                                                         "unexpected",
                                                                         Map.of(),
                                                                         0.5)))))
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(2),
+                                        "test",
+                                        (c, r) -> {}))
                         .guardedTool(GUARDED_TOOL)
                         .build();
 
@@ -422,8 +499,8 @@ class JevAutoModeMiddlewareTest {
                 .then()
                 .block();
 
-        assertEquals(1, captured.get().toolCalls().size());
-        assertEquals(0, state.contextMutable().size());
+        assertEquals(null, captured.get());
+        assertEquals(1, state.contextMutable().size());
     }
 
     @Test
@@ -437,6 +514,101 @@ class JevAutoModeMiddlewareTest {
                                         .guardedTools(Set.of())
                                         .build());
         assertEquals("guardedTools must not be empty", error.getMessage());
+    }
+
+    @Test
+    void shadowNeverChangesCallsOrWritesDeniedResults() {
+        var state = state();
+        var input = new ActingInput(List.of(new ToolUseBlock("a", GUARDED_TOOL, Map.of())));
+        var middleware =
+                JevAutoModeMiddleware.builder(
+                                r -> Mono.just(result(Map.of("tool_0", new NoulAnswer(0.01)))))
+                        .guardedTool(GUARDED_TOOL)
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode.SHADOW,
+                                        java.time.Duration.ofSeconds(1),
+                                        "v1",
+                                        (c, r) -> {}))
+                        .build();
+        middleware
+                .onActing(
+                        null,
+                        ctx(state),
+                        input,
+                        i -> {
+                            assertEquals(input, i);
+                            return Flux.empty();
+                        })
+                .blockLast();
+        assertEquals(0, state.contextMutable().size());
+    }
+
+    @Test
+    void cancelledAssessmentDoesNotDispatchOrWriteResults() {
+        var state = state();
+        var dispatches = new AtomicInteger();
+        var middleware =
+                JevAutoModeMiddleware.builder(r -> Mono.never())
+                        .guardedTool(GUARDED_TOOL)
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(1),
+                                        "v1",
+                                        (c, r) -> {}))
+                        .build();
+        reactor.test.StepVerifier.create(
+                        middleware.onActing(
+                                null,
+                                ctx(state),
+                                new ActingInput(
+                                        List.of(new ToolUseBlock("a", GUARDED_TOOL, Map.of()))),
+                                i -> {
+                                    dispatches.incrementAndGet();
+                                    return Flux.empty();
+                                }))
+                .thenCancel()
+                .verify();
+        assertEquals(0, dispatches.get());
+        assertEquals(0, state.contextMutable().size());
+    }
+
+    @Test
+    void changedConfirmedParametersRequireReviewEvenWithAllowedMarker() {
+        var state = state();
+        var ctx = ctx(state);
+        var original = new ToolUseBlock("id", GUARDED_TOOL, Map.of("amount", 1));
+        io.agentscope.extensions.judge.jev.JevConfirmedCalls.remember(ctx, original);
+        var changed =
+                new ToolUseBlock("id", GUARDED_TOOL, Map.of("amount", 100))
+                        .withState(ToolCallState.ALLOWED);
+        var middleware =
+                JevAutoModeMiddleware.builder(
+                                r -> {
+                                    throw new AssertionError(
+                                            "changed confirmation must not be overridden by JEV");
+                                })
+                        .guardedTool(GUARDED_TOOL)
+                        .execution(
+                                new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                                        io.agentscope.extensions.judge.jev.JevExecution.Mode
+                                                .ENFORCE,
+                                        java.time.Duration.ofSeconds(1),
+                                        "v1",
+                                        (c, r) -> {}))
+                        .build();
+        middleware
+                .onActing(
+                        null,
+                        ctx,
+                        new ActingInput(List.of(changed)),
+                        i -> {
+                            throw new AssertionError("must not dispatch");
+                        })
+                .blockLast();
+        assertEquals(1, state.contextMutable().size());
     }
 
     private static AgentState state() {

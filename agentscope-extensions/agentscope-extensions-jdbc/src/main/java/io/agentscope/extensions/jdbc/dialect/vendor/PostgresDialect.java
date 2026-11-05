@@ -172,9 +172,10 @@ public class PostgresDialect extends AbstractJdbcDialect {
 
     /**
      * Skill tables ported verbatim from the deprecated skill-postgresql-repository module:
-     * {@code BIGSERIAL} id, {@code TEXT} payloads, cascading FK. Only the table names are
-     * resolved through the dialect instead of a hard-coded {@code schema.table} prefix —
-     * tables now live in the connection's current schema, like the base tables.
+     * {@code BIGSERIAL} id, {@code TEXT} payloads, cascading FK. The skill table carries
+     * the {@code namespace} column with {@code UNIQUE(namespace, name)}. Only the table
+     * names are resolved through the dialect instead of a hard-coded {@code schema.table}
+     * prefix — tables now live in the connection's current schema, like the base tables.
      */
     @Override
     public List<String> skillCreateTableDdls() {
@@ -183,13 +184,15 @@ public class PostgresDialect extends AbstractJdbcDialect {
                         + skillTableName()
                         + " ("
                         + "  id            BIGSERIAL PRIMARY KEY,"
-                        + "  name          VARCHAR(255) NOT NULL UNIQUE,"
+                        + "  namespace     VARCHAR(64) NOT NULL DEFAULT 'default',"
+                        + "  name          VARCHAR(255) NOT NULL,"
                         + "  description   TEXT NOT NULL,"
                         + "  skill_content TEXT NOT NULL,"
                         + "  source        VARCHAR(255) NOT NULL,"
                         + "  metadata_json TEXT NULL,"
                         + "  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
-                        + "  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        + "  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  CONSTRAINT uk_namespace_name UNIQUE (namespace, name)"
                         + ")");
     }
 
@@ -200,6 +203,7 @@ public class PostgresDialect extends AbstractJdbcDialect {
                         + skillResourcesTableName()
                         + " ("
                         + "  id               BIGINT NOT NULL,"
+                        + "  namespace        VARCHAR(64)  NOT NULL DEFAULT 'default',"
                         + "  resource_path    VARCHAR(500) NOT NULL,"
                         + "  resource_content TEXT NOT NULL,"
                         + "  created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
@@ -208,7 +212,15 @@ public class PostgresDialect extends AbstractJdbcDialect {
                         + "  FOREIGN KEY (id) REFERENCES "
                         + skillTableName()
                         + "(id) ON DELETE CASCADE"
-                        + ")");
+                        + ")",
+                // PostgreSQL cannot express a secondary index inside CREATE TABLE; without
+                // it, the namespace-scoped bulk resource statements full-scan the shared
+                // table.
+                "CREATE INDEX IF NOT EXISTS "
+                        + skillResourcesTableName()
+                        + "_namespace_idx ON "
+                        + skillResourcesTableName()
+                        + " (namespace)");
     }
 
     // ------------------------------------------------------------------

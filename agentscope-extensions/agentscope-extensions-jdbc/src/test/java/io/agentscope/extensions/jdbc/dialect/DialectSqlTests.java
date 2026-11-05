@@ -25,6 +25,7 @@ import io.agentscope.extensions.jdbc.dialect.vendor.MysqlDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.PostgresDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.SqliteDialect;
 import java.io.ByteArrayInputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -318,6 +319,146 @@ class DialectSqlTests {
         assertTrue(
                 new MysqlDialect()
                         instanceof io.agentscope.extensions.jdbc.dialect.SandboxLockStrategy);
+    }
+
+    // ------------------------------------------------------------------
+    //  SkillDialect — namespace-scoped statements
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("skill statements scope every operation to one namespace")
+    void skillSqlIsNamespaceScoped() {
+        var d = new H2Dialect();
+
+        BoundSql select = d.skillSelectByName("team-a", "code-review");
+        assertEquals(
+                "SELECT id, name, description, skill_content, source, metadata_json FROM"
+                        + " agentscope_skills WHERE namespace = ? AND name = ?",
+                select.sql());
+        assertEquals(List.of("team-a", "code-review"), select.params());
+
+        assertTrue(d.skillSelectAll("team-a").sql().endsWith("WHERE namespace = ? ORDER BY name"));
+        assertTrue(
+                d.skillSelectAllNames("team-a")
+                        .sql()
+                        .contains("WHERE namespace = ? ORDER BY name"));
+        assertTrue(d.skillExists("team-a", "s").sql().contains("WHERE namespace = ? AND name = ?"));
+        assertEquals(
+                "SELECT id FROM agentscope_skills WHERE namespace = ? AND name = ?",
+                d.skillSelectIdByName("team-a", "s").sql());
+
+        BoundSql insert = d.skillInsert("team-a", "s", "d", "c", "src", null);
+        assertTrue(
+                insert.sql()
+                        .contains(
+                                "(namespace, name, description, skill_content, source,"
+                                        + " metadata_json)"));
+        assertEquals(
+                java.util.Arrays.asList("team-a", "s", "d", "c", "src", null), insert.params());
+
+        assertTrue(
+                d.skillDeleteByName("team-a", "s")
+                        .sql()
+                        .contains("WHERE namespace = ? AND name = ?"));
+        assertTrue(d.skillDeleteAll("team-a").sql().contains("WHERE namespace = ?"));
+
+        assertEquals(
+                "SELECT id, resource_path, resource_content FROM agentscope_skill_resources"
+                        + " WHERE namespace = ?",
+                d.skillResourcesSelectAll("team-a").sql());
+        assertTrue(d.skillResourcesDeleteAll("team-a").sql().endsWith("WHERE namespace = ?"));
+        assertTrue(
+                d.skillResourcesInsert("team-a", 1L, "docs/a.md", "a")
+                        .sql()
+                        .contains("(namespace, id, resource_path, resource_content)"));
+    }
+
+    @Test
+    @DisplayName("resources DDLs index namespace; MySQL pins it to utf8mb4_bin")
+    void skillDdlsIndexAndCollateNamespace() {
+        // The resources table is shared by every namespace and its bulk statements filter
+        // by namespace, so each vendor must cover that predicate with an index.
+        for (AbstractJdbcDialect dialect :
+                List.of(new H2Dialect(), new PostgresDialect(), new SqliteDialect())) {
+            assertEquals(
+                    "CREATE INDEX IF NOT EXISTS "
+                            + dialect.skillResourcesTableName()
+                            + "_namespace_idx ON "
+                            + dialect.skillResourcesTableName()
+                            + " (namespace)",
+                    dialect.skillResourcesCreateTableDdls().get(1),
+                    dialect.getClass().getSimpleName() + " must index resources.namespace");
+        }
+        assertTrue(
+                new MysqlDialect()
+                        .skillResourcesCreateTableDdls()
+                        .get(0)
+                        .contains("INDEX idx_namespace (namespace)"),
+                "MySQL declares the resources index inline");
+
+        // The namespace is the isolation boundary: on MySQL it must not fold case under
+        // the table's case-insensitive default collation.
+        MysqlDialect mysql = new MysqlDialect();
+        assertTrue(
+                mysql.skillCreateTableDdls().get(0).contains("COLLATE utf8mb4_bin"),
+                "MySQL skill DDL must pin namespace to utf8mb4_bin");
+        assertTrue(
+                mysql.skillResourcesCreateTableDdls().get(0).contains("COLLATE utf8mb4_bin"),
+                "MySQL resources DDL must pin namespace to utf8mb4_bin");
+    }
+
+    /** The assignments of a statement — the span between SET and WHERE (or the end). */
+    private static final Pattern SET_CLAUSE =
+            Pattern.compile("(?is)\\bSET\\b(.*?)(?:\\bWHERE\\b|$)");
+
+    /** Whether the statement assigns the namespace column inside its SET clause. */
+    private static boolean assignsNamespace(String sql) {
+        Matcher setClause = SET_CLAUSE.matcher(sql);
+        return setClause.find() && setClause.group(1).matches("(?is).*\\bnamespace\\s*=.*");
+    }
+
+    @Test
+    @DisplayName("no skill statement assigns namespace in a SET clause (write-once contract)")
+    void skillStatementsNeverUpdateNamespace() {
+        // Namespace is bound per repository instance and write-once per row: a skill never
+        // moves namespaces through this library, so its resources can never be stranded by
+        // an in-library write. Updates may exist, but namespace must never be assigned —
+        // only the SET clause is checked, so namespace predicates stay legal.
+        List<BoundSql> statements = new ArrayList<>();
+        for (AbstractJdbcDialect d :
+                List.of(
+                        new H2Dialect(),
+                        new MysqlDialect(),
+                        new PostgresDialect(),
+                        new SqliteDialect())) {
+            statements.add(d.skillSelectByName("ns", "s"));
+            statements.add(d.skillSelectAll("ns"));
+            statements.add(d.skillSelectAllNames("ns"));
+            statements.add(d.skillExists("ns", "s"));
+            statements.add(d.skillSelectIdByName("ns", "s"));
+            statements.add(d.skillInsert("ns", "s", "d", "c", "src", null));
+            statements.add(d.skillDeleteByName("ns", "s"));
+            statements.add(d.skillDeleteAll("ns"));
+            statements.add(d.skillResourcesInsert("ns", 1L, "docs/a.md", "a"));
+            statements.add(d.skillResourcesSelectAll("ns"));
+            statements.add(d.skillResourcesDeleteAll("ns"));
+            statements.add(d.skillResourcesSelectBySkillId(1L));
+            statements.add(d.skillResourcesDeleteBySkillId(1L));
+        }
+        for (BoundSql statement : statements) {
+            assertFalse(
+                    assignsNamespace(statement.sql()),
+                    "namespace is write-once; no statement may assign it: " + statement.sql());
+        }
+
+        // The SET-clause scope is the contract: a namespace predicate is legitimate, an
+        // assignment is not — both sides of that line are pinned here.
+        assertFalse(
+                assignsNamespace("UPDATE t SET description = ? WHERE namespace = ? AND name = ?"),
+                "a namespace predicate must not trip the guard");
+        assertTrue(
+                assignsNamespace("UPDATE t SET namespace = ? WHERE name = ?"),
+                "a namespace assignment must trip the guard");
     }
 
     // ------------------------------------------------------------------

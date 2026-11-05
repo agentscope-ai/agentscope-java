@@ -63,7 +63,7 @@ class SkillHookTest {
     @Test
     @DisplayName("Should inject skill prompt for a registered skill")
     void testInjectPromptForRegisteredSkill() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Test Content", null);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Test Content", null);
         skillBox.registerSkill(skill);
 
         // Create PreCallEvent with one user message
@@ -85,7 +85,7 @@ class SkillHookTest {
         assertNotNull(result.getSystemMessage(), "systemMsg should be set by SkillHook");
         assertEquals(MsgRole.SYSTEM, result.getSystemMessage().getRole());
         assertTrue(
-                result.getSystemMessage().getTextContent().contains("test_skill"),
+                result.getSystemMessage().getTextContent().contains("test-skill"),
                 "systemMsg should contain skill information");
     }
 
@@ -95,7 +95,7 @@ class SkillHookTest {
         // Arrange: Register skill but don't activate it
         // Note: SkillPromptProvider returns prompt for all registered skills, not just
         // active ones
-        AgentSkill skill = new AgentSkill("inactive_skill", "Inactive Skill", "# Inactive", null);
+        AgentSkill skill = new AgentSkill("inactive-skill", "Inactive Skill", "# Inactive", null);
         skillBox.registerSkill(skill);
 
         List<Msg> messages = new ArrayList<>();
@@ -150,7 +150,7 @@ class SkillHookTest {
     @Test
     @DisplayName("[ISSUE#765] should inject skill prompt at first not last")
     void testInjectSkillPromptAtFirst() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Test Content", null);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Test Content", null);
         skillBox.registerSkill(skill);
 
         // Create PreCallEvent with multiple messages (no existing SYSTEM message)
@@ -182,7 +182,7 @@ class SkillHookTest {
                 "inputMessages should not gain a SYSTEM entry");
         assertNotNull(result.getSystemMessage(), "systemMsg should be set");
         assertTrue(
-                result.getSystemMessage().getTextContent().contains("test_skill"),
+                result.getSystemMessage().getTextContent().contains("test-skill"),
                 "systemMsg should contain skill information");
 
         // Verify original messages are preserved in order
@@ -201,7 +201,7 @@ class SkillHookTest {
             "[ISSUE#845] should merge skill prompt into existing system message instead of adding a"
                     + " second one")
     void testMergeSkillPromptIntoExistingSystemMessage() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Test Content", null);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Test Content", null);
         skillBox.registerSkill(skill);
 
         // Create PreCallEvent with an existing SYSTEM message
@@ -245,7 +245,7 @@ class SkillHookTest {
         assertNotNull(result.getSystemMessage(), "systemMsg should be set by SkillHook");
         assertEquals(MsgRole.SYSTEM, result.getSystemMessage().getRole());
         assertTrue(
-                result.getSystemMessage().getTextContent().contains("test_skill"),
+                result.getSystemMessage().getTextContent().contains("test-skill"),
                 "systemMsg should contain skill information");
 
         // Verify original messages are preserved in order

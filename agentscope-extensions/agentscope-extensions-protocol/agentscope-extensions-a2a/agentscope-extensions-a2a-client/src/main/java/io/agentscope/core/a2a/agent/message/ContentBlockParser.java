@@ -16,8 +16,8 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.Part;
 import io.agentscope.core.message.ContentBlock;
+import org.a2aproject.sdk.spec.Part;
 
 /**
  * {@link ContentBlock} parser interface, used to parse {@link ContentBlock} and convert to {@link Part} .
