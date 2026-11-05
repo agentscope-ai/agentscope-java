@@ -255,7 +255,7 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini",
         ModelRegistry.getCreationContext("tenant-a"));
 ```
 
-注册时会把 context 规范化为 `CachePolicy.ENABLED` 且 `cacheId = contextId`，因此经它解析的所有调用共享每个 model id 一个的缓存实例（`explicit:<contextId>` 身份）。同名重注册即轮换凭据：缓存条目被清除，重注册之后**开始**的解析使用新 context。`unregisterCreationContext(contextId)` 移除注册、清除其缓存条目并返回被移除的 context。两个不同 contextId 解析同一 model id 得到不同实例。已创建的 `Model` 实例不受影响：它们永久持有创建时刻的凭据。注册的 context 与组合模型身份形式 `contextId@modelId`（例如 `mytokenplan01@dashscope:qwen-plus`）天然配套，`ReActAgent.builder().model(...)` 与 `RuntimeContext.builder().modelIdentity(...)` 都接受该形式。
+注册时会把 context 规范化为 `CachePolicy.ENABLED` 且 `cacheId = contextId`，因此经它解析的所有调用共享每个 model id 一个的缓存实例（`explicit:<contextId>` 身份）。同名重注册即轮换凭据：缓存条目被清除，重注册之后**开始**的解析使用新 context。`unregisterCreationContext(contextId)` 移除注册、清除其缓存条目并返回被移除的 context。两个不同 contextId 解析同一 model id 得到不同实例。已创建的 `Model` 实例不受影响：它们永久持有创建时刻的凭据。`getCreationContext(contextId)` 在该 id 未注册时以 `IllegalArgumentException` 快速失败；`hasCreationContext(contextId)` 是不抛异常的探测方法（`null`、空白或未注册的 id 均返回 `false`），可用于在上述两步组合前做防护。注册的 context 与组合模型身份形式 `contextId@modelId`（例如 `mytokenplan01@dashscope:qwen-plus`）天然配套，`ReActAgent.builder().model(...)` 与 `RuntimeContext.builder().modelIdentity(...)` 都接受该形式。
 
 ### 注册中心生命周期
 

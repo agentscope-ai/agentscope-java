@@ -910,6 +910,21 @@ class ModelRegistryTest {
     }
 
     @Test
+    void creationContext_hasCreationContext_reflectsRegistrationLifecycle() {
+        assertFalse(ModelRegistry.hasCreationContext("tenant"));
+        assertFalse(ModelRegistry.hasCreationContext(null));
+        assertFalse(ModelRegistry.hasCreationContext("   "));
+
+        ModelRegistry.registerCreationContext(
+                "tenant", ModelCreationContext.builder().apiKey("key-a").build());
+        assertTrue(ModelRegistry.hasCreationContext("tenant"));
+        assertTrue(ModelRegistry.hasCreationContext("  tenant  "));
+
+        ModelRegistry.unregisterCreationContext("tenant");
+        assertFalse(ModelRegistry.hasCreationContext("tenant"));
+    }
+
+    @Test
     void creationContext_blankContextId_throws() {
         ModelCreationContext context = ModelCreationContext.builder().apiKey("key-a").build();
         assertThrows(

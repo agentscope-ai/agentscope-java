@@ -616,6 +616,17 @@ public final class ModelRegistry {
     }
 
     /**
+     * Returns {@code true} if a creation context is registered under {@code contextId} (trimmed) —
+     * the probing half of {@link #getCreationContext(String)}: an unregistered id is a plain
+     * {@code false}, never an exception. A {@code null} or blank id is also {@code false}
+     * (mirroring {@link #canResolve(String)}), so this is safe as a guard before the two-step
+     * composition {@code resolve(modelId, getCreationContext(contextId))}.
+     */
+    public static boolean hasCreationContext(String contextId) {
+        return contextId != null && creationContexts.containsKey(contextId.trim());
+    }
+
+    /**
      * Removes the registration for {@code contextId} and evicts cached entries created from
      * it (identity {@code explicit:<contextId>}). Returns the removed context, or {@code
      * null} if nothing was registered. Instances already created are not closed: the
