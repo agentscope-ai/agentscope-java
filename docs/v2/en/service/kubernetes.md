@@ -4,280 +4,222 @@ zh_link: /v2/zh/service/kubernetes
 ---
 
 <Note>
-The current release is `2.1.0-BETA1`, a prerelease. Validate your deployment before using it in production.
+This guide follows the current source architecture. Build and publish its five images together,
+or use a new distribution explicitly containing this implementation. Previously published
+`2.1.0-BETA1` images and Charts keep their earlier architecture and cannot install this runtime.
 </Note>
 
 ## Current source: Managed MQ / Redis deployment
 
-The current source deploys five components: the Go Control Plane, Gateway, Session Portal,
-Brain Dataplane and platform Hands. One `service-controlplane` binary/image owns management,
-Workflow/Team orchestration, Hosted coordination, Cron, channels, outbound messages and webhook
-sending on port 8081. There are no separate scheduler or orchestration deployments.
-
-Every control replica runs bounded workers. PostgreSQL owns message/job deduplication, claims,
-stream leases, retries and fencing; no sticky sessions or single control replica are required.
-`control.executionSlots`, `control.workerBatch`, `control.channelSlots` and `control.webhookSlots`
-set per-replica concurrency in Helm. Keep `cp` and `rt` schemas and signing/encryption keys stable.
-The new `0007_integrated_scheduler` product migration adds the shared jobs and stream leases.
-
-For an upgrade, drain incoming channel traffic and outstanding replies, stop the old Java
-Scheduler and Go orchestration deployments, run the schema jobs and reapply grants, then start
-the combined control replicas. Remove old Compose containers with `--remove-orphans`; scale down
-old Helm deployments before upgrading. Retire unused runtime/scheduler credentials only after
-cutover. This source layout requires newly built images; published BETA1 images are unchanged.
-
-Build all five current-source images together. Platform Hands is a required internal
-HTTP/MQ service on 8085, separate from customer Environment Workers. Prepare external
-PostgreSQL, Redis and RocketMQ 5.5.1 with a standalone Cluster Proxy. Brain consumes
-ma_turns_v3 and ma_turn_resumes_v3; Hands consumes ma_tool_events_v3.
-Initialize the root Turn parent and `_d1` through `_d16` depth parents, plus the tool and
-Resume parents (19 total), with FIFO / Shared / wildcard groups before startup.
-`deploy/managed-mq-init.sh` creates this static family. The runtime uses LitePushConsumer;
-keep Proxy automatic renewal configured for active execution callbacks. A suspended Turn
-returns SDK Suspend after Brain durably commits its checkpoint and waiting state, releasing
-the callback thread while retaining the ordered message. Resume has its own callback pool;
-only a durable terminal Turn allows the original message to return SUCCESS.
-Root callbacks default to 64, each child depth to 4 and Resume callbacks to 64. Active Harness
-capacity is independently bounded; saturation returns Suspend. There are no callback completion
-mailboxes, local Turn scheduling queues or application callback-hold settings.
-
-The current 5.5.1 Lite acceptance has a confirmed first-message gap: an independent SDK
-probe sent two messages to each of 100 fresh LiteTopics, and 49 received only the second.
-The group's consume-from-min flag and the enabled in-memory initial-offset check did not
-prevent this. Earliest-offset support, offline backlog and restart acceptance remain
-required before treating a deployment as reliable. An explicitly named local test derivative
-that honors consume-from-min has passed the raw-SDK live and offline/restart gates with
-the in-memory shortcut disabled; Service integration revalidation is ongoing. This does not
-certify unmodified 5.5.1 or an untested provider. See the
-[broker initialization path](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/broker/src/main/java/org/apache/rocketmq/broker/processor/PopLiteMessageProcessor.java).
-
-Compose and Helm run four independent initialization jobs (cp/rt, portal, dp, ma),
-then grant four business accounts before ordinary replicas start. Replicas only validate
-the ma version/checksum. Unversioned existing ma tables require a fresh runtime data
-space; this refactoring does not silently convert old Managed data. Portal, Brain and
-Hands share private checkpoint and oversized-message objects through PostgreSQL `ma.private_object`.
-With `userFilesEnabled=false`, the Chart disables public file APIs and uses per-pod scratch
-workspaces without user-file PVCs. Harness internal working data uses the existing PostgreSQL KV
-store in a Session-isolated namespace; file, Shell and Artifact tools are disabled, so text turns
-do not require an external sandbox. User files and artifacts still need shared storage when enabled. Set reachable Redis/MQ addresses in private workload configuration.
-
-The unreleased source refactoring also replaces the Dataplane `dp` migration set. Its fresh
-schema contains resource/state services; Managed execution lives in `ma`. Use a fresh data
-space for the previous Dataplane ledger, whose checksum and retired migrations are rejected.
-There is no legacy SQL writer-lease fallback, Brain sandbox execution, or synchronous ASDP
-Agent registration. Worker traffic goes to Hands; Session traffic goes to Session Portal.
-
-Every complete Managed checkpoint, including small checkpoints, is stored as immutable bytes
-in PostgreSQL before Brain commits its manifest and handoff transaction. Brain verifies size,
-hash and identity and advances its native log only after durable commit. Messages above 128 KiB also use this private table; the object limit remains
-64 MiB. Run the `managed-private-objects.sql` migration and business-role grants before replacing
-replicas. Back up referenced objects with the journal for recovery and fork. Existing filesystem
-objects are not automatically imported: use a fresh runtime database or import all referenced
-objects before switching an existing installation. There is no fallback to node-local storage.
-
-Hands stores each confirmed tool outcome in the database result outbox before sending it to
-Tool Topic. A Broker send response does not close this outbox: the Tool consumer closes it in
-the same transaction as the result and projections. Retries reuse the captured outcome and can
-rebuild a missing transport blob, without restarting the external tool. Include these rows in
-database backups together with the native journal.
-
-See the current source deployment and Chart READMEs for exact commands, Secrets, Topic
-initialization and scaling. The published-release commands below describe the earlier
-architecture and cannot install this MQ/Redis protocol.
-
-
-This guide covers production deployment with Kubernetes and Helm. The published Service Chart installs Gateway, Control, Dataplane and Scheduler. You manage PostgreSQL, storage, domain and TLS. Components default to one replica with Recreate updates; plan maintenance windows.
+Service deploys Gateway, Go Control Plane, Session Portal, Brain Dataplane and platform Hands.
+Control Plane includes Team / Workflow coordination, Scheduler, Cron, channels and outbound
+delivery. Applications use Session, Turn and Events; Hands performs physical tool execution.
+Operate PostgreSQL, Redis and RocketMQ separately. Pin the image repository and version to one
+verified source build; see the [release runbook](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-service/release/README.md).
 
 ## 1. Prepare dependencies
 
-Prepare Kubernetes, Helm and reachable PostgreSQL. Workspaces need an RWX StorageClass or an existing shared PVC because several components mount them. Artifacts default to RWO. Single-node RWO behavior does not establish shared access across nodes.
+Prepare Kubernetes, Helm, psql and a registry accessible by every node. PostgreSQL must contain
+`cp`, `rt`, `portal`, `dp` and `ma`. Use separate owner and ordinary service accounts. Redis
+protects active ownership and accelerates notifications; PostgreSQL preserves checkpoints,
+execution facts and oversized objects in `ma.private_object`. No private managed-blobs PVC is used.
 
-You can install the Chart directly from the public Helm repository, without cloning the source. Download the matching configuration template and initialization SQL:
+With `userFilesEnabled=false`, public file/Shell/Artifact features are unavailable and internal
+workspace data uses Session-isolated PostgreSQL KV storage. No file PVC or Sandbox is needed for
+text execution. To enable user files, prepare shared ReadWriteMany Workspace and Artifact storage.
+
+<span id="prepare-rocketmq"></span>
+
+### Prepare RocketMQ
+
+Use a reachable standalone Cluster Proxy supporting LitePushConsumer. Self-hosted Broker 5.5.1
+requires `enableLmq=true`, `enableMultiDispatch=true`; set Proxy `enableProxyAutoRenew=true` and
+`renewMaxTimeMillis=10800000`. The unmodified 5.5.1 Broker has a known initial-offset delivery
+issue on fresh LiteTopics. Verify first-message delivery, offline backlog and restart recovery
+on the exact Broker/provider before production use. The repository's explicitly patched local
+fixture is development acceptance infrastructure, not a supported production Broker distribution.
+
+Initialize five business parent Topics and groups, with FIFO, Shared/wildcard subscriptions and
+minimum-offset consumption. Root and child Sessions share the Turn parent; no depth family is needed.
+
+| Parent Topic | Consumer group | Producer → consumer |
+| --- | --- | --- |
+| `ma_turns_v3` | `ma_brain_v3` | Portal → Brain |
+| `ma_tool_execute_v1` | `ma_hands_execute_v1` | Brain → Hands |
+| `ma_tool_control_v1` | `ma_hands_control_v1` | Brain → Hands |
+| `ma_tool_events_v3` | `ma_brain_tool_events_v3` | Hands / Brain → Brain |
+| `ma_turn_resumes_v3` | `ma_brain_resumes_v3` | Brain → Brain |
+
+From the source `agentscope-service` directory, on your RocketMQ administration host/container:
 
 ```bash
-curl -sS --fail-with-body -LO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/kubernetes.env.example
-curl -sS --fail-with-body -LO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/postgres-init.sql
+ROCKETMQ_HOME=/opt/rocketmq MANAGED_MQ_NAMESRV=namesrv:9876 \
+  MANAGED_MQ_CLUSTER=YOUR_CLUSTER sh deploy/managed-mq-init.sh
 ```
 
-Execute the SQL in the target database as its application owner to create `cp`, `rt` and `dp`. Plan backups for the database, files and keys. For an offline installation, download `agentscope-service-2.1.0-BETA1-kubernetes.tar.gz` and `SHA256SUMS` from the [GitHub Release](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.1.0-BETA1), verify the checksum and extract the bundle. It includes the Chart and the same configuration files.
+Export the matching `BUILDER_MANAGED_MQ_*` overrides when using custom Topic/group names.
+The script also creates the self-hosted Proxy heartbeat Topic. Alibaba Cloud installations use
+`deploy/managed-cloud-mq-init.py --instance INSTANCE --region REGION` with an authenticated
+`aliyun` CLI instead; configure matching endpoints and optional MQ credentials/TLS in workload
+Secrets. See [the source deployment inputs](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service/deploy).
 
 ## 2. Create a Secret
 
-Copy `kubernetes.env.example` to a private file and replace every placeholder: database connections, random JWT/internal/Vault secrets, bootstrap password and required model credentials. URL-encode URI passwords and provide the raw JDBC password separately. Configure TLS according to database certificates.
+From the same current-source checkout, enter `agentscope-service`. Copy
+`deploy/kubernetes.env.example`, `deploy/kubernetes-migration.env.example` and
+`deploy/postgres-grants.env.example` to private files outside Git. Replace every placeholder.
+The grants file uses owner `PG*` settings and four raw business passwords matching the workload
+connections. URI passwords must be URL encoded; JDBC and psql passwords remain raw.
+The migration Secret contains owner credentials and must never be attached to ordinary workloads.
 
 ```bash
+set -a
+. /private/postgres-grants.env
+set +a
+psql -X -v ON_ERROR_STOP=1 -f deploy/postgres-init.sql
 kubectl create namespace agentscope
-kubectl -n agentscope create secret generic agentscope-service --from-env-file=/private/path/service.env
+kubectl -n agentscope create secret generic service-migration --from-env-file=/private/migration.env
+kubectl -n agentscope create secret generic service-credentials --from-env-file=/private/service.env
 ```
 
-Keep plaintext configuration and rendered Secrets out of the repository.
+Use `kubectl apply` with your Secret manager for existing installations; keep signing/encryption
+keys and business passwords stable. Redis/MQ addresses must resolve from service Pods.
 
 ## 3. Configure values
 
-Use this `production-values.yaml` starting point. Replace domain, storage classes, Ingress class and TLS Secret. Provision the TLS Secret beforehand or through your certificate controller.
+Copy `deploy/production-values.yaml.example` to `/private/production-values.yaml` and set the
+public URL, imagePullSecrets and Ingress/TLS as needed. The example enables authentication,
+disables Local tools and user files, and uses two replicas for each role. To enable files:
 
 ```yaml
-existingSecret: agentscope-service
-allowLocalEnvironment: false
-publicURL: https://agentscope.example.com
+userFilesEnabled: true
 persistence:
   workspaces:
-    storageClass: shared-rwx
-    size: 20Gi
+    storageClass: YOUR_RWX_STORAGE_CLASS
+    accessModes: [ReadWriteMany]
   artifacts:
-    storageClass: standard
-    size: 20Gi
-ingress:
-  enabled: true
-  className: nginx
-  host: agentscope.example.com
-  tls:
-    - hosts: [agentscope.example.com]
-      secretName: agentscope-service-tls
+    storageClass: YOUR_RWX_STORAGE_CLASS
+    accessModes: [ReadWriteMany]
 ```
 
-Use `existingClaim` for retained PVCs. Configure `imagePullSecrets` for private images and controller-specific annotations for SSE timeouts and buffering. Tune requests and limits under `control`, `dataplane`, `scheduler` and `gateway` using measured workload requirements.
+Per-role `existingSecret` values can separate credentials. Optional `managed.mq.existingSecret`
+and `data.existingSecret` override business connections; `schema.dataExistingSecret` is migration
+only. None is an implicit cloud dependency. Include all PostgreSQL pools, Dataplane native-log
+connections and migration jobs in the connection budget.
 
 ## 4. Install a pinned version
 
-Add the public Helm repository and refresh its index. Repository access needs no login:
+Set the repository and concrete version of your five built/published images. Use the current
+source Chart, or the matching Chart archive from a newly built Kubernetes bundle. Do not select
+the old BETA1 Chart from the public repository for this architecture.
 
 ```bash
-helm repo add agentscope https://chickenlj.github.io/helm-charts
-helm repo update agentscope
-helm search repo agentscope/agentscope-service --versions --devel
-```
-
-The published [Helm repository](https://github.com/chickenlj/helm-charts) hosts the index and archives on GitHub Pages. Pin `--version 2.1.0-BETA1`; `--devel` in the search command includes prereleases. The Chart supplies the matching image tag through `appVersion`.
-
-Install a specific Chart version with the matching image namespace:
-
-```bash
-helm upgrade --install service agentscope/agentscope-service \
-  --version 2.1.0-BETA1 \
-  --namespace agentscope \
-  --set imageRepository=sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope \
-  -f production-values.yaml \
-  --wait --timeout 10m
-```
-
-For an offline installation, replace `agentscope/agentscope-service` and `--version 2.1.0-BETA1` with the downloaded `./agentscope-service-2.1.0-BETA1.tgz`. Keep Chart and component image versions aligned. The Chart creates workloads in your cluster; Helm repository publication does not deploy a running Service.
-
-## 5. Verify user workflows
-
-```bash
-kubectl -n agentscope get pods,pvc,svc,ingress
+export IMAGE_REPOSITORY=registry.example.com/agentscope
+export SERVICE_VERSION=2.1.0-candidate.1
+export CHART=helm/agentscope-service
+helm upgrade --install service-schema "$CHART" --namespace agentscope \
+  -f /private/production-values.yaml --set imageRepository="$IMAGE_REPOSITORY" \
+  --set imageTag="$SERVICE_VERSION" --set schema.only=true --wait --timeout 10m
+sh deploy/postgres-roles.sh
+helm upgrade --install service "$CHART" --namespace agentscope \
+  -f /private/production-values.yaml --set imageRepository="$IMAGE_REPOSITORY" \
+  --set imageTag="$SERVICE_VERSION" --wait --timeout 10m
+kubectl -n agentscope get pods
 kubectl -n agentscope port-forward service/service-agentscope-gateway 18080:8080
 ```
 
-Confirm Bound PVCs and Ready Pods. Sign in through the public domain with the bootstrap administrator and change its password. Verify the model, Environment, first Chat, Issue delivery and streaming. Port-forwarding helps diagnosis but does not validate public callbacks.
+Four owner-only Jobs migrate Control (`cp` + `rt`), Portal (`portal`), Dataplane (`dp`) and
+Managed (`ma`). Wait for all four, apply grants, then start workloads. Ordinary services only
+validate versions/checksums; they do not run DDL. Helm repeats idempotent migration hooks but
+does not automatically reapply business grants. New tables require this same two-stage upgrade.
+
+## 5. Verify user workflows
+
+Check Gateway health, bootstrap sign-in and Agent creation. Configure an [Environment](/v2/en/service/environments) and export its ID as `ENVIRONMENT_ID`; Session admission requires this binding even with user files disabled. From `agentscope-service`, or using
+the Kubernetes bundle's `smoke.py`, verify native Session creation and Events:
+
+```bash
+python3 release/smoke.py --base http://127.0.0.1:18080 \
+  --env-file /private/service.env --environment-id "$ENVIRONMENT_ID" --state /tmp/service-smoke.json
+# With a working model, repeat using a new state file and --model-turn.
+# After restarting the components, reuse that state file with --resume.
+```
+
+Run this command from `agentscope-service`; a resource-only pass does not qualify inference.
+Also run a tool-using Turn in your intended Environment, check incremental SSE and reconnect,
+and test unfinished work after replica restart. See [your first Managed Agent](/v2/en/service/create-managed-agent).
 
 ## Maintain the installation
 
-Restart affected Deployments after Secret updates. Follow [operations](/v2/en/service/operations) before upgrading and retain prior Charts, values and image versions. PVCs are retained on uninstall; explicitly select them with existingClaim on reinstall.
+Before an incompatible upgrade, back up PostgreSQL including private objects, enabled file
+volumes and original Vault/signing keys. Stop admission and drain Turns, tools and channel
+replies. Stop retired Scheduler/orchestration workloads before starting the combined Control Plane.
+Run the new schema jobs, reapply grants, then replace compatible roles together.
 
-This Chart runs complete Service standalone HTTP. Kubernetes-native ControlPlane/ASDP is a separate deployment mode, requiring deliberate SDK connectivity planning rather than blindly combining Charts. The single-replica installation does not guarantee zero-downtime migrations or multi-replica HA.
+The current `dp`/`ma` baselines reject incompatible old versions/checksums and unversioned
+Managed data. They do not convert previous runtime state or import filesystem objects. Use a
+fresh runtime data space or an explicitly verified migration; never delete a ledger to bypass
+validation. Image rollback does not reverse schema changes. PVCs remain on Helm uninstall.
+
+## Deployment boundaries and production planning
+
+All five roles use RollingUpdate Deployments and can scale independently. Brain's bounded
+Harness and MQ callback pools are configured under `dataplane`; physical tool concurrency is
+under `hands`. A suspended Turn releases active execution resources while preserving Session
+FIFO order. MCP batch waits can continue directly from durable records; other waits use Resume.
+PostgreSQL provides durable coordination across replicas, so no sticky Session routing is required.
+
+Self-hosting deploys the platform; a `self_hosted` tool Worker supplies an execution environment;
+a Runtime Host executes Hosted Coding Agents. These roles are separate. Kubernetes-native
+ControlPlane/ASDP is another deployment mode and is not an extra required Service component.
+See [Environments](/v2/en/service/environments) and [Runtime Host](/v2/en/service/runtime-host).
+
+## Network surfaces
+
+| Component | Port | Exposure |
+| --- | --- | --- |
+| Gateway | 8080 | Public API / Console entry; Compose defaults to loopback 18080 |
+| Control Plane | 8081 | Internal |
+| Brain Dataplane | 8082 | Internal |
+| Session Portal | 8084 | Internal |
+| Hands | 8085 | Internal |
+| PostgreSQL / Redis / MQ | Operator-configured | Private dependency network |
+
+## Enable remote access
+
+Route HTTPS to Gateway, configure `publicURL` in Helm or `BUILDER_OAUTH_PUBLIC_URL` in Compose,
+and keep internal components private. Disable SSE buffering/caching and configure long read
+timeouts. Verify event delivery, reconnect, OAuth/channel callbacks and the actual external URL.
+
+## Install the published Docker Compose bundle
+
+Use a newly built/published Compose archive explicitly containing this architecture and its
+matching `SHA256SUMS`. Verify the checksum, extract it, enter its `agentscope-service` directory,
+then use the image version and repository from its release manifest:
+
+```bash
+./init-env.sh YOUR_VERSION REGISTRY/NAMESPACE
+# Fill reachable Redis/MQ endpoints, MQ auth/TLS and model credentials in .env.
+# Keep BUILDER_LOCAL_DEV=false.
+docker compose config --quiet
+docker compose pull
+docker compose up -d --wait --wait-timeout 600
+python3 smoke.py --base http://127.0.0.1:18080 --env-file .env --environment-id "$ENVIRONMENT_ID" --state /tmp/service-smoke.json
+```
+
+Compose starts PostgreSQL and automatically runs all four migrations and business grants before
+services. Redis/MQ remain external and their five Topic/group pairs must already exist. Only
+Gateway exposes a host port. Local tools require explicit `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`
+and run in Hands. Stop with `docker compose down` to retain volumes; use `--remove-orphans` after
+draining retired components. See [operations](/v2/en/service/operations#compose-operations).
+
+
 
 <span id="self-hosting"></span>
 <span id="three-deployment-boundaries"></span>
 <span id="choose-a-deployment-path"></span>
 <span id="hand-over-a-usable-platform"></span>
 <span id="operate-the-platform"></span>
-
-## Deployment boundaries and production planning
-
-The Compose commands in [quickstart](/v2/en/service/quickstart) deploy the complete Service. Users access it through Gateway; Control manages identity and resources and coordinates work; Dataplane runs HarnessAgent and sessions; and Scheduler handles scheduling work. Databases and persistent storage preserve the data these services need. Operating this shared installation is the responsibility that comes with self-hosting the platform.
-
-Tool execution resources can be prepared separately from platform services. Even when file or Shell tools use a sandbox, remote file backend, or `self_hosted` Worker, Dataplane still runs Managed Agent reasoning. Connecting External or Hosted Agents also involves the existing application or Runtime Host. These resources connect to the deployed Service to provide their respective execution capabilities.
-
-```mermaid
-flowchart LR
-    U["Console / business applications"] --> G["Gateway"]
-    G --> C["Control: identity, resources, coordination"]
-    G --> D["Dataplane: HarnessAgent and sessions"]
-    D --> M["Selected model service"]
-    D --> E["Tool Environment"]
-    C --> R["External / Runtime Host"]
-    C --> P["Databases and persistent storage"]
-    D --> P
-```
-
-After choosing deployment locations, check where each component actually connects. A self-hosted Service can still call a remote model, and its tools may access external systems through MCP or other interfaces. Plan networking around the selected model, tools, and storage to understand where data travels, and provide incoming routes for callbacks such as OAuth when needed.
-
-For local evaluation, use the Compose [quickstart](/v2/en/service/quickstart). A platform team maintaining a longer-term installation can choose Kubernetes to suit its infrastructure. The table below summarizes the resources required by each path; users of an existing team platform normally need only account and execution-environment setup.
-
-| Path | Current use | Prerequisites |
-| --- | --- | --- |
-| Docker Compose | Local evaluation, development, and integration | Release bundle, Docker, model credentials, persistent disk |
-| Kubernetes / Helm | Installation operated by a platform team | PostgreSQL, shared Workspace storage, Artifact storage, Secrets, domain, and TLS |
-| Existing team platform | Direct use by application developers | Service address, account, authorized scope, available model and Environment |
-
-The Service Chart defaults to one replica per component and Recreate updates. To run multiple Dataplane replicas, first initialize the `dp` schema with a single replica, then set the following values:
-
-```yaml
-dataplane:
-  replicas: 2
-  ddlAuto: validate
-```
-
-All Dataplane replicas use the same PostgreSQL database, Secret and RWX Workspace claim. Verify shared writes when using an existing PVC. Their API, SSE and Turn execution run in the same pods; requests and SSE can reach different pods without sticky sessions. Multiple Dataplane replicas use RollingUpdate, while Control, Scheduler and Gateway retain their default deployment settings. Schema upgrades still require a single-replica migration stage; this does not make the entire installation highly available or remove maintenance windows. Kubernetes-native ControlPlane/ASDP is a separate deployment mode for the corresponding SDK and runtime transport requirements; it is not an additional set of mandatory components to install over the complete Service Chart.
-
-When handing the platform over to an application team, administrators provide an accessible Service address and account and explain which Namespace the account can use. Users also need to know whether the default model is ready, which tool environment to select, and where business materials reside and how to access them. With this information, they can verify the model and file tools through [Their first managed Agent](/v2/en/service/create-managed-agent), then check application calls through the [Session API integration guide](/v2/en/service/service-api).
-
-Before production use, verify that users can receive execution events continuously, restore existing content after a page refresh, and download delivered files with the appropriate permissions. If the application relies on Webhooks, confirm that the receiving endpoint gets notifications. Pair database and file backups with recovery exercises, including how unfinished work will be handled. These checks establish that the platform behaves as intended during normal use and recovery.
-
-## Network surfaces
-
-By default, Compose exposes only Gateway at the host address `127.0.0.1:18080`. User requests enter there and are forwarded to internal services, while the other components communicate over the internal network. Their container ports and exposure are listed below.
-
-| Component | Container port | Exposure |
-| --- | --- | --- |
-| Gateway | 8080 | Host `127.0.0.1:18080` by default |
-| Control | 8081 | Internal network |
-| Dataplane | 8082 | Internal network |
-| Scheduler | 8083 | Internal network |
-| PostgreSQL | 5432 | Internal network |
-
-A reverse proxy on the same host can forward requests to `127.0.0.1:18080`. If it runs in another container, its `localhost` refers to the proxy container itself, so configure a shared network or a host address reachable from that container. The public entry point should still target Gateway, with internal services and the database available through the private network.
-
-## Enable remote access
-
-To access the deployment from another device or test public OAuth or Channel callbacks, configure an HTTPS entry point for Gateway. Prepare a domain and TLS certificate, then forward requests through a reverse proxy. Set `BUILDER_OAUTH_PUBLIC_URL` in `.env` to the actual external address, such as `https://agentscope.example.com`. If Gateway also needs a different listening address or port, change `BIND_ADDRESS` and `GATEWAY_PORT`, then recreate the containers to apply the configuration.
-
-Execution progress travels over a long-lived SSE connection, so the proxy needs to forward events promptly, disable event-stream caching, and allow sufficiently long read timeouts. After configuration, verify login and run a task that produces content over time. Check that events arrive incrementally, the page can reconnect after a refresh, and the callbacks your application uses are working.
-
-
-## Install the published Docker Compose bundle
-
-Without Kubernetes, install the published Compose bundle. It uses released images with authentication and authorization enabled, requiring no source or Java/Go build tools. Prepare Compose v2, Bash, curl, and OpenSSL, then download and verify:
-
-```bash
-curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/agentscope-service-2.1.0-BETA1-compose.tar.gz
-curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/SHA256SUMS
-awk '$2 == "agentscope-service-2.1.0-BETA1-compose.tar.gz"' SHA256SUMS > compose.sha256
-if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum -c compose.sha256
-else
-  shasum -a 256 -c compose.sha256
-fi
-```
-
-```bash
-tar -xzf agentscope-service-2.1.0-BETA1-compose.tar.gz
-cd agentscope-service
-./init-env.sh 2.1.0-BETA1 sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope
-```
-
-Set `DASHSCOPE_API_KEY` in the generated `.env` and keep `BUILDER_LOCAL_DEV=false`. Prepare an Environment meeting your isolation needs; a trusted local evaluation may set `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`, running tools inside Dataplane.
-
-```bash
-docker compose pull
-docker compose up -d --wait --wait-timeout 600
-docker compose ps
-curl -fsS http://localhost:18080/actuator/health
-```
-
-Open `http://localhost:18080`, sign in with the bootstrap administrator from `.env`, change the password, and configure API access below. Stop with `docker compose down` to retain volumes; see [operations](/v2/en/service/operations#compose-operations) for backups and upgrades.
 
 <span id="production-api-access"></span>
 
@@ -451,11 +393,12 @@ JSON
 
 ## Install the production CLI and Runtime Host
 
-Prepare Go 1.26+ on the target Linux/macOS host and install both published commands using the standard Go module version:
+Install both commands from the CLI archive built with the same source as the Service. If that release has a published Go module tag, Go 1.26+ can install the matching version:
 
 ```bash
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
+export SERVICE_VERSION=YOUR_CURRENT_RELEASE
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v"$SERVICE_VERSION"
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v"$SERVICE_VERSION"
 as connect https://agentscope.example.com
 ```
 

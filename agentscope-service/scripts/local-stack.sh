@@ -3,13 +3,14 @@
 # Licensed under the Apache License, Version 2.0.
 set -euo pipefail
 service_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-for file in local-portal.env local-portal.local.yaml; do
-    if [[ ! -f "$service_dir/deploy/$file" ]]; then
-        echo "Missing local deployment configuration: $service_dir/deploy/$file" >&2
-        exit 2
-    fi
-done
-exec docker compose --project-name agentscope-portal-local \
-    --env-file "$service_dir/deploy/local-portal.env" \
-    -f "$service_dir/deploy/compose.yaml" \
-    -f "$service_dir/deploy/local-portal.local.yaml" "$@"
+env_file="${BUILDER_COMPOSE_ENV_FILE:-$service_dir/deploy/.env}"
+if [[ ! -f "$env_file" ]]; then
+    echo "Missing deployment configuration: $env_file; run deploy/init-env.sh first." >&2
+    exit 2
+fi
+args=(--project-name "${BUILDER_COMPOSE_PROJECT:-agentscope-service}" \
+      --env-file "$env_file" -f "${BUILDER_COMPOSE_FILE:-$service_dir/deploy/compose.yaml}")
+if [[ -n "${BUILDER_COMPOSE_OVERRIDE:-}" ]]; then
+    args+=(-f "$BUILDER_COMPOSE_OVERRIDE")
+fi
+exec docker compose "${args[@]}" "$@"

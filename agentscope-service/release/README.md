@@ -17,7 +17,7 @@ Run all commands from the monorepo root. Development continues in the existing c
 | Python SDK | `agentscope-service-sdk` wheel and sdist | `service-controlplane/sdk/python/pyproject.toml` and `service-controlplane/sdk/python/agentscope_service/__init__.py` |
 | DSH plugin | `@agentscope-service/dsh-controlplane` npm tarball | `service-controlplane/sdk/dsh/package.json` and lockfile |
 
-The front end is private and bundled into the control image. `service-common` and executable Service modules remain excluded from Maven Central (`maven.deploy.skip=true`); they are not required by external Java SDK users. PostgreSQL is a separately operated dependency, not an AgentScope-published image. The legacy Control Plane Chart remains a separate Kubernetes-native offering. The complete Service Chart uses standalone HTTP, without ASDP gRPC.
+The front end is private and bundled into the control image. `service-common` and executable Service modules remain excluded from Maven Central (`maven.deploy.skip=true`); they are not required by external Java SDK users. PostgreSQL, Redis and RocketMQ Cluster Proxy are separately operated dependencies, not an AgentScope-published image. The legacy Control Plane Chart remains a separate Kubernetes-native offering. The complete Service Chart uses standalone HTTP, without ASDP gRPC.
 
 The public Java Session client uses Java 17/Jackson and has no Service server dependency.
 `package` includes its local artifacts and records its revision in `sdkVersions.java`;
@@ -61,7 +61,7 @@ python agentscope-service/release/release.py package \
 
 Default output: `agentscope-service/release/dist/2.0.3-rc.1/`. Existing output directories are not overwritten. Use another `--output` for a new rehearsal. The package includes deploy files, CLI/Host archives, Helm, Python and npm artifacts, `release-manifest.json` and `SHA256SUMS`. Packaging uses an explicit allowlist and never includes deploy `.env` files. Dirty source is recorded for local candidates.
 
-Each CLI archive includes both executables and a bilingual installation README. The Kubernetes bundle `agentscope-service-VERSION-kubernetes.tar.gz` contains the Chart, Secret configuration template, schema SQL, business-role grant script, separate migration Secret template, and installation README; the Chart is also emitted as a standalone `.tgz`. If SDKs are published separately, add `--distributions-only` to build just the CLI, Compose, Kubernetes, and Chart assets.
+Each CLI archive includes both executables and a bilingual installation README. The Kubernetes bundle `agentscope-service-VERSION-kubernetes.tar.gz` contains the Chart, Secret configuration template, schema SQL, business-role grant script and input template, separate migration Secret template, MQ initialization helpers, production values, Session API checker and installation README; the Chart is also emitted as a standalone `.tgz`. If SDKs are published separately, add `--distributions-only` to build just the CLI, Compose, Kubernetes, and Chart assets.
 
 ```bash
 cd agentscope-service/release/dist/2.0.3-rc.1
@@ -83,11 +83,11 @@ Deploy the generated Compose package under a separate project name and unused po
 
 ```bash
 python agentscope-service/release/smoke.py --base http://127.0.0.1:18081 \
-  --env-file /private/path/.env --state /tmp/service-smoke.json
+  --env-file /private/path/.env --environment-id "$ENVIRONMENT_ID" --state /tmp/service-smoke.json
 # After restarting the test stack, add --resume with the same arguments.
 ```
 
-The smoke script creates test resources and requires Local to be enabled on the disposable test installation. Add `--model-turn` only when configured model credentials are available; otherwise inference is explicitly not qualified. Verify external PostgreSQL, RWX storage on the intended cluster, Ingress/SSE and upgrade/recovery against a restored database copy. Cross-compiling is not a substitute for runtime validation on each advertised architecture.
+Configure an Environment and export `ENVIRONMENT_ID` first; the smoke script creates a Managed Agent bound to it and a native Session, reads Session state and Events and optionally submits a Turn. It supports explicit local-dev mode and authenticated bootstrap credentials without requiring Local tools. Add `--model-turn` only when configured model credentials are available; otherwise inference is explicitly not qualified. Verify external PostgreSQL, RWX storage on the intended cluster, Ingress/SSE and upgrade/recovery against a restored database copy. Cross-compiling is not a substitute for runtime validation on each advertised architecture.
 
 ## 5. Publish approved source
 
@@ -237,4 +237,4 @@ Documentation lives under `docs/v2/{zh,en}/service/`; `docs/docs.json` configure
 
 ## Current deployment boundaries
 
-The full Chart deliberately uses one replica and Recreate updates. It does not install PostgreSQL or an RWX provisioner. Go runs startup migrations; Java still uses Hibernate `update`. Database rollback requires a matching backup and original keys, not just an image rollback. Local Environment is opt-in. Model credentials, sandbox services and third-party Coding Agent providers remain user-supplied.
+The full Chart deploys five RollingUpdate components and does not install PostgreSQL, Redis, RocketMQ or an RWX provisioner. Initialize the five Lite Topic/group pairs first. Four owner-only schema jobs migrate cp/rt, portal, dp and ma; apply business grants before starting ordinary replicas, which validate schema versions without DDL. Checkpoints and large objects use PostgreSQL; shared RWX files are optional when user files are disabled. Database rollback requires a matching backup and original keys, not just an image rollback. Local Environment is opt-in. Model credentials, sandbox services and third-party Coding Agent providers remain user-supplied.

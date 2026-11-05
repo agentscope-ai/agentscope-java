@@ -1,11 +1,15 @@
 # AgentScope CLI and Runtime Host
 
-Install Go 1.26+ on the target Linux or macOS machine and install both commands
+This archive includes `as` and `agentscope-runtime-host` for its named platform. Verify
+its SHA-256 using the matching Release, then install both files in a directory on PATH.
+Run `as version` and `agentscope-runtime-host -help`.
+
+Alternatively, install Go 1.26+ on the target Linux or macOS machine and install both commands
 from the same published Service version:
 
 ```bash
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v@SERVICE_VERSION@
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v@SERVICE_VERSION@
 AS_CLI_BIN_DIR="$(go env GOBIN)"
 if [ -z "$AS_CLI_BIN_DIR" ]; then
   AS_CLI_BIN_DIR="$(go env GOPATH)/bin"
@@ -17,7 +21,7 @@ agentscope-runtime-host -help
 
 Go builds for the current machine and installs into `GOBIN`, or `$(go env GOPATH)/bin`
 when unset. Persist the PATH setting in your shell configuration. These commands
-install the `2.1.0-BETA1` prerelease; update both version suffixes together for a new
+install the matching `@SERVICE_VERSION@` Service version; update both version suffixes together for a new
 release. See the [Runtime Host guide](https://java.agentscope.io/v2/en/service/runtime-host).
 
 Install and authenticate a supported Coding Agent provider separately, then
@@ -41,7 +45,7 @@ If using the archive offline, verify its SHA-256 against the same Release's
 ## 中文
 
 在目标 Linux 或 macOS 主机安装 Go 1.26+，按上面的 `go install` 命令安装同一版本的
-CLI 与 Runtime Host，再配置 PATH。当前命令安装 `2.1.0-BETA1` 预发布版本；
+CLI 与 Runtime Host，再配置 PATH。当前命令安装本包对应的 `@SERVICE_VERSION@` 版本；
 后续版本一起替换两个版本后缀。完整说明见
 [Runtime Host 安装与运维](https://java.agentscope.io/v2/zh/service/runtime-host)。
 

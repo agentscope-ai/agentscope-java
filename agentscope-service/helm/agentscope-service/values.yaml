@@ -14,7 +14,8 @@
 
 # Required: the registry namespace from your release manifest.
 imageRepository: ""
-# Empty uses Chart.appVersion; release packaging sets appVersion.
+# Empty uses Chart.appVersion for a packaged release. Current-source installations must
+# set the tag of all five newly built images; published BETA1 images use an older runtime.
 imageTag: ""
 imagePullPolicy: IfNotPresent
 imagePullSecrets: []

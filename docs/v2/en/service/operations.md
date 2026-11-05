@@ -4,7 +4,7 @@ zh_link: /v2/zh/service/operations
 ---
 
 <Note>
-The current release is `2.1.0-BETA1`, a prerelease. Validate your deployment before production use.
+This guide describes the current source architecture. Use matching images and installation assets from that source; historical `2.1.0-BETA1` assets do not contain it.
 </Note>
 
 A recoverable backup includes the database, workspaces, artifacts and the keys needed to decrypt stored credentials.
@@ -59,9 +59,9 @@ Kubernetes also requires database backups and PVC snapshots. Follow the storage 
 
 Read the release's migration and compatibility notes and rehearse against a test copy first. After backing up, update `SERVICE_VERSION` in Docker's `.env`, pull images and recreate containers. For Helm, upgrade using the specific Chart version.
 
-Current-source deployments run separate migration jobs before ordinary replicas, which validate the schema using business credentials. Include both business and native journal pools in the PostgreSQL connection budget: each Dataplane replica has an additional bounded pool configured by `BUILDER_RUNTIME_NATIVE_LOG_CONNECTIONS` (default 8), or Helm `dataplane.nativeLogConnections`.
+Current-source deployments first migrate Control (`cp/rt`), Portal (`portal`), Dataplane (`dp`) and Managed (`ma`) using four owner-only jobs. Reapply `postgres-roles.sh` before replacing ordinary replicas, which validate versions/checksums without DDL. Helm hooks do not apply these business grants automatically. Follow the [two-stage installation procedure](/v2/en/service/kubernetes#4-install-a-pinned-version). Include both business and native journal pools in the PostgreSQL connection budget: each Dataplane replica has an additional bounded pool configured by `BUILDER_RUNTIME_NATIVE_LOG_CONNECTIONS` (default 8), or Helm `dataplane.nativeLogConnections`.
 
-Managed native history is stored in indexed dataplane tables. This format requires rebuilt runtime data; existing Workspace journals are explicitly refused rather than read as empty history. Drain old Sessions and prepare a new runtime data space before switching. Database migrations do not convert those journals. Back up Portal state, native tables, shared files and original keys together. Rolling back images does not establish that an older version can read a newer schema.
+Managed native history, checkpoints, tool results and oversized private objects are stored in PostgreSQL `ma` tables. This format requires rebuilt runtime data; existing Workspace journals are explicitly refused rather than read as empty history. Drain old Sessions and prepare a new runtime data space before switching. Database migrations do not convert those journals. Back up Portal state, native tables, shared files and original keys together. Rolling back images does not establish that an older version can read a newer schema.
 
 ## Recover
 
@@ -88,8 +88,8 @@ Read existing resources before submitting a clearly new test task:
 | Check | API |
 | --- | --- |
 | Agents and bindings | `GET /api/v1/agents`, `GET /api/v1/agents/{id}/bindings` |
-| Session configuration | `GET /api/v1/agent-sessions/{sessionId}` and its frozen target |
-| Existing business results and UI | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}`, `GET .../{id}/snapshot` |
+| Session configuration | `GET /v1/sessions/{sessionId}` and its frozen target |
+| Existing business results and UI | `GET /v1/sessions/{sessionId}/turns/{turnId}`, `GET .../{id}/snapshot` |
 | Orchestration and actual attempts | `GET /api/v1/orchestration-runs/{id}/graph`, `GET /api/v1/execution-attempts/{id}` |
 | Notification and automation | Inspect original Webhook/Automation delivery records and deduplication state |
 
@@ -107,7 +107,7 @@ curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/bindings" \
 ```
 
 ```bash
-SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+SESSION_URL="$BASE_URL/v1/sessions/$SESSION_ID"
 ```
 
 ```bash
@@ -171,12 +171,12 @@ Record versions, backup batch, inputs, execution IDs, and differences. Validate 
 ## Collect component logs
 
 ```bash
-docker compose logs --tail=200 control data scheduler gateway
+docker compose logs --tail=200 control portal data hands gateway
 kubectl -n agentscope logs deployment/service-agentscope-control --tail=200
 kubectl -n agentscope describe pod POD_NAME
 ```
 
-Gateway health does not verify model or tool execution. Inspect Dataplane for Managed Session failures, Scheduler for channel/Worker scheduling, and Control for product Automations, resources, accounts and orchestration. Hosted provider failures also need the machine's daemon logs.
+Gateway health does not verify model or tool execution. Inspect Portal for admission/SSE failures, Brain Dataplane for reasoning/recovery, Hands for physical tool execution, and Control for channels, Cron, Automations, resources, accounts and orchestration. Include Redis connectivity and the five RocketMQ Topic/group bindings in diagnosis. Hosted provider failures also need the machine's daemon logs.
 
 ### Trace Managed execution across replicas
 
@@ -206,7 +206,7 @@ Query the existing Delivery/Turn first. Reuse the same key and content for the s
 
 ## Diagnose unified service API calls
 
-Save the Session ID, Turn ID, idempotency key, and error code. Read `/api/v1/agent-sessions/{sessionId}/turns/{turnId}` for task status, then that Turn’s `/snapshot` and `/capabilities` for saved results and available commands.
+Save the Session ID, Turn ID, idempotency key, and error code. Read `/v1/sessions/{sessionId}/turns/{turnId}` for task status, then that Turn’s `/snapshot` and `/capabilities` for saved results and available commands.
 
 | Symptom | Check |
 | --- | --- |

@@ -6,7 +6,7 @@ en_link: /v2/en/service/quickstart
 
 使用 Docker Compose 在本机启动 Service，然后直接打开 Console 或调用 API。本地开发模式自动使用开发身份和默认空间，无需登录、用户 token、应用 API key 或授权配置。
 
-准备 Git、Docker Engine 或 Docker Desktop（含 Compose v2），以及 DashScope API Key。首次启动会在容器内构建服务，所需的 Java、Go 和 Node.js 构建工具由 Docker 提供。
+准备 Git、OpenSSL、Docker Engine 或 Docker Desktop（含 Compose v2）、DashScope API Key，以及容器可达的 Redis 和 RocketMQ Cluster Proxy。启动前先初始化[五个业务 Lite Topic 与消费组](/v2/zh/service/kubernetes#prepare-rocketmq)。首次启动会在容器内构建服务，所需的 Java、Go 和 Node.js 构建工具由 Docker 提供。
 
 <Note>
 免鉴权模式需要包含此功能的源码构建，已发布的 `2.1.0-BETA1` 镜像不支持该模式。已发布镜像和 Helm 的安装与身份配置见[生产部署](/v2/zh/service/kubernetes)。
@@ -25,12 +25,17 @@ export DASHSCOPE_API_KEY="YOUR_DASHSCOPE_API_KEY"
 ## 2. 启动服务
 
 ```bash
-docker compose up -d --build --wait --wait-timeout 600
+./deploy/init-env.sh 2.1.0-local agentscope-local
+# 在 deploy/.env 填写容器可达的 Redis/MQ 地址，以及需要的 MQ 认证和 TLS 设置。
+export BUILDER_LOCAL_DEV=true
+export BUILDER_ALLOW_LOCAL_ENVIRONMENT=true
+docker compose --env-file deploy/.env config --quiet
+docker compose --env-file deploy/.env up -d --build --wait --wait-timeout 600
 ```
 
-源码 Compose 默认启用 `BUILDER_LOCAL_DEV=true` 和 Local 工具执行环境，服务端口仅绑定本机。Local 工具在 Dataplane 容器中执行。模型及外部工具仍使用各自提供方的凭据。
+上述显式开发配置开启开发身份与 Local 工具，Gateway 端口仅绑定本机。Local 工具在 Hands 容器中执行。Compose 启动 PostgreSQL，Redis 与 RocketMQ 由运维提供；四个迁移任务初始化 `cp/rt`、`portal`、`dp`、`ma`，业务授权完成后才启动服务。checkpoint 和大对象存入 PostgreSQL。模型及外部工具仍使用各自提供方的凭据。
 
-首次构建可能需要几分钟。启动失败时，用 `docker compose ps -a` 查看状态，再用 `docker compose logs --tail=100` 查看错误。
+首次构建可能需要几分钟。启动失败时，用 `docker compose --env-file deploy/.env ps -a` 查看状态，再用 `docker compose --env-file deploy/.env logs --tail=100` 查看错误。
 
 ## 3. 直接开始使用
 
@@ -38,7 +43,7 @@ docker compose up -d --build --wait --wait-timeout 600
 
 打开 **Design → Agents → New agent**，填写名称和 **Instructions**，选择 **AgentScope Managed**，点击 **Create & open agent**。**Model** 留空即可使用默认模型。
 
-进入 **Connections → Session API**，填写 **Task message**，例如“把会议记录整理成待办：小李周五完成安装说明，下周一评审”，保持 **Application API key** 为空，点击 **Create Session and submit**，等待回复。
+继续按[第一个 Managed Agent](/v2/zh/service/create-managed-agent)配置 Environment、创建原生 Session，通过 `/events` 提交 `user.message` 并检查 Turn。该教程使用当前 `/v1/sessions` 契约，其他后端的兼容 API 是另一条路径。
 
 也可以直接检查 API，无需携带认证请求头：
 
@@ -46,7 +51,7 @@ docker compose up -d --build --wait --wait-timeout 600
 curl -sS --fail-with-body http://localhost:18080/api/v1/agents
 ```
 
-接下来[通过 API 运行第一个托管 Agent](/v2/zh/service/create-managed-agent)。停止服务使用 `docker compose down`，数据卷会保留。生产部署、认证、权限与应用凭据见[生产指南](/v2/zh/service/kubernetes#production-api-access)，备份与升级见[运维指南](/v2/zh/service/operations)。
+接下来[通过 API 运行第一个托管 Agent](/v2/zh/service/create-managed-agent)。停止服务使用 `docker compose --env-file deploy/.env down`，数据卷会保留。生产部署、认证、权限与应用凭据见[生产指南](/v2/zh/service/kubernetes#production-api-access)，备份与升级见[运维指南](/v2/zh/service/operations)。
 
 <span id="1-启动"></span>
 <span id="准备"></span>

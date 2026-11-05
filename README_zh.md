@@ -67,7 +67,7 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 
 ## 新闻
 <!-- BEGIN NEWS -->
-- **[2026-08] [AgentScope Service](./agentscope-service)：** Agent 控制面与 Dashboard，面向 Agent 观测、注册与编排，兼容 AgentScope、LangChain、ADK、Claude / Qoder 等。
+- **[2026-08] [AgentScope Service](./agentscope-service/README_zh.md)：** 可自托管的 Agent as a Service 平台，提供基于 HarnessAgent 的 Managed Agents、面向业务应用的 Session API 和多 Agent 协作。
 - **[2026-07] `v2.0.0 GA`：** 首个正式版本发布！双层 Agent 架构、事件流、权限系统、Middleware、Workspace 沙箱、多智能体编排、分布式部署全面就绪。 [文档](https://java.agentscope.io/) | [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
 - **[2026-07] `v2.0.0-RC5`：** 模型提供商模块化拆分；统一 DataBlock 多模态支持；原生结构化输出；Channel IM 平台接入；腾讯云 COS 状态持久化。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)
 - **[2026-06] `v2.0.0-RC4`：** 异步工具执行与定时唤醒调度；子 agent 跨副本路由与 session 恢复。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC4)
@@ -167,15 +167,20 @@ public class FirstAgent {
 
 ## AgentScope Service
 
-**[AgentScope Service](./agentscope-service)** — 面向业务应用的 Agent as a Service 平台，将生成方案、核验文档、调查异常等 Agent 能力发布为 API。用户在原有产品中发起工作、参与确认并检查交付。
+**[AgentScope Service](./agentscope-service/README_zh.md)** 是可自托管的 **Agent as a Service** 平台。其 **Managed Agents** 与 SDK 使用相同的 HarnessAgent 内核：通过 Console 或 API 配置指令、模型和工具，由 Service 管理 Agent 运行时、Session、后台执行与恢复。应用团队可以共享这些能力，无需为每个产品单独运维 Agent 运行服务。
 
-+ **接入业务。** 用 Endpoint 提供后台任务、交互式助手或流程中的专业处理节点；应用保留自己的界面、数据授权与验收规则。
-+ **持续执行与交付。** 围绕 Invocation 跟踪状态、快照与事件，处理人工交互，获取结果和文件，再接回业务流程。
-+ **按需组织执行。** 托管 AgentScope Harness、接入已有 Agent 应用，或复用 Coding Agent；按任务需要组合 Team 与 Workflow。
+应用为 Agent、Team 或 Workflow 创建 **Session**，以 **Turn** 提交任务，通过 Session 状态与 **Events** 展示进度、处理人工输入并获取结果。用户留在原有业务产品中，业务应用继续负责数据授权与结果验收。先用一个 Managed Agent 验证交付，再按协作需要增加 Team、Workflow、External Agent 或 Hosted Coding Agent。
 
-从[场景案例](https://java.agentscope.io/v2/zh/service/usecases)选择接入方式，再按 [API 快速开始](https://java.agentscope.io/v2/zh/service/first-session)完成一次调用。
+```mermaid
+flowchart TB
+    App["业务应用"] -->|"Session / Turn / Events"| Service["AgentScope Service"]
+    Console["Console / 管理 API"] -->|"配置能力"| Service
+    Service --> Managed["Managed Agents: HarnessAgent"]
+    Managed --> Resources["模型 / 工具 / 执行环境"]
+    Service --> Collaboration["Team / Workflow / External 与 Hosted Agent"]
+```
 
-![](./docs/imgs/agentservice/agentscope-service-architecture.png)
+[部署 Service](https://java.agentscope.io/v2/zh/service/quickstart) → [创建第一个 Managed Agent](https://java.agentscope.io/v2/zh/service/create-managed-agent) → [通过 Session API 接入应用](https://java.agentscope.io/v2/zh/service/claude-session-api)。已有平台时，从创建 Agent 开始；业务接入设计见[场景案例](https://java.agentscope.io/v2/zh/service/usecases)。
 
 ## 核心设计
 

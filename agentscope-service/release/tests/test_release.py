@@ -61,13 +61,19 @@ class ReleaseTests(unittest.TestCase):
                     self.assertFalse(any(Path(name).name == '.env' for name in package.getnames()))
             with tarfile.open(args.output / 'agentscope-service-2.1.0-BETA1-kubernetes.tar.gz') as package:
                 prefix = 'agentscope-service-kubernetes/'
-                for name in ('agentscope-service-2.1.0-BETA1.tgz', 'kubernetes.env.example', 'postgres-init.sql'):
+                for name in ('agentscope-service-2.1.0-BETA1.tgz', 'kubernetes.env.example', 'postgres-init.sql',
+                             'managed-mq-init.sh', 'managed-cloud-mq-init.py', 'postgres-roles.sh',
+                             'postgres-grants.env.example', 'production-values.yaml.example', 'smoke.py'):
                     self.assertIn(prefix + name, package.getnames())
                 readme = package.extractfile(prefix + 'README.md').read().decode()
                 self.assertIn('--set imageRepository=example.com/team', readme)
                 self.assertNotIn('@SERVICE_VERSION@', readme)
+            with tarfile.open(args.output / 'agentscope-service-2.1.0-BETA1-compose.tar.gz') as package:
+                for name in ('managed-mq-init.sh', 'managed-cloud-mq-init.py', 'smoke.py'):
+                    self.assertIn('agentscope-service/' + name, package.getnames())
             with tarfile.open(args.output / 'agentscope-cli-2.1.0-BETA1-darwin-arm64.tar.gz') as package:
                 self.assertEqual(set(package.getnames()), {'as', 'agentscope-runtime-host', 'LICENSE', 'README.md'})
+                self.assertNotIn('@SERVICE_VERSION@', package.extractfile('README.md').read().decode())
             metadata = json.loads((args.output / 'release-manifest.json').read_text())
             self.assertEqual(set(metadata['artifacts']), {p.name for p in args.output.glob('*.tar.gz')} | {'agentscope-service-2.1.0-BETA1.tgz'})
 
@@ -167,7 +173,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertGreaterEqual(len(settings['CONTROL_PLANE_BOOTSTRAP_PASSWORD']), 12)
             self.assertNotEqual(settings['BUILDER_JWT_SECRET'], settings['BUILDER_INTERNAL_TOKEN'])
 
-    def test_chart_has_seven_services_schema_jobs_and_no_demo_users(self):
+    def test_chart_has_five_services_schema_jobs_and_no_demo_users(self):
         rendered = subprocess.check_output(['helm', 'template', 'test', str(SERVICE / 'helm/agentscope-service'),
                                            '--set', 'imageRepository=example.com/test', '--set', 'existingSecret=credentials', '--set', 'schema.existingSecret=migration-credentials'], text=True)
         objects = [o for o in yaml.safe_load_all(rendered) if o]

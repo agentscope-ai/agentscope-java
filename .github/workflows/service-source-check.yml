@@ -22,6 +22,12 @@ jobs:
           version: v3.17.3
       - run: pip install 'PyYAML>=6,<7'
       - run: python agentscope-service/release/release.py hygiene
+      - name: Validate deployment script syntax
+        run: |
+          for script in agentscope-service/deploy/*.sh agentscope-service/scripts/*.sh; do
+            bash -n "$script"
+          done
+          python -m py_compile agentscope-service/release/*.py agentscope-service/deploy/*.py
       - run: python -m unittest discover -s agentscope-service/release/tests
   controlplane:
     name: Control Plane and SDKs

@@ -17,6 +17,8 @@ services:
     build:
       context: ..
       dockerfile: agentscope-service/docker/Dockerfile.control
+      args:
+        VERSION: ${SERVICE_VERSION:?Set source image version}
   schema-portal:
     extends:
       file: ./deploy/compose.yaml
@@ -57,6 +59,8 @@ services:
     build:
       context: ..
       dockerfile: agentscope-service/docker/Dockerfile.control
+      args:
+        VERSION: ${SERVICE_VERSION:?Set source image version}
     environment:
       BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-true}
   portal:
@@ -90,6 +94,8 @@ services:
       dockerfile: agentscope-service/docker/Dockerfile.service
       args:
         MODULE: service-hands
+    environment:
+      BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-true}
   gateway:
     extends:
       file: ./deploy/compose.yaml

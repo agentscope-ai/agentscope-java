@@ -67,7 +67,7 @@ AgentScope Java 2.0 is a production-ready framework for building distributed, en
 
 ## News
 <!-- BEGIN NEWS -->
-- **[2026-08] [AgentScope Service](./agentscope-service):** An agent Control Plane and Dashboard for agent observation, registration and orchestration, designed to be compatible with AgentScope, LangChain, ADK, and Claude / Qoder, etc.
+- **[2026-08] [AgentScope Service](./agentscope-service):** A self-hostable Agent as a Service platform with HarnessAgent-based Managed Agents, Session APIs for business applications, and multi-agent collaboration.
 - **[2026-07] `v2.0.0 GA`:** First production-ready release! Dual-layer agent architecture, event stream, permission system, middleware, workspace sandbox, multi-agent orchestration, and distributed deployment all ready. [Docs](https://java.agentscope.io/) | [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
 - **[2026-07] `v2.0.0-RC5`:** Model provider modularization; unified DataBlock multimodal support; native structured output; Channel IM integration; Tencent Cloud COS state persistence. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)
 - **[2026-06] `v2.0.0-RC4`:** Async tool execution and scheduled wakeup dispatching; subagent cross-replica routing and session recovery. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC4)
@@ -166,15 +166,21 @@ public class FirstAgent {
 Start with `call` / `streamEvents` for ordinary replies, multi-turn chat and workflow steps; follow the [Quick Start](https://java.agentscope.io/v2/en/docs/quickstart). Both also record Harness conversation history by default. Introduce [AgentSession](https://java.agentscope.io/v2/en/docs/harness/session-log) when work must continue after a page closes, queue while busy or resume after interruption. The [recoverable chat example](./agentscope-examples/agents/agentscope-chat/README.md) shows the full integration.
 
 ## AgentScope Service
-**[AgentScope Service](./agentscope-service)** — an Agent as a Service platform for business applications. Publish capabilities such as proposal writing, document verification, and exception investigation through APIs. Users start work, handle decisions, and review delivery inside their existing product.
 
-+ **Business integration.** Offer background tasks, interactive assistants, or specialist process steps through Endpoints. Applications retain their interface, data authorization, and acceptance rules.
-+ **Persistent work and delivery.** Follow status, snapshots, and events through Invocations, handle human interaction, and retrieve results and files for the business process.
-+ **Execution suited to the task.** Run AgentScope Harness, connect an existing Agent application, or reuse a Coding Agent. Add Teams and Workflows when needed.
+**[AgentScope Service](./agentscope-service)** is a self-hostable **Agent as a Service** platform. Its **Managed Agents** use the same HarnessAgent core as the SDK: configure instructions, models and tools through Console or APIs, and let Service manage Agent runtimes, Sessions, background execution and recovery. Application teams can share these capabilities without operating a separate Agent runtime for each product.
 
-Choose an integration in [Use cases](https://java.agentscope.io/v2/en/service/usecases), then complete a call with the [API quickstart](https://java.agentscope.io/v2/en/service/first-session).
+Applications create a **Session** for an Agent, Team or Workflow, submit tasks as **Turns**, and follow Session state and **Events** to show progress, handle human input and retrieve results. Users stay inside the existing business product, which retains responsibility for data authorization and result acceptance. Start with one Managed Agent; add Teams, Workflows, External Agents or Hosted Coding Agents as collaboration requires.
 
-![agentscope-service-architecture.png](docs/imgs/agentservice/agentscope-service-architecture.png)
+```mermaid
+flowchart TB
+    App["Business application"] -->|"Session / Turn / Events"| Service["AgentScope Service"]
+    Console["Console / Management API"] -->|"Configure capabilities"| Service
+    Service --> Managed["Managed Agents: HarnessAgent"]
+    Managed --> Resources["Models / Tools / Execution environments"]
+    Service --> Collaboration["Teams / Workflows / External and Hosted Agents"]
+```
+
+[Deploy Service](https://java.agentscope.io/v2/en/service/quickstart) → [Create your first Managed Agent](https://java.agentscope.io/v2/en/service/create-managed-agent) → [Integrate through the Session API](https://java.agentscope.io/v2/en/service/claude-session-api). Already have a deployment? Start with Agent creation. See [Use cases](https://java.agentscope.io/v2/en/service/usecases) for application designs.
 
 ## Key Design
 

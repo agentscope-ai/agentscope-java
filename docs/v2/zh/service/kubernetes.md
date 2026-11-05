@@ -4,261 +4,205 @@ en_link: /v2/en/service/kubernetes
 ---
 
 <Note>
-当前发布版本为 `2.1.0-BETA1`，属于预发布版本。用于生产前请验证实际部署。
+本页遵循当前源码架构。统一构建和发布五个镜像，或使用明确包含此实现的新制品。
+历史 `2.1.0-BETA1` 镜像与 Chart 保持旧架构，不能用来安装当前运行时。
 </Note>
 
 ## 当前源码：Managed MQ / Redis 部署
 
-当前源码部署五个组件：Go Control Plane、Gateway、Session Portal、Brain Dataplane 和平台 Hands。
-单个 `service-controlplane` 二进制和镜像在 8081 端口承载管理 API、Workflow / Team 编排、Hosted
-协调、Cron、渠道接入、消息发送和 Webhook 投递，不再独立部署 scheduler 或 orchestration。
-
-所有 control 副本运行有界 worker。PostgreSQL 负责消息和任务去重、领取、Stream 租约、重试与
-fence 校验，无需粘性会话或固定单副本。Helm 的 `control.executionSlots`、`control.workerBatch`、
-`control.channelSlots`、`control.webhookSlots` 设置单副本并发。保留 `cp`、`rt` schema 及现有签名、
-加密密钥；新增 `0007_integrated_scheduler` 产品迁移创建共享任务和 Stream 租约表。
-
-升级时先暂停渠道入口并排空待回复消息，停止旧 Java Scheduler 和 Go orchestration 部署，执行
-schema job 并重新授权，再启动合并后的 control 副本。Compose 使用 `--remove-orphans` 清理旧容器；
-Helm 升级前先将旧 Deployment 缩容为 0。切换后再停用旧 runtime / scheduler 数据库凭据。
-该部署结构需要重新构建源码镜像，已发布的 BETA1 镜像保持原样。
-
-五个 Service 镜像必须从同一版本构建。平台 Hands 为必选内部 HTTP/MQ 服务，端口 8085，
-与客户侧 Environment Worker 分开。准备外部 PostgreSQL、Redis 和 RocketMQ 5.5.1 的独立
-Cluster Proxy；先初始化 Turn 根父 Topic 及 `_d1` 至 `_d16` 子深度父 Topic，
-加上工具事件和 Resume 共 19 个父 Topic / 消费组，均启用 FIFO / Shared / wildcard。
-Brain 消费 ma_turns_v3 与 ma_turn_resumes_v3，Hands 仅消费 ma_tool_events_v3。
-使用 LitePushConsumer，Proxy 保留活动执行回调的自动续期配置。Brain 先持久提交完整
-checkpoint 与挂起状态，再释放活动执行令牌并返回 SDK Suspend，原消息保留队头而回调线程释放。
-独立 Resume 推进同一个 Turn；原 Turn 只有持久终态后才返回 SUCCESS。
-根回调默认 64，每个子深度 4，Resume 64；活动 Harness 容量独立有界，容量不足返回 Suspend。
-不再配置回调完成信箱、应用 callback hold 或本地 Turn 调度队列。
-
-当前 5.5.1 Lite 验收已确认首条缺口：独立 SDK 向 100 个新 LiteTopic 各发两条消息，
-其中 49 个只收到第二条；普通组的最小位点开关和已开启的内存检查均未避免此问题。
-最早位点、离线积压与重启验收仍为部署的可靠性前置要求。显式本地 MIN 测试修正版
-已在关闭热内存捷径时通过原始 SDK 的即时、离线积压及重启验收，Service 集成正在复验；
-这不代表官方 5.5.1 或未测试的托管提供者已通过。参见
-[Broker 初始位点路径](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/broker/src/main/java/org/apache/rocketmq/broker/processor/PopLiteMessageProcessor.java)。
-
-Compose / Helm 先执行四个独立初始化任务（cp/rt、portal、dp、ma），再授权四个业务账号。
-普通副本仅校验 ma 版本与校验和，不在启动时建表。已有无版本 ma 表需使用新运行数据空间，
-本轮不自动转换旧 Managed 数据。Portal、Brain、Hands 通过 PostgreSQL `ma.private_object`
-共享 checkpoint 与大消息对象。设置 `userFilesEnabled=false` 后关闭公开文件 API，
-不创建用户文件 PVC，各副本使用临时工作目录；开放Harness 内部工作数据使用现有 PostgreSQL KV 表，按 Session 隔离；关闭文件、Shell 和 Artifact
-工具，文本对话无需外部沙箱。用户文件和 Artifact 功能仍需共享存储。在私有配置中填写从服务可达的 Redis / Proxy 地址。
-
-本轮源码改造同时替换数据面 `dp` 迁移集合：新建 schema 保留资源 / 状态服务，Managed
-执行状态归 `ma`。旧数据面版本和校验和会被拒绝，需使用新数据空间。旧 SQL writer lease
-后端、Brain 本地 Sandbox 执行和同步 ASDP Agent 登记已删除；Worker 请求进入 Hands，
-Session 请求进入 Session Portal。
-
-所有完整 Managed 检查点（包括小检查点）以不可变字节保存到 PostgreSQL，Brain 保存成功后
-才由 Brain 校验大小、哈希、身份，并在挂起或终态事务中提交引用。超过 128 KiB 的消息也使用此私有表，
-对象上限仍为 64 MiB。替换副本前先执行新增 `managed-private-objects.sql` 迁移并重新授权。
-恢复和 fork 引用的对象应与日志一起备份。旧文件对象不会自动导入：升级已有安装前需导入
-全部被引用对象，或使用新的运行数据库；数据库不可用时不回退到节点本地存储。
-
-Hands 在发送 Tool Topic 前，将真实工具终态完整保存到数据库结果 outbox。Broker 发送回执
-不代表结果已经落库；Tool 消费者在提交结果与投影的同一事务中结清 outbox。重试复用原结果，
-必要时重建丢失的传输文件，不重新执行外部工具。数据库备份需同时包含这些记录和原生日志。
-
-精确命令、Secret、Topic 初始化及扩容参考当前源码的部署和 Chart README。下文已发布版本
-的安装命令对应旧架构，不能用于安装当前 MQ/Redis 协议。
-
-
-本页介绍面向生产环境的 Kubernetes 与 Helm 安装。正式 Service Chart 安装 Gateway、Control、Dataplane 和 Scheduler。PostgreSQL、持久存储、入口域名和 TLS 由你管理。应用每组件默认单副本并采用 Recreate 更新，部署和升级需要维护窗口。
+Service 部署 Gateway、Go Control Plane、Session Portal、Brain Dataplane 和平台 Hands 五个组件。
+Team / Workflow、Scheduler、Cron、渠道与消息投递已合并到 Control Plane。应用使用 Session、Turn、
+Events，物理工具由 Hands 执行。PostgreSQL、Redis、RocketMQ 由运维提供。镜像仓库和版本需固定到
+同一次源码构建，见[发布手册](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-service/release/README_zh.md)。
 
 ## 1. 准备依赖
 
-准备 Kubernetes、Helm、可达的 PostgreSQL，以及 Workspace 所需的 RWX StorageClass 或已有共享 PVC。Artifact 默认使用 RWO。工作目录会被多个组件挂载；只在单节点可用的 RWO 卷不能替代跨节点共享存储。
+准备 Kubernetes、Helm、psql 和各节点可访问的镜像仓库。PostgreSQL 使用 `cp`、`rt`、`portal`、
+`dp`、`ma` 五个 schema，owner 与业务账号分离。Redis 保护活动所有权并加速通知，PostgreSQL
+保存 checkpoint、执行事实和 `ma.private_object` 大对象，不使用私有 managed-blobs PVC。
 
-可以直接从公开 Helm 仓库安装 Chart，无需下载源码。先下载与版本配套的配置模板和初始化 SQL：
+设置 `userFilesEnabled=false` 时关闭公开文件、Shell、Artifact，内部工作数据使用 Session 隔离的
+PostgreSQL KV，文本执行无需文件 PVC 或 Sandbox。开放用户文件时，Workspace 和 Artifact 均需
+共享 ReadWriteMany 存储。
+
+<span id="prepare-rocketmq"></span>
+
+### 准备 RocketMQ
+
+使用支持 LitePushConsumer 的独立 Cluster Proxy。自建 Broker 5.5.1 需开启 `enableLmq=true`、
+`enableMultiDispatch=true`；Proxy 设置 `enableProxyAutoRenew=true`、`renewMaxTimeMillis=10800000`。
+原版 5.5.1 在新 LiteTopic 上存在已知初始 offset 投递问题，生产前需对实际 Broker / 云服务验证首次
+投递、离线积压和重启恢复。仓库提供的显式补丁 fixture 用于开发验收，不是生产 Broker 发行版。
+
+初始化五个业务父 Topic 与消费组，使用 FIFO、Shared/wildcard 订阅和最小 offset 消费。根与子
+Session 共用 Turn 父 Topic，无需按深度创建 Topic。
+
+| 父 Topic | 消费组 | 生产者 → 消费者 |
+| --- | --- | --- |
+| `ma_turns_v3` | `ma_brain_v3` | Portal → Brain |
+| `ma_tool_execute_v1` | `ma_hands_execute_v1` | Brain → Hands |
+| `ma_tool_control_v1` | `ma_hands_control_v1` | Brain → Hands |
+| `ma_tool_events_v3` | `ma_brain_tool_events_v3` | Hands / Brain → Brain |
+| `ma_turn_resumes_v3` | `ma_brain_resumes_v3` | Brain → Brain |
+
+在 RocketMQ 管理主机或容器上，从源码 `agentscope-service` 目录执行：
 
 ```bash
-curl -sS --fail-with-body -LO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/kubernetes.env.example
-curl -sS --fail-with-body -LO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/postgres-init.sql
+ROCKETMQ_HOME=/opt/rocketmq MANAGED_MQ_NAMESRV=namesrv:9876 \
+  MANAGED_MQ_CLUSTER=YOUR_CLUSTER sh deploy/managed-mq-init.sh
 ```
 
-用应用数据库所有者在目标数据库执行 SQL，创建 `cp`、`rt`、`dp` 三个 schema。为数据库、文件和密钥建立备份策略。如需离线安装，从 [GitHub Release](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.1.0-BETA1) 下载 `agentscope-service-2.1.0-BETA1-kubernetes.tar.gz` 和 `SHA256SUMS`，核对校验和后解压；包中包含 Chart 和相同的配置文件。
+自定义 Topic/消费组时，初始化也需导出匹配的 `BUILDER_MANAGED_MQ_*` 配置。脚本另建自建 Proxy
+心跳 Topic。阿里云使用已登录 `aliyun` CLI 执行
+`deploy/managed-cloud-mq-init.py --instance INSTANCE --region REGION`，无需访问 NameServer；在
+业务 Secret 中配置匹配的地址、TLS 和需要的成对 MQ 凭据。完整文件见
+[部署输入](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service/deploy)。
 
 ## 2. 创建 Secret
 
-复制 `kubernetes.env.example` 到私有文件并替换全部占位值：数据库连接、随机 JWT/internal/Vault 密钥、初始管理员密码及需要的模型凭据。URI 中的密码 URL 编码，JDBC 密码单独提供原值。根据数据库证书设置 TLS。
+进入当前源码的 `agentscope-service` 目录，将 `deploy/kubernetes.env.example`、
+`deploy/kubernetes-migration.env.example`、`deploy/postgres-grants.env.example` 复制到 Git 之外的
+私有文件并替换全部占位符。授权文件使用 owner 的 `PG*` 设置和四个业务原始密码，与业务连接
+保持一致。URI 密码需 URL 编码，JDBC 与 psql 使用原始密码。迁移 Secret 不得挂给普通业务副本。
 
 ```bash
+set -a
+. /private/postgres-grants.env
+set +a
+psql -X -v ON_ERROR_STOP=1 -f deploy/postgres-init.sql
 kubectl create namespace agentscope
-kubectl -n agentscope create secret generic agentscope-service --from-env-file=/private/path/service.env
+kubectl -n agentscope create secret generic service-migration --from-env-file=/private/migration.env
+kubectl -n agentscope create secret generic service-credentials --from-env-file=/private/service.env
 ```
 
-Secret 是运行配置；不要把明文文件或含 Secret 的渲染结果提交到仓库。
+已有安装通过 Secret 管理系统或 `kubectl apply` 更新，保留签名、加密密钥和业务密码。Redis / MQ
+地址必须能从业务 Pod 解析和访问。
 
 ## 3. 准备 values
 
-以下是 `production-values.yaml` 起点，替换域名、StorageClass、Ingress class 和 TLS Secret。TLS Secret 必须预先存在或由你的证书控制器创建。
+复制 `deploy/production-values.yaml.example` 到 `/private/production-values.yaml`，设置外部 URL、
+imagePullSecrets 与需要的 Ingress/TLS。示例默认开启鉴权，关闭 Local 工具和用户文件，五个角色
+各两个副本。开放文件时配置：
 
 ```yaml
-existingSecret: agentscope-service
-allowLocalEnvironment: false
-publicURL: https://agentscope.example.com
+userFilesEnabled: true
 persistence:
   workspaces:
-    storageClass: shared-rwx
-    size: 20Gi
+    storageClass: YOUR_RWX_STORAGE_CLASS
+    accessModes: [ReadWriteMany]
   artifacts:
-    storageClass: standard
-    size: 20Gi
-ingress:
-  enabled: true
-  className: nginx
-  host: agentscope.example.com
-  tls:
-    - hosts: [agentscope.example.com]
-      secretName: agentscope-service-tls
+    storageClass: YOUR_RWX_STORAGE_CLASS
+    accessModes: [ReadWriteMany]
 ```
 
-已有 PVC 时设置对应 `existingClaim`。私有镜像配置 `imagePullSecrets`；Ingress annotations 按实际控制器设置 SSE 超时和缓冲行为。资源 requests/limits 可分别通过 `control`、`dataplane`、`scheduler`、`gateway` 调整，按实际任务负载压测定容。
+逐角色 `existingSecret` 可分离凭据。可选 `managed.mq.existingSecret`、`data.existingSecret` 用于业务
+连接覆盖，`schema.dataExistingSecret` 只用于迁移，默认都不引入云依赖。连接预算应包括所有副本
+连接池、Brain 原生日志连接和迁移 Job。
 
 ## 4. 安装指定版本
 
-添加公开 Helm 仓库并更新索引，无需登录仓库：
+填写五个已构建并推送镜像的实际仓库和版本，使用当前源码 Chart 或同一新 Kubernetes 制品中的
+Chart 压缩包。不要为此架构选择公共仓库中的旧 BETA1 Chart。
 
 ```bash
-helm repo add agentscope https://chickenlj.github.io/helm-charts
-helm repo update agentscope
-helm search repo agentscope/agentscope-service --versions --devel
-```
-
-已发布的 [Helm 仓库](https://github.com/chickenlj/helm-charts) 在 GitHub Pages 托管索引与安装包。使用 `--version 2.1.0-BETA1` 固定版本；查询命令的 `--devel` 会包含预发布版本。Chart 通过 `appVersion` 使用配套的镜像版本。
-
-安装指定 Chart 版本，并配置对应的镜像命名空间：
-
-```bash
-helm upgrade --install service agentscope/agentscope-service \
-  --version 2.1.0-BETA1 \
-  --namespace agentscope \
-  --set imageRepository=sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope \
-  -f production-values.yaml \
-  --wait --timeout 10m
-```
-
-离线安装时，将 `agentscope/agentscope-service` 和 `--version 2.1.0-BETA1` 替换为下载的 `./agentscope-service-2.1.0-BETA1.tgz`。保持 Chart 与组件镜像版本配套。Chart 会在你的集群创建工作负载；发布 Helm 仓库本身不会部署运行中的 Service。
-
-## 5. 验证用户路径
-
-```bash
-kubectl -n agentscope get pods,pvc,svc,ingress
+export IMAGE_REPOSITORY=registry.example.com/agentscope
+export SERVICE_VERSION=2.1.0-candidate.1
+export CHART=helm/agentscope-service
+helm upgrade --install service-schema "$CHART" --namespace agentscope \
+  -f /private/production-values.yaml --set imageRepository="$IMAGE_REPOSITORY" \
+  --set imageTag="$SERVICE_VERSION" --set schema.only=true --wait --timeout 10m
+sh deploy/postgres-roles.sh
+helm upgrade --install service "$CHART" --namespace agentscope \
+  -f /private/production-values.yaml --set imageRepository="$IMAGE_REPOSITORY" \
+  --set imageTag="$SERVICE_VERSION" --wait --timeout 10m
+kubectl -n agentscope get pods
 kubectl -n agentscope port-forward service/service-agentscope-gateway 18080:8080
 ```
 
-确认 PVC Bound、Pod Ready，使用初始管理员登录公开域名并修改密码。验证模型连接、执行 Environment、第一次 Chat、Issue 交付和长连接。port-forward 用于排障，不替代公开回调地址验证。
+四个 owner Job 分别迁移 Control（`cp` + `rt`）、Portal（`portal`）、Dataplane（`dp`）和 Managed
+（`ma`）。全部成功后执行授权，再启动业务副本。普通组件只校验版本和 checksum，不执行 DDL。
+Helm 的幂等迁移 hook 不会自动重授权，新增表的升级也需遵循先迁移、授权，再更新业务的顺序。
+
+## 5. 验证用户路径
+
+检查 Gateway 健康、bootstrap 登录与 Agent 创建，配置 [Environment](/v2/zh/service/environments) 并将 ID 导出为 `ENVIRONMENT_ID`；关闭用户文件时，Session 准入仍要求 Environment 绑定。在 `agentscope-service` 目录执行以下命令，或
+使用 Kubernetes 包内的 `smoke.py`，验证原生 Session 与 Events：
+
+```bash
+python3 release/smoke.py --base http://127.0.0.1:18080 \
+  --env-file /private/service.env --environment-id "$ENVIRONMENT_ID" --state /tmp/service-smoke.json
+# 有效模型配置下，用新 state 文件加 --model-turn 验证 Turn。
+# 重启组件后，复用对应 state 文件并加 --resume。
+```
+
+仅资源检查不代表推理已验收。还需在目标 Environment 跑工具 Turn，检查 SSE 增量、断线重连和
+副本重启后未完成工作的恢复。参见[第一个 Managed Agent](/v2/zh/service/create-managed-agent)。
 
 ## 升级、卸载与运行模式
 
-Secret 更新后重启相关 Deployment；升级前按[运维手册](/v2/zh/service/operations)备份，并保留原 Chart、values 和镜像版本。Chart 保留 PVC；重新安装时显式指定保留的 existingClaim。
+不兼容升级前，备份 PostgreSQL（含私有对象）、启用的文件卷与原 Vault/签名密钥，停止受理并
+排空 Turn、工具与渠道回复。停用旧 Scheduler/orchestration，再启动合并的 Control Plane。执行新
+镜像的迁移任务、重新授权，然后同步替换兼容的组件。
 
-此 Chart 提供完整 Service standalone HTTP。Kubernetes-native ControlPlane/ASDP 是另外的部署模式，应按 SDK 网络契约规划，不把两个 Chart 直接叠装为同一服务。当前 Chart 的单副本安装不提供无停机迁移或多副本 HA 保证。
+当前 `dp`/`ma` 基线拒绝不兼容的旧版本、checksum 与无版本 Managed 数据，不自动转换旧运行状态
+或导入文件对象。使用新的运行数据空间或经过验证的迁移，不能删除迁移记录绕过校验。回退镜像
+不会撤销 schema 变更，Helm 卸载保留 PVC。
+
+## 部署边界与生产规划
+
+五个角色均使用 RollingUpdate Deployment，可独立扩容。Brain 的 Harness 容量与 MQ 回调池配置在
+`dataplane`，物理工具并发配置在 `hands`。挂起释放活动资源并保留 Session FIFO 顺序；MCP 批次可
+从持久记录直接恢复，其他等待使用 Resume。数据库负责跨副本持久协调，无需粘性 Session 路由。
+
+自托管 Service 部署整个平台；`self_hosted` 工具 Worker 提供工具环境，Runtime Host 执行 Hosted
+Coding Agent。三者职责分离。Kubernetes-native ControlPlane/ASDP 是另一种部署模式，不是完整
+Service 的额外必装组件。参见 [Environment](/v2/zh/service/environments) 和
+[Runtime Host](/v2/zh/service/runtime-host)。
+
+## 入口与网络
+
+| 组件 | 端口 | 暴露方式 |
+| --- | --- | --- |
+| Gateway | 8080 | 公共 API / Console 入口；Compose 默认本机 18080 |
+| Control Plane | 8081 | 内部 |
+| Brain Dataplane | 8082 | 内部 |
+| Session Portal | 8084 | 内部 |
+| Hands | 8085 | 内部 |
+| PostgreSQL / Redis / MQ | 按依赖配置 | 私有依赖网络 |
+
+## 启用远程访问
+
+HTTPS 入口指向 Gateway，Helm 配置 `publicURL`，Compose 配置 `BUILDER_OAUTH_PUBLIC_URL`，内部
+组件保持私网访问。SSE 禁用缓冲与缓存，设置足够长的读取超时。验证增量事件、重连、OAuth /
+渠道回调以及实际外部 URL。
+
+## 使用发布版 Docker Compose
+
+使用明确包含当前架构的新 Compose 包和对应 `SHA256SUMS`。校验后解压并进入 `agentscope-service`
+目录，按制品清单填写实际镜像版本和仓库：
+
+```bash
+./init-env.sh YOUR_VERSION REGISTRY/NAMESPACE
+# 在 .env 填写容器可达的 Redis/MQ 地址、MQ 认证/TLS 与模型凭据。
+# 保持 BUILDER_LOCAL_DEV=false。
+docker compose config --quiet
+docker compose pull
+docker compose up -d --wait --wait-timeout 600
+python3 smoke.py --base http://127.0.0.1:18080 --env-file .env --environment-id "$ENVIRONMENT_ID" --state /tmp/service-smoke.json
+```
+
+Compose 启动 PostgreSQL，自动完成四个迁移任务和业务授权后启动服务。Redis/MQ 仍由运维提供，
+五组 Topic/消费组需提前创建。只有 Gateway 对外开放。Local 工具需显式开启
+`BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`，在 Hands 执行。`docker compose down` 保留卷；旧组件
+排空后可用 `--remove-orphans` 清理。参见[运维](/v2/zh/service/operations#compose-operations)。
+
+
 
 <span id="self-hosting"></span>
 <span id="三个不同的部署对象"></span>
 <span id="选择部署路径"></span>
 <span id="部署后的交接"></span>
 <span id="持续运营"></span>
-
-## 部署边界与生产规划
-
-[快速开始](/v2/zh/service/quickstart)中的 Compose 命令部署了完整 Service。用户通过 Gateway 访问平台，Control 管理身份和资源并协调工作，Dataplane 运行 HarnessAgent 和会话，Scheduler 承担调度相关工作。数据库和持久存储则保存平台运行所需的数据。维护这套共享服务，是平台自托管时需要承担的运维工作。
-
-工具执行环境可以与平台服务分开准备。即使文件或 Shell 工具运行在沙箱、远端文件后端或 `self_hosted` Worker 中，Managed Agent 的推理过程仍由 Dataplane 承担。接入 External Agent 或 Hosted Agent 时，执行工作还会涉及原有应用或 Runtime Host。这些资源连接到已部署的 Service，分别提供对应的执行能力。
-
-```mermaid
-flowchart LR
-    U["Console / 业务应用"] --> G["Gateway"]
-    G --> C["Control：身份、资源与协调"]
-    G --> D["Dataplane：HarnessAgent 与会话"]
-    D --> M["所选模型服务"]
-    D --> E["工具 Environment"]
-    C --> R["External / Runtime Host"]
-    C --> P["数据库与持久存储"]
-    D --> P
-```
-
-部署位置确定后，还需要检查各组件实际连接到哪里。自托管 Service 仍然可以调用远程模型，工具也可能通过 MCP 或其他接口访问外部系统。规划网络时，应结合所选模型、工具和存储逐一确认数据流向，并为需要从外部到达平台的 OAuth 等回调准备入口。
-
-本地体验可以使用[快速开始](/v2/zh/service/quickstart)中的 Compose 部署；由平台团队长期维护的环境，可以根据基础设施选择 Kubernetes。下表列出各条路径需要准备的资源，已有团队平台的使用者通常只需完成账号和执行环境的准备。
-
-| 路径 | 当前用途 | 需要准备 |
-| --- | --- | --- |
-| Docker Compose | 本机体验、开发与集成验证 | 发布包、Docker、模型凭据、持久磁盘 |
-| Kubernetes / Helm | 由平台团队管理的安装 | PostgreSQL、共享 Workspace 存储、Artifact 存储、Secret、域名与 TLS |
-| 已有团队平台 | 应用开发者直接使用 | 服务地址、账号、授权空间、可用模型与 Environment |
-
-Service Chart 默认每组件一个副本并采用 Recreate 更新。需要数据面多副本时，先用单副本初始化 `dp` schema，再设置：
-
-```yaml
-dataplane:
-  replicas: 2
-  ddlAuto: validate
-```
-
-所有数据面副本使用相同的 PostgreSQL 数据库、Secret 和 RWX Workspace。使用已有 PVC 时，需要确认它支持共享写入。API、SSE 和 Turn 执行仍在同一批数据面 Pod 中，请求与 SSE 可以到达不同 Pod，不要求 sticky session。数据面多副本采用 RollingUpdate，Control、Scheduler 和 Gateway 保持默认部署配置。schema 升级仍需要先以单副本完成迁移，整套服务不会因此自动获得高可用或免维护窗口。Kubernetes-native ControlPlane/ASDP 是为相应 SDK 和运行传输提供的另一种部署模式，应根据接入要求选择；它并不是需要叠加到完整 Service Chart 上的一组必装组件。
-
-平台交付给业务团队时，管理员需要提供可访问的 Service 地址和账号，并说明该账号可以使用哪个 Namespace。使用者还需要知道默认模型是否可用、应选择哪个工具环境，以及业务资料放在哪里、如何获得访问权限。有了这些信息，就可以按[第一个托管 Agent](/v2/zh/service/create-managed-agent)完成模型与文件工具验证，再通过[应用接入指南](/v2/zh/service/service-api)检查业务应用的调用过程。
-
-进入生产使用前，应进一步验证用户能否持续接收执行事件、刷新页面后能否恢复已有内容，以及交付文件是否可以按权限下载。如果业务依赖 Webhook，还需确认接收端能够收到通知。数据库和文件备份则需要配合恢复演练，并覆盖未完成工作如何继续处理。这样才能确认平台在实际使用和故障恢复时都能按预期工作。
-
-## 入口与网络
-
-Compose 默认只将 Gateway 暴露在宿主机的 `127.0.0.1:18080`，用户请求由这个入口转发到内部服务。其余组件通过内部网络通信，容器端口及暴露方式如下。
-
-| 组件 | 容器端口 | 暴露方式 |
-| --- | --- | --- |
-| Gateway | 8080 | 默认宿主 `127.0.0.1:18080` |
-| Control | 8081 | 内部网络 |
-| Dataplane | 8082 | 内部网络 |
-| Scheduler | 8083 | 内部网络 |
-| PostgreSQL | 5432 | 内部网络 |
-
-如果反向代理运行在同一台宿主机上，可以将请求转发到 `127.0.0.1:18080`。如果代理运行在另一个容器中，它看到的 `localhost` 指向代理容器自身，因此需要配置共享网络，或使用该容器能够到达的宿主地址。对外入口仍应指向 Gateway，内部组件和数据库通过私网提供服务。
-
-## 启用远程访问
-
-需要从其他设备访问这套部署，或联调 OAuth、Channel 的公网回调时，可以为 Gateway 配置 HTTPS 入口。先准备域名和 TLS 证书，再让反向代理将请求转发到 Gateway。随后在 `.env` 中把 `BUILDER_OAUTH_PUBLIC_URL` 设置为实际的外部地址，例如 `https://agentscope.example.com`；如果 Gateway 还需要调整监听地址或端口，再修改 `BIND_ADDRESS` 和 `GATEWAY_PORT`，并重建容器使配置生效。
-
-执行进度通过 SSE 长连接传输，因此代理需要及时转发事件，关闭事件流缓存，并允许足够长的读取超时。配置完成后，除了确认能够登录，还应运行一次持续生成内容的任务，检查事件是否陆续到达、刷新后能否重新连接，以及业务所需的回调是否正常。
-
-
-## 使用发布版 Docker Compose
-
-没有 Kubernetes 时，也可以使用发布版 Compose 安装包。它使用已发布镜像，保留完整的认证与权限校验，不需要源码或 Java、Go 构建工具。准备 Docker Compose v2、Bash、curl 和 OpenSSL，下载并校验安装包：
-
-```bash
-curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/agentscope-service-2.1.0-BETA1-compose.tar.gz
-curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/SHA256SUMS
-awk '$2 == "agentscope-service-2.1.0-BETA1-compose.tar.gz"' SHA256SUMS > compose.sha256
-if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum -c compose.sha256
-else
-  shasum -a 256 -c compose.sha256
-fi
-```
-
-```bash
-tar -xzf agentscope-service-2.1.0-BETA1-compose.tar.gz
-cd agentscope-service
-./init-env.sh 2.1.0-BETA1 sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope
-```
-
-填写生成的 `.env` 中的 `DASHSCOPE_API_KEY`，保持 `BUILDER_LOCAL_DEV=false`。按实际隔离要求准备 Environment；可信本机验证可设置 `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`，工具在 Dataplane 容器中执行。
-
-```bash
-docker compose pull
-docker compose up -d --wait --wait-timeout 600
-docker compose ps
-curl -fsS http://localhost:18080/actuator/health
-```
-
-打开 `http://localhost:18080`，使用 `.env` 中的初始管理员登录并修改密码，再按下面的认证与权限配置接入 API。日常停止使用 `docker compose down` 保留数据卷；备份与升级见[运维](/v2/zh/service/operations#compose-operations)。
 
 <span id="production-api-access"></span>
 
@@ -432,11 +376,12 @@ JSON
 
 ## 安装生产 CLI 与 Runtime Host
 
-在目标 Linux/macOS 主机安装 Go 1.26+，通过标准 Go 模块版本安装两个发布的命令：
+优先使用与 Service 同一源码构建的 CLI 安装包安装两个命令。若对应发布已有 Go 模块 tag，也可用 Go 1.26+ 安装匹配版本：
 
 ```bash
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
+export SERVICE_VERSION=YOUR_CURRENT_RELEASE
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v"$SERVICE_VERSION"
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v"$SERVICE_VERSION"
 as connect https://agentscope.example.com
 ```
 

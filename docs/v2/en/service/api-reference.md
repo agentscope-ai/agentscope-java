@@ -3,7 +3,7 @@ title: "API, SDKs, and the Agent catalog"
 zh_link: /v2/zh/service/api-reference
 ---
 
-Applications use published Endpoint / Invocation APIs for business integration, or the native Managed Session API for direct Session and Turn control. Management APIs prepare resources and definitions. Follow the [API guide](/v2/en/service/service-api) for public business calls and the [native Managed contract](/v2/en/service/claude-session-api) for the MQ / Redis execution path.
+Applications follow Sessions, Turns and Events. Current MQ / Redis Managed Agents use the [native Managed contract](/v2/en/service/claude-session-api); management APIs prepare resources and definitions. Other backends retain the compatibility path described in the [API guide](/v2/en/service/service-api). Their payloads, event cursors and supported controls differ.
 
 <span id="authentication-and-scope"></span>
 
@@ -17,49 +17,29 @@ An Application records the caller, members, and quotas. Credential creation requ
 
 ## Native Managed Session API
 
-Managed execution uses `/v1/sessions`. The following paths are relative to that base. Other
-backends retain `/api/v1/agent-sessions` with their own payloads, capabilities and cursors;
-do not send native Managed IDs or Input bodies to those routes.
+Current Managed execution uses `/v1/sessions`. Other backends retain the compatibility
+`/api/v1/agent-sessions` path with different payloads and capabilities; do not mix their IDs or cursors.
+The following paths are relative to the native base:
 
 | API | Purpose |
 | --- | --- |
-| `POST /` | Pin `agent`, optional `environment_id`, resources and configuration; idempotency key required |
-| `GET /` | Keyset list: `after`, `limit`, `order`, `lifecycle`, `agent_id` |
-| `GET /{session}` | Read the Session and frozen configuration |
-| `POST /{session}` | Update `title` and string-pair `metadata` |
-| `POST /{session}/archive` or `/restore`; `DELETE /{session}` | Accept a lifecycle change with a stable key |
-| `GET /{session}/lifecycle/{command}` | Read that lifecycle operation's durable receipt |
-| `GET /{session}/capabilities` | Explicit file, artifact, budget and checkpoint capabilities |
-| `POST /{session}/turns` | Submit `{"input":{"message":"Task"}}` or structured Agent input; stable key required |
-| `GET /{session}/turns` | `after`, `limit`, `order`, `status` |
-| `GET /{session}/turns/{turn}` | Admission, execution, delivery and `inputs_open` |
-| `POST /{session}/turns/{turn}/inputs` | `type=steer|inject|reply|cancel`, `payload`, and `action_id` for reply |
-| `GET /{session}/turns/{turn}/inputs` or `/inputs/{input}` | Ordered Input list or one admission/application receipt |
-| `GET /{session}/snapshot` or `/turns/{turn}/snapshot` | Pinned, bounded resources for the Session or one Turn |
-| `GET /{session}/resources/{kind}` | Continue either snapshot's pages with `snapshot_id`, `after`, `limit` |
-| `GET /{session}/events` or `/events/stream` | Session journal pagination or persistent SSE |
-| `GET /{session}/usage` or `/turns/{turn}/usage` | Authoritative aggregate and committed cursor |
-| `GET /{session}/turns/{turn}/capabilities` | Available controls and explicit support flags |
-| `POST/GET /{session}/files` | Immutable binary upload or finite metadata list |
-| `GET /{session}/files/{file}` or `/files/{file}/content` | File metadata or bytes |
-| `POST/GET /{session}/artifacts` | Publish a deliverable or read a pinned resource page |
-| `GET/DELETE /{session}/artifacts/{artifact}` | Read or remove a publication; removal retains file bytes |
-| `GET /{session}/artifacts/{artifact}/content` | Platform-owned content; HTTPS references are not fetched |
-| `GET/PUT /{session}/budget` | Read or replace the shared root budget; PUT uses `If-Match` |
-| `GET /{session}/checkpoints` | Committed checkpoint metadata, with its own pagination watermark |
+| `POST /` | Create with `agent`, optional `environment_id`, `title` and `metadata`; retain a stable idempotency key |
+| `GET /{session}` | Read frozen Agent reference and current Session status |
+| `GET /{session}/capabilities` | Discover the supported protocol subset |
+| `POST /{session}/events` | Submit `user.message` / `user.interrupt`; explicit `new_turn`, `steer`, `inject` and `cancel` require a stable key |
+| `GET /{session}/events` | Paginate public history with `page`, `limit`, `order`, type/time filters |
+| `GET /{session}/events/stream` | Receive events processed after connection; no cursor replay |
+| `GET /{session}/turns` or `/turns/{turn}` | Read Turn identity and state using platform extensions |
+| `GET /{session}/turns/{turn}/output` | Read independently paginated final output |
+| `GET /{session}/turns/{turn}/inputs` or `/inputs/{input}` | Read Input admission and application state |
 
-Paths after “or” share the first path's Session prefix. Native Turn observations use a Turn
-snapshot plus the **Session** event stream; filter events by `data.turn_id` while advancing the
-Session cursor for every applied frame. There is no native Turn-specific events route.
-Snapshots return bounded `resources.<kind>.data` pages with `snapshot_id`, `as_of`, expiry and
-continuation fields. The Console helper flattens these pages; that view type is not the raw response.
-
-Replies and cancellation are Inputs with separate delivery and application status. Long-tool
-suspension resumes automatically. Current capabilities report `resume=false`,
-`checkpoint_restore=false` and `fork=false`; the old `/actions`, `/commands`, tool/workspace
-recovery and trace routes are not native controls. Native webhook registration and complete
-historical-state recovery remain migration work. See the [native contract](/v2/en/service/claude-session-api),
-[Files](/v2/en/service/files) and [SSE](/v2/en/service/sse-events).
+Select `AgentScope-Extensions: turn-inputs-v1` to include platform linkage in receipts and
+history. Create Turns by posting Events, not by posting to `/turns`. Client tool confirmation,
+Session list/update/lifecycle, snapshots, file/Artifact/budget/checkpoint APIs and SSE replay
+are outside this first native protocol release. Internal checkpoints and automatic recovery
+still operate; public feature availability is determined by capabilities. See the
+[current native contract](/v2/en/service/claude-session-api) and
+[first Managed Agent](/v2/en/service/create-managed-agent) for runnable requests.
 
 <span id="agents"></span>
 ## Agent catalog and runtime bindings
@@ -160,21 +140,14 @@ repository publication.
 
 ## Managed runtime contract
 
-Managed Sessions use `/v1/sessions`. Pending actions are in
-`snapshot.resources.required_actions.data`. Reply through
-`POST /v1/sessions/{session}/turns/{turn}/inputs` with
-`{"type":"reply","action_id":"ACTION_ID","payload":{"allow":true,"reason":"..."}}`
-for a confirmation. Keep the same explicit idempotency key and body when retrying.
+All native interaction writes use `POST /v1/sessions/{session}/events`. Submit `user.message`
+with `agentscope_service.intent:new_turn` for new work, or `steer` / `inject` with an existing
+`turn_id`. Cancellation uses `user.interrupt` with `intent:cancel` and the explicit Turn ID.
+Retain the same body and idempotency key after an uncertain response.
 
-The Input receipt contains `id`, `turn_id`, `status` and `delivery_status`.
-`status` is `accepted`, `applied` or `rejected`; a rejected Input includes
-`rejection_reason`. Read the receipt at
-`GET /v1/sessions/{session}/turns/{turn}/inputs/{input}`. Delivery does not imply
-application. A cancel Input being applied does not prove that its Turn and tools have stopped;
-continue observing the Turn's terminal state.
-
-Managed Endpoint Invocation command receipts also expose `input_id`, `input_status`
-and `input_delivery_status`. Their command can remain `submitted` until the native Input
-is applied or rejected. Managed Turns do not expose a separate `resume` operation.
-SSE disconnects leave execution running; use the last applied cursor to reconnect.
-See the [Managed Session API](/v2/en/service/claude-session-api) for native resources and controls.
+An extended receipt links Event and Turn/Input identities. Poll the corresponding read routes
+until the Input is applied/rejected and the Turn reaches its actual terminal state. Acceptance
+or applied cancellation does not prove that an external tool has stopped. SSE disconnects do
+not cancel work; reconnect using public history and current-state queries, without a replay cursor.
+There is no separate client `resume` operation. See the
+[Managed Session API](/v2/en/service/claude-session-api) for the current capability boundary.

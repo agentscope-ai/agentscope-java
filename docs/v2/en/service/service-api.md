@@ -4,6 +4,11 @@ description: "Delegate tasks to an Agent through the Session API, follow progres
 zh_link: /v2/zh/service/service-api
 ---
 
+<Note>
+Current MQ / Redis Managed Agents use the [native Managed Session API](/v2/en/service/claude-session-api) at `/v1/sessions`, with `agent` creation and `user.message` writes through `/events`. Follow [your first Managed Agent](/v2/en/service/create-managed-agent) for a runnable walkthrough. The target-based `/api/v1/agent-sessions` examples below describe the compatibility path for other backends; its snapshots, SSE cursors and controls are not interchangeable with the native Managed protocol.
+</Note>
+
+
 Once an Agent is configured, an application can delegate work to it through the Session API. Create a Session to select the Agent and configuration for this work, then submit a task. Each submission creates a Turn that tracks its execution and result. Service runs the work in the background and preserves its records, so the application can close the submission request and return to the same task later.
 
 This page starts with application credentials and walks through creating a Session, submitting work, and handling results. For your first integration, use the Agent you already verified in [Create a Managed Agent](/v2/en/service/create-managed-agent). When you later need a Team or Workflow, use the same Session API, selecting the appropriate target and handling its supported input and interaction.

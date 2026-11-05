@@ -6,7 +6,6 @@
 #   service-controlplane    :8081  (Go control plane: /api/*, /api/v1/*, console SPA)
 #   Data       :8082
 #   Portal     :8084
-#   Go Runtime :8086
 #   Hands      :8085 (platform HTTP/MQ service)
 #   Postgres   :5432  (schemas cp + rt + portal + dp + ma; via Docker)
 #
@@ -15,8 +14,8 @@
 #
 # Usage:
 #   scripts/dev-up.sh
-#   BUILDER_REBUILD=1 scripts/dev-up.sh   # rebuild binaries and reset the disposable dev schemas
-#   BUILDER_REBUILD=1 BUILDER_RESET_DB=0 scripts/dev-up.sh  # rebuild while preserving local data
+#   BUILDER_REBUILD=1 scripts/dev-up.sh   # rebuild binaries and preserve data
+#   BUILDER_REBUILD=1 BUILDER_RESET_DB=1 scripts/dev-up.sh  # explicitly reset disposable dev schemas
 #   scripts/dev-down.sh
 #
 set -euo pipefail
@@ -28,9 +27,10 @@ PID_DIR="$RUN_DIR/pids"
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
 STARTUP_SUCCEEDED=0
+STARTED_PLANES=0
 cleanup_failed_startup() {
     local status=$?
-    if [ "$status" -ne 0 ] && [ "$STARTUP_SUCCEEDED" != "1" ] && [ "${BUILDER_KEEP_FAILED_STACK:-0}" != "1" ]; then
+    if [ "$status" -ne 0 ] && [ "$STARTED_PLANES" = "1" ] && [ "$STARTUP_SUCCEEDED" != "1" ] && [ "${BUILDER_KEEP_FAILED_STACK:-0}" != "1" ]; then
         echo "==> Startup failed; stopping partially started planes" >&2
         "$ROOT/scripts/dev-down.sh" || true
     fi
@@ -44,7 +44,7 @@ PORTAL_PORT="${BUILDER_PORTAL_PORT:-8084}"
 HANDS_PORT="${BUILDER_HANDS_PORT:-8085}"
 PG_PORT="${BUILDER_PG_PORT:-5432}"
 PG_CONTAINER="${BUILDER_PG_CONTAINER:-agentscope-dev-pg}"
-RESET_DB="${BUILDER_RESET_DB:-${BUILDER_REBUILD:-0}}"
+RESET_DB="${BUILDER_RESET_DB:-0}"
 
 # jdbc profile requires >=32 chars and rejects known short defaults (see InternalTokenStartupValidator)
 export BUILDER_LOCAL_DEV="${BUILDER_LOCAL_DEV:-true}"
@@ -60,7 +60,6 @@ PORTAL_DB_PASSWORD="${PORTAL_DB_PASSWORD:-local-portal-db-password}"
 DATA_DB_PASSWORD="${DATA_DB_PASSWORD:-local-data-db-password}"
 HANDS_DB_PASSWORD="${HANDS_DB_PASSWORD:-local-hands-db-password}"
 export BUILDER_HANDS_URL="http://localhost:${HANDS_PORT}"
-export BUILDER_MANAGED_BLOB_DIR="$RUN_DIR/managed-runtime-blobs"
 export SERVER_ADDRESS="127.0.0.1"
 export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-jdbc}"
 
@@ -128,7 +127,7 @@ ensure_service_ports_available() {
     done
     if [ "$blocked" != "0" ]; then
         echo "Another application or Docker container owns an AgentScope Service port." >&2
-        echo "Stop that workload or override BUILDER_GATEWAY_PORT/CONTROL_PORT/DATA_PORT/SCHEDULER_PORT." >&2
+        echo "Stop that workload or override BUILDER_GATEWAY_PORT/CONTROL_PORT/DATA_PORT/PORTAL_PORT/HANDS_PORT." >&2
         return 1
     fi
 }
@@ -177,6 +176,7 @@ os.dup2(devnull.fileno(), 0)
 os.execvpe(argv[0], argv, os.environ)
 PY
     echo $! >"$pidfile"
+    STARTED_PLANES=1
     echo "  * ${name} started (pid $!)"
 }
 
@@ -193,7 +193,7 @@ ensure_service_ports_available
 # fat jars embed ~/.m2 harness/core/extensions; a service-only build can keep a
 # stale snapshot. Root `mvn install` also walks agentscope-service children
 # (unlike `-pl agentscope-service`, which only builds the packaging=pom aggregator).
-if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -f "$(jar_of service-gateway || true)" ] || [ ! -f "$(jar_of service-session-portal || true)" ] || [ ! -f "$(jar_of service-hands || true)" ]; then
+if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -f "$(jar_of service-gateway || true)" ] || [ ! -f "$(jar_of service-session-portal || true)" ] || [ ! -f "$(jar_of service-dataplane || true)" ] || [ ! -f "$(jar_of service-hands || true)" ]; then
     echo "==> Building agentscope-java monorepo (mvn install -DskipTests)"
     MONOREPO_ROOT="$(cd "$ROOT/.." && pwd)"
     (cd "$MONOREPO_ROOT" && mvn -T1 install -DskipTests -q)
@@ -229,7 +229,7 @@ if ! docker ps --format '{{.Names}}' | grep -qx "$PG_CONTAINER"; then
             -e POSTGRES_DB=builder \
             -e POSTGRES_USER=builder \
             -e POSTGRES_PASSWORD=builder \
-            -p "${PG_PORT}:5432" \
+            -p "127.0.0.1:${PG_PORT}:5432" \
             -v "$ROOT/docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-schemas.sql:ro" \
             postgres:17 >/dev/null
     fi
@@ -249,9 +249,8 @@ for i in $(seq 1 60); do
 done
 
 # v4 intentionally has no compatibility migration from the unpublished legacy
-# Issue/OrchestrationRun/AgentTask/ExecutionAttempt schema. A full local rebuild therefore recreates the
-# disposable development schemas before either Hibernate or service-controlplane starts.
-# Set BUILDER_RESET_DB=0 explicitly when the current v4 development data should be kept.
+# Issue/OrchestrationRun/AgentTask/ExecutionAttempt schema. Rebuilds preserve data by default.
+# Set BUILDER_RESET_DB=1 only to recreate this disposable development database's schemas.
 if [ "$RESET_DB" = "1" ]; then
     echo "==> Resetting disposable Postgres schemas cp, rt, portal, dp, ma"
     docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U builder -d builder -c \
@@ -355,7 +354,7 @@ wait_health gateway "$GATEWAY_PORT" 30
 echo "==> Verifying database schemas and v4 terminal migrations"
 docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U builder -d builder \
     <"$ROOT/docker/postgres-dev-verify.sql" >/dev/null
-echo "  OK cp/rt/dp schemas and v4 collaboration/orchestration/runtime tables"
+echo "  OK cp/rt/portal/dp/ma schemas and current execution tables"
 
 if [ "${BUILDER_SMOKE_TEST:-0}" = "1" ]; then
     echo "==> Running API smoke test"
@@ -369,7 +368,7 @@ cat <<EOF
 ==> AgentScope Service stack is up (Control (Go orchestration, Cron and channels) + Portal + Harness + Hands + Gateway)
 
   Console (SPA via gateway):  http://localhost:${GATEWAY_PORT}/
-  Default login:              admin / admin
+  Identity:                  local developer when BUILDER_LOCAL_DEV=true
 
   Frontend HMR (optional):    cd frontend && npm run dev
 

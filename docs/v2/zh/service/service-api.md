@@ -4,6 +4,11 @@ description: "通过 Session API 把任务交给 Agent，观察执行进度，�
 en_link: /v2/en/service/service-api
 ---
 
+<Note>
+当前 MQ / Redis Managed Agent 使用 `/v1/sessions` 的[原生 Managed Session API](/v2/zh/service/claude-session-api)，使用 `agent` 创建，再通过 `/events` 写入 `user.message`。可运行示例见[第一个 Managed Agent](/v2/zh/service/create-managed-agent)。下文基于 `target` 的 `/api/v1/agent-sessions` 示例描述其他后端的兼容路径，其快照、SSE 游标和控制协议不能与原生 Managed 混用。
+</Note>
+
+
 配置好 Agent 后，业务应用就可以通过 Session API 把工作交给它。应用先创建一个 Session，确定这段工作使用的 Agent 和配置，再向这个 Session 提交任务。每次提交都会创建一个 Turn，用来跟踪这一轮执行的进度和结果。Service 会在后台执行并保存工作记录，因此应用不需要保持提交请求一直连接，也可以在用户返回页面时继续查看同一项任务。
 
 本页直接说明如何创建 Session、提交任务并处理结果。首次接入可以沿用[创建 Managed Agent](/v2/zh/service/create-managed-agent)时已经验证过的 Agent。以后需要调用 Team 或 Workflow 时，仍然使用同一套 Session API，只需在创建 Session 时选择相应目标，并按它的能力处理输入和交互。

@@ -4,7 +4,7 @@ description: "Run Session tools in Hands, Service-managed ACS sandboxes, or user
 zh_link: /v2/zh/service/environments
 ---
 
-Environment selects where a Managed Agent's file and shell tools run. HarnessAgent reasons in Dataplane; Hands executes the tools and returns their results to the same Turn. Worker credentials authorize access to an Environment, while `config.type` selects execution. Starting Hands with a platform token does not force cloud execution.
+Environment selects where a Managed Agent's file and shell tools run. HarnessAgent reasons in Dataplane; Hands executes the tools and returns their results to the same Turn. Worker credentials authorize access to an Environment, while `config.type` selects execution. Platform Hands and customer Environment Workers have separate deployment roles.
 
 ## Choose an execution mode
 
@@ -24,7 +24,7 @@ For self_hosted, Hands must be able to reach the user's SandboxManager and execu
 Use the Gateway URL of your deployment; the existing local portal stack uses port 18081. These examples assume local development without API authentication. For an authenticated installation, also include your authorized user or application headers in each public API call.
 
 ```bash
-export BASE_URL="http://localhost:18081"
+export BASE_URL="http://localhost:18080"
 curl -sS --fail-with-body "$BASE_URL/actuator/health"
 ```
 
@@ -74,15 +74,21 @@ You may set `config.sandboxId` for a dedicated instance, or pass `agentscope.san
 
 ## 2. Start Hands
 
-Build the current source or use the matching Hands image. The Compose profile runs a platform-authenticated Worker and can handle all three modes for its configured Environment:
+Current Compose and Helm installations already start platform Hands as a required HTTP/MQ
+service on internal port 8085. It consumes authorized Execute/Control commands and stores
+physical execution facts in PostgreSQL. It has no fixed Environment ID, `hands.enabled`
+flag or private Worker journal volume. To restart this component from source:
 
 ```bash
-# Set BUILDER_HANDS_ENVIRONMENT_ID in the deployment env file first.
-# Run from agentscope-service with the same env file and project options as your stack.
-docker compose --env-file deploy/.env -f deploy/compose.yaml --profile hands up -d hands
+docker compose --env-file deploy/.env up -d --wait hands
+docker compose --env-file deploy/.env logs --tail=100 hands
 ```
 
-Keep `/data/hands` durable for the Worker journal and `/data/workspaces` shared for cloud archives. Helm provides the same Worker with `hands.enabled=true` and `hands.environmentID`; cloud replicas need shared archive storage.
+Run from `agentscope-service` with the same project/configuration as your installation.
+Image-only bundles use `docker compose up -d --wait hands` from their extracted directory.
+Helm scales the required Deployment with `hands.replicas`. Shared Workspace/Artifact storage
+is needed when user files are enabled; checkpoints and large private objects use PostgreSQL.
+Customer Workers below are separate optional processes, not a replacement for platform Hands.
 
 A customer-side Worker can use an Environment key to execute local or self_hosted tasks. It cannot claim cloud tasks or obtain platform cloud credentials. Start it in a network that can reach the user instance:
 
@@ -90,10 +96,10 @@ A customer-side Worker can use an Environment key to execute local or self_hoste
 java -jar agentscope-service/service-hands/target/service-hands-2.1.0-SNAPSHOT.jar \
   --base-url "$BASE_URL" --environment-id "$ENVIRONMENT_ID" \
   --environment-key "$ENVIRONMENT_KEY" \
-  --hands-root /tmp/agentscope-hands-demo --worker-id demo-hands
+  --hands-root /tmp/agentscope-hands-demo --max-concurrency 4
 ```
 
-Replace the JAR version with the artifact produced by your build. Each Worker uses one Environment ID. Different Worker processes need separate journals; the local workspace remains pinned to its Worker. Both authentication choices use the same execution dispatch based on the Environment.
+Replace the JAR version with the artifact produced by your build. Each Worker uses one Environment ID. Different Worker processes need separate journals; the local workspace remains pinned to its Worker. Platform Hands coordinates these Workers through the same durable tool protocol.
 
 ## 3. Create an Agent and Session
 
@@ -101,7 +107,7 @@ Create a Managed Agent using [your first Agent](/v2/en/service/create-managed-ag
 
 ```bash
 SESSION_JSON=$(jq -n --arg agent "$AGENT_ID" --arg environment "$ENVIRONMENT_ID" \
-  '{agent:$agent,environment_id:$environment,title:"Sandbox demo"}' \
+  '{target:{type:"agent",id:$agent}}' \
   | curl -sS --fail-with-body "$BASE_URL/v1/sessions" \
       -H 'Content-Type: application/json' --data-binary @-) || exit 1
 export SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
@@ -137,7 +143,7 @@ Confirm tool calls, their results and the final answer in the stream or event hi
 Read the authorized tool-task view to locate the cloud or borrowed instance ID:
 
 ```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions/$SESSION_ID/tool-tasks" \
+curl -sS --fail-with-body "$BASE_URL/v1/sessions/$SESSION_ID/tool-tasks" \
   | jq '.data[] | {task_id, environment_type, sandbox_id, status}'
 ```
 

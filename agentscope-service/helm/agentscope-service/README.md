@@ -1,142 +1,119 @@
-# Managed MQ / Redis Helm deployment
+# AgentScope Service Helm Chart
 
-The Chart installs five internal components: Control, Gateway, Session Portal, Brain
-Dataplane and platform Hands. Orchestration and Scheduler run inside the Go Control Plane. Build every
-Service image at the same source version. PostgreSQL, Redis, RocketMQ and optional shared user-file storage are
-operated separately. This contract applies to newly built images; it does not upgrade running
-legacy Service processes or convert Managed data.
+This Chart deploys five current-source components: Gateway, Go Control Plane,
+Session Portal, Brain Dataplane and platform Hands. Scheduler, orchestration, Cron and
+channels run inside Control Plane. All five images must use a compatible source version;
+old published BETA1 images do not gain this architecture by using a newer Chart.
 
-The current source deploys five components: the Go Control Plane, Gateway, Session Portal,
-Brain Dataplane and platform Hands. One `service-controlplane` binary/image owns management,
-Workflow/Team orchestration, Hosted coordination, Cron, channels, outbound messages and webhook
-sending on port 8081. There are no separate scheduler or orchestration deployments.
+## Dependencies and installation inputs
 
-Every control replica runs bounded workers. PostgreSQL owns message/job deduplication, claims,
-stream leases, retries and fencing; no sticky sessions or single control replica are required.
-`control.executionSlots`, `control.workerBatch`, `control.channelSlots` and `control.webhookSlots`
-set per-replica concurrency in Helm. Keep `cp` and `rt` schemas and signing/encryption keys stable.
-The new `0007_integrated_scheduler` product migration adds the shared jobs and stream leases.
+Operate PostgreSQL, Redis and RocketMQ separately. The Broker/Cluster Proxy must support
+LitePushConsumer, FIFO and Shared/wildcard Lite subscriptions with minimum-offset delivery.
+Initialize exactly five business Topic/group pairs using `deploy/managed-mq-init.sh` or the
+cloud helper from the matching source/bundle. Their names must match `managed.mq` values.
+There are no per-depth parents. Brain consumes Turns, Tool Events and Resumes; Hands consumes
+Execute/Control and publishes Tool Events. MCP batch continuation can recover directly from
+durable records without publishing Resume. Qualify first delivery and offline/restart behavior
+on the exact provider; see [production installation](https://java.agentscope.io/v2/en/service/kubernetes).
 
-For an upgrade, drain incoming channel traffic and outstanding replies, stop the old Java
-Scheduler and Go orchestration deployments, run the schema jobs and reapply grants, then start
-the combined control replicas. Remove old Compose containers with `--remove-orphans`; scale down
-old Helm deployments before upgrading. Retire unused runtime/scheduler credentials only after
-cutover. This source layout requires newly built images; published BETA1 images are unchanged.
+The Kubernetes bundle contains these inputs; source copies are in `agentscope-service/deploy/`:
 
-Prepare cp, rt, portal, dp and ma schemas. Use the separate migration Secret from
-[deployment inputs](../../deploy/kubernetes-migration.env.example), and ordinary credentials
-from [the workload template](../../deploy/kubernetes.env.example). Redis URI and reachable
-RocketMQ Cluster Proxy endpoints belong in workload Secrets. Per-component existingSecret
-values can separate database accounts; Hands uses BUILDER_HANDS_DB_* rather than BUILDER_DB_*.
+| Input | Purpose |
+| --- | --- |
+| `kubernetes.env.example` | Workload-only PostgreSQL accounts, Redis URI, MQ endpoint and service keys |
+| `kubernetes-migration.env.example` | Owner connections used only by schema Jobs |
+| `postgres-grants.env.example` | Owner `PG*` settings and four matching raw business passwords for grants |
+| `production-values.yaml.example` | Two replicas per role, authentication enabled, user files disabled |
+| `postgres-init.sql`, `postgres-roles.sh` | Create five schemas, then grant current tables to four business accounts |
+| `managed-mq-init.sh`, `managed-cloud-mq-init.py` | Initialize self-hosted or cloud Lite resources |
 
-Initialize the five Lite channel families (21 parent Topics/groups) with
-[managed-mq-init.sh](../../deploy/managed-mq-init.sh). The default names under managed.mq are
-ma_turns_v3 / ma_brain_v3 and depth groups,
-ma_tool_events_v3 / ma_brain_tool_events_v3, ma_turn_resumes_v3 / ma_brain_resumes_v3,
-ma_tool_execute_v1 / ma_hands_execute_v1 and ma_tool_control_v1 / ma_hands_control_v1.
-Brain consumes Turns/Resumes/tool events and commits native execution facts; Hands consumes
-Execute/Control and publishes tool facts plus reliable Resume notifications. Brain uses the
-`ma_brain_tool_events_v3` group; initialize it before startup. Initialize a fresh Managed schema
-and apply database roles before starting the components; see the deployment notes.
-Suspension returns SDK Suspend without retaining a callback thread; the original message remains
-the FIFO head until terminal state. No callback completion mailbox is used.
-MQ consumers start by default; an explicit false consumer setting only drains MQ and
-does not activate another execution path. The script sets Shared bindings, minimum-offset initialization and idle retention.
-RocketMQ 5.5.1 with standalone Cluster Proxy is the tested server configuration. Match
-managed.mq.ssl to the Proxy's TLS configuration; these images never auto-select a fake.
+Prepare private copies, replace placeholders, and create distinct `service-migration` and
+`service-credentials` Secrets. Keep database, JWT/internal and Vault keys stable across upgrades.
+Use `control.existingSecret`, `portal.existingSecret`, `dataplane.existingSecret` and
+`hands.existingSecret` when credentials are split by role. Hands uses `BUILDER_HANDS_DB_*`.
+Optional `data.existingSecret`, `schema.dataExistingSecret` and `managed.mq.existingSecret`
+are empty by default; business/MQ Secrets must remain separate from migration credentials.
 
-The Managed schema baseline directly creates current Brain and Hands tables. It does not create
-retired runtime receipt, writer-seal, callback-mailbox or shared Sandbox-binding tables, and
-provides no backfill or conversion from previous Managed schemas. Use a fresh Managed data space;
-existing migration ledgers with different checksums or versions are rejected.
+## Migrate, grant, install
 
-Run schema preparation first. Four owner-only Jobs initialize Control (cp + rt), Portal,
-Dataplane and Managed (ma), without service pods or PVCs. The Managed job rejects unversioned
-existing ma tables. Apply postgres-roles.sh with the four matching business passwords, then
-install workloads. Ordinary accounts only validate migration ledgers at startup.
+From the source `agentscope-service` directory, set the candidate's actual registry and tag.
+Run `postgres-init.sql` as owner first. Configure the sample values and private Secrets before
+these commands (for a bundle, use its pinned `.tgz` as CHART):
 
 ```bash
-helm upgrade --install service-schema ./agentscope-service \
-  --namespace agentscope --create-namespace \
-  --set imageRepository=REGISTRY/NAMESPACE --set imageTag=CANDIDATE_VERSION \
-  --set schema.only=true --set schema.existingSecret=service-migration \
-  --wait --timeout 10m
-# Apply postgres-roles.sh with owner PG* variables and four business passwords.
-helm upgrade --install service ./agentscope-service \
-  --namespace agentscope \
-  --set imageRepository=REGISTRY/NAMESPACE --set imageTag=CANDIDATE_VERSION \
-  --set existingSecret=service-credentials --set schema.existingSecret=service-migration \
-  -f production-values.yaml --wait --timeout 10m
+export CHART=helm/agentscope-service
+export IMAGE_REPOSITORY=registry.example.com/agentscope
+export SERVICE_VERSION=2.1.0-candidate.1
+helm upgrade --install service-schema "$CHART" --namespace agentscope --create-namespace \
+  -f /private/production-values.yaml --set imageRepository="$IMAGE_REPOSITORY" \
+  --set imageTag="$SERVICE_VERSION" --set schema.only=true --wait --timeout 10m
+# Export the owner PG* settings and four business passwords from the private grants file.
+sh deploy/postgres-roles.sh
+helm upgrade --install service "$CHART" --namespace agentscope \
+  -f /private/production-values.yaml --set imageRepository="$IMAGE_REPOSITORY" \
+  --set imageTag="$SERVICE_VERSION" --wait --timeout 10m
 ```
 
-Regular installs repeat the idempotent migration Jobs. schema.enabled=false is only for
-operator-managed initialization. All five components are Deployments with RollingUpdate;
-platform Hands listens on internal 8085 and Gateway forwards /v1/hands/... APIs there.
-It needs no environmentID, optional enable flag or per-pod journal directory.
+Four independent owner-only Jobs migrate Control (`cp` + `rt`), Portal (`portal`),
+Dataplane (`dp`) and Managed (`ma`). `schema.only=true` renders no workloads or PVCs.
+New tables require business grants **before** replacing workloads. Normal installation
+repeats idempotent migration hooks; it does not run `postgres-roles.sh` automatically.
+`schema.enabled=false` is only for externally managed, already completed migrations.
+Ordinary services validate versions/checksums and do not execute DDL.
 
-```yaml
-portal:
-  replicas: 2
-dataplane:
-  replicas: 2
-  concurrency: 32
-  ddlAuto: validate
-hands:
-  replicas: 2
-  toolConcurrency: 16
-  databasePoolSize: 16
-  existingSecret: hands-credentials
-userFilesEnabled: false
-control: {replicas: 2}
-gateway: {replicas: 2}
-```
+All five roles are Deployments using RollingUpdate, with at least one replica per role.
+Platform Hands is required on internal port 8085; it needs no optional enable flag, fixed
+Environment ID, platform Worker token or legacy journal directory. Gateway routes Worker
+traffic to Hands and Session traffic to Portal. Customer Environment Workers are separate.
 
-Portal, Brain and Hands store immutable checkpoints and oversized log/result batches in
-PostgreSQL `ma.private_object`. Run the new managed-private-objects.sql migration before
-starting replicas and reapply business-role grants. No private runtime PVC is needed.
-With userFilesEnabled=false, public file/workspace/artifact APIs are disabled and Session
-capabilities advertise files as unavailable. Workspaces use per-pod scratch storage; the
-Chart creates no user-file PVCs. With user files enabled, Workspaces and Artifacts still
-require shared RWX storage. In this mode Harness internal workspace data uses the existing
-PostgreSQL KV store per Session, and file/Shell/Artifact tools are disabled; text turns do not
-require external sandbox credentials. Existing filesystem objects are not imported automatically;
-use a fresh runtime database or import every referenced private object before upgrading.
-Include all component database pools in the connection budget. Configure publicURL, TLS,
-imagePullSecrets and SSE ingress timeouts according to the installation.
+## Storage and scaling
 
-Back up the database (including private objects), enabled user-file volumes, Vault key and service secrets
-together. Restore persistent protocol facts before accepting new execution. Redis hints can
-be rebuilt from those facts; unknown external tool effects cannot be safely replayed merely
-because Redis or a Worker restarted. Full deployment and recovery acceptance remain separate
-from Helm rendering or component unit tests.
+Checkpoints and oversized objects use PostgreSQL `ma.private_object`; no private runtime
+PVC exists. `userFilesEnabled=false` disables public file, Shell and Artifact capabilities,
+uses Session-isolated PostgreSQL KV data and per-pod scratch directories, and creates no file
+PVCs. Text execution in this mode requires no Sandbox. With user files enabled, configure
+shared **ReadWriteMany** Workspace and Artifact claims or storage classes.
+
+Portal, Brain, Hands and Control can scale independently. Include every database pool,
+Dataplane native-log connections and migration jobs in the connection budget. Brain capacity
+and callbacks use `dataplane.concurrency`, `turnCallbacks`, `resumeCallbacks`,
+`toolEventConcurrency`, `childControlConcurrency`; physical tools use Hands
+`toolConcurrency` and `toolControlConcurrency`. Control's bounded workers use
+`executionSlots`, `workerBatch`, `channelSlots` and `webhookSlots` with PostgreSQL fencing.
+`localDev` is false by default. Configure imagePullSecrets for both schema jobs and workloads,
+publicURL, Gateway exposure, Ingress/TLS and SSE timeouts for your installation.
+
+## Upgrades and recovery
+
+Stop admission and drain incompatible in-flight Turns, tools and channel replies. Stop retired
+Scheduler/orchestration deployments; run all schema jobs with the new images, reapply grants,
+then update compatible roles together. Preserve `cp`/`rt` data and signing/encryption keys.
+The current `dp`/`ma` baselines reject incompatible old ledgers and unversioned Managed data;
+they do not import filesystem objects or silently convert previous runtime state. Use a fresh
+runtime data space or a verified migration. Back up PostgreSQL including private objects,
+enabled file volumes and keys together. Image rollback cannot undo database changes.
+PVCs are retained on uninstall. Test restore and unfinished-work recovery on your exact stack;
+Helm rendering alone does not qualify execution or availability.
 
 ## 中文
 
-Chart 部署五个 Service 组件，平台 Hands 为必选 HTTP/MQ Deployment，内部端口 8085。
-PostgreSQL、Redis、RocketMQ 和可选的用户文件共享存储由运维提供；普通组件 Secret 包含 Redis URI 与
-可达的 Cluster Proxy 地址，Hands 使用独立 BUILDER_HANDS_DB_* 账号。
+Chart 部署当前源码的五个组件，平台 Hands 为必选 HTTP/MQ Deployment，Scheduler、编排、Cron
+和渠道职责并入 Go Control Plane。PostgreSQL、Redis、RocketMQ 由运维提供，先初始化五个业务
+Topic / 消费组，不再按子深度建 Topic。Brain 消费 Turn、工具事件和 Resume；Hands 消费
+Execute/Control，只发布工具事件；MCP 批次可直接从持久记录恢复。MQ 需要验证首次投递、离线
+积压和重启行为，原版 5.5.1 的已知初始 offset 问题不能用模板渲染验收代替。
 
-先创建三个 Lite 父 Topic 与 Shared 消费组，再运行 schema.only 的四个初始化 Job
-（cp/rt、portal、dp、ma）；授权四个业务账号后启动服务。ma 初始化拒绝接管已有无版本表，
-普通账号只读校验版本，不在副本启动时建表。迁移 Secret 与业务 Secret 分离。
+安装包提供业务、迁移、授权配置模板及 production values 示例。私有配置替换所有占位符，迁移
+Secret 与业务 Secret 分开。按以上命令先执行四个 schema Job，覆盖 `cp/rt`、`portal`、`dp`、`ma`，
+再以 owner 执行 `postgres-roles.sh`，最后安装业务副本。普通副本只校验版本，不执行 DDL；常规
+Helm 安装的迁移 hook 不会自动重授权，因此升级新增表仍需先迁移、授权，再替换工作负载。
 
-Portal、Brain、Hands 独立扩容，checkpoint 与大消息对象保存在 PostgreSQL ma.private_object，
-不再挂载私有 RWX 卷。关闭用户文件时，Harness 内部工作数据使用 PostgreSQL KV 表，
-文件、Shell 与 Artifact 工具关闭，文本对话不依赖外部沙箱。先执行新增迁移并重新授权业务账号。设置 userFilesEnabled=false 后，
-关闭公开文件、工作区文件和 Artifact API，不创建用户文件 PVC，各副本只使用临时工作目录。
-开放用户文件功能时，Workspace、Artifact 仍需共享存储。旧文件对象不会自动导入数据库，
-升级已有运行数据前必须导入全部被引用对象，或使用新的运行数据库。平台 Hands 无固定 Environment ID、可选 enabled 开关或旧 Pod 日志目录。
-self_hosted Worker 经 Gateway 连接平台 Hands。该模板变化不自动部署现有安装，不转换旧
-Managed 数据；完整恢复和执行验收不能用 Helm 渲染成功替代。
+五个角色均为 RollingUpdate Deployment，可独立扩容。平台 Hands 无固定 Environment ID 或旧
+Worker 日志卷。checkpoint 和大对象保存在 PostgreSQL，关闭用户文件时无需私有或用户文件 PVC；
+文件、Shell、Artifact 关闭，文本执行不依赖 Sandbox。启用用户文件时，Workspace 和 Artifact 均需
+RWX 存储。并发、连接池及资源配置见 values.yaml；`localDev=false`，私有镜像的拉取配置同时用于
+迁移 Job 与业务副本。完整步骤见[生产安装](https://java.agentscope.io/v2/zh/service/kubernetes)。
 
-Tool-event and child-control concurrency are configured under `dataplane`; Hands has separate
-`toolConcurrency` and `toolControlConcurrency`. Move prior Hands tool-event/child-control overrides
-to Dataplane when upgrading.
-
-## Runtime upgrade and portable defaults
-
-Self-hosted credentials remain the default. Optional `managed.mq.existingSecret`, `data.existingSecret` and `schema.dataExistingSecret` overrides are empty; `localDev` defaults to false. MQ/data business Secrets must remain separate from migration credentials. `hands.imageTag` can update the worker independently when a compatible protocol is already deployed.
-
-For the submission-gate upgrade, stop admission, drain old per-depth Turn Topics and unsent Execute work, run schema jobs and `deploy/postgres-roles.sh`, then upgrade Brain and Hands together. See [migration notes](../../docs/master-sync-20261021.en.md).
-
-默认继续自建部署，可选 Secret 覆盖项为空，`localDev=false`。业务/MQ Secret 与迁移凭据保持分离。提交门升级需要先停止受理、排空旧 Execute，再执行 schema Jobs 和 `deploy/postgres-roles.sh`，并同步升级 Brain 与 Hands。参见[同步记录](../../docs/master-sync-20261021.md)。
+升级先停止受理并排空执行、停用旧 Scheduler/orchestration，再迁移、授权和统一更新组件。
+不兼容的旧 `dp`/`ma` 数据不会自动转换，不能删除迁移记录来绕过校验。数据库、文件与原密钥
+一起备份并验证恢复；回滚镜像不等于回滚数据库，卸载保留 PVC。

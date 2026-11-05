@@ -4,7 +4,7 @@ en_link: /v2/en/service/operations
 ---
 
 <Note>
-当前发布版本为 `2.1.0-BETA1`，属于预发布版本。用于生产前请验证实际部署。
+本文对应当前源码架构，镜像与安装制品必须来自同一源码。历史 `2.1.0-BETA1` 制品不包含这套实现。
 </Note>
 
 一份可恢复的备份包括数据库、Workspace、Artifact 和解密这些数据所需的密钥。
@@ -59,9 +59,9 @@ Kubernetes 同样需要数据库备份与 PVC 快照；根据存储提供程序�
 
 阅读新版本的迁移与兼容性说明，先在测试数据库副本上演练。完成备份后，Docker 修改 `.env` 中的 `SERVICE_VERSION`，拉取镜像并重建容器；Helm 使用指定版本的 Chart 执行 upgrade。
 
-当前源码部署先执行独立迁移任务，普通副本使用业务账号校验 schema。PostgreSQL 连接预算要累加业务池和原生日志池：每个数据面副本另有一个有界池，通过 `BUILDER_RUNTIME_NATIVE_LOG_CONNECTIONS`（默认 8）或 Helm `dataplane.nativeLogConnections` 配置。
+当前源码先用四个 owner Job 迁移 Control（`cp/rt`）、Portal（`portal`）、Dataplane（`dp`）和 Managed（`ma`），重新运行 `postgres-roles.sh` 授权后再替换普通副本；业务账号只校验版本和 checksum，不执行 DDL。Helm hook 不会自动重授权，按[两阶段安装流程](/v2/zh/service/kubernetes#4-安装指定版本)操作。PostgreSQL 连接预算要累加业务池和原生日志池：每个数据面副本另有一个有界池，通过 `BUILDER_RUNTIME_NATIVE_LOG_CONNECTIONS`（默认 8）或 Helm `dataplane.nativeLogConnections` 配置。
 
-Managed 原生历史保存在数据面索引表中。该格式要求重建运行数据；旧 Workspace 日志会明确拒绝，不会当成空历史。切换前排空旧 Session，准备新的运行数据空间；数据库迁移不会自动转换旧日志。备份需同时包含 Portal 状态、原生日志表、共享文件和原密钥。组件镜像回退不保证旧版本可以读取新 schema。
+Managed 原生历史、checkpoint、工具结果与私有大对象保存在 PostgreSQL `ma` 表中。该格式要求重建运行数据；旧 Workspace 日志会明确拒绝，不会当成空历史。切换前排空旧 Session，准备新的运行数据空间；数据库迁移不会自动转换旧日志。备份需同时包含 Portal 状态、原生日志表、共享文件和原密钥。组件镜像回退不保证旧版本可以读取新 schema。
 
 ## 恢复
 
@@ -88,8 +88,8 @@ pg_restore --no-owner --no-acl --dbname="$RESTORE_DATABASE_URL" backup/database.
 | 核对内容 | API |
 | --- | --- |
 | Agent 与运行绑定 | `GET /api/v1/agents`、`GET /api/v1/agents/{id}/bindings` |
-| 会话配置与版本 | `GET /api/v1/agent-sessions/{sessionId}`，读取固定 target |
-| 已有业务结果与页面 | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}`、`GET .../{id}/snapshot` |
+| 会话配置与版本 | `GET /v1/sessions/{sessionId}`，读取固定 target |
+| 已有业务结果与页面 | `GET /v1/sessions/{sessionId}/turns/{turnId}`、`GET .../{id}/snapshot` |
 | 未完成编排与实际执行 | `GET /api/v1/orchestration-runs/{id}/graph`、`GET /api/v1/execution-attempts/{id}` |
 | 通知与自动化 | 查询原 Webhook/Automation 的投递记录，核对回调去重与运行状态 |
 
@@ -107,7 +107,7 @@ curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/bindings" \
 ```
 
 ```bash
-SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+SESSION_URL="$BASE_URL/v1/sessions/$SESSION_ID"
 ```
 
 ```bash
@@ -171,12 +171,12 @@ curl -sS --fail-with-body -G "$BASE_URL/api/v1/automations/$AUTOMATION_ID/delive
 ## 获取组件日志
 
 ```bash
-docker compose logs --tail=200 control data scheduler gateway
+docker compose logs --tail=200 control portal data hands gateway
 kubectl -n agentscope logs deployment/service-agentscope-control --tail=200
 kubectl -n agentscope describe pod POD_NAME
 ```
 
-Gateway 正常不代表模型或工具执行正常。Managed 会话故障查看 Dataplane；渠道与 Worker 调度查看 Scheduler；产品 Automation、资源、账号和编排派发查看 Control。Hosted provider 故障还需对应主机的 daemon 日志。
+Gateway 正常不代表模型或工具执行正常。准入与 SSE 故障查看 Portal，推理与恢复查看 Brain Dataplane，物理工具执行查看 Hands，渠道、Cron、产品 Automation、资源、账号和编排查看 Control。同时检查 Redis 连通性与五组 RocketMQ Topic/消费组。Hosted provider 故障还需对应主机的 daemon 日志。
 
 ### 跟踪 Managed 跨实例执行
 
@@ -206,7 +206,7 @@ Gateway 正常不代表模型或工具执行正常。Managed 会话故障查看 
 
 ## 统一服务 API 调用排障
 
-保存 Session ID、Turn ID、请求幂等键和错误码。先读取 `/api/v1/agent-sessions/{sessionId}/turns/{turnId}` 确认任务状态，再通过同一 Turn 的 `/snapshot` 和 `/capabilities` 了解已保存的结果与当前可用命令。
+保存 Session ID、Turn ID、请求幂等键和错误码。先读取 `/v1/sessions/{sessionId}/turns/{turnId}` 确认任务状态，再通过同一 Turn 的 `/snapshot` 和 `/capabilities` 了解已保存的结果与当前可用命令。
 
 | 现象 | 核对方法 |
 | --- | --- |

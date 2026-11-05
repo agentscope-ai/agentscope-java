@@ -24,7 +24,7 @@ self_hosted 要求 Hands 能访问用户的 SandboxManager 和执行端。用户
 使用实际 Gateway 地址；当前本地 portal 部署使用 18081 端口。下列命令按免 API 鉴权的本地开发模式编写；启用鉴权的部署，需要在每条公开 API 请求中加上已授权的用户或应用请求头。
 
 ```bash
-export BASE_URL="http://localhost:18081"
+export BASE_URL="http://localhost:18080"
 curl -sS --fail-with-body "$BASE_URL/actuator/health"
 ```
 
@@ -74,15 +74,19 @@ self_hosted 使用用户自己的连接参数与 key。这里的 key 是 Sandbox
 
 ## 2. 启动 Hands
 
-构建当前源码或使用配套 Hands 镜像。Compose profile 使用平台身份启动 Worker，它按所配置 Environment 的模式执行，支持上述三种模式：
+当前 Compose 与 Helm 已将平台 Hands 作为必选 HTTP/MQ 服务启动，内部端口 8085。它消费授权后的
+Execute/Control 命令，并在 PostgreSQL 保存物理执行事实，无固定 Environment ID、`hands.enabled`
+开关或私有 Worker 日志卷。从源码安装目录重启该组件：
 
 ```bash
-# Set BUILDER_HANDS_ENVIRONMENT_ID in the deployment env file first.
-# Run from agentscope-service with the same env file and project options as your stack.
-docker compose --env-file deploy/.env -f deploy/compose.yaml --profile hands up -d hands
+docker compose --env-file deploy/.env up -d --wait hands
+docker compose --env-file deploy/.env logs --tail=100 hands
 ```
 
-`/data/hands` 需要持久化保存 Worker 日志，`/data/workspaces` 用于共享 cloud 归档。Helm 可通过 `hands.enabled=true` 和 `hands.environmentID` 启动相同 Worker；cloud 多副本需要共享归档存储。
+在 `agentscope-service` 目录使用与安装相同的 project/配置。镜像安装包在解压目录直接使用
+`docker compose up -d --wait hands`。Helm 通过 `hands.replicas` 扩容必选 Deployment。用户文件开启
+时配置共享 Workspace/Artifact 存储；checkpoint 和私有大对象使用 PostgreSQL。下面的客户侧
+Worker 是可选独立进程，不替代平台 Hands。
 
 用户侧 Worker 可以用 Environment key 领取 local 或 self_hosted 任务，不能领取 cloud 任务或获取平台 cloud 凭据。应在可以访问用户实例的网络中启动：
 
@@ -90,10 +94,10 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml --profile hands up 
 java -jar agentscope-service/service-hands/target/service-hands-2.1.0-SNAPSHOT.jar \
   --base-url "$BASE_URL" --environment-id "$ENVIRONMENT_ID" \
   --environment-key "$ENVIRONMENT_KEY" \
-  --hands-root /tmp/agentscope-hands-demo --worker-id demo-hands
+  --hands-root /tmp/agentscope-hands-demo --max-concurrency 4
 ```
 
-将 JAR 版本替换为实际构建产物。每个 Worker 配置一个 Environment ID，不同进程使用独立日志目录；local 工作目录固定在其 Worker 上。两种身份都根据 Environment 选择执行方式。
+将 JAR 版本替换为实际构建产物。每个 Worker 配置一个 Environment ID，不同进程使用独立日志目录；local 工作目录固定在其 Worker 上。平台 Hands 通过相同的持久工具协议协调这些 Worker。
 
 ## 3. 创建 Agent 和 Session
 
@@ -101,7 +105,7 @@ java -jar agentscope-service/service-hands/target/service-hands-2.1.0-SNAPSHOT.j
 
 ```bash
 SESSION_JSON=$(jq -n --arg agent "$AGENT_ID" --arg environment "$ENVIRONMENT_ID" \
-  '{agent:$agent,environment_id:$environment,title:"Sandbox demo"}' \
+  '{target:{type:"agent",id:$agent}}' \
   | curl -sS --fail-with-body "$BASE_URL/v1/sessions" \
       -H 'Content-Type: application/json' --data-binary @-) || exit 1
 export SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
@@ -137,7 +141,7 @@ curl -sS --fail-with-body "$SESSION_URL/events" \
 可以通过已授权的工具任务视图查询 cloud 或用户实例的 ID：
 
 ```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions/$SESSION_ID/tool-tasks" \
+curl -sS --fail-with-body "$BASE_URL/v1/sessions/$SESSION_ID/tool-tasks" \
   | jq '.data[] | {task_id, environment_type, sandbox_id, status}'
 ```
 

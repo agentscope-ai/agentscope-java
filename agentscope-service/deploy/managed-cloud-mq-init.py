@@ -8,6 +8,7 @@ This script initializes management resources; credentials remain in Secrets.
 """
 import argparse
 import json
+import os
 import subprocess
 
 PAIRS = [
@@ -34,7 +35,12 @@ def initialize(instance, region):
             raise RuntimeError(json.dumps(value, ensure_ascii=False))
         return value.get("data")
 
-    for topic, group in PAIRS:
+    keys = [('TURN_TOPIC', 'BRAIN_GROUP'), ('TOOL_EXECUTE_TOPIC', 'TOOL_EXECUTE_GROUP'),
+            ('TOOL_CONTROL_TOPIC', 'TOOL_CONTROL_GROUP'), ('TOOL_EVENT_TOPIC', 'TOOL_EVENTS_GROUP'),
+            ('RESUME_TOPIC', 'RESUME_GROUP')]
+    for (topic, group), (topic_key, group_key) in zip(PAIRS, keys):
+        topic = os.environ.get('BUILDER_MANAGED_MQ_' + topic_key) or topic
+        group = os.environ.get('BUILDER_MANAGED_MQ_' + group_key) or group
         existing = call("GetTopic", "--topicName", topic, missing="Topic.NotFound")
         if existing is None:
             call("CreateTopic", "--topicName", topic, "--body", json.dumps({

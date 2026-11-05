@@ -121,8 +121,13 @@ def package(args):
     deploy = out / 'agentscope-service'
     # Explicit allowlist: never package local .env files or database backups.
     deploy.mkdir()
-    for name in ('compose.yaml', '.env.example', 'init-env.sh', 'postgres-init.sql', 'postgres-roles.sh', 'managed-mq-init.sh', 'kubernetes.env.example', 'kubernetes-migration.env.example', 'README.md'):
+    for name in ('compose.yaml', '.env.example', 'init-env.sh', 'postgres-init.sql', 'postgres-roles.sh', 'managed-mq-init.sh', 'managed-cloud-mq-init.py', 'cloud-mq.env.example', 'README.md'):
         shutil.copy2(SERVICE / 'deploy' / name, deploy / name)
+    shutil.copy2(SERVICE / 'release/smoke.py', deploy / 'smoke.py')
+    settings = (deploy / '.env.example').read_text()
+    settings = re.sub(r'^SERVICE_VERSION=.*$', lambda _: 'SERVICE_VERSION=' + args.version, settings, flags=re.M)
+    settings = re.sub(r'^IMAGE_REPOSITORY=.*$', lambda _: 'IMAGE_REPOSITORY=' + args.repository, settings, flags=re.M)
+    (deploy / '.env.example').write_text(settings)
     for name in ('LICENSE', 'NOTICE'):
         if (ROOT / name).exists():
             shutil.copy2(ROOT / name, deploy / name)
@@ -133,8 +138,9 @@ def package(args):
         '--app-version', args.version, '--destination', str(out))
     deploy = out / 'agentscope-service-kubernetes'
     deploy.mkdir()
-    for name in ('kubernetes.env.example', 'kubernetes-migration.env.example', 'cloud-mq.env.example', 'managed-cloud-mq-init.py', 'postgres-init.sql', 'postgres-roles.sh'):
+    for name in ('kubernetes.env.example', 'kubernetes-migration.env.example', 'postgres-grants.env.example', 'production-values.yaml.example', 'cloud-mq.env.example', 'managed-cloud-mq-init.py', 'managed-mq-init.sh', 'postgres-init.sql', 'postgres-roles.sh'):
         shutil.copy2(SERVICE / 'deploy' / name, deploy / name)
+    shutil.copy2(SERVICE / 'release/smoke.py', deploy / 'smoke.py')
     readme = (SERVICE / 'release/KUBERNETES_README.md').read_text()
     readme = readme.replace('@SERVICE_VERSION@', args.version).replace('@IMAGE_REPOSITORY@', args.repository)
     (deploy / 'README.md').write_text(readme)
@@ -156,7 +162,7 @@ def package(args):
             run('go', 'build', '-trimpath', '-ldflags=-s -w -X github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/version.Version=' + args.version, '-o', str(stage / name), './cmd/' + command,
                 cwd=SERVICE / 'service-controlplane', env=env)
         shutil.copy2(ROOT / 'LICENSE', stage / 'LICENSE')
-        shutil.copy2(SERVICE / 'release/CLI_README.md', stage / 'README.md')
+        (stage / 'README.md').write_text((SERVICE / 'release/CLI_README.md').read_text().replace('@SERVICE_VERSION@', args.version))
         with tarfile.open(out / f'agentscope-cli-{args.version}-{system}-{arch}.tar.gz', 'w:gz') as archive:
             for file in sorted(stage.iterdir()):
                 archive.add(file, arcname=file.name)

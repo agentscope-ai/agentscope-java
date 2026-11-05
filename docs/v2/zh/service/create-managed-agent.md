@@ -10,6 +10,9 @@ en_link: /v2/en/service/create-managed-agent
 
 <span id="登录并选择空间"></span>
 
+本例使用文件工具，需要启用用户文件（源码 Compose 默认开启）。生产安装若设置了
+`userFilesEnabled=false`，先使用[无工具原生 API 示例](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-service/docs/api-quickstart.md)，或配置共享存储并启用用户文件后再运行本例。
+
 ## 准备
 
 先完成[本地 Docker Compose 部署](/v2/zh/service/quickstart)，配置模型凭据。终端需要 Bash 或 zsh、curl 和 jq；请在同一个终端中依次执行下面的命令。
@@ -23,6 +26,11 @@ set -euo pipefail
 export BASE_URL="http://localhost:18080"
 export TENANT="default"
 export NAMESPACE="default"
+
+native_api() {
+  curl -sS --fail-with-body -H 'AgentScope-Extensions: turn-inputs-v1' \
+    -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" "$@"
+}
 ```
 
 
@@ -36,7 +44,7 @@ export NAMESPACE="default"
 
 ```bash
 ENVIRONMENT_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/environments" \
+  native_api "$BASE_URL/api/environments" \
     -H "Content-Type: application/json" \
     --data-binary @- <<'JSON'
 {
@@ -53,7 +61,7 @@ ENVIRONMENT_ID=$(jq -er '.id' <<< "$ENVIRONMENT_JSON")
 
 <span id="2-创建资料助手"></span>
 
-local Environment 现在通过 Hands 执行工具。给 Agent 发送任务前，应按 [环境指南](/v2/zh/service/environments#2-启动-hands) 为该 Environment 启动 Hands。仅创建环境资源不会自动产生在线 Worker。
+Local 工具通过随 Service 安装的平台 Hands 执行。发送任务前，按[环境指南](/v2/zh/service/environments#2-启动-hands)确认 Hands 健康。创建 Environment 资源本身不代表执行环境已就绪；平台服务无需额外 Hands profile 或固定 Environment ID。
 
 ## 2. 创建 Agent
 
@@ -61,7 +69,7 @@ local Environment 现在通过 Hands 执行工具。给 Agent 发送任务前，
 
 ```bash
 AGENT_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
+  native_api "$BASE_URL/api/v1/agents" \
     -H "Content-Type: application/json" \
     --data-binary @- <<JSON
 {
@@ -102,42 +110,45 @@ printf 'Agent ID: %s\n' "$AGENT_ID"
 
 ```bash
 SESSION_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+  native_api "$BASE_URL/v1/sessions" \
     -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notes-session-001" \
     --data-binary @- <<JSON
 {
-  "target": {
-    "type": "agent",
-    "id": "$AGENT_ID"
-  }
+  "agent": "$AGENT_ID",
+  "environment_id": "$ENVIRONMENT_ID"
 }
 JSON
 )
 SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
-export SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+export SESSION_URL="$BASE_URL/v1/sessions/$SESSION_ID"
 printf 'Session ID: %s\n' "$SESSION_ID"
 ```
 
 ## 4. 提交任务
 
-向会话提交消息，创建一个 Turn。
+通过 `/events` 提交带 `intent:new_turn` 的 `user.message` 事件，创建 Turn；`/turns` 为查询扩展，不能用于提交。
 
 ```bash
 TURN_JSON=$(
-  curl -sS --fail-with-body "$SESSION_URL/turns" \
+  native_api "$SESSION_URL/events" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: notes-check-001" \
     --data-binary @- <<'JSON'
 {
-  "message": "小李周五完成安装说明，下周一评审，具体时间待确认。请整理待办，写入 meeting-actions.md，再读取核对，并给出文件内容。"
+  "events": [{
+    "type": "user.message",
+    "content": [{"type": "text", "text": "小李周五完成安装说明，下周一评审，具体时间待确认。请整理待办，写入 meeting-actions.md，再读取核对，并给出文件内容。"}],
+    "agentscope_service": {"intent": "new_turn"}
+  }]
 }
 JSON
 )
-TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
-jq '{id, status}' <<< "$TURN_JSON"
+TURN_ID=$(jq -er '.data[0].agentscope_service.turn_id' <<< "$TURN_JSON")
+jq . <<< "$TURN_JSON"
 ```
 
-请求返回 `202 Accepted` 表示任务已接收。网络重试时保留同一 `Idempotency-Key` 和消息；新的任务使用新 key。
+HTTP 200 与 Event/Turn ID 表示任务已受理，后续在后台执行。网络重试时保留同一 `Idempotency-Key` 和消息；新的任务使用新 key。
 
 <span id="4-读取进度与工具结果"></span>
 
@@ -145,39 +156,37 @@ jq '{id, status}' <<< "$TURN_JSON"
 
 ## 5. 查看进度和结果
 
-先读取快照，查看已有消息、工具结果和任务状态：
+保留相同 Session 和 Turn ID，轮询直到本轮结束：
 
 ```bash
-SNAPSHOT=$(
-  curl -sS --fail-with-body "$SESSION_URL/snapshot"
-)
-jq '{items, tools, turns, required_actions}' <<< "$SNAPSHOT"
-CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
+for attempt in {1..90}; do
+  TURN=$(native_api "$SESSION_URL/turns/$TURN_ID")
+  STATUS=$(jq -er '.status' <<< "$TURN")
+  case "$STATUS" in
+    completed) break ;;
+    failed|cancelled) jq . <<< "$TURN"; exit 1 ;;
+  esac
+  sleep 2
+done
+jq '{id, status, error}' <<< "$TURN"
 ```
 
-如果任务仍在执行，从快照的 `as_of` 继续接收 SSE 事件：
+读取公开历史与最终输出。若本轮仍在运行，保留 ID 后继续查询；上述轮询超时不会取消执行。
 
 ```bash
-curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  --data-urlencode "after=$CURSOR"
+native_api "$SESSION_URL/events?limit=100" | jq .
+native_api "$SESSION_URL/turns/$TURN_ID/output?limit=100" | jq .
 ```
 
-看到对应 `TURN_ID` 的 `turn.completed` 后，按 Ctrl-C 退出事件流，再查询最终结果。关闭事件流不会取消任务。
+确认 `status` 为 `completed`，执行历史包含文件操作，最终回复保留周五完成、下周一评审和“具体
+时间待确认”。文件保存在所选执行环境中。首版原生协议不开放公开文件/Artifact 路由，可通过该 Environment 自身的访问方式检查文件。
 
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  | jq '{id, status, error}'
-
-curl -sS --fail-with-body "$SESSION_URL/snapshot" \
-  | jq '{items, tools, required_actions}'
-```
-
-确认 Turn 的 `status` 为 `completed`，工具记录包含 `meeting-actions.md` 的写入和读取，最终回复保留周五完成、下周一评审以及“具体时间待确认”。文件保存在执行环境中；下载与 Artifact 发布见[文件与产物](/v2/zh/service/files)。
-
-若状态为 `failed`，检查 `error`；若为 `requires_action`，查看快照中的 `required_actions`。处理方式见[会话与任务](/v2/zh/service/session-event-log)。
+当前原生契约不提供快照或 SSE 重放游标。实时 SSE 只接收连接后的事件，断线后用分页历史与
+Turn/output 查询恢复状态。失败或等待输入时检查 Turn 错误与公开历史；支持的控制及限制见
+[当前 Managed Session 契约](/v2/zh/service/claude-session-api)。
 
 <span id="增加能力与发布"></span>
 
 ## 下一步
 
-保留 `AGENT_ID`，继续[通过 Session API 接入应用](/v2/zh/service/service-api)。需要扩展能力时，参阅[Agent 配置](/v2/zh/service/managed-agent-configuration)、[工具与 MCP](/v2/zh/service/tools)和 [SSE 事件](/v2/zh/service/sse-events)。
+保留 `AGENT_ID`，继续[通过 Session API 接入应用](/v2/zh/service/claude-session-api)。需要扩展能力时，参阅[Agent 配置](/v2/zh/service/managed-agent-configuration)、[工具与 MCP](/v2/zh/service/tools)和 [SSE 事件](/v2/zh/service/sse-events)。

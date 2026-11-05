@@ -10,6 +10,9 @@ Create a HarnessAgent-based Managed Agent with curl. It will organize meeting no
 
 <span id="sign-in-and-select-a-namespace"></span>
 
+This file-tool example requires user files enabled (the source Compose default). If production
+uses `userFilesEnabled=false`, start with the [tool-free native API quickstart](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-service/docs/api-quickstart.en.md), or configure the shared storage and enable user files before running this example.
+
 ## Prepare
 
 Complete the [local Docker Compose quickstart](/v2/en/service/quickstart) and configure model credentials. The commands require Bash or zsh, curl, and jq. Run them in order in one terminal.
@@ -23,6 +26,11 @@ set -euo pipefail
 export BASE_URL="http://localhost:18080"
 export TENANT="default"
 export NAMESPACE="default"
+
+native_api() {
+  curl -sS --fail-with-body -H 'AgentScope-Extensions: turn-inputs-v1' \
+    -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" "$@"
+}
 ```
 
 
@@ -36,7 +44,7 @@ Create a Local Environment so file tools execute through Hands. If you already h
 
 ```bash
 ENVIRONMENT_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/environments" \
+  native_api "$BASE_URL/api/environments" \
     -H "Content-Type: application/json" \
     --data-binary @- <<'JSON'
 {
@@ -53,7 +61,7 @@ ENVIRONMENT_ID=$(jq -er '.id' <<< "$ENVIRONMENT_JSON")
 
 <span id="2-create-the-notes-assistant"></span>
 
-A local Environment now executes through Hands. Before sending this Agent a task, start Hands for its Environment using the [Environment guide](/v2/en/service/environments#2-start-hands). Creating the resource alone does not provide an online Worker.
+Local tools execute through the platform Hands component installed with Service. Before sending a task, verify that Hands is healthy using the [Environment guide](/v2/en/service/environments#2-start-hands). Creating an Environment resource alone does not prove execution readiness; no separate Hands profile or fixed Environment ID is required by the platform service.
 
 ## 2. Create an Agent
 
@@ -61,7 +69,7 @@ Create a notes assistant using the deployment’s default model and only the fil
 
 ```bash
 AGENT_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
+  native_api "$BASE_URL/api/v1/agents" \
     -H "Content-Type: application/json" \
     --data-binary @- <<JSON
 {
@@ -102,42 +110,45 @@ Create a Session referencing the Agent to retain messages and execution history.
 
 ```bash
 SESSION_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+  native_api "$BASE_URL/v1/sessions" \
     -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notes-session-001" \
     --data-binary @- <<JSON
 {
-  "target": {
-    "type": "agent",
-    "id": "$AGENT_ID"
-  }
+  "agent": "$AGENT_ID",
+  "environment_id": "$ENVIRONMENT_ID"
 }
 JSON
 )
 SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
-export SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+export SESSION_URL="$BASE_URL/v1/sessions/$SESSION_ID"
 printf 'Session ID: %s\n' "$SESSION_ID"
 ```
 
 ## 4. Submit a task
 
-Send a message to the session to create a Turn.
+Submit a `user.message` event with `intent:new_turn` to create a Turn. Current native writes use `/events`; `/turns` is a read extension, not a submission route.
 
 ```bash
 TURN_JSON=$(
-  curl -sS --fail-with-body "$SESSION_URL/turns" \
+  native_api "$SESSION_URL/events" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: notes-check-001" \
     --data-binary @- <<'JSON'
 {
-  "message": "Li will finish the installation guide on Friday; review it next Monday, exact time unconfirmed. Organize the action items, write meeting-actions.md, read it back, and include the file contents."
+  "events": [{
+    "type": "user.message",
+    "content": [{"type": "text", "text": "Li will finish the installation guide on Friday; review it next Monday, exact time unconfirmed. Organize the action items, write meeting-actions.md, read it back, and include the file contents."}],
+    "agentscope_service": {"intent": "new_turn"}
+  }]
 }
 JSON
 )
-TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
-jq '{id, status}' <<< "$TURN_JSON"
+TURN_ID=$(jq -er '.data[0].agentscope_service.turn_id' <<< "$TURN_JSON")
+jq . <<< "$TURN_JSON"
 ```
 
-A `202 Accepted` response means the task was received. For a network retry, keep the same `Idempotency-Key` and message. Use a new key for a new task.
+A successful 2xx response means the task was admitted; execution continues in the background. For a network retry, keep the same `Idempotency-Key` and message. Use a new key for a new task.
 
 <span id="4-read-progress-and-tool-results"></span>
 
@@ -145,39 +156,40 @@ A `202 Accepted` response means the task was received. For a network retry, keep
 
 ## 5. Inspect progress and results
 
-Read the snapshot to inspect existing messages, tool results, and task status:
+Poll the Turn until it finishes, preserving the same Session and Turn IDs:
 
 ```bash
-SNAPSHOT=$(
-  curl -sS --fail-with-body "$SESSION_URL/snapshot"
-)
-jq '{items, tools, turns, required_actions}' <<< "$SNAPSHOT"
-CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
+for attempt in {1..90}; do
+  TURN=$(native_api "$SESSION_URL/turns/$TURN_ID")
+  STATUS=$(jq -er '.status' <<< "$TURN")
+  case "$STATUS" in
+    completed) break ;;
+    failed|cancelled) jq . <<< "$TURN"; exit 1 ;;
+  esac
+  sleep 2
+done
+jq '{id, status, error}' <<< "$TURN"
 ```
 
-If work is still running, receive SSE events after the snapshot’s `as_of` cursor:
+Read public history and final output. If the Turn is still running, retain the IDs and query again;
+a timeout in this polling example does not cancel execution.
 
 ```bash
-curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  --data-urlencode "after=$CURSOR"
+native_api "$SESSION_URL/events?limit=100" | jq .
+native_api "$SESSION_URL/turns/$TURN_ID/output?limit=100" | jq .
 ```
 
-After receiving `turn.completed` for your `TURN_ID`, press Ctrl-C to stop the stream and query the final result. Closing the stream does not cancel the task.
+Confirm `status` is `completed`, execution history shows the file operations, and the response
+preserves the Friday deadline, Monday review and unconfirmed time. The file remains in the
+selected execution environment. The first native protocol does not expose public file/Artifact routes; inspect the file through that Environment's own access mechanism.
 
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  | jq '{id, status, error}'
-
-curl -sS --fail-with-body "$SESSION_URL/snapshot" \
-  | jq '{items, tools, required_actions}'
-```
-
-Confirm the Turn’s `status` is `completed`, tool records show `meeting-actions.md` was written and read, and the response preserves the Friday deadline, Monday review, and unconfirmed time. The file resides in the execution environment; see [files and artifacts](/v2/en/service/files) for downloads and Artifact publication.
-
-If the status is `failed`, inspect `error`. For `requires_action`, inspect the snapshot’s `required_actions`. See [sessions and tasks](/v2/en/service/session-event-log) for handling these states.
+The current native contract does not provide snapshots or SSE replay cursors. Live SSE starts
+after connection; use paginated history and Turn/output queries to recover state after reconnecting.
+Inspect Turn errors and public history when execution fails or waits for input. Follow the
+[current Managed Session contract](/v2/en/service/claude-session-api) for supported controls and limits.
 
 <span id="add-capabilities-and-publish"></span>
 
 ## Next
 
-Keep `AGENT_ID` and continue to [Session API application integration](/v2/en/service/service-api). To add capabilities, see [Agent configuration](/v2/en/service/managed-agent-configuration), [tools and MCP](/v2/en/service/tools), and [SSE events](/v2/en/service/sse-events).
+Keep `AGENT_ID` and continue to [Session API application integration](/v2/en/service/claude-session-api). To add capabilities, see [Agent configuration](/v2/en/service/managed-agent-configuration), [tools and MCP](/v2/en/service/tools), and [SSE events](/v2/en/service/sse-events).

@@ -1,0 +1,17 @@
+# Pin imageRepository and imageTag from one current-source build or release manifest.
+# Credentials are provided by pre-created Secrets, never inline in values.
+existingSecret: service-credentials
+schema:
+  existingSecret: service-migration
+localDev: false
+allowLocalEnvironment: false
+# No shared file PVCs are needed in this mode. Enable only with RWX storage configured.
+userFilesEnabled: false
+control: {replicas: 2}
+gateway: {replicas: 2}
+portal: {replicas: 2}
+dataplane: {replicas: 2}
+hands: {replicas: 2}
+publicURL: https://agentscope.example.com
+ingress:
+  enabled: false

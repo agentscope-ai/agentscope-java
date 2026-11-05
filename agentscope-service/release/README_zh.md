@@ -154,7 +154,7 @@ python agentscope-service/release/release.py images \
 
 默认制品目录是 `agentscope-service/release/dist/$SERVICE_VERSION/`。`package` 拒绝覆盖已有目录；重新演练用新的 `--output`，后续 `images` / `publish-chart` 也应指向同一个目录。对外交付使用冻结源码后生成的包，不能直接上传早先 `sourceDirty: true` 的候选包。
 
-CLI 压缩包包含两个可执行文件和中英文安装说明。`agentscope-service-VERSION-kubernetes.tar.gz` 包含 Chart、Secret 配置模板、数据库 schema 初始化 SQL 及安装说明，同时保留独立的 Chart `.tgz`。SDK 已单独发布时，给 `package` 加 `--distributions-only`，只构建 CLI、Compose、Kubernetes 和 Chart 制品。
+CLI 压缩包包含两个可执行文件和中英文安装说明。`agentscope-service-VERSION-kubernetes.tar.gz` 包含 Chart、Secret 配置模板、数据库 schema 初始化 SQL、业务授权输入模板、两类 MQ 初始化脚本、生产 values、Session API 冒烟脚本及安装说明，同时保留独立的 Chart `.tgz`。SDK 已单独发布时，给 `package` 加 `--distributions-only`，只构建 CLI、Compose、Kubernetes 和 Chart 制品。
 
 校验包文件；镜像元数据是之后生成的独立证据，不包含在这份校验和中：
 
@@ -164,16 +164,16 @@ CLI 压缩包包含两个可执行文件和中英文安装说明。`agentscope-s
 
 解压 Compose 包到独立安装目录，运行 `init-env.sh`，用单独的 Compose project 名和未占用端口演练。不要覆盖正在使用的开发栈。按照[快速上手](../../docs/v2/zh/service/quickstart.md)配置测试环境，按[Helm 文档](../../docs/v2/zh/service/kubernetes.md)完成临时集群安装。
 
-在用于演练的安装上启用 Local 后运行：
+在已配置 Redis / MQ 并初始化五组业务 Topic / 消费组的演练安装上运行：
 
 ```bash
 python agentscope-service/release/smoke.py \
   --base http://127.0.0.1:18081 \
   --env-file /private/path/service.env \
-  --state /tmp/agentscope-release-smoke.json
+  --environment-id "$ENVIRONMENT_ID" --state /tmp/agentscope-release-smoke.json
 ```
 
-`--env-file` 指向该测试安装生成的私有 `.env` 或等价配置文件。脚本检查健康、管理员登录、演示密码拒绝，以及 Agent / Environment / Session / Team / Issue 创建。配置有效模型凭据后加 `--model-turn` 验证实际推理；重启或恢复后用原参数加 `--resume` 验证资源仍可访问。
+`--env-file` 指向该测试安装生成的私有 `.env` 或等价配置文件。脚本检查健康、入口隔离、生产鉴权或显式开发身份，以及 Managed Agent / 原生 Session / Events；生产检查需用 `--environment-id` 指定已配置环境；Local 只在隔离演练中显式开启。配置有效模型凭据后加 `--model-turn` 验证实际推理；重启或恢复后用原参数加 `--resume` 验证资源仍可访问。
 
 管理员还应验收共享 Workspace、备份恢复、目标集群 RWX、Ingress/SSE，以及宣称支持的各个架构。四个平台的 CLI 交叉编译通过，并不表示四个平台的运行验收都通过。
 
@@ -461,7 +461,7 @@ helm pull agentscope/agentscope-service \
 - [ ] 官网中英文文档可访问，升级说明与当前数据库行为一致。
 - [ ] 发布说明准确列出未覆盖的平台或功能，没有把编译通过写成运行验证通过。
 
-当前完整 Chart 每组件单副本、Recreate 更新，不提供 PostgreSQL 或 RWX provisioner。Go 启动时执行迁移，Java 使用 Hibernate 更新表结构；回退镜像不能代替恢复数据库、Workspace、Artifact 和原 Vault 密钥。正式升级按[备份恢复文档](../../docs/v2/zh/service/operations.md)安排维护窗口。
+当前完整 Chart 使用五个 RollingUpdate 组件，不提供 PostgreSQL、Redis、RocketMQ 或 RWX provisioner。先创建五组业务 Lite Topic/消费组，再执行四个 owner 迁移任务（cp/rt、portal、dp、ma），授权四个业务账号后启动只校验版本的普通副本。checkpoint 和大对象使用 PostgreSQL；关闭用户文件时无需共享文件卷。回退镜像不能代替恢复数据库、Workspace、Artifact 和原 Vault 密钥。正式升级按[备份恢复文档](../../docs/v2/zh/service/operations.md)安排维护窗口。
 
 ## 十、常见发布阻塞
 

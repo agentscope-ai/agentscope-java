@@ -1,111 +1,115 @@
 # AgentScope Service
 
-> **面向业务应用的 Agent as a Service 平台：通过 API 提交工作、持续交互，并获取可复核的结果与交付物。**
+> **可自托管的 Agent as a Service 平台：配置基于 HarnessAgent 的 Managed Agents，通过 API 为业务应用提供 Agent 服务。**
 
 [English](README.md)
 
-AgentScope Service 将能够研究、使用工具和验证结果的 Agent 发布为服务。业务应用可以在 CRM 中生成客户方案，在文档流水线中核验材料，在研发平台中调查故障并生成 PR，也可以提供连续对话的专业助手或定期运行后台任务。
+AgentScope Service 将 Agent 能力作为多个业务应用可以共享的服务。团队在自己的基础设施上部署平台，为 Managed Agent 配置指令、模型和工具，由 Service 承接运行。应用通过 Session API 提交工作、跟踪进展、在需要时补充人工输入，并获取结果。
 
-用户在原有产品中发起工作和检查交付；Service 承接 Agent 的运行、协调与交互。应用团队负责业务工具、数据授权、界面和结果验收。完整接入设计见[场景案例](../docs/v2/zh/service/usecases.md)。
+业务应用可以在 CRM 中生成客户方案，在文档流水线中核验材料，在研发平台中调查故障，也可以提供持续对话的专业助手。用户在原有产品中工作，Service 管理 Agent 执行及其记录；应用团队负责业务工具、数据授权、界面和结果验收。完整接入设计见[场景案例](../docs/v2/zh/service/usecases.md)。
 
-## 产品能力
+## Managed Agents：将 HarnessAgent 作为服务使用
 
-### 通过 API 从任务走向交付
+**Managed Agents 是使用 Service 的主要起点。** 它与 Harness SDK 使用相同的 AgentScope HarnessAgent 内核。通过 Console 或管理 API 直接配置 Agent，连接模型与工具执行 Environment，再通过 Session 验证任务。随着需求明确，可以按当前能力配置工具与 Memory，依据实际执行记录检查并改进交付。首版原生协议不接受 Skills/multiagent 配置或客户端工具确认，启用扩展前先核对[当前契约](../docs/v2/zh/service/claude-session-api.md)。
 
-创建或接入 Agent，配置资源并发布 Endpoint。应用使用 Application 凭证调用服务，保存 Invocation ID，读取状态、快照、事件、待办与产物。Job 用于独立后台任务，Conversation 用于支持会话的单 Agent；每个任务或会话轮次都有自己的 Invocation。
+Service 负责 Agent 运行时、会话管理、后台执行、checkpoint 和恢复。应用团队可以直接使用这些能力，无需为每个应用开发和运维独立的 Agent 运行服务。在当前推荐的自托管部署方式下，平台团队统一运维 Service 及其共享基础设施。
 
-Endpoint 定义输入输出契约和发布版本。应用可以通过查询、SSE 或 Webhook 获取变化，参与人工确认，并把经过验证的结果接回业务流程。执行完成与业务验收分别处理。
+| 使用方式 | 如何开发 | 谁负责运行 |
+| --- | --- | --- |
+| Harness SDK | 在 Java / Spring Boot 应用中嵌入 HarnessAgent，通过代码组织行为 | 应用团队部署并运维运行时 |
+| Service 中的 Managed Agents | 通过 Console 或 API 配置基于 HarnessAgent 的 Agent，再通过 Session API 提交工作 | Service 管理执行与 Session，平台团队运维部署环境 |
 
-从 [API 快速开始](../docs/v2/zh/service/quickstart.md)开始，按[发布 Endpoint](../docs/v2/zh/service/api-reference.md)与[统一服务 API](../docs/v2/zh/service/service-api.md)完成接入。Managed 原生会话、文件、子 Agent 和 checkpoint 接口用于相应扩展能力，不能与公共 Invocation 的 ID、认证和事件游标混用。
+需要在应用代码中深度控制执行时，从 [Harness SDK](../docs/v2/zh/docs/quickstart.md)开始。希望业务应用将执行委托给共享平台时，使用 Managed Agents。已有 SDK 应用也可以作为 External Agent 接入。
 
-### 按任务选择执行方式
+## 从部署到第一个 Managed Agent
 
-- **Managed：** 用指令、模型、工具和资源定义专业 Agent，由 Service 运行 AgentScope Harness；工具在配置的 Environment 中执行。平台可部署在自己的基础设施中。
-- **External：** 接入已有 AgentScope 或其他框架应用，保留其进程与部署；实现任务执行适配、事件回报和支持的控制操作。
-- **Hosted：** 通过 Runtime Host 复用 Codex、Claude Code 等 Coding Agent，按任务管理 provider 进程与工作目录。
+先选择一个能够判断结果是否合格的小任务，沿以下路径完成验证。团队已有可用 Service 时，可以从创建 Agent 开始。
 
-先用一个 Agent 验证交付。需要动态分工时组合 Team；需要明确步骤、条件和人工关卡时使用 Workflow。调用方仍通过 Endpoint 使用能力，通过 Invocation 跟踪结果。Team 与 Workflow 当前提供 Job；具体交互以 runtime capabilities 为准。
+| 步骤 | 要完成的工作 | 指南 |
+| --- | --- | --- |
+| 部署 Service | 启动平台、配置模型并准备工具执行 Environment | [Docker Compose](../docs/v2/zh/service/quickstart.md) / [Kubernetes](../docs/v2/zh/service/kubernetes.md) |
+| 创建 Managed Agent | 配置指令、模型和工具，提交任务并检查结果 | [第一个 Managed Agent](../docs/v2/zh/service/create-managed-agent.md) |
+| 配置能力 | 在当前协议能力内配置工具与 Memory | [工具](../docs/v2/zh/service/tools.md)、[Workspace](../docs/v2/zh/service/workspaces.md)、[Memory](../docs/v2/zh/service/memory.md) |
+| 接入业务应用 | 在产品中创建 Session、提交 Turn 并跟踪 Events | [Session API 接入](../docs/v2/zh/service/claude-session-api.md) |
+| 扩展协作与运维 | 按需增加协作并检查执行记录 | [多 Agent 编排](../docs/v2/zh/service/orchestration.md)、[会话与任务](../docs/v2/zh/service/session-event-log.md) |
 
-### 统一管理与观察
+## 统一应用模型：Session、Turn 与 Events
 
-Control Plane管理 Agent 目录、绑定、发布、应用身份、任务协调与公共调用。Managed Agent、External Application 和 Runtime Host 通过持久执行契约协作。Console 提供 API 能力的可视化配置、任务查看与运维入口；业务用户可以留在自己的产品中。
+Agent 定义可复用的能力。**Session** 选择 Agent、Team 或 Workflow，并冻结后续工作使用的配置。在 Session 中每提交一次任务，就创建一个 **Turn**，由 Service 在后台执行。应用保存 Session 和 Turn ID，将执行记录与业务对象关联。
 
-Workspace、Environment、Memory 和 Vault 组织执行资源。应用身份与业务终端用户身份需要分别处理；共享 Application 的不同凭证不会自动提供用户级任务隔离。CRM、GitHub、订单系统等连接由接入方配置。
+应用通过 Session 状态与 **Events** 展示进度、处理待确认操作并获取结果。SSE 提供实时更新；重新连接时，可以通过快照及其事件游标恢复交互。关闭页面或断开 SSE 不会停止执行。Turn 完成后，应用仍需按业务规则验收，再将结果接入下一阶段。
 
-### Managed Session 的运行时归属
+Managed Agent 在 Session 内保留对话上下文；Team 和 Workflow 的每个 Turn 分别启动协作任务或流程运行。它们共用 Session、Turn 概念。当前 Managed 使用 `/v1/sessions` 的 `agent` 创建与 `user.message` Events 写入，其他后端保留兼容 API；请求体、上下文和支持的控制以所选后端为准。详见 [Session API 接入](../docs/v2/zh/service/claude-session-api.md)和 [API 参考](../docs/v2/zh/service/api-reference.md)。
 
-公共 Managed Session 流量进入 Session Portal，由 Portal 负责准入、查询和 SSE。Brain 从
-RocketMQ LiteTopic 消费 Turn，运行 Harness，直接提交原生日志、checkpoint、挂起和完整终态。
-Brain 先保存不可执行的调用提案并取得 Execute 的 Broker ACK，再在 checkpoint 事务中授权工具任务、保存回执，
-运行期间不扫描 Execute Outbox 发布消息。Hands 先确认共享提交事实；尚未提交时短暂 Suspend，仅在旧执行被新 epoch
-隔离或 Turn 已终结后废弃未提交命令。接管从完整提案恢复，已提交操作继续复用原身份。Hands 在自己的表中保存物理
-执行、输出覆盖与不可变结果，只发布工具事件。Brain 提交工具结果，并在当前 pending set 齐备后生成持久恢复意图。
-如果等待的任务全部为 `mcp.batch`，continuation loop 从持久记录直接恢复；其他工具操作和输入等待继续使用
-Session 级 Resume 消息。两条路径都校验挂起身份并恢复 checkpoint。Brain 在推理前直接获取并固定 MCP 工具描述；
-发现不创建 Hands 任务，也不挂起 Turn。真实 MCP 调用继续交由 Hands 异步执行。
+生产环境中的应用凭证归属于 Application，并授权访问明确的目标资源。应用在暴露业务数据或工具时，还需执行终端用户权限校验；同一 Application 中使用不同凭证不会自动隔离用户任务。
 
-挂起释放活动 Harness、Redis token 与 MQ 回调，返回 SDK Suspend，原消息继续保留 FIFO 队头；
-只有完整终态持久化后才由 SDK ACK，后续 Turn 才推进。根与子 Session 共享一个 Turn Topic 和回调池，
-冻结深度元数据与 16 层上限仍作为业务约束。Redis 保存临时所有权和传递加速数据，
-数据库保存去重、执行历史及 Outbox/Inbox 事实；Redis 丢失不能授权重启未知的外部副作用。
-工作区 checkpoint 与生命周期协调器位于 Brain，物理操作通过同一 MQ 边界交给 Hands。
-Hands 不创建运行日志写入器或 checkpoint 协调器。SSE 断开不会终止执行。
-Channel 会话与 Deployment/Cron 适配器通过控制面和 Portal 提交原生 Turn。重试保留消息 ID 或计划触发时间；回复按该 Turn 的公开事件重放，适配器不再投递旧 Dataplane 事件。原生 Session 在创建时冻结 Environment 和定义，不再额外创建控制面的运行会话。
+## 从 Managed Agents 扩展协作
 
-Managed AgentTask 派发先将不可变 Attempt 和输入写入持久 Outbox，再受理原生 Turn。传输重试复用同一 Attempt、调用身份和请求键。取消通过原生 Input 受理；控制面查询原生执行事实，不再依据自身心跳超时重排 Managed 工作。其他后端保留各自执行路径。AgentTask 的完整接入与故障验收仍在进行。[Managed 运行时改造说明](docs/managed-runtime-dataplane.md)包含数据流程、存储条件及迁移边界。
+先用一个 Managed Agent 验证交付。需要它委派部分工作并整合结果时，可以使用 HarnessAgent Subagent。多个独立维护的专业 Agent 需要由负责人协调时，使用 Team；业务流程需要明确步骤、条件或人工审批时，使用 Workflow。应用仍为选定的目标创建 Session、提交 Turn。
 
-组件职责与完整时序见 [Redis 与 Turn 生命周期](docs/redis-usage-and-turn-lifecycle.md)和 [RocketMQ Topic 与 Turn 生命周期](docs/rocketmq-topics-and-turn-lifecycle.md)。
+已有能力也可以加入协作。[External Agent](../docs/v2/zh/service/register-agentscope-agent.md)保留原有 SDK 或框架实现、进程和部署，通过适配任务执行和事件回报接入 Service。[Hosted Agent](../docs/v2/zh/service/connect-hosted-agent.md)通过 Runtime Host 复用 Codex、Claude Code 等 Coding Agent，由 Host 管理 provider 进程和工作目录。
+
+自托管 Service 指部署整个平台。`self_hosted` 工具 Worker 提供 Managed Agent 的工具执行环境，Runtime Host 则运行 Hosted Agent，三者承担不同职责。配置方式见 [Environment](../docs/v2/zh/service/environments.md)与 [Runtime Host](../docs/v2/zh/service/runtime-host.md)。
 
 ## 整体架构
 
-当前源码部署五个组件：Go Control Plane、Gateway、Session Portal、Brain Dataplane 和平台 Hands。
-单个 `service-controlplane` 二进制和镜像在 8081 端口承载管理 API、Workflow / Team 编排、Hosted
-协调、Cron、渠道接入、消息发送和 Webhook 投递，不再独立部署 scheduler 或 orchestration。
-
-所有 control 副本运行有界 worker。PostgreSQL 负责消息和任务去重、领取、Stream 租约、重试与
-fence 校验，无需粘性会话或固定单副本。Helm 的 `control.executionSlots`、`control.workerBatch`、
-`control.channelSlots`、`control.webhookSlots` 设置单副本并发。保留 `cp`、`rt` schema 及现有签名、
-加密密钥；新增 `0007_integrated_scheduler` 产品迁移创建共享任务和 Stream 租约表。
-
-升级时先暂停渠道入口并排空待回复消息，停止旧 Java Scheduler 和 Go orchestration 部署，执行
-schema job 并重新授权，再启动合并后的 control 副本。Compose 使用 `--remove-orphans` 清理旧容器；
-Helm 升级前先将旧 Deployment 缩容为 0。切换后再停用旧 runtime / scheduler 数据库凭据。
-该部署结构需要重新构建源码镜像，已发布的 BETA1 镜像保持原样。
+当前源码部署五个组件：Gateway、Control Plane、Session Portal、Brain Dataplane 和 Hands。下图展示 Managed Agent 的执行路径与共享基础设施；External Agent 和 Hosted Runtime Host 通过 Control Plane 扩展平台能力。
 
 ### 基本工作原理
 
-业务应用通过 Endpoint / Invocation API 提交与观察工作，开发者通过管理 API 或 Console 配置能力；控制面协调三类数据面：
+```mermaid
+flowchart TB
+    App["业务应用 / Console"] --> Gateway
+    subgraph Service["自托管 AgentScope Service"]
+        Gateway -->|"Agent 与资源配置"| CP["Control Plane"]
+        Gateway -->|"Session / Turn / Input / Events"| Portal["Session Portal"]
+        Portal -->|"Turns"| MQ["RocketMQ LiteTopics"]
+        MQ <--> Brain["Brain: HarnessAgent"]
+        MQ <--> Hands
+        CP --- PG[("PostgreSQL")]
+        Portal --- PG
+        Brain --- PG
+        Hands --- PG
+        Portal -.-> Redis["Redis: 租约与通知"]
+        Brain -.-> Redis
+        Hands -.-> Redis
+    end
+    subgraph Integrations["外部服务与执行环境"]
+        Models["模型服务"]
+        Tools["MCP / Sandbox / self_hosted Worker"]
+    end
+    Brain --> Models
+    Hands --> Tools
+```
 
-- `managed`：AgentScope Harness 托管运行；
-- `external-application`：AgentScope、LangChain、Claude Agent SDK 等用户应用通过 Application SDK / ASDP 注册；
-- `hosted-runtime`：Runtime Host daemon 按任务拉起 Codex、Claude Code 等运行时；
+应用通过 Gateway 使用管理 API 与 Session API。Control Plane 管理 Agent 定义、资源、身份与协作。Session Portal 受理工作，提供快照、查询与 SSE。Brain 运行 HarnessAgent 推理并提交持久执行状态，Hands 在配置的 Environment 中完成物理工具执行。
 
-![AgentScope Service](/docs/imgs/agentservice/agentscope-service-architecture.png)
+| 组件或依赖 | 职责 |
+| --- | --- |
+| Gateway | 公共入口、认证与 API 路由 |
+| Control Plane（`service-controlplane`） | 资源与身份管理、Team / Workflow 编排、Hosted 协调、Cron、渠道和消息投递 |
+| Session Portal | Session / Turn / Input 受理、查询、公开 Events 与 SSE |
+| Brain Dataplane | HarnessAgent 执行、原生日志、checkpoint、工具结果提交与恢复 |
+| Hands | 工具与 Sandbox 执行，持久保存输出和结果，发布工具事件 |
+| PostgreSQL | 持久受理与执行记录、checkpoint、工具结果、去重和大对象 |
+| Redis | 可续期的执行所有权 token 与临时通知 |
+| RocketMQ | Turn、Tool Execute、Tool Control、Tool Events、Turn Resumes 五条业务通道 |
 
+### Managed Session 的运行时归属
+
+Brain 与 Hands 将 Agent 推理和物理工具执行分开。Brain 随 checkpoint 持久保存并授权工具意图，Hands 校验授权后执行操作并持久保存结果，Brain 提交工具结果后继续同一逻辑 Turn。长工具可以触发挂起，释放活动运行资源，同时保留 Session 内的 Turn 顺序；其他 Brain 副本可以从持久状态恢复执行。
+
+MCP 批次等待使用持久的直接恢复意图，其他工具操作和输入等待使用 Session 级 Resume 消息。Redis 加速传递并保护活动所有权，PostgreSQL 保存恢复所需的执行事实。关闭用户文件功能时，checkpoint 和大对象存入 PostgreSQL，无需 NAS；文件与 Artifact 能力另有存储要求。
+
+Managed AgentTask 的完整接入与故障验收仍在进行。协议细节、存储条件与当前接入限制见 [Managed 运行时设计](docs/managed-runtime-dataplane.md)、[Redis 与 Turn 生命周期](docs/redis-usage-and-turn-lifecycle.md)和 [RocketMQ Topic 与 Turn 生命周期](docs/rocketmq-topics-and-turn-lifecycle.md)。
 
 ### 生产部署架构
 
-在生产环境中，推荐的 AgentScope Service 部署架构如下：
+五个组件共享持久基础设施，支持多副本运行。Control Plane 在单个二进制和镜像中合并管理与后台协调职责，监听 8081 端口；当前源码无需独立部署 Scheduler 或 orchestration。有界 worker 通过 PostgreSQL 领取记录、Stream 租约和 fence 校验协调副本。Helm 的 `control.executionSlots`、`control.workerBatch`、`control.channelSlots` 与 `control.webhookSlots` 设置单副本并发。
 
-![AgentScope Service](/docs/imgs/agentservice/agentscope-service-production-deploy.png)
+从旧部署升级时，先暂停渠道入口并排空待回复消息，停止旧 Java Scheduler 和 Go orchestration 部署，执行 schema job 并重新授权，再启动合并后的 Control Plane 副本。保留 `cp` / `rt` schema 与签名、加密密钥；`0007_integrated_scheduler` 产品迁移创建共享任务与 Stream 租约表。Compose 使用 `--remove-orphans` 清理旧容器，Helm 升级前将旧 Deployment 缩容为 0，切换后再停用旧 runtime / scheduler 数据库凭据。
 
-
-| 平面 | 负责 | 不负责 |
-| --- | --- | --- |
-| Gateway | 公共入口、认证与 API 路由 | 业务状态与 Agent 执行 |
-| Control Plane（`service-controlplane`） | 资源定义、发布、身份与配置准入、Workflow/Team 编排、Hosted 协调、Cron、渠道和投递 | Harness 执行 |
-| Session Portal | 公共 Session/Turn 准入、事件、查询和 SSE | 原生执行状态 |
-| Dataplane | Harness 推理、原生日志/checkpoint/终态提交、工具事件 Inbox 与恢复校验 | 资源 CRUD、物理工具执行 |
-| Hands | Sandbox/MCP 执行事实、输出/结果 Outbox、可靠 Resume 与 Sandbox 资源 | Turn 准入、原生运行状态提交 |
-
-
-## Agent 如何接入
-
-业务开发者从 [API 快速开始](../docs/v2/zh/service/quickstart.md)验证调用；平台团队准备模型、执行环境、身份与发布资源。已有 Agent 应用按 [External 接入指南](../docs/v2/zh/service/register-agentscope-agent.md)实现执行适配，再发布为服务。
-
-## 发布部署与文档
-
-发布版使用已构建镜像，参见 [Docker / Helm 部署](deploy/README.md) 和 [中文发布维护手册](release/README_zh.md)。完整用户文档位于 [AgentScope Service 专区](../docs/v2/zh/service/index.md)。以下快速开始从源码启动免鉴权本地开发模式；发布安装见生产指南。
+本节描述当前源码架构，需要重新构建镜像。已发布的 `2.1.0-BETA1` 镜像及安装默认值以对应发布版为准。发布安装见 [Docker / Helm 部署](deploy/README.md)和[发布维护手册](release/README_zh.md)。
 
 ## Docker Compose 快速开始
 
@@ -116,8 +120,9 @@ cd agentscope-service
 export DASHSCOPE_API_KEY="YOUR_DASHSCOPE_API_KEY"
 ./deploy/init-env.sh 2.1.0-local agentscope-local
 # 在 deploy/.env 填写可达的 Redis URI / RocketMQ Cluster Proxy 地址，
-# 并先初始化 Turn 深度分道及另三个 Lite 父 Topic 和 FIFO / Shared / wildcard 消费组。
+# 并先初始化五个业务 Lite 父 Topic 和 FIFO / Shared / wildcard 消费组。
 export BUILDER_LOCAL_DEV=true
+export BUILDER_ALLOW_LOCAL_ENVIRONMENT=true
 docker compose --env-file deploy/.env up -d --build --wait --wait-timeout 600
 ```
 
@@ -149,22 +154,22 @@ CLI 连接已有 Service 并启动 Runtime Host，不负责部署平台。将 PA
 
 ## 使用 Helm 安装生产环境
 
-先准备外部 PostgreSQL、Workspace 的共享 RWX 存储、Artifact 存储、配置 Secret、
-域名和 TLS，然后添加已发布的 Chart 仓库：
+先准备 PostgreSQL、Redis、五组 RocketMQ Lite Topic/消费组、分离的迁移与业务 Secret、域名和 TLS。
+用户文件开启时才需要 Workspace/Artifact 的共享 RWX 存储。使用当前源码 Chart：
 
 ```bash
-helm repo add agentscope https://chickenlj.github.io/helm-charts
-helm repo update agentscope
+helm lint agentscope-service/helm/agentscope-service \
+  --set imageRepository=REGISTRY/NAMESPACE \
+  --set existingSecret=service-credentials --set schema.existingSecret=service-migration
 ```
 
 按[生产安装指南](https://java.agentscope.io/v2/zh/service/kubernetes)安装
-`agentscope/agentscope-service`，固定 `--version 2.1.0-BETA1`，镜像命名空间使用
-`sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`。
-Chart 每组件单副本并采用 Recreate 更新，请安排维护窗口。
+当前源码 Chart，先运行迁移任务、重新授权，再以配套镜像版本部署五个 RollingUpdate 组件。
+已发布的 BETA1 镜像与 Chart 保持旧架构，不能替代当前实现。
 
 ## 开发
 
-手工调试 Session 的指令、snapshot 和 SSE，可以使用[独立 Session Playground](tests/session-playground/README.md)。它在本地 18082 端口运行，默认代理 18081 网关；控制面资源仍通过终端创建。
+手工验证当前 Managed Session 消息、事件历史与实时 SSE，请使用[原生 API 快速入门](docs/api-quickstart.md)。
 
 ### 从源码启动开发环境
 
@@ -173,14 +178,16 @@ Chart 每组件单副本并采用 Recreate 更新，请安排维护窗口。
 
 ```bash
 export DASHSCOPE_API_KEY=YOUR_MODEL_CREDENTIAL
+export BUILDER_MANAGED_REDIS_URI=redis://YOUR_REDIS_HOST:6379
+export BUILDER_MANAGED_MQ_ENDPOINTS=YOUR_CLUSTER_PROXY:8081
 cd agentscope-service
 scripts/dev-down.sh
 BUILDER_REBUILD=1 scripts/dev-up.sh
 # 日后用 scripts/dev-down.sh 停止。
 ```
 
-开发栈默认启用 `BUILDER_LOCAL_DEV=true`，使用单一开发身份与开发密钥，无需登录。完整重建默认重置可丢弃的 `cp`、`rt`、`portal`、`dp` schema；
-仅在需要保留已有兼容开发库时设置 `BUILDER_RESET_DB=0`。
+开发栈默认启用 `BUILDER_LOCAL_DEV=true`，使用单一开发身份与开发密钥，无需登录。重建默认保留数据库。先初始化五组 MQ Topic/消费组，
+只有显式设置 `BUILDER_RESET_DB=1` 才重置所选开发 schema。
 这与上面的发布版 Compose 安装是不同的环境。
 
 ### 构建后端
@@ -188,7 +195,7 @@ BUILDER_REBUILD=1 scripts/dev-up.sh
 请从 Monorepo 根目录执行 Maven，确保 Service JAR 使用的 AgentScope Snapshot 都是最新版本：
 
 ```bash
-mvn install -DskipTests
+mvn -T1 install -DskipTests
 
 cd agentscope-service/service-controlplane
 make build
@@ -210,7 +217,7 @@ npm run dev     # Vite HMR，/api 代理到 Gateway
 先构建 Java Artifact，再启动容器化环境：
 
 ```bash
-mvn install -DskipTests
+mvn -T1 install -DskipTests
 docker compose --env-file agentscope-service/deploy/.env -f agentscope-service/docker-compose.yml up --build
 ```
 
@@ -236,15 +243,15 @@ Java Service 使用 `builder.*` 属性与 `BUILDER_*` 环境变量。各平面�
 | `BUILDER_INTERNAL_TOKEN` | 平面间可信调用密钥 |
 | `BUILDER_VAULT_MASTER_KEY` | Vault 凭据加密密钥 |
 | `BUILDER_DB_URL`、`BUILDER_DB_USER`、`BUILDER_DB_PASSWORD` | Java Dataplane 数据库 |
-| `BUILDER_CONTROL_URL`、`BUILDER_DATA_URL`、`BUILDER_SCHEDULER_URL` | 内部服务地址 |
+| `BUILDER_CONTROL_URL`、`BUILDER_DATA_URL`、`BUILDER_SESSION_PORTAL_URL` | 内部服务地址 |
 | `BUILDER_E2B_API_KEY` | `sandbox` Environment 的 E2B 凭据 |
 | `BUILDER_LOCAL_DEV` | 默认 `false`；源码 Compose 和开发脚本默认 `true`，跳过平台认证与权限校验；发布 Compose / Helm 保持关闭。 |
 | `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | 是否允许新的 `local` Environment 绑定。`service-controlplane` 默认 `false`，`scripts/dev-up.sh` 和开发用 Compose 显式开启；生产环境应保持关闭。 |
 | `CONTROL_PLANE_PRODUCT_DSN` | `service-controlplane` 使用的产品数据库 |
 | `CONTROL_PLANE_ENABLE_KUBERNETES` | 是否启用 Control Plane CRD Reconciler 与 Kubernetes 集成 |
-| `BUILDER_REBUILD=1` | 重建 Monorepo/service-controlplane，并默认重建可丢弃的本地 `cp`/`rt`/`portal`/`dp` schema |
-| `BUILDER_RESET_DB=0` | 完整重建二进制时保留已经是 v4 的本地数据库 |
-| `AGENTSCOPE_SMOKE_TEST=1` | 健康检查和 SQL schema 校验通过后自动运行 `scripts/smoke.sh` |
+| `BUILDER_REBUILD=1` | 重建 Monorepo/service-controlplane，默认保留数据库 |
+| `BUILDER_RESET_DB=1` | 显式重置所选开发实例的 `cp`/`rt`/`portal`/`dp`/`ma` schema；默认 `0` 保留数据 |
+| `BUILDER_SMOKE_TEST=1` | 健康检查和 SQL schema 校验通过后自动运行 `scripts/smoke.sh` |
 
 生产部署必须替换全部开发密钥，并使用持久化 PostgreSQL。
 
@@ -259,9 +266,10 @@ Java Service 使用 `builder.*` 属性与 `BUILDER_*` 环境变量。各平面�
 
 - [Service 定位与介绍](../docs/v2/zh/service/index.md)
 - [场景案例与接入设计](../docs/v2/zh/service/usecases.md)
-- [API 快速开始](../docs/v2/zh/service/quickstart.md)
-- [统一服务 API](../docs/v2/zh/service/service-api.md)
-- [Managed 原生会话与任务](../docs/v2/zh/service/session-event-log.md)
+- [部署 Service](../docs/v2/zh/service/quickstart.md)
+- [第一个 Managed Agent](../docs/v2/zh/service/create-managed-agent.md)
+- [Session API 接入](../docs/v2/zh/service/claude-session-api.md)
+- [会话与任务](../docs/v2/zh/service/session-event-log.md)
 - [API 参考](../docs/v2/zh/service/api-reference.md)
 
 
