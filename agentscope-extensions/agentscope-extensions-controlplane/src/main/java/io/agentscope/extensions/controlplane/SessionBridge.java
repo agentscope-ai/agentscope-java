@@ -948,58 +948,57 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
                                 phases.getOrDefault(sid, PHASE_IDLE),
                                 busyFlags.containsKey(sid)
                                         ? busyFlags.get(sid)
-                                        : PHASE_ACTIVE.equals(
-                                                phases.getOrDefault(sid, PHASE_IDLE)),
+                                        : PHASE_ACTIVE.equals(phases.getOrDefault(sid, PHASE_IDLE)),
                                 isoOrNull(startedAt.get(sid)),
                                 isoOrNull(lastActiveAt.get(sid))));
             }
         }
 
         for (SessionSnapshot snap : snapshots) {
-            String sessionId = snap.sessionId();
-            ContextTracker tracker = snap.tracker();
-            int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
-            int usedForPressure = tracker.getContextUsedTokens();
-            Map<String, Object> session = new LinkedHashMap<>();
-            session.put("id", sessionId);
-            session.put("phase", snap.phase());
-            Boolean busy = snap.busy();
-            session.put("busy", busy);
-                if (!tracker.getModel().isEmpty()) {
-                    session.put("model", tracker.getModel());
-                }
-                putIfPresent(session, "startedAt", snap.startedAt());
-                putIfPresent(session, "lastActiveAt", snap.lastActiveAt());
-                session.put("messageCount", tracker.getMessageCount());
-                Map<String, Object> tokenUsage = new LinkedHashMap<>();
-                tokenUsage.put("promptTokens", tracker.getTokensIn());
-                tokenUsage.put("completionTokens", tracker.getTokensOut());
-                tokenUsage.put("totalTokens", totalTokens);
-                if (tracker.getMaxTokens() > 0) {
-                    tokenUsage.put("maxTokens", tracker.getMaxTokens());
-                }
-                session.put("tokenUsage", tokenUsage);
-                session.put(
-                        "contextPressure",
-                        tracker.getMaxTokens() > 0 && usedForPressure > 0
-                                ? (double) usedForPressure / tracker.getMaxTokens()
-                                : 0.0);
-                Map<String, Object> taskSummary = resolveTaskSummary(sessionId);
-                if (taskSummary != null) {
-                    session.put("taskSummary", taskSummary);
-                }
-                session.put("framework", framework);
-                if (!version.isEmpty()) {
-                    session.put("frameworkVersion", version);
-                }
-                session.put("contextHash", tracker.getContextHash());
-                if (tracker.isCompacted()) {
-                    session.put("isCompacted", true);
-                }
-                session.put("effectiveMessageCount", tracker.getEffectiveMessageCount());
-                out.add(session);
-        }
-        return out;
+        String sessionId = snap.sessionId();
+        ContextTracker tracker = snap.tracker();
+        int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
+        int usedForPressure = tracker.getContextUsedTokens();
+        Map<String, Object> session = new LinkedHashMap<>();
+        session.put("id", sessionId);
+        session.put("phase", snap.phase());
+        Boolean busy = snap.busy();
+        session.put("busy", busy);
+            if (!tracker.getModel().isEmpty()) {
+                session.put("model", tracker.getModel());
+            }
+            putIfPresent(session, "startedAt", snap.startedAt());
+            putIfPresent(session, "lastActiveAt", snap.lastActiveAt());
+            session.put("messageCount", tracker.getMessageCount());
+            Map<String, Object> tokenUsage = new LinkedHashMap<>();
+            tokenUsage.put("promptTokens", tracker.getTokensIn());
+            tokenUsage.put("completionTokens", tracker.getTokensOut());
+            tokenUsage.put("totalTokens", totalTokens);
+            if (tracker.getMaxTokens() > 0) {
+                tokenUsage.put("maxTokens", tracker.getMaxTokens());
+            }
+            session.put("tokenUsage", tokenUsage);
+            session.put(
+                    "contextPressure",
+                    tracker.getMaxTokens() > 0 && usedForPressure > 0
+                            ? (double) usedForPressure / tracker.getMaxTokens()
+                            : 0.0);
+            Map<String, Object> taskSummary = resolveTaskSummary(sessionId);
+            if (taskSummary != null) {
+                session.put("taskSummary", taskSummary);
+            }
+            session.put("framework", framework);
+            if (!version.isEmpty()) {
+                session.put("frameworkVersion", version);
+            }
+            session.put("contextHash", tracker.getContextHash());
+            if (tracker.isCompacted()) {
+                session.put("isCompacted", true);
+            }
+            session.put("effectiveMessageCount", tracker.getEffectiveMessageCount());
+            out.add(session);
+    }
+    return out;
     }
 
     @Override
