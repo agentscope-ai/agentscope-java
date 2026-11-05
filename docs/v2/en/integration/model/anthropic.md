@@ -40,6 +40,43 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
+## PDF documents and citations
+
+PDF `DocumentBlock` content is sent as an Anthropic document block. Base64 data, local file paths
+or `file://` URLs, remote HTTP(S) URLs, and Anthropic file IDs are supported. Local PDFs are
+encoded as base64 before the request is sent.
+
+```java
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
+
+DocumentBlock document = DocumentBlock.builder()
+    .name("guide.pdf")
+    .source(URLSource.builder()
+        .url("file:///absolute/path/to/guide.pdf")
+        .mimeType("application/pdf")
+        .build())
+    .build();
+
+Msg request = Msg.builder()
+    .role(MsgRole.USER)
+    .content(document, TextBlock.builder().text("Summarize this document.").build())
+    .build();
+
+model.stream(List.of(request), List.of(), null);
+```
+
+Anthropic requires citations to be enabled on all documents in a request or on none of them, so
+this integration enables citations on every PDF document it sends. Returned citations are kept as
+provider-specific response metadata under `anthropic.citations`. The value is a `List<Map<String, Object>>`;
+each entry contains `type`, `block_index`, `cited_text`, `document_index`, the location fields for
+its citation type, and optional `document_title` and `file_id` fields.
+
+```java
+Object citations = response.getMetadata().get("anthropic.citations");
+```
+
 ## Server-side tools
 
 Anthropic built-in tools run on Anthropic's infrastructure instead of the local AgentScope toolkit.
