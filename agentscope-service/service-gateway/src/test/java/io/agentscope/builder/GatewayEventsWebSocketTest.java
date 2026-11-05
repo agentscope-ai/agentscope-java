@@ -19,8 +19,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -41,6 +43,10 @@ import reactor.netty.http.server.HttpServer;
 @ActiveProfiles("test")
 class GatewayEventsWebSocketTest {
 
+    // Status the stand-in control plane answered the last handshake with. The gateway accepts
+    // the client upgrade before it dials upstream, so an upstream 403 never reaches the client.
+    private static final AtomicInteger UPSTREAM_STATUS = new AtomicInteger();
+
     // Stand-in for the control plane hub: same-origin check against the Host it receives.
     private static final DisposableServer CONTROL =
             HttpServer.create()
@@ -59,8 +65,10 @@ class GatewayEventsWebSocketTest {
                                                                 .get(HttpHeaders.HOST);
                                                 if (origin != null
                                                         && !origin.equals("http://" + host)) {
+                                                    UPSTREAM_STATUS.set(403);
                                                     return response.status(403).send();
                                                 }
+                                                UPSTREAM_STATUS.set(101);
                                                 return response.sendWebsocket(
                                                         (in, out) ->
                                                                 out.sendString(Mono.just("ready"))
@@ -82,14 +90,21 @@ class GatewayEventsWebSocketTest {
         CONTROL.disposeNow();
     }
 
+    @BeforeEach
+    void resetUpstreamStatus() {
+        UPSTREAM_STATUS.set(0);
+    }
+
     @Test
     void sameOriginBrowserSocketReachesControlPlane() {
         assertThat(firstMessage("http://localhost:" + port)).isEqualTo("ready");
+        assertThat(UPSTREAM_STATUS.get()).isEqualTo(101);
     }
 
     @Test
     void crossOriginSocketIsStillRejected() {
         assertThat(firstMessage("http://evil.example")).isNull();
+        assertThat(UPSTREAM_STATUS.get()).isEqualTo(403);
     }
 
     private String firstMessage(String origin) {
@@ -109,7 +124,6 @@ class GatewayEventsWebSocketTest {
                                         .next()
                                         .doOnNext(received::set)
                                         .then())
-                .onErrorResume(error -> Mono.empty())
                 .block(Duration.ofSeconds(10));
         return received.get();
     }
