@@ -17,6 +17,7 @@ package io.agentscope.core.agui.converter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -41,6 +42,7 @@ import io.agentscope.core.agui.model.VideoInputContent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -875,6 +877,143 @@ class AguiMessageConverterTest {
     }
 
     // ===== Multimodal / Blocks content tests =====
+
+    @Test
+    void testConvertUrlMediaBlocksToAguiInputContents() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-media")
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder().text("Describe these").build(),
+                                ImageBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/img.png")
+                                                        .mimeType("image/png")
+                                                        .build())
+                                        .build(),
+                                AudioBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/audio.mp3")
+                                                        .mimeType("audio/mpeg")
+                                                        .build())
+                                        .build(),
+                                VideoBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/video.mp4")
+                                                        .mimeType("video/mp4")
+                                                        .build())
+                                        .build(),
+                                DataBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/doc.pdf")
+                                                        .mimeType("application/pdf")
+                                                        .build())
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessages(msg).get(0);
+
+        assertTrue(aguiMsg.hasBlocks());
+        MessageContent.Blocks blocks = (MessageContent.Blocks) aguiMsg.getContent();
+        assertEquals(5, blocks.parts().size());
+
+        ImageInputContent image = assertInstanceOf(ImageInputContent.class, blocks.parts().get(0));
+        assertEquals(
+                "https://example.com/img.png", ((InputContentUrlSource) image.source()).value());
+        assertEquals(Map.of("mimeType", "image/png"), image.metadata());
+
+        AudioInputContent audio = assertInstanceOf(AudioInputContent.class, blocks.parts().get(1));
+        assertEquals(
+                "https://example.com/audio.mp3", ((InputContentUrlSource) audio.source()).value());
+        assertEquals(Map.of("mimeType", "audio/mpeg"), audio.metadata());
+
+        VideoInputContent video = assertInstanceOf(VideoInputContent.class, blocks.parts().get(2));
+        assertEquals(
+                "https://example.com/video.mp4", ((InputContentUrlSource) video.source()).value());
+        assertEquals(Map.of("mimeType", "video/mp4"), video.metadata());
+
+        DocumentInputContent document =
+                assertInstanceOf(DocumentInputContent.class, blocks.parts().get(3));
+        assertEquals(
+                "https://example.com/doc.pdf", ((InputContentUrlSource) document.source()).value());
+        assertEquals(Map.of("mimeType", "application/pdf"), document.metadata());
+
+        TextInputContent text = assertInstanceOf(TextInputContent.class, blocks.parts().get(4));
+        assertEquals("Describe these", text.text());
+    }
+
+    @Test
+    void testConvertUrlMediaBlocksWithoutMimeTypeUsesEmptyMetadata() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-media-no-mime")
+                        .role(MsgRole.USER)
+                        .content(
+                                ImageBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/img.png")
+                                                        .build())
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessages(msg).get(0);
+
+        assertTrue(aguiMsg.hasBlocks());
+        MessageContent.Blocks blocks = (MessageContent.Blocks) aguiMsg.getContent();
+        assertEquals(1, blocks.parts().size());
+        ImageInputContent image = assertInstanceOf(ImageInputContent.class, blocks.parts().get(0));
+        assertEquals(Collections.emptyMap(), image.metadata());
+        assertNull(aguiMsg.getTextContent());
+    }
+
+    @Test
+    void testConvertBase64MediaBlocksAreSkippedOnOutbound() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-media-base64")
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder().text("caption").build(),
+                                ImageBlock.builder()
+                                        .source(new Base64Source("image/png", "iVBORw0KGgo="))
+                                        .build(),
+                                AudioBlock.builder()
+                                        .source(new Base64Source("audio/wav", "UklGRg=="))
+                                        .build(),
+                                VideoBlock.builder()
+                                        .source(new Base64Source("video/mp4", "AAAA"))
+                                        .build(),
+                                DataBlock.builder()
+                                        .source(new Base64Source("application/pdf", "dGVzdA=="))
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessages(msg).get(0);
+
+        assertFalse(aguiMsg.hasBlocks());
+        assertEquals("caption", aguiMsg.getTextContent());
+    }
+
+    @Test
+    void testConvertTextOnlyMessageKeepsPlainTextContent() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-text-only")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("hello").build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessages(msg).get(0);
+
+        assertFalse(aguiMsg.hasBlocks());
+        assertEquals("hello", aguiMsg.getTextContent());
+    }
 
     @Test
     void testConvertBlocksContentWithTextOnly() {
