@@ -22,6 +22,16 @@ import io.agentscope.core.model.ChatUsage;
 public interface SessionModelPolicy {
     String CONTEXT_KEY = "agentscope.session.modelPolicy";
 
+    /** False declares that admission is a no-op; the runtime does not enqueue a task. */
+    default boolean hasBeforeCall() {
+        return true;
+    }
+
+    /** False declares that completion accounting is a no-op. */
+    default boolean hasAfterCall() {
+        return true;
+    }
+
     void beforeCall(String callId, String model, RuntimeContext context);
 
     void afterCall(

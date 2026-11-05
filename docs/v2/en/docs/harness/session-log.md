@@ -404,3 +404,13 @@ The destination starts from an imported baseline. It does not copy the source ev
 ## Complete example: recoverable Web Chat
 
 The [agentscope-chat walkthrough](/v2/en/blogs/best-practices/session-chat) connects these operations to HTTP handlers and a browser: submit a background task, restore partial messages and tools, reconnect SSE, answer pending input and continue after interruption or restart. It runs offline by default and can also use a real model. Follow its source to adapt the application projection and runtime ownership to your own chat or task UI.
+
+## Session persistence scheduling
+
+`SessionLog` remains a blocking storage SPI. Recorder commits run on `agentscope-session-commit`, independently of `agentscope-model-request`. A recorder serializes its commits, but releases its state monitor during storage I/O so incoming events can append to a bounded buffer. Overlapping `flush()` calls share the active commit; each caller still waits until its own accepted prefix is acknowledged. Cancelling one waiter does not cancel a shared commit. A failed or fenced commit fails the boundary and must not authorize a subsequent external effect.
+
+A dirty recorder schedules at most one delayed flush, after one second; idle recorders do not enqueue periodic flushes. Dirty and explicit flushes share the commit lane, so a critical boundary cannot be stuck behind a separate low-capacity background writer. Lease renewal uses an independent lane every 30 seconds, with the existing two-minute writer lease. Transcript export uses the maintenance lane. Renewal, export and timers do not consume model-request workers. `finish()` awaits the final prefix before releasing the writer.
+
+The JVM properties `agentscope.session.commitThreadCap` (default `max(64, availableProcessors * 10)`), `agentscope.session.maintenanceThreadCap` (4), `agentscope.session.leaseThreadCap` (4), and `agentscope.session.taskQueueCapacity` (65536 tasks per backing thread) configure these bounded schedulers before first use. Size them against actual backend capacity; a larger queue does not improve storage throughput. There is still one active commit per recorder and a 16 MiB pending-event limit.
+
+An absent `SessionModelPolicy` requires no scheduling. Custom policies can explicitly return `false` from `hasBeforeCall()` or `hasAfterCall()` for hooks with no work; defaults remain `true`. Real admission checks continue to run before the model call. Direct calls without a `SessionExecution` also skip empty inbox step and close hooks. Event schemas, checkpoint contents and writer fencing are unchanged.

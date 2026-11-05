@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.function.BiFunction;
 
-/** Blocking persistence SPI; runtime integration schedules it on boundedElastic. */
+/** Blocking persistence SPI; runtime integration schedules it off reactive event-loop threads. */
 public interface SessionLog {
     /** Durable input journal, independent of the execution writer and its event sequence. */
     default SessionLog inbox() {

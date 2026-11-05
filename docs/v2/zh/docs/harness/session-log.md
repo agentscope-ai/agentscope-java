@@ -443,3 +443,13 @@ static Mono<Void> recordReview(RuntimeContext context, String note) {
 ## 把这些能力接到完整应用中
 
 [可恢复聊天示例](/v2/zh/blogs/best-practices/session-chat)可以离线运行，也可以接入真实模型。建议先启动它，发送多步任务，在工具执行和文本生成期间刷新页面；再试一次待办答复、中断与继续。这样可以直接看到：提交接口负责表达用户意图，后台会话负责执行，快照与事件负责恢复页面，checkpoint 负责继续任务。
+
+## 会话持久化的调度
+
+`SessionLog` 仍是阻塞式存储 SPI。Recorder 提交使用独立的 `agentscope-session-commit`，不再竞争 `agentscope-model-request`。同一个 recorder 的提交串行进行，但存储 I/O 期间释放状态锁，后续事件仍可追加到有上限的缓冲区。重叠的 `flush()` 共享正在执行的提交；每个调用者仍需等到自己调用时已接收的事件前缀得到确认。取消一个等待者不会取消共享提交。提交失败或写入权失效会使边界失败，不能据此继续执行外部副作用。
+
+有新数据的 recorder 最多安排一个一秒后的 flush；空闲 recorder 不再周期性排入 flush。定时和显式 flush 共用提交通道，关键边界不会被单独的低容量后台写入队列阻挡。租约续期使用独立通道，每 30 秒一次，写入租约仍为两分钟。日志导出使用维护通道。续期、导出和定时器不占用模型请求线程；`finish()` 等待最终前缀确认后才释放 writer。
+
+可在首次使用前通过 JVM 参数配置这些有界调度器：`agentscope.session.commitThreadCap` 默认 `max(64, availableProcessors * 10)`，`agentscope.session.maintenanceThreadCap` 默认 4，`agentscope.session.leaseThreadCap` 默认 4，`agentscope.session.taskQueueCapacity` 默认每个底层线程 65536 个任务。参数应匹配后端实际容量；扩大队列不能提升存储吞吐。同一 recorder 仍只有一个活跃提交，待提交事件仍有 16 MiB 上限。
+
+没有 `SessionModelPolicy` 时不再为其调度空任务。自定义策略可通过 `hasBeforeCall()`、`hasAfterCall()` 返回 `false`，明确声明对应钩子无工作；默认值仍为 `true`。真正的模型准入检查仍在模型调用前执行。没有 `SessionExecution` 的直接调用也跳过空 inbox 步骤检查和收尾钩子。事件格式、checkpoint 内容和 writer fencing 保持不变。

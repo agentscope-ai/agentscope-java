@@ -30,7 +30,6 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
@@ -47,11 +46,14 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 
 /** Per-execution ordered acceptance and acknowledged checkpoints. Buffer retained on failure. */
 public final class SessionRecorder {
@@ -75,6 +77,12 @@ public final class SessionRecorder {
     private String resultJson;
     private String stepId;
     private String batchId;
+    private final ReentrantLock writerLock = new ReentrantLock();
+    private final AtomicBoolean renewing = new AtomicBoolean();
+    private long acceptedVersion;
+    private long flushedVersion;
+    private Mono<Void> flushing;
+    private Disposable delayedFlush;
     private final Map<String, String> actionIds = new ConcurrentHashMap<>();
     private final Map<String, String> messageModelCalls = new ConcurrentHashMap<>();
     private String previousState;
@@ -136,23 +144,67 @@ public final class SessionRecorder {
             log.release(writer);
             throw e;
         }
+        // Lease renewal is independent of dirty data and never runs on model-request workers.
         heartbeat =
-                ModelSchedulers.requests()
-                        .schedulePeriodically(
+                SessionSchedulers.timer()
+                        .schedulePeriodically(this::renewLater, 30, 30, TimeUnit.SECONDS);
+    }
+
+    private void renewLater() {
+        synchronized (this) {
+            if (closed || failure != null || !renewing.compareAndSet(false, true)) return;
+        }
+        try {
+            SessionSchedulers.leases()
+                    .schedule(
+                            () -> {
+                                try {
+                                    if (!writerLock.tryLock())
+                                        return; // A commit already validates/renews this writer.
+                                    try {
+                                        synchronized (this) {
+                                            if (closed || failure != null) return;
+                                        }
+                                        log.renew(writer, LEASE);
+                                    } finally {
+                                        writerLock.unlock();
+                                    }
+                                } catch (Throwable error) {
+                                    failed(error);
+                                } finally {
+                                    renewing.set(false);
+                                }
+                            });
+        } catch (RuntimeException rejected) {
+            renewing.set(false);
+            failed(rejected);
+        }
+    }
+
+    private synchronized void failed(Throwable error) {
+        if (failure == null) failure = error;
+    }
+
+    // Called under the short recorder monitor; at most one delayed dirty notification exists.
+    private void scheduleFlush() {
+        if (delayedFlush != null) return;
+        delayedFlush =
+                SessionSchedulers.timer()
+                        .schedule(
                                 () -> {
                                     synchronized (this) {
-                                        if (closed || failure != null) return;
-                                        try {
-                                            flushNow();
-                                            exportCommitted();
-                                        } catch (Throwable e) {
-                                            failure = e;
-                                        }
+                                        delayedFlush = null;
+                                        if (closed || failure != null || pending.isEmpty()) return;
                                     }
+                                    flush().subscribe(ignored -> {}, this::failed);
                                 },
                                 1,
-                                1,
                                 TimeUnit.SECONDS);
+    }
+
+    private void cancelDelayedFlush() {
+        if (delayedFlush != null) delayedFlush.dispose();
+        delayedFlush = null;
     }
 
     public static SessionRecorder from(RuntimeContext rc) {
@@ -162,8 +214,16 @@ public final class SessionRecorder {
     }
 
     /** Parent completion is accepted only while that parent's writer is still active. */
-    public synchronized void recordIfOpen(String type, Object payload) {
-        if (!closed) recordNow(type, payload);
+    public void recordIfOpen(String type, Object payload) {
+        writerLock.lock();
+        try {
+            synchronized (this) {
+                if (closed) return;
+            }
+            recordNow(type, payload);
+        } finally {
+            writerLock.unlock();
+        }
     }
 
     public Set<String> acceptedMessageIds() {
@@ -233,6 +293,8 @@ public final class SessionRecorder {
         SessionEventTypes.validate(accepted);
         pending.add(accepted);
         pendingBytes += byteLength;
+        acceptedVersion++;
+        scheduleFlush();
         return seq;
     }
 
@@ -253,23 +315,109 @@ public final class SessionRecorder {
     }
 
     public Mono<Void> flush() {
-        return Mono.<Void>fromRunnable(this::flushNow).subscribeOn(ModelSchedulers.requests());
+        return flushOn(SessionSchedulers.commits());
     }
 
-    public synchronized void flushNow() {
-        check();
-        log.renew(writer, LEASE);
-        if (pending.isEmpty()) return;
-        if (batchId == null) batchId = UUID.randomUUID().toString();
+    private Mono<Void> flushOn(Scheduler scheduler) {
+        return Mono.defer(
+                () -> {
+                    long target;
+                    synchronized (this) {
+                        check();
+                        target = acceptedVersion;
+                    }
+                    return flushThrough(target, scheduler);
+                });
+    }
+
+    private Mono<Void> flushThrough(long target, Scheduler scheduler) {
+        Mono<Void> active;
+        synchronized (this) {
+            check();
+            if (flushing == null) {
+                var identity = new AtomicReference<Mono<Void>>();
+                var work =
+                        Mono.<Void>fromRunnable(this::flushNow)
+                                .subscribeOn(scheduler)
+                                .doOnSuccess(ignored -> clearFlush(identity.get()))
+                                .doOnError(
+                                        error -> {
+                                            failed(error);
+                                            clearFlush(identity.get());
+                                        })
+                                // One cancelled observer must not cancel another observer's durable
+                                // barrier.
+                                .cache();
+                identity.set(work);
+                flushing = work;
+            }
+            active = flushing;
+        }
+        return active.then(
+                Mono.defer(
+                        () -> {
+                            synchronized (this) {
+                                // A later close/failure cannot revoke an acknowledged prefix.
+                                if (flushedVersion >= target) return Mono.empty();
+                                check();
+                            }
+                            return flushThrough(target, scheduler);
+                        }));
+    }
+
+    private synchronized void clearFlush(Mono<Void> identity) {
+        if (flushing == identity) flushing = null;
+    }
+
+    /** Blocking compatibility boundary; remote IO never holds the recorder state monitor. */
+    public void flushNow() {
+        writerLock.lock();
         try {
-            var head = log.commit(writer, batchId, durableSeq, List.copyOf(pending));
-            durableSeq = head.seq();
-            pending.clear();
-            pendingBytes = 0;
-            batchId = null;
-        } catch (RuntimeException e) {
-            failure = e;
-            throw new SessionLogException("Failed to commit session prefix", e);
+            List<SessionEvent> batch;
+            long expected;
+            long target;
+            String identity;
+            synchronized (this) {
+                check();
+                cancelDelayedFlush();
+                batch = List.copyOf(pending);
+                expected = durableSeq;
+                target = acceptedVersion;
+                if (!batch.isEmpty() && batchId == null) batchId = UUID.randomUUID().toString();
+                identity = batchId;
+            }
+            log.renew(writer, LEASE);
+            if (batch.isEmpty()) return;
+            var head = log.commit(writer, identity, expected, batch);
+            synchronized (this) {
+                durableSeq = head.seq();
+                flushedVersion = target;
+                pending.subList(0, batch.size()).clear();
+                // Hosted logs may discard diagnostic events. Rebase only the uncommitted suffix.
+                pendingBytes = 0;
+                for (int i = 0; i < pending.size(); i++) {
+                    var event = pending.get(i);
+                    pending.set(
+                            i,
+                            new SessionEvent(
+                                    event.schemaVersion(),
+                                    event.eventId(),
+                                    durableSeq + i + 1,
+                                    event.occurredAt(),
+                                    event.type(),
+                                    event.executionRunId(),
+                                    event.turnId(),
+                                    event.required(),
+                                    event.payloadJson()));
+                    pendingBytes += event.payloadJson().getBytes(StandardCharsets.UTF_8).length;
+                }
+                batchId = null;
+            }
+        } catch (RuntimeException error) {
+            failed(error);
+            throw new SessionLogException("Failed to commit session prefix", error);
+        } finally {
+            writerLock.unlock();
         }
         exportCommitted();
     }
@@ -277,7 +425,7 @@ public final class SessionRecorder {
     private void exportCommitted() {
         if (exporter == null) return;
         if (!exporting.compareAndSet(false, true)) return;
-        ModelSchedulers.requests()
+        SessionSchedulers.maintenance()
                 .schedule(
                         () -> {
                             try {
@@ -293,9 +441,14 @@ public final class SessionRecorder {
     }
 
     /** Explicit acknowledged boundary for existing synchronous domain mutation code. */
-    public synchronized void recordNow(String type, Object payload) {
-        append(type, payload);
-        flushNow();
+    public void recordNow(String type, Object payload) {
+        writerLock.lock();
+        try {
+            append(type, payload);
+            flushNow();
+        } finally {
+            writerLock.unlock();
+        }
     }
 
     /** Reads a durable domain fact, never an in-flight buffer. */
@@ -397,23 +550,41 @@ public final class SessionRecorder {
     }
 
     /** Acknowledged checkpoint for synchronous callers already inside this execution. */
-    public synchronized void checkpointNow(AgentState state, String reason) {
-        captureState(state, reason);
-        flushNow();
+    public void checkpointNow(AgentState state, String reason) {
+        writerLock.lock();
+        try {
+            captureState(state, reason);
+            flushNow();
+        } finally {
+            writerLock.unlock();
+        }
     }
 
     /** Commits a recovery-critical fact with its state, even when state capture deduplicates. */
-    public synchronized void checkpointedRecordNow(
+    public void checkpointedRecordNow(
             AgentState state, String reason, String type, Object payload) {
-        captureState(state, reason);
-        boolean checkpoint =
-                pending.stream().anyMatch(event -> "state/checkpoint".equals(event.type()));
-        append(type, payload);
-        if (!checkpoint)
-            append(
-                    "state/checkpoint",
-                    Map.of("projectorVersion", 1, "stateJson", state.toJson(), "reason", reason));
-        flushNow();
+        writerLock.lock();
+        try {
+            synchronized (this) {
+                captureState(state, reason);
+                boolean checkpoint =
+                        pending.stream().anyMatch(event -> "state/checkpoint".equals(event.type()));
+                append(type, payload);
+                if (!checkpoint)
+                    append(
+                            "state/checkpoint",
+                            Map.of(
+                                    "projectorVersion",
+                                    1,
+                                    "stateJson",
+                                    state.toJson(),
+                                    "reason",
+                                    reason));
+            }
+            flushNow();
+        } finally {
+            writerLock.unlock();
+        }
     }
 
     public Mono<Void> checkpoint(AgentState state, String reason) {
@@ -515,22 +686,32 @@ public final class SessionRecorder {
                             }
                             return flush();
                         })
-                .then(Mono.<Void>fromRunnable(this::close).subscribeOn(ModelSchedulers.requests()))
+                .then(Mono.<Void>fromRunnable(this::close).subscribeOn(SessionSchedulers.commits()))
                 .onErrorResume(
                         error ->
                                 Mono.<Void>fromRunnable(this::close)
-                                        .subscribeOn(ModelSchedulers.requests())
+                                        .subscribeOn(SessionSchedulers.commits())
                                         .then(Mono.error(error)));
     }
 
-    public synchronized void close() {
-        if (closed) return;
-        closed = true;
-        heartbeat.dispose();
+    public void close() {
+        writerLock.lock();
         try {
-            log.release(writer);
-        } catch (RuntimeException e) {
-            if (failure == null) throw e;
+            synchronized (this) {
+                if (closed) return;
+                closed = true;
+                heartbeat.dispose();
+                cancelDelayedFlush();
+            }
+            try {
+                log.release(writer);
+            } catch (RuntimeException error) {
+                synchronized (this) {
+                    if (failure == null) throw error;
+                }
+            }
+        } finally {
+            writerLock.unlock();
         }
     }
 

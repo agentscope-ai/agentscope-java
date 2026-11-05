@@ -87,16 +87,7 @@ public final class SessionModels {
                         var recorder = SessionRecorder.from(context);
                         var last = new AtomicReference<ChatResponse>();
                         return Flux.usingWhen(
-                                Mono.fromRunnable(
-                                                () -> {
-                                                    if (context.get(SessionModelPolicy.CONTEXT_KEY)
-                                                            instanceof SessionModelPolicy policy)
-                                                        policy.beforeCall(
-                                                                callId,
-                                                                delegate.getModelName(),
-                                                                context);
-                                                })
-                                        .subscribeOn(ModelSchedulers.requests())
+                                before(callId)
                                         .then(
                                                 recorder.prepareModel(
                                                         new ModelCallInput(
@@ -145,20 +136,29 @@ public final class SessionModels {
                 payload.put("finishReason", last.getFinishReason());
             }
             if (error != null) payload.put("errorType", error.getClass().getName());
-            return recorder.record("model/end", payload)
-                    .then(
-                            Mono.<Void>fromRunnable(
-                                            () -> {
-                                                if (context.get(SessionModelPolicy.CONTEXT_KEY)
-                                                        instanceof SessionModelPolicy policy)
-                                                    policy.afterCall(
+            var policy = context.get(SessionModelPolicy.CONTEXT_KEY);
+            Mono<Void> after =
+                    policy instanceof SessionModelPolicy configured && configured.hasAfterCall()
+                            ? Mono.<Void>fromRunnable(
+                                            () ->
+                                                    configured.afterCall(
                                                             id,
                                                             delegate.getModelName(),
                                                             status,
                                                             last == null ? null : last.getUsage(),
-                                                            context);
-                                            })
-                                    .subscribeOn(ModelSchedulers.requests()));
+                                                            context))
+                                    .subscribeOn(ModelSchedulers.requests())
+                            : Mono.empty();
+            return recorder.record("model/end", payload).then(after);
+        }
+
+        private Mono<Void> before(String callId) {
+            var policy = context.get(SessionModelPolicy.CONTEXT_KEY);
+            if (!(policy instanceof SessionModelPolicy configured) || !configured.hasBeforeCall())
+                return Mono.empty();
+            return Mono.<Void>fromRunnable(
+                            () -> configured.beforeCall(callId, delegate.getModelName(), context))
+                    .subscribeOn(ModelSchedulers.requests());
         }
     }
 }
