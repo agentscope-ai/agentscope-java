@@ -924,25 +924,52 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
         String framework = frameworkName();
         String version = frameworkVersion();
         List<Map<String, Object>> out = new ArrayList<>();
+        // Snapshot the lightweight per-session state under the lock, then do the potentially
+        // slow per-session state loads (resolveTaskSummary) OUTSIDE it. The lock is shared
+        // with event ingestion / acknowledgement / context push; holding it across
+        // sessions × adapter.block(10s) stalled the agent side for the full listing (#3768).
+        record SessionSnapshot(
+                String sessionId,
+                ContextTracker tracker,
+                String phase,
+                Boolean busy,
+                String startedAt,
+                String lastActiveAt) {}
+
+        List<SessionSnapshot> snapshots;
         synchronized (lock) {
+            snapshots = new ArrayList<>();
             for (Map.Entry<String, ContextTracker> entry : trackers.entrySet()) {
-                String sessionId = entry.getKey();
-                ContextTracker tracker = entry.getValue();
-                int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
-                int usedForPressure = tracker.getContextUsedTokens();
-                Map<String, Object> session = new LinkedHashMap<>();
-                session.put("id", sessionId);
-                session.put("phase", phases.getOrDefault(sessionId, PHASE_IDLE));
-                Boolean busy = busyFlags.get(sessionId);
-                if (busy == null) {
-                    busy = PHASE_ACTIVE.equals(phases.getOrDefault(sessionId, PHASE_IDLE));
-                }
-                session.put("busy", busy);
+                String sid = entry.getKey();
+                snapshots.add(
+                        new SessionSnapshot(
+                                sid,
+                                entry.getValue(),
+                                phases.getOrDefault(sid, PHASE_IDLE),
+                                busyFlags.containsKey(sid)
+                                        ? busyFlags.get(sid)
+                                        : PHASE_ACTIVE.equals(
+                                                phases.getOrDefault(sid, PHASE_IDLE)),
+                                isoOrNull(startedAt.get(sid)),
+                                isoOrNull(lastActiveAt.get(sid))));
+            }
+        }
+
+        for (SessionSnapshot snap : snapshots) {
+            String sessionId = snap.sessionId();
+            ContextTracker tracker = snap.tracker();
+            int totalTokens = tracker.getTokensIn() + tracker.getTokensOut();
+            int usedForPressure = tracker.getContextUsedTokens();
+            Map<String, Object> session = new LinkedHashMap<>();
+            session.put("id", sessionId);
+            session.put("phase", snap.phase());
+            Boolean busy = snap.busy();
+            session.put("busy", busy);
                 if (!tracker.getModel().isEmpty()) {
                     session.put("model", tracker.getModel());
                 }
-                putIfPresent(session, "startedAt", isoOrNull(startedAt.get(sessionId)));
-                putIfPresent(session, "lastActiveAt", isoOrNull(lastActiveAt.get(sessionId)));
+                putIfPresent(session, "startedAt", snap.startedAt());
+                putIfPresent(session, "lastActiveAt", snap.lastActiveAt());
                 session.put("messageCount", tracker.getMessageCount());
                 Map<String, Object> tokenUsage = new LinkedHashMap<>();
                 tokenUsage.put("promptTokens", tracker.getTokensIn());
