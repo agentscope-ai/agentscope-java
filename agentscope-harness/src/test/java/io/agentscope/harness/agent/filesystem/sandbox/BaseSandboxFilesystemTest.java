@@ -285,53 +285,61 @@ class BaseSandboxFilesystemTest {
             assertEquals(1, result.occurrences());
             // no staging directory and no file transfer at all
             assertTrue(fs.uploadedFiles.isEmpty());
-            assertTrue(fs.lastCommand.contains("python3 -c "));
+            assertTrue(fs.lastCommand.contains("python3 - "));
             assertTrue(fs.lastCommand.contains("'/workspace/f.txt'"));
             assertTrue(fs.lastCommand.contains("'" + base64("World") + "'"));
             assertTrue(fs.lastCommand.contains("'" + base64("Java") + "'"));
+            assertTrue(fs.lastCommand.contains("__AGENTSCOPE_EDIT_PY__"));
+            // python's exit status must reach Java (else 127 never surfaces as a fallback)
+            assertTrue(
+                    fs.lastCommand.contains("exit $__ec"),
+                    "exit code passthrough required: " + fs.lastCommand);
         }
 
-        // ==================== Command format: base64-encoded script avoids heredoc
-        // ====================
+        // ==================== Bug reproduction: edit program collapsed into one line
+        // (#2571) ====================
 
         @Test
-        void edit_commandIsSingleLine_noHeredoc() {
+        void edit_generatedPythonProgram_isSeparatedByRealLineFeeds() {
             FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
 
             filesystem.edit(RT, "/workspace/file.txt", "old", "new", false);
 
             String cmd = filesystem.lastCommand;
             assertTrue(
-                    cmd.startsWith("python3 -c "),
-                    "edit should use python3 -c with base64-encoded script");
-            assertFalse(cmd.contains("<<"), "command must not use heredoc syntax");
-            // The script travels as base64 inside the -c argument; the command string itself
-            // must be a single line so transport layers that mangle newlines cannot break it.
-            assertFalse(cmd.contains("\n"), "command must be a single line (no embedded newlines)");
+                    cmd.startsWith("python3 - "),
+                    "edit should drive the replacement through a python3 program");
+            // The regression was a program collapsed onto one line, so the invariant is that
+            // statements are separated by real line feeds. A backslash-n may still appear inside
+            // the program's own string literals (the CRLF normalizer), which is harmless.
+            assertTrue(
+                    cmd.contains("import base64, os, sys, json, uuid\ntarget"),
+                    "the python program must be separated by real line feeds");
+            assertTrue(
+                    cmd.contains("\ncount = text.count(old)"),
+                    "every statement must be on its own line, not joined by an escape");
         }
 
         @Test
-        void edit_executeFailure_shouldFallBackToTransfer() {
+        void edit_executeFailure_shouldFailWithCause() {
             EditResult result =
                     new FixedResponseFilesystem(sandboxRequestFailed())
                             .edit(RT, "/workspace/file.txt", "old", "new", false);
 
-            assertFalse(result.isSuccess(), "edit should fail when transfer also fails");
-            assertTrue(
-                    result.error().contains("Could not read file"),
-                    "error should come from the transfer fallback, not the execute layer");
+            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
         }
 
         @Test
-        void edit_executeFailure_nullOutput_shouldFallBackToTransfer() {
+        void edit_executeFailure_nullOutput_shouldFailWithExitCodeFallback() {
             EditResult result =
                     new FixedResponseFilesystem(new ExecuteResponse(null, -1, false))
                             .edit(RT, "/workspace/file.txt", "old", "new", false);
 
-            assertFalse(result.isSuccess(), "edit should fail when transfer also fails");
+            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
             assertTrue(
-                    result.error().contains("Could not read file"),
-                    "error should come from the transfer fallback, not the execute layer");
+                    result.error().contains("exit code -1"),
+                    "error should fall back to the exit code when no diagnostic output exists");
         }
 
         @Test
@@ -978,8 +986,10 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
-        void edit_pathContainingDelimiterString_stillWorks() throws IOException {
-            // The old heredoc delimiter appearing in a path must not break the command.
+        void edit_pathContainingHeredocDelimiter_doesNotTruncateCommand() throws IOException {
+            // A newline inside the single-quoted target argument stays part of the argument: it
+            // does not terminate the command line, and the heredoc body is only read afterwards.
+            // So a path whose own line equals the delimiter cannot close the heredoc early.
             Path dir = Files.createDirectory(tmpDir.resolve("dir__AGENTSCOPE_EDIT_PY__"));
             Path file = dir.resolve("f.txt");
             Files.writeString(file, "Hello World");
@@ -993,7 +1003,7 @@ class BaseSandboxFilesystemTest {
             assertEquals("Hello Java", Files.readString(file));
         }
 
-        // ==================== shell quoting edges — the file path is the last piece of
+        // ==================== heredoc quoting edges — the file path is the last piece of
         // user input that still passes through shell quoting ====================
 
         @Test
