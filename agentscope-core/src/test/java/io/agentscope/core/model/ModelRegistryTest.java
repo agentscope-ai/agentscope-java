@@ -15,11 +15,14 @@
  */
 package io.agentscope.core.model;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -27,7 +30,14 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,6 +81,20 @@ class ModelRegistryTest {
     }
 
     @Test
+    void unregister_removesNamedRegistration_andFallsBackToCachedFactoryInstance() {
+        ModelRegistry.registerFactory("local:(.+)", id -> new StubModel(id));
+        Model cached = ModelRegistry.resolve("local:alpha");
+
+        Model named = new StubModel("named");
+        ModelRegistry.register("local:alpha", named);
+        assertSame(named, ModelRegistry.resolve("local:alpha"));
+
+        assertSame(named, ModelRegistry.unregister("local:alpha"));
+        assertNull(ModelRegistry.unregister("never-registered"));
+        assertSame(cached, ModelRegistry.resolve("local:alpha"));
+    }
+
+    @Test
     void resolve_unknownModel_throwsWithHelpMessage() {
         IllegalArgumentException ex =
                 assertThrows(
@@ -88,6 +112,232 @@ class ModelRegistryTest {
         Model a = ModelRegistry.resolve("local:alpha");
         Model b = ModelRegistry.resolve("local:alpha");
         assertSame(a, b);
+    }
+
+    @Test
+    void registerFactory_evictsCachedInstancesMatchingNewPattern() {
+        ModelRegistry.registerFactory("acme:(.+)", id -> new StubModel("old"));
+        ModelRegistry.registerFactory("other:(.+)", id -> new StubModel("other"));
+        assertEquals("old", ModelRegistry.resolve("acme:m1").getModelName());
+        Model other = ModelRegistry.resolve("other:m1");
+
+        ModelRegistry.registerFactory("acme:(.+)", id -> new StubModel("new"));
+
+        assertEquals("new", ModelRegistry.resolve("acme:m1").getModelName());
+        assertSame(other, ModelRegistry.resolve("other:m1"));
+    }
+
+    @Test
+    void registerFactory_evictsEntryWhoseCreationIsStillInFlight() throws Exception {
+        CountDownLatch inOldFactory = new CountDownLatch(1);
+        CountDownLatch releaseOldFactory = new CountDownLatch(1);
+        ModelRegistry.registerFactory(
+                "acme:(.+)",
+                id -> {
+                    inOldFactory.countDown();
+                    await(releaseOldFactory);
+                    return new StubModel("old");
+                });
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Model> inFlight = pool.submit(() -> ModelRegistry.resolve("acme:m1"));
+            assertTrue(inOldFactory.await(5, TimeUnit.SECONDS));
+
+            ModelRegistry.registerFactory("acme:(.+)", id -> new StubModel("new"));
+            releaseOldFactory.countDown();
+
+            // The call that started before the re-registration may finish with the old factory,
+            // but its result must not stay cached.
+            assertEquals("old", inFlight.get(5, TimeUnit.SECONDS).getModelName());
+            assertEquals("new", ModelRegistry.resolve("acme:m1").getModelName());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void evictResolvedCache_entryWhoseCreationIsStillInFlight() throws Exception {
+        CountDownLatch inFactory = new CountDownLatch(1);
+        CountDownLatch releaseFactory = new CountDownLatch(1);
+        AtomicInteger factoryCalls = new AtomicInteger();
+        ModelRegistry.registerFactory(
+                "acme:(.+)",
+                id -> {
+                    factoryCalls.incrementAndGet();
+                    inFactory.countDown();
+                    await(releaseFactory);
+                    return new StubModel(id);
+                });
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Model> inFlight = pool.submit(() -> ModelRegistry.resolve("acme:m1"));
+            assertTrue(inFactory.await(5, TimeUnit.SECONDS));
+
+            ModelRegistry.evictResolvedCache(null, "acme:m1");
+            releaseFactory.countDown();
+
+            // The call that started before the eviction finishes with its instance,
+            // but that instance must not stay cached.
+            Model inFlightModel = inFlight.get(5, TimeUnit.SECONDS);
+            assertEquals("acme:m1", inFlightModel.getModelName());
+            assertNotSame(inFlightModel, ModelRegistry.resolve("acme:m1"));
+            assertEquals(2, factoryCalls.get());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void evictResolvedCache_selectionDimensions_removeOnlyMatchingEntries() {
+        ModelRegistry.registerFactory("a:(.+)", (id, context) -> new StubModel(id));
+        ModelRegistry.registerFactory("b:(.+)", (id, context) -> new StubModel(id));
+        ModelCreationContext tenantA = tenantContext("tenant-a");
+        ModelCreationContext tenantB = tenantContext("tenant-b");
+        Model legacyA = ModelRegistry.resolve("a:m1");
+        Model legacyB = ModelRegistry.resolve("b:m1");
+        Model tenantAA = ModelRegistry.resolve("a:m1", tenantA);
+        Model tenantAB = ModelRegistry.resolve("a:m1", tenantB);
+        Model tenantBB = ModelRegistry.resolve("b:m1", tenantB);
+
+        // Precise selection: the id is trimmed; other identities and other ids stay cached.
+        ModelRegistry.evictResolvedCache(tenantA, "  a:m1  ");
+        assertNotSame(tenantAA, ModelRegistry.resolve("a:m1", tenantA));
+        assertSame(tenantAB, ModelRegistry.resolve("a:m1", tenantB));
+        assertSame(legacyA, ModelRegistry.resolve("a:m1"));
+
+        // Id wildcard: every identity of that id, other ids untouched.
+        ModelRegistry.evictResolvedCache(null, "a:m1");
+        assertNotSame(legacyA, ModelRegistry.resolve("a:m1"));
+        assertNotSame(tenantAB, ModelRegistry.resolve("a:m1", tenantB));
+        assertSame(tenantBB, ModelRegistry.resolve("b:m1", tenantB));
+
+        // Identity wildcard: a blank id behaves like null and spans model ids.
+        Model tenantABAgain = ModelRegistry.resolve("a:m1", tenantB);
+        ModelRegistry.evictResolvedCache(tenantB, "   ");
+        assertNotSame(tenantABAgain, ModelRegistry.resolve("a:m1", tenantB));
+        assertNotSame(tenantBB, ModelRegistry.resolve("b:m1", tenantB));
+
+        // Named registrations survive an id-wide eviction and win resolution.
+        Model named = new StubModel("named");
+        ModelRegistry.register("a:m1", named);
+        ModelRegistry.evictResolvedCache(null, "a:m1");
+        assertSame(named, ModelRegistry.resolve("a:m1"));
+
+        // Empty context selects the resolve(String) entries.
+        assertSame(legacyB, ModelRegistry.resolve("b:m1"));
+        ModelRegistry.evictResolvedCache(ModelCreationContext.empty(), "b:m1");
+        assertNotSame(legacyB, ModelRegistry.resolve("b:m1"));
+    }
+
+    @Test
+    void evictResolvedCache_missingSelectionOrUnsafeContext_rejectedOrNoOp() {
+        ModelRegistry.registerFactory("local:(.+)", (id, context) -> new StubModel(id));
+        Model legacy = ModelRegistry.resolve("local:alpha");
+        ModelCreationContext withOption =
+                ModelCreationContext.builder()
+                        .option("custom", "value")
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .build();
+        ModelCreationContext defaultPolicy = ModelCreationContext.builder().apiKey("key-a").build();
+
+        // Both selection dimensions absent is rejected; a blank id counts as absent.
+        assertThrows(
+                IllegalArgumentException.class, () -> ModelRegistry.evictResolvedCache(null, null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ModelRegistry.evictResolvedCache(null, "   "));
+        // Opaque enabled contexts require a cacheId, like resolve.
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ModelRegistry.evictResolvedCache(withOption, null));
+        // Contexts that are never cached have no entries to evict.
+        ModelRegistry.evictResolvedCache(defaultPolicy, null);
+        ModelRegistry.evictResolvedCache(defaultPolicy, "local:alpha");
+        assertSame(legacy, ModelRegistry.resolve("local:alpha"));
+    }
+
+    private static ModelCreationContext tenantContext(String cacheId) {
+        return ModelCreationContext.builder()
+                .apiKey("key-" + cacheId)
+                .cachePolicy(CachePolicy.ENABLED)
+                .cacheId(cacheId)
+                .build();
+    }
+
+    @Test
+    void resolve_concurrentFirstResolution_createsSingleInstance() throws Exception {
+        int threads = 8;
+        AtomicInteger factoryCalls = new AtomicInteger();
+        CountDownLatch start = new CountDownLatch(1);
+        ModelRegistry.registerFactory(
+                "race:(.+)",
+                id -> {
+                    factoryCalls.incrementAndGet();
+                    sleep(50);
+                    return new StubModel(id);
+                });
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        try {
+            List<Future<Model>> results = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                results.add(
+                        pool.submit(
+                                () -> {
+                                    await(start);
+                                    return ModelRegistry.resolve("race:m");
+                                }));
+            }
+            start.countDown();
+            Model first = results.get(0).get(5, TimeUnit.SECONDS);
+            for (Future<Model> result : results) {
+                assertSame(first, result.get(5, TimeUnit.SECONDS));
+            }
+            assertEquals(1, factoryCalls.get());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void resolve_failedCreation_isNotCached() {
+        AtomicInteger factoryCalls = new AtomicInteger();
+        ModelRegistry.registerFactory(
+                "flaky:(.+)",
+                id -> {
+                    if (factoryCalls.incrementAndGet() == 1) {
+                        throw new IllegalStateException("boom");
+                    }
+                    return new StubModel(id);
+                });
+
+        assertThrows(IllegalArgumentException.class, () -> ModelRegistry.resolve("flaky:m"));
+        Model recovered = ModelRegistry.resolve("flaky:m");
+        assertSame(recovered, ModelRegistry.resolve("flaky:m"));
+        assertEquals(2, factoryCalls.get());
+    }
+
+    @Test
+    void resolve_factoryResolvingItsOwnId_failsInsteadOfHanging() {
+        AtomicInteger factoryCalls = new AtomicInteger();
+        ModelRegistry.registerFactory(
+                "self:(.+)",
+                id ->
+                        factoryCalls.incrementAndGet() == 1
+                                ? ModelRegistry.resolve(id)
+                                : new StubModel(id));
+
+        assertTimeoutPreemptively(
+                Duration.ofSeconds(5),
+                () -> {
+                    IllegalArgumentException e =
+                            assertThrows(
+                                    IllegalArgumentException.class,
+                                    () -> ModelRegistry.resolve("self:m"));
+                    assertInstanceOf(IllegalStateException.class, e.getCause());
+                });
+        // The failed attempt must not leave a stuck entry behind.
+        assertEquals("self:m", ModelRegistry.resolve("self:m").getModelName());
+        assertEquals(2, factoryCalls.get());
     }
 
     @Test
@@ -404,6 +654,26 @@ class ModelRegistryTest {
         @Override
         public Model create(String modelId) {
             return new StubModel("tccl-" + modelId);
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("latch not released");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
         }
     }
 

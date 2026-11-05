@@ -16,14 +16,12 @@
 
 package io.agentscope.spring.boot.a2a.controller;
 
-import io.a2a.spec.JSONRPCResponse;
-import io.a2a.spec.TransportProtocol;
-import io.a2a.util.Utils;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.Map;
-import java.util.logging.Logger;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,8 +34,6 @@ import reactor.core.publisher.Flux;
 @RestController
 @RequestMapping("/")
 public class A2aJsonRpcController {
-
-    Logger logger = Logger.getLogger(A2aJsonRpcController.class.getName());
 
     private final AgentScopeA2aServer agentScopeA2aServer;
 
@@ -54,15 +50,19 @@ public class A2aJsonRpcController {
     @ResponseBody
     public Object handleRequest(
             @RequestBody String body, @RequestHeader Map<String, String> header) {
+        // The transport wrapper returns JSON: a string, or a Flux of strings for streaming
+        // requests.
         Object result = getJsonRpcHandler().handleRequest(body, header, Map.of());
         if (result instanceof Flux<?> fluxResult) {
-            return fluxResult
-                    .filter(each -> each instanceof JSONRPCResponse)
-                    .map(each -> (JSONRPCResponse<?>) each)
-                    .map(this::convertToSse);
-        } else {
-            return result;
+            return fluxResult.map(
+                    json ->
+                            ServerSentEvent.<String>builder()
+                                    .data((String) json)
+                                    .event("jsonrpc")
+                                    .build());
         }
+        // Set the type explicitly: the String converter could also write it as an event stream.
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(result);
     }
 
     private JsonRpcTransportWrapper getJsonRpcHandler() {
@@ -72,23 +72,5 @@ public class A2aJsonRpcController {
                             TransportProtocol.JSONRPC.asString(), JsonRpcTransportWrapper.class);
         }
         return jsonRpcHandler;
-    }
-
-    private ServerSentEvent<String> convertToSse(JSONRPCResponse<?> response) {
-        try {
-            String data = Utils.OBJECT_MAPPER.writeValueAsString(response);
-            ServerSentEvent.Builder<String> builder =
-                    ServerSentEvent.<String>builder().data(data).event("jsonrpc");
-            if (response.getId() != null) {
-                builder.id(response.getId().toString());
-            }
-            return builder.build();
-        } catch (Exception e) {
-            logger.severe("Error converting response to SSE: " + e.getMessage());
-            return ServerSentEvent.<String>builder()
-                    .data("{\"error\":\"Internal conversion error\"}")
-                    .event("error")
-                    .build();
-        }
     }
 }

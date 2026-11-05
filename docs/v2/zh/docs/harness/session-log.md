@@ -88,6 +88,36 @@ session.inject("补充材料：团队只有两名运维人员，没有夜间值�
 
 因此，业务界面可以把“发送新任务”和“补充当前任务”做成不同操作：新任务调用 `submit`，调整当前工作调用 `steer`，只存入参考资料调用 `inject`。用户不需要理解底层 turn 或 run，也不需要手工设置这些标识。
 
+<span id="load-the-full-conversation-into-a-chat-view"></span>
+
+## 把完整对话加载进前端对话框
+
+前端对话框只需要完整已提交对话时（例如首次进入会话），把 journal 投影一次并渲染消息即可：
+
+```java
+var transcript = agent.session(ctx).transcript();
+
+for (Msg msg : transcript.messages()) {
+    for (ContentBlock block : msg.getContent()) {
+        if (block instanceof TextBlock text) {
+            // text.getText() → 用户 / 助手气泡内容
+        } else if (block instanceof ThinkingBlock thinking) {
+            // thinking.getThinking() → 可选的思考过程面板
+        } else if (block instanceof ToolUseBlock use) {
+            // use.getName() + use.getInput() → 工具调用卡片
+        } else if (block instanceof ToolResultBlock result) {
+            // result.getOutput() → 工具结果块（文本、图片等）
+        } else if (block instanceof ImageBlock image) {
+            // image.getSource() → Base64Source / URLSource
+        }
+    }
+}
+```
+
+`transcript.messages()` 从头重放 journal，因此包含**完整**对话——包括已被压缩出模型工作上下文的消息——并带有稳定的消息 ID、角色与时间戳。工具入参与结果按完整 payload 存储，不会被截断或丢弃。
+
+该投影只覆盖已提交消息。如果对话框需要在 agent 流式输出时保持实时、或要在页面刷新后恢复，把这份快照与下一节的已提交事件游标模式结合使用。
+
 ## 刷新页面后，先恢复内容，再继续接收事件
 
 页面重连与任务执行是两条独立链路。用户刷新页面时，后台可能已经完成了一次工具查询，写出半段比较结论，又开始执行第二个工具。此时仅接收“从现在开始”的新片段，页面就会缺少之前的内容。

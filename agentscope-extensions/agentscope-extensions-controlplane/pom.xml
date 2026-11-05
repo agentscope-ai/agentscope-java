@@ -36,7 +36,7 @@
         <grpc.version>1.75.0</grpc.version>
         <!-- Kept in sync with agentscope-dependencies-bom; an imported BOM's properties are not
              inherited, so protoc needs its own declaration to match the protobuf-java runtime. -->
-        <protoc.version>4.29.3</protoc.version>
+        <protoc.version>4.35.0</protoc.version>
         <!-- Canonical ASDP contract, shared with the Go control plane and the Python SDK. -->
         <asdp.proto.dir>${project.basedir}/../../agentscope-service/service-controlplane/internal/asdp</asdp.proto.dir>
         <os-maven-plugin.version>1.7.1</os-maven-plugin.version>

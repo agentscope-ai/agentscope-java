@@ -213,10 +213,15 @@ class HarnessInputMessageDeduplicationTest {
                 .toList();
     }
 
-    /** Non-system message texts in order, as the model sees them. */
+    /**
+     * Non-system message texts in order, as the model sees them. Synthetic harness state
+     * projections (subagent catalog, session-state context items) are per-turn request-only
+     * messages and are excluded: they are orthogonal to the dedup regression under test.
+     */
     private static List<String> conversationTexts(List<Msg> msgs) {
         return msgs.stream()
                 .filter(m -> m.getRole() != MsgRole.SYSTEM)
+                .filter(m -> !Boolean.TRUE.equals(m.getMetadata().get(Msg.METADATA_SYNTHETIC)))
                 .map(Msg::getTextContent)
                 .toList();
     }

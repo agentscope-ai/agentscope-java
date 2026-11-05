@@ -80,6 +80,8 @@ AgentScope Java 2.0.4 新增 OpenAI Responses API、重新设计的 AgentScope S
 - 将企业微信发送拒绝传播为流式错误（[#3173](https://github.com/agentscope-ai/agentscope-java/pull/3173)）。
 - Spring Boot Starter 改为使用模块化的 core 和 AG-UI 依赖（[#3156](https://github.com/agentscope-ai/agentscope-java/pull/3156)）。
 - 归一化 Milvus L2 检索分数，并转义 WordReader Markdown 表格单元格（[#3070](https://github.com/agentscope-ai/agentscope-java/pull/3070)，[#3169](https://github.com/agentscope-ai/agentscope-java/pull/3169)）。
+- 使 E2B exec 超时确定化：禁用空闲读超时，通过 `Connect-Timeout-Ms` 让服务端终止远端进程，将 `timeoutSeconds = 0` 视为无 deadline，并把外部取消原样抛出而不再误报为超时（[#2976](https://github.com/agentscope-ai/agentscope-java/pull/2976)）。
+- `ExecTimeoutException` 消息不再回显命令文本，E2B 与 Docker 沙箱一致（[#2976](https://github.com/agentscope-ai/agentscope-java/pull/2976)）。
 
 ### 文档
 

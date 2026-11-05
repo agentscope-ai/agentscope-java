@@ -64,6 +64,7 @@ public class WaitAsyncResultsTool {
     private final TaskRepository taskRepository;
     private final LongSupplier currentTimeMillis;
     private final Sleeper sleeper;
+    private final long pollIntervalMs;
     private final ConcurrentHashMap<String, AtomicInteger> consecutiveEmptyWaitsBySession =
             new ConcurrentHashMap<>();
     private volatile BooleanSupplier externalWorkProbe;
@@ -73,7 +74,22 @@ public class WaitAsyncResultsTool {
     }
 
     public WaitAsyncResultsTool(MessageBus messageBus, TaskRepository taskRepository) {
-        this(messageBus, taskRepository, System::currentTimeMillis, Thread::sleep);
+        this(
+                messageBus,
+                taskRepository,
+                System::currentTimeMillis,
+                Thread::sleep,
+                POLL_INTERVAL_MS);
+    }
+
+    /**
+     * Same as {@link #WaitAsyncResultsTool(MessageBus, TaskRepository)}, with a custom polling
+     * granularity for tests: mid-budget task completion is noticed after one test interval instead
+     * of one production interval.
+     */
+    WaitAsyncResultsTool(
+            MessageBus messageBus, TaskRepository taskRepository, long pollIntervalMs) {
+        this(messageBus, taskRepository, System::currentTimeMillis, Thread::sleep, pollIntervalMs);
     }
 
     /** Allows timeout tests to advance elapsed time without waiting for the real deadline. */
@@ -82,10 +98,24 @@ public class WaitAsyncResultsTool {
             TaskRepository taskRepository,
             LongSupplier currentTimeMillis,
             Sleeper sleeper) {
+        this(messageBus, taskRepository, currentTimeMillis, sleeper, POLL_INTERVAL_MS);
+    }
+
+    /**
+     * Allows timeout tests to advance elapsed time without waiting for the real deadline, and to
+     * shrink the polling granularity so waits complete promptly.
+     */
+    WaitAsyncResultsTool(
+            MessageBus messageBus,
+            TaskRepository taskRepository,
+            LongSupplier currentTimeMillis,
+            Sleeper sleeper,
+            long pollIntervalMs) {
         this.messageBus = messageBus;
         this.taskRepository = taskRepository;
         this.currentTimeMillis = currentTimeMillis;
         this.sleeper = sleeper;
+        this.pollIntervalMs = pollIntervalMs;
     }
 
     @FunctionalInterface
@@ -525,7 +555,7 @@ public class WaitAsyncResultsTool {
     }
 
     private void sleepForPollInterval(long remainingMs) throws InterruptedException {
-        sleeper.sleep(Math.min(POLL_INTERVAL_MS, remainingMs));
+        sleeper.sleep(Math.min(pollIntervalMs, remainingMs));
     }
 
     private List<String> parseTaskIds(String taskIds) {

@@ -124,7 +124,11 @@ toolkit.registerTool(new SimpleTools());
 
 #### 显式返回执行状态
 
+使用默认 converter 时，注解工具的 `void` 或 `Void` 返回值，以及成功完成的 `Mono<Void>`、`CompletableFuture<Void>`，会向模型返回 `(completed with no output)`，避免静默成功被误认为缺失的工具结果。普通 `null` 返回值仍为 `null`；错误和取消不会生成这条成功确认。
+
 工具调用成功时返回 `ToolResultBlock.success(text)`，失败时返回 `ToolResultBlock.error(message)`；两者既可直接返回，也可包装在 `Mono<ToolResultBlock>` 中。不要通过文本前缀判断失败。`ToolResultBlock.text(text)` 默认是 `RUNNING`；如需保留既有 JSON 或多行输出，请用 `withState(...)` 明确终态。
+
+对于普通客户端工具，Anthropic formatter 将 `ERROR`、`DENIED`、`INTERRUPTED` 映射为 `is_error: true`，同时保留调用 ID 和输出内容块。`SUCCESS`、`RUNNING`、`SUSPENDED` 不会被 formatter 判为错误。供应商执行的 server tool 仍使用独立的转换路径。
 
 内置工具已改为结构化结果。直接调用时用 `getState()` 判断状态，用 `getOutput()` 读取文本；`Toolkit` 注册方式不变。
 
@@ -225,6 +229,34 @@ public class HumanApprovalTool extends ToolBase {
 ```
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/ToolBaseExample.java`、`tool/ToolExecutionContextExample.java`。
+
+### 重名冲突与显式替换
+
+Tool 名字是下游一切逻辑的查找键——schema 生成、权限规则、Tool Group、确认处理都按名字解析一次调用。因此，注册一个名字已经被*另一个* tool 占用的工具会立刻抛出 `IllegalStateException`，而不是静默覆盖原有的注册：
+
+```java
+toolkit.registerTool(new LocalTools());   // @Tool(name = "dup", ...)
+toolkit.registerTool(new OtherTools());   // 同名、不同的 tool
+// IllegalStateException: Tool 'dup' is already registered and will not be silently replaced.
+```
+
+MCP tool 走同一道校验：远端工具与本地工具（或另一个 server 的工具）重名时，会在该 server 的工具注册当场报错。想两者共存，注册 client 时配置 `toolNamePrefix`，或给其中一个改名。
+
+重复注册*同一个*逻辑工具依然保持幂等，刷新类场景无需特殊处理：同一个被注解对象加同一个方法、同一个 MCP client 重新注册自己的工具（重连 / tool 列表刷新）、以及用 `registerSchema` 重新声明一份内容完全相同的外部工具 schema，都会被识别为刷新而放行。同名但内容*变了*的 schema 属于冲突：先移除旧注册，或换一个名字。
+
+如果就是要有意覆盖——在同一个名字下换一份实现——使用显式替换 API：
+
+```java
+toolkit.replaceAgentTool(newFallbackTool); // 替换掉已有的 "dup" 绑定
+```
+
+`replaceAgentTool` 是唯一的有意替换入口；其余所有注册路径（`registerTool`、`registerAgentTool`、`registerSchema`、sub-agent 与 MCP 注册）都经过 fail-fast 校验。
+
+注解工具通过 `getTool` 取得后，再用 `registerAgentTool` 或 `registerTool` 直接注册，也按源对象实例与 Java 方法判断同源；刷新会安装传入工具的注册配置。MCP 刷新要求 wrapper 实例和远端工具名同时相同；不同前缀映射得到相同本地名称，不代表远端目标同源。
+
+`HarnessAgent.Builder.fromAgent(source)` 会重建源 Harness 创建的工具，包括非活跃分组中的工具，并保留用户工具及显式替换的实现。如果保留的用户工具与 Harness 能力重名，可在新 builder 上禁用该能力，或使用不同的工具名。
+
+构建时需要重新绑定工具时，`Toolkit.copyExcludingTools(instances)` 仅排除指定的实例；同名工具已被替换为新实例时，会保留新绑定。副本保留工具分组关系及 Toolkit 配置，包括 `allowToolDeletion(false)`，源 Toolkit 不受影响。
 
 ## 接收 Context
 
@@ -632,6 +664,181 @@ Meta tool 的输入表示所有 group 的**最终状态**而非增量。任何�
 </Warning>
 
 
+## 按需搜索工具
+
+工具目录较大时，可以启用 `ToolSearchMiddleware`。它会注册只读工具
+`tool_search(query, limit)`，`limit` 默认值为 5。普通模型最初只看到搜索工具和配置为
+始终可见的工具。搜索后，命中的工具会在后续模型调用中可用，搜索本身不会执行它们。
+
+```java
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.search.ToolSearchMiddleware;
+
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new OrderTools());
+ToolSearchMiddleware search = new ToolSearchMiddleware(toolkit);
+
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .middleware(search)
+    .build();
+```
+
+默认的 `KeywordToolSearchStrategy` 不引入额外依赖，按关键词匹配工具名称和描述，
+名称匹配的排序权重更高。可以实现 `ToolSearchStrategy.search(ToolSearchRequest)`，
+接入语义检索或远程索引，并通过 `ToolSearchResult` 按相关性返回可用工具名称。
+结果在写入会话状态前会去重、限制数量；不属于候选集合的名称会被拒绝。
+候选集合遵守当前激活的工具组和请求级工具覆盖规则，未激活的组仍需通过现有工具组
+管理功能启用。
+
+需要保留控制工具，或强制使用普通函数调用时，可以使用完整构造方法：
+
+```java
+import io.agentscope.core.tool.search.KeywordToolSearchStrategy;
+import java.util.Set;
+
+new ToolSearchMiddleware(toolkit, new KeywordToolSearchStrategy(),
+    Set.of("reset_equipped_tools"), false);
+```
+
+最后一个参数为 `true` 时启用原生加载（默认值）。模型通过 `getToolSearchMode()`
+选择加载协议；自定义模型默认为 `FUNCTION`。`OpenAIResponsesChatModel` 使用原生
+client-executed 搜索，通过 `tool_search_output` 重放命中的工具定义；
+`AnthropicChatModel` 发送带有延迟加载标记的候选工具目录，并返回 `tool_reference`。
+这两种方式需要 provider 和模型支持对应的原生协议。不支持时，将参数设为 `false`，
+改用普通函数调用。不要将此 middleware 与 OpenAI hosted `tool_search` server tool 同时配置。
+
+发现结果保存在会话的 `ToolContextState` 中，支持通过状态存储恢复。每次请求都会按
+当前候选目录重新检查工具；搜索不会激活工具组或改变执行权限。显式指定调用的工具和
+结构化输出控制工具会保持可用。调用期间不会修改共享 Toolkit。原生加载保持初始工具
+声明稳定，通过会话历史保留已发现的工具。如果历史压缩删除了搜索结果，或模型切换了
+加载协议，则根据持久化的发现记录立即暴露对应定义，保证工具仍然可用。普通函数调用
+则在 `tools` 中累积已发现的定义。
+
+无需凭证即可运行的示例：
+[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java)。
+## 工具调用拦截器
+
+`ToolCallInterceptor` 是 Toolkit 层、单次调用级的参数拦截扩展点。它运行在 JSON Schema 校验与预置参数合并**之后**、会话分发记录与真实执行**之前** —— 因此它能看到工具将收到的确切参数与调用者身份,并决定实际执行的内容。
+
+用它表达[权限系统](/v2/zh/docs/building-blocks/permission-system)无法覆盖的**参数级业务规则**:工具本身被允许调用,但*本次*调用的 `file_path` 是否在当前用户的沙箱内?这条 SQL 是否超出调用者的数据范围?工具级策略(ALLOW/ASK/DENY、人审)仍归权限引擎;批次级、事件流层面的关注点仍归[中间件](/v2/zh/docs/building-blocks/middleware)的 `onActing`。
+
+拦截器在 `ToolkitConfig` 构建期注册:
+
+```java
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptor(new AuditInterceptor())                    // 追加;可重复调用
+        .interceptor(new PathSandboxInterceptor(                // 追加
+                userId -> Path.of("/data/workspaces", userId)))
+        .build());
+
+// 也可整体设置 —— interceptors(list) 是覆盖语义,而非追加
+Toolkit toolkit2 = new Toolkit(ToolkitConfig.builder()
+        .parallel(true)
+        .interceptors(List.of(audit, sandbox))
+        .build());
+```
+
+`interceptor(...)` 为追加语义,可重复调用;`interceptors(List)` 为覆盖语义,替换此前注册的全部拦截器 —— 适合已在别处组装好拦截器列表的场景。拦截器按 `order()` **降序稳定排序**(数值越大越靠外层:先拦截、后收到结果;同序保持注册顺序),排序后运行期不可变。`Toolkit` 被并发会话共享,拦截器实现必须无状态或线程安全;运行期可变的*策略*(熔断开关、租户规则)以拦截器**内部的可变状态**表达。
+
+钩子形状与中间件同构(洋葱模式):
+
+```java
+public final class PathSandboxInterceptor implements ToolCallInterceptor {
+
+    private final Function<String, Path> workspaceRootResolver;
+
+    public PathSandboxInterceptor(Function<String, Path> workspaceRootResolver) {
+        this.workspaceRootResolver = workspaceRootResolver;
+    }
+
+    @Override
+    public Mono<ToolResultBlock> intercept(
+            ToolInvocation invocation,
+            Function<ToolInvocation, Mono<ToolResultBlock>> next) {
+        if (!invocation.toolName().equals("write_text_file")) {
+            return next.apply(invocation);        // 非目标工具 —— 直接放行
+        }
+        // 注入参数:调用方经 RuntimeContext.builder().put(FileAuditLog.class, log)
+        // 注册,模型不可见
+        FileAuditLog audit = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().get(FileAuditLog.class) : null;
+        String userId = invocation.runtimeContext() != null
+                ? invocation.runtimeContext().getUserId() : null;
+        if (userId == null || userId.isBlank()) { // 身份缺失即拒绝(fail closed)
+            return deny("no authenticated user context; cannot scope file access");
+        }
+        Path root = workspaceRootResolver.apply(userId).toAbsolutePath().normalize();
+        // 工具参数:"file_path" 来自模型的 JSON 输入(含 preset)
+        Path resolved = root
+                .resolve(invocation.input().get("file_path").toString())
+                .normalize();                     // 绝对路径同样过不了下面的检查
+        // 前置处理:校验参数并改写为沙箱内路径
+        if (!resolved.startsWith(root)) {
+            return deny("path must stay inside your workspace; use relative paths");
+        }
+        Map<String, Object> rewritten = new HashMap<>(invocation.input());
+        rewritten.put("file_path", resolved.toString());
+        // 后置处理:审计执行结果而不影响执行
+        return next.apply(invocation.withInput(rewritten))
+                .doOnSuccess(result -> {
+                    if (audit != null) audit.record(userId, resolved, result);
+                });
+    }
+
+    private static Mono<ToolResultBlock> deny(String message) {
+        return Mono.just(ToolResultBlock.text("PathSandbox: " + message)
+                .withState(ToolResultState.DENIED));
+    }
+}
+```
+
+拦截器可执行的动作:
+
+| 动作 | 表达方式 | 效果 |
+|------|----------|------|
+| 放行 | `next.apply(invocation)` | 继续后续链 / 执行工具 |
+| 策略拒绝 | `ToolResultBlock.text(msg).withState(ToolResultState.DENIED)` | 工具不执行;结果回传模型自我纠正;自动记录 `denied` 决策 |
+| 调用非法 | `ToolResultBlock.error(msg)` | "本次调用失败"语义,与 Schema 校验失败一致;不产生 denied 记录 |
+| 改写参数 | `next.apply(invocation.withInput(newInput))` | 工具收到改写后的参数(可覆盖 preset;不做 Schema 重校验 —— 开发者产物,与 preset 同信任级别) |
+| 审计 | `next.apply(invocation).doOnSuccess(...)` | 观察结果而不影响执行 |
+| 挂起(HITL) | 抛出 `ToolSuspendException` | 由既有管线转为 `suspended` 结果 |
+
+需要注意的语义:
+
+- **按 agent 身份分发**。快照携带 `agentId`(审计关联)与 `agentName`(写规则的依据,如"planner 禁止写操作");直连无 agent 时两者为 `null`。刻意只透出标识而非 `Agent` 句柄 —— 其操作属于中间件层且带重入风险;结构性的按 agent 差异宜在构建期表达于各 agent 自己的 `ToolkitConfig`。
+- **改写发生在权限批准之后**。权限引擎判定的是模型原始输入;若安全敏感参数(路径、SQL、URL)改写后的*最终值*需要用户确认,应挂起人审而非静默改写。拦截器拒绝一个已获批准的调用属预期行为 —— 拒绝结果直接回馈模型。
+- **拒绝消息应面向模型可行动**("请使用工作区内的相对路径"),不泄露服务端信息,并带拦截器身份前缀(如 `PathSandbox:`)。在示例之外加固路径守卫:调用者可控的 id 先校验格式再用作路径组件;已存在路径(及新建文件的最近已存在祖先)用 `toRealPath()` 复检 —— `normalize()` 不消解符号链接、Windows 8.3 短名与 ADS,且 `Path#startsWith` 区分大小写;改写时避免把服务端绝对根路径回显给模型。
+- **会话记录保持真实**。`tool/dispatch` 记录位于链终点,记录准备派发的参数;被拦截器拒绝的调用不会留下 `allowed`/`dispatch` 记录。
+- **超时与重试**在批处理 `callTools` 路径包裹整条链:拦截器耗时计入工具超时,重试时每次尝试都会重新走链。直连 `Toolkit#callTool` 路径保持现状 —— 无超时包装 —— 因此拦截器绝不能阻塞;阻塞 IO 用 `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())` 卸载。
+- **外部工具不会被拦截**。`externalTool=true` / `SchemaOnlyTool` 在链之前短路返回 `suspended`,校验由外部执行方负责。挂起后回填的结果属数据注入而非执行,同样不经过链。框架内部合成工具 `generate_response` 亦不经过链。
+- **传播**。`Toolkit#copy()`(Harness 子代理即经此构建)会携带拦截器;以全新 `Toolkit` 构建的子代理则没有,除非显式注册。工具体内再委托其他工具(工具在 `callAsync` 内部调用别的工具)不会被二次拦截 —— 按外层工具名分发守卫。
+
+## 工具实际派发前检查
+
+应用需要在排队工具开始前再次核验本轮状态时，可配置 `ToolkitConfig.builder().beforeToolCall(...)`，例如其他工具已报告基础设施故障：
+
+```java
+// 工具集和标记仅属于本轮运行。
+AtomicBoolean stopped = new AtomicBoolean();
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+        .beforeToolCall(param -> {
+            if (stopped.get()) {
+                throw new IllegalStateException("Run stopped: infrastructure unavailable");
+            }
+        })
+        .build());
+```
+
+检查必须同步且不阻塞，在每次订阅和重试时，前序调度、拦截器及派发日志持久化等待结束后，紧邻本地 `callAsync` 执行。检查接收最终执行参数，包含拦截器改写后的参数。外部工具虽不经过拦截器，仍会在返回挂起结果前执行此检查。拒绝派发时抛普通 `RuntimeException`；检查回调不得抛出 `ToolSuspendException`，它表示请求挂起，不能用于拒绝派发。拒绝沿既有工具错误结果路径返回，批次结果保留调用 ID 和名称。
+
+默认不配置检查。`Toolkit.copy()` 保留配置，覆盖复制后及后注册的工具；独立新建的工具集需要单独配置。跨运行共享工具集时，应从调用的 `RuntimeContext` 获取状态，避免捕获共享停止标记。已开始的调用不会被取消，Agent 循环停止与恢复决策仍由应用负责。框架内部合成工具路径及外部结果回填不经过此检查。
+
+本地检查刻意放在派发日志持久化之后，因此即使检查随后拒绝执行，已持久化的 `tool/dispatch` 仍表示派发意图，动作的最终结果会记录失败。持久化之前的参数策略、改写及审计继续使用拦截器。
+
 ## 延伸阅读
 
 
@@ -696,3 +903,11 @@ agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
 `Toolkit.callTool` 和 `callTools` 同样读取显式传入的 RuntimeContext。无配置的 `getTool(name)` 查看原始注册表；需要请求视图时使用 `getTool(name, config)`。工具组激活状态保存在会话的 `ToolContextState`，流式工具回调绑定本次调用。
 
 需要按用户或会话加载技能的仓库实现 Core 中的 `io.agentscope.core.skill.repository.RuntimeContextSkillRepository`。Core 和 Harness 都将当前上下文传给仓库。动态 Skill 视图按内容签名缓存，并发缓存未命中共享一次完整的资源物化；淘汰后重建视图使用新目录，保留运行中执行所引用的文件。缓存淘汰只限制保留的 SkillBox 数量，不限制磁盘占用：自动生成的目录保留到 JVM 退出时清理。调用方指定的工作目录由调用方负责清理；不要在仍有执行引用资源时删除它。
+
+## 工具执行生命周期回调
+
+`ToolExecutionCallback` 提供 `onStart(call)`、`onProgress(call, chunk)` 和 `onResult(call, result)`。执行器在工具真正开始执行时（串行批次中为轮到该工具时）发送 `onStart`；`onResult` 每次调用至多触发一次，先于有序汇总。`Toolkit.callToolsWithCallback(...)` 转发全部生命周期通知，原 `callTools(...)` 与 chunk callback 签名保持兼容。
+
+最终结果在有序汇总前通知，快工具无需等待慢工具。重试、超时和工具错误转换沿用原逻辑；progress callback 异常沿用原有日志隔离；最终结果 callback 异常通过返回的 Publisher 传播。实现必须线程安全且不能阻塞。取消或基础设施异常可能没有最终结果。
+
+Agent 默认渐进发布结果，无需配置开关。普通工具和合成 `generate_response` 使用该回调，服务端结果与权限拒绝保留直接事件转换。callback 只发布事件，不创建 Msg 或修改上下文；消息结算与中断恢复沿用原流程，提前收到事件不代表结果已保存。

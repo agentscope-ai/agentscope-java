@@ -200,6 +200,7 @@ agentscope:
 | RuntimeContext 内容 | 来源 |
 | --- | --- |
 | `sessionId` | `RunAgentInput.threadId` |
+| `userId` | resolver 提供的身份，否则为 request 一等 userId（见下文） |
 | `RunAgentInput.class` | 完整 `RunAgentInput` |
 | `agui.threadId` | `RunAgentInput.threadId` |
 | `agui.runId` | `RunAgentInput.runId` |
@@ -211,6 +212,22 @@ agentscope:
 | `agui.resume` | `RunAgentInput.resume` |
 
 `sessionId` 来自 `threadId`。沿用相同的用户、thread 和持久存储配置，新实例可以继续原会话；不同 thread 使用各自的会话身份。
+
+`userId` 不在 AG-UI 协议报文中携带，由宿主经两个入口提供，按优先级合并：
+
+1. `AguiRuntimeContextResolver` —— 部署方裁决（例如从认证主体解析），优先级最高。
+2. `AguiRuntimeContextRequest.getUserId()` —— 调用方断言，由宿主构建 request 时直传。仅当 resolver 未提供身份时采信。
+
+直接驱动 `AguiRequestProcessor` 的宿主（自定义 transport）把认证得到的用户 id 作为一等字段传入，无需自行发明 resolver 约定：
+
+```java
+AguiRuntimeContextRequest<?> request = AguiRuntimeContextRequest.builder()
+    .input(input)
+    .userId(authenticatedUserId)
+    .build()
+```
+
+两个入口都提供且不相等时记录 WARN 并以 resolver 为准——调用方断言不得覆盖服务端已验证的身份。宿主未提供 userId 时保持匿名。官方 starter 不了解宿主的身份模型，使用 starter 的宿主应注册 `AguiRuntimeContextResolver` bean（见下文 Spring Boot 集成）。
 
 ## Spring Boot 集成
 
@@ -257,7 +274,7 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 }
 ```
 
-`forwardedProps` 来自客户端请求体，适合传递 UI 选项或前端上下文。不要把它当作可信身份来源；服务端用户身份应由认证链路或服务端 resolver 注入。
+`forwardedProps` 来自客户端请求体，适合传递 UI 选项或前端上下文。不要把它当作可信身份来源；服务端用户身份应由认证链路注入——经服务端 resolver 或 request 一等 `userId` 字段。
 
 ## 服务端记忆与消息去重
 

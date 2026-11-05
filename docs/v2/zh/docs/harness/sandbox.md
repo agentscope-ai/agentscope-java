@@ -64,6 +64,7 @@ agent.call(msg, RuntimeContext.builder()
 - 容器还在 + 工作区还在 → 直接接着用（最快）
 - 容器没了 → 拿快照重新起一个，恢复工作区
 - 没快照 → 按 `WorkspaceSpec` 全量初始化（冷启动）
+- 快照读取或恢复失败 → 本次 `call()` 报错，可重试；不会静默丢弃快照状态
 
 快照存到哪里取决于你配的 `snapshotSpec`：
 
@@ -203,17 +204,19 @@ SandboxContext callCtx = SandboxContext.builder()
 | 文本/查找 | `sed` `grep`（支持 `-rHnF` `--include`）`find` | `read_file` 分页、`grep_files`、`glob_files` |
 | 元数据 | GNU 风格 `stat -c`（非 BSD `stat -f`） | `list_files`、`glob_files` |
 | 归档/编码 | `tar`、`base64`（编码 + `-d` 解码） | 快照持久化/恢复、文件上传下载 |
-| 解释器 | `python3` | `edit_file`（精确字符串替换） |
+| 解释器 | 可选：`python3` | `edit_file` 原生快速路径；缺少时 `edit_file` 会回退到下载/替换/上传 |
 | 文件系统 | 工作区根目录（默认 `/workspace`）可写 | 全部 |
 
-以 `ubuntu:24.04`、`debian` 为基础的镜像天然满足（`python3` 可能需额外安装）；`alpine`（BusyBox `stat` / `grep` 行为不同）和 distroless 镜像**不满足**。
+以 `ubuntu:24.04`、`debian` 为基础的镜像天然满足；`python3` 是可选项，仅用于启用 `edit_file` 原生快速路径。没有可执行的 `python3` 时，编辑仍会通过文件传输回退路径工作，但由于需要经由宿主机传输文件，速度可能较慢。`alpine`（BusyBox `stat` / `grep` 行为不同）和 distroless 镜像不满足其他基线要求。
 
 快速自检（在镜像内执行，全部成功即基本达标）：
 
 ```bash
-sh -c 'echo ok' && python3 --version && tar --version \
+sh -c 'echo ok' && { python3 --version 2>/dev/null || echo 'python3 缺失；edit_file 将使用传输回退路径'; } && tar --version \
   && printf x | base64 | base64 -d && stat -c %Y /tmp && grep -rHnF --include='*.txt' x /tmp; true
 ```
+
+`edit_file` 会拒绝完整命令（包括编码后的参数与脚本）超过 112 KiB 的请求；异常大的编辑应拆成多次调用。该限制针对整条命令，而不是分别限制 `oldString` 和 `newString`。
 
 ### Kubernetes（agent-sandbox）附加约束
 
@@ -235,6 +238,14 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 `Sandbox` 抽象的主数据面入口是 `exec(command)`。这是刻意的——`edit_file` / `grep_files` 这类工具的语义（正则、字符串替换、glob）不可能靠有限的文件 API 端点表达，靠镜像内的标准工具链执行 shell 脚本是唯一通用解。文件 API（upload/download）只承担"纯字节搬运"：工作区快照和单文件上传下载走它（后端通过实现 `SandboxFileTransfer` 可选接口声明该能力），其余一切走 `execute`。这也意味着：**镜像契约本身就是沙箱接口的一部分**，换镜像前先跑上面的自检。
 
 **从模型视角跨越边界。** 上面的文件 API（upload/download）是内部机制——对 LLM 不可见，`FilesystemTool` 不暴露任何传输工具。沙箱中的 agent 把自己产出的产物交给沙箱外目标的受支持方式是通用 **`deliver_artifact`** 工具。只有当你通过 `HarnessAgent.builder().artifactDeliveryTarget(...)` 配置了 `ArtifactDeliveryTarget` 时它才会被注册。该 SPI 保持业务无关——`deliver(RuntimeContext, ArtifactDeliveryRequest) -> ArtifactDeliveryResult`——目标逻辑（例如 WebDAV 上传）由你的应用实现。工具会从沙箱工作区下载文件字节，并把传输委托给 target。未配置 target 时，沙箱工作区提示语会明确说明文件无法离开容器。
+
+## Kubernetes HTTP 交换超时
+
+Kubernetes 沙箱请求同时限制响应头和完整响应体的等待时间。即使服务端发送响应头后停止发送响应体，调用方也能超时返回。命令请求使用传入的超时时间加上 30 秒传输余量（默认 60 + 30 秒）；已有的请求超时可能更早触发。命令交换超时抛出 `SandboxTimeoutException`，Harness 将其映射为 `SandboxException.ExecTimeoutException`。
+
+文件上传和下载默认使用 10 分钟交换预算；目录列表和存在性检查默认使用 60 秒。接受 `Duration` 的客户端方法使用传入值作为交换预算，重试和退避共享这份预算。
+
+这些期限限制 HTTP 等待。连接发现和 pod IP 查询仍使用各自的超时机制。取消客户端交换不保证远程命令已经停止；需要终止远程进程时，应在运行时侧设置进程执行限制。
 
 ## Kubernetes 后端的状态保存：PVC 是第一层
 

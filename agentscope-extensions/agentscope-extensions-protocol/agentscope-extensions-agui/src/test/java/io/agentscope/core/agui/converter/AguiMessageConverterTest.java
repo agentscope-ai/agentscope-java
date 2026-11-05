@@ -294,6 +294,33 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testErrorToolResultSurvivesRepeatedWireRoundTrips() {
+        ToolResultBlock original =
+                ToolResultBlock.builder()
+                        .id("tc-1")
+                        .state(ToolResultState.ERROR)
+                        .output(
+                                List.of(
+                                        TextBlock.builder().text("sandbox unavailable").build(),
+                                        TextBlock.builder().text("partial output").build()))
+                        .build();
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(original).build();
+
+        for (int i = 0; i < 3; i++) {
+            AguiMessage wire = converter.toAguiMessages(msg).get(0);
+            assertEquals("sandbox unavailable\npartial output", wire.getTextContent());
+            assertEquals(wire.getTextContent(), wire.getError());
+            String json = JsonUtils.getJsonCodec().toJson(wire);
+            msg = converter.toMsg(JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class));
+            ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+            assertNotNull(result);
+            assertEquals("tc-1", result.getId());
+            assertEquals(ToolResultState.ERROR, result.getState());
+            assertEquals("sandbox unavailable\npartial output", resultText(result));
+        }
+    }
+
+    @Test
     void testConvertToolMessageWithBlankErrorStaysSuccess() {
         AguiMessage aguiMsg =
                 new AguiMessage(
@@ -333,7 +360,7 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testToolMessageSerialisesNonNullContent() {
+    void testErrorToolMessageSerialisesOutputInContent() {
         Msg failed =
                 Msg.builder()
                         .id("msg-t13")
@@ -349,6 +376,7 @@ class AguiMessageConverterTest {
                 wire.get("content") instanceof String,
                 "tool message content must be text or parts, never null: " + json);
         assertEquals("[ERROR] sandbox unavailable", wire.get("error"));
+        assertEquals("[ERROR] sandbox unavailable", wire.get("content"));
     }
 
     @Test
@@ -371,10 +399,10 @@ class AguiMessageConverterTest {
         assertEquals("ok", messages.get(0).getTextContent());
         assertEquals("tc-1", messages.get(1).getToolCallId());
         assertEquals("[ERROR] first failed", messages.get(1).getError());
-        assertEquals("", messages.get(1).getTextContent());
+        assertEquals("[ERROR] first failed", messages.get(1).getTextContent());
         assertEquals("tc-2", messages.get(2).getToolCallId());
         assertEquals("[ERROR] second failed", messages.get(2).getError());
-        assertEquals("", messages.get(2).getTextContent());
+        assertEquals("[ERROR] second failed", messages.get(2).getTextContent());
     }
 
     @Test
@@ -443,6 +471,7 @@ class AguiMessageConverterTest {
         // The payload sent alongside the error stays part of the error text, so the round trip
         // carries both rather than dropping the payload.
         assertEquals("sandbox unavailable\npartial output", roundTripped.getError());
+        assertEquals("sandbox unavailable\npartial output", roundTripped.getTextContent());
         assertEquals("tc-1", roundTripped.getToolCallId());
 
         ToolResultBlock result =

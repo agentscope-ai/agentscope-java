@@ -31,6 +31,7 @@ import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.tool.search.ToolSearchMode;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicBaseFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicChatFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicResponseParser;
@@ -387,6 +388,11 @@ public class AnthropicChatModel extends ChatModelBase {
         return modelName;
     }
 
+    @Override
+    public ToolSearchMode getToolSearchMode() {
+        return ToolSearchMode.DEFERRED;
+    }
+
     /**
      * Creates a builder for constructing AnthropicChatModel instances.
      *
@@ -401,7 +407,7 @@ public class AnthropicChatModel extends ChatModelBase {
         private String baseUrl;
         private String apiKey;
         private String authToken;
-        private String modelName = "claude-sonnet-4-5-20250929";
+        private String modelName = "claude-sonnet-5-5";
         private boolean streamEnabled = true;
         private GenerateOptions defaultOptions;
         private AnthropicBaseFormatter formatter;
