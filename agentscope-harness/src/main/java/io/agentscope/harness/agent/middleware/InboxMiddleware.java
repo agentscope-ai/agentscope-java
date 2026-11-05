@@ -204,6 +204,17 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                             List<Msg> notifications = List.of();
                             if (state != null) {
                                 notifications = injectHintsToContext(state, allHints);
+                            } else {
+                                // The hints were already destructively drained from the bus —
+                                // without this WARN the consumed-and-emitted-but-never-injected
+                                // loss is invisible (#3971).
+                                log.warn(
+                                        "InboxMiddleware: {} hint(s) drained but agent state is"
+                                                + " null for session {}; they are emitted as"
+                                                + " events but NOT injected into the reasoning"
+                                                + " input",
+                                        allHints.size(),
+                                        sessionId);
                             }
 
                             String replyId =
