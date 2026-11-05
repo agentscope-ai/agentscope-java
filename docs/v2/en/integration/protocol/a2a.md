@@ -151,8 +151,9 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 
 server.postEndpointReady();   // call after the web server is listening — triggers registration etc.
 
-// On shutdown: stop the threads of the request handler. Running executions are asked to stop
-// (interrupted); close() does not wait for them. The Spring Boot starter does this for you.
+// On shutdown: stop the threads of the request handler and the thread pools the server created.
+// Running executions are asked to stop (interrupted); close() does not wait for them. An executor
+// you set with executor(...) is left to you. The Spring Boot starter does this for you.
 server.close();
 ```
 
