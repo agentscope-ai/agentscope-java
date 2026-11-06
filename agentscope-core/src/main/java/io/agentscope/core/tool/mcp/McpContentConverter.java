@@ -21,6 +21,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.util.JsonUtils;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -62,20 +63,32 @@ public class McpContentConverter {
             return ToolResultBlock.error("MCP tool returned null result");
         }
 
-        // Check if the result is an error
-        if (Boolean.TRUE.equals(mcpResult.isError())) {
-            String errorMsg = extractErrorMessage(mcpResult.content());
-            return ToolResultBlock.error(errorMsg);
+        boolean isError = Boolean.TRUE.equals(mcpResult.isError());
+        List<ContentBlock> contentBlocks;
+        if (isError) {
+            contentBlocks =
+                    new ArrayList<>(
+                            ToolResultBlock.error(extractErrorMessage(mcpResult.content()))
+                                    .getOutput());
+            for (McpSchema.Content content : mcpResult.content()) {
+                if (!(content instanceof McpSchema.TextContent)) {
+                    ContentBlock block = convertContent(content);
+                    if (block != null) {
+                        contentBlocks.add(block);
+                    }
+                }
+            }
+        } else {
+            contentBlocks = new ArrayList<>(convertContentList(mcpResult.content()));
         }
 
-        // Convert successful result: content blocks + structured content (if present)
-        List<ContentBlock> contentBlocks = new ArrayList<>(convertContentList(mcpResult.content()));
         if (mcpResult.structuredContent() != null) {
             contentBlocks.add(
                     TextBlock.builder().text(toJson(mcpResult.structuredContent())).build());
         }
 
-        return ToolResultBlock.of(contentBlocks);
+        return ToolResultBlock.of(contentBlocks)
+                .withState(isError ? ToolResultState.ERROR : ToolResultState.SUCCESS);
     }
 
     /**
@@ -120,6 +133,18 @@ public class McpContentConverter {
             return convertAudioContent(audioContent);
         } else if (content instanceof McpSchema.EmbeddedResource embeddedResource) {
             return convertEmbeddedResource(embeddedResource);
+        } else if (content instanceof McpSchema.ResourceLink resourceLink) {
+            return TextBlock.builder()
+                    .text(
+                            "Resource link: "
+                                    + resourceLink.name()
+                                    + " ("
+                                    + resourceLink.uri()
+                                    + ")"
+                                    + (resourceLink.description() != null
+                                            ? "\n" + resourceLink.description()
+                                            : ""))
+                    .build();
         }
 
         return TextBlock.builder()
@@ -242,9 +267,11 @@ public class McpContentConverter {
             return "Unknown error";
         }
 
-        return contents.stream()
-                .filter(c -> c instanceof McpSchema.TextContent)
-                .map(c -> ((McpSchema.TextContent) c).text())
-                .collect(Collectors.joining("\n"));
+        String message =
+                contents.stream()
+                        .filter(c -> c instanceof McpSchema.TextContent)
+                        .map(c -> ((McpSchema.TextContent) c).text())
+                        .collect(Collectors.joining("\n"));
+        return message.isEmpty() ? "Unknown error" : message;
     }
 }

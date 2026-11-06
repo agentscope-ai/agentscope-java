@@ -18,9 +18,14 @@ package io.agentscope.core.tool;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.mcp.McpTool;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -30,7 +35,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -40,6 +44,8 @@ import reactor.core.publisher.Mono;
 class McpClientManager {
 
     private static final Logger logger = LoggerFactory.getLogger(McpClientManager.class);
+    private static final int MAX_MODEL_TOOL_NAME_LENGTH = 64;
+    private static final int TOOL_NAME_HASH_LENGTH = 12;
 
     /** Tracks attempts and rollback bindings for one wrapper. */
     private static final class ClientClaim {
@@ -334,17 +340,27 @@ class McpClientManager {
         logger.info("Registering MCP client: {}", wrapper.getName());
         return Mono.defer(wrapper::initialize)
                 .then(Mono.defer(wrapper::listTools))
-                .flatMapMany(
+                .flatMap(
                         tools -> {
-                            validateMetadataOverrides(tools, options, wrapper.getName());
-                            return Flux.fromIterable(tools);
+                            synchronized (toolRegistry) {
+                                validateMetadataOverrides(tools, options, wrapper.getName());
+                                List<McpSchema.Tool> selectedTools =
+                                        tools.stream()
+                                                .filter(
+                                                        tool ->
+                                                                shouldRegisterTool(
+                                                                        tool.name(),
+                                                                        options.enableTools(),
+                                                                        options.disableTools()))
+                                                .toList();
+                                Map<String, McpSchema.Tool> modelTools =
+                                        prepareModelTools(selectedTools, options, wrapper);
+                                for (McpSchema.Tool tool : modelTools.values()) {
+                                    registerTool(claim, tool, options);
+                                }
+                            }
+                            return Mono.<Void>empty();
                         })
-                .filter(
-                        tool ->
-                                shouldRegisterTool(
-                                        tool.name(), options.enableTools(), options.disableTools()))
-                .doOnNext(tool -> registerTool(claim, tool, options))
-                .then()
                 .doOnSuccess(unused -> completeRegistration(claim))
                 .doOnError(
                         error ->
@@ -419,7 +435,8 @@ class McpClientManager {
                         && Boolean.TRUE.equals(remoteTool.annotations().readOnlyHint());
         McpTool tool =
                 new McpTool(
-                        options.toolNamePrefix() + remoteTool.name(),
+                        modelToolName(
+                                options.toolNamePrefix(), wrapper.getName(), remoteTool.name()),
                         remoteTool.name(),
                         remoteTool.description() == null ? "" : remoteTool.description(),
                         McpTool.convertMcpSchemaToParameters(
@@ -508,6 +525,69 @@ class McpClientManager {
                 tool.getName(), tool, () -> groupManager.removeToolFromAllGroups(tool.getName()))) {
             logger.debug("Removed MCP tool: {}", tool.getName());
         }
+    }
+
+    /**
+     * Derives the model-facing name for a remote MCP tool.
+     *
+     * <p>Without a prefix the remote name is returned unchanged. With a prefix, characters
+     * outside {@code [A-Za-z0-9_-]} are replaced and the name is capped at {@value
+     * #MAX_MODEL_TOOL_NAME_LENGTH} characters; whenever either step changes the name, a stable
+     * hash of {@code serverName + remoteToolName} is appended so the identity survives
+     * re-registrations.
+     */
+    private static String modelToolName(
+            String toolNamePrefix, String serverName, String remoteToolName) {
+        String prefix = toolNamePrefix != null ? toolNamePrefix : "";
+        String name = prefix + remoteToolName;
+        if (prefix.isEmpty()) {
+            return name;
+        }
+
+        String normalized = name.replaceAll("[^A-Za-z0-9_-]", "_");
+        if (normalized.equals(name) && normalized.length() <= MAX_MODEL_TOOL_NAME_LENGTH) {
+            return normalized;
+        }
+
+        String identity = serverName + '\0' + remoteToolName;
+        byte[] digest;
+        try {
+            digest =
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(identity.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+        String hash = HexFormat.of().formatHex(digest, 0, TOOL_NAME_HASH_LENGTH / 2);
+        int namePrefixLength = MAX_MODEL_TOOL_NAME_LENGTH - TOOL_NAME_HASH_LENGTH - 1;
+        return normalized.substring(0, Math.min(normalized.length(), namePrefixLength))
+                + "_"
+                + hash;
+    }
+
+    /**
+     * Maps every selected remote tool to its model-facing name and rejects the whole batch when
+     * two tools collide or a name is already registered, so a failing client registers no tools.
+     *
+     * @param tools tools selected by the server-level enable/disable filters
+     * @return model-facing name to remote tool, in server listing order
+     */
+    private Map<String, McpSchema.Tool> prepareModelTools(
+            List<McpSchema.Tool> tools, RegistrationOptions options, McpClientWrapper wrapper) {
+        Map<String, McpSchema.Tool> modelTools = new LinkedHashMap<>();
+        for (McpSchema.Tool tool : tools) {
+            String serverName = wrapper.getName();
+            String modelName = modelToolName(options.toolNamePrefix(), serverName, tool.name());
+            if (modelTools.putIfAbsent(modelName, tool) != null) {
+                throw new IllegalArgumentException(
+                        "MCP tool name conflict for client '" + serverName + "': " + modelName);
+            }
+            McpTool incoming =
+                    createTool(wrapper, tool, options, options.presetParameters(tool.name()));
+            toolRegistry.validateRegistration(
+                    modelName, incoming, new RegisteredToolFunction(incoming, null, serverName));
+        }
+        return modelTools;
     }
 
     /**
