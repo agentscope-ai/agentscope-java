@@ -58,16 +58,22 @@ public final class TextChunker {
             throw new IllegalArgumentException("Overlap size must be less than chunk size");
         }
 
-        if (text.isEmpty()) {
-            return List.of("");
+        // Blank input produces no chunks: an empty/whitespace-only chunk would flow into
+        // the RAG embedding pipeline as a Document with nothing to embed (#3305).
+        if (text.isBlank()) {
+            return List.of();
         }
 
-        return switch (strategy) {
-            case CHARACTER -> chunkByCharacter(text, chunkSize, overlapSize);
-            case PARAGRAPH -> chunkByParagraph(text, chunkSize, overlapSize);
-            case TOKEN -> chunkByToken(text, chunkSize, overlapSize);
-            case SEMANTIC -> chunkBySemantic(text, chunkSize, overlapSize);
-        };
+        List<String> chunks =
+                switch (strategy) {
+                    case CHARACTER -> chunkByCharacter(text, chunkSize, overlapSize);
+                    case PARAGRAPH -> chunkByParagraph(text, chunkSize, overlapSize);
+                    case TOKEN -> chunkByToken(text, chunkSize, overlapSize);
+                    case SEMANTIC -> chunkBySemantic(text, chunkSize, overlapSize);
+                };
+        // Whitespace-only chunks carry no embeddable content; drop them while preserving
+        // the order and content of the surviving chunks (#3305).
+        return chunks.stream().filter(c -> !c.isBlank()).toList();
     }
 
     /**
