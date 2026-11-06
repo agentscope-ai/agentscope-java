@@ -107,7 +107,10 @@ public class JacksonJsonCodec implements JsonCodec {
     @Override
     public <T> T fromJson(String json, Class<T> type) {
         try {
-            return objectMapper.readValue(json, type);
+            return objectMapper
+                    .readerFor(type)
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readValue(json);
         } catch (JsonProcessingException e) {
             throw new JsonException("Failed to deserialize JSON to " + type.getName(), e);
         }
@@ -116,7 +119,10 @@ public class JacksonJsonCodec implements JsonCodec {
     @Override
     public <T> T fromJson(String json, TypeReference<T> typeRef) {
         try {
-            return objectMapper.readValue(json, typeRef);
+            return objectMapper
+                    .readerFor(typeRef)
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readValue(json);
         } catch (JsonProcessingException e) {
             throw new JsonException("Failed to deserialize JSON", e);
         }
