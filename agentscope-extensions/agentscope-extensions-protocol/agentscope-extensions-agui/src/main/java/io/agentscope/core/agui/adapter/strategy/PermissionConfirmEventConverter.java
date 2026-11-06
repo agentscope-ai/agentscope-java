@@ -15,24 +15,14 @@
  */
 package io.agentscope.core.agui.adapter.strategy;
 
-import static io.agentscope.core.agui.AguiInterruptConstants.INTERRUPT_KIND_PERMISSION_CONFIRM;
-import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_AGENTSCOPE_INTERRUPT_KIND;
-import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_REPLY_ID;
-import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_CONTENT;
-import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_INPUT;
-import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_NAME;
-import static io.agentscope.core.agui.AguiInterruptConstants.TOOL_CALL_INTERRUPT_REASON;
-
+import io.agentscope.core.agui.AguiInterrupts;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.util.JsonUtils;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -61,29 +51,6 @@ import java.util.Set;
  */
 final class PermissionConfirmEventConverter implements AgentEventConverter {
 
-    private static final Map<String, Object> CONFIRM_RESPONSE_SCHEMA =
-            Map.of(
-                    "type",
-                    "object",
-                    "properties",
-                    Map.of(
-                            "approved",
-                            Map.of("type", "boolean"),
-                            "editedArgs",
-                            Map.of(
-                                    "type",
-                                    "object",
-                                    "description",
-                                    "Full replacement of the tool args. Not merged."),
-                            "reason",
-                            Map.of(
-                                    "type",
-                                    "string",
-                                    "description",
-                                    "Optional explanation supplied when the tool call is denied.")),
-                    "required",
-                    List.of("approved"));
-
     @Override
     public Set<Class<? extends AgentEvent>> eventTypes() {
         return Set.of(RequireUserConfirmEvent.class, UserConfirmResultEvent.class);
@@ -109,44 +76,8 @@ final class PermissionConfirmEventConverter implements AgentEventConverter {
                 throw new IllegalStateException(
                         "RequireUserConfirmEvent contains a tool call without a stable id");
             }
-            context.addInterrupt(buildInterrupt(replyId, toolUse));
+            context.addInterrupt(AguiInterrupts.permissionConfirm(replyId, toolUse));
         }
-    }
-
-    private static AguiEvent.Interrupt buildInterrupt(String replyId, ToolUseBlock toolUse) {
-        String toolCallId = toolUse.getId();
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        if (!isBlank(toolUse.getName())) {
-            metadata.put(METADATA_TOOL_NAME, toolUse.getName());
-        }
-        if (toolUse.getInput() != null && !toolUse.getInput().isEmpty()) {
-            metadata.put(METADATA_TOOL_INPUT, toolUse.getInput());
-        }
-        metadata.put(METADATA_TOOL_CONTENT, JsonUtils.resolveToolCallArgsJson(toolUse));
-        metadata.put(METADATA_AGENTSCOPE_INTERRUPT_KIND, INTERRUPT_KIND_PERMISSION_CONFIRM);
-        if (!isBlank(replyId)) {
-            metadata.put(METADATA_REPLY_ID, replyId);
-        }
-        return new AguiEvent.Interrupt(
-                interruptId(replyId, toolCallId),
-                TOOL_CALL_INTERRUPT_REASON,
-                confirmMessage(toolUse),
-                toolCallId,
-                CONFIRM_RESPONSE_SCHEMA,
-                null,
-                Map.copyOf(metadata));
-    }
-
-    private static String confirmMessage(ToolUseBlock toolUse) {
-        String name = isBlank(toolUse.getName()) ? "tool" : toolUse.getName();
-        return "Tool '" + name + "' requires user confirmation before execution";
-    }
-
-    private static String interruptId(String replyId, String toolCallId) {
-        if (!isBlank(replyId)) {
-            return replyId + ":" + toolCallId;
-        }
-        return toolCallId;
     }
 
     private static boolean isBlank(String value) {
