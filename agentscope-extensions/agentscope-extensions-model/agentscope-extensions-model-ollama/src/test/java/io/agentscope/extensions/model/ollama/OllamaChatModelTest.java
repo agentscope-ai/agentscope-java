@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -26,6 +27,8 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -101,6 +104,66 @@ class OllamaChatModelTest {
                 OllamaChatModel.builder().modelName("qwen2.5:14b-instruct").build();
         assertNotNull(simpleModel);
         assertEquals("qwen2.5:14b-instruct", simpleModel.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should project an object-shaped default format as a response format")
+    void testDefaultObjectFormatIsProjectedAsResponseFormat() {
+        OllamaOptions options =
+                OllamaOptions.builder()
+                        .temperature(0.5)
+                        .format(Map.of("type", "object", "properties", Map.of()))
+                        .build();
+        OllamaChatModel modelWithOptions =
+                OllamaChatModel.builder()
+                        .modelName(TEST_MODEL_NAME)
+                        .defaultOptions(options)
+                        .build();
+
+        GenerateOptions resolved = modelWithOptions.resolveOptions(null);
+
+        assertNotNull(resolved.getResponseFormat(), "object format carries a schema");
+        assertEquals(0.5, resolved.getTemperature(), "mapped fields are kept");
+    }
+
+    @Test
+    @DisplayName("Should not project a scalar or string default format as a response format")
+    void testScalarDefaultFormatIsNotProjected() {
+        OllamaOptions options = OllamaOptions.builder().format("json").build();
+        OllamaChatModel modelWithOptions =
+                OllamaChatModel.builder()
+                        .modelName(TEST_MODEL_NAME)
+                        .defaultOptions(options)
+                        .build();
+
+        GenerateOptions defaults = modelWithOptions.getDefaultOptions();
+        GenerateOptions resolved = modelWithOptions.resolveOptions(null);
+
+        assertNotNull(defaults);
+        assertNull(defaults.getResponseFormat());
+        assertNull(resolved.getResponseFormat());
+    }
+
+    @Test
+    @DisplayName("Should prefer the request format over the stored default")
+    void testRequestFormatOverridesStoredDefault() {
+        OllamaOptions options =
+                OllamaOptions.builder()
+                        .format(Map.of("type", "object", "title", "Default"))
+                        .build();
+        OllamaChatModel modelWithOptions =
+                OllamaChatModel.builder()
+                        .modelName(TEST_MODEL_NAME)
+                        .defaultOptions(options)
+                        .build();
+        ResponseFormat requestFormat =
+                ResponseFormat.jsonSchema(JsonSchema.builder().name("Request").build());
+
+        GenerateOptions resolved =
+                modelWithOptions.resolveOptions(
+                        GenerateOptions.builder().responseFormat(requestFormat).build());
+
+        assertEquals("Request", resolved.getResponseFormat().getJsonSchema().getName());
     }
 
     // ========== Configuration Tests ==========

@@ -15,15 +15,26 @@
  */
 package io.agentscope.harness.agent.context;
 
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.util.JsonUtils;
 
-/** Replace with an adapter-specific tokenizer when available. Estimates are not provider usage. */
+/**
+ * Replace with an adapter-specific tokenizer when available. Estimates are not provider usage.
+ *
+ * <p>Text is counted per Unicode category: ASCII at {@code 2.5} characters per token, BMP
+ * non-ASCII (CJK and other multi-byte scripts) at one token per character, and supplementary code
+ * points (emoji and rare scripts) at two tokens each. The result is never lower than the uniform
+ * {@code length / 2.5} baseline it replaces. A structured-output response format that travels with
+ * the request — including one supplied by the model's default options — is priced as part of the
+ * input surface.
+ */
 @FunctionalInterface
 public interface ContextTokenEstimator {
     Estimate estimate(ModelCallInput input);
@@ -45,12 +56,46 @@ public interface ContextTokenEstimator {
             for (var tool : input.tools()) {
                 count += 16 + text(JsonUtils.getJsonCodec().toJson(tool));
             }
-            return new Estimate(count, "mixed-text-2.5chars-media-2048-v1", false);
+            ResponseFormat responseFormat = effectiveResponseFormat(input);
+            if (responseFormat != null) {
+                count += 16 + text(JsonUtils.getJsonCodec().toJson(responseFormat));
+            }
+            return new Estimate(count, "mixed-ascii2.5-cjk1-supp2-media-2048-v1", false);
         };
     }
 
+    /** Reads the response format the provider will actually send after applying model defaults. */
+    private static ResponseFormat effectiveResponseFormat(ModelCallInput input) {
+        GenerateOptions options =
+                input.model() == null
+                        ? input.options()
+                        : input.model().resolveOptions(input.options());
+        return options == null ? null : options.getResponseFormat();
+    }
+
     private static long text(String value) {
-        return value == null ? 0 : (long) Math.ceil(value.length() / 2.5);
+        if (value == null || value.isEmpty()) return 0;
+        long ascii = 0;
+        long bmpNonAscii = 0;
+        long supplementary = 0;
+        int i = 0;
+        int length = value.length();
+        while (i < length) {
+            char c = value.charAt(i);
+            if (c < 0x80) {
+                ascii++;
+                i++;
+            } else if (Character.isHighSurrogate(c)
+                    && i + 1 < length
+                    && Character.isLowSurrogate(value.charAt(i + 1))) {
+                supplementary++;
+                i += 2;
+            } else {
+                bmpNonAscii++;
+                i++;
+            }
+        }
+        return (long) Math.ceil(ascii / 2.5) + bmpNonAscii + supplementary * 2;
     }
 
     private static long block(ContentBlock block) {

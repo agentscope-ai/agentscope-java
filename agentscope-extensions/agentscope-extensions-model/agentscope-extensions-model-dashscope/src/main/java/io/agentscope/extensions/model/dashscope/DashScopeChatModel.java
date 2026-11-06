@@ -435,6 +435,11 @@ public class DashScopeChatModel extends ChatModelBase {
     }
 
     @Override
+    public GenerateOptions getDefaultOptions() {
+        return defaultOptions;
+    }
+
+    @Override
     public boolean supportsNativeStructuredOutput() {
         if (Boolean.TRUE.equals(enableThinking)) {
             return false;
