@@ -40,10 +40,6 @@ GeminiChatModel model = GeminiChatModel.builder()
     .build();
 ```
 
-Gemini can request multiple local function calls in one response, including calls to the same tool
-with different arguments. AgentScope keeps each call's arguments and result separate, generating
-unique call IDs when Gemini omits them and retaining IDs supplied by Gemini.
-
 ## Server-side tools
 
 Gemini built-in tools run on the model provider instead of the local AgentScope toolkit. Build a

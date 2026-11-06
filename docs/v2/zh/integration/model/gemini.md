@@ -40,9 +40,6 @@ GeminiChatModel model = GeminiChatModel.builder()
     .build();
 ```
 
-Gemini 可以在一次响应中请求多个本地函数调用，包括用不同参数调用同一个工具。AgentScope 会分别保留
-每个调用的参数和结果；Gemini 未提供调用 ID 时，框架会生成唯一 ID，已提供的 ID 则保持不变。
-
 ## 服务端工具
 
 Gemini 内置工具由模型服务商执行，不会通过 AgentScope 本地 Toolkit 执行。使用显式 model
