@@ -36,8 +36,10 @@ import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.dto.OpenAIStreamOptions;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
+import io.agentscope.extensions.model.openai.formatter.OpenAIToolNameCodec;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -130,6 +132,12 @@ public class OpenAIChatModel extends ChatModelBase {
 
         Instant start = Instant.now();
 
+        // Tool names that violate the OpenAI function name pattern (e.g. MCP tools like
+        // "task.get") are encoded before going on the wire; original names are restored on
+        // parsed responses via this per-request decode map.
+        Map<String, String> toolNameDecodeMap = OpenAIToolNameCodec.buildDecodeMap(tools);
+        messages = OpenAIToolNameCodec.encodeToolNames(messages);
+
         // Format messages using formatter (handles provider-specific transformations)
         List<OpenAIMessage> openaiMessages = formatter.format(messages, effectiveOptions);
 
@@ -172,6 +180,11 @@ public class OpenAIChatModel extends ChatModelBase {
                                                     response ->
                                                             formatter.parseResponse(
                                                                     response, start))
+                                            .map(
+                                                    chatResponse ->
+                                                            OpenAIToolNameCodec.decodeToolNames(
+                                                                    chatResponse,
+                                                                    toolNameDecodeMap))
                                             .filter(Objects::nonNull))
                     .subscribeOn(Schedulers.boundedElastic());
         } else {
@@ -183,7 +196,9 @@ public class OpenAIChatModel extends ChatModelBase {
                                             client.call(apiKey, baseUrl, request, effectiveOptions);
                                     ChatResponse chatResponse =
                                             formatter.parseResponse(response, start);
-                                    return Flux.just(chatResponse);
+                                    return Flux.just(
+                                            OpenAIToolNameCodec.decodeToolNames(
+                                                    chatResponse, toolNameDecodeMap));
                                 } catch (Exception e) {
                                     return Flux.error(
                                             new ModelException(
