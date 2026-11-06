@@ -24,7 +24,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
@@ -375,11 +374,7 @@ public class PostgresBaseStore implements BaseStore {
     }
 
     private static boolean isDuplicateKey(SQLException e) {
-        if (e instanceof SQLIntegrityConstraintViolationException) {
-            return true;
-        }
-        String state = e.getSQLState();
-        return state != null && state.startsWith("23");
+        return "23505".equals(e.getSQLState());
     }
 
     /** Builder for {@link PostgresBaseStore}. */

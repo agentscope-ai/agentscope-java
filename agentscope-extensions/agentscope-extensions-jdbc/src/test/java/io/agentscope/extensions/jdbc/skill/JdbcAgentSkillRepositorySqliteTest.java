@@ -32,6 +32,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sqlite.SQLiteDataSource;
+import org.sqlite.SQLiteErrorCode;
+import org.sqlite.SQLiteException;
 
 /**
  * SQLite conflict-classification tests — the one vendor reporting every {@code
@@ -69,6 +71,14 @@ class JdbcAgentSkillRepositorySqliteTest {
     @Test
     @DisplayName("real driver errors classify: SQLITE_CONSTRAINT_UNIQUE matches, NOT NULL not")
     void realDriverErrorsClassify() throws Exception {
+        assertTrue(
+                JdbcAgentSkillRepository.isUniqueViolation(
+                        new SQLiteException(
+                                "primary key", SQLiteErrorCode.SQLITE_CONSTRAINT_PRIMARYKEY)));
+        assertFalse(
+                JdbcAgentSkillRepository.isUniqueViolation(
+                        new SQLiteException(
+                                "unknown constraint", SQLiteErrorCode.SQLITE_CONSTRAINT)));
         DataSource ds = createDataSource("skill_classifier");
         skillDialect(ds); // build creates the tables the raw inserts target
         try (Connection conn = ds.getConnection();
