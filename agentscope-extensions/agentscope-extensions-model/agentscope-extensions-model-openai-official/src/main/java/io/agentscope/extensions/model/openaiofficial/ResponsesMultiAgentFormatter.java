@@ -22,6 +22,7 @@ import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseInputText;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -218,7 +219,7 @@ public class ResponsesMultiAgentFormatter {
      * Merges a group of agent conversation messages into a single user message
      * with {@code <history>} tags.
      *
-     * <p>Text and thinking blocks are accumulated in a text buffer. Image and data blocks
+     * <p>Text and thinking blocks are accumulated in a text buffer. Image, document, and data blocks
      * flush the buffer and are added as separate {@link ResponseInputContent} parts to
      * preserve their multimodal nature.
      *
@@ -304,6 +305,11 @@ public class ResponsesMultiAgentFormatter {
                     }
                     textBuffer.append("[Image - processing failed]\n");
                 }
+            } else if (block instanceof DocumentBlock document) {
+                flushText(textBuffer, parts);
+                parts.add(
+                        ResponseInputContent.ofInputFile(
+                                ResponsesRequestMapper.mapDocument(document)));
             } else if (block instanceof DataBlock db) {
                 flushText(textBuffer, parts);
                 try {

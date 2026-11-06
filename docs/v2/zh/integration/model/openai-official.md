@@ -42,6 +42,73 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
     .build();
 ```
 
+## 文档输入
+
+通过用户消息中的 `DocumentBlock` 发送文档。默认 formatter 和
+`ResponsesMultiAgentFormatter` 都会将文档保留为原生 `input_file` 内容，并保持
+文档与文本、图片的排列顺序。文件格式和模型支持范围遵循
+[OpenAI 文件输入指南](https://developers.openai.com/api/docs/guides/file-inputs)，
+本适配器不将文档限制为 PDF。
+
+```java
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.UserMessage;
+import java.util.List;
+
+DocumentBlock document = DocumentBlock.builder()
+    .source(new URLSource("https://example.com/report.pdf"))
+    .build();
+
+model.stream(List.of(UserMessage.builder()
+        .content(TextBlock.builder().text("总结这份报告。").build())
+        .content(document)
+        .build()), null, null)
+    .doOnNext(System.out::println)
+    .blockLast();
+```
+
+HTTP(S) 来源会直接作为 `file_url` 发送给 OpenAI，AgentScope 不下载远程文件。
+本地路径和 `file://` URI 会自动读取并编码为 `file_data`，读取时沿用现有的单文件
+50 MB 限制，且只接受普通文件。模型会在线程池中执行请求映射，避免本地文件读取阻塞
+Reactor 事件线程。请求准备阶段遵循配置的执行超时，准备失败不会重试；提供方调用仍
+遵循原有的超时和重试配置。
+
+使用 `Base64Source` 传入已经编码的文件时，提供原始 Base64 字符串和 MIME 类型。
+本地文档的 MIME 类型优先使用 `DocumentBlock.mimeType`，其次使用
+`URLSource.mimeType`，最后根据扩展名推断 PDF、Word、电子表格、演示文稿和文本等
+常见文档格式。无法推断时应显式填写 MIME 类型。
+
+```java
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.FileIdSource;
+import java.nio.file.Path;
+
+DocumentBlock local = DocumentBlock.builder()
+    .source(new URLSource(Path.of("report.pdf").toUri().toString()))
+    .build();
+
+DocumentBlock inline = DocumentBlock.builder()
+    .source(new Base64Source("text/csv", "bmFtZSx2YWx1ZQphLDEK"))
+    .name("report.csv")
+    .build();
+
+DocumentBlock uploaded = DocumentBlock.builder()
+    .source(new FileIdSource("openai", "file-123"))
+    .build();
+```
+
+内联文件优先使用 `DocumentBlock.name` 作为文件名。未填写时，本地文件保留原文件名；
+Base64 来源会根据 MIME 类型生成默认名称，例如 `document.pdf`、`document.txt`、
+`document.docx`、`document.xlsx`。如果没有对应的默认名称，需要显式填写 `name`。
+这些默认名称不限制提供了文件名时可发送的文件格式。
+
+文件 ID 的 provider 接受 `openai` 和 `openai-official`，并映射为 `file_id`。
+文件需要先由调用方单独上传，再引用返回的 ID。provider 不匹配、URL 协议不支持或
+本地文件读取失败时，会明确报错，不会丢弃文档。本功能仅处理用户消息中的文档输入，
+工具结果中的文档、文件上传和响应端文件输出不在本次范围内。
+
 ## 服务端内置工具
 
 OpenAI 官方文档: https://developers.openai.com/api/docs/guides/tools#available-tools

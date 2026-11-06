@@ -23,11 +23,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.openai.core.JsonValue;
+import com.openai.core.ObjectMappers;
 import com.openai.models.responses.FunctionTool;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseFunctionCallOutputItem;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseIncludable;
+import com.openai.models.responses.ResponseInputContent;
+import com.openai.models.responses.ResponseInputFile;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.Tool;
@@ -36,10 +39,14 @@ import com.openai.models.responses.WebSearchTool;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.SystemMessage;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -54,12 +61,18 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
 import io.agentscope.extensions.model.openaiofficial.tool.ResponsesServerToolHelper;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Tests for {@link ResponsesRequestMapper}, grouped by request-mapping sections.
@@ -790,6 +803,387 @@ class ResponsesRequestMapperTest {
             List<Msg> messages = List.of(ToolResultMessage.builder().build());
             assertThrows(
                     OpenAIOfficialModelException.class, () -> mapHistory(baseOptions(), messages));
+        }
+    }
+
+    @Nested
+    class DocumentInput {
+
+        @TempDir Path directory;
+
+        private List<ResponseInputContent> parts(ContentBlock... blocks) {
+            return mapHistory(
+                            baseOptions(),
+                            List.of(UserMessage.builder().content(List.of(blocks)).build()))
+                    .input()
+                    .orElseThrow()
+                    .asResponse()
+                    .get(0)
+                    .asEasyInputMessage()
+                    .content()
+                    .asResponseInputMessageContentList();
+        }
+
+        private ResponseInputFile file(DocumentBlock document) {
+            return parts(document).get(0).asInputFile();
+        }
+
+        @Test
+        void remoteDocumentUrlIsPassedThroughWithoutDownloading() {
+            String url = "https://example.invalid/report.docx?token=signed%2Bvalue";
+            ResponseInputFile file =
+                    file(DocumentBlock.builder().source(new URLSource(url)).build());
+            assertEquals(url, file.fileUrl().orElseThrow());
+            assertTrue(file.fileData().isEmpty());
+            assertTrue(file.fileId().isEmpty());
+        }
+
+        @Test
+        void documentSerializesAsNativeInputFile() throws Exception {
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new Base64Source("text/plain", "YWJj"))
+                                    .name("report.txt")
+                                    .build());
+            assertEquals(
+                    ObjectMappers.jsonMapper()
+                            .readTree(
+                                    "{\"type\":\"input_file\",\"filename\":\"report.txt\",\"file_data\":\"data:text/plain;base64,YWJj\"}"),
+                    ObjectMappers.jsonMapper().valueToTree(file));
+        }
+
+        @Test
+        void base64PreservesExplicitFilenameAndNonPdfMimeType() {
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(
+                                            new Base64Source(
+                                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                                    "YWJj"))
+                                    .name("报告.docx")
+                                    .build());
+            assertEquals("报告.docx", file.filename().orElseThrow());
+            assertEquals(
+                    "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,YWJj",
+                    file.fileData().orElseThrow());
+            assertTrue(file.fileUrl().isEmpty());
+            assertTrue(file.fileId().isEmpty());
+        }
+
+        @ParameterizedTest
+        @CsvSource({
+            "application/pdf,pdf",
+            "text/plain,txt",
+            "text/markdown,md",
+            "text/csv,csv",
+            "text/tsv,tsv",
+            "application/json,json",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document,docx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,xlsx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation,pptx"
+        })
+        void missingBase64NameUsesMimeType(String mimeType, String extension) {
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new Base64Source(mimeType, "YWJj"))
+                                    .build());
+            assertEquals("document." + extension, file.filename().orElseThrow());
+        }
+
+        @Test
+        void explicitNameDoesNotRequireAMimeTypeWhitelist() {
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new Base64Source("text/x-java-source", "YWJj"))
+                                    .name("Example.java")
+                                    .build());
+            assertEquals("Example.java", file.filename().orElseThrow());
+        }
+
+        @Test
+        void unknownMimeWithoutNameAsksForFilename() {
+            OpenAIOfficialModelException error =
+                    assertThrows(
+                            OpenAIOfficialModelException.class,
+                            () ->
+                                    file(
+                                            DocumentBlock.builder()
+                                                    .source(
+                                                            new Base64Source(
+                                                                    "application/octet-stream",
+                                                                    "YWJj"))
+                                                    .build()));
+            assertTrue(error.getMessage().contains("name"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(booleans = {true, false})
+        void localFilesAndEncodedFileUrisAreRead(boolean useUri) throws Exception {
+            Path path = directory.resolve("报告 #1.pdf");
+            Files.writeString(path, "abc");
+            String url = useUri ? path.toUri().toString() : path.toString();
+            ResponseInputFile file =
+                    file(DocumentBlock.builder().source(new URLSource(url)).build());
+            assertEquals("报告 #1.pdf", file.filename().orElseThrow());
+            assertEquals("data:application/pdf;base64,YWJj", file.fileData().orElseThrow());
+            assertTrue(file.fileUrl().isEmpty());
+        }
+
+        @ParameterizedTest
+        @CsvSource({
+            "txt,text/plain",
+            "md,text/markdown",
+            "csv,text/csv",
+            "tsv,text/tsv",
+            "json,application/json",
+            "xml,text/xml",
+            "html,text/html",
+            "rtf,application/rtf",
+            "doc,application/msword",
+            "docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "DOCX,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xls,application/vnd.ms-excel",
+            "xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "ppt,application/vnd.ms-powerpoint",
+            "pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "odt,application/vnd.oasis.opendocument.text"
+        })
+        void localDocumentMimeIsInferredFromItsExtension(String extension, String mimeType)
+                throws Exception {
+            Path path = directory.resolve("report." + extension);
+            Files.writeString(path, "abc");
+            ResponseInputFile file =
+                    file(DocumentBlock.builder().source(new URLSource(path.toString())).build());
+            assertEquals(path.getFileName().toString(), file.filename().orElseThrow());
+            assertEquals("data:" + mimeType + ";base64,YWJj", file.fileData().orElseThrow());
+        }
+
+        @Test
+        void declaredMimeOverridesSourceMimeAndExtension() throws Exception {
+            Path path = directory.resolve("report.docx");
+            Files.writeString(path, "abc");
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new URLSource(path.toString(), "text/plain"))
+                                    .mimeType("text/csv")
+                                    .build());
+            assertEquals("data:text/csv;base64,YWJj", file.fileData().orElseThrow());
+        }
+
+        @Test
+        void localNonPdfUsesDeclaredMimeAndExplicitName() throws Exception {
+            Path path = directory.resolve("data.bin");
+            Files.writeString(path, "abc");
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new URLSource(path.toString()))
+                                    .mimeType("text/csv")
+                                    .name("report.csv")
+                                    .build());
+            assertEquals("report.csv", file.filename().orElseThrow());
+            assertEquals("data:text/csv;base64,YWJj", file.fileData().orElseThrow());
+        }
+
+        @Test
+        void localFileUsesSourceMimeHint() throws Exception {
+            Path path = directory.resolve("download");
+            Files.writeString(path, "abc");
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new URLSource(path.toUri().toString(), "text/plain"))
+                                    .build());
+            assertEquals("data:text/plain;base64,YWJj", file.fileData().orElseThrow());
+        }
+
+        @Test
+        void missingLocalFilePreservesIoCause() {
+            OpenAIOfficialModelException error =
+                    assertThrows(
+                            OpenAIOfficialModelException.class,
+                            () ->
+                                    file(
+                                            DocumentBlock.builder()
+                                                    .source(
+                                                            new URLSource(
+                                                                    directory
+                                                                            .resolve("missing.pdf")
+                                                                            .toString()))
+                                                    .build()));
+            assertTrue(error.getCause() instanceof java.io.IOException);
+        }
+
+        @Test
+        void oversizedLocalDocumentUsesExistingSizeLimit() throws Exception {
+            Path path = directory.resolve("large.pdf");
+            try (java.io.RandomAccessFile file =
+                    new java.io.RandomAccessFile(path.toFile(), "rw")) {
+                file.setLength(50L * 1024 * 1024 + 1);
+            }
+            OpenAIOfficialModelException error =
+                    assertThrows(
+                            OpenAIOfficialModelException.class,
+                            () ->
+                                    file(
+                                            DocumentBlock.builder()
+                                                    .source(new URLSource(path.toString()))
+                                                    .build()));
+            assertTrue(error.getCause() instanceof java.io.IOException);
+            assertTrue(error.getCause().getMessage().contains("File too large"));
+        }
+
+        @Test
+        void directoryIsRejectedAsAnUnreadableDocument() {
+            OpenAIOfficialModelException error =
+                    assertThrows(
+                            OpenAIOfficialModelException.class,
+                            () ->
+                                    file(
+                                            DocumentBlock.builder()
+                                                    .source(
+                                                            new URLSource(
+                                                                    directory.toUri().toString()))
+                                                    .build()));
+            assertTrue(error.getCause().getMessage().contains("regular file"));
+        }
+
+        @Test
+        void emptyBase64DocumentIsRejected() {
+            assertThrows(
+                    OpenAIOfficialModelException.class,
+                    () ->
+                            file(
+                                    DocumentBlock.builder()
+                                            .source(new Base64Source("application/pdf", " "))
+                                            .build()));
+        }
+
+        @Test
+        void blankSourceMimeCanUseDeclaredDocumentMime() {
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new Base64Source("", "YWJj"))
+                                    .mimeType("text/plain")
+                                    .build());
+            assertEquals("document.txt", file.filename().orElseThrow());
+            assertEquals("data:text/plain;base64,YWJj", file.fileData().orElseThrow());
+        }
+
+        @Test
+        void missingInlineMimeIsRejectedWithAnActionableMessage() {
+            OpenAIOfficialModelException error =
+                    assertThrows(
+                            OpenAIOfficialModelException.class,
+                            () ->
+                                    file(
+                                            DocumentBlock.builder()
+                                                    .source(new Base64Source(" ", "YWJj"))
+                                                    .name("report.pdf")
+                                                    .build()));
+            assertTrue(error.getMessage().contains("MIME"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"openai", "openai-official"})
+        void openAiFileIdsArePassedThrough(String provider) {
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new FileIdSource(provider, "file-123"))
+                                    .build());
+            assertEquals("file-123", file.fileId().orElseThrow());
+            assertTrue(file.fileUrl().isEmpty());
+            assertTrue(file.fileData().isEmpty());
+        }
+
+        @Test
+        void anotherProvidersFileIdIsRejected() {
+            OpenAIOfficialModelException error =
+                    assertThrows(
+                            OpenAIOfficialModelException.class,
+                            () ->
+                                    file(
+                                            DocumentBlock.builder()
+                                                    .source(
+                                                            new FileIdSource(
+                                                                    "anthropic", "file-123"))
+                                                    .build()));
+            assertTrue(error.getMessage().contains("provider"));
+        }
+
+        @Test
+        void emptyFileIdIsRejected() {
+            assertThrows(
+                    OpenAIOfficialModelException.class,
+                    () ->
+                            file(
+                                    DocumentBlock.builder()
+                                            .source(new FileIdSource("openai", " "))
+                                            .build()));
+        }
+
+        @ParameterizedTest
+        @ValueSource(
+                strings = {
+                    "ftp://example.com/doc.pdf",
+                    "s3://bucket/doc.pdf",
+                    "data:application/pdf;base64,YWJj",
+                    " "
+                })
+        void unsupportedDocumentUrlsAreRejected(String url) {
+            assertThrows(
+                    OpenAIOfficialModelException.class,
+                    () -> file(DocumentBlock.builder().source(new URLSource(url)).build()));
+        }
+
+        @Test
+        void unknownDocumentSourceIsRejected() {
+            assertThrows(
+                    OpenAIOfficialModelException.class,
+                    () -> file(DocumentBlock.builder().source(new Source()).build()));
+        }
+
+        @Test
+        void mixedTextImageAndMultipleDocumentsKeepOrder() {
+            List<ResponseInputContent> parts =
+                    parts(
+                            text("before"),
+                            DocumentBlock.builder()
+                                    .source(new URLSource("https://example.com/a.pdf"))
+                                    .build(),
+                            ImageBlock.builder()
+                                    .source(new URLSource("https://example.com/image.png"))
+                                    .build(),
+                            DocumentBlock.builder()
+                                    .source(new FileIdSource("openai", "file-b"))
+                                    .build(),
+                            text("after"));
+            assertEquals(5, parts.size());
+            assertEquals("before", parts.get(0).asInputText().text());
+            assertEquals(
+                    "https://example.com/a.pdf",
+                    parts.get(1).asInputFile().fileUrl().orElseThrow());
+            assertTrue(parts.get(2).isInputImage());
+            assertEquals("file-b", parts.get(3).asInputFile().fileId().orElseThrow());
+            assertEquals("after", parts.get(4).asInputText().text());
+        }
+
+        @Test
+        void documentDoesNotChangeDataBlockImageOnlyContract() {
+            assertThrows(
+                    OpenAIOfficialModelException.class,
+                    () ->
+                            parts(
+                                    DataBlock.builder()
+                                            .source(new Base64Source("application/pdf", "YWJj"))
+                                            .build()));
         }
     }
 

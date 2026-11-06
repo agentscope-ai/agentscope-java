@@ -42,6 +42,78 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
     .build();
 ```
 
+## Document input
+
+Send documents in user messages with `DocumentBlock`. Both the default formatter
+and `ResponsesMultiAgentFormatter` preserve documents as native `input_file`
+content parts, including their position among text and images. File formats and
+model support follow the [OpenAI file inputs guide](https://developers.openai.com/api/docs/guides/file-inputs);
+this adapter does not restrict documents to PDF.
+
+```java
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.UserMessage;
+import java.util.List;
+
+DocumentBlock document = DocumentBlock.builder()
+    .source(new URLSource("https://example.com/report.pdf"))
+    .build();
+
+model.stream(List.of(UserMessage.builder()
+        .content(TextBlock.builder().text("Summarize this report.").build())
+        .content(document)
+        .build()), null, null)
+    .doOnNext(System.out::println)
+    .blockLast();
+```
+
+HTTP(S) sources are passed to OpenAI as `file_url` without downloading them in
+AgentScope. Local paths and `file://` URIs are read and encoded as `file_data`;
+local reads require regular files and use the existing 50 MB per-file limit. The
+model schedules request mapping on a worker thread so local reads do not block
+reactive event loops. Request preparation uses the configured execution timeout;
+preparation failures are not retried. Provider calls retain their timeout and
+retry configuration.
+
+For inline data, use `Base64Source` with raw Base64 bytes and the MIME type. For
+local documents, `DocumentBlock.mimeType` takes priority over `URLSource.mimeType`
+and extension-based inference for common document formats, including PDF, Word,
+spreadsheets, presentations, and text files. Set a MIME type explicitly when it
+cannot be inferred.
+
+```java
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.FileIdSource;
+import java.nio.file.Path;
+
+DocumentBlock local = DocumentBlock.builder()
+    .source(new URLSource(Path.of("report.pdf").toUri().toString()))
+    .build();
+
+DocumentBlock inline = DocumentBlock.builder()
+    .source(new Base64Source("text/csv", "bmFtZSx2YWx1ZQphLDEK"))
+    .name("report.csv")
+    .build();
+
+DocumentBlock uploaded = DocumentBlock.builder()
+    .source(new FileIdSource("openai", "file-123"))
+    .build();
+```
+
+Inline filenames use `DocumentBlock.name` when supplied. Local files otherwise
+keep their original filename; Base64 sources use a MIME-based default such as
+`document.pdf`, `document.txt`, `document.docx`, or `document.xlsx`. If no default
+is known for a MIME type, provide `name` explicitly. These defaults do not limit
+which formats can be sent with an explicit filename.
+
+File IDs accept provider `openai` or `openai-official` and are sent as `file_id`.
+Upload files separately before referencing their IDs. Invalid providers,
+unsupported URL schemes, and local file read failures raise an error rather than
+dropping the document. This support covers user-message input; document tool
+results, file uploads, and response-side file output are outside its scope.
+
 ## Server-side built-in tools
 
 OpenAI Official Documents: https://developers.openai.com/api/docs/guides/tools#available-tools
