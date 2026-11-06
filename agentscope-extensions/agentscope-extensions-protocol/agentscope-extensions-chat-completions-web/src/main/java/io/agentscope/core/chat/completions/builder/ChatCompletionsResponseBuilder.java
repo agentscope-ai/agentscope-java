@@ -28,6 +28,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatUsage;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -112,8 +113,26 @@ public class ChatCompletionsResponseBuilder {
         }
 
         response.setChoices(List.of(choice));
+        response.setUsage(toUsage(reply));
 
         return response;
+    }
+
+    /**
+     * Map the invocation's total usage to the OpenAI {@code usage} object.
+     *
+     * <p>Uses {@link Msg#getInvocationUsage()} rather than {@link Msg#getChatUsage()}: the latter
+     * covers only the last model call, so it would under-report any request in which the agent
+     * called a tool. Returns {@code null} (field omitted) when no usage was reported, instead of
+     * reporting zeros.
+     */
+    private ChatCompletionsResponse.Usage toUsage(Msg reply) {
+        ChatUsage usage = reply != null ? reply.getInvocationUsage() : null;
+        if (usage == null) {
+            return null;
+        }
+        return new ChatCompletionsResponse.Usage(
+                usage.getInputTokens(), usage.getOutputTokens(), usage.getTotalTokens());
     }
 
     /**
