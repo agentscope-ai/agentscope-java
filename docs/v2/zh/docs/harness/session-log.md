@@ -294,6 +294,8 @@ for (var event : log.scan(0, through)) {
 
 记录范围是模型适配器可见的请求与输出、工具和框架执行过程，不包括模型服务内部过程，也不会自动备份被引用的文件。原始请求和工具结果可能包含业务数据，面向浏览器的接口应挑选需要展示的字段。
 
+`request/prepared` 记录模型输入，但其中的媒体块（图片、音频、视频、数据块，包括工具结果中嵌套的媒体）会替换为 `redacted` 占位符。二进制数据、URL 和文件路径不会进入日志，模型仍然收到真实内容。
+
 `compaction/end` 的载荷包含 `compactionId`、`status`、`beforeMsgCount` 和
 `beforeTokenCount`。当 `status` 为 `completed` 时，还会包含根据压缩后有效对话计算的
 `afterMsgCount` 和 `afterTokenCount`。压缩失败或取消时不会伪造压缩后指标，因为此时没有可用的压缩后上下文。

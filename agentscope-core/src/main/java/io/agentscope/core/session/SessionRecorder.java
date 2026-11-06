@@ -22,12 +22,19 @@ import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.state.AgentState;
@@ -599,7 +606,7 @@ public final class SessionRecorder {
                         payload.put("modelCallId", callId);
                         payload.put("purpose", purpose);
                         payload.put("model", input.model().getModelName());
-                        payload.put("messages", input.messages());
+                        payload.put("messages", redactedForLog(input.messages()));
                         payload.put("tools", input.tools());
                         payload.put("options", input.options());
                         append("request/prepared", payload);
@@ -609,5 +616,97 @@ public final class SessionRecorder {
                     }
                     return flush();
                 });
+    }
+
+    /**
+     * Placeholder URL used in the logged request projection. Media bytes (Base64) and signed or
+     * temporary URLs are stripped before the request is written to the session log; the block type
+     * is preserved so the logged shape still reflects one image/audio/video/data payload.
+     */
+    private static final String REDACTED_MEDIA_URL = "redacted";
+
+    /**
+     * Media-safe projection of the prepared request for the session log.
+     *
+     * <p>The canonical history keeps only attachment placeholders; the model boundary is where
+     * references are expanded into real media. Writing that expansion verbatim would persist Base64
+     * bodies or signed URLs, so every media block is replaced by a source with no payload. Text,
+     * roles, block order and non-media metadata are untouched; the request sent to the model is
+     * unmodified because only this copy is logged.
+     */
+    private static List<Msg> redactedForLog(List<Msg> messages) {
+        if (messages == null) return List.of();
+        List<Msg> redacted = new ArrayList<>(messages.size());
+        for (Msg message : messages) redacted.add(redactMessage(message));
+        return redacted;
+    }
+
+    private static Msg redactMessage(Msg message) {
+        List<ContentBlock> content = message.getContent();
+        if (content == null || content.stream().noneMatch(SessionRecorder::containsMedia))
+            return message;
+        List<ContentBlock> redacted = new ArrayList<>(content.size());
+        for (ContentBlock block : content) redacted.add(redactMediaBlock(block));
+        return Msg.builder()
+                .id(message.getId())
+                .name(message.getName())
+                .role(message.getRole())
+                .content(redacted)
+                .metadata(message.getMetadata())
+                .timestamp(message.getTimestamp())
+                .usage(message.getUsage())
+                .build();
+    }
+
+    private static boolean containsMedia(ContentBlock block) {
+        if (block instanceof ImageBlock
+                || block instanceof AudioBlock
+                || block instanceof VideoBlock
+                || block instanceof DataBlock) {
+            return true;
+        }
+        if (block instanceof ToolResultBlock result) {
+            List<ContentBlock> output = result.getOutput();
+            return output != null && output.stream().anyMatch(SessionRecorder::containsMedia);
+        }
+        return false;
+    }
+
+    private static ContentBlock redactMediaBlock(ContentBlock block) {
+        if (block instanceof ImageBlock image)
+            return new ImageBlock(redactedSource(image.getSource()));
+        if (block instanceof AudioBlock audio)
+            return new AudioBlock(redactedSource(audio.getSource()));
+        if (block instanceof VideoBlock video)
+            return new VideoBlock(redactedSource(video.getSource()));
+        if (block instanceof DataBlock data)
+            return DataBlock.builder()
+                    .source(redactedSource(data.getSource()))
+                    .id(data.getId())
+                    .name(data.getName())
+                    .build();
+        if (block instanceof ToolResultBlock result) {
+            List<ContentBlock> output = result.getOutput();
+            if (output == null || output.stream().noneMatch(SessionRecorder::containsMedia))
+                return result;
+            List<ContentBlock> redactedOutput = new ArrayList<>(output.size());
+            for (ContentBlock child : output) redactedOutput.add(redactMediaBlock(child));
+            return ToolResultBlock.builder()
+                    .id(result.getId())
+                    .name(result.getName())
+                    .output(redactedOutput)
+                    .metadata(result.getMetadata())
+                    .state(result.getState())
+                    .executionDetails(result.getExecutionDetails())
+                    .build();
+        }
+        return block;
+    }
+
+    private static Source redactedSource(Source source) {
+        String mediaType = null;
+        if (source instanceof Base64Source base64) mediaType = base64.getMediaType();
+        else if (source instanceof URLSource url) mediaType = url.getMimeType();
+        return new URLSource(REDACTED_MEDIA_URL, mediaType);
     }
 }
