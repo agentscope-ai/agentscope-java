@@ -66,7 +66,7 @@ public class OpenAIMessageConverter {
     /**
      * Create an OpenAIMessageConverter with required dependency functions.
      *
-     * @param textExtractor Function to extract text content from Msg, excluding document references
+     * @param textExtractor Function to extract text content from Msg
      * @param toolResultConverter Function to convert tool result blocks to strings
      */
     public OpenAIMessageConverter(
@@ -301,14 +301,10 @@ public class OpenAIMessageConverter {
                 }
             } else if (block instanceof DocumentBlock db) {
                 log.warn(
-                        "DocumentBlock is not supported by OpenAI; sending a text placeholder"
+                        "DocumentBlock is not supported by OpenAI; sending a text reference"
                                 + " instead of '{}'",
                         db.getName() != null ? db.getName() : db.getId());
-                contentParts.add(
-                        OpenAIContentPart.text(
-                                "[Document - not supported by OpenAI: "
-                                        + (db.getName() != null ? db.getName() : db.getId())
-                                        + "]"));
+                contentParts.add(OpenAIContentPart.text(DocumentReferenceRenderer.render(db)));
             } else if (block instanceof ToolUseBlock) {
                 log.warn("ToolUseBlock is not supported in user messages");
             } else if (block instanceof ToolResultBlock) {
@@ -327,14 +323,8 @@ public class OpenAIMessageConverter {
     private OpenAIMessage convertAssistantMessage(Msg msg) {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("assistant");
 
-        if (msg.hasContentBlocks(DocumentBlock.class)) {
-            // returnDirect tool deliveries put documents on assistant turns; the history keeps a
-            // reference there instead of losing the attachment.
-            log.debug(
-                    "Rendering text references for documents in an assistant message for OpenAI;"
-                            + " the role cannot carry them natively");
-        }
-
+        // returnDirect tool deliveries put documents on assistant turns; the history keeps a
+        // reference there instead of losing the attachment.
         String textContent = extractTextWithDocumentReferences(msg);
         // Qwen3 and similar models in thinking mode may produce assistant messages with
         // reasoning_content + tool_calls but null content. Due to @JsonInclude(NON_NULL),

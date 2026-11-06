@@ -129,29 +129,16 @@ public class OllamaMessageConverter {
                     // but usually image is important context.
                 }
             } else if (block instanceof DocumentBlock documentBlock) {
-                if (msg.getRole() == MsgRole.USER) {
-                    log.warn(
-                            "DocumentBlock is not supported by Ollama; sending a text"
-                                    + " placeholder instead of '{}'",
-                            documentBlock.getName() != null
-                                    ? documentBlock.getName()
-                                    : documentBlock.getId());
-                    if (textContent.length() > 0) {
-                        textContent.append("\n");
-                    }
-                    textContent.append(OllamaChatFormatter.documentPlaceholder(documentBlock));
-                } else {
-                    // returnDirect tool deliveries put documents on assistant turns; the
-                    // history keeps a reference there instead of losing the attachment.
-                    log.debug(
-                            "Rendering a text reference for a DocumentBlock outside a user"
-                                    + " message for Ollama: {}",
-                            documentBlock.getId());
-                    if (textContent.length() > 0) {
-                        textContent.append("\n");
-                    }
-                    textContent.append(DocumentReferenceRenderer.render(documentBlock));
+                log.debug(
+                        "DocumentBlock is not supported by Ollama; rendering a text reference"
+                                + " for '{}'",
+                        documentBlock.getName() != null
+                                ? documentBlock.getName()
+                                : documentBlock.getId());
+                if (textContent.length() > 0) {
+                    textContent.append("\n");
                 }
+                textContent.append(DocumentReferenceRenderer.render(documentBlock));
             } else if (block instanceof ToolUseBlock) {
                 ToolUseBlock toolUse = (ToolUseBlock) block;
                 // Convert ToolUseBlock to OllamaToolCall
@@ -207,7 +194,7 @@ public class OllamaMessageConverter {
                                         .map(OllamaMessageConverter::toolOutputText)
                                         .filter(text -> !text.isEmpty());
                             } else if (block instanceof DocumentBlock document) {
-                                return Stream.of(OllamaChatFormatter.documentPlaceholder(document));
+                                return Stream.of(DocumentReferenceRenderer.render(document));
                             }
                             return Stream.empty();
                         })
@@ -233,7 +220,7 @@ public class OllamaMessageConverter {
                                         .map(OllamaMessageConverter::toolOutputText)
                                         .filter(text -> !text.isEmpty());
                             } else if (block instanceof DocumentBlock document) {
-                                return Stream.of(OllamaChatFormatter.documentPlaceholder(document));
+                                return Stream.of(DocumentReferenceRenderer.render(document));
                             }
                             return Stream.empty();
                         })
@@ -277,7 +264,7 @@ public class OllamaMessageConverter {
             return tb.getText();
         }
         if (output instanceof DocumentBlock document) {
-            return OllamaChatFormatter.documentPlaceholder(document);
+            return DocumentReferenceRenderer.render(document);
         }
         return "";
     }

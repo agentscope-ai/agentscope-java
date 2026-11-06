@@ -91,7 +91,7 @@ public class OllamaChatFormatter
      */
     private void processMessage(Msg msg, List<OllamaMessage> result) {
         // Separate content blocks by type
-        MessageContent messageContent = separateContentBlocks(msg.getContent(), msg.getRole());
+        MessageContent messageContent = separateContentBlocks(msg.getContent());
 
         // Handle tool result blocks first (they are added directly to the result)
         if (messageContent.toolResultBlocks != null) {
@@ -127,10 +127,9 @@ public class OllamaChatFormatter
      * Separate content blocks into different types for easier processing.
      *
      * @param contentBlocks the list of content blocks to separate
-     * @param role the role of the message the blocks belong to
      * @return a MessageContent object containing separated blocks
      */
-    private MessageContent separateContentBlocks(List<ContentBlock> contentBlocks, MsgRole role) {
+    private MessageContent separateContentBlocks(List<ContentBlock> contentBlocks) {
         MessageContent messageContent = new MessageContent();
 
         for (ContentBlock block : contentBlocks) {
@@ -145,9 +144,6 @@ public class OllamaChatFormatter
             } else if (block instanceof ImageBlock) {
                 processImageBlock((ImageBlock) block, messageContent.images);
             } else if (block instanceof DocumentBlock documentBlock) {
-                // Ollama has no document channel anywhere; every role gets the same reference.
-                // returnDirect tool deliveries put documents on assistant turns, and dropping
-                // them there would erase the attachment after a single round.
                 log.debug(
                         "DocumentBlock is not supported by Ollama; rendering a text reference"
                                 + " for '{}'",
@@ -156,10 +152,7 @@ public class OllamaChatFormatter
                                 : documentBlock.getId());
                 messageContent.textBlocks.add(
                         TextBlock.builder()
-                                .text(
-                                        role == MsgRole.USER
-                                                ? documentPlaceholder(documentBlock)
-                                                : DocumentReferenceRenderer.render(documentBlock))
+                                .text(DocumentReferenceRenderer.render(documentBlock))
                                 .build());
             } else {
                 log.warn(
@@ -215,7 +208,7 @@ public class OllamaChatFormatter
                 if (textualOutput.length() > 0) {
                     textualOutput.append("\n");
                 }
-                textualOutput.append(documentPlaceholder(documentBlock));
+                textualOutput.append(DocumentReferenceRenderer.render(documentBlock));
             }
         }
 
@@ -512,17 +505,5 @@ public class OllamaChatFormatter
         List<ContentBlock> toolUseBlocks = new ArrayList<>();
         List<ContentBlock> toolResultBlocks = new ArrayList<>();
         List<String> images = new ArrayList<>();
-    }
-
-    /**
-     * Placeholder used in place of a document block, which Ollama cannot consume.
-     *
-     * @param document Document block being replaced
-     * @return Text naming the document
-     */
-    static String documentPlaceholder(DocumentBlock document) {
-        return "[Document - not supported by Ollama: "
-                + (document.getName() != null ? document.getName() : document.getId())
-                + "]";
     }
 }

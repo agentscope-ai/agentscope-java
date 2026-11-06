@@ -121,9 +121,9 @@ public class AguiMessageConverter {
      * Convert an AgentScope message to one or more AG-UI messages.
      *
      * <p>A message mixing {@link ThinkingBlock} with other content is split into a reasoning
-     * message and the remaining content. A TOOL message with multiple tool results is expanded
-     * into one AG-UI tool message per result, preserving each result's {@code toolCallId},
-     * content, and error state.
+     * message and the remaining content. A TOOL message with tool results is expanded into one
+     * AG-UI tool message per result, preserving each result's {@code toolCallId}, content, and
+     * error state.
      *
      * <p>Each generated AG-UI message receives a unique ID in the format
      * {@code agui::sourceId-UUID}. An ID that already carries the prefix is reused, so repeated
@@ -140,7 +140,7 @@ public class AguiMessageConverter {
     private List<AguiMessage> buildAguiMessages(Msg msg) {
         if (msg.getRole() == MsgRole.TOOL) {
             List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
-            if (toolResults.size() > 1) {
+            if (!toolResults.isEmpty()) {
                 List<AguiMessage> messages = new ArrayList<>();
                 for (ToolResultBlock toolResult : toolResults) {
                     messages.add(toolResultMessage(msg, toolResult));
@@ -150,12 +150,12 @@ public class AguiMessageConverter {
         }
         String role = convertRole(msg.getRole());
         StringBuilder content = new StringBuilder();
+        StringBuilder reasoningContent = new StringBuilder();
+        List<InputContent> inputContents = new ArrayList<>();
         List<AguiToolCall> toolCalls = new ArrayList<>();
         String toolCallId = null;
         String error = null;
         boolean toolMessage = msg.getRole() == MsgRole.TOOL;
-        StringBuilder reasoningContent = new StringBuilder();
-        List<InputContent> inputContents = new ArrayList<>();
 
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof ThinkingBlock tb) {
@@ -192,10 +192,6 @@ public class AguiMessageConverter {
                     inputContents.add(inputContent);
                 }
             } else if (block instanceof DocumentBlock db) {
-                // Documents travel on every role, like the other media kinds: an assistant turn
-                // can carry a generated file for display. Inbound structured blocks remain
-                // user-only, so this is an outbound representation; only a source the protocol
-                // cannot express falls back to a visible text reference.
                 InputContent attachment = toDocumentInputContent(db);
                 if (attachment != null) {
                     inputContents.add(attachment);
@@ -254,26 +250,24 @@ public class AguiMessageConverter {
      */
     private static InputContent toDocumentInputContent(DocumentBlock block) {
         Source source = block.getSource();
-        // User metadata travels with the part untouched: round-tripping a file_parsing_strategy
-        // or a custom tag through history must not silently reset it. The document name rides
-        // on the source record itself, so it can never collide with a user metadata key.
         Map<String, Object> metadata = block.getMetadata();
         String name = block.getName();
         if (source instanceof URLSource url) {
             String mimeType = block.getMimeType() != null ? block.getMimeType() : url.getMimeType();
             return new DocumentInputContent(
-                    new InputContentUrlSource(url.getUrl(), mimeType, name), metadata);
+                    block.getId(), new InputContentUrlSource(url.getUrl(), mimeType), metadata);
         }
         if (source instanceof Base64Source base64) {
             String mimeType =
                     block.getMimeType() != null ? block.getMimeType() : base64.getMediaType();
             return new DocumentInputContent(
-                    new InputContentDataSource(base64.getData(), mimeType, name), metadata);
+                    block.getId(),
+                    new InputContentDataSource(base64.getData(), mimeType),
+                    metadata);
         }
         if (source instanceof FileIdSource fileId) {
             // The protocol's file source carries an opaque provider handle, which is exactly what
-            // a FileIdSource is; the peer resolves it against the named provider. The name and the
-            // MIME type travel along: the handle alone leaves the peer without a type to infer.
+            // a FileIdSource is; the peer resolves it against the named provider.
             String mimeType = block.getMimeType();
             if (mimeType == null || mimeType.isBlank()) {
                 String inferred = name != null ? MediaUtils.determineMediaType(name) : null;
@@ -282,8 +276,8 @@ public class AguiMessageConverter {
                 }
             }
             return new DocumentInputContent(
-                    new InputContentFileSource(
-                            fileId.getFileId(), fileId.getProvider(), mimeType, name),
+                    block.getId(),
+                    new InputContentFileSource(fileId.getFileId(), fileId.getProvider(), mimeType),
                     metadata);
         }
         return null;
@@ -327,12 +321,31 @@ public class AguiMessageConverter {
                 addTextBlock(blocks, text.value(), aguiMessage);
             }
         } else if (content instanceof MessageContent.Blocks blocksContent) {
-            if (!aguiMessage.isUserMessage()) {
+            if (!aguiMessage.isUserMessage() && !aguiMessage.isToolMessage()) {
                 throw new IllegalArgumentException(
-                        "Structured content blocks are only supported for AG-UI user messages");
+                        "Structured content blocks are only supported for AG-UI user and tool"
+                                + " messages");
             }
+            List<ContentBlock> contentBlocks = new ArrayList<>();
             for (InputContent input : blocksContent.parts()) {
-                blocks.add(toContentBlock(input));
+                contentBlocks.add(toContentBlock(input));
+            }
+            if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+                if (aguiMessage.getError() != null && !aguiMessage.getError().isBlank()) {
+                    contentBlocks.add(0, TextBlock.builder().text(aguiMessage.getError()).build());
+                }
+                blocks.add(
+                        ToolResultBlock.builder()
+                                .id(aguiMessage.getToolCallId())
+                                .output(contentBlocks)
+                                .state(
+                                        aguiMessage.getError() != null
+                                                        && !aguiMessage.getError().isBlank()
+                                                ? ToolResultState.ERROR
+                                                : ToolResultState.SUCCESS)
+                                .build());
+            } else {
+                blocks.addAll(contentBlocks);
             }
         } else if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
             // Tool message with no content (e.g. frontend tool returning nothing): still
@@ -502,8 +515,7 @@ public class AguiMessageConverter {
     }
 
     /**
-     * Join the text blocks of a tool result into a single string, keeping a reference for
-     * documents because a tool message carries text only.
+     * Join the text and document-reference parts of a tool result into a single string.
      */
     private static String toolResultText(ToolResultBlock trb) {
         StringBuilder text = new StringBuilder();
@@ -522,11 +534,38 @@ public class AguiMessageConverter {
      */
     private AguiMessage toolResultMessage(Msg msg, ToolResultBlock result) {
         String id = generatedMessageId(msg);
-        String text = toolResultText(result);
         boolean error = result.getState() == ToolResultState.ERROR;
-        MessageContent content = new MessageContent.Text(text);
+        StringBuilder text = new StringBuilder();
+        List<InputContent> parts = new ArrayList<>();
+        for (ContentBlock output : result.getOutput()) {
+            if (output instanceof TextBlock textBlock) {
+                appendContent(text, textBlock.getText());
+            }
+            if (output instanceof DocumentBlock document) {
+                InputContent documentContent = toDocumentInputContent(document);
+                if (documentContent != null) {
+                    parts.add(documentContent);
+                } else {
+                    appendContent(text, DocumentReferenceRenderer.render(document));
+                }
+            }
+        }
+        MessageContent content;
+        if (parts.isEmpty()) {
+            content = new MessageContent.Text(text.toString());
+        } else {
+            if (!text.isEmpty()) {
+                parts.add(new TextInputContent(text.toString()));
+            }
+            content = new MessageContent.Blocks(parts);
+        }
         return new AguiMessage(
-                id, convertRole(msg.getRole()), content, null, result.getId(), error ? text : null);
+                id,
+                convertRole(msg.getRole()),
+                content,
+                null,
+                result.getId(),
+                error ? text.toString() : null);
     }
 
     private static String generatedMessageId(Msg msg) {
@@ -559,23 +598,12 @@ public class AguiMessageConverter {
             return VideoBlock.builder().source(toSource(video.source())).build();
         }
         if (input instanceof DocumentInputContent document) {
-            DocumentBlock.Builder builder =
-                    DocumentBlock.builder().source(toSource(document.source()));
-            String mimeType = mimeTypeOf(document.source());
-            if (mimeType != null && !mimeType.isBlank()) {
-                builder.mimeType(mimeType);
-            }
-            // Every source variant carries an optional name field: the file handle natively,
-            // URL and inline data as protocol extensions. User metadata passes through
-            // untouched, so a reserved-looking key can never shadow the name or be eaten.
-            String name = nameOf(document.source());
-            if (name != null && !name.isBlank()) {
-                builder.name(name);
-            }
-            if (document.metadata() != null && !document.metadata().isEmpty()) {
-                builder.metadata(document.metadata());
-            }
-            return builder.build();
+            return DocumentBlock.builder()
+                    .id(document.id())
+                    .source(toSource(document.source()))
+                    .mimeType(mimeTypeOf(document.source()))
+                    .metadata(document.metadata())
+                    .build();
         }
         throw new IllegalStateException(
                 "Unhandled InputContent type: "
@@ -597,25 +625,6 @@ public class AguiMessageConverter {
         }
         if (inputSource instanceof InputContentFileSource file) {
             return file.mimeType();
-        }
-        return null;
-    }
-
-    /**
-     * Reads the display name an AG-UI content source carries, if any.
-     *
-     * @param inputSource the AG-UI protocol source
-     * @return declared name, or {@code null}
-     */
-    private static String nameOf(InputContentSource inputSource) {
-        if (inputSource instanceof InputContentUrlSource url) {
-            return url.name();
-        }
-        if (inputSource instanceof InputContentDataSource data) {
-            return data.name();
-        }
-        if (inputSource instanceof InputContentFileSource file) {
-            return file.name();
         }
         return null;
     }

@@ -27,8 +27,6 @@ import com.openai.models.responses.ResponseReasoningItem;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
-import io.agentscope.core.message.DocumentBlock;
-import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -229,28 +227,6 @@ class ResponsesMultiAgentFormatterTest {
             assertTrue(content.contains("Alice: Hello, Bob"));
             assertTrue(content.contains("Bob: Hi Alice!"));
             assertTrue(content.contains("Alice: How are you?"));
-        }
-
-        @Test
-        @DisplayName("Document block kept as a text placeholder")
-        void documentBlockKeptAsPlaceholder() {
-            DocumentBlock document =
-                    DocumentBlock.builder()
-                            .source(
-                                    FileIdSource.builder()
-                                            .provider("dashscope")
-                                            .fileId("file-abc")
-                                            .build())
-                            .name("report.pdf")
-                            .build();
-
-            List<ResponseInputItem> result =
-                    formatter.formatHistory(
-                            List.of(user("Alice", text("Summarise this"), document)));
-
-            assertTrue(
-                    extractAllText(result)
-                            .contains("[Document - not supported by OpenAI: report.pdf]"));
         }
 
         @Test

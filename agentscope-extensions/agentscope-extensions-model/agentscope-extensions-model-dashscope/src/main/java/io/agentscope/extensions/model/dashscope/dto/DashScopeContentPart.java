@@ -24,7 +24,7 @@ import java.util.Map;
  * DashScope content part DTO for multimodal messages.
  *
  * <p>Each content part can contain one type of content:
- * text, image, audio, or video.
+ * text, document, image, audio, or video.
  *
  * <p>Example text part:
  * <pre>{@code

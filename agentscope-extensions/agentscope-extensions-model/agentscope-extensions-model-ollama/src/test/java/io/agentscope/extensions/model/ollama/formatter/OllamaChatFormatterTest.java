@@ -603,8 +603,8 @@ class OllamaChatFormatterTest {
     }
 
     @Test
-    @DisplayName("Should keep a document placeholder instead of dropping the block")
-    void testDocumentBlockKeepsPlaceholder() {
+    @DisplayName("Should keep a document reference instead of dropping the block")
+    void testDocumentBlockKeepsReference() {
         Msg msg =
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -629,7 +629,9 @@ class OllamaChatFormatterTest {
                 formatted
                         .get(0)
                         .getContent()
-                        .contains("[Document - not supported by Ollama: report.pdf]"),
+                        .contains(
+                                "[document: report.pdf, provider file id: file-abc"
+                                        + " (dashscope)]"),
                 formatted.get(0).getContent());
     }
 
@@ -654,14 +656,14 @@ class OllamaChatFormatterTest {
 
         assertEquals(1, formatted.size());
         assertEquals(
-                "[Document - not supported by Ollama: report.pdf]",
+                "[document: report.pdf, provider file id: file-abc (dashscope)]",
                 formatted.get(0).getContent().strip(),
-                "a document-only turn must still produce the placeholder");
+                "a document-only turn must still produce the reference");
     }
 
     @Test
-    @DisplayName("Should keep a document placeholder in a tool result")
-    void testDocumentInToolResultKeepsPlaceholder() {
+    @DisplayName("Should keep a document reference in a tool result")
+    void testDocumentInToolResultKeepsReference() {
         Msg msg =
                 Msg.builder()
                         .role(MsgRole.TOOL)
@@ -691,7 +693,9 @@ class OllamaChatFormatterTest {
                 formatted
                         .get(0)
                         .getContent()
-                        .contains("[Document - not supported by Ollama: report.pdf]"),
+                        .contains(
+                                "[document: report.pdf, provider file id: file-abc"
+                                        + " (dashscope)]"),
                 formatted.get(0).getContent());
     }
 

@@ -346,7 +346,9 @@ public class DashScopeChatModel extends ChatModelBase {
 
         if (stream) {
             // Streaming mode
-            boolean skillActive = isSkillConfigured(request, effectiveOptions);
+            boolean skillActive =
+                    DashScopeHttpClient.isSkillConfigured(
+                            request, effectiveOptions.getAdditionalBodyParams());
             return httpClient.stream(
                             request,
                             effectiveOptions.getAdditionalHeaders(),
@@ -394,28 +396,9 @@ public class DashScopeChatModel extends ChatModelBase {
         if (stream) {
             return;
         }
-        if (isSkillConfigured(request, options)) {
+        if (DashScopeHttpClient.isSkillConfigured(request, options.getAdditionalBodyParams())) {
             throw new IllegalStateException(DashScopeHttpClient.SKILL_STREAM_REQUIREMENT_MESSAGE);
         }
-    }
-
-    /**
-     * Checks whether the request carries a {@code skill}.
-     *
-     * <p>A skill reaches the request either through the typed parameters or through additional
-     * body params, which the HTTP client merges into the parameters object.
-     *
-     * @param request the built request
-     * @param options the effective per-call options
-     * @return true if a skill is configured for this request
-     */
-    private static boolean isSkillConfigured(DashScopeRequest request, GenerateOptions options) {
-        Map<String, Object> additionalBodyParams = options.getAdditionalBodyParams();
-        boolean viaAdditionalParams =
-                additionalBodyParams != null && additionalBodyParams.containsKey("skill");
-        boolean viaParameters =
-                request.getParameters() != null && request.getParameters().getSkill() != null;
-        return viaAdditionalParams || viaParameters;
     }
 
     /**

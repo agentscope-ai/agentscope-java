@@ -24,17 +24,12 @@ import java.util.Objects;
 /**
  * Document input content in the AG-UI protocol.
  *
- * <p>JSON form: {@code {"type": "document", "source": {"type": "url", "value": "...",
- * "name": "report.pdf"}, "metadata": {...}}}
+ * <p>JSON form: {@code {"type": "document", "id": "...", "source": {"type": "url", "value": "..."},
+ * "metadata": {...}}}
  *
- * <p>Shares the same structure as {@link ImageInputContent}, {@link AudioInputContent},
- * and {@link VideoInputContent} (source + metadata). The source union carries URL, inline-data
- * and provider-file-handle sources, which map onto {@link io.agentscope.core.message.DocumentBlock};
- * each source variant carries an optional {@code name} extension so the document's display name
- * never has to borrow a user metadata key. A source type outside that union is rejected at
- * deserialization time by the sealed hierarchy; the outbound degradation to a text reference only
- * applies to document blocks whose source cannot be expressed in the union at all.
+ * <p>It maps to AgentScope's {@code DocumentBlock} during conversion.
  *
+ * @param id optional identifier of this part within its message
  * @param source the document source (URL, data, or file), must not be null
  * @param metadata optional metadata, may be null
  * @author shanhongyu
@@ -43,6 +38,7 @@ import java.util.Objects;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record DocumentInputContent(
+        @JsonProperty("id") String id,
         @JsonProperty("source") InputContentSource source,
         @JsonProperty("metadata") Map<String, Object> metadata)
         implements InputContent {
@@ -50,10 +46,21 @@ public record DocumentInputContent(
     /**
      * Compact constructor ensuring {@code source} is non-null.
      *
+     * @param id optional part identifier
      * @param source the document source
      * @param metadata optional metadata
      */
     public DocumentInputContent {
         Objects.requireNonNull(source, "source cannot be null");
+    }
+
+    /**
+     * Creates a document part without a part identifier.
+     *
+     * @param source the document source
+     * @param metadata optional metadata
+     */
+    public DocumentInputContent(InputContentSource source, Map<String, Object> metadata) {
+        this(null, source, metadata);
     }
 }

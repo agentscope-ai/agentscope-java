@@ -651,13 +651,28 @@ public class DashScopeHttpClient {
      */
     private static void rejectSkillOutsideStreaming(
             DashScopeRequest request, Map<String, Object> additionalBodyParams) {
-        boolean viaParameters =
-                request.getParameters() != null && request.getParameters().getSkill() != null;
-        boolean viaAdditionalParams =
-                additionalBodyParams != null && additionalBodyParams.containsKey("skill");
-        if (viaParameters || viaAdditionalParams) {
+        if (isSkillConfigured(request, additionalBodyParams)) {
             throw new IllegalStateException(SKILL_STREAM_REQUIREMENT_MESSAGE);
         }
+    }
+
+    /**
+     * Checks whether the request carries a {@code skill}.
+     *
+     * <p>A skill reaches the request either through the typed parameters or through additional
+     * body params, which the HTTP client merges into the parameters object.
+     *
+     * @param request the request whose parameters may carry a skill
+     * @param additionalBodyParams additional body params that will be merged into the parameters
+     * @return true if a skill is configured for this request
+     */
+    static boolean isSkillConfigured(
+            DashScopeRequest request, Map<String, Object> additionalBodyParams) {
+        boolean viaAdditionalParams =
+                additionalBodyParams != null && additionalBodyParams.containsKey("skill");
+        boolean viaParameters =
+                request.getParameters() != null && request.getParameters().getSkill() != null;
+        return viaAdditionalParams || viaParameters;
     }
 
     /**

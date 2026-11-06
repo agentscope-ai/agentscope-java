@@ -11,13 +11,13 @@ en_link: /v2/en/integration/protocol/agui
 
 `AguiMessage.content` 现在使用类型化消息内容表示。仅处理纯文本时，请使用 `getTextContent()`。
 
-多模态输入支持 text、image、audio、video 和 document。带 URL、内联数据或 file source 的文档会转换成 `DocumentBlock`；file source 会映射为 `FileIdSource`，协议的 `provider` 字段标明 handle 的签发方。每种 source 变体都带有可选的 `name` 扩展字段，文档名随 source 传输，不会借用用户 metadata 键。
+多模态输入支持 image/audio/video/document。document part 会转换为 `DocumentBlock`；无法消费文档的模型提供方会返回错误，而不是静默丢弃内容。
 
 `RUN_STARTED.input` 保留原始请求，包括文档内容。记录日志或转发事件的使用方需要自行对敏感输入脱敏。
 
 `AguiMessageConverter.toAguiMessageList()` 会把包含多个 `ToolResultBlock` 的 TOOL `Msg` 展开成每个 tool result 一条 AG-UI tool message。`toAguiMessage()` 仅用于最多一个 tool result 的消息，多结果时会拒绝；需要展开结果时请使用 `toAguiMessages()`。
 
-出站方向会把带 URL 的 `ImageBlock` / `AudioBlock` / `VideoBlock` 序列化为 AG-UI `MessageContent.Blocks`（`image` / `audio` / `video`）；带 URL 的 `DataBlock` 会按解析出的 MIME 类型路由；`DocumentBlock` 会按其 URL、内联数据或 file source 序列化，文档名随 source 的 `name` 字段一起传输。目前出站会跳过 image、audio、video 和 `DataBlock` 的 Base64 来源。
+出站方向会把带 URL 的 `ImageBlock` / `AudioBlock` / `VideoBlock` / `DocumentBlock` 序列化为 AG-UI `MessageContent.Blocks`（`image` / `audio` / `video` / `document`），带 URL 的 `DataBlock` 会按解析出的 MIME 类型路由。目前出站会跳过 Base64 媒体来源。
 
 当助手消息包含推理和受支持的 URL 媒体、但没有文本时，`toAguiMessages()` 和 `toAguiMessageList()` 会同时保留两部分，依次生成推理消息和包含媒体的助手消息。
 

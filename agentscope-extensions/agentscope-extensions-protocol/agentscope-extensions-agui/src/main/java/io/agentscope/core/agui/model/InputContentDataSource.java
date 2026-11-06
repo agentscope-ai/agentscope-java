@@ -15,29 +15,26 @@
  */
 package io.agentscope.core.agui.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Objects;
 
 /**
  * Inline data source in the AG-UI protocol.
  *
- * <p>JSON form: {@code {"type": "data", "value": "<base64>", "mimeType": "image/png",
- * "name": "report.pdf"}}
+ * <p>JSON form: {@code {"type": "data", "value": "<base64>", "mimeType": "image/png"}}
  *
  * <p>Maps to AgentScope's {@link io.agentscope.core.message.Base64Source} during conversion:
  * {@code value} &rarr; {@code data}, {@code mimeType} &rarr; {@code mediaType}.
  *
  * @param value the Base64-encoded data content
  * @param mimeType the MIME type (e.g. "image/png")
- * @param name the optional display name, may be null; an extension beyond the protocol union so
- *     inline document data can carry its file name without borrowing a metadata key
  * @author shanhongyu
  * @since 2026-08-01
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record InputContentDataSource(
-        @JsonProperty("value") String value,
-        @JsonProperty("mimeType") String mimeType,
-        @JsonProperty("name") String name)
+        @JsonProperty("value") String value, @JsonProperty("mimeType") String mimeType)
         implements InputContentSource {
 
     /**
@@ -45,20 +42,9 @@ public record InputContentDataSource(
      *
      * @param value the data content
      * @param mimeType the MIME type
-     * @param name the optional display name
      */
     public InputContentDataSource {
         Objects.requireNonNull(value, "value cannot be null");
         Objects.requireNonNull(mimeType, "mimeType cannot be null");
-    }
-
-    /**
-     * Convenience constructor without a display name.
-     *
-     * @param value the data content
-     * @param mimeType the MIME type
-     */
-    public InputContentDataSource(String value, String mimeType) {
-        this(value, mimeType, null);
     }
 }

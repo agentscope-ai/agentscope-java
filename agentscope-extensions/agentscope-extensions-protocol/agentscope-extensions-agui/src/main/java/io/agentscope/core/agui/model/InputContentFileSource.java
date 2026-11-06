@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agui.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Objects;
 
@@ -22,26 +23,24 @@ import java.util.Objects;
  * Provider-issued file handle in the AG-UI protocol.
  *
  * <p>JSON form: {@code {"type": "file", "value": "file-abc", "provider": "openai",
- * "mimeType": "application/pdf", "name": "report.pdf"}}
+ * "mimeType": "application/pdf"}}
  *
  * <p>The value is an opaque handle the provider issued and is never fetched by the transport. It
  * maps to AgentScope's {@link io.agentscope.core.message.FileIdSource} during conversion, with the
- * optional {@code provider} naming who issued the handle. {@code name} and {@code mimeType} are
- * optional extensions beyond the protocol union: the handle alone leaves the receiving side
- * without a name to display or a type to infer, which degraded otherwise-sendable documents.
+ * optional {@code provider} naming who issued the handle. {@code mimeType} is optional because
+ * the provider that holds the bytes knows the file type.
  *
  * @param value the provider-issued file handle, must not be null
  * @param provider who issued the handle, may be null
  * @param mimeType the MIME type, may be null
- * @param name the file name, may be null
  * @author shanhongyu
  * @since 2026-11-04
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record InputContentFileSource(
         @JsonProperty("value") String value,
         @JsonProperty("provider") String provider,
-        @JsonProperty("mimeType") String mimeType,
-        @JsonProperty("name") String name)
+        @JsonProperty("mimeType") String mimeType)
         implements InputContentSource {
 
     /**
@@ -50,7 +49,6 @@ public record InputContentFileSource(
      * @param value the provider-issued file handle
      * @param provider who issued the handle, may be null
      * @param mimeType the MIME type, may be null
-     * @param name the file name, may be null
      */
     public InputContentFileSource {
         Objects.requireNonNull(value, "value cannot be null");

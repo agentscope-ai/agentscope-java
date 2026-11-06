@@ -1018,8 +1018,8 @@ class OpenAIConversationMergerTest {
     }
 
     @Test
-    @DisplayName("Should keep a placeholder for DocumentBlock in merged history")
-    void testDocumentBlockBecomesPlaceholder() {
+    @DisplayName("Should keep a reference for DocumentBlock in merged history")
+    void testDocumentBlockBecomesReference() {
         Msg msg =
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -1044,7 +1044,9 @@ class OpenAIConversationMergerTest {
         String content = result.getContentAsString();
         assertNotNull(content);
         assertTrue(
-                content.contains("[Document - not supported by OpenAI: report.pdf]"),
+                content.contains(
+                        "[document: report.pdf, application/pdf, url:"
+                                + " https://example.com/report.pdf]"),
                 "Merged history must mention the document instead of dropping it");
     }
 }

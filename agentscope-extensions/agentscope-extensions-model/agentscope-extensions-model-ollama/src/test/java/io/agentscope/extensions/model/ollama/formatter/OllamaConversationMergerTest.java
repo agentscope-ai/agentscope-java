@@ -312,7 +312,10 @@ class OllamaConversationMergerTest {
                         msgs, Msg::getName, blocks -> "Converted", TEST_HISTORY_PROMPT);
 
         assertTrue(
-                merged.getContent().contains("[Document - not supported by Ollama: report.pdf]"),
+                merged.getContent()
+                        .contains(
+                                "[document: report.pdf, application/pdf, url:"
+                                        + " https://example.com/report.pdf]"),
                 "Merged history must mention the document instead of dropping it");
     }
 }

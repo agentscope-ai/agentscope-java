@@ -22,24 +22,19 @@ import java.util.Objects;
 /**
  * URL source in the AG-UI protocol.
  *
- * <p>JSON form: {@code {"type": "url", "value": "https://...", "mimeType": "image/png",
- * "name": "report.pdf"}}
+ * <p>JSON form: {@code {"type": "url", "value": "https://...", "mimeType": "image/png"}}
  *
  * <p>Maps to AgentScope's {@link io.agentscope.core.message.URLSource} during conversion:
  * {@code value} &rarr; {@code url}, {@code mimeType} &rarr; {@code mimeType}.
  *
  * @param value the URL pointing to the media content
  * @param mimeType the optional MIME type hint, may be null
- * @param name the optional display name, may be null; an extension beyond the protocol union so a
- *     document URL can carry its file name without borrowing a metadata key
  * @author shanhongyu
  * @since 2026-08-01
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record InputContentUrlSource(
-        @JsonProperty("value") String value,
-        @JsonProperty("mimeType") String mimeType,
-        @JsonProperty("name") String name)
+        @JsonProperty("value") String value, @JsonProperty("mimeType") String mimeType)
         implements InputContentSource {
 
     /**
@@ -47,7 +42,6 @@ public record InputContentUrlSource(
      *
      * @param value the URL
      * @param mimeType the optional MIME type
-     * @param name the optional display name
      */
     public InputContentUrlSource {
         Objects.requireNonNull(value, "value cannot be null");
@@ -59,16 +53,6 @@ public record InputContentUrlSource(
      * @param value the URL
      */
     public InputContentUrlSource(String value) {
-        this(value, null, null);
-    }
-
-    /**
-     * Convenience constructor without a display name.
-     *
-     * @param value the URL
-     * @param mimeType the optional MIME type
-     */
-    public InputContentUrlSource(String value, String mimeType) {
-        this(value, mimeType, null);
+        this(value, null);
     }
 }

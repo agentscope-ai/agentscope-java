@@ -111,8 +111,8 @@ class OpenAIMessageConverterTest {
     }
 
     @Test
-    @DisplayName("Should replace a DocumentBlock with a text placeholder")
-    void testDocumentBlockPlaceholder() {
+    @DisplayName("Should replace a DocumentBlock with a text reference")
+    void testDocumentBlockReference() {
         Msg msg =
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -134,8 +134,9 @@ class OpenAIMessageConverterTest {
         @SuppressWarnings("unchecked")
         List<OpenAIContentPart> parts = (List<OpenAIContentPart>) result.getContent();
         assertEquals(1, parts.size());
-        assertTrue(parts.get(0).getText().contains("Document - not supported by OpenAI"));
-        assertTrue(parts.get(0).getText().contains("report.pdf"));
+        assertEquals(
+                "[document: report.pdf, provider file id: file-abc (openai)]",
+                parts.get(0).getText());
     }
 
     @ParameterizedTest
@@ -179,6 +180,37 @@ class OpenAIMessageConverterTest {
         OpenAIMessage result = converter.convertToMessage(msg, false);
 
         assertEquals(reference + "\n" + reference + "\n" + reference, result.getContentAsString());
+    }
+
+    @Test
+    @DisplayName("A mixed tool result keeps the document reference")
+    void testMixedToolResultKeepsDocumentReference() {
+        ToolResultBlock toolResult =
+                ToolResultBlock.of(
+                        "call-1",
+                        "report_tool",
+                        List.of(
+                                TextBlock.builder().text("Generated.").build(),
+                                ImageBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/image.png")
+                                                        .build())
+                                        .build(),
+                                DocumentBlock.builder()
+                                        .source(new FileIdSource("dashscope", "file-abc"))
+                                        .name("report.pdf")
+                                        .build()));
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, false);
+
+        @SuppressWarnings("unchecked")
+        List<OpenAIContentPart> parts = (List<OpenAIContentPart>) result.getContent();
+        assertEquals(3, parts.size());
+        assertEquals(
+                "[document: report.pdf, provider file id: file-abc (dashscope)]",
+                parts.get(2).getText());
     }
 
     // Note: ImageBlock and AudioBlock constructors require non-null source,

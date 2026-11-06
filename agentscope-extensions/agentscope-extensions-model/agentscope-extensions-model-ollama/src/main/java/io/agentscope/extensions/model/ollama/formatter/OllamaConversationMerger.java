@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.ollama.formatter;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DocumentBlock;
@@ -84,12 +85,10 @@ public class OllamaConversationMerger {
                         textAccumulator.append(name).append(": [Image - processing failed]\n");
                     }
                 } else if (block instanceof DocumentBlock doc) {
-                    // The merged history is always sent as a user message, so the source role
-                    // does not matter here: keep a placeholder rather than dropping the block.
                     textAccumulator
                             .append(name)
                             .append(": ")
-                            .append(OllamaChatFormatter.documentPlaceholder(doc))
+                            .append(DocumentReferenceRenderer.render(doc))
                             .append("\n");
                 } else if (block instanceof ToolResultBlock) {
                     // Tool results in history are usually just appended as text

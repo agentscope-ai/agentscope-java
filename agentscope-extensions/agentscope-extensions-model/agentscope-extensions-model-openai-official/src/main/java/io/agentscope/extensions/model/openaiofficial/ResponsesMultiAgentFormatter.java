@@ -22,7 +22,6 @@ import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseInputText;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
-import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -324,14 +323,6 @@ public class ResponsesMultiAgentFormatter {
                     }
                     textBuffer.append("[Data - processing failed]\n");
                 }
-            } else if (block instanceof DocumentBlock doc) {
-                if (includePrefix) {
-                    appendNamePrefix(textBuffer, agentName);
-                }
-                textBuffer
-                        .append("[Document - not supported by OpenAI: ")
-                        .append(doc.getName() != null ? doc.getName() : doc.getId())
-                        .append("]\n");
             } else if (block instanceof ThinkingBlock tb) {
                 if (includePrefix) {
                     appendNamePrefix(textBuffer, agentName);

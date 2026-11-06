@@ -303,8 +303,8 @@ class OllamaMessageConverterTest {
     }
 
     @Test
-    @DisplayName("Should keep a document placeholder instead of dropping the block")
-    void testConvertUserMessageWithDocumentKeepsPlaceholder() {
+    @DisplayName("Should keep a document reference instead of dropping the block")
+    void testConvertUserMessageWithDocumentKeepsReference() {
         Msg msg =
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -326,7 +326,11 @@ class OllamaMessageConverterTest {
         assertNotNull(ollamaMsg);
         assertTrue(ollamaMsg.getContent().contains("Summarise this"));
         assertTrue(
-                ollamaMsg.getContent().contains("[Document - not supported by Ollama: report.pdf]"),
+                ollamaMsg
+                        .getContent()
+                        .contains(
+                                "[document: report.pdf, provider file id: file-abc"
+                                        + " (dashscope)]"),
                 ollamaMsg.getContent());
     }
 }

@@ -624,7 +624,7 @@ class OllamaMultiAgentFormatterTest {
     }
 
     @Test
-    @DisplayName("Should keep a document placeholder inside a tool result")
+    @DisplayName("Should keep a document reference inside a tool result")
     void testFormatToolResultWithDocument() {
         // Arrange
         ToolResultBlock toolResult =
@@ -651,7 +651,9 @@ class OllamaMultiAgentFormatterTest {
                 formatted
                         .get(0)
                         .getContent()
-                        .contains("[Document - not supported by Ollama: report.pdf]"),
+                        .contains(
+                                "[document: report.pdf, application/pdf, provider file id:"
+                                        + " file-1 (ollama)]"),
                 "document must not be dropped by the tool sequence path: "
                         + formatted.get(0).getContent());
     }

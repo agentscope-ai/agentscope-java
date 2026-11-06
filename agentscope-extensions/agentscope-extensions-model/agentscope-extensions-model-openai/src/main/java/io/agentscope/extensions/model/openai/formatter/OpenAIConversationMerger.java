@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
@@ -321,15 +322,10 @@ public class OpenAIConversationMerger {
                 }
 
             } else if (block instanceof DocumentBlock doc) {
-                // The merged history is always sent as a user message, so the source role does
-                // not matter here: keep a placeholder rather than dropping the block.
                 if (includePrefix) {
                     appendNamePrefix(textBuffer, agentName);
                 }
-                textBuffer
-                        .append("[Document - not supported by OpenAI: ")
-                        .append(doc.getName() != null ? doc.getName() : doc.getId())
-                        .append("]\n");
+                textBuffer.append(DocumentReferenceRenderer.render(doc)).append("\n");
 
             } else if (block instanceof ThinkingBlock thinkingBlock) {
                 // Include ThinkingBlock in conversation history for models that support reasoning
