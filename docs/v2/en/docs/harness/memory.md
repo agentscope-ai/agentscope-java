@@ -72,6 +72,7 @@ Harness enables context compaction by default. The following configuration adjus
 HarnessAgent agent = HarnessAgent.builder()
     .name("MyAgent")
     .model(model)
+    .fallbackModel(fallbackModel) // also used if compaction summarization fails
     .workspace(workspace)
     .compaction(CompactionConfig.builder()
         .triggerMessages(30)     // fire at 30 messages
@@ -92,6 +93,12 @@ Common options:
 | `flushBeforeCompact` | `true` | Extract new facts to the daily log before compacting (path 2) |
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
 | `model` | `null` (uses the agent's primary model) | Dedicated model for the compaction summarization call |
+
+When the selected summary model fails after its existing provider retries, conversation compaction switches once to the agent's `fallbackModel`, including when a dedicated compaction model is configured. The fallback regenerates the complete summary from the same input; any partial output from the failed model is discarded. Each model's context budget is checked before dispatch. A missing fallback, or the same model instance as the summary model, does not add another attempt. Each new compaction starts with the selected summary model again.
+
+Empty summaries, tool-call output and output-token truncation retain their existing validation behavior and do not trigger a fallback. Cancellation, including wrapped cancellation errors, interruption and Session Log failures do not start a fallback call. Admission, recording or accounting failures injected by the framework's native session hooks also do not trigger a fallback. A custom `ManagedModel` is observed at its public stream boundary; the framework cannot distinguish failures introduced inside that third-party wrapper. If both models fail during automatic compaction, the original history remains and final request budget validation decides whether reasoning can continue.
+
+Summary calls and switches use the Session Log's `SUMMARY` purpose and `model/retry` events. Models already wrapped with `SessionModels.wrap` retain their original recording purpose and context. A `model/retry` event records an attempted switch; the fallback's budget validation can still reject the request before provider dispatch. `context.summary_model` identifies the model that actually generated the accepted summary. These conversation-compaction switches do not invoke the `FailoverListener` used by ReActAgent-managed calls. Long-term memory extraction and consolidation keep their own model-call behavior.
 
 **Auto-recovery on overflow**: when the model returns `context_length_exceeded` or a similar error, the framework attempts forced compaction unless compaction is disabled. In the default `EVENT_LOG` execution mode, it retries the current reasoning step once within the same execution. No explicit `.compaction(...)` call is needed to enable this; a repeated overflow propagates to the caller.
 

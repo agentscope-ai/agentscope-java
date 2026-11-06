@@ -33,6 +33,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.context.ContextModelCalls;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
@@ -58,7 +59,7 @@ import reactor.core.publisher.Mono;
  * <ol>
  *   <li>Long-term memories are flushed from the prefix via {@link MemoryFlushManager}.</li>
  *   <li>The native session log retains the complete conversation before compaction.</li>
- *   <li>The prefix is distilled into a structured summary via one LLM call.</li>
+ *   <li>The prefix is distilled into a structured summary, with optional model failover.</li>
  *   <li>The agent's working {@link AgentState#contextMutable() context} is replaced with
  *       {@code [summaryMsg] + preservedTail}.</li>
  *   <li>The downstream {@link ReasoningInput} is rebuilt with
@@ -344,12 +345,17 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     if (compactModel == null) {
                         compactModel = input.model();
                     }
+                    Model fallbackModel =
+                            agent instanceof ReActAgent react && react.getModelConfig() != null
+                                    ? react.getModelConfig().fallbackModel()
+                                    : null;
                     ConversationCompactor compactor =
                             new ConversationCompactor(
                                     compactModel,
                                     new MemoryFlushManager(workspaceManager, compactModel),
                                     tokenCounter,
-                                    toolResultTokenCounter);
+                                    toolResultTokenCounter,
+                                    fallbackModel);
                     // Copies may retain message IDs. Only an unchanged view can become durable;
                     // matching IDs alone must not persist hook-edited content or metadata.
                     boolean canCommit = sameSerializedHistory(canonical, conversation);
@@ -362,7 +368,9 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                     rc.getSessionId() == null ? "default" : rc.getSessionId())
                             .onErrorResume(
                                     error -> {
-                                        if (ExceptionUtils.containsInterruptedException(error)
+                                        if (ContextModelCalls.isCancellation(error)
+                                                || ExceptionUtils.containsInterruptedException(
+                                                        error)
                                                 || SessionLogException.causedBy(error))
                                             return Mono.error(error);
                                         log.warn(
