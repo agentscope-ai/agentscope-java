@@ -91,6 +91,43 @@ public class JdbcStore implements BaseStore {
     }
 
     @Override
+    public boolean containsKey(List<String> namespace, String key) {
+        validateKey(key);
+        BoundSql boundSql = dialect.storeContainsKey(namespacePath(namespace), key);
+        try (Connection c = dataSource.getConnection();
+                PreparedStatement ps = c.prepareStatement(boundSql.sql())) {
+            bindParams(ps, boundSql.params());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("JdbcStore containsKey failed", e);
+        }
+    }
+
+    @Override
+    public boolean hasKeyPrefix(List<String> namespace, String prefix) {
+        String namespacePattern = likePrefixPattern(namespace);
+        String keyPattern =
+                likePrefixPattern(Objects.requireNonNull(prefix, "prefix must not be null"));
+        BoundSql boundSql = dialect.storeHasKeyPrefix(namespacePattern, keyPattern);
+        try (Connection c = dataSource.getConnection();
+                PreparedStatement ps = c.prepareStatement(boundSql.sql())) {
+            bindParams(ps, boundSql.params());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    if (rs.getString(1).startsWith(prefix)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("JdbcStore hasKeyPrefix failed", e);
+        }
+    }
+
+    @Override
     public void put(List<String> namespace, String key, Map<String, Object> value) {
         validateKey(key);
         String json = serialize(value);
@@ -234,9 +271,13 @@ public class JdbcStore implements BaseStore {
     }
 
     private String likePrefixPattern(List<String> namespace) {
+        return likePrefixPattern(namespacePath(namespace));
+    }
+
+    private String likePrefixPattern(String prefix) {
         char esc = dialect.storeLikeEscapeChar();
         StringBuilder sb = new StringBuilder();
-        for (char ch : namespacePath(namespace).toCharArray()) {
+        for (char ch : prefix.toCharArray()) {
             if (ch == esc || ch == '%' || ch == '_') {
                 sb.append(esc);
             }

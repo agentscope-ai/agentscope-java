@@ -97,6 +97,32 @@ public interface StoreDialect {
                 key);
     }
 
+    /** Exact-namespace existence check without reading the value. */
+    default BoundSql storeContainsKey(String namespacePath, String key) {
+        return new BoundSql(
+                "SELECT 1 FROM " + storeTableName() + " WHERE namespace_path = ? AND item_key = ?",
+                namespacePath,
+                key);
+    }
+
+    /**
+     * Key-only prefix search. Callers confirm candidate keys with a case-sensitive prefix
+     * check because LIKE may use a case-insensitive database collation.
+     */
+    default BoundSql storeHasKeyPrefix(String namespacePattern, String keyPattern) {
+        char escape = storeLikeEscapeChar();
+        return new BoundSql(
+                "SELECT item_key FROM "
+                        + storeTableName()
+                        + " WHERE namespace_path LIKE ? ESCAPE '"
+                        + escape
+                        + "' AND item_key LIKE ? ESCAPE '"
+                        + escape
+                        + "'",
+                namespacePattern,
+                keyPattern);
+    }
+
     /** Single-item DELETE. */
     default BoundSql storeDelete(String namespacePath, String key) {
         return new BoundSql(
