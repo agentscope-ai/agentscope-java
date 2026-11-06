@@ -354,7 +354,7 @@ public class OpenAIMessageConverter {
                 if (detailsObj instanceof List<?> list && !list.isEmpty()) {
                     List<OpenAIReasoningDetail> details = new ArrayList<>();
                     for (Object item : list) {
-                        OpenAIReasoningDetail detail = toReasoningDetail(item);
+                        OpenAIReasoningDetail detail = toRequestReasoningDetail(item);
                         if (detail != null) {
                             details.add(detail);
                         }
@@ -507,27 +507,38 @@ public class OpenAIMessageConverter {
     }
 
     /**
-     * Restores an {@link OpenAIReasoningDetail} from a metadata value.
+     * Copies an {@link OpenAIReasoningDetail} from metadata for a request.
      *
      * <p>After a JSON state persistence round-trip the typed detail object is restored as a {@code
      * LinkedHashMap}, so it is converted back to its typed form here.
      *
+     * <p>The streaming index is omitted from the request copy because strict compatible APIs reject
+     * it in message history. The original metadata retains the index for streaming and persistence.
+     *
      * @param value the raw metadata value
-     * @return the typed detail, or {@code null} if it cannot be restored
+     * @return the request detail, or {@code null} if it cannot be restored
      */
-    private static OpenAIReasoningDetail toReasoningDetail(Object value) {
-        if (value instanceof OpenAIReasoningDetail detail) {
-            return detail;
-        }
-        if (value instanceof Map<?, ?>) {
+    private static OpenAIReasoningDetail toRequestReasoningDetail(Object value) {
+        OpenAIReasoningDetail detail;
+        if (value instanceof OpenAIReasoningDetail typedDetail) {
+            detail = typedDetail;
+        } else if (value instanceof Map<?, ?>) {
             try {
-                return JsonUtils.getJsonCodec().convertValue(value, OpenAIReasoningDetail.class);
+                detail = JsonUtils.getJsonCodec().convertValue(value, OpenAIReasoningDetail.class);
             } catch (RuntimeException e) {
                 log.warn("Failed to restore reasoning detail from metadata", e);
                 return null;
             }
+        } else {
+            return null;
         }
-        return null;
+        OpenAIReasoningDetail requestDetail = new OpenAIReasoningDetail();
+        requestDetail.setId(detail.getId());
+        requestDetail.setType(detail.getType());
+        requestDetail.setData(detail.getData());
+        requestDetail.setText(detail.getText());
+        requestDetail.setFormat(detail.getFormat());
+        return requestDetail;
     }
 
     /**
