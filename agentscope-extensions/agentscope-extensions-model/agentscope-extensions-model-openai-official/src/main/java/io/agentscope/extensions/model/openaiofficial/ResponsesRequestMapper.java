@@ -969,12 +969,13 @@ final class ResponsesRequestMapper {
                 if (!Files.isRegularFile(path)) {
                     throw new IOException("Local document must be a regular file: " + path);
                 }
-                String data = MediaUtils.fileToBase64(path.toString());
                 String sourceMimeType = urlSource.getMimeType();
-                if (sourceMimeType == null || sourceMimeType.isBlank()) {
+                if ((document.getMimeType() == null || document.getMimeType().isBlank())
+                        && (sourceMimeType == null || sourceMimeType.isBlank())) {
                     sourceMimeType = localDocumentMimeType(path);
                 }
                 String mimeType = documentMimeType(document, sourceMimeType);
+                String data = MediaUtils.fileToBase64(path.toString());
                 String name = document.getName();
                 if (name == null || name.isBlank()) {
                     name = path.getFileName().toString();
@@ -1008,26 +1009,35 @@ final class ResponsesRequestMapper {
         String name = path.getFileName().toString();
         int dot = name.lastIndexOf('.');
         String extension = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
-        return switch (extension) {
-            case "txt" -> "text/plain";
-            case "md" -> "text/markdown";
-            case "csv" -> "text/csv";
-            case "tsv" -> "text/tsv";
-            case "json" -> "application/json";
-            case "xml" -> "text/xml";
-            case "html", "htm" -> "text/html";
-            case "rtf" -> "application/rtf";
-            case "doc" -> "application/msword";
-            case "docx" ->
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-            case "xls" -> "application/vnd.ms-excel";
-            case "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-            case "ppt" -> "application/vnd.ms-powerpoint";
-            case "pptx" ->
-                    "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-            case "odt" -> "application/vnd.oasis.opendocument.text";
-            default -> MediaUtils.determineMediaType(path.toString());
-        };
+        String mimeType =
+                switch (extension) {
+                    case "txt" -> "text/plain";
+                    case "md" -> "text/markdown";
+                    case "csv" -> "text/csv";
+                    case "tsv" -> "text/tsv";
+                    case "json" -> "application/json";
+                    case "xml" -> "text/xml";
+                    case "html", "htm" -> "text/html";
+                    case "rtf" -> "application/rtf";
+                    case "doc" -> "application/msword";
+                    case "docx" ->
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                    case "xls" -> "application/vnd.ms-excel";
+                    case "xlsx" ->
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                    case "ppt" -> "application/vnd.ms-powerpoint";
+                    case "pptx" ->
+                            "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+                    case "odt" -> "application/vnd.oasis.opendocument.text";
+                    default -> MediaUtils.determineMediaType(path.toString());
+                };
+        if ("application/octet-stream".equals(mimeType)) {
+            throw new OpenAIOfficialModelException(
+                    "Cannot infer a document MIME type from local path '"
+                            + path
+                            + "'; set DocumentBlock.mimeType or URLSource.mimeType explicitly.");
+        }
+        return mimeType;
     }
 
     private static String documentFilename(String name, String mimeType) {

@@ -962,6 +962,45 @@ class ResponsesRequestMapperTest {
             assertEquals("data:" + mimeType + ";base64,YWJj", file.fileData().orElseThrow());
         }
 
+        @ParameterizedTest
+        @ValueSource(strings = {"report.xyz", "report"})
+        void unknownLocalMimeAsksForAnExplicitMimeType(String filename) throws Exception {
+            Path path = directory.resolve(filename);
+            Files.writeString(path, "abc");
+            OpenAIOfficialModelException error =
+                    assertThrows(
+                            OpenAIOfficialModelException.class,
+                            () ->
+                                    file(
+                                            DocumentBlock.builder()
+                                                    .source(new URLSource(path.toString()))
+                                                    .build()));
+            assertTrue(error.getMessage().contains("Cannot infer a document MIME type"));
+            assertTrue(error.getMessage().contains("DocumentBlock.mimeType"));
+            assertTrue(error.getMessage().contains("URLSource.mimeType"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(booleans = {true, false})
+        void unknownLocalExtensionAcceptsExplicitMimeWithoutAWhitelist(boolean documentMime)
+                throws Exception {
+            Path path = directory.resolve("report.xyz");
+            Files.writeString(path, "abc");
+            String mimeType = "text/x-java-source";
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(
+                                            new URLSource(
+                                                    path.toString(),
+                                                    documentMime ? null : mimeType))
+                                    .mimeType(documentMime ? mimeType : null)
+                                    .name("Example.java")
+                                    .build());
+            assertEquals("Example.java", file.filename().orElseThrow());
+            assertEquals("data:" + mimeType + ";base64,YWJj", file.fileData().orElseThrow());
+        }
+
         @Test
         void declaredMimeOverridesSourceMimeAndExtension() throws Exception {
             Path path = directory.resolve("report.docx");

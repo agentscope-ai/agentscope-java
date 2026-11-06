@@ -62,23 +62,31 @@ DocumentBlock document = DocumentBlock.builder()
     .build();
 
 model.stream(List.of(UserMessage.builder()
-        .content(TextBlock.builder().text("总结这份报告。").build())
-        .content(document)
+        .content(TextBlock.builder().text("总结这份报告。").build(), document)
         .build()), null, null)
     .doOnNext(System.out::println)
     .blockLast();
 ```
 
+`content(...)` 会替换消息内容，请在一次调用中传入所有内容块。
+
 HTTP(S) 来源会直接作为 `file_url` 发送给 OpenAI，AgentScope 不下载远程文件。
 本地路径和 `file://` URI 会自动读取并编码为 `file_data`，读取时沿用现有的单文件
-50 MB 限制，且只接受普通文件。模型会在线程池中执行请求映射，避免本地文件读取阻塞
-Reactor 事件线程。请求准备阶段遵循配置的执行超时，准备失败不会重试；提供方调用仍
-遵循原有的超时和重试配置。
+50 MB 限制，且只接受普通文件。请只使用可信的本地路径：适配器会读取传入的路径，
+不会将其限制在某个目录内。
+
+通过 `model.stream(...)` 调用时，请求映射会在订阅时在线程池中执行。每次重新订阅
+都会重新读取本地文档；提供方内部重试会复用已经准备好的请求。直接调用
+`ResponsesMultiAgentFormatter.formatHistory(...)` 时，映射会在调用线程上同步执行。
+对于跨请求复用的文档，可以先上传文件，再使用 `FileIdSource`，避免重复读取和编码。
+
+请求准备阶段遵循配置的执行超时，且不会重试。提供方调用仍遵循原有的超时和重试
+配置。准备阶段与提供方调用分别计时，不共享一个覆盖整个请求的截止时间。
 
 使用 `Base64Source` 传入已经编码的文件时，提供原始 Base64 字符串和 MIME 类型。
 本地文档的 MIME 类型优先使用 `DocumentBlock.mimeType`，其次使用
 `URLSource.mimeType`，最后根据扩展名推断 PDF、Word、电子表格、演示文稿和文本等
-常见文档格式。无法推断时应显式填写 MIME 类型。
+常见文档格式。无法推断本地文件的 MIME 类型时，映射会报错，提示显式填写 MIME 类型。
 
 ```java
 import io.agentscope.core.message.Base64Source;
@@ -106,8 +114,9 @@ Base64 来源会根据 MIME 类型生成默认名称，例如 `document.pdf`、`
 
 文件 ID 的 provider 接受 `openai` 和 `openai-official`，并映射为 `file_id`。
 文件需要先由调用方单独上传，再引用返回的 ID。provider 不匹配、URL 协议不支持或
-本地文件读取失败时，会明确报错，不会丢弃文档。本功能仅处理用户消息中的文档输入，
-工具结果中的文档、文件上传和响应端文件输出不在本次范围内。
+本地文件读取失败时，会明确报错，不会丢弃文档。文档映射失败会终止整个请求，
+多 agent 历史映射也遵循这一行为。本功能仅处理用户消息中的文档输入，工具结果中的
+文档、文件上传和响应端文件输出不在本次范围内。
 
 ## 服务端内置工具
 
