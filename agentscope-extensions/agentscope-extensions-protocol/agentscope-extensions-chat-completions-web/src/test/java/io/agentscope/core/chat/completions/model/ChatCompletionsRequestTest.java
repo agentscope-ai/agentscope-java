@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -251,6 +252,53 @@ class ChatCompletionsRequestTest {
             assertFalse(request.getStream());
             assertNotNull(request.getTools());
             assertEquals(1, request.getTools().size());
+        }
+    }
+
+    @Nested
+    @DisplayName("Stream Options Tests")
+    class StreamOptionsTests {
+
+        @Test
+        @DisplayName("Should read stream_options.include_usage from JSON")
+        void shouldReadIncludeUsageFromJson() throws Exception {
+            ChatCompletionsRequest request =
+                    new ObjectMapper()
+                            .readValue(
+                                    "{\"model\":\"m\",\"stream\":true,"
+                                            + "\"stream_options\":{\"include_usage\":true}}",
+                                    ChatCompletionsRequest.class);
+
+            assertTrue(request.isIncludeUsage());
+            assertTrue(request.getStreamOptions().getIncludeUsage());
+        }
+
+        @Test
+        @DisplayName("include_usage defaults to false when absent or false")
+        void includeUsageDefaultsToFalse() throws Exception {
+            ObjectMapper mapper = new ObjectMapper();
+
+            assertFalse(new ChatCompletionsRequest().isIncludeUsage());
+            assertFalse(
+                    mapper.readValue("{\"stream_options\":{}}", ChatCompletionsRequest.class)
+                            .isIncludeUsage());
+            assertFalse(
+                    mapper.readValue(
+                                    "{\"stream_options\":{\"include_usage\":false}}",
+                                    ChatCompletionsRequest.class)
+                            .isIncludeUsage());
+        }
+
+        @Test
+        @DisplayName("Should not serialize the derived includeUsage flag")
+        void shouldNotSerializeDerivedFlag() throws Exception {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setStreamOptions(new ChatCompletionsRequest.StreamOptions(true));
+
+            String json = new ObjectMapper().writeValueAsString(request);
+
+            assertTrue(json.contains("\"stream_options\":{\"include_usage\":true}"), json);
+            assertFalse(json.contains("includeUsage"), json);
         }
     }
 }

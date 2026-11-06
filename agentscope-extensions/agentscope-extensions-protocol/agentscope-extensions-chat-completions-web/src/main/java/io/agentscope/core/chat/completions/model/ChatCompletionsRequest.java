@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.chat.completions.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
@@ -80,6 +82,15 @@ public class ChatCompletionsRequest {
      */
     private List<OpenAITool> tools;
 
+    /**
+     * Options for streaming responses. Only meaningful when {@code stream} is true.
+     *
+     * <p>With {@code {"include_usage": true}}, the stream carries one more chunk before {@code
+     * data: [DONE]} whose {@code usage} holds the token usage of the whole request.
+     */
+    @JsonProperty("stream_options")
+    private StreamOptions streamOptions;
+
     public String getModel() {
         return model;
     }
@@ -110,5 +121,45 @@ public class ChatCompletionsRequest {
 
     public void setTools(List<OpenAITool> tools) {
         this.tools = tools;
+    }
+
+    public StreamOptions getStreamOptions() {
+        return streamOptions;
+    }
+
+    public void setStreamOptions(StreamOptions streamOptions) {
+        this.streamOptions = streamOptions;
+    }
+
+    /**
+     * Whether the client asked for usage in the stream ({@code stream_options.include_usage}).
+     *
+     * @return true only when {@code stream_options.include_usage} is explicitly true
+     */
+    @JsonIgnore
+    public boolean isIncludeUsage() {
+        return streamOptions != null && Boolean.TRUE.equals(streamOptions.getIncludeUsage());
+    }
+
+    /** The {@code stream_options} object of the OpenAI Chat Completions API. */
+    public static class StreamOptions {
+
+        /** Whether to send a final chunk carrying the usage of the whole request. */
+        @JsonProperty("include_usage")
+        private Boolean includeUsage;
+
+        public StreamOptions() {}
+
+        public StreamOptions(Boolean includeUsage) {
+            this.includeUsage = includeUsage;
+        }
+
+        public Boolean getIncludeUsage() {
+            return includeUsage;
+        }
+
+        public void setIncludeUsage(Boolean includeUsage) {
+            this.includeUsage = includeUsage;
+        }
     }
 }
