@@ -76,18 +76,18 @@ public record MsgContext(
     /** Stable key for session routing: same logical conversation maps to the same gateway session id. */
     public String canonicalKey() {
         StringBuilder sb = new StringBuilder(64);
-        sb.append(Objects.requireNonNullElse(channel, "default"));
+        sb.append(escapeKeyComponent(Objects.requireNonNullElse(channel, "default")));
         if (group != null && !group.isBlank()) {
-            sb.append("|g:").append(group.trim());
+            sb.append("|g:").append(escapeKeyComponent(group.trim()));
         }
         if (room != null && !room.isBlank()) {
-            sb.append("|r:").append(room.trim());
+            sb.append("|r:").append(escapeKeyComponent(room.trim()));
         }
         if (threadId != null && !threadId.isBlank()) {
-            sb.append("|t:").append(threadId.trim());
+            sb.append("|t:").append(escapeKeyComponent(threadId.trim()));
         }
         if (threadTs != null && !threadTs.isBlank()) {
-            sb.append("|ts:").append(threadTs.trim());
+            sb.append("|ts:").append(escapeKeyComponent(threadTs.trim()));
         }
         if (!extra.isEmpty()) {
             extra.entrySet().stream()
@@ -95,10 +95,31 @@ public record MsgContext(
                     .forEach(
                             e ->
                                     sb.append("|x:")
-                                            .append(e.getKey())
+                                            .append(escapeKeyComponent(e.getKey()))
                                             .append('=')
-                                            .append(e.getValue()));
+                                            .append(escapeKeyComponent(e.getValue())));
         }
         return sb.toString();
+    }
+
+    /**
+     * Escape the two characters that would otherwise let a value imitate key structure, so that
+     * {@code '|'} appears in the key only as a separator and {@code '%'} only as an escape
+     * introducer. Without this, {@code group="team|r:room-1"} and {@code group="team",
+     * room="room-1"} produce the same key, and two distinct conversations share one gateway session
+     * (session id, per-key turn gate and the session-to-key wake-up map all derive from it).
+     *
+     * <p>Escapes {@code '%'} before {@code '|'}: the other order would re-escape the {@code '%'} of
+     * the escape it just wrote, and a literal {@code %7C} value would then collide with a literal
+     * {@code |} one.
+     *
+     * <p>Values containing neither character - the common case - are returned unchanged, so
+     * existing session keys and their derived ids stay byte-identical.
+     */
+    private static String escapeKeyComponent(String value) {
+        if (value.indexOf('%') < 0 && value.indexOf('|') < 0) {
+            return value;
+        }
+        return value.replace("%", "%25").replace("|", "%7C");
     }
 }
