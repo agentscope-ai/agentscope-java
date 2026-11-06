@@ -142,6 +142,23 @@ class GitHubReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, 'HTTP 403'):
             self.publish(Path('/unused'), None, 'HTTP 403')
 
+    def test_image_digest_asset_is_uploaded_and_included_in_checksums(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            self.package_fixture(output)
+            (output / 'images.json').write_text(json.dumps({
+                'sourceCommit': COMMIT, 'serviceVersion': VERSION,
+                'images': {plane: {'digest': 'sha256:' + 'a' * 64} for plane in release.PLANES}}))
+            calls, _ = self.publish(output, None, 'HTTP 404')
+            self.assertIn(str(output / 'images.json'), calls[1].args)
+            checksums = (output / 'SHA256SUMS').read_text()
+            self.assertIn(hashlib.sha256((output / 'images.json').read_bytes()).hexdigest() + '  images.json', checksums)
+            data = json.loads((output / 'images.json').read_text())
+            data['images'].pop('gateway')
+            (output / 'images.json').write_text(json.dumps(data))
+            with self.assertRaisesRegex(SystemExit, 'complete tagged release'):
+                self.publish(output, None, 'HTTP 404')
+
     def test_draft_retry_skips_matching_assets_and_rejects_conflicts(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)

@@ -4,10 +4,37 @@ zh_link: /v2/zh/service/operations
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+The current release is `2.1.0-BETA1`, a prerelease. Validate your deployment before production use.
 </Note>
 
 A recoverable backup includes the database, workspaces, artifacts and the keys needed to decrypt stored credentials.
+
+<span id="compose-operations"></span>
+
+## Persist data
+
+Compose uses three named volumes for PostgreSQL data, shared Workspaces, and Artifacts. Locate this project’s volumes with `docker volume ls` and include them in your backup policy. When backing up encrypted data, securely preserve the Vault master key from `.env` as well, because recovery still requires the original key.
+
+If tools need business materials from the host, configure explicit directory mounts and give container user `65532:65532` the necessary access. Merely writing a host path in an Agent instruction does not make it available inside the container. First confirm which directory the selected Environment can actually access, then provide that location to the Agent.
+
+## Change configuration or version
+
+After editing `.env`, run the Compose startup command again so services use the new configuration. Check component status afterward to confirm that the updated installation still runs normally.
+
+```bash
+docker compose up -d --wait --wait-timeout 600
+docker compose ps
+```
+
+To upgrade, edit `SERVICE_VERSION` in `.env`, pull the corresponding new images, and restart the services. Initialization preserves an existing `.env`, so rerunning `init-env.sh` does not perform the version change for you. Coordinate any secret change across components that use it. In particular, the Vault master key is needed to decrypt existing data and cannot be replaced like an ordinary login password.
+
+The complete Compose installation uses standalone HTTP. To connect an External SDK that depends on ASDP, prepare its runtime transport according to [External integration](/v2/en/service/external-agent). See [production installation](/v2/en/service/kubernetes) for Kubernetes setup. Whatever deployment you use, rehearse [backup and recovery](/v2/en/service/operations) before upgrading.
+
+## Stop, resume and diagnose
+
+To stop the platform temporarily, run `docker compose down`. It stops services while retaining their data volumes, so the startup command can later resume the installation with its existing data. Do not add `-v` for an ordinary shutdown, because that option also deletes the volumes.
+
+If startup fails, use `docker compose ps -a` to identify the component that did not start, then inspect `docker compose logs --tail=100` to determine whether the problem involves image pulling, database connectivity, or component startup. If the host port is occupied, change `GATEWAY_PORT` in `.env`. If this also changes the public address, update `BUILDER_OAUTH_PUBLIC_URL` accordingly, then recreate the containers.
 
 ## Docker backup
 

@@ -232,6 +232,17 @@ def publish_github(args):
         raise SystemExit('The package manifest does not match the clean tagged source.')
     checksums = dict((name, digest) for digest, name in
                      (line.split() for line in (args.output / 'SHA256SUMS').read_text().splitlines()))
+    image_file = args.output / 'images.json'
+    if image_file.is_file():
+        image_metadata = json.loads(image_file.read_text())
+        if (image_metadata['sourceCommit'] != commit or image_metadata['serviceVersion'] != args.version
+                or set(image_metadata['images']) != set(PLANES)):
+            raise SystemExit('The image metadata does not match the complete tagged release.')
+        assets.append('images.json')
+        if 'images.json' not in checksums:
+            checksums['images.json'] = hashlib.sha256(image_file.read_bytes()).hexdigest()
+            (args.output / 'SHA256SUMS').write_text(''.join(
+                f'{digest}  {name}\n' for name, digest in checksums.items()))
     if set(checksums) != set(assets) - {'SHA256SUMS'}:
         raise SystemExit('The checksums must cover exactly the distribution assets.')
     digests = {name: 'sha256:' + hashlib.sha256((args.output / name).read_bytes()).hexdigest()
@@ -285,26 +296,75 @@ def publish_npm(args):
     (out / 'publication.json').write_text(json.dumps(record, indent=2) + '\n')
 
 
+def inspect_release_image(reference, version, commit, platforms, allow_missing=False):
+    result = subprocess.run(['docker', 'buildx', 'imagetools', 'inspect', reference,
+                             '--format', '{{json .Manifest}}'], text=True, capture_output=True)
+    if result.returncode:
+        if allow_missing and ('manifest unknown' in result.stderr.lower() or ': not found' in result.stderr.lower()):
+            return None
+        raise SystemExit(result.stderr)
+    metadata = json.loads(result.stdout)
+    actual = {f'{p["os"]}/{p["architecture"]}' for m in metadata.get('manifests', [])
+              if (p := m.get('platform', {})).get('os') != 'unknown' and p.get('os')}
+    expected = set(platforms.split(','))
+    if actual != expected:
+        raise SystemExit(f'Refusing to reuse {reference}: platforms {actual} do not match {expected}.')
+    pinned = reference.rsplit(':', 1)[0] + '@' + metadata['digest']
+    configs = json.loads(run('docker', 'buildx', 'imagetools', 'inspect', pinned,
+                             '--format', '{{json .Image}}', capture=True))
+    for platform in expected:
+        labels = configs[platform].get('config', {}).get('Labels', {})
+        if (labels.get('org.opencontainers.image.version') != version
+                or labels.get('org.opencontainers.image.revision') != commit):
+            raise SystemExit(f'Refusing to reuse {reference}: {platform} version/source labels differ.')
+    return metadata['digest']
+
+
 def images(args):
     if args.push:
         require_clean()
     if not args.push and ',' in args.platforms:
         raise SystemExit('Use one platform with --load; multi-platform builds require --push.')
+    skip_existing = getattr(args, 'skip_existing', False)
+    if skip_existing and not args.push:
+        raise SystemExit('--skip-existing requires --push.')
+    commit = run('git', 'rev-parse', 'HEAD', capture=True).strip()
+    references = {plane: f'{args.repository}/{IMAGE_NAMES[plane]}:{args.version}' for plane in PLANES}
+    existing = {plane: inspect_release_image(reference, args.version, commit, args.platforms, allow_missing=True)
+                for plane, reference in references.items()} if skip_existing else {}
     args.output.mkdir(parents=True, exist_ok=True)
+    records = {}
     for plane in PLANES:
-        dockerfile = 'Dockerfile.control' if plane == 'control' else 'Dockerfile.service'
-        cmd = ['docker', 'buildx', 'build', '--platform', args.platforms, '-f', str(SERVICE / 'docker' / dockerfile),
-               '-t', f'{args.repository}/{IMAGE_NAMES[plane]}:{args.version}',
-               '--label', f'org.opencontainers.image.version={args.version}',
-               '--label', 'org.opencontainers.image.revision=' + run('git', 'rev-parse', 'HEAD', capture=True).strip(),
-               '--metadata-file', str(args.output / f'image-{plane}.json')]
-        if plane == 'control':
-            cmd += ['--build-arg', 'VERSION=' + args.version,
-                    '--build-arg', 'GIT_COMMIT=' + run('git', 'rev-parse', 'HEAD', capture=True).strip()]
-        if plane != 'control':
-            cmd += ['--build-arg', 'MODULE=service-' + plane]
-        cmd += ['--push', '--sbom=true', '--provenance=mode=max'] if args.push else ['--load']
-        run(*cmd, str(ROOT))
+        if existing.get(plane):
+            print(f'Reusing {references[plane]}@{existing[plane]}; source and platforms match.')
+            (args.output / f'image-{plane}.json').write_text(json.dumps(
+                {'containerimage.digest': existing[plane]}, indent=2) + '\n')
+        else:
+            build_image(args, plane, commit)
+        if skip_existing:
+            digest = existing.get(plane) or inspect_release_image(
+                references[plane], args.version, commit, args.platforms)
+            records[plane] = {'reference': references[plane], 'digest': digest,
+                              'platforms': args.platforms.split(',')}
+    if skip_existing:
+        (args.output / 'images.json').write_text(json.dumps({
+            'serviceVersion': args.version, 'sourceCommit': commit, 'images': records}, indent=2) + '\n')
+
+
+def build_image(args, plane, commit):
+    dockerfile = 'Dockerfile.control' if plane == 'control' else 'Dockerfile.service'
+    cmd = ['docker', 'buildx', 'build', '--platform', args.platforms, '-f', str(SERVICE / 'docker' / dockerfile),
+           '-t', f'{args.repository}/{IMAGE_NAMES[plane]}:{args.version}',
+           '--label', f'org.opencontainers.image.version={args.version}',
+           '--label', 'org.opencontainers.image.revision=' + commit,
+           '--metadata-file', str(args.output / f'image-{plane}.json')]
+    if plane == 'control':
+        cmd += ['--build-arg', 'VERSION=' + args.version,
+                '--build-arg', 'GIT_COMMIT=' + commit]
+    if plane != 'control':
+        cmd += ['--build-arg', 'MODULE=service-' + plane]
+    cmd += ['--push', '--sbom=true', '--provenance=mode=max'] if args.push else ['--load']
+    run(*cmd, str(ROOT))
 
 
 def main():
@@ -315,6 +375,7 @@ def main():
     parser.add_argument('--output', type=Path)
     parser.add_argument('--platforms', default='linux/amd64,linux/arm64,darwin/amd64,darwin/arm64')
     parser.add_argument('--push', action='store_true', help='Push images (otherwise load one platform locally)')
+    parser.add_argument('--skip-existing', action='store_true', help='Reuse matching published images and verify image source/platforms')
     parser.add_argument('--dry-run', action='store_true', help='Validate npm publication without uploading')
     parser.add_argument('--distributions-only', action='store_true', help='Package CLI, Compose and Kubernetes without SDK archives')
     args = parser.parse_args()

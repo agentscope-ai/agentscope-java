@@ -116,7 +116,7 @@ Anything implementing `io.agentscope.core.state.AgentStateStore` works. Pick by 
 | `InMemoryAgentStateStore` | `agentscope-core` | Unit tests / single-process demos; lost on exit |
 | `JsonFileAgentStateStore` | `agentscope-core` | Local dev with file persistence; not cross-node. **`HarnessAgent` LEGACY default**, rooted at `~/.agentscope/state/<agentId>/` (override the base via the `agentscope.state.home` system property); **single-host** |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | **Production default** for multi-replica deployments; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
-| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | When state needs to flow into a relational store (audit, reporting) |
+| `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | When state needs to flow into a relational store (audit, reporting) |
 
 Switching is one call at builder time:
 
@@ -148,6 +148,20 @@ The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-ho
 
 </Warning>
 
+
+### Sandbox mirror release wait
+
+For self-managed sandboxes, `agentscope.sandbox.mirror.release-timeout-millis` controls the **synchronous wait per release** for session mirror uploads already in progress. It is a process-wide JVM system property: all agents in the same JVM share it, and it is read at each release. There is no per-agent builder override.
+
+The value is an integer number of milliseconds. The default is `1000`; `0` disables waiting. Negative, malformed, or out-of-range values log a warning and fall back to `1000`. For example, when launching your application's executable JAR (replace `your-agent-app.jar` with its actual path), allow up to five seconds per release:
+
+```bash
+java -Dagentscope.sandbox.mirror.release-timeout-millis=5000 -jar your-agent-app.jar
+```
+
+Release first rejects new mirrors, then waits for active uploads before calling the sandbox manager's release operation. Each consecutive release can consume the full budget again. This setting limits only that mirror wait; it is neither a per-upload timeout nor a deadline for total shutdown. User-managed sandboxes that remain alive across calls do not use this release wait.
+
+If the budget expires, shutdown proceeds and an in-flight mirror may fail. The warning `Mirror upload still in flight after ... ms; releasing sandbox` identifies this case. Increasing the value gives slow uploads more time but can add the same amount of latency to each call's release. Setting it to `0` avoids the wait but gives active mirrors no time to finish. Monitor this warning and call completion latency when tuning; remove the JVM option to restore the default. This setting does not change the agent state-store location controlled by `agentscope.state.home`.
 
 ### Resume saved sessions across processes and machines
 
@@ -332,8 +346,36 @@ Available accessors:
 | `resolveAgentState(ctx, agent)` | Static helper: returns `ctx.getAgentState()` if available, falls back to `agent.getAgentState()`. Ensure the current call has injected its state; fallback does not guarantee the intended business session |
 | `get(String)` / `put(String, Object)` | String-keyed get/put |
 | `get(Class<T>)` / `put(Class<T>, T)` | Typed singleton get/put |
+| `getModelId()` | Per-call model selection (see [per-call model selection](#per-call-model-selection) below) |
 | `getExtra()` | Direct access to the string-attribute map (mutable view) |
 | `RuntimeContext.empty()` | Empty context |
+
+### Per-call model selection
+
+`builder().modelId(...)` selects the model for one call by id — the per-request model convention of LLM APIs. The id is resolved through `ModelRegistry` on every model call of the run (reasoning, summary, compaction, memory flush), so a singleton agent can serve sessions that need different models without reflection or per-tenant agent instances. The model choice is deterministic for the whole call: it is carried by the immutable `RuntimeContext`, not by mutable agent state, so there is no mid-call switch and no cross-session leakage.
+
+```java
+// Register models once at startup (consistent across cluster nodes):
+ModelRegistry.register("prod", openAiModel);
+ModelRegistry.registerFactory("deepseek:.*", id -> deepseekModel(id));
+
+// Every request carries the caller's choice:
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId("alice")
+        .sessionId("s-001")
+        .modelId("deepseek:deepseek-v4")   // null = the agent's default model
+        .build();
+Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
+```
+
+Semantics:
+
+- **Fail-fast, never silent fallback**: a set-but-blank or unresolvable id fails the call (`IllegalArgumentException` surfaced as an error event) instead of quietly using the default model — a wrong model usually means wrong credentials and wrong billing in multi-tenant setups. `null` (unset) simply uses the agent's default model.
+- **Auxiliary calls follow the effective model**: compaction, memory flush and max-iteration summaries use the resolved model unless a dedicated model is configured for them (`CompactionConfig.getModel()` / `MemoryConfig.model()`), in which case the dedicated one wins. Compaction trigger budgets are computed from the effective model's context window. Periodic background memory maintenance is not part of any call and always uses the build-time configured model.
+- **Subagents do not inherit it**: subagent spawning clears the caller's `modelId` — a subagent's model is a build-time contract (`SubagentDeclaration.getModel()`), and a caller's runtime choice must not silently change worker models or their cost envelope.
+- **Provider failures still fail over**: if the selected model fails at runtime, the configured `fallbackModel` takes over as usual — failover covers availability, the selection itself was honored.
+- Session-sticky switching (remember the choice across requests) is the application's concern: persist it in your own session record and stamp `modelId` on each request's context. Keeping the choice out of `AgentState` leaves a single source of truth.
+- Not to be confused with `GenerateOptions.getModelName()`, which providers treat as a routing hint and no provider consumes for model selection.
 
 ### runId correlation
 

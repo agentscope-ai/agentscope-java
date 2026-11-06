@@ -203,6 +203,21 @@ git push origin "$RELEASE_TAG"
 
 `publish=false` 的镜像只存在于临时 runner，不是可下载的 Docker 镜像归档。需要本地安装演练时使用第四节的本地镜像构建命令。
 
+### 主 tag 自动发布镜像
+
+未来发版使用 `service-dist-release.yml` 自动串联安装包、镜像与 GitHub Release。先在仓库 **Settings → Secrets and variables → Actions** 配置两个 Repository secrets：
+
+| Secret | 内容 |
+| --- | --- |
+| `SERVICE_REGISTRY_USER` | 能访问四个镜像仓库的 ACR 登录用户名 |
+| `SERVICE_REGISTRY_TOKEN` | 该用户名对应的 ACR Registry 专用密码，不是阿里云控制台登录密码 |
+
+登录域名从 Repository variable `SERVICE_IMAGE_REPOSITORY` 的镜像命名空间提取，默认 `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`；自动入口不需要 `SERVICE_REGISTRY_HOST`。本机 `docker login` 不会授权 GitHub 云端 runner。凭据含义见 [ACR 访问凭证文档](https://help.aliyun.com/zh/acr/user-guide/configure-access-credentials/)。上面的三个 Secret 仍适用于原手动镜像与 OCI Chart 工作流。
+
+先准备 Java POM 与 Go 版本常量中的正式发布版本，将源码合入 `main`，再推送主 `vVERSION` tag。当前 Maven `2.1.0-SNAPSHOT` 用于开发，打下一版本的发布 tag 前需同步实际发布版本。自动工作流先构建安装包，然后推送 `as-controlplane`、`as-gateway`、`as-dataplane`、`as-scheduler`，镜像 tag 为不含 `v` 的 `VERSION`，每个同时包含 `linux/amd64` 与 `linux/arm64`。Buildx 请求 SBOM 与 provenance。
+
+重跑时，已有镜像必须同时满足架构、版本和源码提交标签一致才能复用；冲突或认证、网络错误时停止，不覆盖。缺失镜像才会构建，推送后再次检查。部分推送失败可重跑 images job，复用已经成功的镜像。四个镜像全部成功后，才公开 GitHub Release，并自动上传含引用、digest、源码提交与架构的 `images.json`，把它纳入 `SHA256SUMS`。原始 Buildx 元数据保留在 `service-image-metadata` Actions artifact。公开 HTTP Helm 仓库与 Homebrew tap 保留独立发布流程，自动镜像 job 不依赖 Helm OCI 登录。
+
 ### 6.2 运行与查看结果
 
 在 GitHub Actions 中选择 **AgentScope Service release**，选定发布 tag，填写 `version` 和 `repository`；正式推送时设置 `publish=true`。也可明确用 CLI 指定 tag，避免选错分支：
@@ -338,7 +353,7 @@ mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-controlplane -am \
 - 四个平台的 `agentscope-cli-*.tar.gz`，每份包含 CLI 与 Runtime Host。
 - `release-manifest.json`、`SHA256SUMS`。
 
-以上九个附件由安装包工作流自动上传。Python wheel/sdist、DSH npm tarball 及镜像 digest 元数据由各自发布流程提供，按实际发布情况另行补充。
+以上九个安装包附件与镜像 digest 清单 `images.json` 由主 tag 工作流自动上传，共十个附件。Python wheel/sdist 和 DSH npm tarball 由各自发布流程提供，按实际发布情况另行补充。
 
 只上传这些公开制品；不要把工作目录、测试 `.env`、数据库备份或密钥一起打包。GitHub 自动生成的源码压缩包不能替代 Compose、CLI 和 SDK 附件。
 
@@ -351,9 +366,9 @@ git tag -a "$RELEASE_TAG" origin/main -m "$RELEASE_TAG"
 git push origin "$RELEASE_TAG"
 ```
 
-工作流校验提交已进入 `main`、Java/Go 版本与 tag 一致、Go 模块主版本一致，执行打包和 CLI 测试并构建上述附件。附件先上传至草稿，随后创建指向同一提交的 `agentscope-service/service-controlplane/vVERSION` tag，最后公开 GitHub Release；带预发布后缀的版本自动标记为 prerelease。Release Notes 保持一句话，链接到中英文官方文档。
+工作流校验提交已进入 `main`、Java/Go 版本与 tag 一致、Go 模块主版本一致，执行打包和 CLI 测试并构建上述附件。四个双架构镜像推送完成后，附件和镜像清单先上传至草稿，随后创建指向同一提交的 `agentscope-service/service-controlplane/vVERSION` tag，最后公开 GitHub Release；带预发布后缀的版本自动标记为 prerelease。Release Notes 保持一句话，链接到中英文官方文档。
 
-仅发布 job 使用 `contents: write` 和仓库自带的 `GITHUB_TOKEN`，无需新增 Secret。可选的 Repository variable `SERVICE_IMAGE_REPOSITORY` 控制安装包内引用的镜像命名空间，默认是 `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`。此工作流不构建或推送镜像，不发布 Maven/npm/PyPI，也不更新独立的 HTTP Helm 仓库或 Homebrew tap；各渠道保留已有发布流程。SDK 工作流仍独立响应主 tag。
+仅 GitHub Release 发布 job 使用 `contents: write` 和仓库自带的 `GITHUB_TOKEN`；镜像 job 使用第六节的两个 ACR Secret。可选的 Repository variable `SERVICE_IMAGE_REPOSITORY` 控制安装包内引用的镜像命名空间，默认是 `sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope`。此工作流构建并推送四个镜像，不发布 Maven/npm/PyPI，也不更新独立的 HTTP Helm 仓库或 Homebrew tap；各渠道保留已有发布流程。SDK 工作流仍独立响应主 tag。
 
 对于已经包含此工作流的现有 tag，可手动重跑，无需新建 tag：
 

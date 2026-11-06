@@ -152,7 +152,7 @@ Managed Agent 通过所选 [Environment](/v2/zh/service/environments) 访问输�
 
 ## API 与访问范围
 
-请求使用平台用户 Bearer token，并通过 `X-AgentScope-Tenant`、`X-AgentScope-Namespace` 选择范围。读取、修改和发布分别受资源的 inspect、edit、publish 权限约束；创建还需要空间资源创建权限。配置变量见[部署准备](/v2/zh/service/quickstart)。下文 `{id}` 为响应返回的 Workspace ID，URL 参数需编码。
+请求使用平台用户 Bearer token，并通过 `X-AgentScope-Tenant`、`X-AgentScope-Namespace` 选择范围。读取、修改和发布分别受资源的 inspect、edit、publish 权限约束；创建还需要空间资源创建权限。配置变量见[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)。下文 `{id}` 为响应返回的 Workspace ID，URL 参数需编码。
 
 | 操作 | API | 请求或响应 |
 | --- | --- | --- |

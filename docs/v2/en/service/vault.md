@@ -12,7 +12,7 @@ A Vault stores credentials an Agent uses to access external tools. Save the cred
 
 The Agent definition declares connection addresses and tools, while Vaults hold authentication material. This lets different Sessions using the same Agent use different authorizations. Tool credentials authenticate access to external systems; the platform `TOKEN` or Application key authenticates an application calling Service. Public resource APIs return credential metadata after creation, without returning the secret again.
 
-Use the platform identity variables from the [deployment guide](/v2/en/service/quickstart). Before verification, configure a Managed Agent's MCP connection using the [tool guide](/v2/en/service/tools) and retain `AGENT_ID`. This page uses the connection name `reports` and variable `REPORTS_TOKEN`; adapt both names and the service URL to your actual connection.
+Use the platform identity variables from the [API identity setup](/v2/en/service/create-managed-agent#api-setup). Before verification, configure a Managed Agent's MCP connection using the [tool guide](/v2/en/service/tools) and retain `AGENT_ID`. This page uses the connection name `reports` and variable `REPORTS_TOKEN`; adapt both names and the service URL to your actual connection.
 
 ## Create a Vault and add a credential
 
@@ -134,7 +134,7 @@ Create collections and maintain credentials under **Resources → Vault**, then 
 
 ## Management APIs
 
-Use a platform user Bearer token with `X-AgentScope-Tenant` and `X-AgentScope-Namespace`; prepare variables as in the [deployment preparation](/v2/en/service/quickstart). Reads require inspect, mutations require edit, and creation requires namespace resource creation rights. Listings are filtered to inspectable resources; Agent binding also checks dependency access.
+Use a platform user Bearer token with `X-AgentScope-Tenant` and `X-AgentScope-Namespace`; prepare variables as in the [API identity setup](/v2/en/service/create-managed-agent#api-setup). Reads require inspect, mutations require edit, and creation requires namespace resource creation rights. Listings are filtered to inspectable resources; Agent binding also checks dependency access.
 
 | Operation | API | Parameters and response |
 | --- | --- | --- |

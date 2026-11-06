@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.session;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -25,6 +26,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.session.SessionEvent;
 import io.agentscope.core.session.SessionKey;
 import io.agentscope.core.session.SessionLogException;
@@ -127,7 +129,7 @@ class WorkspaceSessionLogStoreTest {
                 Msg.builder()
                         .id("message-id")
                         .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Native history marker").build())
+                        .content(TextBlock.builder().text("Error: Native history marker").build())
                         .build();
         var messageEvent =
                 new SessionEvent(
@@ -145,10 +147,33 @@ class WorkspaceSessionLogStoreTest {
         var reader = new WorkspaceSessionLogStore(new LocalFilesystem(directory));
         assertEquals(List.of(key), reader.list(rc));
         var tool = new SessionSearchTool(reader);
-        assertTrue(tool.sessionSearch(rc, "history marker", "agent", 10).contains("message-id"));
         assertTrue(
-                tool.sessionHistory(rc, "agent", "session", 20).contains("Native history marker"));
-        assertTrue(tool.sessionList(rc, "agent").contains("session"));
+                assertText(
+                                tool.sessionSearch(rc, "history marker", "agent", 10),
+                                ToolResultState.SUCCESS)
+                        .contains("message-id"));
+        assertTrue(
+                assertText(tool.sessionHistory(rc, "agent", "session", 20), ToolResultState.SUCCESS)
+                        .contains("Error: Native history marker"));
+        assertTrue(
+                assertText(tool.sessionList(rc, "agent"), ToolResultState.SUCCESS)
+                        .contains("session"));
+    }
+
+    @Test
+    void invalidSessionArgumentsAndMissingHistoryReportErrors() {
+        var tool =
+                new SessionSearchTool(new WorkspaceSessionLogStore(new LocalFilesystem(directory)));
+        var rc = RuntimeContext.builder().userId("u").build();
+        assertText(tool.sessionSearch(rc, " ", "agent", 10), ToolResultState.ERROR);
+        assertText(tool.sessionList(rc, " "), ToolResultState.ERROR);
+        assertText(tool.sessionHistory(rc, "agent", " ", 20), ToolResultState.ERROR);
+        assertText(tool.sessionHistory(rc, "agent", "missing", 20), ToolResultState.ERROR);
+        assertEquals(
+                "[]",
+                assertText(
+                        tool.sessionSearch(rc, "no match", "agent", 10), ToolResultState.SUCCESS));
+        assertEquals("[]", assertText(tool.sessionList(rc, "agent"), ToolResultState.SUCCESS));
     }
 
     @Test

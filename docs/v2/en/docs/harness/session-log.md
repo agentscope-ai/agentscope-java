@@ -70,6 +70,36 @@ session.inject("Additional material: plan A requires weekly maintenance; plan B 
 
 `inject` persists reference material without starting execution. While idle, it waits for future work; if the running task has no further reasoning step, the material remains pending. Use `submit` when the user wants a separate comparison queued after the current one.
 
+<span id="load-the-full-conversation-into-a-chat-view"></span>
+
+## Load the full conversation into a chat view
+
+When the frontend only needs the complete committed conversation -- for example on first load of a chat dialog -- project the journal once and render the messages:
+
+```java
+var transcript = agent.session(ctx).transcript();
+
+for (Msg msg : transcript.messages()) {
+    for (ContentBlock block : msg.getContent()) {
+        if (block instanceof TextBlock text) {
+            // text.getText() -> user / assistant bubble content
+        } else if (block instanceof ThinkingBlock thinking) {
+            // thinking.getThinking() -> optional reasoning panel
+        } else if (block instanceof ToolUseBlock use) {
+            // use.getName() + use.getInput() -> tool call card
+        } else if (block instanceof ToolResultBlock result) {
+            // result.getOutput() -> tool result blocks (text, images, ...)
+        } else if (block instanceof ImageBlock image) {
+            // image.getSource() -> Base64Source / URLSource
+        }
+    }
+}
+```
+
+`transcript.messages()` replays the journal from the beginning, so it contains the **complete** conversation -- including messages that compaction has already removed from the model's working context -- with stable message IDs, roles and timestamps. Tool inputs and outputs are stored with full payloads, so nothing is truncated or dropped.
+
+This projection covers committed messages only. For a view that stays live while the agent streams, or that survives page refreshes, combine the snapshot with the committed-event cursor pattern described in the next section.
+
 ## Restore the UI after refresh or reconnection
 
 Now imagine the assistant has finished looking up plan A, called a tool for plan B, and is streaming its comparison. Refreshing the page should restore the earlier messages, both tool calls, committed results and the current text prefix before new output appears. Reconnecting an event stream from a cursor alone cannot restore the content that preceded that cursor.
@@ -229,6 +259,11 @@ The catalog below helps locate the facts needed for a timeline, diagnosis or app
 | `presentation/hint`, application types | Presentation hints and custom facts |
 
 Events cover adapter-visible requests and output, not provider internals or backups of referenced files. Keep raw requests, tool results and checkpoints in an authorized diagnostic interface; filter what you expose to a browser.
+
+The `compaction/end` payload includes `compactionId`, `status`, `beforeMsgCount`, and
+`beforeTokenCount`. When `status` is `completed`, it also includes `afterMsgCount` and
+`afterTokenCount`, calculated from the effective post-compaction conversation. Failed or cancelled
+compactions include only the before metrics because no post-compaction state is available.
 
 <Accordion title="SessionEvent envelope">
 

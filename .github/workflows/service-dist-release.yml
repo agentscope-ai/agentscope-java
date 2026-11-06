@@ -16,14 +16,17 @@ concurrency:
   group: service-dist-release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
+env:
+  IMAGE_REPOSITORY: ${{ vars.SERVICE_IMAGE_REPOSITORY || 'sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope' }}
+
 jobs:
   package:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.source.outputs.version }}
+      registry: ${{ steps.source.outputs.registry }}
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-      IMAGE_REPOSITORY: ${{ vars.SERVICE_IMAGE_REPOSITORY || 'sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,6 +39,7 @@ jobs:
           version="${RELEASE_TAG#v}"
           python3 agentscope-service/release/release.py check-tag --version "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "registry=${IMAGE_REPOSITORY%%/*}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v5
         with:
           go-version-file: agentscope-service/service-controlplane/go.mod
@@ -67,8 +71,48 @@ jobs:
           path: agentscope-service/release/dist/${{ steps.source.outputs.version }}/
           if-no-files-found: error
 
-  publish:
+  images:
     needs: package
+    runs-on: ubuntu-latest
+    env:
+      SERVICE_VERSION: ${{ needs.package.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - name: Check source and registry credentials
+        env:
+          REGISTRY_USER: ${{ secrets.SERVICE_REGISTRY_USER }}
+          REGISTRY_TOKEN: ${{ secrets.SERVICE_REGISTRY_TOKEN }}
+        run: |
+          python3 agentscope-service/release/release.py check-tag --version "$SERVICE_VERSION"
+          if [[ -z "$REGISTRY_USER" || -z "$REGISTRY_TOKEN" ]]; then
+            echo 'Configure SERVICE_REGISTRY_USER and SERVICE_REGISTRY_TOKEN repository secrets.' >&2
+            exit 1
+          fi
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ needs.package.outputs.registry }}
+          username: ${{ secrets.SERVICE_REGISTRY_USER }}
+          password: ${{ secrets.SERVICE_REGISTRY_TOKEN }}
+      - name: Build and push four multi-platform images
+        run: |
+          python3 agentscope-service/release/release.py images \
+            --version "$SERVICE_VERSION" --repository "$IMAGE_REPOSITORY" \
+            --platforms linux/amd64,linux/arm64 --push --skip-existing
+      - uses: actions/upload-artifact@v4
+        with:
+          name: service-image-metadata
+          path: |
+            agentscope-service/release/dist/${{ needs.package.outputs.version }}/image-*.json
+            agentscope-service/release/dist/${{ needs.package.outputs.version }}/images.json
+          if-no-files-found: error
+
+  publish:
+    needs: [package, images]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -84,6 +128,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: service-distributions
+          path: agentscope-service/release/dist/${{ needs.package.outputs.version }}/
+      - uses: actions/download-artifact@v4
+        with:
+          name: service-image-metadata
           path: agentscope-service/release/dist/${{ needs.package.outputs.version }}/
       - name: Upload assets, create Go tag and publish GitHub Release
         run: python3 agentscope-service/release/release.py publish-github --version "$SERVICE_VERSION"
