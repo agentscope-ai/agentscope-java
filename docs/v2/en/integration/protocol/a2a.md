@@ -52,6 +52,10 @@ Msg result = remote.call(new UserMessage("Translate to English: 你好")).block(
 
 For completed tasks, the final result prefers output artifacts. When no artifacts are present, it uses the final status message, whether completion arrives as a full task or a streaming status update.
 
+When the remote task stops to wait for the caller (`TASK_STATE_INPUT_REQUIRED` or `TASK_STATE_AUTH_REQUIRED`), the call ends with the status message of the task, which usually carries the question. The metadata of the reply has the task id under `MessageConstants.TASK_ID_METADATA_KEY` and the state under `MessageConstants.TASK_STATE_METADATA_KEY`. The task stays open on the remote agent.
+
+Without streaming (the client config or the AgentCard does not stream), a reply that is a task still `SUBMITTED` or `WORKING` fails the call with an `IllegalStateException`, because `A2aAgent` does not poll tasks.
+
 ```java
 remote.streamEvents(new UserMessage("Translate to English: 你好"))
     .doOnNext(event -> {
@@ -151,8 +155,9 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 
 server.postEndpointReady();   // call after the web server is listening — triggers registration etc.
 
-// On shutdown: stop the threads of the request handler. Running executions are asked to stop
-// (interrupted); close() does not wait for them. The Spring Boot starter does this for you.
+// On shutdown: stop the threads of the request handler and the thread pools the server created.
+// Running executions are asked to stop (interrupted); close() does not wait for them. An executor
+// you set with executor(...) is left to you. The Spring Boot starter does this for you.
 server.close();
 ```
 

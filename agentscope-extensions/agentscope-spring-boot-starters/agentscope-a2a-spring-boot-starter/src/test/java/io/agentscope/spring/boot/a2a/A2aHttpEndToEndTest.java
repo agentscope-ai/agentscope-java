@@ -71,7 +71,6 @@ import org.a2aproject.sdk.spec.AgentInterface;
 import org.a2aproject.sdk.spec.TaskNotFoundError;
 import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -441,10 +440,6 @@ class A2aHttpEndToEndTest {
     }
 
     @Test
-    @Disabled(
-            "AgentScopeAgentExecutor.cancel() cancels the upstream subscription, so the blocking"
-                    + " execution never receives a terminal signal and stays blocked; re-enable"
-                    + " once cancellation releases the execution (#3546)")
     void interruptCancelsRemoteTask() throws Exception {
         Sinks.Empty<Void> release = Sinks.empty();
         runner.script(

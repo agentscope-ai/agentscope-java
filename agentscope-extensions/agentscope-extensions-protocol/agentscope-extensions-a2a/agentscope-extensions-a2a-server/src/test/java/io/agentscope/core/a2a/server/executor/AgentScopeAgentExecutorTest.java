@@ -87,6 +87,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
 import org.reactivestreams.Publisher;
@@ -1226,6 +1227,37 @@ class AgentScopeAgentExecutorTest {
                 verify(mockAgentRunner).stop(taskId);
                 TimeUnit.MILLISECONDS.sleep(500);
                 assertTrue(isCancelled.get());
+            } finally {
+                taskThread.interrupt();
+            }
+        }
+
+        @ParameterizedTest(name = "streaming={0}")
+        @ValueSource(booleans = {true, false})
+        @DisplayName("Should end the execution when the task is cancelled")
+        void testCancelEndsExecution(boolean streaming) throws Exception {
+            doMockForContext(streaming, true, false);
+            CountDownLatch started = new CountDownLatch(1);
+            AtomicBoolean upstreamCancelled = new AtomicBoolean();
+            // An agent that keeps running and ignores stop(), so only the cancel can end it.
+            Flux<AgentEvent> endless =
+                    Flux.<AgentEvent>just(new TextBlockDeltaEvent("reply-id", "block-id", "..."))
+                            .concatWith(Flux.never())
+                            .doOnNext(event -> started.countDown())
+                            .doOnCancel(() -> upstreamCancelled.set(true));
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(endless);
+
+            Thread taskThread = new Thread(() -> executor.execute(mockContext, emitter()));
+            try {
+                taskThread.start();
+                assertTrue(started.await(5, TimeUnit.SECONDS), "the agent stream should start");
+
+                executor.cancel(mockContext, emitter());
+
+                taskThread.join(TimeUnit.SECONDS.toMillis(5));
+                assertFalse(taskThread.isAlive(), "the execution should end after the cancel");
+                assertTrue(upstreamCancelled.get(), "the agent stream should be cancelled");
             } finally {
                 taskThread.interrupt();
             }

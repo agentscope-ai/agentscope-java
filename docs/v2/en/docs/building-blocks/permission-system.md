@@ -220,6 +220,24 @@ ConfirmResult result =
 
 Runnable examples: `agentscope-examples/documentation/.../tool/PermissionContextExample.java`, `hitl/PermissionHITLExample.java`.
 
+### Permission contexts and existing sessions
+
+A non-null `permissionContext` replaces a slot's persisted permission context when the current agent instance loads that slot for the first time. Passing `null` leaves an existing slot's context untouched.
+
+This also applies when rebuilding an agent against the same state store. To preserve runtime permission state across a rebuild, read the old context first and construct the new one from it:
+
+```java
+PermissionContextState old =
+        agent.getAgentState(userId, sessionId).getPermissionContext();
+PermissionContextState next =
+        PermissionContextState.builder()
+                .mode(old.getMode())
+                // carry over working directories and rules you want to keep
+                .build();
+```
+
+A non-null `PermissionContextState.builder().build()` is a valid trivial context, not a no-op: it replaces the old context with the default mode and no rules. Use `null` when you want to leave the existing context unchanged.
+
 ## Built-in checks
 
 Every tool implements `checkPermissions(toolInput, context)` (on `ToolBase`) — a runtime check on the actual input that returns `Mono<PermissionDecision>`. These checks cannot be bypassed: they apply regardless of mode or rules.
