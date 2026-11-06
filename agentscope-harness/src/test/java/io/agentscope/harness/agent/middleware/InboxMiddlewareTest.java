@@ -413,6 +413,67 @@ class InboxMiddlewareTest {
         assertTrue(notification.getTextContent().contains("new hint"));
     }
 
+    @Test
+    void staleToolHintDoesNotClaimTheToolCrashed() {
+        io.agentscope.harness.agent.bus.AsyncToolRecord rec =
+                new io.agentscope.harness.agent.bus.AsyncToolRecord(
+                        "rec-1",
+                        "session-1",
+                        "slow_tool",
+                        "call-1",
+                        io.agentscope.harness.agent.bus.AsyncToolRecord.RUNNING,
+                        java.time.Instant.now().minusSeconds(3600));
+        io.agentscope.harness.agent.bus.AsyncToolRegistry registry =
+                new io.agentscope.harness.agent.bus.AsyncToolRegistry() {
+                    @Override
+                    public reactor.core.publisher.Mono<Void> register(
+                            io.agentscope.harness.agent.bus.AsyncToolRecord record) {
+                        return reactor.core.publisher.Mono.empty();
+                    }
+
+                    @Override
+                    public reactor.core.publisher.Mono<Void> complete(String id, String result) {
+                        return reactor.core.publisher.Mono.empty();
+                    }
+
+                    @Override
+                    public reactor.core.publisher.Mono<Void> fail(String id, String error) {
+                        return reactor.core.publisher.Mono.empty();
+                    }
+
+                    @Override
+                    public reactor.core.publisher.Mono<
+                                    List<io.agentscope.harness.agent.bus.AsyncToolRecord>>
+                            findStale(String sessionId, java.time.Duration ttl) {
+                        return reactor.core.publisher.Mono.just(List.of(rec));
+                    }
+
+                    @Override
+                    public reactor.core.publisher.Mono<Void> markTimeout(String id) {
+                        return reactor.core.publisher.Mono.empty();
+                    }
+                };
+        InboxMiddleware withRegistry =
+                new InboxMiddleware(bus, 100, registry, java.time.Duration.ofMinutes(10));
+
+        List<AgentEvent> events =
+                withRegistry
+                        .onReasoning(
+                                stubAgent(),
+                                ctx,
+                                new ReasoningInput(List.of(), List.of(), null),
+                                next -> Flux.empty())
+                        .collectList()
+                        .block();
+
+        assertEquals(1, events.size());
+        String hint = ((HintBlockEvent) events.get(0)).getHint();
+        assertTrue(hint.contains("slow_tool"), hint);
+        assertTrue(hint.contains("10 minutes"), hint);
+        assertTrue(hint.contains("may still be running"), hint);
+        assertFalse(hint.contains("did not complete"), hint);
+    }
+
     private static io.agentscope.core.agent.Agent stubAgent() {
         return new io.agentscope.core.agent.Agent() {
             @Override
