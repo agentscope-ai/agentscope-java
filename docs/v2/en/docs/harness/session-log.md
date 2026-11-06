@@ -110,6 +110,8 @@ Build the frontend around a snapshot and a stream of subsequent committed events
 2. Render that snapshot, then observe events after its cursor. Update existing items by stable message/tool IDs, or refresh the snapshot when new commits arrive.
 3. On a stream reconnect, continue after the last successfully applied cursor. If a page refresh lost the view, fetch a new snapshot before subscribing again.
 
+If the Agent is hosted behind the AG-UI starter, the same history-plus-cursor view is available through its explicit attach extension; see [AG-UI SessionLog recovery](/v2/en/integration/protocol/agui#sessionlog-recovery-harnessagent-only).
+
 The SDK provides the records from which your application builds that view:
 
 ```java
