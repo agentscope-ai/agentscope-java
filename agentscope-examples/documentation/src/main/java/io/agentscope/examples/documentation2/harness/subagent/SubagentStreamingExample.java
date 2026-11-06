@@ -34,17 +34,18 @@ import io.agentscope.harness.agent.subagent.SubagentDeclaration;
  * <p>When a parent agent spawns a synchronous subagent via {@code agent_spawn}, the child's
  * intermediate events (model calls, text deltas, tool invocations, etc.) are forwarded into the
  * parent's {@code streamEvents()} stream in real time. Each child event carries a
- * {@link AgentEvent#getSource() source} path (e.g. {@code "main/researcher"}) so callers can
- * distinguish parent events ({@code source == null}) from child events.
+ * {@link AgentEvent#getSource() source} path (e.g. {@code "main/researcher/sub-1"}) so callers can
+ * distinguish parent events ({@code source == null}) from child events and separate same-type
+ * child instances.
  *
  * <p>Event flow:
  * <pre>
  *   AGENT_START                                      ← parent
  *     TEXT_BLOCK_DELTA …                             ← parent reasoning
  *     TOOL_CALL_START "agent_spawn"                  ← parent calls agent_spawn
- *     AGENT_START       (source="main/researcher")   ← child starts
- *       TEXT_BLOCK_DELTA  (source="main/researcher") ← child reasoning tokens
- *     AGENT_END         (source="main/researcher")   ← child done
+ *     AGENT_START       (source="main/researcher/sub-1")   ← child starts
+ *       TEXT_BLOCK_DELTA  (source="main/researcher/sub-1") ← child reasoning tokens
+ *     AGENT_END         (source="main/researcher/sub-1")   ← child done
  *     TOOL_RESULT_END                                ← parent gets tool result
  *     TEXT_BLOCK_DELTA …                             ← parent final response
  *   AGENT_END                                        ← parent done

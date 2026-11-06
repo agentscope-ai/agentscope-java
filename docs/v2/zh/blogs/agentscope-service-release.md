@@ -1,5 +1,6 @@
 ---
 title: AgentScope Service 发布
+en_link: /v2/en/blogs/agentscope-service-release
 ---
 
 今天，社区正式推出了 **AgentScope Service** — 基于 AgentScope Harness 构建的 Agent 管控与治理平台，为企业提供统一的控制面与治理中心！
@@ -211,7 +212,7 @@ Agent Teams 或 AgentScope Subagent 委派的目标，不一定运行在同一�
 上图体现了使用控制面实现 remote subagent 调用的流量代理能力，而不是一次特定的 API 设计：
 
 + **本地优先，能不经过控制面就不经过**。如果 `techlead` 恰好是 Agent A 同一个 `HarnessAgent` 进程内声明的本地 Subagent，委派直接走进程内调用，控制面完全不参与——这是延迟最低、也是最常见的路径。
-+ **跨实例 / 跨框架时，控制面负责"发现 + 鉴权 + 代理"三件事**：先确认 Agent A 与 `techlead` 之间存在合法的协作关系（同一 Team、白名单 ACL），再按 Agent ID 在舰队注册表里查到目标实例——这里的目标可能是一个 Managed Agent（转发到 Dataplane 的 Session Turn 接口），也可能是一个通过 `aistio.instrument()` 注册上来的 LangChain Agent（转发到其上报的 chat 端点）——最后把请求代理转发过去，并把响应原样透传回 Agent A。
++ **跨实例 / 跨框架时，控制面负责"发现 + 鉴权 + 代理"三件事**：先确认 Agent A 与 `techlead` 之间存在合法的协作关系（同一 Team、白名单 ACL），再按 Agent ID 在舰队注册表里查到目标实例——这里的目标可能是一个 Managed Agent（转发到 Dataplane 的 Session Turn 接口），也可能是一个通过 `agentscope_service.instrument()` 注册上来的 LangChain Agent（转发到其上报的 chat 端点）——最后把请求代理转发过去，并把响应原样透传回 Agent A。
 + **Agent A 全程不知道对方是什么框架**。对发起方而言，`delegate("techlead", ...)` 的调用方式不因为目标是本地 Subagent、Managed Agent 还是 LangChain Agent 而改变；框架差异被控制面的路由层吸收掉了。
 
 这也是为什么前面在“如何接入”里强调 AgentScope、LangChain、Claude 可以用不同方式接入同一个控制面：一旦接入完成，它们就都具备了被其他 Agent 找到、委派任务、并拿到结果的能力，而不需要每一对框架之间单独打通。
@@ -225,7 +226,7 @@ Agent Teams 或 AgentScope Subagent 委派的目标，不一定运行在同一�
 | **平面** | **负责** | **不负责** |
 | --- | --- | --- |
 | Gateway | 公共入口、认证与 API 路由 | 业务状态与 Agent 执行 |
-| Control Plane（`aistiod`） | 产品资源、控制台、Agent状态、Session、Team 与运行时命令 | Harness 推理、Session 流传输 |
+| Control Plane（`service-controlplane`） | 产品资源、控制台、Agent状态、Session、Team 与运行时命令 | Harness 推理、Session 流传输 |
 | Dataplane | Managed Harness Runtime、事件日志、SSE、Turn Lease、HITL 与 Work Queue | 直读产品 Catalog 表 |
 | Scheduler | Channel、Cron、出站任务与 Self-hosted Hands Worker | 推理循环 |
 
@@ -253,12 +254,12 @@ AgentScope Service 同时服务两类用户：
 
 ### Agent Framework
 #### AgentScope
-AgentScope Java 目前原生支持 Agent 应用接入，通过引入 `agentscope-extensions-aistio` 依赖，即可自动将现有 AgentScope Runtime 注册到控制面，与 Managed Agent 一同出现在 Dashboard。会话状态、健康信息与运行时观测沿同一套契约上报。
+AgentScope Java 目前原生支持 Agent 应用接入，通过引入 `agentscope-extensions-controlplane` 依赖，即可自动将现有 AgentScope Runtime 注册到控制面，与 Managed Agent 一同出现在 Dashboard。会话状态、健康信息与运行时观测沿同一套契约上报。
 
 同时 AgentScope 分布式部署需要的 Agent Teams 跨副本的消息投递与子任务委派、跨节点异步任务状态跟踪、Session 并发控制、Workspace 状态同步等，都可以由控制面提供原生支持。
 
 #### LangChain
-目前我们在社区提供了 python sdk，用户可以通过 `aistio.instrument()` wrapper 实现接入。对 LangChain / LangGraph 应用，控制面侧以旁路方式采集 Session 快照、上下文与运行时指标；主业务路径先成功，上报失败不影响推理本身。
+目前我们在社区提供了 python sdk，用户可以通过 `agentscope_service.instrument()` wrapper 实现接入。对 LangChain / LangGraph 应用，控制面侧以旁路方式采集 Session 快照、上下文与运行时指标；主业务路径先成功，上报失败不影响推理本身。
 
 这样一来，LangChain 开发的 Agent 也能进入 AgentScope Service 的舰队管理与 Session 观测，而不必重写业务链路。
 
@@ -276,31 +277,16 @@ AgentScope Java 目前原生支持 Agent 应用接入，通过引入 `agentscope
 QwenPaw 等个人工作区助手理论上也可以通过 sidecar 方式实现接入，具体请查看 roadmap。
 
 ## 本地快速体验
-AgentScope Service 处于快速迭代阶段，如果你想先完整体验产品面，可以下载仓库源码启动，在本地环境快速体验。
 
-1. 启动控制面、Managed Agents 数据面等所有组件（如上文中的生产部署架构图）：
+按[部署并准备 Service](/v2/zh/service/quickstart)，使用 Docker Compose 启动已发布的
+`2.1.0-BETA1`，无需从源码构建。指南包含安装包下载、SHA-256 校验、模型配置和启动步骤。
+打开 `http://localhost:18080`，以 `admin` 和 `.env` 中生成的
+`CONTROL_PLANE_BOOTSTRAP_PASSWORD` 登录，然后修改密码。
 
-```shell
-git clone https://github.com/agentscope-ai/agentscope-java.git
-cd agentscope-java
-```
-
-```bash
-export DASHSCOPE_API_KEY=sk-xxx
-cd agentscope-service
-scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
-```
-
-2. 打开 [http://localhost:8080](http://localhost:8080)，输入用户名/密码（`admin` / `admin`）
-
-接下来就可以直接体验 Managed Agents 快速创建智能体了：
-
-    1. 在 **Managed Agents** 创建 Agent；
-    2. 创建一个 `local` Environment；
-    3. 打开 **Sessions**，绑定 Agent 与 Environment，发送第一条消息；
-    4. 回到 **Dashboard** 查看在线状态、事件与运行时信息；
-    5. 如需协作，再进入 **Agent Teams** 创建团队并观察任务与成员状态。
-3. 如果要体验 BYO Agent 注册，可以使用源码仓库中的示例 agentscope-samples/agents/agentscope-paw，启动后即可在 dashboard 中看到智能体注册成功。
+接下来[运行第一个托管 Agent](/v2/zh/service/create-managed-agent)。
+要接入已有 Coding Agent，通过 [Go 安装 CLI 与 Runtime Host](/v2/zh/service/runtime-host)，
+再按[连接 Hosted Agent](/v2/zh/service/connect-hosted-agent)完成接入。
+生产环境的 Kubernetes 部署使用已发布的 [Helm Chart](/v2/zh/service/kubernetes)。
 
 ## Roadmap & 总结
 AgentScope Service 把不同模式构建的 Agent（Framework、Coding Agent、Managed Agents）等收敛在统一控制平面内，为 Agent 间协作提供统一视图。无论你从 Console 新建第一个 Agent，把 Harness 运行托管给 AgentScope Service 平台，还是把现有 AgentScope / LangChain / Claude 应用接入控制面，目标都一样——**让企业拥有一站式的 Agent 管控与治理中心**。

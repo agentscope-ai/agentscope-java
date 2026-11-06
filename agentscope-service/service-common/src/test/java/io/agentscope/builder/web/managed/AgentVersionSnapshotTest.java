@@ -25,7 +25,7 @@ class AgentVersionSnapshotTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     /**
-     * The control plane ({@code aistiod}) serializes the agent snapshot with envelope fields the
+     * The control plane ({@code service-controlplane}) serializes the agent snapshot with envelope fields the
      * record does not model; deserialization must tolerate them.
      */
     @Test

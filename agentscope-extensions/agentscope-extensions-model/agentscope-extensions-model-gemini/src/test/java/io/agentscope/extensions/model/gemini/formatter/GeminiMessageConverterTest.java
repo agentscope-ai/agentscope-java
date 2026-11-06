@@ -21,8 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.genai.types.CodeExecutionResult;
 import com.google.genai.types.Content;
+import com.google.genai.types.Outcome;
 import com.google.genai.types.Part;
+import com.google.genai.types.ToolResponse;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -34,6 +37,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -627,17 +631,19 @@ class GeminiMessageConverterTest {
 
         List<Content> result = converter.convertMessages(List.of(msg));
 
-        // Should have 2 Content objects: tool result added first, then text parts
+        // Should have 2 Content objects: the message's own text parts first, then the tool
+        // result content appended after them so the response always follows the call.
         assertEquals(2, result.size());
 
-        // First content should be the tool result (added during block processing)
-        Content toolResultContent = result.get(0);
+        // First content should have text parts before and after
+        Content textContent = result.get(0);
+        assertEquals("user", textContent.role().get());
+        assertEquals(2, textContent.parts().get().size());
+
+        // Second content should be the tool result (appended after the message content)
+        Content toolResultContent = result.get(1);
         assertEquals("user", toolResultContent.role().get());
         assertNotNull(toolResultContent.parts().get().get(0).functionResponse().get());
-
-        // Second content should have text parts before and after
-        Content textContent = result.get(1);
-        assertEquals(2, textContent.parts().get().size());
     }
 
     @Test
@@ -1016,5 +1022,364 @@ class GeminiMessageConverterTest {
         Map<String, Object> args = part.functionCall().get().args().get();
         assertEquals("Tokyo", args.get("city"));
         assertEquals("celsius", args.get("unit"));
+    }
+
+    @Test
+    @DisplayName(
+            "Should keep inline server tool call and result in the model message (regression:"
+                    + " previously split and reordered)")
+    void testConvertAssistantMessageWithInlineServerToolResult() {
+        // Blocks exactly as produced by GeminiResponseParser from a response that contains a
+        // server-side tool call with its inline result plus a local function call.
+        ToolUseBlock serverToolUse =
+                ToolUseBlock.builder()
+                        .id("call_277215")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", List.of("southernmost city in China")))
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+
+        ToolResponse serverToolResponse =
+                ToolResponse.builder()
+                        .id("call_277215")
+                        .toolType("GOOGLE_SEARCH_WEB")
+                        .response(Map.of("search_suggestions", "southernmost city in China"))
+                        .build();
+
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("call_277215")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_SERVER_TOOL_RESPONSE,
+                                        serverToolResponse.toJson(),
+                                        ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                        "server-result-signature".getBytes()))
+                        .output(
+                                TextBlock.builder()
+                                        .text(
+                                                "{\"search_suggestions\":\"southernmost city in"
+                                                        + " China\"}")
+                                        .build())
+                        .build();
+
+        ToolUseBlock localToolUse =
+                ToolUseBlock.builder()
+                        .id("call_277275")
+                        .name("getWeather")
+                        .input(Map.of("location", "Sansha, China"))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolUse, serverToolResult, localToolUse))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        // Format for the next request; must not throw (regression: convertValue(String, Map)
+        // previously raised IllegalArgumentException on the serialized response JSON).
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        // Gemini requires the original candidate content to be circulated as one model message:
+        // toolCall, toolResponse and functionCall stay together and retain their signatures.
+        assertEquals(1, result.size(), "One model content expected");
+
+        Content modelContent = result.get(0);
+        assertEquals("model", modelContent.role().get());
+        List<Part> modelParts = modelContent.parts().get();
+        assertEquals(3, modelParts.size(), "toolCall, toolResponse and functionCall expected");
+
+        Part toolCallPart = modelParts.get(0);
+        assertTrue(toolCallPart.toolCall().isPresent());
+        assertEquals("call_277215", toolCallPart.toolCall().get().id().get());
+        assertEquals(
+                "GOOGLE_SEARCH_WEB", toolCallPart.toolCall().get().toolType().get().toString());
+
+        Part toolResponsePart = modelParts.get(1);
+        assertTrue(toolResponsePart.toolResponse().isPresent());
+        ToolResponse toolResponse = toolResponsePart.toolResponse().get();
+        assertEquals("call_277215", toolResponse.id().get());
+        assertEquals("GOOGLE_SEARCH_WEB", toolResponse.toolType().get().toString());
+        assertArrayEquals(
+                "server-result-signature".getBytes(),
+                toolResponsePart.thoughtSignature().orElseThrow());
+        assertEquals(
+                "southernmost city in China",
+                toolResponse.response().get().get("search_suggestions"));
+
+        Part functionCallPart = modelParts.get(2);
+        assertTrue(functionCallPart.functionCall().isPresent());
+        assertEquals("getWeather", functionCallPart.functionCall().get().name().get());
+    }
+
+    @Test
+    @DisplayName("Should skip server tool result without raw metadata")
+    void testConvertServerToolResultWithNonJsonOutput() {
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("call_1")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
+                        .output(TextBlock.builder().text("plain text result").build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(0, result.size());
+    }
+
+    @Test
+    @DisplayName("Should keep server tool response parseable with realistic Gemini payload")
+    void testConvertServerToolResultWithSearchSuggestionsHtml() {
+        // Mirrors the real GOOGLE_SEARCH_WEB toolResponse payload shape
+        String htmlSuggestions =
+                "<div class=\"container\">\n"
+                        + "  <a class=\"chip\""
+                        + " href=\"https://www.google.com/search?q=southernmost+city+in+China\">"
+                        + "southernmost city in China</a>\n"
+                        + "</div>";
+        String json =
+                JsonUtils.getJsonCodec().toJson(Map.of("search_suggestions", htmlSuggestions));
+        ToolResponse original =
+                ToolResponse.builder()
+                        .id("call_2")
+                        .toolType("GOOGLE_SEARCH_WEB")
+                        .response(Map.of("search_suggestions", htmlSuggestions))
+                        .build();
+
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("call_2")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_SERVER_TOOL_RESPONSE,
+                                        original.toJson()))
+                        .output(TextBlock.builder().text(json).build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        ToolResponse toolResponse = part.toolResponse().get();
+        assertEquals(htmlSuggestions, toolResponse.response().get().get("search_suggestions"));
+    }
+
+    @Test
+    @DisplayName("Should convert code execution blocks back to Gemini parts")
+    void testConvertCodeExecutionBlocks() {
+        ToolUseBlock executableCode =
+                ToolUseBlock.builder()
+                        .id("code-execution-1")
+                        .name("CODE_EXECUTION")
+                        .input(Map.of("language", "PYTHON", "code", "print(1 + 1)"))
+                        .metadata(
+                                Map.of(
+                                        ToolUseBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_CODE_EXECUTION,
+                                        true,
+                                        ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                        "code-signature".getBytes()))
+                        .build();
+
+        CodeExecutionResult original =
+                CodeExecutionResult.builder()
+                        .id("code-execution-1")
+                        .outcome(Outcome.Known.OUTCOME_OK)
+                        .output("2")
+                        .build();
+
+        ToolResultBlock codeExecutionResult =
+                ToolResultBlock.builder()
+                        .id("code-execution-1")
+                        .name("CODE_EXECUTION")
+                        .output(TextBlock.builder().text("2").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_CODE_EXECUTION,
+                                        true,
+                                        GeminiResponseParser.METADATA_CODE_EXECUTION_RESULT,
+                                        original.toJson(),
+                                        ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                        "result-signature".getBytes()))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(executableCode, codeExecutionResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        List<Part> parts = result.get(0).parts().get();
+        assertEquals(2, parts.size());
+
+        Part executableCodePart = parts.get(0);
+        assertTrue(executableCodePart.executableCode().isPresent());
+        assertEquals("code-execution-1", executableCodePart.executableCode().get().id().get());
+        assertEquals(
+                "PYTHON", executableCodePart.executableCode().get().language().get().toString());
+        assertEquals(
+                "print(1 + 1)", executableCodePart.executableCode().get().code().orElseThrow());
+        assertArrayEquals(
+                "code-signature".getBytes(), executableCodePart.thoughtSignature().orElseThrow());
+
+        Part resultPart = parts.get(1);
+        assertTrue(resultPart.codeExecutionResult().isPresent());
+        assertEquals("code-execution-1", resultPart.codeExecutionResult().get().id().get());
+        assertEquals(
+                "OUTCOME_OK", resultPart.codeExecutionResult().get().outcome().get().toString());
+        assertEquals("2", resultPart.codeExecutionResult().get().output().orElseThrow());
+        assertArrayEquals(
+                "result-signature".getBytes(), resultPart.thoughtSignature().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should restore server tool result signature after JSON persistence")
+    void testServerToolResultSignatureRestoredAfterJsonRoundTrip() {
+        ToolResponse original =
+                ToolResponse.builder()
+                        .id("server-result-1")
+                        .toolType("GOOGLE_SEARCH_WEB")
+                        .response(Map.of("result", "ok"))
+                        .build();
+
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("server-result-1")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .output(TextBlock.builder().text("{\"result\":\"ok\"}").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_SERVER_TOOL_RESPONSE,
+                                        original.toJson(),
+                                        ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                        "persisted-signature".getBytes()))
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        Msg roundTripped =
+                JsonUtils.getJsonCodec().fromJson(JsonUtils.getJsonCodec().toJson(msg), Msg.class);
+
+        List<Content> result = converter.convertMessages(List.of(roundTripped));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.toolResponse().isPresent());
+        assertArrayEquals("persisted-signature".getBytes(), part.thoughtSignature().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should restore server tool response from raw metadata")
+    void testServerToolResponseRestoredFromRawMetadata() {
+        ToolResponse original =
+                ToolResponse.builder()
+                        .id("raw-server-response")
+                        .toolType("GOOGLE_SEARCH_WEB")
+                        .response(Map.of("search_suggestions", "raw response"))
+                        .build();
+
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("raw-server-response")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .output(TextBlock.builder().text("corrupted display text").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_SERVER_TOOL_RESPONSE,
+                                        original.toJson()))
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.toolResponse().isPresent());
+        assertEquals("raw-server-response", part.toolResponse().get().id().orElseThrow());
+        assertEquals(
+                "GOOGLE_SEARCH_WEB", part.toolResponse().get().toolType().orElseThrow().toString());
+        assertEquals(
+                "raw response",
+                part.toolResponse().get().response().orElseThrow().get("search_suggestions"));
+    }
+
+    @Test
+    @DisplayName("Should restore code execution result from raw metadata")
+    void testCodeExecutionResultRestoredFromRawMetadata() {
+        CodeExecutionResult original =
+                CodeExecutionResult.builder()
+                        .id("raw-code-result")
+                        .outcome(Outcome.Known.OUTCOME_OK)
+                        .output("42")
+                        .build();
+
+        ToolResultBlock codeResult =
+                ToolResultBlock.builder()
+                        .id("raw-code-result")
+                        .name("CODE_EXECUTION")
+                        .output(TextBlock.builder().text("corrupted display text").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_CODE_EXECUTION,
+                                        true,
+                                        GeminiResponseParser.METADATA_CODE_EXECUTION_RESULT,
+                                        original.toJson()))
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(codeResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.codeExecutionResult().isPresent());
+        assertEquals("raw-code-result", part.codeExecutionResult().get().id().orElseThrow());
+        assertEquals(
+                "OUTCOME_OK", part.codeExecutionResult().get().outcome().orElseThrow().toString());
+        assertEquals("42", part.codeExecutionResult().get().output().orElseThrow());
     }
 }

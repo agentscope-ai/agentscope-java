@@ -16,11 +16,12 @@
 
 package io.agentscope.core.a2a.agent.event;
 
-import io.a2a.client.TaskEvent;
-import io.a2a.spec.Task;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.Msg;
+import org.a2aproject.sdk.client.TaskEvent;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,34 +45,39 @@ public class TaskEventHandler implements ClientEventHandler<TaskEvent> {
                 log,
                 "[{}] A2A Task {} with status {}",
                 context.getCurrentRequestId(),
-                task.getId(),
-                task.getStatus());
+                task.id(),
+                task.status());
 
         context.publishPreReasoning();
 
         boolean isFinal =
-                task.getStatus() != null
-                        && task.getStatus().state() != null
-                        && task.getStatus().state().isFinal();
+                task.status() != null
+                        && task.status().state() != null
+                        && task.status().state().isFinal();
         if (!isFinal) {
             LoggerUtil.debug(
                     log,
                     "[{}] TaskEventHandler: task state {} is not terminal, waiting for more"
                             + " events.",
                     context.getCurrentRequestId(),
-                    task.getStatus() != null ? task.getStatus().state() : "null");
+                    task.status() != null ? task.status().state() : "null");
             return;
         }
 
         Msg msg;
-        if (task.getStatus() != null && task.getStatus().message() != null) {
+        boolean hasArtifacts = task.artifacts() != null && !task.artifacts().isEmpty();
+        if (TaskState.TASK_STATE_COMPLETED.equals(task.status().state()) && hasArtifacts) {
+            msg =
+                    MessageConvertUtil.convertFromArtifact(
+                            task.artifacts(), context.getAgent().getName());
+        } else if (task.status().message() != null) {
             msg =
                     MessageConvertUtil.convertFromMessage(
-                            task.getStatus().message(), context.getAgent().getName());
+                            task.status().message(), context.getAgent().getName());
         } else {
             msg =
                     MessageConvertUtil.convertFromArtifact(
-                            task.getArtifacts(), context.getAgent().getName());
+                            task.artifacts(), context.getAgent().getName());
         }
         msg = context.publishPostReasoning(msg);
         if (!context.complete(msg)) {

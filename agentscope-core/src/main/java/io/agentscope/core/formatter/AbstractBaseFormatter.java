@@ -75,7 +75,33 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
         return TracerRegistry.get().callFormat(this, msgs, () -> doFormat(msgs));
     }
 
+    /**
+     * Format AgentScope messages using request-scoped generation options.
+     *
+     * @param msgs list of AgentScope messages
+     * @param options request-scoped generation options; may be {@code null}
+     * @return list of provider-specific request messages
+     */
+    @Override
+    public List<TReq> format(List<Msg> msgs, GenerateOptions options) {
+        return TracerRegistry.get().callFormat(this, msgs, () -> doFormat(msgs, options));
+    }
+
     protected abstract List<TReq> doFormat(List<Msg> msgs);
+
+    /**
+     * Format AgentScope messages using request-scoped generation options.
+     *
+     * <p>The default implementation delegates to {@link #doFormat(List)} for providers that do not
+     * need options during message conversion.
+     *
+     * @param msgs list of AgentScope messages
+     * @param options request-scoped generation options; may be {@code null}
+     * @return list of provider-specific request messages
+     */
+    protected List<TReq> doFormat(List<Msg> msgs, GenerateOptions options) {
+        return doFormat(msgs);
+    }
 
     /**
      * Extract text content from a message, filtering out ThinkingBlock.

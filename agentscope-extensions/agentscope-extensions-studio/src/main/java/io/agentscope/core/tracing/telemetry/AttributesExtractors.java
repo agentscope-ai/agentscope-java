@@ -19,6 +19,7 @@ package io.agentscope.core.tracing.telemetry;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_FORMAT_TARGET;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_INPUT;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_OUTPUT;
+import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_USAGE_TOOL_USE_PROMPT_TOKENS;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.GenAiOperationNameAgentScopeIncubatingValues.FORMAT;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.GenAiProviderNameAgentScopeIncubatingValues.DASHSCOPE;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_AGENT_DESCRIPTION;
@@ -45,8 +46,11 @@ import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_TOOL_DEFINITIONS;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_TOOL_DESCRIPTION;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_TOOL_NAME;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_USAGE_INPUT_TOKENS;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_USAGE_OUTPUT_TOKENS;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_USAGE_REASONING_OUTPUT_TOKENS;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.CHAT;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.EXECUTE_TOOL;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.INVOKE_AGENT;
@@ -217,14 +221,27 @@ final class AttributesExtractors {
                         Collections.singletonList(response.getFinishReason()));
             }
             internalSet(builder, GEN_AI_RESPONSE_ID, response.getId());
-            internalSet(
-                    builder,
-                    GEN_AI_USAGE_INPUT_TOKENS,
-                    (long) response.getUsage().getInputTokens());
-            internalSet(
-                    builder,
-                    GEN_AI_USAGE_OUTPUT_TOKENS,
-                    (long) response.getUsage().getOutputTokens());
+            if (response.getUsage() != null) {
+                var usage = response.getUsage();
+                internalSet(builder, GEN_AI_USAGE_INPUT_TOKENS, (long) usage.getInputTokens());
+                internalSet(builder, GEN_AI_USAGE_OUTPUT_TOKENS, (long) usage.getOutputTokens());
+                internalSet(
+                        builder,
+                        GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS,
+                        (long) usage.getCacheCreationTokens());
+                internalSet(
+                        builder,
+                        GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS,
+                        (long) usage.getCachedTokens());
+                internalSet(
+                        builder,
+                        GEN_AI_USAGE_REASONING_OUTPUT_TOKENS,
+                        (long) usage.getReasoningTokens());
+                internalSet(
+                        builder,
+                        AGENTSCOPE_USAGE_TOOL_USE_PROMPT_TOKENS,
+                        (long) usage.getToolUsePromptTokens());
+            }
             internalSet(builder, GEN_AI_OUTPUT_MESSAGES, getOutputMessages(response));
         }
 

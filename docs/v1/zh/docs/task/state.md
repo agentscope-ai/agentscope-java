@@ -1,5 +1,6 @@
 ---
 title: 状态管理
+en_link: /v1/en/docs/task/state
 ---
 
 State 提供组件状态的序列化和反序列化能力，是 Session 持久化的底层基础。

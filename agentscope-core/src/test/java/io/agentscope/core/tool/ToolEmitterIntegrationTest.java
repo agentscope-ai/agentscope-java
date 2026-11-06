@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -229,47 +230,6 @@ class ToolEmitterIntegrationTest {
     }
 
     @Test
-    @DisplayName("ToolEmitter should work after Toolkit copy")
-    void testToolEmitterWithCopiedToolkit() {
-        toolkit.registerTool(
-                new Object() {
-                    @Tool(name = "task_a", description = "Task A")
-                    public ToolResultBlock taskA(
-                            @ToolParam(name = "data") String data, ToolEmitter emitter) {
-                        emitter.emit(ToolResultBlock.text("A: Started"));
-                        emitter.emit(ToolResultBlock.text("A: Processing"));
-                        return ToolResultBlock.text("A: Done");
-                    }
-                });
-        var copiedToolkit = toolkit.copy();
-        copiedToolkit.setChunkCallback(
-                (toolUse, chunk) -> {
-                    capturedChunks.add(chunk);
-                    capturedToolUseBlocks.add(toolUse);
-                });
-
-        // Call task_a
-        Map<String, Object> inputA = Map.of("data", "x");
-        ToolUseBlock toolA =
-                ToolUseBlock.builder()
-                        .id("call-a")
-                        .name("task_a")
-                        .input(inputA)
-                        .content(JsonUtils.getJsonCodec().toJson(inputA))
-                        .build();
-        copiedToolkit.callTool(ToolCallParam.builder().toolUseBlock(toolA).build()).block();
-
-        // Verify chunks
-        assertEquals(2, capturedChunks.size());
-        assertEquals("A: Started", extractText(capturedChunks.get(0)));
-        assertEquals("A: Processing", extractText(capturedChunks.get(1)));
-
-        // Verify tool use blocks
-        assertEquals("call-a", capturedToolUseBlocks.get(0).getId());
-        assertEquals("call-a", capturedToolUseBlocks.get(1).getId());
-    }
-
-    @Test
     @DisplayName("ReActAgent should preserve user chunk callback while emitting ActingChunkEvent")
     void testReActAgentPreservesUserChunkCallback() {
         toolkit.registerTool(new StreamingTool());
@@ -323,22 +283,23 @@ class ToolEmitterIntegrationTest {
 
         List<String> userChunks = new CopyOnWriteArrayList<>();
         toolkit.setChunkCallback((toolUse, chunk) -> userChunks.add(extractText(chunk)));
-        toolkit.setInternalChunkCallback(
+        BiConsumer<ToolUseBlock, ToolResultBlock> internal =
                 (toolUse, chunk) -> {
                     throw new IllegalStateException("boom");
-                });
+                };
 
-        ToolResultBlock finalResponse =
-                toolkit.callTool(
-                                ToolCallParam.builder()
-                                        .toolUseBlock(
-                                                createToolCall(
-                                                        "stream_task", Map.of("input", "demo")))
-                                        .build())
+        List<ToolResultBlock> results =
+                toolkit.callTools(
+                                List.of(createToolCall("stream_task", Map.of("input", "demo"))),
+                                null,
+                                null,
+                                null,
+                                internal)
                         .block();
 
-        assertNotNull(finalResponse);
-        assertEquals("tool-result:demo", extractText(finalResponse));
+        assertNotNull(results);
+        assertEquals(1, results.size());
+        assertEquals("tool-result:demo", extractText(results.get(0)));
         assertEquals(List.of("chunk:1:demo", "chunk:2:demo"), userChunks);
     }
 
@@ -368,22 +329,23 @@ class ToolEmitterIntegrationTest {
     @DisplayName("Internal chunk callback failure should not interrupt tool execution")
     void testInternalChunkCallbackFailureDoesNotInterruptToolExecution() {
         toolkit.registerTool(new StreamingTool());
-        toolkit.setInternalChunkCallback(
+        BiConsumer<ToolUseBlock, ToolResultBlock> internal =
                 (toolUse, chunk) -> {
                     throw new IllegalStateException("internal callback failure");
-                });
+                };
 
-        ToolResultBlock finalResponse =
-                toolkit.callTool(
-                                ToolCallParam.builder()
-                                        .toolUseBlock(
-                                                createToolCall(
-                                                        "stream_task", Map.of("input", "demo")))
-                                        .build())
+        List<ToolResultBlock> results =
+                toolkit.callTools(
+                                List.of(createToolCall("stream_task", Map.of("input", "demo"))),
+                                null,
+                                null,
+                                null,
+                                internal)
                         .block();
 
-        assertNotNull(finalResponse);
-        assertEquals("tool-result:demo", extractText(finalResponse));
+        assertNotNull(results);
+        assertEquals(1, results.size());
+        assertEquals("tool-result:demo", extractText(results.get(0)));
     }
 
     /**

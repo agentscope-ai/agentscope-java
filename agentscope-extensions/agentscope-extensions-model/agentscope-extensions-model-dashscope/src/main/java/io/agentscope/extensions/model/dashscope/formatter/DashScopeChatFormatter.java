@@ -16,11 +16,17 @@
 package io.agentscope.extensions.model.dashscope.formatter;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.dashscope.dto.DashScopeContentPart;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeInput;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeParameters;
@@ -28,10 +34,11 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Formatter for DashScope Conversation/Generation APIs.
@@ -43,14 +50,12 @@ import java.util.stream.Collectors;
 public class DashScopeChatFormatter
         extends AbstractBaseFormatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> {
 
-    private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
+    private static final Logger log = LoggerFactory.getLogger(DashScopeChatFormatter.class);
 
-    /**
-     * Sentinel for an explicit "no cache" intent. An empty map is serialized away (via
-     * {@code @JsonInclude(NON_EMPTY)} on {@link DashScopeMessage#cacheControl}), so the upstream
-     * API receives no {@code cache_control} field and therefore performs no caching.
-     */
-    private static final Map<String, String> NO_CACHE_CONTROL = Collections.emptyMap();
+    private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
+    private static final int MAX_CACHE_MARKERS = 4;
+    private static final String FILE_ID_SCHEME = "fileid://";
+    private static final String DASHSCOPE_PROVIDER = "dashscope";
 
     private final DashScopeMessageConverter messageConverter;
     private final DashScopeResponseParser responseParser;
@@ -66,6 +71,7 @@ public class DashScopeChatFormatter
     protected List<DashScopeMessage> doFormat(List<Msg> msgs) {
         List<DashScopeMessage> result = new ArrayList<>();
         for (Msg msg : msgs) {
+            appendDocumentMessages(msg, result, null);
             boolean hasMedia = hasMediaContent(msg);
             DashScopeMessage dsMsg = messageConverter.convertToMessage(msg, hasMedia);
             if (dsMsg != null) {
@@ -73,6 +79,70 @@ public class DashScopeChatFormatter
             }
         }
         return result;
+    }
+
+    @Override
+    protected List<DashScopeMessage> doFormat(List<Msg> msgs, GenerateOptions options) {
+        List<DashScopeMessage> result = new ArrayList<>();
+        List<Boolean> cacheDirectives = new ArrayList<>();
+        for (Msg msg : msgs) {
+            appendDocumentMessages(msg, result, cacheDirectives);
+            DashScopeMessage dsMsg = messageConverter.convertToMessage(msg, hasMediaContent(msg));
+            if (dsMsg != null) {
+                result.add(dsMsg);
+                cacheDirectives.add(cacheControlDirective(msg));
+            }
+        }
+        applyAutomaticCacheControl(result, cacheDirectives, options);
+        return result;
+    }
+
+    /**
+     * Emit the system message that DashScope's document contract expects.
+     *
+     * <p>{@code qwen-long} reads documents from a {@code fileid://} reference carried by a system
+     * message placed before the turn that asks about them, not from a content part. Each document
+     * block therefore contributes one system message ahead of its own message.
+     *
+     * <p>Only {@link FileIdSource} is supported in this phase: URL and Base64 documents are
+     * rejected here rather than being dropped on the floor. Blocks on non-USER turns are left
+     * alone - documents are user input, and the role validation already rejects them on SYSTEM
+     * while ASSISTANT/TOOL accept arbitrary blocks for back-compat.
+     *
+     * @param msg The message whose document blocks should be emitted
+     * @param messages The formatted messages collected so far
+     * @param directives Cache-control directives aligned with {@code messages}; may be null
+     * @throws IllegalArgumentException if a document block carries a non-DashScope file id source
+     */
+    static void appendDocumentMessages(
+            Msg msg, List<DashScopeMessage> messages, List<Boolean> directives) {
+        if (msg.getRole() != MsgRole.USER) {
+            return;
+        }
+        for (DocumentBlock document : msg.getContentBlocks(DocumentBlock.class)) {
+            Source source = document.getSource();
+            if (!(source instanceof FileIdSource fileIdSource)) {
+                throw new IllegalArgumentException(
+                        "DashScope document input requires a file id source, got "
+                                + (source == null ? "null" : source.getClass().getSimpleName())
+                                + "; upload the document first and pass the DashScope file id");
+            }
+            if (!DASHSCOPE_PROVIDER.equals(fileIdSource.getProvider())) {
+                throw new IllegalArgumentException(
+                        "DashScope document input requires a DashScope file id, got provider '"
+                                + fileIdSource.getProvider()
+                                + "'");
+            }
+            messages.add(
+                    DashScopeMessage.builder()
+                            .role("system")
+                            .content(FILE_ID_SCHEME + fileIdSource.getFileId())
+                            .build());
+            if (directives != null) {
+                // Keep the injected message out of automatic cache_control placement.
+                directives.add(Boolean.FALSE);
+            }
+        }
     }
 
     @Override
@@ -125,9 +195,28 @@ public class DashScopeChatFormatter
      * @return List of DashScopeMessage objects with multimodal content
      */
     public List<DashScopeMessage> formatMultiModal(List<Msg> messages) {
-        return messages.stream()
-                .map(msg -> messageConverter.convertToMessage(msg, true))
-                .collect(Collectors.toList());
+        return formatMultiModal(messages, null);
+    }
+
+    /**
+     * Format AgentScope Msg objects to DashScope MultiModal message format using request-scoped
+     * generation options.
+     *
+     * @param messages The AgentScope messages to convert
+     * @param options request-scoped generation options; may be {@code null}
+     * @return List of DashScopeMessage objects with multimodal content
+     */
+    public List<DashScopeMessage> formatMultiModal(List<Msg> messages, GenerateOptions options) {
+        List<DashScopeMessage> result = new ArrayList<>();
+        List<Boolean> cacheDirectives = new ArrayList<>();
+        for (Msg msg : messages) {
+            appendDocumentMessages(msg, result, cacheDirectives);
+            DashScopeMessage message = messageConverter.convertToMessage(msg, true);
+            result.add(message);
+            cacheDirectives.add(cacheControlDirective(msg));
+        }
+        applyAutomaticCacheControl(result, cacheDirectives, options);
+        return result;
     }
 
     /**
@@ -180,59 +269,101 @@ public class DashScopeChatFormatter
         return request;
     }
 
-    /**
-     * Apply cache control to DashScope messages.
-     *
-     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that already carry a cache_control value (including the empty
-     * "no cache" sentinel) are left untouched.
-     *
-     * @param messages the list of formatted DashScope messages
-     */
-    public void applyCacheControl(List<DashScopeMessage> messages) {
-        if (messages == null || messages.isEmpty()) {
-            return;
+    static void setCacheControlOnContent(DashScopeMessage message) {
+        DashScopeContentPart lastPart = getOrCreateLastContentPart(message);
+        if (lastPart == null) {
+            throw new IllegalStateException(
+                    "Cannot place cache_control on a message without a content part");
         }
-        for (DashScopeMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && shouldAutoCache(msg)) {
-                msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+        if (lastPart.getCacheControl() == null) {
+            lastPart.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+        }
+    }
+
+    private static DashScopeContentPart getOrCreateLastContentPart(DashScopeMessage message) {
+        Object content = message.getContent();
+        if (content instanceof String text) {
+            DashScopeContentPart textPart = DashScopeContentPart.text(text);
+            message.setContent(List.of(textPart));
+            return textPart;
+        } else if (content instanceof List<?> parts) {
+            for (int i = parts.size() - 1; i >= 0; i--) {
+                if (parts.get(i) instanceof DashScopeContentPart part) {
+                    return part;
+                }
             }
         }
-        DashScopeMessage lastMsg = messages.get(messages.size() - 1);
-        if (shouldAutoCache(lastMsg)) {
-            lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+        return null;
+    }
+
+    static Boolean cacheControlDirective(Msg msg) {
+        if (msg == null || msg.getMetadata() == null) {
+            return null;
+        }
+        Object directive = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
+        return directive instanceof Boolean value ? value : null;
+    }
+
+    static void applyAutomaticCacheControl(
+            List<DashScopeMessage> messages, List<Boolean> directives, GenerateOptions options) {
+        if (messages == null
+                || messages.isEmpty()
+                || options == null
+                || !Boolean.TRUE.equals(options.getCacheControl())) {
+            return;
+        }
+        if (messages.size() != directives.size()) {
+            throw new IllegalStateException(
+                    "Cache-control directives do not match formatted messages");
+        }
+
+        int markerCount = countCacheMarkers(messages);
+        if (markerCount > MAX_CACHE_MARKERS) {
+            log.warn(
+                    "Request contains {} explicit cache_control markers; provider uses the last {};"
+                            + " skipping automatic markers",
+                    markerCount,
+                    MAX_CACHE_MARKERS);
+            return;
+        }
+
+        LinkedHashSet<Integer> candidates = new LinkedHashSet<>();
+        int lastIndex = messages.size() - 1;
+        if (shouldAutoCache(directives.get(lastIndex))) {
+            candidates.add(lastIndex);
+        }
+        for (int i = 0; i < messages.size(); i++) {
+            if ("system".equals(messages.get(i).getRole()) && shouldAutoCache(directives.get(i))) {
+                candidates.add(i);
+            }
+        }
+
+        for (Integer index : candidates) {
+            if (markerCount >= MAX_CACHE_MARKERS) {
+                break;
+            }
+            setCacheControlOnContent(messages.get(index));
+            markerCount++;
         }
     }
 
-    /**
-     * Get the ephemeral cache control constant.
-     *
-     * @return unmodifiable map representing ephemeral cache control
-     */
-    static Map<String, String> getEphemeralCacheControl() {
-        return EPHEMERAL_CACHE_CONTROL;
+    private static boolean shouldAutoCache(Boolean directive) {
+        return directive == null;
     }
 
-    /**
-     * Get the "no cache" sentinel constant.
-     *
-     * @return unmodifiable empty map representing an explicit "no cache" intent
-     */
-    static Map<String, String> getNoCacheControl() {
-        return NO_CACHE_CONTROL;
-    }
-
-    /**
-     * Whether the automatic cache-control strategy should mark a message as ephemeral.
-     *
-     * <p>Returns {@code true} only when the message has no cache_control value at all. Any non-null
-     * value — an explicit {@code {"type": "ephemeral"}}, a custom value, or the empty "no cache"
-     * sentinel — is left unchanged.
-     *
-     * @param message the message to inspect
-     * @return {@code true} if the message should be auto-cached, {@code false} otherwise
-     */
-    static boolean shouldAutoCache(DashScopeMessage message) {
-        return message.getCacheControl() == null;
+    private static int countCacheMarkers(List<DashScopeMessage> messages) {
+        int count = 0;
+        for (DashScopeMessage message : messages) {
+            Object content = message.getContent();
+            if (content instanceof List<?> parts) {
+                for (Object part : parts) {
+                    if (part instanceof DashScopeContentPart contentPart
+                            && contentPart.getCacheControl() != null) {
+                        count++;
+                    }
+                }
+            }
+        }
+        return count;
     }
 }

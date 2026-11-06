@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.ollama.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -24,6 +25,7 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
@@ -524,6 +526,77 @@ class OllamaChatFormatterTest {
         assertEquals(model, request.getModel());
         assertEquals(messages, request.getMessages());
         assertEquals(stream, request.getStream());
+    }
+
+    @Test
+    @DisplayName("Should serialize request messages without thinking key when thinking is null")
+    void testRequestSerializationOmitsThinkingWhenNull() {
+        OllamaMessage userMsg = new OllamaMessage("user", "Hello");
+        OllamaMessage assistantMsg = new OllamaMessage("assistant", "Hi there");
+
+        List<OllamaMessage> messages = Arrays.asList(userMsg, assistantMsg);
+        OllamaRequest request =
+                formatter.buildRequest("test-model", messages, false, null, null, null, null);
+
+        assertNotNull(request);
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(request);
+        assertFalse(json.contains("\"thinking\""));
+    }
+
+    @Test
+    @DisplayName("Should serialize request message with thinking key when thinking is present")
+    void testRequestSerializationIncludesThinkingWhenPresent() {
+        OllamaMessage assistantMsg = new OllamaMessage("assistant", "I will run a tool");
+        assistantMsg.setThinking("Planning tool call");
+
+        OllamaRequest request =
+                formatter.buildRequest(
+                        "test-model",
+                        Collections.singletonList(assistantMsg),
+                        false,
+                        null,
+                        null,
+                        null,
+                        null);
+
+        assertNotNull(request);
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(request);
+        assertTrue(json.contains("\"thinking\":\"Planning tool call\""));
+    }
+
+    @Test
+    @DisplayName("Should preserve assistant ThinkingBlock in the formatted request")
+    void testFormatPreservesAssistantThinkingBlock() {
+        Msg assistantMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(
+                                Arrays.asList(
+                                        ThinkingBlock.builder()
+                                                .thinking("I should call the weather tool.")
+                                                .build(),
+                                        TextBlock.builder()
+                                                .text("Let me check the weather.")
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call-123")
+                                                .name("get_weather")
+                                                .input(Collections.singletonMap("city", "Tokyo"))
+                                                .build()))
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(Collections.singletonList(assistantMsg));
+        OllamaRequest request =
+                formatter.buildRequest("test-model", formatted, false, null, null, null, null);
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(request);
+
+        assertEquals(1, formatted.size());
+        assertEquals("assistant", formatted.get(0).getRole());
+        assertEquals("I should call the weather tool.", formatted.get(0).getThinking());
+        assertEquals("Let me check the weather.", formatted.get(0).getContent());
+        assertNotNull(formatted.get(0).getToolCalls());
+        assertTrue(json.contains("\"thinking\":\"I should call the weather tool.\""));
     }
 
     // Helper method to concatenate lists

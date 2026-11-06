@@ -88,6 +88,21 @@ public interface AgentTool {
     }
 
     /**
+     * Gets deferred tool definition loading configuration for this tool.
+     *
+     * <p>Providers that support tool search (such as the OpenAI Responses {@code tool_search}
+     * server tool) can defer loading this tool's parameter schema until the model searches for
+     * it. Returning {@code null} means no explicit preference is provided, which leaves the tool
+     * eagerly loaded.
+     *
+     * @return deferred loading value ({@code true}/{@code false}) or {@code null} when
+     *     unspecified
+     */
+    default Boolean getDeferLoading() {
+        return null;
+    }
+
+    /**
      * Gets the optional output schema for this tool in JSON Schema format.
      *
      * <p>Most tools do not expose a structured output schema to models, so the default
@@ -101,6 +116,24 @@ public interface AgentTool {
     }
 
     /**
+     * Gets the human-readable display name of this tool, for rendering to an end user.
+     *
+     * <p>{@link #getName()} is a programmatic identifier chosen for model consumption and
+     * {@link #getDescription()} is model-facing guidance; neither is suitable as a UI label. MCP
+     * servers may supply a display name via the spec's {@code Tool.title} (falling back to
+     * {@code ToolAnnotations.title}), which {@link io.agentscope.core.tool.mcp.McpTool} surfaces
+     * here.
+     *
+     * <p>Local {@code @Tool} methods have no display name, so the default implementation returns
+     * {@code null}. Callers must fall back to {@link #getName()} when this is {@code null}.
+     *
+     * @return the display title, or {@code null} when the tool provides none
+     */
+    default String getTitle() {
+        return null;
+    }
+
+    /**
      * Returns whether this tool performs only read operations and never mutates state.
      *
      * <p>Read-only tools are automatically permitted in restricted execution modes such as
@@ -109,6 +142,33 @@ public interface AgentTool {
      * @return {@code true} if the tool is read-only; {@code false} by default
      */
     default boolean isReadOnly() {
+        return false;
+    }
+
+    /**
+     * Whether this tool manages its own timeout, bypassing the ordinary tool execution timeout.
+     * Parent cancellation still propagates to the tool.
+     *
+     * @return true if the tool owns its timeout budget
+     */
+    default boolean isTimeoutManaged() {
+        return false;
+    }
+
+    /**
+     * Whether this tool's result should be returned directly to the caller,
+     * skipping the next reasoning iteration. Defaults to {@code false}.
+     *
+     * <p>The flag applies wherever the tool's successful result is produced: framework-executed
+     * tools and results supplied by the caller when resuming after {@code TOOL_SUSPENDED}
+     * (e.g. {@code externalTool = true} tools). A batch resolved across multiple resumes, or
+     * mixing externally supplied and framework-executed results, is always fed back to the
+     * model.
+     *
+     * <p>Since the successful result becomes the turn's final answer, ensure it always
+     * produces presentable content blocks — never an empty output list.
+     */
+    default boolean isReturnDirect() {
         return false;
     }
 

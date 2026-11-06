@@ -19,6 +19,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -43,6 +44,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
@@ -272,6 +274,9 @@ class ReActAgentStructuredOutputWithToolsTest {
         assertTrue(
                 model.optionsHaveResponseFormat(),
                 "Native path should set response_format in options");
+        assertNull(
+                model.getCapturedOptions().getResponseFormat().getJsonSchema().getStrict(),
+                "Agent should leave strict to the model-level configuration");
         assertFalse(
                 model.toolListContainsGenerateResponse(),
                 "Native path should not inject generate_response tool");
@@ -362,6 +367,90 @@ class ReActAgentStructuredOutputWithToolsTest {
         assertTrue(
                 tools.stream().anyMatch(t -> "getWeather".equals(t.getName())),
                 "Real tool should be present in tool list");
+    }
+
+    @Test
+    @DisplayName("Has tools + invalid native output + with-tools support → fallback path")
+    void hasTools_invalidNativeOutput_fallsBackToToolPath() {
+        AtomicInteger calls = new AtomicInteger();
+        Map<String, Object> toolInput =
+                Map.of("response", Map.of("city", "Shanghai", "temperature", "32°C"));
+
+        Function<List<Msg>, List<ChatResponse>> responder =
+                msgs -> {
+                    int call = calls.getAndIncrement();
+                    if (call == 0) {
+                        return List.of(
+                                ChatResponse.builder()
+                                        .id("native_invalid")
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("{\"city\":42}")
+                                                                .build()))
+                                        .usage(new ChatUsage(10, 20, 0.5))
+                                        .build());
+                    }
+                    if (call == 1) {
+                        return List.of(
+                                ChatResponse.builder()
+                                        .id("fallback_tool")
+                                        .content(
+                                                List.of(
+                                                        ToolUseBlock.builder()
+                                                                .id("fallback_call")
+                                                                .name("generate_response")
+                                                                .input(toolInput)
+                                                                .content(
+                                                                        JsonUtils.getJsonCodec()
+                                                                                .toJson(toolInput))
+                                                                .build()))
+                                        .usage(new ChatUsage(10, 20, 0.5))
+                                        .build());
+                    }
+                    throw new AssertionError("Unexpected model call: " + call);
+                };
+
+        ConfigurableMockModel model = new ConfigurableMockModel(true, true, responder);
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new DummyTools());
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("test-agent")
+                        .sysPrompt("test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg result =
+                agent.call(userMsg(), WeatherInfo.class)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(result);
+        WeatherInfo info = result.getStructuredData(WeatherInfo.class);
+        assertNotNull(info);
+        assertEquals("Shanghai", info.city);
+        assertEquals("32°C", info.temperature);
+        assertEquals(2, calls.get());
+        assertFalse(
+                model.optionsHaveResponseFormat(),
+                "Fallback path should not retain response_format");
+        assertTrue(
+                model.toolListContainsGenerateResponse(),
+                "Fallback path should inject generate_response");
+        assertTrue(
+                model.getCapturedTools().stream()
+                        .anyMatch(tool -> "getWeather".equals(tool.getName())),
+                "The real tool should remain available on fallback");
+        assertFalse(
+                agent.getAgentState().getContext().stream()
+                        .anyMatch(
+                                msg ->
+                                        msg.getTextContent() != null
+                                                && msg.getTextContent().contains("{\"city\":42}")),
+                "The rejected native output should not remain in durable context");
     }
 
     @Test

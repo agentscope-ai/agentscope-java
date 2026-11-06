@@ -55,7 +55,6 @@ import org.springframework.stereotype.Component;
 public class ToolConfirmationCoordinator {
 
     private static final Logger log = LoggerFactory.getLogger(ToolConfirmationCoordinator.class);
-    private static final long UPLOAD_RETRY_MS = 1_000L;
     private static final UUID UUID_NAMESPACE_URL =
             UUID.fromString("6ba7b811-9dad-11d1-80b4-00c04fd430c8");
 
@@ -157,15 +156,12 @@ public class ToolConfirmationCoordinator {
         if (ticket.inputJson() != null) {
             payload.put("inputSha256", sha256(ticket.inputJson()));
         }
-        SessionEventDto requestEvent =
-                managed
-                        ? eventLog.appendLocal(
-                                sessionId, SessionEventTypes.SESSION_REQUIRES_ACTION, payload, null)
-                        : eventLog.append(
-                                sessionId, SessionEventTypes.SESSION_REQUIRES_ACTION, payload);
-        if (managed) {
-            startReliableUpload(requestEvent, scope, future);
-        }
+        eventLog.appendScoped(
+                sessionId,
+                SessionEventTypes.SESSION_REQUIRES_ACTION,
+                payload,
+                null,
+                ControlPlaneClient.eventScope(scope));
 
         Thread poller =
                 new Thread(() -> pollUntilResolved(ticket, future), "hitl-poll-" + toolUseId);
@@ -185,7 +181,7 @@ public class ToolConfirmationCoordinator {
                         payload,
                         scope);
             } catch (RuntimeException ex) {
-                // The durable request uploader/projector remains authoritative. Do not fail open
+                // The durable request outbox/projector remains authoritative. Do not fail open
                 // after the ticket and request event already exist.
                 log.warn(
                         "Could not project HITL requires_action status: session={}, error={}",
@@ -316,7 +312,7 @@ public class ToolConfirmationCoordinator {
                 .filter(ticket -> ticket.resolvedAllow() != null)
                 .map(
                         ticket ->
-                                eventLog.appendIdempotent(
+                                eventLog.appendIdempotentScoped(
                                         sessionId,
                                         SessionEventTypes.USER_TOOL_CONFIRMATION,
                                         resolutionPayload(
@@ -324,7 +320,8 @@ public class ToolConfirmationCoordinator {
                                                 ticket.managedTask()
                                                         ? "control_plane"
                                                         : "personal_chat"),
-                                        resolutionEventId(ticket)));
+                                        resolutionEventId(ticket),
+                                        ControlPlaneClient.eventScope(managedScope(ticket))));
     }
 
     /** Expires one pending ticket and resumes a live continuation as a denied tool call. */
@@ -435,21 +432,12 @@ public class ToolConfirmationCoordinator {
 
     private void finishResolution(CoordinationStore.HitlTicket ticket, String source) {
         Map<String, Object> payload = resolutionPayload(ticket, source);
-        SessionEventDto resolutionEvent =
-                ticket.managedTask()
-                        ? eventLog.appendIdempotentLocal(
-                                ticket.sessionId(),
-                                SessionEventTypes.USER_TOOL_CONFIRMATION,
-                                payload,
-                                resolutionEventId(ticket))
-                        : eventLog.appendIdempotent(
-                                ticket.sessionId(),
-                                SessionEventTypes.USER_TOOL_CONFIRMATION,
-                                payload,
-                                resolutionEventId(ticket));
-        if (ticket.managedTask()) {
-            controlPlaneClient.appendSessionEvent(resolutionEvent, managedScope(ticket));
-        }
+        eventLog.appendIdempotentScoped(
+                ticket.sessionId(),
+                SessionEventTypes.USER_TOOL_CONFIRMATION,
+                payload,
+                resolutionEventId(ticket),
+                ControlPlaneClient.eventScope(managedScope(ticket)));
         if (ticket.ownerId() != null) {
             sessionService.updateStatus(
                     ticket.ownerId(),
@@ -525,42 +513,6 @@ public class ToolConfirmationCoordinator {
         }
     }
 
-    private void startReliableUpload(
-            SessionEventDto event, ManagedExecutionScope scope, CompletableFuture<Boolean> future) {
-        Thread uploader =
-                new Thread(
-                        () -> {
-                            // Continue past expiresAt. If CP was unavailable for the whole human
-                            // window it still needs this same idempotent request so its
-                            // authoritative
-                            // expiry sweep can create-and-cancel the Approval and release the turn.
-                            while (!future.isDone()) {
-                                try {
-                                    // The ordinary mirror may already have succeeded. CP's source
-                                    // key makes this explicit retry idempotent.
-                                    controlPlaneClient.appendSessionEvent(event, scope);
-                                    return;
-                                } catch (RuntimeException ex) {
-                                    log.warn(
-                                            "HITL request upload failed; retrying: session={},"
-                                                    + " eventId={}, error={}",
-                                            event.sessionId(),
-                                            event.id(),
-                                            ex.getMessage());
-                                }
-                                try {
-                                    Thread.sleep(UPLOAD_RETRY_MS);
-                                } catch (InterruptedException ex) {
-                                    Thread.currentThread().interrupt();
-                                    return;
-                                }
-                            }
-                        },
-                        "hitl-upload-" + event.id());
-        uploader.setDaemon(true);
-        uploader.start();
-    }
-
     private void expireAtDeadline(
             CoordinationStore.HitlTicket ticket, CompletableFuture<Boolean> future) {
         long remaining = ticket.expiresAt() - System.currentTimeMillis();
@@ -579,7 +531,7 @@ public class ToolConfirmationCoordinator {
                 }
             } catch (RuntimeException ex) {
                 // The durable reconciler retries this path. Never release the continuation before
-                // the fenced resolution event has reached the control plane.
+                // the fenced decision is durably queued and its runtime update succeeds.
                 log.warn(
                         "HITL expiry delivery failed: session={}, toolUseId={}, error={}",
                         ticket.sessionId(),
@@ -685,6 +637,7 @@ public class ToolConfirmationCoordinator {
 
     private static String managedApprovalId(
             ManagedExecutionScope scope, String sessionId, String toolUseId) {
+        // Frozen UUID input shared with the Control Plane; preserve existing approval identities.
         String name =
                 "aistio:managed-hitl:v1:"
                         + scope.tenant()
