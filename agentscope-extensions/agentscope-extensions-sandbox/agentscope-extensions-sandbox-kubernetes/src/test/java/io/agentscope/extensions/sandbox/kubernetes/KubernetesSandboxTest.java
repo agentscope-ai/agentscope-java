@@ -113,7 +113,8 @@ class KubernetesSandboxTest {
     void confirmedRuntimeTimeoutPreservesPartialOutputAndExitCode() {
         when(commands.run(anyString(), any(Duration.class)))
                 .thenReturn(
-                        new ExecutionResult("before", "Command timed out after 2 seconds", 124, true));
+                        new ExecutionResult(
+                                "before", "Command timed out after 2 seconds", 124, true));
         SandboxException.ExecException error =
                 assertThrows(
                         SandboxException.ExecException.class,

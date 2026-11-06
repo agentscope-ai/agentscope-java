@@ -79,7 +79,13 @@ public class CommandExecutor {
             submissionAttempted = true;
             HttpResponse<String> response =
                     connector.sendRequest(
-                            "POST", "execute", body, "application/json", 1, requestTimeout);
+                            "POST",
+                            "execute",
+                            body,
+                            "application/json",
+                            1,
+                            requestTimeout,
+                            requestTimeout);
 
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw unknownOutcome(

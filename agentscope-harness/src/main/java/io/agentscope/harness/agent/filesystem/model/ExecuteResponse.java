@@ -23,7 +23,8 @@ package io.agentscope.harness.agent.filesystem.model;
  * @param truncated whether the output was truncated due to filesystem limitations
  * @param timedOut whether the execution path confirmed that the command timed out
  */
-public record ExecuteResponse(String output, Integer exitCode, boolean truncated, boolean timedOut) {
+public record ExecuteResponse(
+        String output, Integer exitCode, boolean truncated, boolean timedOut) {
 
     public ExecuteResponse(String output, Integer exitCode, boolean truncated) {
         this(output, exitCode, truncated, false);

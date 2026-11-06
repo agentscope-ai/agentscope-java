@@ -267,9 +267,7 @@ public class AnthropicMessageConverter {
 
         for (ContentBlock block : blocks) {
             if (block instanceof TextBlock tb) {
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder().text(tb.getText()).build()));
+                contentBlocks.add(ContentBlockParam.ofText(convertTextBlock(tb)));
             } else if (block instanceof HintBlock hb) {
                 contentBlocks.add(
                         ContentBlockParam.ofText(
@@ -311,21 +309,14 @@ public class AnthropicMessageConverter {
                                                             + "]")
                                             .build()));
                 }
-            } else if (block instanceof DocumentBlock db && msg.getRole() == MsgRole.USER) {
-                log.warn(
-                        "DocumentBlock is not supported by Anthropic; sending a text placeholder"
-                                + " instead of '{}'",
-                        db.getName() != null ? db.getName() : db.getId());
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder()
-                                        .text(
-                                                "[Document - not supported by Anthropic: "
-                                                        + (db.getName() != null
-                                                                ? db.getName()
-                                                                : db.getId())
-                                                        + "]")
-                                        .build()));
+            } else if (block instanceof DocumentBlock db) {
+                try {
+                    contentBlocks.add(
+                            ContentBlockParam.ofDocument(mediaConverter.convertDocumentBlock(db)));
+                } catch (Exception e) {
+                    throw new IllegalArgumentException(
+                            "Failed to process DocumentBlock: " + db.getId(), e);
+                }
             } else if (block instanceof ToolUseBlock tub) {
                 if (tub.isServerTool()) {
                     // Server tool calls are echoed back as server_tool_use blocks
@@ -382,9 +373,7 @@ public class AnthropicMessageConverter {
             for (Object item : outputList) {
                 if (item instanceof ContentBlock cb) {
                     if (cb instanceof TextBlock tb) {
-                        blocks.add(
-                                ToolResultBlockParam.Content.Block.ofText(
-                                        TextBlockParam.builder().text(tb.getText()).build()));
+                        blocks.add(ToolResultBlockParam.Content.Block.ofText(convertTextBlock(tb)));
                     } else if (cb instanceof ImageBlock ib) {
                         try {
                             ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
@@ -394,10 +383,19 @@ public class AnthropicMessageConverter {
                         }
                     } else if (cb instanceof DataBlock db) {
                         try {
-                            ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
-                            blocks.add(ToolResultBlockParam.Content.Block.ofImage(imageParam));
+                            blocks.add(
+                                    ToolResultBlockParam.Content.Block.ofImage(
+                                            mediaConverter.convertDataBlock(db)));
                         } catch (Exception e) {
                             log.warn("Failed to process DataBlock in tool result: {}", e);
+                        }
+                    } else if (cb instanceof DocumentBlock db) {
+                        try {
+                            blocks.add(
+                                    ToolResultBlockParam.Content.Block.ofDocument(
+                                            mediaConverter.convertDocumentBlock(db)));
+                        } catch (Exception e) {
+                            log.warn("Failed to process DocumentBlock in tool result: {}", e);
                         }
                     }
                 }
@@ -446,6 +444,10 @@ public class AnthropicMessageConverter {
                         MessageParam.Content.ofBlockParams(
                                 List.of(ContentBlockParam.ofToolResult(toolResultParam))))
                 .build();
+    }
+
+    private TextBlockParam convertTextBlock(TextBlock textBlock) {
+        return TextBlockParam.builder().text(textBlock.getText()).build();
     }
 
     /**

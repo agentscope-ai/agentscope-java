@@ -304,6 +304,15 @@ One more reminder: the `SandboxState` identity layer is never optional — in mu
 
 ## How the workspace maps into the sandbox
 
+For a shared Kubernetes PVC, pass a stable directory from authenticated identity at Claim creation:
+
+```java
+.claimEnv(List.of(new SandboxClaimSpec.EnvVar(
+    "WORKSPACE_SUBPATH", "users/1001/2001", "python-runtime")))
+```
+
+`KubernetesFilesystemSpec.claimEnv` forwards these entries to `SandboxClaim.spec.env`. The cluster template must allow env injection and use `subPathExpr: $(WORKSPACE_SUBPATH)` for the external PVC mounted at `/workspace`. Provision storage permissions in the cluster. In agent-sandbox v0.5.4, a Claim with env bypasses prewarmed instances; the replacement sandbox can reuse the same directory on the retained PVC. Per-call `null` env inherits client defaults; an empty list clears them.
+
 Host-side key files under `workspace/` (`AGENTS.md`, `skills/`, `subagents/`, `knowledge/`) are synced into the sandbox at each start, content-hash-gated — unchanged content is skipped.
 
 To bind a host directory into the sandbox (e.g. a code repo), use `BindMountEntry` (Docker only; for Kubernetes, declare mounts in the cluster-side `SandboxTemplate` pod template instead; managed sandboxes like Daytona / E2B run in the cloud and can't mount your host paths).

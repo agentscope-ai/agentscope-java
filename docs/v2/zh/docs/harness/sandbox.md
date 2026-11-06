@@ -303,6 +303,15 @@ spec:
 
 ## 工作区怎么映射进沙箱
 
+使用 Kubernetes 共享 PVC 时，在创建 Claim 时传入由认证身份派生的固定目录：
+
+```java
+.claimEnv(List.of(new SandboxClaimSpec.EnvVar(
+    "WORKSPACE_SUBPATH", "users/1001/2001", "python-runtime")))
+```
+
+`KubernetesFilesystemSpec.claimEnv` 将条目透传到 `SandboxClaim.spec.env`。集群模板须允许 env 注入，并通过 `subPathExpr: $(WORKSPACE_SUBPATH)` 将外部 PVC 的子目录挂到 `/workspace`，存储权限在集群侧配置。agent-sandbox v0.5.4 对带 env 的 Claim 跳过预热实例；新沙箱可在保留的 PVC 上续用同一目录。单次调用的 env 为 `null` 时沿用客户端默认值，空列表清除默认值。
+
 宿主侧 `workspace/` 下的关键文件（`AGENTS.md`、`skills/`、`subagents/`、`knowledge/`）在每次沙箱启动时同步进去；按内容哈希增量，不变就跳过传输。
 
 需要把宿主的某个目录 bind 进沙箱（例如代码仓库），用 `BindMountEntry`（仅 Docker 支持；Kubernetes 后端的挂载在集群侧 `SandboxTemplate` 的 podTemplate 里声明，Daytona / E2B 等托管沙箱在云上跑，自然不能挂宿主目录）。

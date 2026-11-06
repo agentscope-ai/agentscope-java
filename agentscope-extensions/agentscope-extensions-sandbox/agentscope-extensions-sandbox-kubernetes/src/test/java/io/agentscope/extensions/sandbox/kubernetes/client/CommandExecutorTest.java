@@ -273,7 +273,7 @@ class CommandExecutorTest {
                 assertThrows(
                         SandboxRequestException.class,
                         () -> executor(Duration.ofSeconds(2)).run("side-effect"));
-        assertTrue(error.isExecutionOutcomeUnknown());
+        assertTrue(error.isExecutionOutcomeUnknown(), error.getMessage());
         assertEquals(1, executions.get());
     }
 
@@ -293,12 +293,12 @@ class CommandExecutorTest {
         capabilities =
                 "{\"execute\":{\"timeout_seconds\":true,\"max_timeout_seconds\":900,\"cleanup_timeout_seconds\":0}}";
         headersBeforeDelay = true;
-        delayMillis = 3000;
+        delayMillis = 5000;
         SandboxRequestException error =
                 assertThrows(
                         SandboxRequestException.class,
                         () ->
-                                executor(Duration.ofMillis(500))
+                                executor(Duration.ofSeconds(2))
                                         .run("body-stall", Duration.ofSeconds(1)));
         assertTrue(error.isExecutionOutcomeUnknown());
         assertEquals(1, executions.get());
