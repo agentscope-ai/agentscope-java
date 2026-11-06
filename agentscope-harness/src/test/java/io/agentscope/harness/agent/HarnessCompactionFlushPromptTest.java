@@ -26,6 +26,7 @@ import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
@@ -35,6 +36,7 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -112,6 +114,73 @@ class HarnessCompactionFlushPromptTest {
                 MsgRole.USER,
                 auxiliary.inputs.get(auxiliary.inputs.size() - 1).get(0).getRole(),
                 "summary input must remain separate from the extraction prompt");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "false, false, false", "false, true, false",
+        "true, false, false", "true, true, false",
+        "false, false, true", "false, true, true",
+        "true, false, true", "true, true, true"
+    })
+    void keepsCustomFlushPromptWithPerCallModel(
+            boolean overflow, boolean streaming, boolean dedicatedCompactionModel) {
+        String prompt = "Remember only project decisions. PER_CALL_FLUSH_MARKER";
+        RecordingModel defaultModel = new RecordingModel(false);
+        RecordingModel perCallModel = new RecordingModel(overflow);
+        RecordingModel auxiliary = new RecordingModel(false);
+        String modelId = "compaction-flush-" + UUID.randomUUID();
+        ModelRegistry.register(modelId, perCallModel);
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("per-call-flush-prompt-test")
+                        .model(defaultModel)
+                        .workspace(workspace)
+                        .memory(
+                                MemoryConfig.builder()
+                                        .flushPrompt(prompt)
+                                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                                        .build())
+                        .compaction(
+                                CompactionConfig.builder()
+                                        .model(dedicatedCompactionModel ? auxiliary : null)
+                                        .triggerMessages(overflow ? 100 : 3)
+                                        .triggerTokens(100000)
+                                        .keepMessages(1)
+                                        .keepTokens(0)
+                                        .build())
+                        .disableSubagents()
+                        .build()) {
+            List<Msg> history =
+                    List.of(
+                            message(MsgRole.USER, "We decided to use Java. ".repeat(200)),
+                            message(MsgRole.ASSISTANT, "Decision recorded."),
+                            message(MsgRole.USER, "What did we decide?"));
+            RuntimeContext ctx =
+                    RuntimeContext.builder()
+                            .sessionId("per-call-prompt-session")
+                            .modelId(modelId)
+                            .build();
+            if (streaming) {
+                agent.streamEvents(history, ctx).collectList().block(Duration.ofSeconds(20));
+            } else {
+                assertEquals(
+                        "answer",
+                        agent.call(history, ctx).block(Duration.ofSeconds(20)).getTextContent());
+            }
+            assertEquals(0, defaultModel.calls.get(), "the build-time model must not be used");
+            assertEquals(dedicatedCompactionModel ? 2 : 0, auxiliary.calls.get());
+            assertEquals(
+                    (overflow ? 2 : 1) + (dedicatedCompactionModel ? 0 : 2),
+                    perCallModel.calls.get());
+            RecordingModel flushModel = dedicatedCompactionModel ? auxiliary : perCallModel;
+            int flushCall = overflow && !dedicatedCompactionModel ? 1 : 0;
+            Msg extractionPrompt = flushModel.inputs.get(flushCall).get(0);
+            assertEquals(MsgRole.SYSTEM, extractionPrompt.getRole());
+            assertEquals(prompt, extractionPrompt.getTextContent());
+        } finally {
+            ModelRegistry.unregister(modelId);
+        }
     }
 
     @Test

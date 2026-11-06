@@ -225,10 +225,17 @@ The agent-sandbox backend does not `kubectl exec` into the container; it talks t
 
 | Endpoint | Semantics |
 |----------|-----------|
-| `POST /execute` (body `{"command": "..."}`) | **Must interpret the command with POSIX shell semantics** (equivalent to `sh -c`) and return `{"stdout", "stderr", "exit_code"}`. Harness sends commands containing `cd ... && (...)`, pipes, and other shell constructs |
+| `GET /capabilities` | Returns `{"execute":{"timeout_seconds":true,"max_timeout_seconds":900,"cleanup_timeout_seconds":6}}`. Limits are positive whole seconds; cleanup allowance is nonnegative. The SDK verifies support and the requested limit before submitting a command. Missing/invalid capabilities reject execution; there is no fallback that ignores timeout |
+| `POST /execute` (body `{"command": "...", "timeout_seconds": 30}`) | **Must interpret the command with POSIX shell semantics** (equivalent to `sh -c`) and return `{"stdout", "stderr", "exit_code"}`. Harness sends commands containing `cd ... && (...)`, pipes, and other shell constructs |
 | `POST /upload` (multipart; `filename` is a relative path) | writes a file under the file-API base directory |
 | `GET /download/{path}` | downloads file bytes by relative path |
 | `GET /list/{path}`, `GET /exists/{path}` | directory listing / existence check |
+
+`timeout_seconds` is a positive whole-second deadline covering queue wait, process creation and execution, and draining stdout/stderr. Reject invalid or unsupported values before starting the process. On expiry, terminate the command process group, bound cleanup by the advertised `cleanup_timeout_seconds`, and return exit code `124` with all output collected so far. The deadline must also cover inherited output pipes after the parent shell exits. Cancellation must clean up the process group. Detached processes that create a new session are outside the process-group guarantee.
+
+The `execute` tool defaults to 30 seconds; direct SDK `commands().run(command)` defaults to 60 seconds. Both send the effective timeout explicitly. The HTTP wait budget for each command POST is **execution timeout + advertised cleanup allowance + connector `perAttemptTimeout`**; concurrent requests do not change each other's budgets. The capability preflight has its own connector `perAttemptTimeout` budget before the command POST; this formula does not include that preflight. Set every gateway/router request and idle timeout to cover the largest supported budget (or disable those limits deliberately). A fixed 180-second route still prevents a 300-second command from completing through that route.
+
+Deploy the conforming runtime and route settings before this SDK. Existing runtime images without capabilities are rejected before command submission, including workspace setup and file-tool commands. Do not advertise capabilities until timeout enforcement is implemented. HTTP errors, wait expiry, and invalid responses once command submission is attempted mean **execution outcome unknown** (Harness exit code `null` / outcome `UNKNOWN`), not confirmed process timeout. Transport submission failures are conservatively UNKNOWN because acceptance cannot be proven from the caller. Capability verification failures use `SandboxRequestException.RuntimeCapabilityException` (with the original HTTP status when available), so applications must treat them as runtime failures even when the status is 400 or 404; a supported runtime rejecting an excessive requested timeout remains an ordinary 422 input error. Workspace directory creation also checks the command exit code before setup, hydration, or upload can continue. Command POSTs are not retried or redirected; inspect command state before deciding to retry.
 
 **The file-API base directory must match the workspace root** (recommended: `/workspace` for both). Harness transfers two kinds of content through `/upload` / `/download`: workspace snapshot tarballs (temp files under `.agentscope-tmp/` inside that directory), and single-file bytes for `write_file` / file downloads when the path lies under the base directory (Linux caps a single command-line argument at about 128 KiB; native file-API transfer has no such limit). The base directory is configured via `KubernetesSandboxClientOptions.fileApiBaseDir` (default `/workspace`); setting it blank falls back to base64-over-exec transfer.
 
@@ -239,6 +246,16 @@ The agent-sandbox backend does not `kubectl exec` into the container; it talks t
 The `Sandbox` abstraction's primary data-plane entry point is `exec(command)`. This is deliberate — tool semantics like `edit_file` / `grep_files` (regex, string replacement, globbing) cannot be expressed through a small set of file-API endpoints; running shell scripts against a standard toolchain inside the image is the only portable answer. The file API (upload/download) handles pure byte transfer only: workspace snapshots and single-file upload/download go through it (backends declare the capability by implementing the optional `SandboxFileTransfer` interface); everything else goes through `execute`. Which also means: **the image contract is part of the sandbox interface** — run the conformance check above before switching images.
 
 **Crossing the boundary from the model's point of view.** The file API (upload/download) above is an internal mechanism — invisible to the LLM, and `FilesystemTool` exposes no transfer tools. The supported way for a sandboxed agent to hand an artifact it produced to a destination outside the sandbox is the generic **`deliver_artifact`** tool. It is registered only when you configure an `ArtifactDeliveryTarget` via `HarnessAgent.builder().artifactDeliveryTarget(...)`. The SPI stays business-agnostic — `deliver(RuntimeContext, ArtifactDeliveryRequest) -> ArtifactDeliveryResult` — so destination logic (e.g. WebDAV upload) lives in your application. The tool downloads the file bytes from the sandbox workspace and delegates the transport to the target. Without a configured target, the sandbox workspace prompt states plainly that files cannot leave the container.
+
+## Kubernetes HTTP exchange timeouts
+
+Kubernetes sandbox requests bound the wait for both response headers and the complete response body. A server that sends headers and then stalls cannot keep the caller waiting indefinitely. Command requests use the execution timeout plus the advertised cleanup allowance and connector `perAttemptTimeout`, as described above. An expired command exchange reports an unknown execution outcome; only a valid runtime response confirms the exit code.
+
+The runtime's `timed_out: true` response confirms that the process was terminated by its execution limit and preserves its partial output. An HTTP exchange timeout leaves the execution outcome unknown; an exit code of 124 alone does not confirm a runtime timeout.
+
+File uploads and downloads default to a 10-minute exchange budget. Directory listing and existence checks default to 60 seconds. The client methods accepting a `Duration` use that value as the exchange budget; retries and backoff share it.
+
+These deadlines bound HTTP waits. Connection discovery and pod IP lookup retain their own timeout behavior. Cancelling the client exchange does not guarantee that the remote command has stopped; use runtime-side process limits when remote termination is required.
 
 ## Kubernetes state persistence: PVC is the first layer
 
@@ -286,6 +303,15 @@ spec:
 One more reminder: the `SandboxState` identity layer is never optional — in multi-replica deployments configure a distributed `AgentStateStore`, otherwise other replicas can't learn the claimName and the data on the PVC is unreachable no matter how intact it is.
 
 ## How the workspace maps into the sandbox
+
+For a shared Kubernetes PVC, pass a stable directory from authenticated identity at Claim creation:
+
+```java
+.claimEnv(List.of(new SandboxClaimSpec.EnvVar(
+    "WORKSPACE_SUBPATH", "users/1001/2001", "python-runtime")))
+```
+
+`KubernetesFilesystemSpec.claimEnv` forwards these entries to `SandboxClaim.spec.env`. The cluster template must allow env injection and use `subPathExpr: $(WORKSPACE_SUBPATH)` for the external PVC mounted at `/workspace`. Provision storage permissions in the cluster. In agent-sandbox v0.5.4, a Claim with env bypasses prewarmed instances; the replacement sandbox can reuse the same directory on the retained PVC. Per-call `null` env inherits client defaults; an empty list clears them.
 
 Host-side key files under `workspace/` (`AGENTS.md`, `skills/`, `subagents/`, `knowledge/`) are synced into the sandbox at each start, content-hash-gated — unchanged content is skipped.
 

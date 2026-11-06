@@ -40,9 +40,12 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.TextInputContent;
 import io.agentscope.core.agui.model.VideoInputContent;
 import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -124,6 +127,11 @@ public class AguiMessageConverter {
      * @return The converted AG-UI messages, never empty
      */
     public List<AguiMessage> toAguiMessages(Msg msg) {
+        return buildAguiMessages(msg);
+    }
+
+    /** Build reasoning, standard content, and expanded tool-result messages together. */
+    private List<AguiMessage> buildAguiMessages(Msg msg) {
         if (msg.getRole() == MsgRole.TOOL) {
             List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
             if (toolResults.size() > 1) {
@@ -134,26 +142,19 @@ public class AguiMessageConverter {
                 return List.copyOf(messages);
             }
         }
-        return splitReasoningMessage(msg, toSingleAguiMessage(msg));
-    }
-
-    /**
-     * Convert an AgentScope message that carries at most one tool result.
-     *
-     * @param msg The AgentScope message to convert
-     * @return The converted AG-UI message
-     */
-    private AguiMessage toSingleAguiMessage(Msg msg) {
         String role = convertRole(msg.getRole());
         StringBuilder content = new StringBuilder();
         List<AguiToolCall> toolCalls = new ArrayList<>();
         String toolCallId = null;
         String error = null;
         boolean toolMessage = msg.getRole() == MsgRole.TOOL;
-        String reasoningContent = thinkingContent(msg);
+        StringBuilder reasoningContent = new StringBuilder();
+        List<InputContent> inputContents = new ArrayList<>();
 
         for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock tb) {
+            if (block instanceof ThinkingBlock tb) {
+                appendContent(reasoningContent, tb.getThinking());
+            } else if (block instanceof TextBlock tb) {
                 appendContent(content, tb.getText());
             } else if (block instanceof ToolUseBlock tub) {
                 toolCalls.add(toAguiToolCall(tub));
@@ -161,36 +162,78 @@ public class AguiMessageConverter {
                 toolCallId = trb.getId();
                 if (toolMessage && trb.getState() == ToolResultState.ERROR) {
                     error = toolResultText(trb);
-                } else {
-                    for (ContentBlock output : trb.getOutput()) {
-                        if (output instanceof TextBlock tb) {
-                            appendContent(content, tb.getText());
-                        }
-                    }
                 }
+                appendContent(content, toolResultText(trb));
+            } else if (block instanceof ImageBlock ib
+                    && ib.getSource() instanceof URLSource urlSource) {
+                inputContents.add(
+                        new ImageInputContent(
+                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
+            } else if (block instanceof AudioBlock ab
+                    && ab.getSource() instanceof URLSource urlSource) {
+                inputContents.add(
+                        new AudioInputContent(
+                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
+            } else if (block instanceof VideoBlock vb
+                    && vb.getSource() instanceof URLSource urlSource) {
+                inputContents.add(
+                        new VideoInputContent(
+                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
+            } else if (block instanceof DataBlock db
+                    && db.getSource() instanceof URLSource urlSource) {
+                InputContent inputContent = dataBlockInputContent(urlSource);
+                if (inputContent != null) {
+                    inputContents.add(inputContent);
+                }
+            } else if (block instanceof DocumentBlock db
+                    && db.getSource() instanceof URLSource urlSource) {
+                String mimeType =
+                        db.getMimeType() != null ? db.getMimeType() : urlSource.getMimeType();
+                inputContents.add(
+                        new DocumentInputContent(
+                                new InputContentUrlSource(urlSource.getUrl(), mimeType),
+                                db.getMetadata() == null
+                                        ? Collections.emptyMap()
+                                        : db.getMetadata()));
             }
         }
 
-        if (reasoningContent.length() > 0
-                && content.length() == 0
-                && toolCalls.isEmpty()
-                && toolCallId == null) {
-            return AguiMessage.reasoningMessage(
-                    generatedMessageId(msg), reasoningContent.toString());
+        List<AguiMessage> messages = new ArrayList<>();
+        if (reasoningContent.length() > 0) {
+            messages.add(
+                    AguiMessage.reasoningMessage(
+                            generatedMessageId(msg), reasoningContent.toString()));
+            if (content.length() == 0
+                    && inputContents.isEmpty()
+                    && toolCalls.isEmpty()
+                    && toolCallId == null) {
+                return List.copyOf(messages);
+            }
         }
 
         // The protocol lists `content` as required on a tool message and does not accept null
         String contentText = content.toString();
-        MessageContent wireContent =
-                contentText.isEmpty() && !toolMessage ? null : new MessageContent.Text(contentText);
-
-        return new AguiMessage(
-                generatedMessageId(msg),
-                role,
-                wireContent,
-                toolCalls.isEmpty() ? null : toolCalls,
-                toolCallId,
-                error);
+        MessageContent wireContent;
+        if (inputContents.isEmpty()) {
+            wireContent =
+                    contentText.isEmpty() && !toolMessage
+                            ? null
+                            : new MessageContent.Text(contentText);
+        } else {
+            if (!contentText.isEmpty() || toolMessage) {
+                inputContents.add(new TextInputContent(contentText));
+            }
+            wireContent = new MessageContent.Blocks(inputContents);
+        }
+        messages.add(
+                new AguiMessage(
+                        generatedMessageId(msg),
+                        role,
+                        wireContent,
+                        toolCalls.isEmpty() ? null : toolCalls,
+                        toolCallId,
+                        error));
+        return List.copyOf(messages);
     }
 
     /**
@@ -361,7 +404,9 @@ public class AguiMessageConverter {
                                 .output(
                                         TextBlock.builder()
                                                 .text(
-                                                        text == null || text.isEmpty()
+                                                        text == null
+                                                                        || text.isEmpty()
+                                                                        || error.equals(text)
                                                                 ? error
                                                                 : error + "\n" + text)
                                                 .build())
@@ -423,35 +468,14 @@ public class AguiMessageConverter {
         String id = generatedMessageId(msg);
         String text = toolResultText(result);
         boolean error = result.getState() == ToolResultState.ERROR;
-        MessageContent content =
-                error ? new MessageContent.Text("") : new MessageContent.Text(text);
+        MessageContent content = new MessageContent.Text(text);
         return new AguiMessage(
                 id, convertRole(msg.getRole()), content, null, result.getId(), error ? text : null);
-    }
-
-    private List<AguiMessage> splitReasoningMessage(Msg msg, AguiMessage standardMessage) {
-        String reasoningContent = thinkingContent(msg);
-        if (reasoningContent.isEmpty() || standardMessage.isReasoningMessage()) {
-            return List.of(standardMessage);
-        }
-        return List.of(
-                AguiMessage.reasoningMessage(generatedMessageId(msg), reasoningContent),
-                standardMessage);
     }
 
     private static String generatedMessageId(Msg msg) {
         String id = msg.getId();
         return id.startsWith("agui::") ? id : "agui::" + id + "-" + UUID.randomUUID();
-    }
-
-    private static String thinkingContent(Msg msg) {
-        StringBuilder reasoningContent = new StringBuilder();
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof ThinkingBlock tb) {
-                appendContent(reasoningContent, tb.getThinking());
-            }
-        }
-        return reasoningContent.toString();
     }
 
     /**
@@ -478,10 +502,12 @@ public class AguiMessageConverter {
         if (input instanceof VideoInputContent video) {
             return VideoBlock.builder().source(toSource(video.source())).build();
         }
-        if (input instanceof DocumentInputContent) {
-            throw new IllegalStateException(
-                    "Unsupported AG-UI input content type 'document': document input is not"
-                            + " supported yet");
+        if (input instanceof DocumentInputContent document) {
+            return DocumentBlock.builder()
+                    .source(toSource(document.source()))
+                    .mimeType(sourceMimeType(document.source()))
+                    .metadata(document.metadata())
+                    .build();
         }
         throw new IllegalStateException(
                 "Unhandled InputContent type: "
@@ -508,6 +534,41 @@ public class AguiMessageConverter {
             return new Base64Source(data.mimeType(), data.value());
         }
         throw new IllegalStateException("Unhandled InputContentSource type: " + inputSource);
+    }
+
+    private static String sourceMimeType(InputContentSource source) {
+        if (source instanceof InputContentUrlSource url) {
+            return url.mimeType();
+        }
+        if (source instanceof InputContentDataSource data) {
+            return data.mimeType();
+        }
+        return null;
+    }
+
+    private static InputContentUrlSource toInputContentUrlSource(URLSource source) {
+        return new InputContentUrlSource(source.getUrl(), source.getMimeType());
+    }
+
+    private static InputContent dataBlockInputContent(URLSource source) {
+        String mimeType;
+        try {
+            mimeType = MediaUtils.resolveMimeType(source);
+        } catch (IllegalArgumentException unreadableMimeType) {
+            return null;
+        }
+
+        InputContentUrlSource inputSource = new InputContentUrlSource(source.getUrl(), mimeType);
+        if (mimeType.startsWith("image/")) {
+            return new ImageInputContent(inputSource, Collections.emptyMap());
+        }
+        if (mimeType.startsWith("audio/")) {
+            return new AudioInputContent(inputSource, Collections.emptyMap());
+        }
+        if (mimeType.startsWith("video/")) {
+            return new VideoInputContent(inputSource, Collections.emptyMap());
+        }
+        return new DocumentInputContent(inputSource, Collections.emptyMap());
     }
 
     /**
