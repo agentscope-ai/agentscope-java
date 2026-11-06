@@ -17,6 +17,7 @@ package io.agentscope.core.tool.mcp;
 
 import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -44,6 +45,16 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
     private final McpAsyncClient client;
 
     /**
+     * Default ceiling for the graceful-close attempt, matching the bound the synchronous wrapper
+     * already gets from the MCP SDK. Deliberately shorter than the client's own request (120s) and
+     * initialisation (30s) timeouts: teardown should fail fast and fall back to forceful closure,
+     * not hold the calling thread for minutes.
+     */
+    public static final Duration DEFAULT_CLOSE_TIMEOUT = Duration.ofSeconds(10);
+
+    private volatile Duration closeTimeout = DEFAULT_CLOSE_TIMEOUT;
+
+    /**
      * Constructs a new asynchronous MCP client wrapper.
      *
      * @param name unique identifier for this client
@@ -52,6 +63,30 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
     public McpAsyncClientWrapper(String name, McpAsyncClient client) {
         super(name);
         this.client = client;
+    }
+
+    /**
+     * @return the ceiling applied to the graceful-close attempt in {@link #close()}
+     */
+    public Duration getCloseTimeout() {
+        return closeTimeout;
+    }
+
+    /**
+     * Configures how long {@link #close()} waits for graceful closure before forcing the
+     * connection shut.
+     *
+     * <p>This is a live switch: it takes effect on the next {@code close()} call. The value must be
+     * positive and may not be {@code null}, since an absent ceiling would restore the unbounded
+     * wait this class exists to prevent.
+     *
+     * @param closeTimeout positive ceiling; {@code null}, zero, or negative is rejected
+     */
+    public void setCloseTimeout(Duration closeTimeout) {
+        if (closeTimeout == null || closeTimeout.isZero() || closeTimeout.isNegative()) {
+            throw new IllegalArgumentException("closeTimeout must be a positive duration");
+        }
+        this.closeTimeout = closeTimeout;
     }
 
     /**
@@ -177,6 +212,12 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      *
      * <p>This method attempts to close the client gracefully, falling back to forceful closure if
      * graceful closure fails. This method is idempotent and can be called multiple times safely.
+     *
+     * <p>The graceful attempt is bounded by {@link #getCloseTimeout()}. Without a ceiling the
+     * underlying {@code closeGracefully()} Mono never completes when the server keeps the transport
+     * open but stops answering, so {@code block()} parks the calling thread forever and the forceful
+     * fallback below is never reached - which matters because {@code close()} is called from shared
+     * teardown paths such as {@code Toolkit#closeMcpClients()}.
      */
     @Override
     public void close() {
@@ -186,8 +227,9 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
                 client.closeGracefully()
                         .doOnSuccess(v -> logger.debug("MCP client '{}' closed", name))
                         .doOnError(e -> logger.error("Error closing MCP client '{}'", name, e))
-                        .block();
+                        .block(closeTimeout);
             } catch (Exception e) {
+                // Includes a timeout on the graceful attempt: release the transport anyway.
                 logger.error("Exception during MCP client close", e);
                 client.close();
             }
