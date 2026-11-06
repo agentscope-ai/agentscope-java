@@ -1,0 +1,211 @@
+{
+  "catalogId": "agentscope.io:a2ui/basic",
+  "version": "1.0",
+  "components": {
+    "Heading": {
+      "description": "Section heading.",
+      "props": {
+        "text": { "type": "string", "description": "Heading text." },
+        "level": { "type": "integer", "enum": [1, 2, 3], "description": "Heading level, default 2." }
+      },
+      "required": ["text"]
+    },
+    "Text": {
+      "description": "Plain paragraph text.",
+      "props": {
+        "text": { "type": "string", "description": "Paragraph content." },
+        "muted": { "type": "boolean", "description": "Render in secondary color." }
+      },
+      "required": ["text"]
+    },
+    "Markdown": {
+      "description": "Markdown block rendered with the chat renderer.",
+      "props": {
+        "content": { "type": "string", "description": "Markdown source." }
+      },
+      "required": ["content"]
+    },
+    "Table": {
+      "description": "Data table.",
+      "props": {
+        "columns": { "type": "array", "items": { "type": "string" }, "description": "Column headers." },
+        "rows": { "type": "array", "items": { "type": "array" }, "description": "Row values, each row aligned with columns." },
+        "caption": { "type": "string", "description": "Optional caption below the table." }
+      },
+      "required": ["columns", "rows"]
+    },
+    "List": {
+      "description": "Ordered or unordered list.",
+      "props": {
+        "items": { "type": "array", "items": { "type": "string" }, "description": "List entries." },
+        "ordered": { "type": "boolean", "description": "Number the entries when true." }
+      },
+      "required": ["items"]
+    },
+    "Image": {
+      "description": "Image from URL or data URI.",
+      "props": {
+        "src": { "type": "string", "description": "Image URL." },
+        "alt": { "type": "string", "description": "Alternative text." }
+      },
+      "required": ["src"]
+    },
+    "Alert": {
+      "description": "Highlighted callout box.",
+      "props": {
+        "text": { "type": "string", "description": "Alert content." },
+        "kind": { "type": "string", "enum": ["info", "success", "warning", "error"], "description": "Visual tone, default info." }
+      },
+      "required": ["text"]
+    },
+    "Badge": {
+      "description": "Small status badge.",
+      "props": {
+        "text": { "type": "string", "description": "Badge label." },
+        "tone": { "type": "string", "enum": ["neutral", "info", "success", "warning", "error"], "description": "Visual tone, default neutral." }
+      },
+      "required": ["text"]
+    },
+    "Card": {
+      "description": "Bordered container with an optional title.",
+      "props": {
+        "title": { "type": "string", "description": "Card title." }
+      },
+      "required": []
+    },
+    "Row": {
+      "description": "Horizontal layout container; following components until Column/Divider are its children (simple flow model).",
+      "props": {
+        "gap": { "type": "integer", "description": "Gap in pixels." }
+      },
+      "required": []
+    },
+    "Column": {
+      "description": "Vertical layout container segment; closes the current Row.",
+      "props": {
+        "gap": { "type": "integer", "description": "Gap in pixels." }
+      },
+      "required": []
+    },
+    "Divider": {
+      "description": "Horizontal rule.",
+      "props": {},
+      "required": []
+    },
+    "Tabs": {
+      "description": "Tabbed panes.",
+      "props": {
+        "tabs": {
+          "type": "array",
+          "description": "Pane list.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string" },
+              "content": { "type": "string" }
+            },
+            "required": ["label", "content"]
+          }
+        }
+      },
+      "required": ["tabs"]
+    },
+    "ProgressBar": {
+      "description": "Determinate progress bar.",
+      "props": {
+        "value": { "type": "number", "description": "Current value." },
+        "max": { "type": "number", "description": "Upper bound, default 100." },
+        "label": { "type": "string", "description": "Caption above the bar." }
+      },
+      "required": ["value"]
+    },
+    "TextInput": {
+      "description": "Single-line input.",
+      "props": {
+        "name": { "type": "string", "description": "Answer key." },
+        "label": { "type": "string", "description": "Field label." },
+        "placeholder": { "type": "string", "description": "Placeholder text." },
+        "required": { "type": "boolean", "description": "Block submit while empty." }
+      },
+      "required": ["name"]
+    },
+    "TextArea": {
+      "description": "Multi-line input.",
+      "props": {
+        "name": { "type": "string", "description": "Answer key." },
+        "label": { "type": "string", "description": "Field label." },
+        "rows": { "type": "integer", "description": "Visible rows, default 3." }
+      },
+      "required": ["name"]
+    },
+    "Select": {
+      "description": "Dropdown selection; set multiple=true for multi-select.",
+      "props": {
+        "name": { "type": "string", "description": "Answer key." },
+        "label": { "type": "string", "description": "Field label." },
+        "options": { "type": "array", "items": { "type": "string" }, "description": "Selectable choices." },
+        "multiple": { "type": "boolean", "description": "Allow several selections." }
+      },
+      "required": ["name", "options"]
+    },
+    "Checkbox": {
+      "description": "Single boolean checkbox.",
+      "props": {
+        "name": { "type": "string", "description": "Answer key." },
+        "label": { "type": "string", "description": "Label next to the box." },
+        "checked": { "type": "boolean", "description": "Initial state." }
+      },
+      "required": ["name", "label"]
+    },
+    "RadioGroup": {
+      "description": "Exclusive choice group.",
+      "props": {
+        "name": { "type": "string", "description": "Answer key." },
+        "label": { "type": "string", "description": "Group label." },
+        "options": { "type": "array", "items": { "type": "string" }, "description": "Selectable choices." }
+      },
+      "required": ["name", "options"]
+    },
+    "Button": {
+      "description": "Action button; action=submit attaches the form answers to the resume payload.",
+      "props": {
+        "text": { "type": "string", "description": "Button label." },
+        "action": { "type": "string", "enum": ["submit", "link"], "description": "Button behavior, default submit." },
+        "href": { "type": "string", "description": "Target URL when action=link." }
+      },
+      "required": ["text"]
+    },
+    "Form": {
+      "description": "Explicit form wrapper with inline field list (alternative to flat input components).",
+      "props": {
+        "name": { "type": "string", "description": "Form answer namespace." },
+        "fields": {
+          "type": "array",
+          "description": "Field definitions rendered in order.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "label": { "type": "string" },
+              "type": { "type": "string", "enum": ["text", "textarea", "select", "checkbox", "radio"] },
+              "options": { "type": "array", "items": { "type": "string" } },
+              "required": { "type": "boolean" }
+            },
+            "required": ["name", "label", "type"]
+          }
+        },
+        "submitText": { "type": "string", "description": "Submit button label, default Submit." }
+      },
+      "required": ["fields"]
+    },
+    "FileDrop": {
+      "description": "File upload dropzone (upload handled by the frontend).",
+      "props": {
+        "name": { "type": "string", "description": "Answer key for uploaded file references." },
+        "label": { "type": "string", "description": "Dropzone caption." },
+        "accept": { "type": "string", "description": "Comma-separated accepted file types." }
+      },
+      "required": ["name"]
+    }
+  }
+}
