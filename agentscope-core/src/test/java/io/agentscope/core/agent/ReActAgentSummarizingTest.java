@@ -28,6 +28,8 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.PreSummaryEvent;
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -745,6 +747,52 @@ class ReActAgentSummarizingTest {
                 List.of("pre:primary-summary-model", "post:FallbackSummaryModel"), seenModelNames);
     }
 
+    @Test
+    @DisplayName("Should synthesize a message when the summary is empty")
+    void testSummarizingFallsBackWhenSummaryIsEmpty() {
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(new EmptySummaryModel())
+                        .toolkit(new MockToolkit())
+                        .maxIters(1)
+                        .build();
+
+        Msg pendingAssistantMsg =
+                Msg.builder()
+                        .name("TestAgent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .name("search_tool")
+                                                .id("call_empty_summary")
+                                                .input(Map.of("query", "weather"))
+                                                .build()))
+                        .build();
+        agent.getAgentState().contextMutable().add(pendingAssistantMsg);
+
+        Msg response = invokeSummarizing(agent);
+
+        // A summary that produced no visible content used to complete the Mono empty: the caller
+        // received neither onNext nor onError and had no way to tell "nothing to say" from
+        // "finished".
+        assertNotNull(response, "An empty summary must still produce a message");
+        assertEquals(MsgRole.ASSISTANT, response.getRole());
+        String text = TestUtils.extractTextContent(response);
+        assertTrue(text.contains("Maximum iterations (1)"), text);
+        assertTrue(text.contains("no visible output"), text);
+        assertEquals(
+                Boolean.TRUE,
+                response.getMetadata().get(MessageMetadataKeys.SUMMARY_FAILED),
+                "Fallback message must be marked as a failed summary");
+        assertEquals(GenerateReason.MAX_ITERATIONS, response.getGenerateReason());
+        assertTrue(
+                agent.getAgentState().getContext().contains(response),
+                "Fallback message should be written to the agent context");
+    }
+
     private static Msg invokeSummarizing(ReActAgent agent) {
         try {
             // Create a CallExecution for the default session via activateSlotForContext(null)
@@ -780,6 +828,20 @@ class ReActAgentSummarizingTest {
         @Override
         public String getModelName() {
             return "primary-summary-model";
+        }
+    }
+
+    private static final class EmptySummaryModel implements Model {
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.empty();
+        }
+
+        @Override
+        public String getModelName() {
+            return "empty-summary-model";
         }
     }
 
