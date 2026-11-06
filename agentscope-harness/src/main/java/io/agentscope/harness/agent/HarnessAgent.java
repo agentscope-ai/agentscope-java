@@ -43,6 +43,7 @@ import io.agentscope.core.session.SessionLog;
 import io.agentscope.core.session.SessionLogStore;
 import io.agentscope.core.session.SessionProjection;
 import io.agentscope.core.session.SessionRecovery;
+import io.agentscope.core.session.SessionRequestRecording;
 import io.agentscope.core.session.SessionViews;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
@@ -1291,12 +1292,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
         private SessionLogStore sessionLogStore;
         private boolean legacySessionHistory;
         private SessionHistoryMode historyMode = SessionHistoryMode.EVENT_LOG;
+        private SessionRequestRecording requestRecording = SessionRequestRecording.FULL;
 
         java.util.function.Consumer<Builder> sessionHistoryConfigurer() {
             var mode = historyMode;
             var store = sessionLogStore;
+            var recording = requestRecording;
             return child -> {
                 child.sessionHistoryMode(mode);
+                child.sessionRequestRecording(recording);
                 if (store != null) child.sessionLogStore(store);
             };
         }
@@ -1311,6 +1315,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /** Override native history storage while preserving runtime commit semantics. */
         public Builder sessionLogStore(SessionLogStore store) {
             this.sessionLogStore = Objects.requireNonNull(store);
+            return this;
+        }
+
+        /**
+         * Controls native model-request payloads for this agent and Harness-created subagents.
+         * Defaults to {@code FULL}; {@code METADATA} retains identity and counts while omitting
+         * messages, tool schemas and options. Checkpoints and recovery are unchanged.
+         */
+        public Builder sessionRequestRecording(SessionRequestRecording recording) {
+            this.requestRecording = Objects.requireNonNull(recording);
+            inner.sessionRequestRecording(recording);
             return this;
         }
 

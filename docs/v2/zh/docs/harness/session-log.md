@@ -386,6 +386,33 @@ agents/s_<agent>/sessions/s_<user>/s_<session>/
 
 </Accordion>
 
+## 减少重复的模型请求内容
+
+原生会话日志默认在每条 `request/prepared` 中保存完整的消息、工具 schema 和生成参数。
+对话越长，每次模型调用重复记录的历史就可能越多。如果应用不需要查看历史模型请求的完整内容，
+可以选择只记录元数据：
+
+```java
+import io.agentscope.core.session.SessionRequestRecording;
+
+HarnessAgent agent = HarnessAgent.builder()
+        .name("Cost Assistant")
+        .model(model)
+        .sessionRequestRecording(SessionRequestRecording.METADATA)
+        .build();
+```
+
+配置了原生 `sessionLogStore` 的 `ReActAgent.Builder` 也支持同名选项。
+`METADATA` 保存 `modelCallId`、`purpose`、`model`、`payloadMode`（值为 `metadata`）、
+`messageCount` 和 `toolCount`，不再在该请求记录中保存 messages、tools 和 options。
+Harness 创建的子 Agent 会继承此设置。需要检查完整请求或导出器依赖这些字段时，
+请保留默认的 `FULL`。启用前，先确保 `request/prepared` 的消费者兼容元数据形式。
+
+此选项只影响模型请求记录。消息、工具结果、模型 dispatch 事件和状态 checkpoint 仍会保存，
+因此会话历史和 checkpoint 恢复继续生效，同一日志中也可以同时存在两种形式。
+它不是脱敏或保留策略：请求内容仍可能出现在其他事件中，日志总大小也取决于这些事件。
+legacy 历史模式不受此选项影响。
+
 ## 导出到其他系统
 
 如果要把执行历史送到审计系统或数据仓库，使用 `SessionLogExporter` 读取已提交事件，并交给应用实现的 `SessionExportSink`。导出只读取历史，不会重新运行 Agent。

@@ -124,6 +124,7 @@ import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.session.SessionLogStore;
 import io.agentscope.core.session.SessionModels;
 import io.agentscope.core.session.SessionRecorder;
+import io.agentscope.core.session.SessionRequestRecording;
 import io.agentscope.core.session.SessionStateAccess;
 import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
@@ -408,6 +409,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     private final SessionHistoryMode sessionHistoryMode;
+    private final SessionRequestRecording sessionRequestRecording;
     private final SessionLogStore sessionLogStore;
     private final String sessionLogAgentId;
 
@@ -438,6 +440,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.stateStore = builder.stateStore;
         this.sessionLogStore = builder.sessionLogStore;
         this.sessionHistoryMode = builder.sessionHistoryMode;
+        this.sessionRequestRecording = builder.sessionRequestRecording;
         this.sessionLogAgentId =
                 builder.sessionLogAgentId != null
                         ? builder.sessionLogAgentId
@@ -886,7 +889,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             (String) callContext.get(SessionRecorder.TURN_ID_KEY),
                                             control.runId(),
                                             (SessionExportSink)
-                                                    callContext.get(SessionExportSink.CONTEXT_KEY));
+                                                    callContext.get(SessionExportSink.CONTEXT_KEY),
+                                            sessionRequestRecording);
                             callContext.put(SessionRecorder.CONTEXT_KEY, recorder);
                             if (callContext.get(SessionRecorder.PARENT_KEY) != null)
                                 recorder.append(
@@ -5900,6 +5904,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @SuppressWarnings("deprecation")
     public static class Builder {
         private SessionHistoryMode sessionHistoryMode = SessionHistoryMode.EVENT_LOG;
+        private SessionRequestRecording sessionRequestRecording = SessionRequestRecording.FULL;
+
+        /**
+         * Controls native {@code request/prepared} payloads. Defaults to {@code FULL};
+         * {@code METADATA} omits request bodies without changing checkpoints or recovery.
+         * Has no effect in legacy history mode or without a native session log store.
+         */
+        public Builder sessionRequestRecording(SessionRequestRecording recording) {
+            this.sessionRequestRecording = Objects.requireNonNull(recording);
+            return this;
+        }
 
         public Builder sessionHistoryMode(SessionHistoryMode mode) {
             this.sessionHistoryMode = Objects.requireNonNull(mode);
@@ -6035,6 +6050,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         public synchronized Builder copy() {
             Builder copy = new Builder();
             copy.sessionHistoryMode = this.sessionHistoryMode;
+            copy.sessionRequestRecording = this.sessionRequestRecording;
             copy.sessionLogStore = this.sessionLogStore;
             copy.sessionLogAgentId = this.sessionLogAgentId;
             copy.name = this.name;

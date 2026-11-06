@@ -337,6 +337,37 @@ Back up headers, heads, reachable commits/blobs, inbox and export watermarks usi
 
 <span id="exporting-records" />
 
+## Reduce repeated model-request payloads
+
+Native session logs record the full `request/prepared` payload by default: messages,
+tool schemas and generation options. As a conversation grows, each model call can
+record much of the same history again. Applications that do not need to inspect
+complete historical model requests can opt into metadata-only recording:
+
+```java
+import io.agentscope.core.session.SessionRequestRecording;
+
+HarnessAgent agent = HarnessAgent.builder()
+        .name("Cost Assistant")
+        .model(model)
+        .sessionRequestRecording(SessionRequestRecording.METADATA)
+        .build();
+```
+
+The same option is available on `ReActAgent.Builder` when a native `sessionLogStore`
+is configured. `METADATA` records `modelCallId`, `purpose`, `model`, `payloadMode`
+(`metadata`), `messageCount` and `toolCount` instead of the request's messages,
+tools and options. Harness-created subagents inherit this setting. Use `FULL`
+(the default) when request-body inspection or an exporter requires those fields.
+Consumers of `request/prepared` must accept the metadata form before enabling it.
+
+This setting only changes model-request records. Messages, tool results, model
+dispatch events and state checkpoints are still recorded, so transcript and
+checkpoint recovery continue to work, including histories containing both modes.
+It is neither a redaction mode nor a retention policy: request content can still
+appear in other events, and total log size depends on those events too. It has no
+effect in legacy history mode.
+
 ## Export records to another system
 
 To feed an audit database or application event view, implement `SessionExportSink`. Its `accept` method should return only after durable acknowledgment, and duplicate `eventId` deliveries must be harmless. Drain committed records at startup or during idle periods:
