@@ -25,12 +25,16 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Executes commands inside a sandbox via {@code POST /execute}. */
 public class CommandExecutor {
 
+    private static final Logger log = LoggerFactory.getLogger(CommandExecutor.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration LEGACY_EXCHANGE_MARGIN = Duration.ofSeconds(30);
     private static final int CAPABILITY_MAX_ATTEMPTS = 3;
 
     private final SandboxConnector connector;
@@ -50,10 +54,9 @@ public class CommandExecutor {
     }
 
     /**
-     * Runs a command with the given timeout. The runtime must advertise support for the timeout
-     * contract before the command is submitted. Once submission starts, any HTTP failure or
-     * malformed response is reported as an unknown execution outcome because the remote process
-     * may have started.
+     * Runs a command with the given timeout. Runtimes without a capabilities endpoint use the
+     * legacy protocol, which bounds HTTP waiting but cannot guarantee remote process termination.
+     * Once submission starts, HTTP failures or malformed responses have an unknown outcome.
      *
      * @param command shell command
      * @param timeout positive whole-second deadline for queueing and command execution; null uses
@@ -65,15 +68,21 @@ public class CommandExecutor {
         validateTimeout(effectiveTimeout);
 
         Duration requestTimeout = executionRequestTimeout(effectiveTimeout);
+        boolean legacy = requestTimeout == null;
+        if (legacy) {
+            requestTimeout = effectiveTimeout.plus(LEGACY_EXCHANGE_MARGIN);
+        }
         boolean submissionAttempted = false;
         try {
             String json =
                     MAPPER.writeValueAsString(
-                            Map.of(
-                                    "command",
-                                    command,
-                                    "timeout_seconds",
-                                    effectiveTimeout.toSeconds()));
+                            legacy
+                                    ? Map.of("command", command)
+                                    : Map.of(
+                                            "command",
+                                            command,
+                                            "timeout_seconds",
+                                            effectiveTimeout.toSeconds()));
             HttpRequest.BodyPublisher body =
                     HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8);
             submissionAttempted = true;
@@ -139,6 +148,13 @@ public class CommandExecutor {
                             "application/json",
                             CAPABILITY_MAX_ATTEMPTS,
                             connector.getPerAttemptTimeout());
+            if (response.statusCode() == 404) {
+                log.warn(
+                        "[sandbox-client] Runtime capabilities returned 404; using legacy execution"
+                                + " protocol without a guaranteed remote timeout. Check runtime"
+                                + " version and routing.");
+                return null;
+            }
             if (response.statusCode() != 200) {
                 throw new SandboxRequestException.RuntimeCapabilityException(
                         "Runtime does not advertise execution timeout support; command was not"
