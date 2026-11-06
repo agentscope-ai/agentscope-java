@@ -57,9 +57,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Tests for the {@link MiddlewareBase#activePoints()} participation-switch contract: default
- * full-set compatibility, four-state declaration semantics, per-point filtering, order
- * preservation, empty-chain short-circuit, null handling, and construction-time freezing.
+ * Tests for the {@link MiddlewareBase#activePoints()} participation-switch contract: explicit
+ * declaration semantics (the only source of the participation set), null fail-fast, per-point
+ * filtering, order preservation, empty-chain short-circuit, and construction-time freezing.
+ * Non-declaration cannot occur — the method is abstract, so the compiler rejects it.
  */
 class MiddlewareActivePointsTest {
 
@@ -71,6 +72,16 @@ class MiddlewareActivePointsTest {
         RecordingMiddleware(String tag, List<String> trace) {
             this.tag = tag;
             this.trace = trace;
+        }
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(
+                    ExtensionPoint.ON_AGENT,
+                    ExtensionPoint.ON_REASONING,
+                    ExtensionPoint.ON_ACTING,
+                    ExtensionPoint.ON_MODEL_CALL,
+                    ExtensionPoint.ON_SYSTEM_PROMPT);
         }
 
         @Override
@@ -155,9 +166,8 @@ class MiddlewareActivePointsTest {
     }
 
     @Test
-    void defaultAndNullDeclarationsBothActivateAllPoints() {
+    void nullDeclarationFailsFastAtConstruction() {
         List<String> trace = new ArrayList<>();
-        CapturingModel model = new CapturingModel();
         MiddlewareBase nullDeclaring =
                 new RecordingMiddleware("B", trace) {
                     @Override
@@ -165,23 +175,29 @@ class MiddlewareActivePointsTest {
                         return null;
                     }
                 };
-        ReActAgent agent =
-                buildAgent(model, List.of(new RecordingMiddleware("A", trace), nullDeclaring));
+
+        // A null declaration is a programming error and must fail at build time, not at call
+        // time.
+        NullPointerException error =
+                assertThrows(
+                        NullPointerException.class,
+                        () -> buildAgent(new CapturingModel(), List.of(nullDeclaring)));
+        assertTrue(error.getMessage().contains("activePoints()"), error.getMessage());
+    }
+
+    @Test
+    void explicitlyDeclaredAllPointsActivateThemAll() {
+        List<String> trace = new ArrayList<>();
+        CapturingModel model = new CapturingModel();
+        ReActAgent agent = buildAgent(model, List.of(new RecordingMiddleware("A", trace)));
 
         agent.streamEvents(List.of()).collectList().block();
 
-        // The default and a null declaration are equivalent: both activate every point.
         assertTrue(
                 trace.containsAll(
-                        List.of(
-                                "A:onAgent",
-                                "B:onAgent",
-                                "A:onReasoning",
-                                "B:onReasoning",
-                                "A:onModelCall",
-                                "B:onModelCall")),
+                        List.of("A:onAgent", "A:onReasoning", "A:onModelCall", "A:onSystemPrompt")),
                 trace.toString());
-        assertEquals("base-system|A|B", model.firstInputText());
+        assertEquals("base-system|A", model.firstInputText());
     }
 
     @Test

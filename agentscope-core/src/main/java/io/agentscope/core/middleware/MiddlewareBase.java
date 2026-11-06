@@ -20,7 +20,6 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentState;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
@@ -52,11 +51,18 @@ import reactor.core.publisher.Mono;
  *
  * <p>Each onion/transformer hook has a default implementation that delegates
  * directly to {@code next}, so subclasses only need to override the hooks they
- * care about; {@link #onAgentStateReady} defaults to a no-op.
+ * care about; {@link #onAgentStateReady} defaults to a no-op. Every
+ * implementation must additionally declare the points it participates in via
+ * {@link #activePoints()} — participation is never implied.
  *
  * <p><b>Example:</b>
  * <pre>{@code
  * MiddlewareBase logging = new MiddlewareBase() {
+ *     @Override
+ *     public Set<ExtensionPoint> activePoints() {
+ *         return EnumSet.of(ExtensionPoint.ON_REASONING);
+ *     }
+ *
  *     @Override
  *     public Flux<AgentEvent> onReasoning(
  *             Agent agent, RuntimeContext ctx, ReasoningInput input,
@@ -72,7 +78,10 @@ public interface MiddlewareBase {
 
     /**
      * Middleware extension points. Adding a point adds one constant here; the
-     * grouping mechanism stays unchanged.
+     * grouping mechanism stays unchanged. No middleware participates at a new
+     * point until it declares that point in {@link #activePoints()} — a new
+     * point must never be activated by default, especially one whose
+     * activation has side effects beyond the declaring middleware.
      */
     enum ExtensionPoint {
         ON_AGENT,
@@ -84,29 +93,26 @@ public interface MiddlewareBase {
     }
 
     /**
-     * Returns the extension points where this middleware is active. This is
-     * a participation switch, not a statement about which methods are
-     * overridden: a point declared active but not overridden simply runs
-     * its default (pass-through / no-op), and a point omitted is never
-     * invoked — even if overridden.
+     * Returns the extension points where this middleware is active — the sole
+     * source of its participation set. This is a participation switch, not a
+     * statement about which methods are overridden: a point declared active
+     * but not overridden simply runs its default (pass-through / no-op), and
+     * a point omitted is never invoked — even if overridden.
      *
-     * <p>The default is active at every extension point, including ones
-     * added in future releases, so middlewares that do not override this
-     * method keep today's behavior unchanged. Once overridden, the active
-     * set is exactly the returned set; an empty set disables this
-     * middleware at every point while keeping its registration.
+     * <p>Participation must be declared explicitly; there is no default set.
+     * An empty set ({@code EnumSet.noneOf(ExtensionPoint.class)}) keeps this
+     * middleware registered while participating at no point — useful as a
+     * runtime switch. Returning {@code null} is a programming error and
+     * fails fast when the agent is built.
      *
      * <p>Activation is decided once at agent construction; mutating the
      * returned set (or changing later results) has no effect on an
      * already-built agent.
      *
-     * @return the set of extension points this middleware participates in;
-     *         {@code null} is treated as the full set; elements that do not equal
-     *         an {@link ExtensionPoint} constant never activate any point
+     * @return the set of extension points this middleware participates in,
+     *         never {@code null}; the empty set means zero participation
      */
-    default Set<ExtensionPoint> activePoints() {
-        return EnumSet.allOf(ExtensionPoint.class);
-    }
+    Set<ExtensionPoint> activePoints();
 
     /**
      * Returns this middleware's execution order.

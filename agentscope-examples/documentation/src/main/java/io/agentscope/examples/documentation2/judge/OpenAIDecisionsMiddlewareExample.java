@@ -41,7 +41,9 @@ import io.agentscope.extensions.judge.openaidecisions.example.OpenAIDecisionsMod
 import io.agentscope.extensions.judge.openaidecisions.example.OpenAIDecisionsToolSelectionMiddleware;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -190,6 +192,11 @@ public final class OpenAIDecisionsMiddlewareExample {
 
     /** Prints the model and tool schemas after the middleware has applied its decision. */
     private static final class ModelAudit implements MiddlewareBase {
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+        }
+
         @Override
         public int order() {
             return -1;
