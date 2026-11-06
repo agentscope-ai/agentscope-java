@@ -89,7 +89,13 @@ class SandboxConnectorRedirectTest {
                         try (OutputStream out = exchange.getResponseBody()) {}
                         return;
                     }
-                    if ("/execute".equals(exchange.getRequestURI().getRawPath())) {
+                    if ("/capabilities".equals(exchange.getRequestURI().getRawPath())) {
+                        body =
+                                ("{\"execute\":{\"timeout_seconds\":true,"
+                                                + "\"max_timeout_seconds\":900,"
+                                                + "\"cleanup_timeout_seconds\":0}}")
+                                        .getBytes(StandardCharsets.UTF_8);
+                    } else if ("/execute".equals(exchange.getRequestURI().getRawPath())) {
                         delayedHeaderRequests.incrementAndGet();
                         try {
                             Thread.sleep(500);

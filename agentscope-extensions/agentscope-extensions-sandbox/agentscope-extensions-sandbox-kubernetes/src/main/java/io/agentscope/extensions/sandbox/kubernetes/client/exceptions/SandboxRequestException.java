@@ -19,6 +19,7 @@ package io.agentscope.extensions.sandbox.kubernetes.client.exceptions;
 public class SandboxRequestException extends SandboxException {
 
     private final Integer statusCode;
+    private final boolean executionOutcomeUnknown;
 
     public SandboxRequestException(String message) {
         this(message, null, null);
@@ -29,11 +30,30 @@ public class SandboxRequestException extends SandboxException {
     }
 
     public SandboxRequestException(String message, Integer statusCode, Throwable cause) {
+        this(message, statusCode, cause, false);
+    }
+
+    public SandboxRequestException(
+            String message, Integer statusCode, Throwable cause, boolean executionOutcomeUnknown) {
         super(message, cause);
         this.statusCode = statusCode;
+        this.executionOutcomeUnknown = executionOutcomeUnknown;
+    }
+
+    /** Whether command submission was attempted without obtaining a trustworthy process result. */
+    public boolean isExecutionOutcomeUnknown() {
+        return executionOutcomeUnknown;
     }
 
     public Integer getStatusCode() {
         return statusCode;
+    }
+
+    /** Runtime capabilities could not be verified before any command was submitted. */
+    public static class RuntimeCapabilityException extends SandboxRequestException {
+
+        public RuntimeCapabilityException(String message, Integer statusCode, Throwable cause) {
+            super(message, statusCode, cause);
+        }
     }
 }
