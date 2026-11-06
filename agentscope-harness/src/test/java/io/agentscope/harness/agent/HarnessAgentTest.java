@@ -69,7 +69,9 @@ import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
@@ -1789,6 +1791,41 @@ class HarnessAgentTest {
                 workspace.normalize(),
                 child.getWorkspaceManager().getWorkspace().normalize(),
                 "general-purpose must share mainWorkspace");
+    }
+
+    /** The built-in general-purpose subagent must reuse the parent's LocalFilesystemSpec. */
+    @Test
+    void generalPurpose_reusesParentLocalFilesystemSpec() throws Exception {
+        Files.createDirectories(workspace);
+        AtomicInteger calls = new AtomicInteger();
+        LocalFilesystemSpec spec =
+                new LocalFilesystemSpec() {
+                    @Override
+                    public AbstractFilesystem toFilesystem(Path ws, NamespaceFactory nsFactory) {
+                        calls.incrementAndGet();
+                        return super.toFilesystem(ws, nsFactory);
+                    }
+                };
+        spec.project(workspace);
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .filesystem(spec)
+                        .buildSubagentEntries(workspace);
+        int before = calls.get();
+
+        SubagentEntry gp =
+                entries.stream()
+                        .filter(e -> "general-purpose".equals(e.name()))
+                        .findFirst()
+                        .orElseThrow();
+        gp.factory().create(RuntimeContext.empty());
+
+        assertTrue(
+                calls.get() > before,
+                "general-purpose must build its filesystem from the parent's LocalFilesystemSpec");
     }
 
     // =========================================================================
