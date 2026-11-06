@@ -13,7 +13,7 @@ zh_link: /v2/zh/integration/protocol/agui
 
 Multimodal input supports image/audio/video/document. Document parts are converted to `DocumentBlock`; model providers that cannot consume a document report an error instead of silently dropping the content.
 
-`RUN_STARTED.input` retains the original request, so consumers that log or forward events must redact sensitive input themselves.
+`RUN_STARTED.input` retains the original request, including any document content. Consumers that log or forward events must redact sensitive input themselves.
 
 `AguiMessageConverter.toAguiMessageList()` expands a TOOL `Msg` containing multiple `ToolResultBlock`s into one AG-UI tool message per tool result. `toAguiMessage()` remains for messages with at most one tool result and rejects a multi-result TOOL message; use `toAguiMessages()` for the expanded form.
 
