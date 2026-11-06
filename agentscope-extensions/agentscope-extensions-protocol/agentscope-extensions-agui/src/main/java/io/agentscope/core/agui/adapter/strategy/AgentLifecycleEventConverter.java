@@ -15,12 +15,7 @@
  */
 package io.agentscope.core.agui.adapter.strategy;
 
-import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_REPLY_ID;
-import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_CONTENT;
-import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_INPUT;
-import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_NAME;
-import static io.agentscope.core.agui.AguiInterruptConstants.TOOL_CALL_INTERRUPT_REASON;
-
+import io.agentscope.core.agui.AguiInterrupts;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -34,7 +29,6 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.util.JsonUtils;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,8 +43,6 @@ import java.util.stream.Collectors;
  * outcomes on run finish.
  */
 final class AgentLifecycleEventConverter implements AgentEventConverter {
-
-    private static final String DEFAULT_SUSPEND_MESSAGE = "Awaiting external execution";
 
     @Override
     public Set<Class<? extends AgentEvent>> eventTypes() {
@@ -121,42 +113,14 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
             if (toolUse == null || frontTools.contains(toolUse.getName())) {
                 continue;
             }
-            context.addInterrupt(buildToolCallInterrupt(result, toolUse, toolResult));
+            context.addInterrupt(
+                    AguiInterrupts.externalExecution(
+                            result.getId(),
+                            toolUse,
+                            toolResult.getSuspendReason() != null
+                                    ? toolResult.getSuspendReason()
+                                    : AguiInterrupts.DEFAULT_EXTERNAL_EXECUTION_MESSAGE));
         }
-    }
-
-    private static AguiEvent.Interrupt buildToolCallInterrupt(
-            Msg result, ToolUseBlock toolUse, ToolResultBlock toolResult) {
-        String toolCallId = toolResult.getId();
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        if (!isBlank(toolUse.getName())) {
-            metadata.put(METADATA_TOOL_NAME, toolUse.getName());
-        }
-        if (toolUse != null && toolUse.getInput() != null && !toolUse.getInput().isEmpty()) {
-            metadata.put(METADATA_TOOL_INPUT, toolUse.getInput());
-        }
-        metadata.put(METADATA_TOOL_CONTENT, JsonUtils.resolveToolCallArgsJson(toolUse));
-        if (!isBlank(result.getId())) {
-            metadata.put(METADATA_REPLY_ID, result.getId());
-        }
-
-        return new AguiEvent.Interrupt(
-                interruptId(result, toolCallId),
-                TOOL_CALL_INTERRUPT_REASON,
-                toolResult.getSuspendReason() != null
-                        ? toolResult.getSuspendReason()
-                        : DEFAULT_SUSPEND_MESSAGE,
-                toolCallId,
-                null,
-                null,
-                Map.copyOf(metadata));
-    }
-
-    private static String interruptId(Msg result, String toolCallId) {
-        if (!isBlank(result.getId())) {
-            return result.getId() + ":" + toolCallId;
-        }
-        return toolCallId;
     }
 
     private static Set<String> frontendToolNames(AguiStreamContext context) {
