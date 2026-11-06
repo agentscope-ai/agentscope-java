@@ -691,12 +691,17 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
     //  Turn serialization
     // ------------------------------------------------------------------
 
-    private Mono<Msg> withGatedTurn(String gateKey, Supplier<Mono<Msg>> turn) {
-        AtomicReference<TurnLease> leaseRef = new AtomicReference<>();
+    Mono<Msg> withGatedTurn(String gateKey, Supplier<Mono<Msg>> turn) {
         return Mono.defer(
                         () -> {
+                            // Acquire per subscription and release in that same subscription's
+                            // doFinally. A lease reference held outside defer would be shared by
+                            // every subscriber to the returned publisher, so cancelling a queued
+                            // second subscriber could close the first subscriber's still-running
+                            // turn - letting a subsequent turn enter the session concurrently.
+                            final TurnLease lease;
                             try {
-                                leaseRef.set(sessionTurnGate.acquire(gateKey));
+                                lease = sessionTurnGate.acquire(gateKey);
                             } catch (TurnBusyException e) {
                                 log.debug(
                                         "Skipping turn for {}: gate busy ({})",
@@ -707,24 +712,23 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
                                 Thread.currentThread().interrupt();
                                 return Mono.error(new IllegalStateException(e));
                             }
-                            return turn.get();
-                        })
-                .doFinally(
-                        sig -> {
-                            TurnLease lease = leaseRef.get();
-                            if (lease != null) {
-                                lease.close();
-                            }
+                            return turn.get().doFinally(sig -> lease.close());
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    private Flux<AgentEvent> withGatedStream(String gateKey, Supplier<Flux<AgentEvent>> stream) {
-        AtomicReference<TurnLease> leaseRef = new AtomicReference<>();
+    Flux<AgentEvent> withGatedStream(String gateKey, Supplier<Flux<AgentEvent>> stream) {
         return Flux.defer(
                         () -> {
+                            // Per-subscription lease and release, as in withGatedTurn: runStream's
+                            // publisher is commonly subscribed more than once (e.g. a UI
+                            // re-subscribe
+                            // after a disconnect), and a shared reference let the newer
+                            // subscriber's
+                            // cancellation end the in-flight turn's serialization.
+                            final TurnLease lease;
                             try {
-                                leaseRef.set(sessionTurnGate.acquire(gateKey));
+                                lease = sessionTurnGate.acquire(gateKey);
                             } catch (TurnBusyException e) {
                                 log.debug(
                                         "Skipping stream for {}: gate busy ({})",
@@ -735,14 +739,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
                                 Thread.currentThread().interrupt();
                                 return Flux.error(new IllegalStateException(e));
                             }
-                            return stream.get();
-                        })
-                .doFinally(
-                        sig -> {
-                            TurnLease lease = leaseRef.get();
-                            if (lease != null) {
-                                lease.close();
-                            }
+                            return stream.get().doFinally(sig -> lease.close());
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
