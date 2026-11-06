@@ -91,20 +91,21 @@ class HarnessContextBudgetTest {
     }
 
     @Test
-    void mediaHistoryTriggersCompactionBelowTheMessageThreshold() {
+    void mediaHistoryIsRetainedAndRejectedWhenBudgetCannotFitIt() {
         List<Msg> history = new ArrayList<>();
         for (int i = 0; i < 24; i++) history.add(image());
         history.add(message("continue"));
 
-        ModelCallInput prepared =
-                prepare(builder(1024, ContextTokenEstimator.approximate(), 0), input(history));
+        assertThrows(
+                ContextBudgetExceededException.class,
+                () ->
+                        prepare(
+                                builder(1024, ContextTokenEstimator.approximate(), 0),
+                                input(history)));
 
-        assertEquals(1, summaryCalls.get());
-        assertEquals(2, prepared.messages().size());
-        assertSame(history.get(24), prepared.messages().get(1));
-        assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, prepared.messages().get(0).getName());
-        assertTrue(manifests.get(0).estimatedInputTokens() <= 1024);
-        assertEquals(prepared.messages(), state.contextMutable());
+        assertEquals(0, summaryCalls.get(), "media must never be folded into a summary");
+        assertEquals(history, state.contextMutable(), "rejection must not replace history");
+        assertEquals("budget_exceeded", manifests.get(0).validation());
     }
 
     @Test
