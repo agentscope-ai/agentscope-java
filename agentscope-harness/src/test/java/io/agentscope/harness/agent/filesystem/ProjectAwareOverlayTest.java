@@ -396,6 +396,49 @@ class ProjectAwareOverlayTest {
         }
 
         @Test
+        void relativeProjectWrite_isVisibleToReadFamily() {
+            assertTrue(nsOverlay.write(nsRc, "hi.txt", "hello").isSuccess());
+            assertTrue(Files.exists(project.resolve("u1/hi.txt")));
+
+            assertTrue(nsOverlay.exists(nsRc, "hi.txt"));
+            ReadResult r = nsOverlay.read(nsRc, "hi.txt", 0, 0);
+            assertTrue(r.isSuccess(), () -> "read failed: " + r.error());
+            assertEquals("hello", r.fileData().content());
+
+            List<FileDownloadResponse> dl = nsOverlay.downloadFiles(nsRc, List.of("hi.txt"));
+            assertEquals(1, dl.size());
+            assertEquals("hello", new String(dl.get(0).content(), StandardCharsets.UTF_8));
+
+            LsResult ls = nsOverlay.ls(nsRc, ".");
+            assertTrue(ls.isSuccess(), () -> "ls failed: " + ls.error());
+            assertTrue(
+                    ls.entries().stream().anyMatch(e -> e.path().equals("hi.txt")),
+                    () -> "ls entries: " + ls.entries());
+
+            GlobResult glob = nsOverlay.glob(nsRc, "*.txt", ".");
+            assertTrue(glob.isSuccess(), () -> "glob failed: " + glob.error());
+            assertTrue(
+                    glob.matches().stream().anyMatch(e -> e.path().endsWith("hi.txt")),
+                    () -> "glob matches: " + glob.matches());
+
+            GrepResult grep = nsOverlay.grep(nsRc, "hello", ".", null);
+            assertTrue(grep.isSuccess(), () -> "grep failed: " + grep.error());
+            assertTrue(
+                    grep.matches().stream().anyMatch(m -> m.path().endsWith("hi.txt")),
+                    () -> "grep matches: " + grep.matches());
+        }
+
+        @Test
+        void read_sharedProjectBaseline_stillVisible() throws IOException {
+            Files.createDirectories(project.resolve("docs"));
+            Files.writeString(project.resolve("docs/readme.md"), "base", StandardCharsets.UTF_8);
+
+            ReadResult r = nsOverlay.read(nsRc, "docs/readme.md", 0, 0);
+            assertTrue(r.isSuccess(), () -> "read failed: " + r.error());
+            assertEquals("base", r.fileData().content());
+        }
+
+        @Test
         void read_absoluteNamespacedMemoryPath_findsUpperFile() {
             assertTrue(nsOverlay.write(nsRc, "MEMORY.md", "hello").isSuccess());
 

@@ -20,8 +20,10 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.GrepMatch;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
@@ -30,6 +32,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,7 +52,11 @@ import java.util.Set;
  * workspace root pass through unchanged and are never classified as workspace metadata.
  *
  * <p>Read operations retain standard overlay semantics: check upper (workspace) first, fall back
- * to lower (project). Shell {@code execute()} delegates to the upper layer as before.
+ * to lower (project). Under namespace scoping, project writes land in the caller's namespace
+ * folder of the project directory, which the shared lower layer does not see; read, exists,
+ * download, ls, grep and glob therefore also consult the namespaced project filesystem for
+ * relative non-workspace paths, with the same precedence {@code edit()} and {@code delete()} use.
+ * Shell {@code execute()} delegates to the upper layer as before.
  */
 public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSandboxFilesystem {
 
@@ -198,38 +205,91 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
 
     @Override
     public ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit) {
-        return super.read(
-                runtimeContext, toWorkspaceRelativePath(runtimeContext, filePath), offset, limit);
+        String target = toWorkspaceRelativePath(runtimeContext, filePath);
+        if (inNamespacedProject(runtimeContext, filePath, target)) {
+            return projectFs.read(runtimeContext, target, offset, limit);
+        }
+        return super.read(runtimeContext, target, offset, limit);
     }
 
     @Override
     public boolean exists(RuntimeContext runtimeContext, String path) {
-        return super.exists(runtimeContext, toWorkspaceRelativePath(runtimeContext, path));
+        String target = toWorkspaceRelativePath(runtimeContext, path);
+        return inNamespacedProject(runtimeContext, path, target)
+                || super.exists(runtimeContext, target);
     }
 
     @Override
     public List<FileDownloadResponse> downloadFiles(
             RuntimeContext runtimeContext, List<String> paths) {
-        List<String> targets =
-                paths.stream().map(path -> toWorkspaceRelativePath(runtimeContext, path)).toList();
-        return super.downloadFiles(runtimeContext, targets);
+        List<FileDownloadResponse> results = new ArrayList<>();
+        for (String path : paths) {
+            String target = toWorkspaceRelativePath(runtimeContext, path);
+            if (inNamespacedProject(runtimeContext, path, target)) {
+                results.addAll(projectFs.downloadFiles(runtimeContext, List.of(target)));
+            } else {
+                results.addAll(super.downloadFiles(runtimeContext, List.of(target)));
+            }
+        }
+        return results;
     }
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        return super.ls(runtimeContext, toWorkspaceRelativePath(runtimeContext, path));
+        String target = toWorkspaceRelativePath(runtimeContext, path);
+        LsResult result = super.ls(runtimeContext, target);
+        if (!isNamespacedRelative(runtimeContext, target)) {
+            return result;
+        }
+        LsResult projectResult = projectFs.ls(runtimeContext, target);
+        if (!projectResult.isSuccess()) {
+            return result;
+        }
+        return LsResult.success(
+                mergeFileInfos(
+                        result.isSuccess() ? result.entries() : null, projectResult.entries()));
     }
 
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
-        return super.grep(
-                runtimeContext, pattern, toWorkspaceRelativePath(runtimeContext, path), glob);
+        String target = toWorkspaceRelativePath(runtimeContext, path);
+        GrepResult result = super.grep(runtimeContext, pattern, target, glob);
+        if (!isNamespacedRelative(runtimeContext, target)) {
+            return result;
+        }
+        GrepResult projectResult = projectFs.grep(runtimeContext, pattern, target, glob);
+        if (!projectResult.isSuccess()) {
+            return result;
+        }
+        Map<String, GrepMatch> merged = new LinkedHashMap<>();
+        if (result.isSuccess() && result.matches() != null) {
+            for (GrepMatch m : result.matches()) {
+                merged.put(m.path() + ":" + m.line(), m);
+            }
+        }
+        if (projectResult.matches() != null) {
+            for (GrepMatch m : projectResult.matches()) {
+                merged.put(m.path() + ":" + m.line(), m);
+            }
+        }
+        return GrepResult.success(new ArrayList<>(merged.values()));
     }
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
-        return super.glob(runtimeContext, pattern, toWorkspaceRelativePath(runtimeContext, path));
+        String target = toWorkspaceRelativePath(runtimeContext, path);
+        GlobResult result = super.glob(runtimeContext, pattern, target);
+        if (!isNamespacedRelative(runtimeContext, target)) {
+            return result;
+        }
+        GlobResult projectResult = projectFs.glob(runtimeContext, pattern, target);
+        if (!projectResult.isSuccess()) {
+            return result;
+        }
+        return GlobResult.success(
+                mergeFileInfos(
+                        result.isSuccess() ? result.matches() : null, projectResult.matches()));
     }
 
     @Override
@@ -238,6 +298,55 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
                 runtimeContext,
                 toWorkspaceRelativePath(runtimeContext, fromPath),
                 toWorkspaceRelativePath(runtimeContext, toPath));
+    }
+
+    // ==================== Namespaced project layer ====================
+
+    /**
+     * Whether a non-workspace path resolves to an existing file in the caller's namespaced
+     * project directory. Writes on the project leg land there, but the read-only lower layer is
+     * shared and not namespaced, so the read family must consult {@link #projectFs} first (the same
+     * precedence {@link #edit} and {@link #delete} use).
+     */
+    private boolean inNamespacedProject(
+            RuntimeContext runtimeContext, String originalPath, String target) {
+        return isNamespacedRelative(runtimeContext, target)
+                && !isWorkspacePath(runtimeContext, originalPath)
+                && projectFs.exists(runtimeContext, target);
+    }
+
+    /**
+     * Whether {@link #projectFs} resolves {@code target} inside the caller's namespace. Without
+     * namespace scoping, or for blank and absolute paths (which {@link LocalFilesystem} does not
+     * prefix), {@link #projectFs} sees the same files as the lower layer, so the overlay alone is
+     * enough.
+     */
+    private boolean isNamespacedRelative(RuntimeContext runtimeContext, String target) {
+        if (namespaceFactory == null
+                || target == null
+                || target.isBlank()
+                || target.startsWith("/")
+                || target.startsWith("\\")
+                || Path.of(target).isAbsolute()) {
+            return false;
+        }
+        List<String> namespace = namespaceFactory.getNamespace(runtimeContext);
+        return namespace != null && !namespace.isEmpty();
+    }
+
+    private static List<FileInfo> mergeFileInfos(List<FileInfo> base, List<FileInfo> project) {
+        Map<String, FileInfo> merged = new LinkedHashMap<>();
+        if (base != null) {
+            for (FileInfo fi : base) {
+                merged.put(fi.path(), fi);
+            }
+        }
+        if (project != null) {
+            for (FileInfo fi : project) {
+                merged.put(fi.path(), fi);
+            }
+        }
+        return new ArrayList<>(merged.values());
     }
 
     // ==================== Path classification ====================
