@@ -73,7 +73,7 @@ Managed Session snapshots expose runtime resource arrays, including inputs, suba
 
 ## Pagination, reconnects, and expiration
 
-Use `GET /events?after=...&limit=100` when a persistent connection is unnecessary. `next_cursor` continues pagination and `has_more` indicates immediately available events. An empty page does not establish completion; read Turn status or wait for further events.
+Use `GET /events?after=...&limit=100` when a persistent connection is unnecessary. The response contains the event array in `data`, the next page cursor in `next_cursor`, and a `has_more` flag. An empty `data` array does not establish completion. Read Turn status or wait for further events.
 
 ```bash
 EVENT_PAGE=$(
@@ -127,11 +127,11 @@ WEBHOOK_ID=$(jq -er '.webhook.id' <<< "$WEBHOOK_JSON")
 SIGNING_SECRET=$(jq -er '.signing_secret' <<< "$WEBHOOK_JSON")
 ```
 
-Store the returned `signing_secret` on the backend. Compute HMAC-SHA256 over `timestamp + '.' + raw request body` and compare it with `X-AgentScope-Signature: t=<seconds>,v1=<hex>`. Also check timestamp freshness and deduplicate event IDs. Verify the original bytes before parsing or reserializing JSON.
+Store the returned `signing_secret` on the backend. Compute HMAC-SHA256 over `timestamp + '.' + raw request body` and compare it with `X-AgentScope-Signature: t=<seconds>,v1=<hex>`. Also check timestamp freshness. Verify the original bytes before parsing or reserializing JSON.
 
 For one Turn, set `WEBHOOKS_URL="$SESSION_URL/turns/$TURN_ID/webhooks"` before registering. The management requests below reuse that registration URL and returned `WEBHOOK_ID`.
 
-Delivery is at least once, so receivers may see duplicates. Persist the notification before acknowledging success, then read the latest Session or Turn state as needed. Inspect delivery with `GET /webhooks`, retry through `POST /webhooks/{webhookId}/retry`, or revoke with `DELETE`. Notification delivery does not make business operations idempotent or establish that an external transaction committed.
+A new subscription can deliver matching events that were recorded before registration and are still retained. Delivery is at least once, so deduplicate verified notifications by `X-AgentScope-Event-ID`. Persist the notification before acknowledging success, then read the latest Session or Turn state as needed. Inspect delivery with `GET /webhooks`, retry through `POST /webhooks/{webhookId}/retry`, or revoke with `DELETE`. Notification delivery does not make business operations idempotent or establish that an external transaction committed.
 
 <Accordion title="Inspect, retry, and disable a Webhook">
 
