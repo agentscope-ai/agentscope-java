@@ -19,6 +19,8 @@ Multimodal input supports image/audio/video/document. Document parts are convert
 
 On the outbound path, URL-backed `ImageBlock` / `AudioBlock` / `VideoBlock` / `DocumentBlock` content is serialized into AG-UI `MessageContent.Blocks` (`image` / `audio` / `video` / `document`); URL-backed `DataBlock` is routed by its resolved MIME type. Base64 media sources are skipped on outbound conversion for now.
 
+When an assistant message contains reasoning and supported URL media without text, `toAguiMessages()` and `toAguiMessageList()` preserve both as a reasoning message followed by an assistant message containing the media.
+
 ## When To Use
 
 - You need to connect an AgentScope agent to an AG-UI-compatible front end or a custom chat UI.

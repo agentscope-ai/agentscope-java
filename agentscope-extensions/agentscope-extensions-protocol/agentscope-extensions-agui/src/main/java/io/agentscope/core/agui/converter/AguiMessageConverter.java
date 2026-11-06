@@ -203,6 +203,7 @@ public class AguiMessageConverter {
 
         if (reasoningContent.length() > 0
                 && content.length() == 0
+                && inputContents.isEmpty()
                 && toolCalls.isEmpty()
                 && toolCallId == null) {
             return AguiMessage.reasoningMessage(

@@ -19,6 +19,8 @@ en_link: /v2/en/integration/protocol/agui
 
 出站方向会把带 URL 的 `ImageBlock` / `AudioBlock` / `VideoBlock` / `DocumentBlock` 序列化为 AG-UI `MessageContent.Blocks`（`image` / `audio` / `video` / `document`），带 URL 的 `DataBlock` 会按解析出的 MIME 类型路由。目前出站会跳过 Base64 媒体来源。
 
+当助手消息包含推理和受支持的 URL 媒体、但没有文本时，`toAguiMessages()` 和 `toAguiMessageList()` 会同时保留两部分，依次生成推理消息和包含媒体的助手消息。
+
 ## 何时使用
 
 - 需要把 AgentScope agent 接入 AG-UI 兼容前端或自研 Chat UI。
