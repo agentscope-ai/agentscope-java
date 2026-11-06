@@ -207,6 +207,33 @@ class LocalFilesystemModeTest {
     }
 
     @Test
+    void rooted_lsEntryOutsideNamespaceCanBeReadBack(@TempDir Path workspace) throws IOException {
+        // Marketplace skills are staged at <ws>/.skills-cache/<session>/..., outside the
+        // caller's namespace folder; listed paths must round-trip into read (#3426).
+        Path skillDir = workspace.resolve(".skills-cache/sess-1/database/sales-order-manager");
+        Files.createDirectories(skillDir);
+        Files.writeString(skillDir.resolve("SKILL.md"), "skill body", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(
+                        workspace,
+                        LocalFsMode.ROOTED,
+                        PathPolicy.empty(),
+                        10,
+                        rc -> List.of(rc.getSessionId()));
+        RuntimeContext rc = RuntimeContext.builder().sessionId("sess-1").build();
+
+        LsResult ls = fs.ls(rc, skillDir.toString());
+        assertTrue(ls.isSuccess(), () -> "ls failed: " + ls.error());
+        assertEquals(1, ls.entries().size());
+
+        String listed = ls.entries().get(0).path();
+        ReadResult r = fs.read(rc, listed, 0, 0);
+        assertTrue(r.isSuccess(), () -> "listed path " + listed + " not readable: " + r.error());
+        assertEquals("skill body", r.fileData().content());
+    }
+
+    @Test
     void rooted_relativePathStillNamespaced(@TempDir Path workspace) throws IOException {
         Path nsDir = workspace.resolve("user-1");
         Files.createDirectories(nsDir);
