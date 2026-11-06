@@ -63,6 +63,7 @@ public class CommandExecutor {
      */
     public ExecutionResult run(String command, Duration timeout) {
         Duration effectiveTimeout = timeout != null ? timeout : DEFAULT_TIMEOUT;
+        Duration exchangeTimeout = effectiveTimeout.plus(EXCHANGE_TIMEOUT_MARGIN);
         try {
             String json = MAPPER.writeValueAsString(Map.of("command", command));
             HttpRequest.BodyPublisher body =
@@ -74,7 +75,8 @@ public class CommandExecutor {
                             body,
                             "application/json",
                             1,
-                            effectiveTimeout.plus(EXCHANGE_TIMEOUT_MARGIN));
+                            exchangeTimeout,
+                            exchangeTimeout);
 
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
                 throw new SandboxRequestException(
