@@ -190,6 +190,17 @@ class ShellExecuteToolTest {
     }
 
     @Test
+    void exposesConfirmedTimeoutToTheModel() {
+        sandbox.response = new ExecuteResponse("partial output", 124, false, true);
+
+        var result = tool.execute(RT, "sleep 60", null, null);
+
+        assertTrue(textOf(result).contains("Timed out: true"));
+        assertTrue(textOf(result).contains("partial output"));
+        assertEquals(ToolResultState.ERROR, result.getState());
+    }
+
+    @Test
     void missingExitCodeIsNotSuccess() {
         sandbox.response = new ExecuteResponse("unknown", null, false);
         var result = tool.execute(RT, "test", null, null);

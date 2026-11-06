@@ -113,13 +113,27 @@ class KubernetesSandboxTest {
     void confirmedRuntimeTimeoutPreservesPartialOutputAndExitCode() {
         when(commands.run(anyString(), any(Duration.class)))
                 .thenReturn(
-                        new ExecutionResult("before", "Command timed out after 2 seconds", 124));
+                        new ExecutionResult("before", "Command timed out after 2 seconds", 124, true));
         SandboxException.ExecException error =
                 assertThrows(
                         SandboxException.ExecException.class,
                         () -> sandbox.doExec(null, "echo before; sleep 10", 2));
         assertEquals(124, error.getExitCode());
         assertEquals("before", error.getStdout());
+        assertTrue(error.isTimedOut());
+    }
+
+    @Test
+    void exitCode124AloneDoesNotConfirmRuntimeTimeout() {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenReturn(new ExecutionResult("before", "process exited", 124));
+
+        SandboxException.ExecException error =
+                assertThrows(
+                        SandboxException.ExecException.class,
+                        () -> sandbox.doExec(null, "exit 124", 2));
+
+        assertFalse(error.isTimedOut());
     }
 
     @ParameterizedTest

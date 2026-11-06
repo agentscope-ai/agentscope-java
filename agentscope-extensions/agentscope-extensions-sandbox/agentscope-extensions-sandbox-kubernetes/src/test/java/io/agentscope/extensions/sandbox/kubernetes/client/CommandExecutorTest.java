@@ -225,12 +225,13 @@ class CommandExecutorTest {
     void preservesConfirmedTimeoutAndPartialOutput() {
         response =
                 "{\"stdout\":\"before\",\"stderr\":\"Command timed out after 2"
-                        + " seconds\",\"exit_code\":124}";
+                        + " seconds\",\"exit_code\":124,\"timed_out\":true}";
         ExecutionResult result =
                 executor(Duration.ofSeconds(2)).run("echo before; sleep 10", Duration.ofSeconds(2));
         assertEquals(124, result.getExitCode());
         assertEquals("before", result.getStdout());
         assertTrue(result.getStderr().contains("2 seconds"));
+        assertTrue(result.isTimedOut());
     }
 
     @Test

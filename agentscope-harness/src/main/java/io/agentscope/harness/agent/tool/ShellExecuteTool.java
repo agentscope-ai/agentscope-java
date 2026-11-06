@@ -98,6 +98,9 @@ public class ShellExecuteTool {
 
         StringBuilder sb = new StringBuilder();
         sb.append("Exit code: ").append(result.exitCode()).append("\n");
+        if (result.timedOut()) {
+            sb.append("Timed out: true\n");
+        }
         if (result.output() != null && !result.output().isBlank()) {
             sb.append("\n").append(result.output());
         }

@@ -251,6 +251,8 @@ The `Sandbox` abstraction's primary data-plane entry point is `exec(command)`. T
 
 Kubernetes sandbox requests bound the wait for both response headers and the complete response body. A server that sends headers and then stalls cannot keep the caller waiting indefinitely. Command requests use the execution timeout plus the advertised cleanup allowance and connector `perAttemptTimeout`, as described above. An expired command exchange reports an unknown execution outcome; only a valid runtime response confirms the exit code.
 
+The runtime's `timed_out: true` response confirms that the process was terminated by its execution limit and preserves its partial output. An HTTP exchange timeout leaves the execution outcome unknown; an exit code of 124 alone does not confirm a runtime timeout.
+
 File uploads and downloads default to a 10-minute exchange budget. Directory listing and existence checks default to 60 seconds. The client methods accepting a `Duration` use that value as the exchange budget; retries and backoff share it.
 
 These deadlines bound HTTP waits. Connection discovery and pod IP lookup retain their own timeout behavior. Cancelling the client exchange does not guarantee that the remote command has stopped; use runtime-side process limits when remote termination is required.

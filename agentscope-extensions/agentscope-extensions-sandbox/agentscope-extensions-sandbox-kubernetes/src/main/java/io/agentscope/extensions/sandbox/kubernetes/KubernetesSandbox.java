@@ -114,8 +114,9 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
         String stderr = result.getStderr() != null ? result.getStderr() : "";
 
         ExecResult execResult = new ExecResult(result.getExitCode(), stdout, stderr, truncated);
-        if (!execResult.ok()) {
-            throw new SandboxException.ExecException(result.getExitCode(), stdout, stderr);
+        if (result.isTimedOut() || !execResult.ok()) {
+            throw new SandboxException.ExecException(
+                    result.getExitCode(), stdout, stderr, result.isTimedOut());
         }
         return execResult;
     }
