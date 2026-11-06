@@ -66,6 +66,23 @@ To insert custom behaviour without bypassing Harness's plumbing:
 - Read `RuntimeContext` from the agent for the current call's identity (`userId` / `sessionId`).
 - For workspace I/O, go through `harnessAgent.getWorkspaceManager()` — it routes correctly under sandbox or remote-store modes. `java.nio.Files` writes to the host disk and will land in the wrong place outside local mode.
 
+## Team notification namespaces
+
+`LocalTeamClient` carries the namespace through message, task assignment, and task result notifications. `TeamsMiddleware` routes these notifications by `(namespace, teamName, memberName)`, so teams with the same name and members in different namespaces reach their own sessions. A null or blank namespace resolves to `default`, matching `TeamContext.resolvedNamespace()`.
+
+Use the four-parameter overload when waking a member directly:
+
+```java
+import io.agentscope.harness.agent.middleware.TeamsMiddleware;
+
+boolean accepted = TeamsMiddleware.wakeupTeamMember(
+        "namespace-a", "research", "worker-1", "The task is ready.");
+```
+
+Pass `null` as the notice when no text is needed. The existing two- and three-parameter overloads remain available: they return `true` when exactly one registered member matches the team and member names across namespaces, and `false` when none or more than one match. The scoped overload returns `false` when its exact target is absent.
+
+Custom `TeamWakeups.Hook` implementations retain the original three-parameter functional interface, so existing lambdas still work. Its four-parameter default method delegates to that original method and does not automatically provide namespace isolation. A custom hook that routes by namespace must override the four-parameter method and use the supplied namespace.
+
 ## Related pages
 
 - [Session operations, events and recovery](/v2/en/docs/harness/session-log) — background tasks, queues, interaction and continuation
