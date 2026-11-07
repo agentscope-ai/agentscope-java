@@ -108,7 +108,8 @@ class ReActAgentStructuredOutputTest {
                                     msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
 
                             if (!hasToolResults) {
-                                // First call: return tool use for generate_response
+                                // First call: return an input-map-only tool use. The fallback
+                                // structured path must validate the same arguments it executes.
                                 return List.of(
                                         ChatResponse.builder()
                                                 .id("msg_1")
@@ -118,11 +119,6 @@ class ReActAgentStructuredOutputTest {
                                                                         .id("call_123")
                                                                         .name("generate_response")
                                                                         .input(toolInput)
-                                                                        .content(
-                                                                                JsonUtils
-                                                                                        .getJsonCodec()
-                                                                                        .toJson(
-                                                                                                toolInput))
                                                                         .build()))
                                                 .usage(new ChatUsage(10, 20, 30))
                                                 .build());
