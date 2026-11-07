@@ -229,6 +229,21 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
+        void read_binary_wrappedBase64_shouldStripLineBreaks() {
+            // GNU base64 wraps its output at 76 columns, so the sandbox returns embedded newlines.
+            String raw = "x".repeat(200);
+            String single = base64(raw);
+            String wrapped = single.substring(0, 76) + "\n" + single.substring(76) + "\n";
+
+            ReadResult result =
+                    new FixedResponseFilesystem(new ExecuteResponse(wrapped, 0, false))
+                            .read(RT, "/workspace/logo.png", 0, 10);
+
+            assertTrue(result.isSuccess());
+            assertEquals(single, result.fileData().content());
+        }
+
+        @Test
         void read_binary_commandFailure_shouldKeepFileNotFoundSignal() {
             ReadResult result =
                     new FixedResponseFilesystem(new ExecuteResponse("", 1, false))
