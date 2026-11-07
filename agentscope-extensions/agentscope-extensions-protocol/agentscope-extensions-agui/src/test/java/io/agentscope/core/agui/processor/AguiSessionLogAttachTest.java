@@ -71,9 +71,12 @@ class AguiSessionLogAttachTest {
                             .collectList()
                             .block(Duration.ofSeconds(5));
 
-            // The cursor already covers run/start, so a reconnect must not announce a new run.
-            assertEquals(1, frames.size());
-            assertTrue(frames.get(0).event() instanceof AguiEvent.RunFinished);
+            // The cursor already covers run/start, but a connect stream must still open with
+            // RUN_STARTED before the terminal frame.
+            assertEquals(2, frames.size());
+            assertTrue(frames.get(0).event() instanceof AguiEvent.RunStarted);
+            assertEquals("exec-1", ((AguiEvent.RunStarted) frames.get(0).event()).runId());
+            assertTrue(frames.get(1).event() instanceof AguiEvent.RunFinished);
             assertFalse(
                     frames.stream()
                             .anyMatch(
@@ -84,6 +87,37 @@ class AguiSessionLogAttachTest {
                 log.release(writer);
             }
         }
+    }
+
+    @Test
+    void attachEmitsRunStartedFirstWhenCursorPassedRunStart() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        long after;
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            after = append(log, writer, "message/user", message(user("u1", "hello")));
+            append(log, writer, "run/end", Map.of("status", "completed"));
+        } finally {
+            log.release(writer);
+        }
+
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attach(input(), log, after, "exec-1", CONFIG, POLL)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        assertEquals(2, frames.size());
+        assertTrue(
+                frames.get(0).event() instanceof AguiEvent.RunStarted,
+                "the official AG-UI client requires RUN_STARTED as the first connect event");
+        assertEquals(
+                -1L,
+                frames.get(0).seq(),
+                "the synthetic RUN_STARTED must not advance the replay cursor");
+        assertEquals("exec-1", ((AguiEvent.RunStarted) frames.get(0).event()).runId());
+        assertTrue(frames.get(1).event() instanceof AguiEvent.RunFinished);
     }
 
     @Test
