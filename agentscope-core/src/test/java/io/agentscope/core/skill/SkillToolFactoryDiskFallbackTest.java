@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.CapabilitySurface;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.AgentTool;
@@ -68,14 +70,19 @@ class SkillToolFactoryDiskFallbackTest {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
         assertNotNull(tool);
 
-        Map<String, Object> input = Map.of("skillId", skill.getSkillId(), "path", "scripts/run.sh");
+        Map<String, Object> input = Map.of("skillId", skill.getName(), "path", "scripts/run.sh");
         ToolUseBlock useBlock =
                 ToolUseBlock.builder()
                         .id("fallback-1")
                         .name("load_skill_through_path")
                         .input(input)
                         .build();
-        ToolCallParam param = ToolCallParam.builder().toolUseBlock(useBlock).input(input).build();
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(useBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
         assertNotNull(result);
@@ -109,14 +116,19 @@ class SkillToolFactoryDiskFallbackTest {
         box.registerSkillLoadTool();
 
         AgentTool tool = toolkit.getTool("load_skill_through_path");
-        Map<String, Object> input = Map.of("skillId", skill.getSkillId(), "path", "scripts/run.sh");
+        Map<String, Object> input = Map.of("skillId", skill.getName(), "path", "scripts/run.sh");
         ToolUseBlock useBlock =
                 ToolUseBlock.builder()
                         .id("precedence-1")
                         .name("load_skill_through_path")
                         .input(input)
                         .build();
-        ToolCallParam param = ToolCallParam.builder().toolUseBlock(useBlock).input(input).build();
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(useBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
         String text = textOf(result);
@@ -149,20 +161,31 @@ class SkillToolFactoryDiskFallbackTest {
         box.registerSkillLoadTool();
 
         AgentTool tool = toolkit.getTool("load_skill_through_path");
-        Map<String, Object> input =
-                Map.of("skillId", skill.getSkillId(), "path", "../forbidden.txt");
+        Map<String, Object> input = Map.of("skillId", skill.getName(), "path", "../forbidden.txt");
         ToolUseBlock useBlock =
                 ToolUseBlock.builder()
                         .id("traversal-1")
                         .name("load_skill_through_path")
                         .input(input)
                         .build();
-        ToolCallParam param = ToolCallParam.builder().toolUseBlock(useBlock).input(input).build();
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(useBlock)
+                        .input(input)
+                        .runtimeContext(grantRc())
+                        .build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
         String text = textOf(result);
         assertFalse(text.contains(sentinel), "must NOT leak sibling-of-originDir file contents");
         assertTrue(text.contains("not found") || text.contains("Resource not found"));
+    }
+
+    /** Direct-execution tests bypass the agent call() entry; seed the grant surface. */
+    private static RuntimeContext grantRc() {
+        RuntimeContext rc = RuntimeContext.empty();
+        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
+        return rc;
     }
 
     private static String textOf(ToolResultBlock r) {

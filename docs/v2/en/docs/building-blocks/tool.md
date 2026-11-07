@@ -501,7 +501,7 @@ At runtime, the agent invokes the viewer with two required arguments:
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `skillId` | `string` (enum of registered skill IDs) | The skill to load. |
+| `skillId` | `string` (enum of registered skill ids, normally the skill name) | The skill to load. |
 | `path` | `string` | Use `"SKILL.md"` to fetch the skill's markdown instructions, or an exact resource path declared by the skill such as `"references/guide.md"` or `"scripts/run.py"`. Do not pass `"."`, `"./"`, a directory, or an absolute path. |
 
 Example tool call payload:
@@ -557,7 +557,7 @@ ReActAgent agent =
 
 ### Skill + ToolGroup: on-demand tool disclosure
 
-`SkillToolGroup` binds a group of tools to a skill name — the group activates automatically when the agent loads that skill, and stays hidden from the model's schema otherwise, reducing context noise.
+`SkillToolGroup` binds a group of tools to a skillName — the group activates automatically when the agent loads that skill, and stays hidden from the model's schema otherwise, reducing context noise.
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -570,7 +570,7 @@ toolkit.createSkillToolGroup(
         "analysis-tools",                // group name
         "Data analysis tools",           // description
         false,                           // initially inactive
-        "data-analysis");                // bound skill name
+        "data-analysis");                // bound skillName
 
 // 2. Register tools into that group
 toolkit.registration()

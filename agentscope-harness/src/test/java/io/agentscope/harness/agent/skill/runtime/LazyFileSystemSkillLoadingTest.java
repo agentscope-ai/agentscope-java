@@ -86,13 +86,13 @@ class LazyFileSystemSkillLoadingTest {
                                                                     .id("load-" + round)
                                                                     .name(SkillLoadTool.TOOL_NAME)
                                                                     .content(
-                                                                            "{\"skillId\":\"alpha_audit\",\"path\":\""
+                                                                            "{\"skillId\":\"alpha__s__audit\",\"path\":\""
                                                                                     + path
                                                                                     + "\"}")
                                                                     .input(
                                                                             Map.of(
                                                                                     "skillId",
-                                                                                    "alpha_audit",
+                                                                                    "alpha__s__audit",
                                                                                     "path",
                                                                                     path))
                                                                     .build()))
@@ -143,7 +143,7 @@ class LazyFileSystemSkillLoadingTest {
                         "./")) {
             assertFalse(load(ctx, path).contains("OUTSIDE_SENTINEL"), path);
         }
-        assertNull(middleware.runtime().currentCatalog(ctx).get("alpha_audit").filesRoot());
+        assertNull(middleware.runtime().currentCatalog(ctx).get("alpha__s__audit").filesRoot());
     }
 
     @Test
@@ -160,7 +160,7 @@ class LazyFileSystemSkillLoadingTest {
                 middleware
                         .runtime()
                         .currentCatalog(ctx)
-                        .get("alpha_audit")
+                        .get("alpha__s__audit")
                         .lazyResources()
                         .readBinary("literal.txt")
                         .orElseThrow());
@@ -224,7 +224,7 @@ class LazyFileSystemSkillLoadingTest {
     }
 
     private static String load(RuntimeContext ctx, String path) {
-        Map<String, Object> input = Map.of("skillId", "alpha_audit", "path", path);
+        Map<String, Object> input = Map.of("skillId", "alpha__s__audit", "path", path);
         ToolUseBlock use =
                 ToolUseBlock.builder()
                         .id("resource")

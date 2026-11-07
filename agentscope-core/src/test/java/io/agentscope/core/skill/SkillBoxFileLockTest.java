@@ -70,7 +70,7 @@ class SkillBoxFileLockTest {
         int payloadSize = 64 * 1024;
         String payloadA = "A".repeat(payloadSize);
         String payloadB = "B".repeat(payloadSize);
-        Path target = workDir.resolve("skills").resolve("concurrent_custom").resolve("data.txt");
+        Path target = workDir.resolve("skills").resolve("concurrent").resolve("data.txt");
         SkillBox boxA = boxUploading("concurrent", payloadA);
         SkillBox boxB = boxUploading("concurrent", payloadB);
 

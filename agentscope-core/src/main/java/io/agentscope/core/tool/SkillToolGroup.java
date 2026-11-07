@@ -46,13 +46,25 @@ public class SkillToolGroup extends ToolGroup {
     private final String activateOnSkill;
     private final String rawDescription;
 
+    /**
+     * Single source of the skill tool-group naming convention: {@code skillName +
+     * "_skill_tools"}.
+     *
+     * @param skillName the skill name (the skill's business identity)
+     * @return the derived tool-group name
+     */
+    public static String skillToolsGroupName(String skillName) {
+        return skillName + "_skill_tools";
+    }
+
     private SkillToolGroup(Builder builder) {
         super(
                 builder.name,
                 builder.description,
                 builder.active,
                 ToolGroupScope.META,
-                builder.tools);
+                builder.tools,
+                builder.system);
         this.activateOnSkill =
                 Objects.requireNonNull(builder.activateOnSkill, "activateOnSkill cannot be null");
         this.rawDescription = builder.description != null ? builder.description : "";
@@ -82,15 +94,16 @@ public class SkillToolGroup extends ToolGroup {
 
     @Override
     public ToolGroup copy() {
-        SkillToolGroup copy =
-                SkillToolGroup.skillBuilder()
-                        .name(getName())
-                        .description(rawDescription)
-                        .active(isActive())
-                        .activateOnSkill(activateOnSkill)
-                        .tools(getTools())
-                        .build();
-        return copy;
+        return SkillToolGroup.skillBuilder()
+                .name(getName())
+                .description(rawDescription)
+                .active(isActive())
+                .activateOnSkill(activateOnSkill)
+                .tools(getTools())
+                // Rebuilt via skillBuilder: without this the system flag is silently
+                // dropped on copy.
+                .system(isSystem())
+                .build();
     }
 
     /**
@@ -110,6 +123,7 @@ public class SkillToolGroup extends ToolGroup {
         private boolean active = false;
         private String activateOnSkill;
         private Set<String> tools = new HashSet<>();
+        private boolean system = false;
 
         /**
          * Sets the name of the tool group.
@@ -163,6 +177,21 @@ public class SkillToolGroup extends ToolGroup {
          */
         public Builder tools(Set<String> tools) {
             this.tools = new HashSet<>(tools);
+            return this;
+        }
+
+        /**
+         * Marks the group as a system capability exempt from grant-layer trimming —
+         * group-level only (enumeration/activation); member tools are exempt only when each is
+         * itself marked system. This builder does not extend {@link ToolGroup.Builder}, so the
+         * flag is declared explicitly here.
+         *
+         * @param system true to exempt this group's enumeration/activation from grant-layer
+         *     trimming
+         * @return This builder for method chaining
+         */
+        public Builder system(boolean system) {
+            this.system = system;
             return this;
         }
 

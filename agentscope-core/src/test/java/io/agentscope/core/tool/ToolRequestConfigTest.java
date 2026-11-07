@@ -28,6 +28,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.observation.ActionObservation;
 import io.agentscope.core.observation.ActionObserver;
+import io.agentscope.core.tool.test.GrantTestUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -153,7 +154,7 @@ class ToolRequestConfigTest {
                         .build();
 
         List<ToolResultBlock> results =
-                toolkit.callTools(List.of(use), null, null, RuntimeContext.empty(), config, null)
+                toolkit.callTools(List.of(use), null, null, GrantTestUtils.grantRc(), config, null)
                         .block();
 
         assertNotNull(results);
@@ -188,7 +189,7 @@ class ToolRequestConfigTest {
                         .content("{}")
                         .build();
         List<ToolResultBlock> results =
-                toolkit.callTools(List.of(use), null, null, RuntimeContext.empty(), config, null)
+                toolkit.callTools(List.of(use), null, null, GrantTestUtils.grantRc(), config, null)
                         .block();
 
         assertNotNull(results);
@@ -288,7 +289,12 @@ class ToolRequestConfigTest {
                 .block();
         toolkit.callTools(List.of(use), null, null, rc).block();
         assertEquals(0, backend.calls);
-        toolkit.callTool(ToolCallParam.builder().toolUseBlock(use).build()).block();
+        toolkit.callTool(
+                        ToolCallParam.builder()
+                                .toolUseBlock(use)
+                                .runtimeContext(GrantTestUtils.grantRc())
+                                .build())
+                .block();
         assertEquals(1, backend.calls);
     }
 

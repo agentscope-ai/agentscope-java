@@ -67,6 +67,16 @@ import java.util.Set;
  * Manage markdown skill catalogs in application code.
  */
 public class AgentSkill {
+
+    /**
+     * Single source of the skillId composition separator: {@code skillId = name + "__s__" +
+     * source}. Neither the name nor the source may contain this separator (enforced at
+     * construction), so the separator occurs in a well-formed skillId if and only if it is the
+     * delimiter — grant entries can therefore distinguish "bare name" (source-unrestricted)
+     * from "name__s__source" (repository-qualified) by simply looking for it.
+     */
+    public static final String SKILL_ID_SEPARATOR = "__s__";
+
     private final Map<String, Object> metadata;
     private final String skillContent;
     private final Map<String, String> resources;
@@ -81,10 +91,16 @@ public class AgentSkill {
     private final Path originDir;
 
     /**
+     * Whether this is a system capability exempt from grant-layer (per-user capability)
+     * trimming. Settable only via the Builder; public constructors default to {@code false}.
+     */
+    private final boolean system;
+
+    /**
      * Creates an AgentSkill with explicit parameters.
      *
      * <p>Use this constructor when you want to create a skill directly without parsing
-     * markdown. Uses "custom" as the default source.
+     * markdown. No source is set (see {@link #getSource()}).
      *
      * @param name Skill name (must not be null or empty)
      * @param description Skill description (must not be null or empty)
@@ -94,7 +110,7 @@ public class AgentSkill {
      */
     public AgentSkill(
             String name, String description, String skillContent, Map<String, String> resources) {
-        this(name, description, skillContent, resources, "custom");
+        this(name, description, skillContent, resources, null);
     }
 
     /**
@@ -107,7 +123,7 @@ public class AgentSkill {
      * @param description Skill description (must not be null or empty)
      * @param skillContent The skill implementation or instructions (must not be null or empty)
      * @param resources Supporting resources referenced by the skill (can be null)
-     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param source Source identifier for the skill ({@code null} = no provenance)
      * @throws IllegalArgumentException if name, description, or skillContent is null or empty
      */
     public AgentSkill(
@@ -128,7 +144,7 @@ public class AgentSkill {
      * @param metadata Skill metadata including required {@code name} and {@code description}
      * @param skillContent The skill implementation or instructions (must not be null or empty)
      * @param resources Supporting resources referenced by the skill (can be null)
-     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param source Source identifier for the skill ({@code null} = no provenance)
      * @throws IllegalArgumentException if metadata is invalid or skillContent is null or empty
      */
     public AgentSkill(
@@ -149,7 +165,7 @@ public class AgentSkill {
      * @param metadata Skill metadata including required {@code name} and {@code description}
      * @param skillContent The skill implementation or instructions (must not be null or empty)
      * @param resources Supporting resources referenced by the skill (can be null)
-     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param source Source identifier for the skill ({@code null} = no provenance)
      * @param originDir Absolute path to the skill's source directory, or {@code null} if not
      *                  filesystem-backed (e.g. classpath / remote / synthetic). Stored as-is.
      * @throws IllegalArgumentException if metadata is invalid, skillContent is null or empty, or
@@ -161,11 +177,45 @@ public class AgentSkill {
             Map<String, String> resources,
             String source,
             Path originDir) {
+        this(metadata, skillContent, resources, source, originDir, false);
+    }
+
+    /**
+     * Full constructor including the system-capability flag (Builder path only).
+     *
+     * @param metadata Skill metadata including required {@code name} and {@code description}
+     * @param skillContent The skill implementation or instructions (must not be null or empty)
+     * @param resources Supporting resources (can be null)
+     * @param source Source identifier for the skill ({@code null} = no provenance)
+     * @param originDir Absolute path to the skill's source directory, or {@code null}
+     * @param system Whether this skill is exempt from grant-layer trimming
+     * @throws IllegalArgumentException if metadata is invalid or skillContent is null or empty
+     */
+    private AgentSkill(
+            Map<String, Object> metadata,
+            String skillContent,
+            Map<String, String> resources,
+            String source,
+            Path originDir,
+            boolean system) {
         String name = getRequiredMetadataString(metadata, "name");
         String description = getRequiredMetadataString(metadata, "description");
         SkillUtil.requireValidSkillName(name);
         if (skillContent == null || skillContent.isEmpty()) {
             throw new IllegalArgumentException("The skill must have content");
+        }
+        if (name.contains(SKILL_ID_SEPARATOR)) {
+            throw new IllegalArgumentException(
+                    "The skill name must not contain '"
+                            + SKILL_ID_SEPARATOR
+                            + "' (reserved as the skillId separator)");
+        }
+        String resolvedSource = source != null && !source.isBlank() ? source : null;
+        if (resolvedSource != null && resolvedSource.contains(SKILL_ID_SEPARATOR)) {
+            throw new IllegalArgumentException(
+                    "The skill source must not contain '"
+                            + SKILL_ID_SEPARATOR
+                            + "' (reserved as the skillId separator)");
         }
 
         LinkedHashMap<String, Object> metadataCopy = new LinkedHashMap<>(metadata);
@@ -175,12 +225,18 @@ public class AgentSkill {
         this.metadata = Collections.unmodifiableMap(metadataCopy);
         this.skillContent = skillContent;
         this.resources = resources != null ? new HashMap<>(resources) : new HashMap<>();
-        this.source = source != null ? source : "custom";
+        this.source = resolvedSource;
         this.originDir = originDir;
+        this.system = system;
     }
 
     /**
      * Gets the skill name.
+     *
+     * <p>The name is the skill's business identity and follows the industry convention of unique
+     * skill naming: it is the single identifier used across the grant surface, registry keying,
+     * loading, and skill tool-group naming. It must be unique within an agent's catalog; the
+     * {@link #getSource() source} is provenance metadata only, not part of the identity.
      *
      * @return The skill name (never null)
      */
@@ -228,9 +284,9 @@ public class AgentSkill {
     }
 
     /**
-     * Gets the skill source identifier.
+     * Gets the skill source identifier (provenance only, not part of the identity).
      *
-     * @return The source identifier (never null)
+     * @return The source identifier, or {@code null} when the skill carries no provenance
      */
     public String getSource() {
         return source;
@@ -265,19 +321,30 @@ public class AgentSkill {
     }
 
     /**
-     * Gets a unique identifier for this skill.
+     * Gets a unique identifier for this skill. With no source set (the common case — skills
+     * are not differentiated by repository), the id is simply the name; with a source set it
+     * extends to {@code name + "__s__" + source} (see {@link #SKILL_ID_SEPARATOR}). Neither
+     * part may contain the separator, so a qualified id parses back unambiguously; grant
+     * entries use either the bare name (source-unrestricted) or the qualified form
+     * (repository-specific).
      *
-     * <p>The ID is composed of name and source: "name_source". Because the standard naming rule
-     * forbids underscores in names, the ID splits deterministically at the first underscore, so
-     * distinct {@code (name, source)} pairs always produce distinct IDs. {@code SkillRegistry}
-     * additionally warns if a same-ID registration ever overwrites a different {@code (name,
-     * source)} pair — with the current charset this is unreachable and serves purely as a
-     * tripwire against future rule relaxations.
-     *
-     * @return Unique skill identifier (never null)
+     * @return the skill identifier (never null)
      */
     public String getSkillId() {
-        return getName() + "_" + source;
+        return source == null || source.isBlank()
+                ? getName()
+                : getName() + SKILL_ID_SEPARATOR + source;
+    }
+
+    /**
+     * Parses the name part out of a skill identifier.
+     *
+     * @param skillIdOrName a bare skill name or a full skillId ({@code name__s__source})
+     * @return the name part (the whole input when it contains no separator)
+     */
+    public static String parseSkillName(String skillIdOrName) {
+        int idx = skillIdOrName.indexOf(SKILL_ID_SEPARATOR);
+        return idx < 0 ? skillIdOrName : skillIdOrName.substring(0, idx);
     }
 
     /**
@@ -289,6 +356,17 @@ public class AgentSkill {
      */
     public Optional<Path> getOriginDir() {
         return Optional.ofNullable(originDir);
+    }
+
+    /**
+     * Whether this skill is a system capability exempt from grant-layer (per-user capability)
+     * trimming. The bypass takes effect only when a surface is present; a missing surface fails
+     * closed.
+     *
+     * @return {@code true} if this skill bypasses grant-layer trimming; {@code false} by default
+     */
+    public boolean isSystem() {
+        return system;
     }
 
     /**
@@ -356,6 +434,7 @@ public class AgentSkill {
         private Map<String, String> resources;
         private String source;
         private Path originDir;
+        private boolean system = false;
 
         /**
          * Creates an empty builder.
@@ -376,6 +455,7 @@ public class AgentSkill {
             this.resources = new HashMap<>(baseSkill.resources);
             this.source = baseSkill.source;
             this.originDir = baseSkill.originDir;
+            this.system = baseSkill.system;
         }
 
         /**
@@ -515,13 +595,26 @@ public class AgentSkill {
         }
 
         /**
+         * Marks the skill as a system capability exempt from grant-layer (per-user capability)
+         * trimming. Only mark framework/infrastructure skills; business skills marked system
+         * bypass per-user capability trimming entirely.
+         *
+         * @param system true to exempt this skill from grant-layer trimming
+         * @return This builder
+         */
+        public Builder system(boolean system) {
+            this.system = system;
+            return this;
+        }
+
+        /**
          * Builds the AgentSkill instance.
          *
          * @return A new AgentSkill instance
          * @throws IllegalArgumentException if required fields are missing
          */
         public AgentSkill build() {
-            return new AgentSkill(metadata, skillContent, resources, source, originDir);
+            return new AgentSkill(metadata, skillContent, resources, source, originDir, system);
         }
     }
 

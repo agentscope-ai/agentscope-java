@@ -248,7 +248,7 @@ class SkillE2ETest {
                                 + targetSkillName
                                 + "] | "
                                 + provider.getProviderName()
-                                + " — did not call load_skill_through_path(skillId='"
+                                + " — did not call load_skill_through_path(skillName='"
                                 + expectedSkillId
                                 + "')");
             }
