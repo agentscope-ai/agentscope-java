@@ -714,7 +714,12 @@ replays discovered definitions in `tool_search_output`. `AnthropicChatModel` sen
 the eligible catalog with deferred schemas and returns `tool_reference` blocks.
 These paths require a provider/model that supports the native protocol. Set the
 argument to `false` to use ordinary function calling instead. Do not combine the
-middleware with a hosted OpenAI `tool_search` server tool.
+middleware with a hosted OpenAI `tool_search` server tool. Failover pairs that mix
+the two native protocols (for example an `AnthropicChatModel` primary with an
+`OpenAIResponsesChatModel` fallback) are not supported: the tool surface is shaped
+once from the primary's mode and is not reshaped for the fallback, and a `CLIENT`
+fallback rejects `deferLoading` entries. Use a plain function-calling fallback
+model or set `nativeLoading=false` when failing over across such models.
 
 Discoveries are stored in the session's `ToolContextState` and survive state-store
 round trips. Tools are rechecked against the current request's eligible catalog;
