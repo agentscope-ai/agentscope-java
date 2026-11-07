@@ -20,10 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.MessageContent;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.Msg;
@@ -90,8 +92,59 @@ class AguiToolDocumentErrorTest {
         if (state == ToolResultState.ERROR) {
             assertNotNull(wire.getError());
             assertFalse(wire.getError().isBlank());
+            if (source instanceof Base64Source base64) {
+                assertTrue(wire.getError().contains("inline base64"));
+                assertFalse(wire.getError().contains(base64.getData()));
+            }
         } else {
             assertNull(wire.getError());
+        }
+        String expectedShape = JsonUtils.getJsonCodec().toJson(restored.getOutput());
+        for (int i = 0; i < 2; i++) {
+            Msg replay = Msg.builder().role(MsgRole.TOOL).content(restored).build();
+            restored = restore(converter.toAguiMessages(replay).get(0));
+            assertEquals(state, restored.getState());
+            assertEquals(expectedShape, JsonUtils.getJsonCodec().toJson(restored.getOutput()));
+        }
+    }
+
+    static Stream<Arguments> unrenderableResults() {
+        return Stream.of(
+                        List.<ContentBlock>of(),
+                        List.<ContentBlock>of(TextBlock.builder().text("").build()),
+                        List.<ContentBlock>of(TextBlock.builder().text(" \n\t").build()))
+                .flatMap(
+                        output ->
+                                Stream.of(
+                                        Arguments.of(output, ToolResultState.ERROR),
+                                        Arguments.of(output, ToolResultState.SUCCESS)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("unrenderableResults")
+    void emptyOrBlankResultPreservesStateAcrossJson(
+            List<ContentBlock> output, ToolResultState state) {
+        ToolResultBlock result =
+                ToolResultBlock.builder().id("tc-empty").state(state).output(output).build();
+        Msg message = Msg.builder().role(MsgRole.TOOL).content(result).build();
+        AguiMessage wire = converter.toAguiMessages(message).get(0);
+
+        ToolResultBlock restored = restore(wire);
+
+        assertEquals(state, restored.getState());
+        assertEquals("tc-empty", restored.getId());
+        if (state == ToolResultState.ERROR) {
+            assertNotNull(wire.getError());
+            assertFalse(wire.getError().isBlank());
+            assertEquals(wire.getTextContent(), wire.getError());
+        } else {
+            assertNull(wire.getError());
+            assertEquals(
+                    output.stream()
+                            .map(TextBlock.class::cast)
+                            .map(TextBlock::getText)
+                            .collect(java.util.stream.Collectors.joining("\n")),
+                    wire.getTextContent());
         }
     }
 

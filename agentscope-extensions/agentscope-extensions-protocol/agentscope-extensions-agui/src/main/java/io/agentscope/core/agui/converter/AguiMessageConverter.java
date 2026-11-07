@@ -556,6 +556,11 @@ public class AguiMessageConverter {
                 }
             }
         }
+        if (error && text.toString().isBlank()) {
+            String fallback = toolResultText(result);
+            text.setLength(0);
+            text.append(fallback.isBlank() ? "Tool execution failed" : fallback);
+        }
         MessageContent content;
         if (parts.isEmpty()) {
             content = new MessageContent.Text(text.toString());
@@ -566,10 +571,6 @@ public class AguiMessageConverter {
             content = new MessageContent.Blocks(parts);
         }
         String errorText = error ? text.toString() : null;
-        if (error && errorText.isBlank()) {
-            // A document-only failure still needs a non-blank error marker on the wire.
-            errorText = toolResultText(result);
-        }
         return new AguiMessage(
                 id, convertRole(msg.getRole()), content, null, result.getId(), errorText);
     }
