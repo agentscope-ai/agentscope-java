@@ -163,6 +163,37 @@ Typical workflow: write `PLAN.md` during the plan phase → `plan_exit` → in e
 
 ⚠ Don't confuse with subagent **background tasks** (`task_output` / `task_cancel` / `task_list`) — that's a different concept; see [Subagent](/v2/en/docs/harness/subagent).
 
+### Optional display fields
+
+Each `todo_write` item can include `description`, `expectedOutcome`, `outcome`, and
+`metadata` for a frontend-facing plan. These optional fields do not change task status,
+priority validation, or full-list replacement semantics:
+
+```json
+{
+  "content": "Compare notices",
+  "status": "completed",
+  "priority": "high",
+  "description": "Compare Anhui and Nanjing notices",
+  "expectedOutcome": "A concise comparison",
+  "outcome": "Found two differences",
+  "metadata": { "region": "east" }
+}
+```
+
+`description` is stored in `Task.description`; `expectedOutcome` and `outcome` are
+stored under the same keys in `Task.metadata`, alongside application metadata.
+The tool's text receipt includes the description and outcomes, while arbitrary
+application metadata is available from task state. These values survive state serialization.
+The existing three-argument Java `TodoItem` constructor remains supported.
+
+When content matches an existing task, omitted display fields retain their previous
+values. For a new task, an omitted description defaults to `content`. Use an empty
+string to clear a description or outcome. Application metadata is merged; a null
+metadata value removes that key. Top-level outcome fields take precedence over
+same-named metadata entries. `metadata.priority` is ignored: use the validated
+top-level `priority` field. Omit a task from the complete list to remove it.
+
 ## Viewing the task list
 
 The task list lives in `AgentState.tasksContext` and is persisted automatically with every `call()`. To read it from application code:
