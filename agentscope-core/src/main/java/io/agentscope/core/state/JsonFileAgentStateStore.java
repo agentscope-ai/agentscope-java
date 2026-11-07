@@ -138,18 +138,24 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     private void rewriteEntireList(Path file, List<? extends State> values) throws IOException {
         Path tmp = uniqueTmpSibling(file);
-        try (BufferedWriter writer =
-                newUtf8ReplacingWriter(
-                        tmp,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING,
-                        StandardOpenOption.WRITE)) {
-            for (State item : values) {
-                writer.write(JsonUtils.getJsonCodec().toJson(item));
-                writer.newLine();
+        try {
+            try (BufferedWriter writer =
+                    newUtf8ReplacingWriter(
+                            tmp,
+                            StandardOpenOption.CREATE,
+                            StandardOpenOption.TRUNCATE_EXISTING,
+                            StandardOpenOption.WRITE)) {
+                for (State item : values) {
+                    writer.write(JsonUtils.getJsonCodec().toJson(item));
+                    writer.newLine();
+                }
             }
+            Files.move(
+                    tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            deleteQuietly(tmp);
+            throw e;
         }
-        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private void appendToList(Path file, List<? extends State> items) throws IOException {
@@ -318,15 +324,31 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     private static void atomicWriteString(Path file, String content) throws IOException {
         Path tmp = uniqueTmpSibling(file);
-        try (BufferedWriter writer =
-                newUtf8ReplacingWriter(
-                        tmp,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING,
-                        StandardOpenOption.WRITE)) {
-            writer.write(content);
+        try {
+            try (BufferedWriter writer =
+                    newUtf8ReplacingWriter(
+                            tmp,
+                            StandardOpenOption.CREATE,
+                            StandardOpenOption.TRUNCATE_EXISTING,
+                            StandardOpenOption.WRITE)) {
+                writer.write(content);
+            }
+            Files.move(
+                    tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            deleteQuietly(tmp);
+            throw e;
         }
-        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    // Unique tmp names are never overwritten by a later write, so a failed one must be
+    // removed explicitly or it stays on disk forever.
+    private static void deleteQuietly(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException ignored) {
+            // best-effort cleanup while propagating the original failure
+        }
     }
 
     // A fixed ".tmp" sibling races when two threads persist the same state concurrently: one

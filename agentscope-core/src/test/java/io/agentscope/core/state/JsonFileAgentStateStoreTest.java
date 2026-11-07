@@ -181,7 +181,13 @@ class JsonFileAgentStateStoreTest {
 
         var loaded = store.get(null, "session1", "agent_state", TestState.class);
         assertTrue(loaded.isPresent());
-        assertTrue(loaded.get().count() >= 0);
+        // The winner is whichever thread moved last; it must be a complete, intact document.
+        assertTrue(loaded.get().value().matches("v\\d+"));
+        assertTrue(loaded.get().count() >= 0 && loaded.get().count() < iterations);
+        // No orphaned tmp files may survive a successful save.
+        try (Stream<Path> paths = Files.walk(tempDir)) {
+            assertEquals(0, paths.filter(p -> p.toString().endsWith(".tmp")).count());
+        }
     }
 
     private static List<Msg> conversation(String reply) {
