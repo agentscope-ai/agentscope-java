@@ -21,6 +21,8 @@ en_link: /v2/en/integration/protocol/agui
 
 当助手消息包含推理和受支持的 URL 媒体、但没有文本时，`toAguiMessages()` 和 `toAguiMessageList()` 会同时保留两部分，依次生成推理消息和包含媒体的助手消息。
 
+包含文档的工具结果在 AG-UI JSON 往返转换后仍保留 `ERROR` 状态，即使文本输出为空或只有空白。此时使用文档引用生成非空的协议错误字段，不把内联文档字节复制到错误中。若错误文字已存在于结构化文本部分中，则不再次前置追加；与输出不同的前端错误仍会保留。
+
 ## 何时使用
 
 - 需要把 AgentScope agent 接入 AG-UI 兼容前端或自研 Chat UI。

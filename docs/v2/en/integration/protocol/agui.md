@@ -21,6 +21,8 @@ On the outbound path, URL-backed `ImageBlock` / `AudioBlock` / `VideoBlock` / `D
 
 When an assistant message contains reasoning and supported URL media without text, `toAguiMessages()` and `toAguiMessageList()` preserve both as a reasoning message followed by an assistant message containing the media.
 
+Tool results containing documents preserve their `ERROR` state through AG-UI JSON round trips even when the text output is empty or blank. In that case a document reference supplies the non-blank wire error; inline document bytes are not copied into the error. An error already present as a structured text part is not prepended again, while a distinct frontend error is retained.
+
 ## When To Use
 
 - You need to connect an AgentScope agent to an AG-UI-compatible front end or a custom chat UI.
