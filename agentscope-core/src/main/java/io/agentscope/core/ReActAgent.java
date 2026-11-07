@@ -174,6 +174,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -279,6 +280,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * registered here — they live on the per-call {@link CallExecution} scope.
      */
     private final Toolkit toolkit;
+
+    /**
+     * Optional per-call toolkit selector, {@code null} when unset. Receives this agent's own
+     * {@link #toolkit} plus the call's {@link RuntimeContext} and may return a different toolkit
+     * for that call (for example one carrying an isolated MCP tool set); a {@code null} result
+     * falls back to {@link #toolkit}. Never used to mutate the shared toolkit.
+     */
+    private final BiFunction<Toolkit, RuntimeContext, Toolkit> toolkitForContext;
 
     /** Default active groups captured after builder-time toolkit configuration is complete. */
     private final List<String> initialActiveToolGroups;
@@ -415,6 +424,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         super(builder.name, builder.description, new ArrayList<>(builder.hooks), builder.agentId);
 
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
+        this.toolkitForContext = builder.toolkitForContext;
         this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
         this.skillFilter = builder.skillFilter != null ? builder.skillFilter : SkillFilter.all();
         this.skillWorkDir = builder.skillWorkDir;
@@ -996,7 +1006,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // carried on the scope's toolRequestConfig and composed with the shared toolkit on demand.
         ToolRequestConfig requestConfig = ctx.getToolRequestConfig();
         scope.toolRequestConfig = requestConfig != null ? requestConfig : ToolRequestConfig.NONE;
-        scope.activeToolkit = this.toolkit;
+        // Per-call toolkit: an installed selector may swap in a context-scoped toolkit (e.g. an
+        // isolated MCP tool set). It must never mutate the shared toolkit; null means "unchanged".
+        Toolkit scopedToolkit =
+                toolkitForContext != null ? toolkitForContext.apply(this.toolkit, ctx) : null;
+        scope.activeToolkit = scopedToolkit != null ? scopedToolkit : this.toolkit;
         scope.systemMsg = null;
         scope.interruption = control.interruption();
         return scope;
@@ -5920,6 +5934,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String sysPrompt;
         Model model;
         Toolkit toolkit = new Toolkit();
+        BiFunction<Toolkit, RuntimeContext, Toolkit> toolkitForContext;
 
         int maxIters = 10;
         ExecutionConfig modelExecutionConfig;
@@ -6037,6 +6052,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             copy.sysPrompt = this.sysPrompt;
             copy.model = this.model;
             copy.toolkit = this.toolkit;
+            copy.toolkitForContext = this.toolkitForContext;
             copy.maxIters = this.maxIters;
             copy.modelExecutionConfig = this.modelExecutionConfig;
             copy.toolExecutionConfig = this.toolExecutionConfig;
@@ -6165,6 +6181,30 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder toolkit(Toolkit toolkit) {
             this.toolkit = toolkit;
+            return this;
+        }
+
+        /**
+         * Installs a per-call toolkit selector so tool visibility and execution can depend on the
+         * call's {@link RuntimeContext} instead of one shared tool set.
+         *
+         * <p>The selector is invoked once per call with this agent's own toolkit (the one passed
+         * to {@link #toolkit(Toolkit)}, as copied at build time) and the call's context. It may
+         * return a different toolkit — typically a copy of the agent toolkit plus tools scoped to
+         * that context, such as a per-user MCP server set — or {@code null} to use the agent
+         * toolkit unchanged. Both schema generation and tool execution read the selected toolkit,
+         * so a returned toolkit is authoritative for the whole call.
+         *
+         * <p>The selector must never mutate the agent toolkit it receives; the agent's shared
+         * toolkit is used concurrently by other calls. The toolkit it returns must also be safe
+         * for the duration of the call. When unset, the agent uses its shared toolkit, which is
+         * the default and the fastest path.
+         *
+         * @param selector selector of the per-call toolkit, or {@code null} to disable
+         * @return This builder instance for method chaining
+         */
+        public Builder toolkitForContext(BiFunction<Toolkit, RuntimeContext, Toolkit> selector) {
+            this.toolkitForContext = selector;
             return this;
         }
 
