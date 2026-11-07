@@ -25,6 +25,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.FinishReasons;
 import io.agentscope.core.model.Model;
@@ -45,6 +46,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -59,7 +61,7 @@ import reactor.core.publisher.Mono;
  *       "keep" budget; never split an ASSISTANT tool-call from its TOOL result(s)</li>
  *   <li><b>Memory flush</b> (optional) — extract long-term memories from the prefix via
  *       {@link MemoryFlushManager#flushMemories}</li>
- *   <li><b>Summarize</b> — one LLM call to distill the prefix into a structured summary</li>
+ *   <li><b>Summarize</b> — distill the prefix, using an optional fallback on invocation failure</li>
  *   <li><b>Rebuild</b> — return {@code [summaryUserMsg] + preservedTail}</li>
  * </ol>
  *
@@ -74,16 +76,24 @@ public class ConversationCompactor {
     public static final String SUMMARY_MSG_NAME = "__compaction_summary__";
 
     private final Model model;
+    private final Model fallbackModel;
     private final MemoryFlushManager flushManager;
     private final ToLongFunction<List<Msg>> tokenCounter;
     private final ToLongFunction<Msg> toolResultTokenCounter;
 
     public ConversationCompactor(Model model, MemoryFlushManager flushManager) {
+        this(model, flushManager, null);
+    }
+
+    /** Uses the agent's optional fallback only for conversation summarization. */
+    public ConversationCompactor(
+            Model model, MemoryFlushManager flushManager, Model fallbackModel) {
         this(
                 model,
                 flushManager,
                 TokenCounterUtil::calculateToken,
-                message -> TokenCounterUtil.calculateToken(List.of(message)));
+                message -> TokenCounterUtil.calculateToken(List.of(message)),
+                fallbackModel);
     }
 
     /**
@@ -100,7 +110,18 @@ public class ConversationCompactor {
             MemoryFlushManager flushManager,
             ToLongFunction<List<Msg>> tokenCounter,
             ToLongFunction<Msg> toolResultTokenCounter) {
+        this(model, flushManager, tokenCounter, toolResultTokenCounter, null);
+    }
+
+    /** Uses caller-supplied counters and an optional fallback for complete summary attempts. */
+    public ConversationCompactor(
+            Model model,
+            MemoryFlushManager flushManager,
+            ToLongFunction<List<Msg>> tokenCounter,
+            ToLongFunction<Msg> toolResultTokenCounter,
+            Model fallbackModel) {
         this.model = model;
+        this.fallbackModel = fallbackModel;
         this.flushManager = flushManager;
         this.tokenCounter = tokenCounter;
         this.toolResultTokenCounter = toolResultTokenCounter;
@@ -330,7 +351,7 @@ public class ConversationCompactor {
         // complete summary whose full candidate actually shrinks the conversation may replace
         // history; anything else keeps the lightweight reductions alone.
         return flushStep
-                .then(summarizePrefix(summaryInput, config))
+                .then(summarizePrefix(rc, summaryInput, config))
                 .map(
                         summary -> {
                             if (summary.isEmpty()) {
@@ -339,7 +360,7 @@ public class ConversationCompactor {
                                 return lightweightResult(messages, conversationMessages);
                             }
                             Msg summaryMsg =
-                                    buildSummaryMessage(summary.get(), historyReference)
+                                    buildSummaryMessage(summary.get().text(), historyReference)
                                             .withMetadata(
                                                     Map.of(
                                                             "context.summary_version", 1,
@@ -348,7 +369,7 @@ public class ConversationCompactor {
                                                                             .map(Msg::getId)
                                                                             .toList(),
                                                             "context.summary_model",
-                                                                    model.getModelName()));
+                                                                    summary.get().modelName()));
                             List<Msg> compacted = new ArrayList<>();
                             compacted.add(summaryMsg);
                             compacted.addAll(tail);
@@ -510,9 +531,13 @@ public class ConversationCompactor {
      * providers that do not report one keep working. Rejection yields {@code Optional.empty()}
      * rather than an error, so already-successful lightweight reductions still apply.
      */
-    private Mono<Optional<String>> summarizePrefix(List<Msg> prefix, CompactionConfig config) {
+    private Mono<Optional<Summary>> summarizePrefix(
+            RuntimeContext rc, List<Msg> prefix, CompactionConfig config) {
         if (prefix.isEmpty()) {
-            return Mono.just(Optional.of("No previous conversation history."));
+            return Mono.just(
+                    Optional.of(
+                            new Summary(
+                                    "No previous conversation history.", model.getModelName())));
         }
 
         String formatted = formatMessagesForSummary(prefix);
@@ -525,22 +550,77 @@ public class ConversationCompactor {
                                 .content(TextBlock.builder().text(prompt).build())
                                 .build());
 
-        return ContextModelCalls.auxiliary(model, summarizationInput)
-                .reduce(
-                        new SummaryCollection(),
-                        (collection, resp) -> {
-                            collection.accept(resp);
-                            return collection;
+        return ContextModelCalls.prepareAuxiliary(model, summarizationInput)
+                .flatMap(
+                        input -> {
+                            AtomicReference<Throwable> invocationError = new AtomicReference<>();
+                            return collectSummary(input, invocationError::set)
+                                    .onErrorResume(
+                                            error ->
+                                                    error == invocationError.get()
+                                                            ? fallbackSummary(
+                                                                    rc, summarizationInput, error)
+                                                            : Mono.error(error));
                         })
                 .map(SummaryCollection::toValidatedSummary);
     }
 
+    private Mono<SummaryCollection> fallbackSummary(
+            RuntimeContext rc, List<Msg> summarizationInput, Throwable error) {
+        if (fallbackModel == null
+                || fallbackModel == model
+                || ContextModelCalls.isCancellation(error)
+                || ExceptionUtils.containsInterruptedException(error)
+                || SessionLogException.causedBy(error)) {
+            return Mono.error(error);
+        }
+        SessionRecorder recorder = SessionRecorder.from(rc);
+        if (recorder != null) {
+            recorder.append(
+                    "model/retry",
+                    Map.of(
+                            "reason",
+                            "fallback",
+                            "purpose",
+                            "SUMMARY",
+                            "from",
+                            model.getModelName(),
+                            "to",
+                            fallbackModel.getModelName()));
+        }
+        log.warn(
+                "Summary model {} failed, switching to fallback {}",
+                model.getModelName(),
+                fallbackModel.getModelName(),
+                error);
+        return ContextModelCalls.prepareAuxiliary(fallbackModel, summarizationInput)
+                .flatMap(input -> collectSummary(input, null));
+    }
+
+    private static Mono<SummaryCollection> collectSummary(
+            ModelCallInput input, Consumer<Throwable> invocationError) {
+        return ContextModelCalls.auxiliary(input, invocationError)
+                .reduceWith(
+                        () -> new SummaryCollection(input.model().getModelName()),
+                        (collection, resp) -> {
+                            collection.accept(resp);
+                            return collection;
+                        });
+    }
+
+    private record Summary(String text, String modelName) {}
+
     /** Accumulates one summary call's streamed output together with its terminal state. */
     private static final class SummaryCollection {
+        private final String modelName;
         private final StringBuilder text = new StringBuilder();
         private boolean sawToolUse;
         private String finishReason;
         private Map<String, Object> finishMetadata = Map.of();
+
+        private SummaryCollection(String modelName) {
+            this.modelName = modelName;
+        }
 
         void accept(ChatResponse response) {
             if (response.getContent() != null) {
@@ -558,7 +638,7 @@ public class ConversationCompactor {
             }
         }
 
-        Optional<String> toValidatedSummary() {
+        Optional<Summary> toValidatedSummary() {
             if (FinishReasons.indicatesOutputLimit(finishReason, finishMetadata)) {
                 log.warn("Rejected summary: output stopped at the provider token limit");
                 return Optional.empty();
@@ -572,7 +652,7 @@ public class ConversationCompactor {
                 log.warn("Rejected summary: model returned no text content");
                 return Optional.empty();
             }
-            return Optional.of(summary);
+            return Optional.of(new Summary(summary, modelName));
         }
     }
 

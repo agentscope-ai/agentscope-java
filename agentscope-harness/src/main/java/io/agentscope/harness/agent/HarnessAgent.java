@@ -1169,7 +1169,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
         // per-call model that just overflowed (same rule as CompactionMiddleware#overflowRecovery).
         MemoryFlushManager fm =
                 new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
-        ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
+        ConversationCompactor compactor =
+                new ConversationCompactor(
+                        getModel(), fm, delegate.getModelConfig().fallbackModel());
 
         return compactor
                 .compactIfNeeded(ctx, allMsgs, forceConfig, agentId, sessionId)

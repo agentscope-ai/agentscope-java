@@ -25,8 +25,10 @@ import io.agentscope.core.model.ToolSchema;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -39,6 +41,22 @@ public final class SessionModels {
     public static Model wrap(Model model, RuntimeContext context, String purpose) {
         if (model instanceof ManagedModel || SessionRecorder.from(context) == null) return model;
         return new Recorded(model, context, purpose);
+    }
+
+    /** Observes model errors separately from native session lifecycle failures; must not throw. */
+    public static Flux<ChatResponse> stream(
+            ModelCallInput input,
+            RuntimeContext context,
+            String purpose,
+            Consumer<Throwable> invocationError) {
+        Objects.requireNonNull(invocationError, "invocationError");
+        Model model = wrap(input.model(), context, purpose);
+        if (model instanceof Recorded recorded) {
+            return recorded.stream(
+                    input.messages(), input.tools(), input.options(), invocationError);
+        }
+        return Flux.defer(() -> model.stream(input.messages(), input.tools(), input.options()))
+                .doOnError(invocationError);
     }
 
     private record Recorded(Model delegate, RuntimeContext context, String purpose)
@@ -61,6 +79,14 @@ public final class SessionModels {
 
         public Flux<ChatResponse> stream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return stream(messages, tools, options, null);
+        }
+
+        private Flux<ChatResponse> stream(
+                List<Msg> messages,
+                List<ToolSchema> tools,
+                GenerateOptions options,
+                Consumer<Throwable> invocationError) {
             return Flux.defer(
                     () -> {
                         var recorder = SessionRecorder.from(context);
@@ -84,21 +110,26 @@ public final class SessionModels {
                                                         purpose,
                                                         context.getAgentState()))
                                         .thenReturn(callId),
-                                id ->
-                                        Flux.defer(() -> delegate.stream(messages, tools, options))
-                                                .doOnNext(
-                                                        chunk -> {
-                                                            last.set(chunk);
-                                                            recorder.append(
-                                                                    "model/chunk",
-                                                                    Map.of(
-                                                                            "modelCallId",
-                                                                            id,
-                                                                            "purpose",
-                                                                            purpose,
-                                                                            "chunk",
-                                                                            chunk));
-                                                        }),
+                                id -> {
+                                    Flux<ChatResponse> responses =
+                                            Flux.defer(
+                                                    () ->
+                                                            delegate.stream(
+                                                                    messages, tools, options));
+                                    if (invocationError != null) {
+                                        responses = responses.doOnError(invocationError);
+                                    }
+                                    return responses.doOnNext(
+                                            chunk -> {
+                                                last.set(chunk);
+                                                recorder.append(
+                                                        "model/chunk",
+                                                        Map.of(
+                                                                "modelCallId", id,
+                                                                "purpose", purpose,
+                                                                "chunk", chunk));
+                                            });
+                                },
                                 id -> end(recorder, id, "completed", last.get(), null),
                                 (id, error) ->
                                         SessionLogException.causedBy(error)
