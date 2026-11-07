@@ -317,6 +317,7 @@ final class HarnessAgentBuilderSupport {
         final var capturedDisableDefaultSkills = b.disableDefaultWorkspaceSkills;
         final var capturedSandboxSpec = b.sandboxFilesystemSpec;
         final var capturedRemoteSpec = b.remoteFilesystemSpec;
+        final var capturedLocalSpec = b.localFilesystemSpec;
         final var capturedRoutes = Map.copyOf(b.filesystemRoutes);
 
         final boolean capturedPendingToolRecovery = b.enablePendingToolRecovery;
@@ -393,6 +394,12 @@ final class HarnessAgentBuilderSupport {
                 sub.filesystem(capturedRemoteSpec);
             if (capturedBackend == null && capturedSandboxSpec != null)
                 sub.filesystem(capturedSandboxSpec);
+            // The spec is a factory and general-purpose shares the main workspace, so reuse the
+            // parent's instance to keep project/isolationScope/subclass behaviour.
+            if (capturedBackend == null
+                    && capturedRemoteSpec == null
+                    && capturedSandboxSpec == null
+                    && capturedLocalSpec != null) sub.filesystem(capturedLocalSpec);
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
