@@ -86,8 +86,8 @@ public abstract class AbstractBaseSandbox implements Sandbox {
                     log.debug("[sandbox] Branch B: workspace lost, restoring from snapshot");
                     Optional<InputStream> archive = openSnapshotArchive(snapshot);
                     if (archive.isPresent()) {
-                        doSetupWorkspace();
                         try (InputStream stream = archive.get()) {
+                            doSetupWorkspace();
                             doHydrateWorkspace(stream);
                         }
                         workspaceSpecApplier.applyWorkspaceSpec(spec, true);
@@ -104,8 +104,8 @@ public abstract class AbstractBaseSandbox implements Sandbox {
                 if (archive.isPresent()) {
                     // Branch C: restore from snapshot + all spec entries
                     log.debug("[sandbox] Branch C: restoring from snapshot");
-                    doSetupWorkspace();
                     try (InputStream stream = archive.get()) {
+                        doSetupWorkspace();
                         doHydrateWorkspace(stream);
                     }
                     workspaceSpecApplier.applyWorkspaceSpec(spec, false);
