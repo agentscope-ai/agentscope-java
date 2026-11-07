@@ -27,20 +27,30 @@ public class ModelCallEndEvent extends AgentEvent {
     private final String replyId;
     private final ChatUsage usage;
 
+    /** Finish reason reported by the provider for the final chunk (may be null). */
+    private final String finishReason;
+
     @JsonCreator
     public ModelCallEndEvent(
             @JsonProperty("id") String id,
             @JsonProperty("createdAt") String createdAt,
             @JsonProperty("replyId") String replyId,
-            @JsonProperty("usage") ChatUsage usage) {
+            @JsonProperty("usage") ChatUsage usage,
+            @JsonProperty("finishReason") String finishReason) {
         super(id, createdAt);
         this.replyId = replyId;
         this.usage = usage;
+        this.finishReason = finishReason;
     }
 
     public ModelCallEndEvent(String replyId, ChatUsage usage) {
+        this(replyId, usage, null);
+    }
+
+    public ModelCallEndEvent(String replyId, ChatUsage usage, String finishReason) {
         this.replyId = replyId;
         this.usage = usage;
+        this.finishReason = finishReason;
     }
 
     @Override
@@ -54,5 +64,16 @@ public class ModelCallEndEvent extends AgentEvent {
 
     public ChatUsage getUsage() {
         return usage;
+    }
+
+    /**
+     * The finish reason of the final response chunk, e.g. {@code stop} or {@code length}.
+     * Null when the provider did not report one — consumers should treat a null finish
+     * reason as "provider did not confirm a normal completion" for observability.
+     *
+     * @return finish reason, or null
+     */
+    public String getFinishReason() {
+        return finishReason;
     }
 }

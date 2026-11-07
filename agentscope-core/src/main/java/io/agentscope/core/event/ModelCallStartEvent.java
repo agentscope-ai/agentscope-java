@@ -25,17 +25,27 @@ public class ModelCallStartEvent extends AgentEvent {
 
     private final String replyId;
 
+    /** 1-based attempt number of this model call within the same reasoning step. */
+    private final int attempt;
+
     @JsonCreator
     public ModelCallStartEvent(
             @JsonProperty("id") String id,
             @JsonProperty("createdAt") String createdAt,
-            @JsonProperty("replyId") String replyId) {
+            @JsonProperty("replyId") String replyId,
+            @JsonProperty("attempt") Integer attempt) {
         super(id, createdAt);
         this.replyId = replyId;
+        this.attempt = attempt != null ? attempt : 1;
     }
 
     public ModelCallStartEvent(String replyId) {
+        this(replyId, 1);
+    }
+
+    public ModelCallStartEvent(String replyId, int attempt) {
         this.replyId = replyId;
+        this.attempt = attempt;
     }
 
     @Override
@@ -45,5 +55,16 @@ public class ModelCallStartEvent extends AgentEvent {
 
     public String getReplyId() {
         return replyId;
+    }
+
+    /**
+     * Attempt number of this model call. Values greater than 1 indicate the call is a
+     * retry of an earlier attempt (e.g. after an incomplete stream), letting consumers
+     * reset state accumulated from the aborted attempt.
+     *
+     * @return 1-based attempt number
+     */
+    public int getAttempt() {
+        return attempt;
     }
 }
