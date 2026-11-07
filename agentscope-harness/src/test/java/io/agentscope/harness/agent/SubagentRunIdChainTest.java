@@ -60,7 +60,9 @@ class SubagentRunIdChainTest {
     @TempDir Path workspace;
     @TempDir Path stateHome;
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    // A parent call that spawns a subagent runs in ~0.6-6.5 s locally; a loaded Windows
+    // runner can exceed 10 s, so keep a generous margin (see #3505).
+    private static final Duration TIMEOUT = Duration.ofSeconds(60);
 
     private String previousStateHome;
     private HarnessAgent parent;
