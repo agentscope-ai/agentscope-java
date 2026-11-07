@@ -337,7 +337,11 @@ public final class AgentSession implements AutoCloseable {
         return List.copyOf(tasks.values());
     }
 
-    /** Observe this accepted execution until it completes, suspends, is interrupted, or fails. */
+    /**
+     * Observe this accepted execution until it completes, suspends, is interrupted, or fails.
+     * An unfinished run is interrupted once its writer lease expires, even if no new writer
+     * has replaced the persisted owner.
+     */
     public Mono<Task> await(Task task) {
         return Flux.interval(Duration.ZERO, Duration.ofMillis(100))
                 .onBackpressureLatest()
@@ -346,11 +350,13 @@ public final class AgentSession implements AutoCloseable {
                                 Mono.fromCallable(() -> task(task.commandId()))
                                         .subscribeOn(Schedulers.boundedElastic()))
                 .filter(
-                        value ->
-                                value.settled()
-                                        && (value.runId() == null
-                                                || !Objects.equals(
-                                                        value.runId(), log.head().owner())))
+                        value -> {
+                            if (!value.settled()) return false;
+                            if (value.runId() == null) return true;
+                            var head = log.head();
+                            return !Objects.equals(value.runId(), head.owner())
+                                    || head.leaseUntil() <= System.currentTimeMillis();
+                        })
                 .next();
     }
 

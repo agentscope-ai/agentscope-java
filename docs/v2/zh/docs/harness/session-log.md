@@ -64,6 +64,8 @@ session.transcript().messages()
 
 `await` 只负责观察。它会在本次执行完成、挂起、中断或失败后返回；`suspended` 表示 Agent 正在等用户答复，不代表整个任务完成。取消对 `await` 的订阅也不会取消后台任务。
 
+如果 Worker 在记录执行结果前退出，`await` 会在其写入租约过期后返回 `interrupted`，无需先由另一个 Worker 接管。写入租约仍有效时，`await` 会继续等待原 Worker 完成所有权释放。
+
 即使此前一直通过 `agent.call(input, ctx)` 对话，仍可以用相同身份取得 `session` 并读取 `transcript()`，不必再次提交输入。**同一会话选择一套执行方式：直接调用，或由 AgentSession 调度。** 已提交任务的进度通过日志观察；再调用 `streamEvents` 会启动另一次执行。
 
 <span id="场景二运行中补充信息与前端续传" />
