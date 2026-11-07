@@ -2838,8 +2838,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     (uid, sid) -> {
                         RuntimeContext bakedRc =
                                 HarnessAgentBuilderSupport.buildBakedRuntimeContext(uid, sid);
-                        NamespaceFactory ctxNs =
-                                rc -> (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
+                        // The context workspace follows the configured isolation scope, the
+                        // same way the main workspace does; a per-user prefix was assumed here.
+                        NamespaceFactory ctxNs = nsFactory;
                         AbstractFilesystem ctxFs =
                                 new io.agentscope.harness.agent.filesystem.BakedContextFilesystem(
                                         sharedFilesystemRef, bakedRc);

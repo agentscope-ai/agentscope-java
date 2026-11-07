@@ -640,25 +640,18 @@ final class HarnessAgentBuilderSupport {
     }
 
     /**
-     * Builds a fresh {@link io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec} for
-     * an ISOLATED subagent, copying the main agent's project, mode, and additionalRoots so the
-     * subagent's {@code PathPolicy} stays consistent with the parent. The subagent gets its own
-     * workspace (passed separately via {@code sub.workspace(...)}) so its MEMORY/sessions stay
-     * isolated; only the allow-list inputs are shared.
+     * Builds the {@link io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec} an
+     * ISOLATED subagent inherits from its parent. The subagent gets its own workspace (passed
+     * separately via {@code sub.workspace(...)}) so its MEMORY/sessions stay isolated, but the
+     * policy it runs under — isolation scope, timeouts, environment, path mode and the concrete
+     * spec type — is the parent's, so the only difference is the workspace root.
      */
-    private static io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec
+    static io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec
             cloneLocalSpecForSubagent(
                     io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec parent) {
-        io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec spec =
-                new io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec();
-        if (parent.getProject() != null) {
-            spec.project(parent.getProject());
-        }
-        if (parent.getMode() != null) {
-            spec.mode(parent.getMode());
-        }
-        spec.additionalRoots(parent.getAdditionalRoots());
-        return spec;
+        // The subagent runs under the parent's policy; only its workspace root differs. Delegating
+        // to copy() keeps that true when a field is added to the spec later.
+        return parent.copy();
     }
 
     /** Returns a defensive copy of inherited parent tools filtered by the optional allowlist. */

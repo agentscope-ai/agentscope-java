@@ -315,6 +315,67 @@ public class LocalFilesystemSpec {
         return List.copyOf(additionalRoots);
     }
 
+    /**
+     * Returns a copy of this spec that carries every policy field, including the concrete type.
+     *
+     * <p>A subagent inherits its parent's filesystem policy, so a copy has to be indistinguishable
+     * from the parent apart from the workspace root it is attached to. Copying the fields by name at
+     * the call site is how a field added to this class ends up silently dropped for every subagent,
+     * so the copy lives here and every field is carried.
+     *
+     * @return a copy of this spec
+     */
+    public LocalFilesystemSpec copy() {
+        LocalFilesystemSpec copy = newInstance();
+        copy.executeTimeoutSeconds = executeTimeoutSeconds;
+        copy.maxOutputBytes = maxOutputBytes;
+        copy.env.putAll(env);
+        copy.inheritEnv = inheritEnv;
+        copy.mode = mode;
+        copy.isolationScope = isolationScope;
+        copy.project = project;
+        copy.additionalRoots.addAll(additionalRoots);
+        copy.projectWritable = projectWritable;
+        copy.sharedLocalWorkspace = sharedLocalWorkspace;
+        return copy;
+    }
+
+    /**
+     * Creates the instance {@link #copy()} fills in. A subclass that carries its own state
+     * overrides this, so a copy keeps the behaviour the parent was configured with instead of
+     * degrading to the base type.
+     *
+     * @return an empty spec of the same type as this one
+     */
+    protected LocalFilesystemSpec newInstance() {
+        return new LocalFilesystemSpec();
+    }
+
+    /** @return the command execution timeout in seconds */
+    public int getExecuteTimeoutSeconds() {
+        return executeTimeoutSeconds;
+    }
+
+    /** @return the maximum captured output size in bytes */
+    public int getMaxOutputBytes() {
+        return maxOutputBytes;
+    }
+
+    /** @return the environment variables set for shell commands */
+    public Map<String, String> getEnv() {
+        return Map.copyOf(env);
+    }
+
+    /** @return whether the parent process environment is inherited by shell commands */
+    public boolean isInheritEnv() {
+        return inheritEnv;
+    }
+
+    /** @return whether the per-user namespace prefix is dropped for host-app writes */
+    public boolean isSharedLocalWorkspace() {
+        return sharedLocalWorkspace;
+    }
+
     public AbstractFilesystem toFilesystem(Path workspace, NamespaceFactory localNamespaceFactory) {
         Path effectiveProject =
                 project != null ? project : Paths.get(System.getProperty("user.dir"));
