@@ -86,18 +86,29 @@ public final class SessionModels {
                                         .thenReturn(callId),
                                 id ->
                                         Flux.defer(() -> delegate.stream(messages, tools, options))
-                                                .doOnNext(
+                                                .map(
                                                         chunk -> {
+                                                            // Keep the last seen chunk even if
+                                                            // append fails, matching the previous
+                                                            // doOnNext ordering.
                                                             last.set(chunk);
-                                                            recorder.append(
-                                                                    "model/chunk",
-                                                                    Map.of(
-                                                                            "modelCallId",
-                                                                            id,
-                                                                            "purpose",
-                                                                            purpose,
-                                                                            "chunk",
-                                                                            chunk));
+                                                            long seq =
+                                                                    recorder.append(
+                                                                            "model/chunk",
+                                                                            Map.of(
+                                                                                    "modelCallId",
+                                                                                    id,
+                                                                                    "purpose",
+                                                                                    purpose,
+                                                                                    "chunk",
+                                                                                    chunk));
+                                                            ChatResponse tagged =
+                                                                    chunk.withMetadataEntry(
+                                                                            SessionRecorder
+                                                                                    .SESSION_SEQ_KEY,
+                                                                            seq);
+                                                            last.set(tagged);
+                                                            return tagged;
                                                         }),
                                 id -> end(recorder, id, "completed", last.get(), null),
                                 (id, error) ->

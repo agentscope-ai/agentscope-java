@@ -132,6 +132,8 @@ for (Msg msg : transcript.messages()) {
 2. **渲染完成后，从这个 cursor 继续观察。** 即使获取快照期间后台已产生第 121～125 条事件，续读也会把它们补上。消息和工具应按稳定 ID 更新原条目，避免同一个结果重复显示。
 3. **区分短暂断线与页面刷新。** 页面仍保留内容时，可以从最后已处理的事件位置续读；刷新导致页面状态丢失时，应重新获取完整快照。只在浏览器保存一个 cursor，并不能恢复 cursor 之前的内容。
 
+如果 Agent 通过 AG-UI starter 暴露，同一种“历史 + 游标”视图也可通过其显式 attach 扩展使用，见 [AG-UI SessionLog 恢复](/v2/zh/integration/protocol/agui#sessionlog-恢复仅-harnessagent)。
+
 聊天示例把快照暴露为 `GET /api/sessions/{id}`，再通过 `GET /api/sessions/{id}/stream?after={cursor}` 提供 SSE。它收到 `committed` 通知后会合并频繁通知并重新读取快照，让页面始终显示后端整理好的视图；并不是把每条原生事件都直接交给浏览器拼接。这些 HTTP 接口属于示例应用，SDK 本身提供的是会话与日志读取 API。
 
 重新连接时只做读取，**不要再次调用 `submit` 或 `streamEvents`**。浏览器的连接负责观察已有任务，任务是否继续由会话管理器负责。使用 Service 时，可以直接采用其公共快照、SSE 和 cursor 协议，见 [Service 事件接入](/v2/zh/service/sse-events)。

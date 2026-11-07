@@ -94,6 +94,77 @@ v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射�
 
 正常运行的 `RUN_STARTED` 和 `RUN_FINISHED` 由上游 `AgentStartEvent` / `AgentEndEvent` 决定。正常流结束但上游没有发 `AgentEndEvent` 时，adapter 不会额外补 `RUN_FINISHED`。异常路径会输出带 `timestamp` 的 `RUN_ERROR`。 `RUN_ERROR` 和 `RUN_FINISHED` 是互斥终态事件。只有旧客户端仍依赖错误后补发完成事件时，才设置 `emitRunFinishedAfterError=true`（Spring Boot 配置为 `agentscope.agui.emit-run-finished-after-error=true`）。
 
+## SessionLog 恢复（仅 HarnessAgent）
+
+这里的“恢复”只指一种场景：Agent 仍在后台运行，浏览器刷新或重启后重新附着到这次运行。已完成的一轮、HITL 挂起后的状态展示、以及中断后的继续，都属于应用层的消息历史/状态处理，不在 AG-UI 恢复职责内。
+
+AG-UI 恢复路径是 AgentScope 扩展，不属于 AG-UI 协议。标准 `/agui/run` 始终启动普通 run，不会因为 `messages` 为空而自动推断为恢复。
+
+### 前提
+
+- 执行不归浏览器请求所有：长期保留 `HarnessAgent` 并通过 `AgentSession` 执行，或使用 `agentscope.agui.interrupt-on-disconnect=false` 加长期存活的 Agent。
+- 解析出的 Agent 是 `HarnessAgent`，并使用 `SessionHistoryMode.EVENT_LOG`。
+- 应用保存 `threadId`、执行的 `runId` 和最后应用的 cursor。
+- 应用历史与 `SessionLog` 使用相同的消息身份，包括 assistant 消息中的工具调用。
+
+### 应用历史 + attach
+
+应用层提供基础对话和一个“展示边界”游标：
+
+1. 从应用历史存储读取已提交消息；
+2. 返回 `asOfSeq`：这些消息覆盖到的最后一个 committed 事件。它不能包含历史里没有的 in-flight 文本或工具参数；
+3. 如果 run 仍在执行，从 `asOfSeq` 调用 AgentScope attach 扩展。
+
+```json
+{
+  "threadId": "conversation-001",
+  "runId": "recovery-1",
+  "messages": [],
+  "forwardedProps": {
+    "agentscope": {
+      "afterSequence": 42,
+      "runId": "exec-1"
+    }
+  }
+}
+```
+
+`afterSequence` 也可以来自 `Last-Event-ID`。`runId` 把流限定在一次执行内。这是 AgentScope 扩展。
+
+可复用的入口是 `AguiRequestProcessor.attach(AguiRuntimeContextRequest)`，返回 `Flux<AguiFramedEvent>`。HTTP 端点、鉴权、历史存储和 SSE 编码由应用层负责；starter 不会在 `/agui/run` 上隐式增加 attach 路径。
+
+### attach 做什么
+
+attach 是已有 run 的重连路径。它是只读观察者：不启动、不继续、不中断 Agent，不调用模型，也不写会话日志。同一个游标始终得到相同的事件，因此重复重连是安全的。
+
+- 回放游标之后的已提交事件，并把每个 committed 事件的游标写入最后一帧的 SSE `id`。model chunk 属于流式内容而不是回放边界：它的帧只携带 source sequence、不带 `id`，因此重连永远不会落在一条消息中间；工具结果结束帧和 run 结束帧属于边界，会携带 `id`。
+- run 仍在当前进程执行时，attach 优先使用 broadcaster 的有界近期帧缓冲：游标落在缓冲内时直接从内存接续实时尾部，不需要等待日志提交；游标更老时先把日志追平到缓冲中最老的事件，再从缓冲和尾部接续。交接边界及更早的帧按 source sequence 丢弃，因此既不丢帧也不重复，文本按帧而不是按提交批次到达。
+- 没有实时尾部时（其他实例、进程重启、run 已结束），attach 通过轮询跟随会话日志。速度较慢，但结果始终正确。
+- run 已结束时，排空剩余事件并以 `RUN_FINISHED` / `RUN_ERROR` 结束。
+- 游标之后的文本和工具输出映射为 `TEXT_MESSAGE_*`、`REASONING_MESSAGE_*`、`TOOL_CALL_*`、`RUN_*`；
+- 已经在应用历史中的工具调用不会重新 Start；后续结果以 `TOOL_CALL_RESULT` 关联已有 toolCallId；
+- `RUN_STARTED` 由已提交的 `run/start` 事件产生，游标越过它时不会再次宣告新 run。
+
+游标是原生 `SessionEvent.seq()`，不是 AG-UI 字段，也不能与其他会话或 Service SSE 游标混用。
+
+### 游标必须是展示边界
+
+使用“其效果已经完整存在于应用历史中”的最后一个 committed 事件。如果 run 还有 in-flight 文本或工具参数，不要取 `head().seq()`，否则 attach 会跳过它们；也不要把游标放在一条消息的中间。满足这个边界后，attach 不需要快照，也不需要 known IDs。
+
+### run 状态查询是可选的
+
+状态查询用于决定“只查历史”还是“历史 + attach”，但 attach 本身不要求 run 仍 active。历史查询时是 running、attach 时已经结束也没问题：attach 会回放剩余事件并以 `RUN_FINISHED` / `RUN_ERROR` 结束。如果游标已经越过终态事件，attach 立即结束，终态由应用历史提供。
+
+### 限制
+
+- 完成态和 HITL 属于应用层历史/状态，不在本次恢复契约内。
+- 没有实时尾部时恢复路径基于轮询，提交批次按 recorder flush 粒度到达；进程内近期帧缓冲可以让最近的交接立即完成，但它有界且只存在于当前进程，游标比缓冲更老时仍回退到日志。
+- 运行必须能在浏览器请求断开后继续；使用 `AgentSession` 或 `interrupt-on-disconnect=false` + 长期存活的 Agent。
+- 服务端重启需要 `AgentSession`/持久化调度；内存中的订阅不会存活。
+- 多实例需要共享 `SessionLogStore` 与 namespace。
+- 游标必须属于同一会话，且不能超过当前 head。
+- 部分模型输出通过重放 `model/chunk` 恢复，而不是通过快照。
+
 ## 子 agent 事件
 
 默认（`emitSubagentEventsAsNative=false`）下，带非空 `source` 的 AgentEvent（子 / 远程子 agent 事件）**不会**映射为原生的 `TEXT_MESSAGE_*` / `RUN_*` / 工具调用事件，而是变成 `subagent.*` 命名空间下的 AG-UI `CUSTOM` 事件，避免污染父 run 的生命周期与文本流：
@@ -107,7 +178,7 @@ v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射�
 | `subagent.tool_result` | `ToolResultEndEvent` |
 | `subagent.require_confirm` | `RequireUserConfirmEvent` |
 
-payload 至少包含 `source` 与 `type`（以及 `delta`、`toolCallId` 等类型相关字段）。
+payload 至少包含 `source` 与 `type`（以及 `delta`、`toolCallId` 等类型相关字段）。转发的子 agent 帧不携带父级回放游标：子日志的 seq 与父日志不可比，因此只通过实时尾部投递，不带 SSE `id`。
 
 若要恢复子事件与父事件使用同一套原生 converter 的旧行为：
 

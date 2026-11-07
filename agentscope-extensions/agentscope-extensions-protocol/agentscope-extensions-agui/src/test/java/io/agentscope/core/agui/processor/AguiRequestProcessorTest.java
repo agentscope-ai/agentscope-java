@@ -40,6 +40,7 @@ import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
+import io.agentscope.core.agui.event.AguiFramedEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -516,7 +517,8 @@ class AguiRequestProcessorTest {
         AguiAgentAdapter failingAdapter =
                 new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig()) {
                     @Override
-                    public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext context) {
+                    public Flux<AguiFramedEvent> runFramed(
+                            RunAgentInput input, RuntimeContext context) {
                         // Only the first run fails with a raw error signal; the follow-up
                         // run must find the marker cleared and start normally.
                         return adapterRuns.getAndIncrement() == 0
@@ -884,7 +886,7 @@ class AguiRequestProcessorTest {
         }
 
         @Override
-        public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
+        public Flux<AguiFramedEvent> runFramed(RunAgentInput input, RuntimeContext runtimeContext) {
             seenInput.set(input);
             return Flux.empty();
         }
@@ -923,13 +925,14 @@ class AguiRequestProcessorTest {
         }
 
         @Override
-        public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
+        public Flux<AguiFramedEvent> runFramed(RunAgentInput input, RuntimeContext runtimeContext) {
             return Flux.just(
-                    new AguiEvent.RunFinished(
-                            input.getThreadId(),
-                            input.getRunId(),
-                            null,
-                            new AguiEvent.RunFinishedInterruptOutcome(interrupts)));
+                    AguiFramedEvent.uncursored(
+                            new AguiEvent.RunFinished(
+                                    input.getThreadId(),
+                                    input.getRunId(),
+                                    null,
+                                    new AguiEvent.RunFinishedInterruptOutcome(interrupts))));
         }
     }
 
@@ -940,7 +943,7 @@ class AguiRequestProcessorTest {
         }
 
         @Override
-        public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
+        public Flux<AguiFramedEvent> runFramed(RunAgentInput input, RuntimeContext runtimeContext) {
             return Flux.never();
         }
     }

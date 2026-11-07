@@ -36,6 +36,7 @@ import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
 import io.agentscope.core.agui.event.AguiEvents;
+import io.agentscope.core.agui.event.AguiFramedEvent;
 import io.agentscope.core.agui.model.AguiContext;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
@@ -79,6 +80,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.ToolMergeMode;
 import io.agentscope.core.tool.ToolRequestConfig;
@@ -2541,6 +2543,53 @@ class AguiAgentAdapterV2Test {
         assertEquals(toolUsePromptTokens, usage.get("toolUsePromptTokens"));
         assertEquals(totalTokens, usage.get("totalTokens"));
         assertEquals(time, (Double) usage.get("time"), 0.000001);
+    }
+
+    @Test
+    void runFramedCarriesTheSessionSeqOfTheSourceEvent() {
+        ReActAgent agent = mock(ReActAgent.class);
+        TextBlockDeltaEvent delta = new TextBlockDeltaEvent("reply-seq", "text-1", "hi");
+        delta.withMetadataEntry(SessionRecorder.SESSION_SEQ_KEY, 42L);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.just(delta));
+
+        List<AguiFramedEvent> frames =
+                new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                        .runFramed(input())
+                        .collectList()
+                        .block();
+
+        assertNotNull(frames);
+        List<AguiFramedEvent> textFrames =
+                frames.stream().filter(frame -> frame.sourceSeq() == 42L).toList();
+        assertFalse(textFrames.isEmpty(), "frames of the event must carry its source sequence");
+        assertEquals(42L, textFrames.get(textFrames.size() - 1).seq());
+        assertTrue(
+                textFrames.stream()
+                        .limit(textFrames.size() - 1L)
+                        .noneMatch(AguiFramedEvent::hasCursor),
+                "only the last frame of an event advances the cursor");
+    }
+
+    @Test
+    void forwardedEventsDoNotCarryTheChildSessionSeq() {
+        ReActAgent agent = mock(ReActAgent.class);
+        TextBlockDeltaEvent delta = new TextBlockDeltaEvent("reply-child", "text-1", "hi");
+        delta.withSource("parent-session/child");
+        delta.withMetadataEntry(SessionRecorder.SESSION_SEQ_KEY, 42L);
+        delta.withMetadataEntry(SessionRecorder.SESSION_SOURCE_SEQ_KEY, 42L);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.just(delta));
+
+        List<AguiFramedEvent> frames =
+                new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                        .runFramed(input())
+                        .collectList()
+                        .block();
+
+        assertNotNull(frames);
+        assertFalse(frames.isEmpty());
+        assertTrue(
+                frames.stream().allMatch(frame -> frame.sourceSeq() < 0 && !frame.hasCursor()),
+                "a child journal sequence must not become the parent's source or cursor");
     }
 
     private static Set<String> warnedMissingToolCallIdOperations(AguiStreamContext context)

@@ -23,10 +23,12 @@ import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.event.AguiFramedEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
+import io.agentscope.core.session.SessionLog;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -72,6 +74,7 @@ public class AguiRequestProcessor {
     private final AguiAgentAdapterFactory adapterFactory;
     private final AguiResumeCoordinator resumeCoordinator;
     private final AguiRuntimeContextResolver runtimeContextResolver;
+    private final AguiRunBroadcaster broadcaster;
 
     private AguiRequestProcessor(Builder builder) {
         this.agentResolver =
@@ -83,6 +86,8 @@ public class AguiRequestProcessor {
                         : AguiAgentAdapterFactory.defaultFactory();
         this.resumeCoordinator = new AguiResumeCoordinator();
         this.runtimeContextResolver = builder.runtimeContextResolver;
+        this.broadcaster =
+                builder.broadcaster != null ? builder.broadcaster : new AguiRunBroadcaster();
     }
 
     /**
@@ -108,19 +113,28 @@ public class AguiRequestProcessor {
          * @param threadId The AG-UI thread id for this request
          */
         public void interrupt(String threadId) {
-            ReActAgent reActAgent = AguiUtil.asReActAgent(agent);
-            if (reActAgent != null) {
-                RuntimeContext interruptContext =
-                        RuntimeContext.builder(runtimeContext).sessionId(threadId).build();
-                reActAgent.interrupt(interruptContext);
-            } else {
-                agent.interrupt();
-            }
+            interruptAgent(agent, runtimeContext, threadId);
+        }
+    }
+
+    private static void interruptAgent(
+            Agent agent, RuntimeContext runtimeContext, String threadId) {
+        ReActAgent reActAgent = AguiUtil.asReActAgent(agent);
+        if (reActAgent != null) {
+            RuntimeContext interruptContext =
+                    RuntimeContext.builder(runtimeContext).sessionId(threadId).build();
+            reActAgent.interrupt(interruptContext);
+        } else {
+            agent.interrupt();
         }
     }
 
     /**
-     * Process an AG-UI request and return the result containing agent and event stream.
+     * Process an ordinary AG-UI run request.
+     *
+     * <p>This method always follows the normal run path. SessionLog recovery is an explicit
+     * AgentScope extension available through {@link #attach(AguiRuntimeContextRequest)}; it is not
+     * inferred from empty messages on the standard run endpoint.
      *
      * <p>The {@link AguiRuntimeContextResolver} (if configured on this processor) is invoked with
      * the given request to obtain a caller-provided {@link RuntimeContext}. That context is copied
@@ -146,6 +160,7 @@ public class AguiRequestProcessor {
 
         // Resolve agent ID
         String agentId = resolveAgentId(input, headerAgentId, pathAgentId);
+        String broadcastKey = broadcastKey(agentId, runtimeContext, threadId);
 
         // Resolve agent
         Agent agent = agentResolver.resolveAgent(agentId, threadId, runtimeContext.getUserId());
@@ -182,12 +197,37 @@ public class AguiRequestProcessor {
                                 // Create adapter and run
                                 AguiAgentAdapter adapter = adapterFactory.create(agent, config);
                                 AtomicBoolean runErrorSeen = new AtomicBoolean(false);
+                                broadcaster.open(broadcastKey, runId);
+                                // Publish complete source events, not individual frames: a tail
+                                // snapshot must never land in the middle of one event.
+                                List<AguiFramedEvent> pendingFrames = new ArrayList<>();
+                                Runnable flushFrames =
+                                        () -> {
+                                            if (pendingFrames.isEmpty()) {
+                                                return;
+                                            }
+                                            List<AguiFramedEvent> batch =
+                                                    pendingFrames.stream()
+                                                            .filter(
+                                                                    frame ->
+                                                                            !(frame.event()
+                                                                                    instanceof
+                                                                                    AguiEvent
+                                                                                            .RunStarted))
+                                                            .toList();
+                                            pendingFrames.clear();
+                                            // RUN_STARTED is replayed from the session log.
+                                            if (!batch.isEmpty()) {
+                                                broadcaster.publish(broadcastKey, runId, batch);
+                                            }
+                                        };
                                 return Objects.requireNonNull(
-                                                adapter.run(
+                                                adapter.runFramed(
                                                         effectiveInput, effectiveRuntimeContext),
                                                 "adapter event stream is null")
                                         .doOnNext(
-                                                event -> {
+                                                frame -> {
+                                                    AguiEvent event = frame.event();
                                                     if (event instanceof AguiEvent.RunError) {
                                                         runErrorSeen.set(true);
                                                     }
@@ -196,7 +236,19 @@ public class AguiRequestProcessor {
                                                             runId,
                                                             event,
                                                             runErrorSeen.get());
+                                                    if (!pendingFrames.isEmpty()
+                                                            && pendingFrames.get(0).sourceSeq()
+                                                                    != frame.sourceSeq()) {
+                                                        flushFrames.run();
+                                                    }
+                                                    pendingFrames.add(frame);
+                                                    if (event instanceof AguiEvent.RunStarted) {
+                                                        flushFrames.run();
+                                                    }
                                                 })
+                                        .doOnComplete(flushFrames::run)
+                                        .doOnError(error -> flushFrames.run())
+                                        .map(AguiFramedEvent::event)
                                         // Finish the run before the terminal signal reaches
                                         // the caller. doFinally runs after onComplete/onError
                                         // is propagated, so a caller that collected this run's
@@ -214,15 +266,32 @@ public class AguiRequestProcessor {
                                                         resumeCoordinator.finishRun(
                                                                 threadId, runId))
                                         .doFinally(
-                                                signalType ->
-                                                        resumeCoordinator.finishRun(
-                                                                threadId, runId));
+                                                signalType -> {
+                                                    resumeCoordinator.finishRun(threadId, runId);
+                                                    broadcaster.close(broadcastKey, runId);
+                                                });
                             } catch (Throwable error) {
                                 resumeCoordinator.finishRun(threadId, runId);
-                                return processorErrorEvents(input, error);
+                                broadcaster.close(broadcastKey, runId);
+                                return Flux.fromIterable(processorErrorEvents(input, error));
                             }
                         });
         return new ProcessResult(agent, events, runtimeContext);
+    }
+
+    /**
+     * Identifies the live channel of a run.
+     *
+     * <p>A thread id alone is not unique across users and agents, and a shared processor would
+     * otherwise hand one session's live tail to another.
+     */
+    private static String broadcastKey(String agentId, RuntimeContext context, String threadId) {
+        String userId = context != null ? context.getUserId() : null;
+        return (userId == null ? "" : userId)
+                + '\u0000'
+                + (agentId == null ? "" : agentId)
+                + '\u0000'
+                + (threadId == null ? "" : threadId);
     }
 
     /**
@@ -260,7 +329,118 @@ public class AguiRequestProcessor {
         return contextBuilder.build();
     }
 
-    private Flux<AguiEvent> processorErrorEvents(RunAgentInput input, Throwable error) {
+    /**
+     * Reconnects to an existing AgentScope run after a recovery cursor.
+     *
+     * <p>This is an AgentScope extension, not an AG-UI standard endpoint. It is the reconnect
+     * path of a run: the application supplies the conversation history and a cursor that is a
+     * presentation boundary, and this method delivers everything after that cursor. It never
+     * starts, resumes or re-executes an Agent run, never calls a model, and never writes to the
+     * session log, so calling it repeatedly with the same cursor is idempotent.
+     *
+     * <p>When the run is still active in this process, the frames published by the original
+     * request are used as a low-latency tail: the log is replayed up to the tail's position and
+     * the tail continues without a gap or a duplicate. Otherwise the committed log is replayed and
+     * then followed by polling, which is slower but always correct.
+     *
+     * <p>{@code after} must be the sequence of an event whose effects are fully present in the
+     * application history; a cursor from the middle of a message replays partial frames.
+     *
+     * @param request the AG-UI request context
+     * @param after the cursor returned by the application history query
+     * @param executionRunId the SessionLog execution run id, or {@code null} to follow active runs
+     * @return framed AG-UI reconnect events
+     */
+    public Flux<AguiFramedEvent> attach(
+            AguiRuntimeContextRequest<?> request, long after, String executionRunId) {
+        RunAgentInput input = request.getInput();
+        RuntimeContext runtimeContext;
+        try {
+            runtimeContext = resolveRuntimeContext(request);
+        } catch (RuntimeException error) {
+            // A failing resolver is reported like any other attach error instead of escaping as a
+            // transport exception.
+            return Flux.fromIterable(framed(processorErrorEvents(input, error), -1));
+        }
+        String agentId =
+                resolveAgentId(input, request.getHeaderAgentId(), request.getPathAgentId());
+        Agent agent;
+        try {
+            agent =
+                    agentResolver.resolveAgent(
+                            agentId, input.getThreadId(), runtimeContext.getUserId());
+        } catch (RuntimeException error) {
+            // AgentNotFoundException and other resolver failures are reported like any other
+            // attach error instead of escaping as a transport exception.
+            return Flux.fromIterable(framed(processorErrorEvents(input, error), -1));
+        }
+        SessionLog sessionLog;
+        try {
+            sessionLog = AguiUtil.sessionLog(agent, runtimeContext);
+        } catch (RuntimeException error) {
+            return Flux.fromIterable(framed(processorErrorEvents(input, error), -1));
+        }
+        if (sessionLog == null) {
+            return Flux.fromIterable(
+                    framed(
+                            processorErrorEvents(
+                                    input,
+                                    new IllegalStateException(
+                                            "Session log attach requires a HarnessAgent with"
+                                                    + " SessionHistoryMode.EVENT_LOG")),
+                            -1));
+        }
+        // Register the live tail only when the returned stream is subscribed: an attach that is
+        // never subscribed must not occupy a channel queue.
+        String broadcastKey = broadcastKey(agentId, runtimeContext, input.getThreadId());
+        return Flux.defer(
+                () -> {
+                    AguiRunBroadcaster.LiveRun live = broadcaster.live(broadcastKey);
+                    return AguiSessionLogAttach.attach(
+                            input, sessionLog, after, live, executionRunId, config);
+                });
+    }
+
+    /**
+     * Attaches using the cursor and execution run id carried by the request.
+     *
+     * <p>The cursor comes from {@code Last-Event-ID} or {@code forwardedProps.agentscope
+     * .afterSequence}; the run id comes from {@code forwardedProps.agentscope.runId} or {@code
+     * forwardedProps.agentscope.executionRunId}.
+     *
+     * @param request the AG-UI request context
+     * @return framed AG-UI replay events
+     */
+    public Flux<AguiFramedEvent> attach(AguiRuntimeContextRequest<?> request) {
+        RunAgentInput input = request.getInput();
+        Long after;
+        try {
+            after = AguiSessionCursor.resolve(request, input);
+        } catch (IllegalArgumentException error) {
+            return Flux.fromIterable(framed(processorErrorEvents(input, error), -1));
+        }
+        if (after == null) {
+            return Flux.fromIterable(
+                    framed(
+                            processorErrorEvents(
+                                    input,
+                                    new IllegalArgumentException(
+                                            "An attach cursor is required: Last-Event-ID or"
+                                                    + " forwardedProps.agentscope.afterSequence")),
+                            -1));
+        }
+        return attach(request, after, AguiSessionCursor.resolveRunId(input));
+    }
+
+    private static List<AguiFramedEvent> framed(List<AguiEvent> events, long seq) {
+        List<AguiFramedEvent> framed = new ArrayList<>(events.size());
+        for (AguiEvent event : events) {
+            framed.add(new AguiFramedEvent(seq, event));
+        }
+        return framed;
+    }
+
+    private List<AguiEvent> processorErrorEvents(RunAgentInput input, Throwable error) {
         String errorMessage =
                 error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
         List<AguiEvent> events = new ArrayList<>();
@@ -276,7 +456,7 @@ public class AguiRequestProcessor {
         if (config.isEmitRunFinishedAfterError()) {
             events.add(new AguiEvent.RunFinished(input.getThreadId(), input.getRunId()));
         }
-        return Flux.fromIterable(events);
+        return List.copyOf(events);
     }
 
     private static String mapErrorCode(Throwable error) {
@@ -415,6 +595,7 @@ public class AguiRequestProcessor {
         private AguiAdapterConfig config;
         private AguiAgentAdapterFactory adapterFactory;
         private AguiRuntimeContextResolver runtimeContextResolver;
+        private AguiRunBroadcaster broadcaster;
 
         /**
          * Set the agent resolver.
@@ -458,6 +639,18 @@ public class AguiRequestProcessor {
          */
         public Builder runtimeContextResolver(AguiRuntimeContextResolver runtimeContextResolver) {
             this.runtimeContextResolver = runtimeContextResolver;
+            return this;
+        }
+
+        /**
+         * Set the live frame broadcaster used to hand a reconnecting client over to a running
+         * thread. Optional; when null, a process-local broadcaster is created.
+         *
+         * @param broadcaster The broadcaster shared by all runs of this processor
+         * @return This builder
+         */
+        public Builder broadcaster(AguiRunBroadcaster broadcaster) {
+            this.broadcaster = broadcaster;
             return this;
         }
 

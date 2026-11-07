@@ -184,6 +184,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.context.Context;
 
@@ -867,43 +868,56 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<Msg> msgs, RuntimeContext rc, RunControl control) {
         if (sessionLogStore == null || sessionHistoryMode == SessionHistoryMode.LEGACY)
             return super.acquireCallExecution(msgs, rc, control);
-        return Mono.fromCallable(
-                        () -> {
-                            RuntimeContext callContext =
-                                    rc == null
-                                            ? RuntimeContext.empty()
-                                            : RuntimeContext.builder(rc).build();
-                            String sid = callContext.getSessionId();
-                            if (sid == null || sid.isBlank()) sid = defaultSessionId;
-                            SessionRecorder recorder =
-                                    new SessionRecorder(
-                                            sessionLogStore.open(
-                                                    new SessionKey(
-                                                            callContext.getUserId(),
-                                                            sessionLogAgentId,
-                                                            sid),
-                                                    callContext),
-                                            (String) callContext.get(SessionRecorder.TURN_ID_KEY),
-                                            control.runId(),
-                                            (SessionExportSink)
-                                                    callContext.get(SessionExportSink.CONTEXT_KEY));
-                            callContext.put(SessionRecorder.CONTEXT_KEY, recorder);
-                            if (callContext.get(SessionRecorder.PARENT_KEY) != null)
-                                recorder.append(
-                                        "subagent/linked",
-                                        callContext.get(SessionRecorder.PARENT_KEY));
-                            try {
-                                SessionExecution execution = SessionExecution.from(callContext);
-                                if (execution != null) execution.prepare(recorder);
-                                CallExecution acquired =
-                                        (CallExecution)
-                                                beforeAgentExecution(msgs, callContext, control);
-                                if (rc != null) rc.setAgentState(acquired.state);
-                                return (Object) acquired;
-                            } catch (Throwable error) {
-                                closeFailedSessionExecution(callContext, error);
-                                throw error;
-                            }
+        return Mono.deferContextual(
+                        view -> {
+                            AtomicReference<SessionRecorder> recorderRefHolder = recorderRef(view);
+                            return Mono.fromCallable(
+                                    () -> {
+                                        RuntimeContext callContext =
+                                                rc == null
+                                                        ? RuntimeContext.empty()
+                                                        : RuntimeContext.builder(rc).build();
+                                        String sid = callContext.getSessionId();
+                                        if (sid == null || sid.isBlank()) sid = defaultSessionId;
+                                        SessionRecorder recorder =
+                                                new SessionRecorder(
+                                                        sessionLogStore.open(
+                                                                new SessionKey(
+                                                                        callContext.getUserId(),
+                                                                        sessionLogAgentId,
+                                                                        sid),
+                                                                callContext),
+                                                        (String)
+                                                                callContext.get(
+                                                                        SessionRecorder
+                                                                                .TURN_ID_KEY),
+                                                        control.runId(),
+                                                        (SessionExportSink)
+                                                                callContext.get(
+                                                                        SessionExportSink
+                                                                                .CONTEXT_KEY));
+                                        callContext.put(SessionRecorder.CONTEXT_KEY, recorder);
+                                        if (recorderRefHolder != null)
+                                            recorderRefHolder.set(recorder);
+                                        if (callContext.get(SessionRecorder.PARENT_KEY) != null)
+                                            recorder.append(
+                                                    "subagent/linked",
+                                                    callContext.get(SessionRecorder.PARENT_KEY));
+                                        try {
+                                            SessionExecution execution =
+                                                    SessionExecution.from(callContext);
+                                            if (execution != null) execution.prepare(recorder);
+                                            CallExecution acquired =
+                                                    (CallExecution)
+                                                            beforeAgentExecution(
+                                                                    msgs, callContext, control);
+                                            if (rc != null) rc.setAgentState(acquired.state);
+                                            return (Object) acquired;
+                                        } catch (Throwable error) {
+                                            closeFailedSessionExecution(callContext, error);
+                                            throw error;
+                                        }
+                                    });
                         })
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMap(
@@ -919,6 +933,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     .doOnError(error -> closeFailedSessionExecution(ce.rc, error));
                         })
                 .doOnDiscard(CallExecution.class, scope -> SessionRecorder.from(scope.rc).close());
+    }
+
+    /**
+     * Returns the recorder reference published by the event stream, so a boundary remembered below
+     * the stream (call acquisition) can reach the events emitted above it.
+     */
+    @SuppressWarnings("unchecked")
+    private static AtomicReference<SessionRecorder> recorderRef(
+            reactor.util.context.ContextView view) {
+        Object value = view.getOrDefault(SessionRecorder.CONTEXT_REF_KEY, null);
+        return value instanceof AtomicReference<?> ref
+                ? (AtomicReference<SessionRecorder>) ref
+                : null;
     }
 
     private void closeFailedSessionExecution(RuntimeContext context, Throwable error) {
@@ -1358,8 +1385,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     key.agentId(), key.sessionId(), turnId, control.runId());
                     effective.put(SessionRecorder.TURN_ID_KEY, identity.turnId());
                     effective.put(ExecutionIdentity.CONTEXT_KEY, identity);
+                    AtomicReference<SessionRecorder> recorderRef = new AtomicReference<>();
                     Flux<AgentEvent> events =
-                            buildIdentifiedAgentStream(msgs, effective, doCallFn)
+                            buildIdentifiedAgentStream(msgs, effective, doCallFn, recorderRef)
                                     .doOnNext(
                                             event -> {
                                                 if (event.getSource() == null
@@ -1371,7 +1399,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 if (signal.isOnComplete() || signal.isOnError())
                                                     source.setAgentState(effective.getAgentState());
                                             })
-                                    .contextWrite(control::attach);
+                                    .contextWrite(control::attach)
+                                    .contextWrite(
+                                            c ->
+                                                    c.put(
+                                                            SessionRecorder.CONTEXT_REF_KEY,
+                                                            recorderRef));
                     if (inherited != null) return events;
                     return events.doOnComplete(() -> control.finish(AgentRun.Status.COMPLETED))
                             .doOnError(error -> control.finish(AgentRun.Status.FAILED))
@@ -1380,7 +1413,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     private Flux<AgentEvent> buildIdentifiedAgentStream(
-            List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
+            List<Msg> msgs,
+            RuntimeContext context,
+            Function<List<Msg>, Mono<Msg>> doCallFn,
+            AtomicReference<SessionRecorder> recorderRef) {
         String replyId = UUID.randomUUID().toString().replace("-", "");
         Function<AgentInput, Flux<AgentEvent>> core =
                 input ->
@@ -1427,8 +1463,30 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                                     ::next))
                                                     .doFinally(
                                                             signal -> {
-                                                                sink.next(
-                                                                        new AgentEndEvent(replyId));
+                                                                AgentEndEvent end =
+                                                                        new AgentEndEvent(replyId);
+                                                                SessionRecorder recorder =
+                                                                        recorderRef.get();
+                                                                if (signal == SignalType.ON_COMPLETE
+                                                                        && recorder != null) {
+                                                                    // finish() appended run/end
+                                                                    // last, so this is its seq.
+                                                                    long seq =
+                                                                            recorder
+                                                                                    .lastAppendedSeq(
+                                                                                            "run/end");
+                                                                    if (seq > 0) {
+                                                                        end.withMetadataEntry(
+                                                                                SessionRecorder
+                                                                                        .SESSION_SOURCE_SEQ_KEY,
+                                                                                seq);
+                                                                        end.withMetadataEntry(
+                                                                                SessionRecorder
+                                                                                        .SESSION_SEQ_KEY,
+                                                                                seq);
+                                                                    }
+                                                                }
+                                                                sink.next(end);
                                                                 sink.complete();
                                                             })
                                                     .contextWrite(subscriberCtx)
@@ -2175,6 +2233,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         ExecutionIdentity executionIdentity;
 
         /**
+         * Tool result messages recorded as their tool finishes, by tool call id. Recording at this
+         * boundary lets the result events carry the exact log sequence, and the state capture
+         * later skips the same message id instead of appending it again.
+         */
+        private final Map<String, Msg> recordedToolResults = new ConcurrentHashMap<>();
+
+        /** Session log sequence of each recorded tool result, by tool call id. */
+        private final Map<String, Long> recordedToolResultSeqs = new ConcurrentHashMap<>();
+
+        /**
          * External event emitter for child-agent event forwarding. When a parent's tool (e.g.
          * {@code agent_spawn}) injects a forwarding emitter via
          * {@link AgentEventEmitter#FORWARDING_CONTEXT_KEY}, this child agent uses it to push
@@ -2576,6 +2644,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         ToolResultMessageBuilder.buildToolResultMsg(
                                 deniedResult, denied, getName());
                 state.contextMutable().add(deniedMsg);
+                recordToolResult(denied.getId(), deniedMsg);
                 deniedToolResultEvents(denied, replyId, reasonText).forEach(this::publishEvent);
             }
         }
@@ -2584,11 +2653,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private List<AgentEvent> deniedToolResultEvents(
                 ToolUseBlock toolCall, String replyId, String reason) {
             return List.of(
-                    new ToolResultStartEvent(replyId, toolCall.getId(), toolCall.getName()),
-                    new ToolResultTextDeltaEvent(
-                            replyId, toolCall.getId(), toolCall.getName(), reason),
-                    new ToolResultEndEvent(
-                            replyId, toolCall.getId(), toolCall.getName(), ToolResultState.DENIED));
+                    tagToolResult(
+                            new ToolResultStartEvent(replyId, toolCall.getId(), toolCall.getName()),
+                            toolCall.getId()),
+                    tagToolResult(
+                            new ToolResultTextDeltaEvent(
+                                    replyId, toolCall.getId(), toolCall.getName(), reason),
+                            toolCall.getId()),
+                    tagToolResult(
+                            new ToolResultEndEvent(
+                                    replyId,
+                                    toolCall.getId(),
+                                    toolCall.getName(),
+                                    ToolResultState.DENIED),
+                            toolCall.getId()));
         }
 
         private void maybePatchPendingToolCalls(List<Msg> msgs, Set<String> pendingIds) {
@@ -2684,6 +2762,77 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             } else if (externalEventEmitter != null) {
                 externalEventEmitter.emit(event);
             }
+        }
+
+        /**
+         * Marks the block-flush events of one model call with the just-appended {@code model/end}
+         * sequence. Only the last event is a replay boundary; the preceding block ends share the
+         * source sequence.
+         */
+        private void tagModelEndBoundary(List<AgentEvent> events) {
+            SessionRecorder recorder = SessionRecorder.from(rc);
+            if (recorder == null) return;
+            long seq = recorder.lastAppendedSeq("model/end");
+            if (seq <= 0) return;
+            for (int i = 0; i < events.size(); i++) {
+                AgentEvent event = events.get(i);
+                event.withMetadataEntry(SessionRecorder.SESSION_SOURCE_SEQ_KEY, seq);
+                if (i == events.size() - 1) {
+                    event.withMetadataEntry(SessionRecorder.SESSION_SEQ_KEY, seq);
+                }
+            }
+        }
+
+        /**
+         * Records a tool result before its events are emitted, so the terminal frame can advance
+         * the replay cursor to the exact {@code tool/result} sequence.
+         */
+        private long recordToolResult(String toolCallId, Msg message) {
+            SessionRecorder recorder = SessionRecorder.from(rc);
+            if (recorder == null || message == null) return 0;
+            recordAssistantBeforeToolResult(recorder);
+            long seq = recorder.recordMessage(message);
+            if (seq > 0) {
+                recordedToolResults.put(toolCallId, message);
+                recordedToolResultSeqs.put(toolCallId, seq);
+            }
+            return seq;
+        }
+
+        /**
+         * Records a pre-hook tool result for the live cursor. The final result is recorded after
+         * the {@code PostActing} hook, so a rewrite is visible to log readers.
+         */
+        private long recordProvisionalToolResult(String toolCallId, Msg message) {
+            SessionRecorder recorder = SessionRecorder.from(rc);
+            if (recorder == null || message == null) return 0;
+            recordAssistantBeforeToolResult(recorder);
+            long seq = recorder.recordProvisionalToolResult(message);
+            if (seq > 0) {
+                recordedToolResults.put(toolCallId, message);
+                recordedToolResultSeqs.put(toolCallId, seq);
+            }
+            return seq;
+        }
+
+        /**
+         * Keeps the assistant tool-call message ahead of its tool result in the session log; a
+         * checkpoint would otherwise append it only after the tool already finished.
+         */
+        private void recordAssistantBeforeToolResult(SessionRecorder recorder) {
+            Msg assistant = MessageUtils.lastAssistantMessage(state.contextMutable());
+            if (assistant != null) recorder.recordAssistantMessage(assistant);
+        }
+
+        /** Attaches the recorded sequence to a tool result event, cursoring its terminal frame. */
+        private AgentEvent tagToolResult(AgentEvent event, String toolCallId) {
+            Long seq = recordedToolResultSeqs.get(toolCallId);
+            if (seq == null || seq <= 0) return event;
+            event.withMetadataEntry(SessionRecorder.SESSION_SOURCE_SEQ_KEY, seq);
+            if (event instanceof ToolResultEndEvent) {
+                event.withMetadataEntry(SessionRecorder.SESSION_SEQ_KEY, seq);
+            }
+            return event;
         }
 
         /**
@@ -3347,6 +3496,28 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                     withToolEvents,
                                                                     events);
                                                         }
+                                                        Object sessionSeq =
+                                                                chunk.getMetadata() == null
+                                                                        ? null
+                                                                        : chunk.getMetadata()
+                                                                                .get(
+                                                                                        SessionRecorder
+                                                                                                .SESSION_SEQ_KEY);
+                                                        if (sessionSeq instanceof Number number) {
+                                                            // A model chunk is streamed content,
+                                                            // not
+                                                            // a replay boundary: its events carry
+                                                            // only the source seq, so a reconnect
+                                                            // never lands in the middle of a
+                                                            // message.
+                                                            long seq = number.longValue();
+                                                            for (AgentEvent event : events) {
+                                                                event.withMetadataEntry(
+                                                                        SessionRecorder
+                                                                                .SESSION_SOURCE_SEQ_KEY,
+                                                                        seq);
+                                                            }
+                                                        }
                                                         return Flux.fromIterable(events);
                                                     }));
 
@@ -3356,6 +3527,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 List<AgentEvent> events = new ArrayList<>();
                                 blockLifecycle.flushAll(events);
                                 events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                                tagModelEndBoundary(events);
                                 return Flux.fromIterable(events);
                             });
 
@@ -3820,6 +3992,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 .withState(ToolResultState.DENIED);
                 Msg deniedMsg = ToolResultMessageBuilder.buildToolResultMsg(denied, tc, getName());
                 state.contextMutable().add(deniedMsg);
+                recordToolResult(tc.getId(), deniedMsg);
             }
         }
 
@@ -3839,12 +4012,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 Msg toolResultMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(errorResult, tc, getName());
                 state.contextMutable().add(toolResultMsg);
-                publishEvent(new ToolResultStartEvent(replyId, tc.getId(), tc.getName()));
+                recordToolResult(tc.getId(), toolResultMsg);
                 publishEvent(
-                        new ToolResultTextDeltaEvent(replyId, tc.getId(), tc.getName(), message));
+                        tagToolResult(
+                                new ToolResultStartEvent(replyId, tc.getId(), tc.getName()),
+                                tc.getId()));
                 publishEvent(
-                        new ToolResultEndEvent(
-                                replyId, tc.getId(), tc.getName(), ToolResultState.ERROR));
+                        tagToolResult(
+                                new ToolResultTextDeltaEvent(
+                                        replyId, tc.getId(), tc.getName(), message),
+                                tc.getId()));
+                publishEvent(
+                        tagToolResult(
+                                new ToolResultEndEvent(
+                                        replyId, tc.getId(), tc.getName(), ToolResultState.ERROR),
+                                tc.getId()));
             }
         }
 
@@ -3872,6 +4054,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 } else {
                     approved.add(tc);
                 }
+            }
+
+            for (Map.Entry<ToolUseBlock, ToolResultBlock> denied : deniedEntries) {
+                recordToolResult(
+                        denied.getKey().getId(),
+                        ToolResultMessageBuilder.buildToolResultMsg(
+                                denied.getValue(), denied.getKey(), getName()));
             }
 
             Flux<AgentEvent> deniedEvents =
@@ -4113,6 +4302,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             /** Ids of calls whose start has been published. */
             private final Set<String> startedCalls = ConcurrentHashMap.newKeySet();
 
+            /**
+             * Serializes result recording with the emission of the whole result event group, so a
+             * cursor never advances past a result whose events have not been sent yet when tools
+             * finish concurrently.
+             */
+            private final Object resultLock = new Object();
+
             private ToolResultCallback(
                     String replyId,
                     FluxSink<AgentEvent> sink,
@@ -4151,32 +4347,73 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             @Override
             public void onResult(ToolUseBlock call, ToolResultBlock result) {
-                // Record before the suspended check so an earlier suspension survives the batch
-                // error fallback; only the first resolution publishes events.
-                if (resolvedResults.putIfAbsent(call.getId(), result) != null) return;
-                if (result.isSuspended()) return;
-                Map<String, Object> metadata = result.getMetadata();
-                if (result.getOutput() != null) {
-                    for (ContentBlock block : result.getOutput()) {
-                        AgentEvent event =
-                                block instanceof TextBlock text
-                                        ? new ToolResultTextDeltaEvent(
-                                                replyId,
-                                                call.getId(),
-                                                call.getName(),
-                                                text.getText())
-                                        : new ToolResultDataDeltaEvent(
-                                                replyId, call.getId(), call.getName(), block);
-                        emit(event.withMetadata(metadata));
+                synchronized (resultLock) {
+                    // Record before the suspended check so an earlier suspension survives the batch
+                    // error fallback; only the first resolution publishes events.
+                    if (resolvedResults.putIfAbsent(call.getId(), result) != null) return;
+                    if (result.isSuspended()) return;
+                    Map<String, Object> metadata = result.getMetadata();
+                    // Record the result before emitting its events so the terminal frame carries
+                    // the
+                    // exact tool/result sequence. The same message object is added to the state
+                    // later,
+                    // so captureState skips it instead of appending a duplicate.
+                    // A returnDirect result can be replaced by a placeholder before it reaches the
+                    // state, so leave it unrecorded: the extra record would replay as a duplicate
+                    // tool result.
+                    Msg resultMsg =
+                            ToolResultMessageBuilder.buildToolResultMsg(
+                                    result.withState(determineToolResultState(result)),
+                                    call,
+                                    getName());
+                    long seq;
+                    boolean provisional = false;
+                    if (isReturnDirectToolCall(Map.entry(call, result))) {
+                        seq = 0;
+                    } else if (getSortedHooks().isEmpty()) {
+                        seq = recordToolResult(call.getId(), resultMsg);
+                    } else {
+                        // Hooks may rewrite the result; keep the pre-hook record provisional and
+                        // write the final message after the hook. Its sequence is only used for
+                        // tail deduplication, not as a client cursor, because the record is not
+                        // conversation history.
+                        provisional = true;
+                        seq = recordProvisionalToolResult(call.getId(), resultMsg);
                     }
+                    if (result.getOutput() != null) {
+                        for (ContentBlock block : result.getOutput()) {
+                            AgentEvent event =
+                                    block instanceof TextBlock text
+                                            ? new ToolResultTextDeltaEvent(
+                                                    replyId,
+                                                    call.getId(),
+                                                    call.getName(),
+                                                    text.getText())
+                                            : new ToolResultDataDeltaEvent(
+                                                    replyId, call.getId(), call.getName(), block);
+                            event = event.withMetadata(metadata);
+                            if (seq > 0) {
+                                event.withMetadataEntry(
+                                        SessionRecorder.SESSION_SOURCE_SEQ_KEY, seq);
+                            }
+                            emit(event);
+                        }
+                    }
+                    AgentEvent end =
+                            new ToolResultEndEvent(
+                                            replyId,
+                                            call.getId(),
+                                            call.getName(),
+                                            determineToolResultState(result))
+                                    .withMetadata(metadata);
+                    if (seq > 0) {
+                        end.withMetadataEntry(SessionRecorder.SESSION_SOURCE_SEQ_KEY, seq);
+                        if (!provisional) {
+                            end.withMetadataEntry(SessionRecorder.SESSION_SEQ_KEY, seq);
+                        }
+                    }
+                    emit(end);
                 }
-                emit(
-                        new ToolResultEndEvent(
-                                        replyId,
-                                        call.getId(),
-                                        call.getName(),
-                                        determineToolResultState(result))
-                                .withMetadata(metadata));
             }
 
             /** Result already resolved for {@code call}, or {@code null} if it never settled. */
@@ -4455,8 +4692,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             ToolResultState finalState = determineToolResultState(result);
             ToolResultBlock updatedResult = result.withState(finalState);
 
+            Msg recorded = recordedToolResults.get(toolUse.getId());
             Msg toolMsg =
-                    ToolResultMessageBuilder.buildToolResultMsg(updatedResult, toolUse, getName());
+                    recorded != null
+                            ? recorded
+                            : ToolResultMessageBuilder.buildToolResultMsg(
+                                    updatedResult, toolUse, getName());
 
             return hookDispatcher
                     .firePostActing(toolUse, updatedResult, toolkit, toolMsg)
@@ -4494,6 +4735,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             "returnDirect: replaced tool result with placeholder"
                                                     + " for tool '{}'",
                                             toolUse.getName());
+                                }
+                                // The hook has finalized the result: this is the record that log
+                                // readers must see. A pre-hook provisional record remains
+                                // invisible to transcript/projection readers.
+                                SessionRecorder recorder = SessionRecorder.from(rc);
+                                if (recorder != null && resultMsg != null) {
+                                    recorder.recordMessage(resultMsg);
+                                    recordedToolResults.put(toolUse.getId(), resultMsg);
                                 }
                                 state.contextMutable().add(resultMsg);
                             });
@@ -4854,6 +5103,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 List<AgentEvent> events = new ArrayList<>();
                                 blockLifecycle.flushAll(events);
                                 events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                                tagModelEndBoundary(events);
                                 return Flux.fromIterable(events);
                             });
 
