@@ -37,9 +37,10 @@ import org.slf4j.LoggerFactory;
  * Parser for {@link DocumentBlock} to a {@link FilePart}.
  *
  * <p>URL and inline-data sources travel as a file part with the document name and MIME type. A
- * provider file id has no A2A representation, so it is sent as a text reference — the peer then at
- * least learns which file the turn referred to instead of receiving a message that silently lost
- * the attachment.
+ * provider file id has no A2A representation, and a document whose MIME type cannot be resolved
+ * cannot travel as a file part either: the receiving parser drops an untyped part. Both are sent
+ * as a text reference instead, so the peer at least learns which file the turn referred to rather
+ * than receiving a message that silently lost the attachment.
  */
 public class DocumentBlockParser implements ContentBlockParser<DocumentBlock> {
 
@@ -52,25 +53,20 @@ public class DocumentBlockParser implements ContentBlockParser<DocumentBlock> {
         String mimeType = mimeTypeOf(contentBlock);
 
         if (source instanceof Base64Source base64Source) {
+            String resolvedMimeType =
+                    mimeType != null && !mimeType.isBlank()
+                            ? mimeType
+                            : base64Source.getMediaType();
+            if (resolvedMimeType == null || resolvedMimeType.isBlank()) {
+                return untypedTextReference(contentBlock, name);
+            }
             return new FilePart(
-                    new FileWithBytes(
-                            mimeType != null ? mimeType : base64Source.getMediaType(),
-                            name,
-                            base64Source.getData()),
+                    new FileWithBytes(resolvedMimeType, name, base64Source.getData()),
                     metadataOf(contentBlock));
         }
         if (source instanceof URLSource urlSource) {
-            if (mimeType == null) {
-                // The peer drops a FilePart without a MIME type, so sending one would lose the
-                // document silently - the exact behaviour this parser exists to prevent.
-                LoggerUtil.warn(
-                        log,
-                        "Document '{}' has no resolvable MIME type; sending a text reference"
-                                + " instead of a file part.",
-                        name);
-                return new TextPart(
-                        DocumentReferenceRenderer.render(contentBlock),
-                        MetadataUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_TEXT));
+            if (mimeType == null || mimeType.isBlank()) {
+                return untypedTextReference(contentBlock, name);
             }
             return new FilePart(
                     new FileWithUri(mimeType, name, urlSource.getUrl()), metadataOf(contentBlock));
@@ -87,6 +83,27 @@ public class DocumentBlockParser implements ContentBlockParser<DocumentBlock> {
         }
         LoggerUtil.warn(log, "Unsupported source type: {}", source.getClass().getName());
         return null;
+    }
+
+    /**
+     * Sends a document whose MIME type cannot be resolved as a text reference.
+     *
+     * <p>The receiving parser drops an untyped file part, so sending one would lose the document
+     * silently - the exact behaviour this parser exists to prevent.
+     *
+     * @param contentBlock the document being exported
+     * @param name the resolved document name
+     * @return a text part carrying the document reference
+     */
+    private Part<?> untypedTextReference(DocumentBlock contentBlock, String name) {
+        LoggerUtil.warn(
+                log,
+                "Document '{}' has no resolvable MIME type; sending a text reference instead of a"
+                        + " file part.",
+                name);
+        return new TextPart(
+                DocumentReferenceRenderer.render(contentBlock),
+                MetadataUtil.buildTypeMetadata(MessageConstants.BlockContent.TYPE_TEXT));
     }
 
     /**
