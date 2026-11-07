@@ -251,9 +251,7 @@ class JsonFileAgentStateStoreTest {
         }
         // No line may appear twice: a rewrite fully replaces the file and an append only adds
         // a snapshot's tail, so duplication means two writers interleaved on the same file.
-        assertEquals(
-                loaded.size(),
-                loaded.stream().map(TestState::value).distinct().count());
+        assertEquals(loaded.size(), loaded.stream().map(TestState::value).distinct().count());
         try (Stream<Path> paths = Files.walk(tempDir)) {
             assertEquals(0, paths.filter(p -> p.toString().endsWith(".tmp")).count());
         }
