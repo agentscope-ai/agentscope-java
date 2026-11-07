@@ -43,7 +43,7 @@ import reactor.core.publisher.Mono;
 public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceAsyncToolRegistry.class);
-    private static final RuntimeContext RC = RuntimeContext.empty();
+    private final RuntimeContext ctx;
 
     private final AbstractFilesystem fs;
     private final String registryRoot;
@@ -53,11 +53,24 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
      * @param registryRoot absolute path within the filesystem (e.g. {@code "/bus/async-tools"})
      */
     public WorkspaceAsyncToolRegistry(AbstractFilesystem filesystem, String registryRoot) {
-        this.fs = filesystem;
-        this.registryRoot =
+        this(
+                filesystem,
                 registryRoot.endsWith("/")
                         ? registryRoot.substring(0, registryRoot.length() - 1)
-                        : registryRoot;
+                        : registryRoot,
+                RuntimeContext.empty());
+    }
+
+    private WorkspaceAsyncToolRegistry(
+            AbstractFilesystem filesystem, String registryRoot, RuntimeContext ctx) {
+        this.ctx = ctx;
+        this.fs = filesystem;
+        this.registryRoot = registryRoot;
+    }
+
+    @Override
+    public AsyncToolRegistry forCall(RuntimeContext ctx) {
+        return new WorkspaceAsyncToolRegistry(fs, registryRoot, ctx);
     }
 
     @Override
@@ -74,7 +87,7 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
                                     "toolCallId", record.toolCallId(),
                                     "status", record.status(),
                                     "createdAt", record.createdAt().toString());
-                    fs.write(RC, path, JsonUtils.getJsonCodec().toJson(data));
+                    fs.write(ctx, path, JsonUtils.getJsonCodec().toJson(data));
                 });
     }
 
@@ -98,10 +111,10 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
         return Mono.fromCallable(
                 () -> {
                     String dir = sessionDir(sessionId);
-                    if (!fs.exists(RC, dir)) {
+                    if (!fs.exists(ctx, dir)) {
                         return List.<AsyncToolRecord>of();
                     }
-                    LsResult ls = fs.ls(RC, dir);
+                    LsResult ls = fs.ls(ctx, dir);
                     if (!ls.isSuccess() || ls.entries() == null) {
                         return List.<AsyncToolRecord>of();
                     }
@@ -133,7 +146,7 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
                     if (rec == null) {
                         return;
                     }
-                    fs.delete(RC, path);
+                    fs.delete(ctx, path);
                     Map<String, Object> data =
                             Map.of(
                                     "id", rec.id(),
@@ -142,12 +155,12 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
                                     "toolCallId", rec.toolCallId(),
                                     "status", newStatus,
                                     "createdAt", rec.createdAt().toString());
-                    fs.write(RC, path, JsonUtils.getJsonCodec().toJson(data));
+                    fs.write(ctx, path, JsonUtils.getJsonCodec().toJson(data));
                 });
     }
 
     private AsyncToolRecord readRecord(String path) {
-        ReadResult rr = fs.read(RC, path, 0, Integer.MAX_VALUE);
+        ReadResult rr = fs.read(ctx, path, 0, Integer.MAX_VALUE);
         if (!rr.isSuccess() || rr.fileData() == null) {
             return null;
         }
@@ -169,7 +182,7 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
     }
 
     private String findRecordPath(String id) {
-        LsResult rootLs = fs.ls(RC, registryRoot);
+        LsResult rootLs = fs.ls(ctx, registryRoot);
         if (!rootLs.isSuccess() || rootLs.entries() == null) {
             return null;
         }
@@ -178,7 +191,7 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
                 continue;
             }
             String candidate = sessionDir.path() + "/" + id + ".json";
-            if (fs.exists(RC, candidate)) {
+            if (fs.exists(ctx, candidate)) {
                 return candidate;
             }
         }
@@ -194,8 +207,8 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
     }
 
     private void ensureDir(String dir) {
-        if (!fs.exists(RC, dir)) {
-            fs.write(RC, dir + "/.keep", "");
+        if (!fs.exists(ctx, dir)) {
+            fs.write(ctx, dir + "/.keep", "");
         }
     }
 

@@ -109,6 +109,7 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
 
         Mono<List<HintBlock>> inboxHints =
                 messageBus
+                        .forCall(ctx)
                         .inboxDrain(sessionId, maxDrainCount)
                         .map(
                                 entries -> {
@@ -122,15 +123,17 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                     return hints;
                                 });
 
+        AsyncToolRegistry callRegistry =
+                asyncToolRegistry != null ? asyncToolRegistry.forCall(ctx) : null;
         Mono<List<HintBlock>> staleHints =
-                asyncToolRegistry != null
-                        ? asyncToolRegistry
+                callRegistry != null
+                        ? callRegistry
                                 .findStale(sessionId, staleTtl)
                                 .flatMap(
                                         staleRecords -> {
                                             List<HintBlock> hints = new ArrayList<>();
                                             for (AsyncToolRecord rec : staleRecords) {
-                                                asyncToolRegistry.markTimeout(rec.id()).subscribe();
+                                                callRegistry.markTimeout(rec.id()).subscribe();
                                                 hints.add(
                                                         new HintBlock(
                                                                 UUID.randomUUID()

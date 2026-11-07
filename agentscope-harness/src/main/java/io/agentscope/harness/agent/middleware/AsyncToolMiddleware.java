@@ -199,6 +199,7 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
         for (ToolUseBlock toolCall : toolCalls) {
             if (asyncToolRegistry != null && sessionId != null) {
                 asyncToolRegistry
+                        .forCall(ctx)
                         .register(
                                 new AsyncToolRecord(
                                         toolCall.getId(),
@@ -276,16 +277,16 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
         if (asyncToolRegistry != null) {
             String resultStr = resultText.length() > 0 ? resultText.toString() : "(no output)";
             for (ToolUseBlock tc : toolCalls) {
-                asyncToolRegistry.complete(tc.getId(), resultStr).subscribe();
+                asyncToolRegistry.forCall(ctx).complete(tc.getId(), resultStr).subscribe();
             }
         }
 
-        messageBus.inboxPush(sessionId, hintPayload).subscribe();
+        MessageBus callBus = messageBus.forCall(ctx);
+        callBus.inboxPush(sessionId, hintPayload).subscribe();
 
         String agentId = ctx.get("agentId");
         String userId = ctx.getUserId();
-        messageBus
-                .enqueueWakeup(
+        callBus.enqueueWakeup(
                         userId != null ? userId : "", sessionId, agentId != null ? agentId : "")
                 .subscribe(
                         unused -> {},
