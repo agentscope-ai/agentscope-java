@@ -105,6 +105,23 @@ public interface StoreDialect {
                 key);
     }
 
+    /**
+     * Key-only listing under a namespace, filtered by a key prefix pattern. The value column is
+     * intentionally not projected: callers only need the keys and may share a namespace with many
+     * unrelated journals.
+     */
+    default BoundSql storeListKeys(String namespacePath, String keyPattern) {
+        return new BoundSql(
+                "SELECT item_key FROM "
+                        + storeTableName()
+                        + " WHERE namespace_path = ? AND item_key LIKE ? ESCAPE '"
+                        + storeLikeEscapeChar()
+                        + "'"
+                        + " ORDER BY item_key",
+                namespacePath,
+                keyPattern);
+    }
+
     /** Namespace-prefix search with pagination. Projection: (item_key, value_json, version). */
     default BoundSql storeSearch(String likePattern, int limit, int offset) {
         return new BoundSql(

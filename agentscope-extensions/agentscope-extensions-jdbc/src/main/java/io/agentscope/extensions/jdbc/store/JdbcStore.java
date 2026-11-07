@@ -150,6 +150,26 @@ public class JdbcStore implements BaseStore {
     }
 
     @Override
+    public List<String> listKeys(List<String> namespace, String keyPrefix) {
+        String nsPath = namespacePath(namespace);
+        String pattern = likePrefixPattern(keyPrefix == null ? "" : keyPrefix);
+        BoundSql boundSql = dialect.storeListKeys(nsPath, pattern);
+        List<String> keys = new ArrayList<>();
+        try (Connection c = dataSource.getConnection();
+                PreparedStatement ps = c.prepareStatement(boundSql.sql())) {
+            bindParams(ps, boundSql.params());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    keys.add(rs.getString(1));
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("JdbcStore listKeys failed", e);
+        }
+        return keys;
+    }
+
+    @Override
     public List<StoreItem> search(List<String> namespace, int limit, int offset) {
         if (limit <= 0) {
             return List.of();
@@ -234,9 +254,13 @@ public class JdbcStore implements BaseStore {
     }
 
     private String likePrefixPattern(List<String> namespace) {
+        return likePrefixPattern(namespacePath(namespace));
+    }
+
+    private String likePrefixPattern(String prefix) {
         char esc = dialect.storeLikeEscapeChar();
         StringBuilder sb = new StringBuilder();
-        for (char ch : namespacePath(namespace).toCharArray()) {
+        for (char ch : prefix.toCharArray()) {
             if (ch == esc || ch == '%' || ch == '_') {
                 sb.append(esc);
             }
