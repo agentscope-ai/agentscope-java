@@ -169,6 +169,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -867,54 +868,114 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<Msg> msgs, RuntimeContext rc, RunControl control) {
         if (sessionLogStore == null || sessionHistoryMode == SessionHistoryMode.LEGACY)
             return super.acquireCallExecution(msgs, rc, control);
-        return Mono.fromCallable(
-                        () -> {
-                            RuntimeContext callContext =
-                                    rc == null
-                                            ? RuntimeContext.empty()
-                                            : RuntimeContext.builder(rc).build();
-                            String sid = callContext.getSessionId();
-                            if (sid == null || sid.isBlank()) sid = defaultSessionId;
-                            SessionRecorder recorder =
-                                    new SessionRecorder(
-                                            sessionLogStore.open(
-                                                    new SessionKey(
-                                                            callContext.getUserId(),
-                                                            sessionLogAgentId,
-                                                            sid),
-                                                    callContext),
-                                            (String) callContext.get(SessionRecorder.TURN_ID_KEY),
-                                            control.runId(),
-                                            (SessionExportSink)
-                                                    callContext.get(SessionExportSink.CONTEXT_KEY));
-                            callContext.put(SessionRecorder.CONTEXT_KEY, recorder);
-                            if (callContext.get(SessionRecorder.PARENT_KEY) != null)
-                                recorder.append(
-                                        "subagent/linked",
-                                        callContext.get(SessionRecorder.PARENT_KEY));
-                            try {
-                                SessionExecution execution = SessionExecution.from(callContext);
-                                if (execution != null) execution.prepare(recorder, msgs);
-                                CallExecution acquired =
-                                        (CallExecution)
-                                                beforeAgentExecution(msgs, callContext, control);
-                                if (rc != null) rc.setAgentState(acquired.state);
-                                return (Object) acquired;
-                            } catch (Throwable error) {
-                                closeFailedSessionExecution(callContext, error);
-                                throw error;
-                            }
-                        })
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(
-                        scope -> {
-                            CallExecution ce = (CallExecution) scope;
-                            return SessionRecorder.from(ce.rc)
-                                    .start(msgs, ce.state)
-                                    .thenReturn(scope)
-                                    .doOnError(error -> closeFailedSessionExecution(ce.rc, error));
-                        })
-                .doOnDiscard(CallExecution.class, scope -> SessionRecorder.from(scope.rc).close());
+        // A subscriber can cancel after the recorder is created, which already holds the writer
+        // lease. `usingWhen` has no scope to release until this Mono emits, so the lease would
+        // stay taken until it expires and the next call on the same session is rejected. Remember
+        // the cancellation and close the recorder once it exists — both when the cancel lands
+        // before this Mono emits and when it lands while the first journal write is in flight.
+        return Mono.defer(
+                () -> {
+                    AtomicBoolean cancelled = new AtomicBoolean();
+                    return Mono.fromCallable(
+                                    () -> {
+                                        RuntimeContext callContext =
+                                                rc == null
+                                                        ? RuntimeContext.empty()
+                                                        : RuntimeContext.builder(rc).build();
+                                        String sid = callContext.getSessionId();
+                                        if (sid == null || sid.isBlank()) sid = defaultSessionId;
+                                        SessionRecorder recorder =
+                                                new SessionRecorder(
+                                                        sessionLogStore.open(
+                                                                new SessionKey(
+                                                                        callContext.getUserId(),
+                                                                        sessionLogAgentId,
+                                                                        sid),
+                                                                callContext),
+                                                        (String)
+                                                                callContext.get(
+                                                                        SessionRecorder
+                                                                                .TURN_ID_KEY),
+                                                        control.runId(),
+                                                        (SessionExportSink)
+                                                                callContext.get(
+                                                                        SessionExportSink
+                                                                                .CONTEXT_KEY));
+                                        callContext.put(SessionRecorder.CONTEXT_KEY, recorder);
+                                        try {
+                                            if (cancelled.get()) {
+                                                // The subscriber is gone: an error
+                                                // emitted now would only be dropped. Close
+                                                // through the failure path and complete
+                                                // empty instead.
+                                                cancelBeforeSessionStart(callContext);
+                                                return null;
+                                            }
+                                            if (callContext.get(SessionRecorder.PARENT_KEY) != null)
+                                                recorder.append(
+                                                        "subagent/linked",
+                                                        callContext.get(
+                                                                SessionRecorder.PARENT_KEY));
+                                            SessionExecution execution =
+                                                    SessionExecution.from(callContext);
+                                            if (execution != null)
+                                                execution.prepare(recorder, msgs);
+                                            CallExecution acquired =
+                                                    (CallExecution)
+                                                            beforeAgentExecution(
+                                                                    msgs, callContext, control);
+                                            if (rc != null) rc.setAgentState(acquired.state);
+                                            // Re-check once the hooks have run: if the
+                                            // subscriber cancelled mid-flight, subscribeOn
+                                            // drops the produced value silently (no onNext,
+                                            // no discard signal), so close here or the lease
+                                            // would be held until it expires.
+                                            if (cancelled.get()) {
+                                                cancelBeforeSessionStart(callContext);
+                                                return null;
+                                            }
+                                            return (Object) acquired;
+                                        } catch (Throwable error) {
+                                            closeFailedSessionExecution(callContext, error);
+                                            throw error;
+                                        }
+                                    })
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .doOnCancel(() -> cancelled.set(true))
+                            .flatMap(
+                                    scope -> {
+                                        CallExecution ce = (CallExecution) scope;
+                                        return SessionRecorder.from(ce.rc)
+                                                .start(msgs, ce.state)
+                                                .thenReturn(scope)
+                                                .doOnError(
+                                                        error ->
+                                                                closeFailedSessionExecution(
+                                                                        ce.rc, error))
+                                                .doOnCancel(() -> cancelJournalStart(ce));
+                                    })
+                            .doOnDiscard(
+                                    CallExecution.class,
+                                    scope -> SessionRecorder.from(scope.rc).close());
+                });
+    }
+
+    /**
+     * Same window as the acquisition start, one step earlier: the cancel lands after the
+     * recorder exists but before the acquisition emits.
+     */
+    private void cancelBeforeSessionStart(RuntimeContext context) {
+        closeFailedSessionExecution(
+                context, new CancellationException("Call cancelled before session start"));
+    }
+
+    /**
+     * Same window as the acquisition start, one step later: the cancel lands while the journal
+     * is starting, before the resource has been emitted.
+     */
+    private void cancelJournalStart(CallExecution scope) {
+        closeFailedSessionExecution(
+                scope.rc, new CancellationException("Call cancelled during journal startup"));
     }
 
     private void closeFailedSessionExecution(RuntimeContext context, Throwable error) {
