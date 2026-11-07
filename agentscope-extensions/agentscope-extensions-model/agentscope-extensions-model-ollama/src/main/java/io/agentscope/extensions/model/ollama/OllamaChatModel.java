@@ -37,10 +37,10 @@ import io.agentscope.extensions.model.ollama.formatter.OllamaMultiAgentFormatter
 import io.agentscope.extensions.model.ollama.options.OllamaOptions;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * AgentScope ChatModel implementation for Ollama.
@@ -246,18 +246,14 @@ public class OllamaChatModel extends ChatModelBase {
                             });
         } else {
             responseFlux =
-                    Flux.defer(
+                    ModelUtils.fromBlockingCallable(
                                     () -> {
                                         Instant startTime = Instant.now();
-                                        try {
-                                            OllamaResponse response = httpClient.chat(request);
-                                            return Flux.just(
-                                                    formatter.parseResponse(response, startTime));
-                                        } catch (Exception e) {
-                                            return Flux.error(e);
-                                        }
+                                        OllamaResponse response = httpClient.chat(request);
+                                        return Objects.requireNonNull(
+                                                formatter.parseResponse(response, startTime));
                                     })
-                            .subscribeOn(Schedulers.boundedElastic());
+                            .flux();
         }
 
         return responseFlux.transform(

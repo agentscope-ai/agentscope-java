@@ -23,7 +23,6 @@ import com.openai.errors.OpenAIServiceException;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseInputItem;
-import com.openai.models.responses.ResponseStreamEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
@@ -48,7 +47,6 @@ import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * OpenAI Responses chat model using the official OpenAI Java SDK.
@@ -152,37 +150,40 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
 
     private Flux<ChatResponse> buildNonStreamingFlux(
             ResponseCreateParams params, String modelName) {
-        return Flux.defer(
+        return ModelUtils.fromBlockingCallable(
                         () -> {
                             Instant start = Instant.now();
                             try {
                                 Response response = client.responses().create(params);
-                                return Flux.just(
+                                return Objects.requireNonNull(
                                         ResponsesResponseParser.parse(response, modelName, start));
                             } catch (RuntimeException e) {
-                                return Flux.error(OpenAIErrorTranslator.translate(e, modelName));
+                                throw OpenAIErrorTranslator.translate(e, modelName);
                             }
                         })
-                .subscribeOn(Schedulers.boundedElastic());
+                .flux();
     }
 
     private Flux<ChatResponse> buildStreamingFlux(ResponseCreateParams params, String modelName) {
         return Flux.defer(
-                        () -> {
-                            Instant start = Instant.now();
-                            StreamResponse<ResponseStreamEvent> streamResponse = null;
-                            try {
-                                streamResponse = client.responses().createStreaming(params);
-                                return ResponsesStreamingAssembler.assemble(
-                                        streamResponse, modelName, start);
-                            } catch (RuntimeException e) {
-                                if (streamResponse != null) {
-                                    ResponsesStreamingAssembler.closeQuietly(streamResponse);
-                                }
-                                return Flux.error(OpenAIErrorTranslator.translate(e, modelName));
-                            }
-                        })
-                .subscribeOn(Schedulers.boundedElastic());
+                () -> {
+                    Instant start = Instant.now();
+                    return ModelUtils.fromBlockingCallable(
+                                    () -> client.responses().createStreaming(params))
+                            .flatMapMany(
+                                    response -> {
+                                        try {
+                                            return ResponsesStreamingAssembler.assemble(
+                                                    response, modelName, start);
+                                        } catch (RuntimeException e) {
+                                            ResponsesStreamingAssembler.closeQuietly(response);
+                                            throw e;
+                                        }
+                                    })
+                            .doOnDiscard(
+                                    StreamResponse.class, ResponsesStreamingAssembler::closeQuietly)
+                            .onErrorMap(e -> OpenAIErrorTranslator.translate(e, modelName));
+                });
     }
 
     private void validateConnectionFields(GenerateOptions effectiveOptions) {

@@ -16,14 +16,20 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.message.ContentBlock;
+import java.io.InterruptedIOException;
+import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.util.retry.Retry;
 
 /**
@@ -38,6 +44,60 @@ public final class ModelUtils {
 
     private ModelUtils() {
         // Utility class - prevent instantiation
+    }
+
+    /**
+     * Adapts a blocking model operation to a lazy, cancellation-aware publisher.
+     *
+     * <p>Each subscription runs the callable on the bounded elastic scheduler. Cancellation
+     * still interrupts the worker, but an interruption caused by cancelling that subscription
+     * is not reported as an undeliverable error. Failures of an active subscription and
+     * unrelated late failures retain Reactor's normal error handling. No global hooks are changed.
+     *
+     * <p>A null result completes empty, as with {@link Mono#fromCallable(Callable)}. Callers
+     * acquiring closeable resources should register {@code doOnDiscard} to close a result
+     * returned after cancellation.
+     *
+     * @param callable the blocking operation, invoked anew for each subscription/retry
+     * @param <T> the result type
+     * @return a publisher for the result of the operation
+     */
+    public static <T> Mono<T> fromBlockingCallable(Callable<T> callable) {
+        Objects.requireNonNull(callable, "callable");
+        // Defer preserves the callable's cancellation/discard path instead of subscribeOn's
+        // optimized callable subscription, which does not discard late results.
+        return Mono.defer(
+                        () -> {
+                            AtomicBoolean cancelled = new AtomicBoolean();
+                            return Mono.<T>fromCallable(
+                                            () -> {
+                                                try {
+                                                    return callable.call();
+                                                } catch (Exception error) {
+                                                    if (cancelled.get() && isInterruption(error)) {
+                                                        return null;
+                                                    }
+                                                    throw error;
+                                                }
+                                            })
+                                    .doOnCancel(() -> cancelled.set(true));
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private static boolean isInterruption(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof InterruptedException
+                    || (cause instanceof InterruptedIOException
+                            && !(cause instanceof SocketTimeoutException)
+                            && Thread.currentThread().isInterrupted())) {
+                return true;
+            }
+            if (cause.getCause() == cause) {
+                break;
+            }
+        }
+        return false;
     }
 
     /**

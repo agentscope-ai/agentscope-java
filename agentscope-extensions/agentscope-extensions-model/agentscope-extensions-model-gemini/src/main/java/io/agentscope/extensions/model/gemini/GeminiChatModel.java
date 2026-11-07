@@ -330,24 +330,21 @@ public class GeminiChatModel extends ChatModelBase {
                 tools != null && !tools.isEmpty(),
                 streamEnabled);
 
-        return Flux.defer(
-                        () -> {
-                            try {
-                                // Use formatter to convert Msg to Gemini
-                                // Content
+        if (streamEnabled) {
+            return ModelUtils.fromBlockingCallable(
+                            () -> {
                                 List<Content> formattedMessages = formatter.format(messages);
-
                                 GenerateContentConfig config =
                                         buildGenerateContentConfig(tools, options);
-
-                                // Choose API based on streaming flag
-                                if (streamEnabled) {
-                                    // Use streaming API
-                                    ResponseStream<GenerateContentResponse> responseStream =
-                                            client.models.generateContentStream(
-                                                    modelName, formattedMessages, config);
-
-                                    // Convert ResponseStream to Flux
+                                return client.models.generateContentStream(
+                                        modelName, formattedMessages, config);
+                            })
+                    .onErrorMap(
+                            e -> new ModelException("Gemini API call failed: " + e.getMessage(), e))
+                    .doOnError(e -> log.error("Gemini API call failed: {}", e.getMessage(), e))
+                    .flatMapMany(
+                            responseStream -> {
+                                try {
                                     return Flux.fromIterable(responseStream)
                                             .subscribeOn(Schedulers.boundedElastic())
                                             .map(
@@ -355,40 +352,41 @@ public class GeminiChatModel extends ChatModelBase {
                                                             formatter.parseResponse(
                                                                     response, startTime))
                                             .doFinally(
-                                                    signalType -> {
-                                                        // Close the stream
-                                                        // when done
-                                                        try {
-                                                            responseStream.close();
-                                                        } catch (Exception e) {
-                                                            log.warn(
-                                                                    "Error closing"
-                                                                            + " response"
-                                                                            + " stream: {}",
-                                                                    e.getMessage());
-                                                        }
-                                                    });
-                                } else {
-                                    // Use non-streaming API
-                                    GenerateContentResponse response =
-                                            client.models.generateContent(
-                                                    modelName, formattedMessages, config);
-
-                                    // Parse response using formatter
-                                    ChatResponse chatResponse =
-                                            formatter.parseResponse(response, startTime);
-
-                                    return Flux.just(chatResponse);
+                                                    signal -> closeResponseStream(responseStream));
+                                } catch (Exception e) {
+                                    closeResponseStream(responseStream);
+                                    log.error("Gemini API call failed: {}", e.getMessage(), e);
+                                    return Flux.error(
+                                            new ModelException(
+                                                    "Gemini API call failed: " + e.getMessage(),
+                                                    e));
                                 }
-
-                            } catch (Exception e) {
-                                log.error("Gemini API call failed: {}", e.getMessage(), e);
-                                return Flux.error(
-                                        new ModelException(
-                                                "Gemini API call failed: " + e.getMessage(), e));
-                            }
+                            })
+                    .doOnDiscard(ResponseStream.class, this::closeResponseStream);
+        }
+        return ModelUtils.fromBlockingCallable(
+                        () -> {
+                            List<Content> formattedMessages = formatter.format(messages);
+                            GenerateContentConfig config =
+                                    buildGenerateContentConfig(tools, options);
+                            GenerateContentResponse response =
+                                    client.models.generateContent(
+                                            modelName, formattedMessages, config);
+                            return Objects.requireNonNull(
+                                    formatter.parseResponse(response, startTime));
                         })
-                .subscribeOn(Schedulers.boundedElastic());
+                .onErrorMap(e -> new ModelException("Gemini API call failed: " + e.getMessage(), e))
+                .doOnError(e -> log.error("Gemini API call failed: {}", e.getMessage(), e))
+                .flux();
+    }
+
+    /** Closes SDK streams on termination or when acquisition finishes after cancellation. */
+    private void closeResponseStream(ResponseStream<?> responseStream) {
+        try {
+            responseStream.close();
+        } catch (Exception e) {
+            log.warn("Error closing response stream: {}", e.getMessage());
+        }
     }
 
     @Override

@@ -20,7 +20,6 @@ import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.core.http.StreamResponse;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
-import com.anthropic.models.messages.RawMessageStreamEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.ChatModelBase;
@@ -332,27 +331,49 @@ public class AnthropicChatModel extends ChatModelBase {
                                 MessageCreateParams params = paramsBuilder.build();
 
                                 if (streamEnabled) {
-                                    // Make streaming API call
-                                    StreamResponse<RawMessageStreamEvent> streamResponse =
-                                            client.messages().createStreaming(params);
-
-                                    // Convert the SDK's Stream to Flux
-                                    return AnthropicResponseParser.parseStreamEvents(
-                                                    Flux.fromStream(streamResponse.stream())
-                                                            .subscribeOn(
-                                                                    Schedulers.boundedElastic()),
-                                                    startTime)
-                                            .doFinally(
-                                                    signalType -> {
+                                    return ModelUtils.fromBlockingCallable(
+                                                    () -> client.messages().createStreaming(params))
+                                            .onErrorMap(
+                                                    e ->
+                                                            new ModelException(
+                                                                    "Failed to stream Anthropic"
+                                                                            + " API: "
+                                                                            + e.getMessage(),
+                                                                    e,
+                                                                    modelName,
+                                                                    "anthropic"))
+                                            .flatMapMany(
+                                                    streamResponse -> {
                                                         try {
-                                                            streamResponse.close();
+                                                            return AnthropicResponseParser
+                                                                    .parseStreamEvents(
+                                                                            Flux.fromStream(
+                                                                                            streamResponse
+                                                                                                    .stream())
+                                                                                    .subscribeOn(
+                                                                                            Schedulers
+                                                                                                    .boundedElastic()),
+                                                                            startTime)
+                                                                    .doFinally(
+                                                                            signal ->
+                                                                                    closeStreamResponse(
+                                                                                            streamResponse));
                                                         } catch (Exception e) {
-                                                            log.debug(
-                                                                    "Error closing stream"
-                                                                            + " response",
-                                                                    e);
+                                                            closeStreamResponse(streamResponse);
+                                                            return Flux.error(
+                                                                    new ModelException(
+                                                                            "Failed to stream"
+                                                                                + " Anthropic API: "
+                                                                                    + e
+                                                                                            .getMessage(),
+                                                                            e,
+                                                                            modelName,
+                                                                            "anthropic"));
                                                         }
-                                                    });
+                                                    })
+                                            .doOnDiscard(
+                                                    StreamResponse.class,
+                                                    this::closeStreamResponse);
                                 } else {
                                     // For non-streaming, make a single call
                                     // via CompletableFuture
@@ -376,6 +397,15 @@ public class AnthropicChatModel extends ChatModelBase {
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
                 responseFlux, options, defaultOptions, modelName, "anthropic");
+    }
+
+    /** Closes SDK streams on termination or when acquisition finishes after cancellation. */
+    private void closeStreamResponse(StreamResponse<?> streamResponse) {
+        try {
+            streamResponse.close();
+        } catch (Exception e) {
+            log.debug("Error closing stream response", e);
+        }
     }
 
     /**
