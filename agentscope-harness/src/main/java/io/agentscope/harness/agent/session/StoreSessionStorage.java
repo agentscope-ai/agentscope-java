@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeSet;
 
 /** Reuses the workspace's distributed store and resolved namespace, with a private runtime partition. */
 public final class StoreSessionStorage implements AtomicSessionStorage {
@@ -42,13 +41,9 @@ public final class StoreSessionStorage implements AtomicSessionStorage {
 
     @Override
     public List<String> listPaths(String prefix) {
-        var paths = new TreeSet<String>();
-        final int pageSize = 256;
-        for (int offset = 0; ; offset += pageSize) {
-            var page = store.search(namespace, pageSize, offset);
-            for (var item : page) if (item.key().startsWith(prefix)) paths.add(item.key());
-            if (page.size() < pageSize) return List.copyOf(paths);
-        }
+        // Push the prefix into the store query: a shared namespace may hold the journals of every
+        // conversation, and paging it client-side would transfer all of their values.
+        return store.listKeys(namespace, prefix);
     }
 
     @Override

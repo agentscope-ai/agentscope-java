@@ -114,6 +114,19 @@ class DialectSqlTests {
         assertTrue(bs.sql().contains("ON CONFLICT"));
     }
 
+    @Test
+    @DisplayName("storeListKeys projects only item_key and filters by namespace and key prefix")
+    void storeListKeysProjectsOnlyKeys() {
+        BoundSql bs = new H2Dialect().storeListKeys("ns", "commits/%");
+
+        assertTrue(bs.sql().startsWith("SELECT item_key FROM "));
+        assertFalse(bs.sql().contains("value_json"));
+        assertTrue(bs.sql().contains("namespace_path = ?"));
+        assertTrue(bs.sql().contains("item_key LIKE ? ESCAPE '!'"));
+        assertTrue(bs.sql().endsWith("ORDER BY item_key"));
+        assertEquals(List.of("ns", "commits/%"), bs.params());
+    }
+
     // ------------------------------------------------------------------
     //  StoreDialect — DDL type differences
     // ------------------------------------------------------------------
