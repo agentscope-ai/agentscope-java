@@ -72,9 +72,10 @@ class AguiRequestProcessorSessionLogTest {
             List<AguiFramedEvent> frames =
                     processor.attach(request(emptyInput()), cursor, "exec-1").collectList().block();
 
-            // The cursor already covers run/start, so only the terminal frame is replayed.
-            assertEquals(1, frames.size());
-            assertTrue(frames.get(0).event() instanceof AguiEvent.RunFinished);
+            // The cursor already covers run/start, but the stream still opens with RUN_STARTED.
+            assertEquals(2, frames.size());
+            assertTrue(frames.get(0).event() instanceof AguiEvent.RunStarted);
+            assertTrue(frames.get(1).event() instanceof AguiEvent.RunFinished);
             assertEquals(0, agent.getStreamCalls());
         } finally {
             if (writer != null) {
@@ -109,7 +110,10 @@ class AguiRequestProcessorSessionLogTest {
 
             List<AguiFramedEvent> frames = processor.attach(request(input)).collectList().block();
 
-            assertEquals(1, frames.size());
+            assertEquals(2, frames.size());
+            assertTrue(frames.get(0).event() instanceof AguiEvent.RunStarted);
+            assertEquals("exec-1", ((AguiEvent.RunStarted) frames.get(0).event()).runId());
+            assertTrue(frames.get(1).event() instanceof AguiEvent.RunFinished);
             assertEquals(0, agent.getStreamCalls());
         } finally {
             if (writer != null) {

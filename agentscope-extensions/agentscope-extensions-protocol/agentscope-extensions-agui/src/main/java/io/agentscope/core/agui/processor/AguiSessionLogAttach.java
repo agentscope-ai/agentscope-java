@@ -82,8 +82,76 @@ final class AguiSessionLogAttach {
             String executionRunId,
             AguiAdapterConfig config,
             Duration pollInterval) {
-        return Flux.<AguiFramedEvent>create(
-                sink -> runAttach(sink, input, log, after, executionRunId, config, pollInterval));
+        return Flux.concat(
+                runStartedPrefix(input, log, after, executionRunId),
+                Flux.<AguiFramedEvent>create(
+                        sink ->
+                                runAttach(
+                                        sink,
+                                        input,
+                                        log,
+                                        after,
+                                        executionRunId,
+                                        config,
+                                        pollInterval)));
+    }
+
+    /**
+     * AG-UI transports require the first event of a run/connect stream to be {@code RUN_STARTED}.
+     * A reconnect whose cursor already passed {@code run/start} would otherwise start with a
+     * content or tool event, which official clients reject. Emit a synthetic, uncursored
+     * RUN_STARTED when the replay range no longer contains the committed run/start event.
+     */
+    private static Flux<AguiFramedEvent> runStartedPrefix(
+            RunAgentInput input, SessionLog log, long after, String executionRunId) {
+        return Flux.defer(
+                        () -> {
+                            try {
+                                long runStart = lastRunStartSeq(log);
+                                if (runStart > 0 && after >= runStart) {
+                                    String runId =
+                                            executionRunId == null || executionRunId.isBlank()
+                                                    ? input.getRunId()
+                                                    : executionRunId;
+                                    return Flux.just(
+                                            new AguiFramedEvent(
+                                                    -1,
+                                                    -1,
+                                                    new AguiEvent.RunStarted(
+                                                            input.getThreadId(),
+                                                            runId,
+                                                            null,
+                                                            input)));
+                                }
+                            } catch (RuntimeException ignored) {
+                                // Fall back to the committed log, which contains run/start when
+                                // it is available.
+                            }
+                            return Flux.empty();
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Sequence of the most recent committed {@code run/start} event, or {@code 0} when none.
+     *
+     * <p>Reads backwards from the head in batches, so the check costs a few recent segments
+     * rather than the whole journal.
+     */
+    private static long lastRunStartSeq(SessionLog log) {
+        long end = log.head().seq();
+        while (end > 0) {
+            long start = Math.max(0, end - BATCH_SIZE);
+            List<SessionEvent> batch = log.readAfter(start, (int) (end - start));
+            for (int i = batch.size() - 1; i >= 0; i--) {
+                SessionEvent event = batch.get(i);
+                if ("run/start".equals(event.type())) {
+                    return event.seq();
+                }
+            }
+            end = start;
+        }
+        return 0;
     }
 
     /**
