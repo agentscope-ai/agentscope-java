@@ -42,6 +42,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.SimpleFileVisitor;
@@ -54,6 +55,7 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
@@ -120,6 +122,12 @@ public class LocalFilesystem implements AbstractFilesystem {
      * the same file (even with different input paths) always share the same lock.
      */
     private final ConcurrentHashMap<String, ReentrantLock> fileLocks = new ConcurrentHashMap<>();
+
+    /** Absolute roots hidden from this filesystem; see {@link #excludeSubtree}. */
+    private final Set<Path> excludedSubtrees = ConcurrentHashMap.newKeySet();
+
+    /** The same roots as real paths; a link into one would pass the lexical check. */
+    private final Set<Path> excludedRealSubtrees = ConcurrentHashMap.newKeySet();
 
     /**
      * Same as {@link #LocalFilesystem(Path)} with {@link Path#of(String, String...) Path.of(path)}
@@ -308,8 +316,14 @@ public class LocalFilesystem implements AbstractFilesystem {
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         Path dirPath = resolvePath(runtimeContext, path);
+        if (isHiddenFromCaller(dirPath)) {
+            return LsResult.success(List.of());
+        }
         if (!Files.exists(dirPath)) {
-            return LsResult.fail("Path does not exist: " + path);
+            // A caller with no directory yet has an empty root, not a broken one.
+            return path == null || path.isBlank()
+                    ? LsResult.success(List.of())
+                    : LsResult.fail("Path does not exist: " + path);
         }
         if (!Files.isDirectory(dirPath)) {
             return LsResult.fail("Not a directory: " + path);
@@ -318,6 +332,10 @@ public class LocalFilesystem implements AbstractFilesystem {
         List<FileInfo> results = new ArrayList<>();
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(dirPath)) {
             for (Path entry : ds) {
+                // readAttributes() below follows links, so the link flag comes from the entry.
+                if (isSubtreeExcluded(entry) || isHiddenEntry(entry, Files.isSymbolicLink(entry))) {
+                    continue;
+                }
                 try {
                     BasicFileAttributes attrs =
                             Files.readAttributes(entry, BasicFileAttributes.class);
@@ -345,6 +363,9 @@ public class LocalFilesystem implements AbstractFilesystem {
     @Override
     public ReadResult read(RuntimeContext runtimeContext, String filePath, int offset, int limit) {
         Path resolved = resolvePath(runtimeContext, filePath);
+        if (isHiddenFromCaller(resolved)) {
+            return ReadResult.fail("File '" + filePath + "' not found");
+        }
 
         if (!Files.exists(resolved) || !Files.isRegularFile(resolved)) {
             return ReadResult.fail("File '" + filePath + "' not found");
@@ -395,6 +416,9 @@ public class LocalFilesystem implements AbstractFilesystem {
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
         Path resolved = resolvePath(runtimeContext, filePath);
+        if (isHiddenFromCaller(resolved)) {
+            return WriteResult.fail("Cannot write to '" + filePath + "': no such directory");
+        }
 
         if (Files.exists(resolved)) {
             return WriteResult.alreadyExists(filePath);
@@ -427,6 +451,9 @@ public class LocalFilesystem implements AbstractFilesystem {
         }
 
         Path resolved = resolvePath(runtimeContext, filePath);
+        if (isHiddenFromCaller(resolved)) {
+            return EditResult.fail("Error: File '" + filePath + "' not found");
+        }
 
         if (!Files.exists(resolved) || !Files.isRegularFile(resolved)) {
             return EditResult.fail("Error: File '" + filePath + "' not found");
@@ -473,6 +500,9 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (!Files.exists(basePath)) {
             return GrepResult.success(List.of());
         }
+        if (isHiddenFromCaller(basePath)) {
+            return GrepResult.success(List.of());
+        }
 
         List<GrepMatch> matches = ripgrepSearch(runtimeContext, pattern, basePath, glob);
         if (matches == null) {
@@ -496,6 +526,9 @@ public class LocalFilesystem implements AbstractFilesystem {
         }
 
         if (!Files.exists(searchPath) || !Files.isDirectory(searchPath)) {
+            return GlobResult.success(List.of());
+        }
+        if (isHiddenFromCaller(searchPath)) {
             return GlobResult.success(List.of());
         }
 
@@ -522,7 +555,19 @@ public class LocalFilesystem implements AbstractFilesystem {
                     searchPath,
                     new SimpleFileVisitor<>() {
                         @Override
+                        public FileVisitResult preVisitDirectory(
+                                Path dir, BasicFileAttributes attrs) {
+                            return isSubtreeExcluded(dir)
+                                    ? FileVisitResult.SKIP_SUBTREE
+                                    : FileVisitResult.CONTINUE;
+                        }
+
+                        @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                            if (isSubtreeExcluded(file)
+                                    || isHiddenEntry(file, attrs.isSymbolicLink())) {
+                                return FileVisitResult.CONTINUE;
+                            }
                             Path rel = searchPath.relativize(file);
                             if (matcher.matches(rel) || directMatcher.matches(rel)) {
                                 String filePath = resolveEntryPath(runtimeContext, file);
@@ -556,6 +601,10 @@ public class LocalFilesystem implements AbstractFilesystem {
             byte[] content = entry.getValue();
             try {
                 Path resolved = resolvePath(runtimeContext, filePath);
+                if (isHiddenFromCaller(resolved)) {
+                    responses.add(FileUploadResponse.fail(filePath, "path not found"));
+                    continue;
+                }
                 if (resolved.getParent() != null) {
                     Files.createDirectories(resolved.getParent());
                 }
@@ -577,7 +626,7 @@ public class LocalFilesystem implements AbstractFilesystem {
         for (String filePath : paths) {
             try {
                 Path resolved = resolvePath(runtimeContext, filePath);
-                if (!Files.exists(resolved)) {
+                if (isHiddenFromCaller(resolved) || !Files.exists(resolved)) {
                     responses.add(FileDownloadResponse.fail(filePath, "file_not_found"));
                     continue;
                 }
@@ -600,11 +649,17 @@ public class LocalFilesystem implements AbstractFilesystem {
     public WriteResult delete(RuntimeContext runtimeContext, String path) {
         AbstractFilesystem.validatePath(path);
         Path resolved = resolvePath(runtimeContext, path);
-        if (!Files.exists(resolved)) {
+        // A hidden path does not exist here; deleting a link drops the entry, not its target.
+        boolean link = Files.isSymbolicLink(resolved);
+        if ((!link && isHiddenFromCaller(resolved))
+                || !Files.exists(resolved, LinkOption.NOFOLLOW_LINKS)) {
             return WriteResult.ok(path); // idempotent
         }
+        if (!link && Files.isDirectory(resolved) && containsExcludedSubtree(resolved)) {
+            return WriteResult.fail("Cannot delete '" + path + "': the directory is not empty");
+        }
         try {
-            if (Files.isDirectory(resolved)) {
+            if (!link && Files.isDirectory(resolved)) {
                 try (Stream<Path> walk = Files.walk(resolved)) {
                     walk.sorted(Comparator.reverseOrder())
                             .forEach(
@@ -631,8 +686,15 @@ public class LocalFilesystem implements AbstractFilesystem {
         AbstractFilesystem.validatePath(toPath);
         Path from = resolvePath(runtimeContext, fromPath);
         Path to = resolvePath(runtimeContext, toPath);
-        if (!Files.exists(from)) {
+        // Moving a link moves the entry, not the hidden target.
+        if ((!Files.isSymbolicLink(from) && isHiddenFromCaller(from)) || !Files.exists(from)) {
             return WriteResult.fail("Source does not exist: " + fromPath);
+        }
+        if (isHiddenFromCaller(to)) {
+            return WriteResult.fail("Destination not found: " + toPath);
+        }
+        if (Files.isDirectory(from) && containsExcludedSubtree(from)) {
+            return WriteResult.fail("Cannot move '" + fromPath + "': the directory is not empty");
         }
         try {
             if (to.getParent() != null) {
@@ -652,7 +714,8 @@ public class LocalFilesystem implements AbstractFilesystem {
             return false;
         }
         try {
-            return Files.exists(resolvePath(runtimeContext, path));
+            Path resolved = resolvePath(runtimeContext, path);
+            return !isHiddenFromCaller(resolved) && Files.exists(resolved);
         } catch (SecurityException e) {
             return false;
         }
@@ -685,12 +748,87 @@ public class LocalFilesystem implements AbstractFilesystem {
                 resolvePath(rc, ".").resolve(".agentscope-runtime"));
     }
 
+    /**
+     * Hides a subtree: enumeration skips it and every content operation treats it as absent,
+     * including through a link into it. Call it before the instance is handed to callers.
+     *
+     * @param root absolute root to hide; relative and {@code null} roots are ignored
+     * @return this filesystem, for chaining
+     */
+    public LocalFilesystem excludeSubtree(Path root) {
+        if (root != null && root.isAbsolute()) {
+            Path normalized = root.normalize();
+            excludedSubtrees.add(normalized);
+            Path real = realPath(normalized);
+            excludedRealSubtrees.add(real != null ? real : normalized);
+        }
+        return this;
+    }
+
+    /** A link entry is the only way a lexical walk can surface a hidden path. */
+    private boolean isHiddenEntry(Path entry, boolean isLink) {
+        return isLink && isHiddenFromCaller(entry);
+    }
+
+    /** Hidden: lexically inside a hidden root, or resolving into one through a link. */
+    private boolean isHiddenFromCaller(Path path) {
+        if (path == null) {
+            return false;
+        }
+        if (isSubtreeExcluded(path)) {
+            return true;
+        }
+        if (excludedRealSubtrees.isEmpty()) {
+            return false;
+        }
+        Path real = realPath(path);
+        return real != null && excludedRealSubtrees.stream().anyMatch(real::startsWith);
+    }
+
+    /**
+     * Resolves through the nearest existing ancestor, so a file that does not exist yet still
+     * resolves through a linked directory. {@code null} if nothing along it resolves.
+     */
+    private static Path realPath(Path path) {
+        Path absolute = path.toAbsolutePath().normalize();
+        Path existing = absolute;
+        while (existing != null && !Files.exists(existing, LinkOption.NOFOLLOW_LINKS)) {
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            return null;
+        }
+        try {
+            return existing.toRealPath().resolve(existing.relativize(absolute));
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private boolean isSubtreeExcluded(Path path) {
+        if (path == null || excludedSubtrees.isEmpty()) {
+            return false;
+        }
+        Path absolute = path.toAbsolutePath().normalize();
+        return excludedSubtrees.stream().anyMatch(absolute::startsWith);
+    }
+
+    /** True when {@code path} is an ancestor of a hidden subtree root, or the root itself. */
+    private boolean containsExcludedSubtree(Path path) {
+        if (path == null || excludedSubtrees.isEmpty()) {
+            return false;
+        }
+        Path absolute = path.toAbsolutePath().normalize();
+        return excludedSubtrees.stream().anyMatch(excluded -> excluded.startsWith(absolute));
+    }
+
     protected Path resolvePath(RuntimeContext rc, String key) {
         if (key != null
                 && java.util.Arrays.stream(key.replace('\\', '/').split("/"))
                         .anyMatch(".agentscope-runtime"::equalsIgnoreCase))
             throw new SecurityException("Session journal is reserved for the runtime");
-        String effectiveKey = applyNamespacePrefix(rc, key);
+        // A blank key is the caller's own root, not the shared workspace root it used to reach.
+        String effectiveKey = applyNamespacePrefix(rc, (key == null || key.isBlank()) ? "." : key);
         if (effectiveKey == null || effectiveKey.isBlank()) {
             return cwd;
         }
@@ -1008,6 +1146,31 @@ public class LocalFilesystem implements AbstractFilesystem {
 
     // ==================== Grep implementations ====================
 
+    /** {@code excluded} relative to {@code base}; {@code null} when it is not a descendant. */
+    private static String relativeForGlob(Path base, Path excluded) {
+        try {
+            Path relative = base.toAbsolutePath().normalize().relativize(excluded);
+            String value = relative.toString().replace('\\', '/');
+            // First name, not the string: a directory literally named "..cache" is a descendant.
+            return value.isEmpty() || relative.getName(0).toString().equals("..") ? null : value;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /** Escapes glob syntax so a directory name matches itself instead of a pattern. */
+    private static String escapeGlob(String relativePath) {
+        StringBuilder escaped = new StringBuilder(relativePath.length());
+        for (char ch : relativePath.toCharArray()) {
+            if (ch == '*' || ch == '?' || ch == '[' || ch == ']' || ch == '{' || ch == '}') {
+                escaped.append('[').append(ch).append(']');
+            } else {
+                escaped.append(ch);
+            }
+        }
+        return escaped.toString();
+    }
+
     private List<GrepMatch> ripgrepSearch(
             RuntimeContext rc, String pattern, Path basePath, String includeGlob) {
         List<String> cmd = new ArrayList<>();
@@ -1018,12 +1181,27 @@ public class LocalFilesystem implements AbstractFilesystem {
             cmd.add("--glob");
             cmd.add(includeGlob);
         }
+        // rg matches --glob against the working directory, not the search root, so both the
+        // exclusions and the process directory are derived from the glob base.
+        Path globBase = Files.isDirectory(basePath) ? basePath : basePath.getParent();
+        if (globBase != null) {
+            for (Path excluded : excludedSubtrees) {
+                String relative = relativeForGlob(globBase, excluded);
+                if (relative != null) {
+                    cmd.add("--glob");
+                    cmd.add("!" + escapeGlob(relative) + "/**");
+                }
+            }
+        }
         cmd.add("--");
         cmd.add(pattern);
         cmd.add(basePath.toString());
 
         try {
             ProcessBuilder pb = new ProcessBuilder(cmd);
+            // Output paths carry the absolute search root, so the working directory cannot skew
+            // them.
+            pb.directory(globBase == null ? null : globBase.toFile());
             pb.redirectErrorStream(true);
             Process proc = pb.start();
 
@@ -1063,7 +1241,13 @@ public class LocalFilesystem implements AbstractFilesystem {
             if (pathText == null || lineNumStr == null) {
                 return null;
             }
-            String filePath = resolveEntryPath(rc, Path.of(pathText));
+            Path reported = Path.of(pathText);
+            // The exclusion globs are the fast path, not the boundary: a pattern that fails to
+            // exclude a subtree must not surface its content.
+            if (isHiddenFromCaller(reported)) {
+                return null;
+            }
+            String filePath = resolveEntryPath(rc, reported);
             int lineNum = Integer.parseInt(lineNumStr.trim());
             String text = linesText != null ? linesText.replaceAll("[\r\n]+$", "") : "";
             return new GrepMatch(filePath, lineNum, text);
@@ -1117,44 +1301,56 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (includeGlob != null && !includeGlob.isBlank()) {
             globMatcher = FileSystems.getDefault().getPathMatcher("glob:" + includeGlob);
         }
+        PathMatcher finalGlobMatcher = globMatcher;
 
         List<GrepMatch> matches = new ArrayList<>();
         Path root = Files.isDirectory(basePath) ? basePath : basePath.getParent();
 
-        try (Stream<Path> walk = Files.walk(root)) {
-            PathMatcher finalGlobMatcher = globMatcher;
-            walk.filter(Files::isRegularFile)
-                    .filter(
-                            p -> {
-                                if (finalGlobMatcher != null) {
-                                    return finalGlobMatcher.matches(p.getFileName());
-                                }
-                                return true;
-                            })
-                    .filter(
-                            p -> {
-                                try {
-                                    return Files.size(p) <= maxFileSizeBytes;
-                                } catch (IOException e) {
-                                    return false;
-                                }
-                            })
-                    .forEach(
-                            file -> {
-                                try {
-                                    List<String> lines =
-                                            Files.readAllLines(file, StandardCharsets.UTF_8);
-                                    for (int i = 0; i < lines.size(); i++) {
-                                        if (compiledPattern.matcher(lines.get(i)).find()) {
-                                            String filePath = resolveEntryPath(rc, file);
-                                            matches.add(
-                                                    new GrepMatch(filePath, i + 1, lines.get(i)));
-                                        }
+        try {
+            Files.walkFileTree(
+                    root,
+                    new SimpleFileVisitor<>() {
+                        @Override
+                        public FileVisitResult preVisitDirectory(
+                                Path dir, BasicFileAttributes attrs) {
+                            return isSubtreeExcluded(dir)
+                                    ? FileVisitResult.SKIP_SUBTREE
+                                    : FileVisitResult.CONTINUE;
+                        }
+
+                        @Override
+                        public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                            if (isSubtreeExcluded(file)
+                                    || isHiddenEntry(file, attrs.isSymbolicLink())) {
+                                return FileVisitResult.CONTINUE;
+                            }
+                            if (finalGlobMatcher != null
+                                    && !finalGlobMatcher.matches(file.getFileName())) {
+                                return FileVisitResult.CONTINUE;
+                            }
+                            if (attrs.size() > maxFileSizeBytes) {
+                                return FileVisitResult.CONTINUE;
+                            }
+                            try {
+                                List<String> lines =
+                                        Files.readAllLines(file, StandardCharsets.UTF_8);
+                                for (int i = 0; i < lines.size(); i++) {
+                                    if (compiledPattern.matcher(lines.get(i)).find()) {
+                                        String filePath = resolveEntryPath(rc, file);
+                                        matches.add(new GrepMatch(filePath, i + 1, lines.get(i)));
                                     }
-                                } catch (IOException e) {
-                                    // Skip binary/unreadable files
                                 }
-                            });
+                            } catch (IOException e) {
+                                // Skip binary/unreadable files
+                            }
+                            return FileVisitResult.CONTINUE;
+                        }
+
+                        @Override
+                        public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                            return FileVisitResult.CONTINUE;
+                        }
+                    });
         } catch (IOException e) {
             log.warn("Java search failed: {}", e.getMessage());
         }

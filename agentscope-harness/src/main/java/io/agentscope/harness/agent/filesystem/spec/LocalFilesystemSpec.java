@@ -25,6 +25,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -384,10 +385,26 @@ public class LocalFilesystemSpec {
             upper.namespaceBoundary(true);
         }
         LocalFilesystem lower = new LocalFilesystem(effectiveProject, true, 10, null);
+        Path projectRoot = effectiveProject.toAbsolutePath().normalize();
+        Path projectReal = realOrSelf(projectRoot);
+        Path workspaceReal = realOrSelf(workspace);
+        Path hiddenRoot = null;
+        // A workspace nested in the project must stay invisible to the namespaced lower layer.
+        if (effectiveNamespaceFactory != null
+                && !workspaceReal.equals(projectReal)
+                && workspaceReal.startsWith(projectReal)) {
+            // Registered in the project's spelling, because that is what the walk uses.
+            hiddenRoot = projectRoot.resolve(projectReal.relativize(workspaceReal));
+            lower = lower.excludeSubtree(hiddenRoot);
+        }
         if (projectWritable) {
             LocalFilesystem projectFs =
                     new LocalFilesystem(
                             effectiveProject, mode, pathPolicy, 10, effectiveNamespaceFactory);
+            if (hiddenRoot != null) {
+                // Absolute paths skip the namespace prefix, so they would route here.
+                projectFs = projectFs.excludeSubtree(hiddenRoot);
+            }
             return new ProjectAwareOverlay(
                     (AbstractSandboxFilesystem) upper,
                     lower,
@@ -396,5 +413,15 @@ public class LocalFilesystemSpec {
                     effectiveNamespaceFactory);
         }
         return OverlayFilesystem.of(upper, lower);
+    }
+
+    /** Real path of an existing directory, or its absolute form when it cannot be resolved. */
+    private static Path realOrSelf(Path path) {
+        Path absolute = path.toAbsolutePath().normalize();
+        try {
+            return absolute.toRealPath();
+        } catch (IOException e) {
+            return absolute;
+        }
     }
 }

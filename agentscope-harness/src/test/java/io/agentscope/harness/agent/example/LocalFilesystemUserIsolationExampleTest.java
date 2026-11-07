@@ -37,6 +37,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
+import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import io.agentscope.harness.agent.tool.MemoryGetTool;
@@ -514,6 +515,60 @@ class LocalFilesystemUserIsolationExampleTest {
             wm.writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice-fact");
             assertEquals("alice-fact", wm.readMemoryMd(ctx("s1", "alice")));
             assertEquals("", wm.readMemoryMd(ctx("s2", "bob")));
+        }
+    }
+
+    /**
+     * Enumeration stays inside the caller's namespace: a blank or relative root resolves to the
+     * caller's own directory, never the workspace root. (This test's workspace is a standalone
+     * temp directory rather than a subtree of the project, so the project-layer boundary itself
+     * is pinned separately by
+     * {@link io.agentscope.harness.agent.filesystem.LocalFilesystemProjectEnumerationBoundaryTest}.)
+     */
+    @Test
+    void enumeration_staysInsideCallerNamespace() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("assistant")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .build()) {
+
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            WorkspaceManager wm = agent.getWorkspaceManager();
+            wm.writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice-secret-memory");
+            wm.writeUtf8WorkspaceRelative(
+                    ctx("s1", "alice"), "outputs/report.md", "alice-secret-output");
+
+            agent.call(userMsg("continuing"), ctx("s2", "bob")).block();
+            RuntimeContext bob = ctx("s2", "bob");
+            AbstractFilesystem fs = wm.getFilesystem();
+
+            LsResult listed = fs.ls(bob, "");
+            assertTrue(listed.isSuccess());
+            assertFalse(
+                    listed.entries().stream().anyMatch(e -> e.path().contains("alice")),
+                    "list('') must not show a sibling namespace: " + listed.entries());
+
+            // The project layer legitimately contains this literal in the module's own test
+            // sources, so the assertion targets sibling-namespace paths, not the string.
+            GrepResult grepped = fs.grep(bob, "alice-secret-memory", "", null);
+            assertFalse(
+                    grepped.matches().stream().anyMatch(m -> m.path().contains("alice")),
+                    "grep('') must not read a sibling namespace: " + grepped.matches());
+
+            GlobResult globbed = fs.glob(bob, "**/*.md", "");
+            assertFalse(
+                    globbed.matches().stream().anyMatch(f -> f.path().contains("alice")),
+                    "glob('') must not list a sibling namespace: " + globbed.matches());
+
+            GrepResult relative = fs.grep(bob, "alice-secret-memory", ".", null);
+            assertFalse(
+                    relative.matches().stream().anyMatch(m -> m.path().contains("alice")),
+                    "grep('.') must not descend into the workspace subtree: " + relative.matches());
         }
     }
 
