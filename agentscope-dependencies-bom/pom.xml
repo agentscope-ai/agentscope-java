@@ -95,7 +95,7 @@
         <socket.io-client.version>2.1.2</socket.io-client.version>
         <mysql.version>9.6.0</mysql.version>
         <opentelemetry-reactor.version>2.33.1-alpha</opentelemetry-reactor.version>
-        <opentelemetry-semconv-incubating.version>1.41.0-alpha</opentelemetry-semconv-incubating.version>
+        <opentelemetry-semconv-incubating.version>1.45.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.2.0</redisson.version>
         <a2a-java-sdk.version>1.4.0.Final</a2a-java-sdk.version>
         <jedis.version>7.4.1</jedis.version>
