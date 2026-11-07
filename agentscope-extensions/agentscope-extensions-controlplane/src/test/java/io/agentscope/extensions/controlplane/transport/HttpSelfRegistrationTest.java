@@ -134,6 +134,8 @@ class HttpSelfRegistrationTest {
         AtomicReference<JsonNode> heartbeatBody = new AtomicReference<>();
         AtomicReference<JsonNode> deleteBody = new AtomicReference<>();
         AtomicReference<String> authHeader = new AtomicReference<>();
+        AtomicReference<String> heartbeatCredential = new AtomicReference<>();
+        AtomicReference<String> deleteCredential = new AtomicReference<>();
 
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         ExecutorService executor = Executors.newCachedThreadPool();
@@ -157,6 +159,10 @@ class HttpSelfRegistrationTest {
         server.createContext(
                 "/api/v1/dataplanes/" + durableId + "/heartbeat",
                 exchange -> {
+                    heartbeatCredential.set(
+                            exchange.getRequestHeaders()
+                                    .getFirst(
+                                            ControlPlaneHttpClient.REGISTRATION_CREDENTIAL_HEADER));
                     heartbeatBody.set(readJson(exchange));
                     heartbeat.countDown();
                     try {
@@ -173,6 +179,10 @@ class HttpSelfRegistrationTest {
         server.createContext(
                 "/api/v1/dataplanes/" + durableId,
                 exchange -> {
+                    deleteCredential.set(
+                            exchange.getRequestHeaders()
+                                    .getFirst(
+                                            ControlPlaneHttpClient.REGISTRATION_CREDENTIAL_HEADER));
                     deleteBody.set(readJson(exchange));
                     deletedAfterHeartbeat.set(heartbeatCompleted.get());
                     deleted.countDown();
@@ -205,6 +215,7 @@ class HttpSelfRegistrationTest {
                     "runtime-instance-key", registrationBody.get().path("instanceKey").asText());
             assertEquals("reviewer", registrationBody.get().path("agentKey").asText());
             assertEquals("secret-token", authHeader.get());
+            assertEquals("asreg_test", heartbeatCredential.get());
             assertEquals(7, heartbeatBody.get().path("generation").asLong());
             Future<?> closing = executor.submit(registration::close);
             try {
@@ -227,6 +238,80 @@ class HttpSelfRegistrationTest {
         }
         assertTrue(deletedAfterHeartbeat.get());
         assertEquals(7, deleteBody.get().path("generation").asLong());
+        assertEquals("asreg_test", deleteCredential.get());
+    }
+
+    @Test
+    void nonSuccessHeartbeatRetriesRegistrationUntilRecovery() throws Exception {
+        String durableId = "50b14458-e59b-4f53-bf51-bb96b7e4a1af";
+        AtomicInteger registrations = new AtomicInteger();
+        AtomicInteger heartbeats = new AtomicInteger();
+        CountDownLatch firstHeartbeat = new CountDownLatch(1);
+        CountDownLatch recovered = new CountDownLatch(1);
+
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/api/v1/agent-registrations",
+                exchange -> {
+                    int attempt = registrations.incrementAndGet();
+                    if (attempt == 2) {
+                        respond(exchange, 503, "{}");
+                        return;
+                    }
+                    int generation = attempt == 1 ? 7 : 8;
+                    respond(
+                            exchange,
+                            201,
+                            "{\"agent\":{\"id\":\"11111111-1111-1111-1111-111111111111\"},"
+                                + "\"binding\":{\"id\":\"22222222-2222-2222-2222-222222222222\"},"
+                                + "\"instance\":{\"id\":\""
+                                    + durableId
+                                    + "\",\"generation\":"
+                                    + generation
+                                    + "},"
+                                    + "\"registrationCredential\":\"asreg_test\"}");
+                });
+        server.createContext(
+                "/api/v1/dataplanes/" + durableId + "/heartbeat",
+                exchange -> {
+                    int attempt = heartbeats.incrementAndGet();
+                    firstHeartbeat.countDown();
+                    respond(exchange, attempt == 1 ? 503 : 200, "{}");
+                });
+        server.createContext(
+                "/api/v1/dataplanes/" + durableId, exchange -> respond(exchange, 204, ""));
+        server.start();
+
+        String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
+        try (HttpSelfRegistration registration =
+                new HttpSelfRegistration(
+                        endpoint,
+                        "secret-token",
+                        "",
+                        "reviewer",
+                        "tenant-a",
+                        "namespace-a",
+                        "runtime-instance-key",
+                        "http://127.0.0.1:9191",
+                        "agentscope-java",
+                        "agentscope",
+                        3,
+                        List.of("sessions"),
+                        20)) {
+            registration.setIdentityListener(
+                    identity -> {
+                        if (identity.generation() == 8) {
+                            recovered.countDown();
+                        }
+                    });
+            registration.start();
+            assertTrue(firstHeartbeat.await(2, TimeUnit.SECONDS));
+            assertTrue(recovered.await(2, TimeUnit.SECONDS));
+            assertEquals(3, registrations.get());
+            assertEquals(8, registration.identity().generation());
+        } finally {
+            server.stop(0);
+        }
     }
 
     private static JsonNode readJson(HttpExchange exchange) throws IOException {

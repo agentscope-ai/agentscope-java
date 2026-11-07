@@ -29,6 +29,7 @@ import (
 	"github.com/google/uuid"
 
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/dataplane"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/features"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 	_ "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store/memory"
@@ -103,6 +104,110 @@ func TestExternalAgentRegistrationIsOpenAndKeepsStableIdentity(t *testing.T) {
 	instances, err := st.RuntimeRegistry().ListAgentInstances(ctx, "acme", "engineering", created.Agent.ID)
 	if err != nil || len(instances) != 4 {
 		t.Fatalf("logical Agent should have four instances: instances=%+v err=%v", instances, err)
+	}
+}
+
+func TestDataPlaneRoutesAcceptScopedRegistrationCredential(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	server := NewServer(ServerOptions{
+		Store: st, InternalToken: "bootstrap-secret", Registry: dataplane.NewRegistry(),
+	})
+
+	registration := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/agent-registrations",
+		bytes.NewBufferString(`{"tenant":"acme","namespace":"engineering","agentKey":"reviewer","instanceKey":"pod-1"}`))
+	registration.Header.Set("Content-Type", "application/json")
+	registered := httptest.NewRecorder()
+	server.router.ServeHTTP(registered, registration)
+	if registered.Code != http.StatusCreated {
+		t.Fatalf("registration status=%d body=%s", registered.Code, registered.Body.String())
+	}
+	var identity struct {
+		Agent                  controlmodel.Agent         `json:"agent"`
+		Instance               controlmodel.AgentInstance `json:"instance"`
+		RegistrationCredential string                     `json:"registrationCredential"`
+	}
+	if err := json.Unmarshal(registered.Body.Bytes(), &identity); err != nil {
+		t.Fatal(err)
+	}
+
+	heartbeat := func(
+		instanceID string, generation int64, credential, internalToken string,
+	) *httptest.ResponseRecorder {
+		t.Helper()
+		body := fmt.Sprintf(`{"generation":%d}`, generation)
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/dataplanes/"+instanceID+"/heartbeat",
+			bytes.NewBufferString(body))
+		request.Header.Set("Content-Type", "application/json")
+		if credential != "" {
+			request.Header.Set(registrationCredentialHeader, credential)
+		}
+		if internalToken != "" {
+			request.Header.Set("X-Builder-Internal-Token", internalToken)
+		}
+		response := httptest.NewRecorder()
+		server.router.ServeHTTP(response, request)
+		return response
+	}
+
+	instanceID := identity.Instance.ID.String()
+	if got := heartbeat(instanceID, identity.Instance.Generation, "asreg_invalid", ""); got.Code != http.StatusUnauthorized {
+		t.Fatalf("invalid registration credential status=%d body=%s", got.Code, got.Body.String())
+	}
+	if identity.RegistrationCredential == "" || identity.Agent.ID != identity.Instance.AgentID {
+		t.Fatal("registration did not return a credential for its Agent instance")
+	}
+	if got := heartbeat(instanceID, identity.Instance.Generation, identity.RegistrationCredential, ""); got.Code != http.StatusOK {
+		t.Fatalf("scoped credential heartbeat status=%d body=%s", got.Code, got.Body.String())
+	}
+	if got := heartbeat(instanceID, identity.Instance.Generation, "", "bootstrap-secret"); got.Code != http.StatusOK {
+		t.Fatalf("internal-token heartbeat status=%d body=%s", got.Code, got.Body.String())
+	}
+
+	otherRegistration := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/agent-registrations",
+		bytes.NewBufferString(`{"tenant":"acme","namespace":"engineering","agentKey":"other","instanceKey":"pod-2"}`))
+	otherRegistration.Header.Set("Content-Type", "application/json")
+	otherRegistered := httptest.NewRecorder()
+	server.router.ServeHTTP(otherRegistered, otherRegistration)
+	if otherRegistered.Code != http.StatusCreated {
+		t.Fatalf("second registration status=%d body=%s", otherRegistered.Code, otherRegistered.Body.String())
+	}
+	var otherIdentity struct {
+		Instance controlmodel.AgentInstance `json:"instance"`
+	}
+	if err := json.Unmarshal(otherRegistered.Body.Bytes(), &otherIdentity); err != nil {
+		t.Fatal(err)
+	}
+	if got := heartbeat(
+		otherIdentity.Instance.ID.String(),
+		otherIdentity.Instance.Generation,
+		identity.RegistrationCredential,
+		"",
+	); got.Code != http.StatusUnauthorized {
+		t.Fatalf("cross-Agent credential status=%d body=%s", got.Code, got.Body.String())
+	}
+
+	body := fmt.Sprintf(`{"generation":%d}`, identity.Instance.Generation)
+	unregister := httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/dataplanes/"+identity.Instance.ID.String(),
+		bytes.NewBufferString(body))
+	unregister.Header.Set("Content-Type", "application/json")
+	unregister.Header.Set(registrationCredentialHeader, identity.RegistrationCredential)
+	unregistered := httptest.NewRecorder()
+	server.router.ServeHTTP(unregistered, unregister)
+	if unregistered.Code != http.StatusNoContent {
+		t.Fatalf("scoped credential unregister status=%d body=%s", unregistered.Code, unregistered.Body.String())
 	}
 }
 

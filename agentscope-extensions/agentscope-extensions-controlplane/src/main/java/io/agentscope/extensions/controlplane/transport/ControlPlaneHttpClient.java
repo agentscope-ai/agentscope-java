@@ -39,6 +39,7 @@ public final class ControlPlaneHttpClient {
     public record BytesResponse(int status, byte[] body) {}
 
     static final String INTERNAL_TOKEN_HEADER = "X-Builder-Internal-Token";
+    static final String REGISTRATION_CREDENTIAL_HEADER = "X-Agent-Registration-Credential";
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(10);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 

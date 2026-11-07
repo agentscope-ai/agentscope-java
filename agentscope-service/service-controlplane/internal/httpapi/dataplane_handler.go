@@ -16,6 +16,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -24,7 +25,10 @@ import (
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/dataplane"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/prober"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
+
+const registrationCredentialHeader = "X-Agent-Registration-Credential"
 
 type registerReq struct {
 	Tenant        string   `json:"tenant"`
@@ -41,6 +45,80 @@ type registerReq struct {
 
 func (s *Server) registerDataPlane(c *gin.Context) {
 	c.JSON(http.StatusGone, ErrorResponse{Error: "use POST /api/v1/agent-registrations with agentKey and a registration credential"})
+}
+
+func (s *Server) dataPlaneAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if s.internalToken == "" {
+			c.Next()
+			return
+		}
+		token := c.GetHeader("X-Builder-Internal-Token")
+		if token != "" && token == s.internalToken {
+			c.Next()
+			return
+		}
+		valid, err := s.registrationCredentialMatchesInstance(
+			c,
+			c.GetHeader(registrationCredentialHeader))
+		if err != nil {
+			c.AbortWithStatusJSON(
+				http.StatusInternalServerError,
+				ErrorResponse{Error: "failed to validate registration credential"})
+			return
+		}
+		if !valid {
+			c.AbortWithStatusJSON(
+				http.StatusUnauthorized,
+				ErrorResponse{Error: "invalid internal token or registration credential"})
+			return
+		}
+		c.Next()
+	}
+}
+
+func (s *Server) registrationCredentialMatchesInstance(
+	c *gin.Context, credential string) (bool, error) {
+	if credential == "" || s.store == nil {
+		return false, nil
+	}
+	instanceID, err := uuid.Parse(c.Param("instanceId"))
+	if err != nil {
+		return false, nil
+	}
+	instance, err := s.store.RuntimeRegistry().GetAgentInstance(c.Request.Context(), instanceID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	agent, err := s.store.AgentCatalog().GetAgent(c.Request.Context(), instance.AgentID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	_, err = s.store.AgentCatalog().ValidateInstanceClaim(
+		c.Request.Context(),
+		store.AgentInstanceClaim{
+			Tenant:         instance.Tenant,
+			Namespace:      instance.Namespace,
+			AgentID:        instance.AgentID,
+			BindingID:      instance.BindingID,
+			AgentKey:       agent.AgentKey,
+			InstanceKey:    instance.InstanceKey,
+			Generation:     instance.Generation,
+			CredentialHash: registrationTokenHash(credential),
+		})
+	if errors.Is(err, store.ErrForbidden) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Server) heartbeatDataPlane(c *gin.Context) {
