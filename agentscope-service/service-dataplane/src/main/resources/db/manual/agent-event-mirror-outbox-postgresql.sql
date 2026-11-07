@@ -20,7 +20,7 @@ CREATE INDEX IF NOT EXISTS ix_event_outbox_delivery ON builder_session_event_out
 CREATE INDEX IF NOT EXISTS ix_event_outbox_session ON builder_session_event_outbox(session_id,event_seq);
 CREATE INDEX IF NOT EXISTS ix_event_outbox_attempt ON builder_session_event_outbox(session_id,attempt_id,delivered_at);
 CREATE TABLE IF NOT EXISTS builder_session_execution_scope (
-    admission_id varchar(128) PRIMARY KEY,
+    admission_id varchar(255) PRIMARY KEY,
     session_id varchar(64) NOT NULL,
     attempt_id varchar(64),
     run_id varchar(64),
@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS builder_session_execution_scope (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ix_execution_scope_run ON builder_session_execution_scope(run_id);
 CREATE INDEX IF NOT EXISTS ix_execution_scope_attempt ON builder_session_execution_scope(session_id,attempt_id);
+-- admission_id stores the coordination id ("<instanceId>/<uuid>") and must fit the same
+-- value as builder_coord_lease.instance_id; widen existing deployments created as varchar(128).
+ALTER TABLE builder_session_execution_scope ALTER COLUMN admission_id TYPE varchar(255);
 CREATE TABLE IF NOT EXISTS builder_session_event_fence (
     attempt_id varchar(64) PRIMARY KEY,
     session_id varchar(64) NOT NULL,

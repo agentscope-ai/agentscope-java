@@ -32,7 +32,7 @@ import jakarta.persistence.Version;
         })
 public class SessionExecutionScopeEntity {
     @Id
-    @Column(name = "admission_id", length = 128)
+    @Column(name = "admission_id", length = 255)
     public String admissionId;
 
     @Column(name = "session_id", nullable = false, length = 64)
