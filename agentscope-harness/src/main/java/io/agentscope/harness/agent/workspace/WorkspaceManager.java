@@ -120,6 +120,13 @@ public class WorkspaceManager implements AutoCloseable {
      */
     private final Map<String, ReentrantLock> pathLocks = new ConcurrentHashMap<>();
 
+    /**
+     * Memory paths already reported as an un-namespaced leftover at the workspace root, so the
+     * warning is emitted once per path per process rather than once per read (memory is read on
+     * every call).
+     */
+    private final Set<String> warnedLegacyRootCopies = ConcurrentHashMap.newKeySet();
+
     private final Path workspace;
     private final AbstractFilesystem filesystem;
 
@@ -274,7 +281,7 @@ public class WorkspaceManager implements AutoCloseable {
      * persistent store when one is mounted for it (e.g. on the {@code memory/} prefix), the
      * host runtime-data namespace when that backend is the per-call sandbox proxy (memory
      * files are cross-call metadata written by the fire-and-forget flush after the sandbox
-     * may be gone, #3110), and the standard two-layer read otherwise.
+     * may be gone, #3110), and a namespace-anchored two-layer read otherwise.
      *
      * <p><b>Durability assumption:</b> host-side routing presumes the host workspace outlives
      * the process or is shared across replicas. A stateless multi-replica deployment with
@@ -295,7 +302,7 @@ public class WorkspaceManager implements AutoCloseable {
             }
             return readFileQuietly(hostPath);
         }
-        return readWithOverride(rc, normalized);
+        return readNamespacedRuntimeData(rc, normalized);
     }
 
     /**
@@ -379,6 +386,10 @@ public class WorkspaceManager implements AutoCloseable {
     /**
      * Reads a UTF-8 file under the workspace, using the two-layer pattern:
      * filesystem first, then local disk fallback.
+     *
+     * <p>Same namespace caveat as {@link #readWithOverride}: the fallback reads the workspace
+     * root, so this suits build-time configuration files ({@code additionalContextFiles},
+     * {@code tools.json}), not per-identity runtime data.
      */
     public String readManagedWorkspaceFileUtf8(RuntimeContext rc, String relativePath) {
         if (relativePath == null || relativePath.isBlank()) {
@@ -1021,8 +1032,11 @@ public class WorkspaceManager implements AutoCloseable {
     // ==================== Two-layer read/write helpers ====================
 
     /**
-     * Two-layer read: filesystem first (namespaced by {@link
-     * NamespaceFactory}), local disk fallback.
+     * Two-layer read for shared, non-identity content ({@code AGENTS.md}, {@code knowledge/*}):
+     * filesystem first (namespaced by {@link NamespaceFactory}), then the workspace-root disk
+     * copy. The fallback deliberately stays outside the namespace — those files are
+     * configuration shared by every caller. Per-identity runtime data must use
+     * {@link #readNamespacedRuntimeData} instead.
      */
     private String readWithOverride(RuntimeContext rc, String relativePath) {
         String fsContent = readTextThroughFilesystem(rc, relativePath);
@@ -1030,6 +1044,64 @@ public class WorkspaceManager implements AutoCloseable {
             return fsContent;
         }
         return readFileQuietly(workspace.resolve(relativePath));
+    }
+
+    /**
+     * Two-layer read for per-user runtime data ({@code MEMORY.md}, the daily ledgers, the
+     * consolidation watermark): filesystem first, then the local disk <em>inside the
+     * caller's namespace</em>.
+     *
+     * <p>Unlike {@link #readWithOverride}, the fallback never resolves an un-namespaced path
+     * at the workspace root. A root-level copy belongs to no identity — it is either a
+     * leftover from a pre-namespace workspace or a file written by an explicitly shared
+     * deployment — so serving it to an identified caller would hand one user another user's
+     * data: a relative path such as {@code other-user/MEMORY.md} resolves to the sibling's
+     * namespace directory once the caller's own prefix is not applied. Contexts with no
+     * namespace at all ({@code userId} and {@code sessionId} both absent) keep the historical
+     * root read, which is what single-tenant setups rely on.
+     */
+    private String readNamespacedRuntimeData(RuntimeContext rc, String relativePath) {
+        if (filesystem == null) {
+            // Without a filesystem layer the write path does not apply a namespace either
+            // ({@link #writeUtf8WorkspaceRelative}), so the root copy is the caller's own.
+            return readFileQuietly(workspace.resolve(relativePath));
+        }
+        String fsContent = readTextThroughFilesystem(rc, relativePath);
+        if (!fsContent.isEmpty()) {
+            return fsContent;
+        }
+        List<String> ns =
+                namespaceFactory != null
+                        ? namespaceFactory.getNamespace(rc != null ? rc : RuntimeContext.empty())
+                        : List.of();
+        if (ns == null || ns.isEmpty()) {
+            return readFileQuietly(workspace.resolve(relativePath));
+        }
+        Path namespaced = resolveRuntimeDataPath(rc, relativePath);
+        String content = readFileQuietly(namespaced);
+        if (content.isEmpty()) {
+            warnWhenUnnamespacedRootCopyExists(relativePath, namespaced);
+        }
+        return content;
+    }
+
+    /**
+     * Surfaces a pre-namespace leftover once per path: the root copy belongs to no identity, so
+     * it is no longer served to identified callers. An operator upgrading a workspace that
+     * predates namespace scoping has to move the file into the namespace directory to keep it.
+     */
+    private void warnWhenUnnamespacedRootCopyExists(String relPath, Path namespacedPath) {
+        if (Files.exists(namespacedPath) || !Files.isRegularFile(workspace.resolve(relPath))) {
+            return;
+        }
+        if (warnedLegacyRootCopies.add(relPath)) {
+            log.warn(
+                    "Memory file {} exists at the workspace root but not in the caller's"
+                            + " namespace ({}); root copies are no longer served to identified"
+                            + " callers — move it into the namespace directory to keep it",
+                    relPath,
+                    namespacedPath);
+        }
     }
 
     private String readFileQuietly(Path path) {
