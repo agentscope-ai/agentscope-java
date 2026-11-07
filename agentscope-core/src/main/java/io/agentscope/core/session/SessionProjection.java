@@ -41,15 +41,15 @@ public record SessionProjection(
         long upper = log.head().seq();
         for (var event : log.scan(0, upper)) {
             SessionEventTypes.validate(event);
-            var data = event.data();
             switch (event.type()) {
                 case "state/checkpoint", "migration/baseline", "state/restored" -> {
-                    state = (String) data.get("stateJson");
+                    state = (String) event.data().get("stateJson");
                     results.clear();
                     verifications.clear();
                     extensions.clear();
                 }
                 case "verification/result" -> {
+                    var data = event.data();
                     if (data.get("verification") != null)
                         verifications.add(
                                 JsonUtils.getJsonCodec()
@@ -57,8 +57,9 @@ public record SessionProjection(
                                                 data.get("verification"),
                                                 io.agentscope.core.state.TaskVerification.class));
                 }
-                case "tool/dispatch" -> uncertain.add((String) data.get("toolCallId"));
+                case "tool/dispatch" -> uncertain.add((String) event.data().get("toolCallId"));
                 case "action/end" -> {
+                    var data = event.data();
                     if (data.get("result") != null) {
                         String id = (String) data.get("toolCallId");
                         uncertain.remove(id);
@@ -73,6 +74,7 @@ public record SessionProjection(
                     }
                 }
                 case "recovery/applied" -> {
+                    var data = event.data();
                     Object interrupted = data.get("interruptedRuns");
                     if (interrupted instanceof List<?> ids) ids.forEach(runs::remove);
                     Object resolved = data.get("resolvedToolCallIds");
