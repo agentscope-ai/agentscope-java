@@ -198,14 +198,23 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     public <T extends State> Optional<T> get(
             String userId, String sessionId, String key, Class<T> type) {
         Path file = getStatePath(userId, sessionId, key);
-        if (!Files.exists(file)) {
-            return Optional.empty();
-        }
+        // Readers take the same per-file lock as writers: on Windows an open read handle
+        // blocks another thread's replace of the same file (AccessDeniedException), so
+        // reads and writes must be mutually exclusive per target.
+        ReentrantLock lock = lockFor(file);
+        lock.lock();
         try {
-            String json = Files.readString(file, StandardCharsets.UTF_8);
-            return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to load state: " + key, e);
+            if (!Files.exists(file)) {
+                return Optional.empty();
+            }
+            try {
+                String json = Files.readString(file, StandardCharsets.UTF_8);
+                return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to load state: " + key, e);
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -213,22 +222,29 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     public <T extends State> List<T> getList(
             String userId, String sessionId, String key, Class<T> itemType) {
         Path file = getListPath(userId, sessionId, key);
-        if (!Files.exists(file)) {
-            return List.of();
-        }
+        ReentrantLock lock = lockFor(file);
+        lock.lock();
         try {
-            List<T> result = new ArrayList<>();
-            try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (!line.isBlank()) {
-                        result.add(JsonUtils.getJsonCodec().fromJson(line, itemType));
+            if (!Files.exists(file)) {
+                return List.of();
+            }
+            try {
+                List<T> result = new ArrayList<>();
+                try (BufferedReader reader =
+                        Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (!line.isBlank()) {
+                            result.add(JsonUtils.getJsonCodec().fromJson(line, itemType));
+                        }
                     }
                 }
+                return result;
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to load list: " + key, e);
             }
-            return result;
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to load list: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -247,10 +263,15 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     @Override
     public void delete(String userId, String sessionId, String key) {
+        Path file = getStatePath(userId, sessionId, key);
+        ReentrantLock lock = lockFor(file);
+        lock.lock();
         try {
-            Files.deleteIfExists(getStatePath(userId, sessionId, key));
+            Files.deleteIfExists(file);
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete state: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
