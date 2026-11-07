@@ -251,7 +251,7 @@ public final class DefaultAgentManager {
                                 .userId(userId)
                                 // Subagents keep their build-time model; the caller's per-call
                                 // model choice applies only to the agent it was handed to.
-                                .modelId(null)
+                                .modelIdentity(null)
                                 .build();
         var recorder = SessionRecorder.from(parent);
         child.put(SessionRecorder.CONTEXT_KEY, null);

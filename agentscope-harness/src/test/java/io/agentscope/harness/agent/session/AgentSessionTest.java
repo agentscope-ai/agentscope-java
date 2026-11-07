@@ -271,7 +271,7 @@ class AgentSessionTest {
                         return Flux.error(
                                 new AssertionError(
                                         "session turns must not inherit the caller's per-call"
-                                                + " modelId"));
+                                                + " modelIdentity"));
                     }
                 };
         ModelRegistry.register("sticky-per-call", sticky);
@@ -282,7 +282,7 @@ class AgentSessionTest {
                                 RuntimeContext.builder()
                                         .userId("u")
                                         .sessionId("s")
-                                        .modelId("sticky-per-call")
+                                        .modelIdentity("sticky-per-call")
                                         .build());
                 var done = session.await(session.submit("begin")).block(WAIT);
                 assertEquals("completed", done.status(), session.executionError());
