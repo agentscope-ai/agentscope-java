@@ -229,6 +229,37 @@ class OpenAIChatFormatterTest {
     }
 
     @Test
+    @DisplayName("Should encode tool names violating the OpenAI name pattern")
+    void testApplyToolsEncodesInvalidNames() {
+        OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+        ToolSchema dotted = ToolSchema.builder().name("task.get").description("Get task").build();
+        ToolSchema valid =
+                ToolSchema.builder().name("get_weather").description("Get weather").build();
+
+        formatter.applyTools(request, List.of(dotted, valid));
+
+        assertNotNull(request.getTools());
+        assertEquals(2, request.getTools().size());
+        assertEquals("task_get", request.getTools().get(0).getFunction().getName());
+        assertEquals("get_weather", request.getTools().get(1).getFunction().getName());
+    }
+
+    @Test
+    @DisplayName("Should encode specific tool choice names violating the OpenAI name pattern")
+    void testApplyToolChoiceEncodesInvalidNames() {
+        OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+        request.setTools(createDummyTools());
+
+        ToolChoice toolChoice = new ToolChoice.Specific("task.get");
+
+        formatter.applyToolChoice(request, toolChoice);
+
+        assertNotNull(request.getToolChoice());
+        assertTrue(request.getToolChoice().toString().contains("task_get"));
+    }
+
+    @Test
     @DisplayName("Should apply tool choice to request")
     void testApplyToolChoice() {
         OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
