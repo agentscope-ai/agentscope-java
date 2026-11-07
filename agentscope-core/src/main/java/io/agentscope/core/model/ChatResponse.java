@@ -16,6 +16,7 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.message.ContentBlock;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -110,6 +111,29 @@ public class ChatResponse {
      */
     public ChatResponse withId(String newId) {
         return new ChatResponse(newId, this.content, this.usage, this.metadata, this.finishReason);
+    }
+
+    /**
+     * Creates a new instance with one metadata entry merged, copying all other fields.
+     *
+     * <p>Unlike {@code AgentEvent#withMetadataEntry}, which mutates the event and returns it, this
+     * method leaves the receiver untouched: callers must use the returned instance. A null or blank
+     * key is ignored, matching {@code AgentEvent#withMetadataEntry}.
+     *
+     * @param key metadata key
+     * @param value metadata value
+     * @return a new ChatResponse instance, or this instance when the key is null or blank
+     */
+    public ChatResponse withMetadataEntry(String key, Object value) {
+        if (key == null || key.isBlank()) {
+            return this;
+        }
+        Map<String, Object> next = new LinkedHashMap<>();
+        if (this.metadata != null) {
+            next.putAll(this.metadata);
+        }
+        next.put(key, value);
+        return new ChatResponse(id, content, usage, next, finishReason);
     }
 
     /**
