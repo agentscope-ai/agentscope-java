@@ -25,6 +25,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
@@ -40,6 +41,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.test.StepVerifier;
@@ -159,6 +161,89 @@ class TrainingRouterTest {
         ErrorEvent errorEvent = new ErrorEvent(mockAgent, new RuntimeException("Test error"));
 
         StepVerifier.create(router.onEvent(errorEvent)).expectNext(errorEvent).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should train a call on its own inputs when two calls overlap")
+    @SuppressWarnings("unchecked")
+    void shouldTrainEachCallWithItsOwnInputs() {
+        when(mockAgent.getAgentId()).thenReturn("agent-123");
+        when(mockAgent.getName()).thenReturn("TestAgent");
+
+        Object scopeOfFirstCall = new Object();
+        Object scopeOfSecondCall = new Object();
+        List<Msg> firstInputs =
+                Collections.singletonList(
+                        Msg.builder().role(MsgRole.USER).textContent("first-call").build());
+        List<Msg> secondInputs =
+                Collections.singletonList(
+                        Msg.builder().role(MsgRole.USER).textContent("second-call").build());
+
+        // Two calls on the same agent. AgentBase#callSerializationKey only serializes calls
+        // that share a session, so calls belonging to different sessions overlap by design.
+        router.onEvent(new PreCallEvent(mockAgent, firstInputs))
+                .contextWrite(c -> c.put(AgentBase.CALL_SCOPE_KEY, scopeOfFirstCall))
+                .block();
+        router.onEvent(new PreCallEvent(mockAgent, secondInputs))
+                .contextWrite(c -> c.put(AgentBase.CALL_SCOPE_KEY, scopeOfSecondCall))
+                .block();
+
+        when(selectionStrategy.shouldSelect(any(), anyList(), any(), any()))
+                .thenReturn(SelectionDecision.reject("not selected"));
+
+        Msg outputMsg = Msg.builder().role(MsgRole.ASSISTANT).textContent("Response").build();
+        router.onEvent(new PostCallEvent(mockAgent, outputMsg))
+                .contextWrite(c -> c.put(AgentBase.CALL_SCOPE_KEY, scopeOfFirstCall))
+                .block();
+
+        ArgumentCaptor<List<Msg>> seenInputs = ArgumentCaptor.forClass(List.class);
+        verify(selectionStrategy).shouldSelect(any(), seenInputs.capture(), any(), any());
+        assertEquals(
+                "first-call",
+                seenInputs.getValue().get(0).getTextContent(),
+                "the first call must be trained on its own inputs, not on a later call");
+    }
+
+    @Test
+    @DisplayName("Should drop the saved inputs when the call ends in an error")
+    void shouldDropSavedInputsWhenTheCallEndsInAnError() {
+        when(mockAgent.getAgentId()).thenReturn("agent-error");
+        when(mockAgent.getName()).thenReturn("TestAgent");
+
+        Object callScope = new Object();
+        List<Msg> inputs =
+                Collections.singletonList(
+                        Msg.builder().role(MsgRole.USER).textContent("doomed").build());
+
+        router.onEvent(new PreCallEvent(mockAgent, inputs))
+                .contextWrite(c -> c.put(AgentBase.CALL_SCOPE_KEY, callScope))
+                .block();
+        router.onEvent(new ErrorEvent(mockAgent, new RuntimeException("boom")))
+                .contextWrite(c -> c.put(AgentBase.CALL_SCOPE_KEY, callScope))
+                .block();
+
+        Msg outputMsg = Msg.builder().role(MsgRole.ASSISTANT).textContent("Response").build();
+        router.onEvent(new PostCallEvent(mockAgent, outputMsg))
+                .contextWrite(c -> c.put(AgentBase.CALL_SCOPE_KEY, callScope))
+                .block();
+
+        // The error already consumed the entry, so the late PostCall has nothing to train on.
+        verify(selectionStrategy, never()).shouldSelect(any(), anyList(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Should tolerate an agent that exposes no id to key the call by")
+    void shouldTolerateAnAgentWithoutId() {
+        when(mockAgent.getAgentId()).thenReturn(null);
+
+        List<Msg> inputs =
+                Collections.singletonList(
+                        Msg.builder().role(MsgRole.USER).textContent("Hello").build());
+        PreCallEvent event = new PreCallEvent(mockAgent, inputs);
+
+        StepVerifier.create(router.onEvent(event).contextWrite(Context.empty()))
+                .expectNext(event)
+                .verifyComplete();
     }
 
     @Test
