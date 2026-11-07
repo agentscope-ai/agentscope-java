@@ -20,6 +20,7 @@ import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import io.opentelemetry.context.Context;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -328,15 +329,13 @@ public class WorkspaceTaskRepository implements TaskRepository {
                         }
                     });
         } else if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
+            // The child starts a fresh Reactor subscription on a worker with no caller context.
+            Supplier<String> execution = Context.current().wrapSupplier(local.execution());
             future =
                     CompletableFuture.supplyAsync(
                             () ->
                                     runLocalSupplier(
-                                            capturedRc,
-                                            sessionId,
-                                            taskId,
-                                            subAgentId,
-                                            local.execution()),
+                                            capturedRc, sessionId, taskId, subAgentId, execution),
                             executor);
         } else if (spec instanceof TaskRunSpec.RemoteTaskRunSpec remote) {
             future =
