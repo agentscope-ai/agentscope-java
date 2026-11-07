@@ -99,6 +99,8 @@ BaseStore store = JdbcStore.builder(dataSource)
 
 **并发安全**：`putIfVersion` 通过单语句 CAS `UPDATE ... WHERE version = ?` 实现，所有已支持数据库均可用。
 
+插入或更新因数据库错误失败时，`putIfVersion` 抛出的 `IllegalStateException` 消息包含 SQLState 和数据库错误消息，并继续以原始 `SQLException` 作为 cause。重复键插入仍返回 `false`。
+
 ### 3. JdbcSnapshotSpec
 
 沙箱快照以 BLOB 存储到数据库表（MySQL 为 LONGBLOB，PostgreSQL 为 BYTEA）。

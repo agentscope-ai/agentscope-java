@@ -135,7 +135,12 @@ public class JdbcStore implements BaseStore {
                 if (isDuplicateKey(e)) {
                     return false;
                 }
-                throw new IllegalStateException("JdbcStore putIfVersion (insert) failed", e);
+                throw new IllegalStateException(
+                        "JdbcStore putIfVersion (insert) failed [SQLState="
+                                + e.getSQLState()
+                                + "]: "
+                                + e.getMessage(),
+                        e);
             }
         }
 
@@ -145,7 +150,12 @@ public class JdbcStore implements BaseStore {
             bindParams(ps, boundSql.params());
             return ps.executeUpdate() == 1;
         } catch (SQLException e) {
-            throw new IllegalStateException("JdbcStore putIfVersion (update) failed", e);
+            throw new IllegalStateException(
+                    "JdbcStore putIfVersion (update) failed [SQLState="
+                            + e.getSQLState()
+                            + "]: "
+                            + e.getMessage(),
+                    e);
         }
     }
 

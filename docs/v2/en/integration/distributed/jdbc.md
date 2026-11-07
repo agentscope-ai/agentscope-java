@@ -99,6 +99,8 @@ BaseStore store = JdbcStore.builder(dataSource)
 
 **Concurrency**: `putIfVersion` uses a single-statement CAS `UPDATE ... WHERE version = ?`, supported on all databases above.
 
+If an insert or update fails with a database error, `putIfVersion` throws an `IllegalStateException` whose message includes the SQLState and database error message; the original `SQLException` remains the cause. Duplicate-key inserts still return `false`.
+
 ### 3. JdbcSnapshotSpec
 
 Sandbox snapshots stored as BLOBs (LONGBLOB on MySQL, BYTEA on PostgreSQL).
