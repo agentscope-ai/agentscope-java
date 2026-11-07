@@ -69,27 +69,39 @@ public class ManagedEventOutbox {
 
     /** Called inside the source-event transaction. Failure must roll it back. */
     public void enqueue(SessionEventDto event, SessionEventScope scope) {
-        if (scope == null || !scope.managed()) return;
+        SessionEventScope captured = scope == null ? SessionEventScope.NONE : scope;
+        if (!captured.managed()) {
+            // Generic events from task sessions must not block the queue with unfenced reports.
+            // A durable admission without an Attempt identifies an admitted personal Chat.
+            if (!captured.forNativeFact().equals(SessionEventScope.NONE.forNativeFact())
+                    || scopes.findBySessionIdAndAttemptId(event.sessionId(), null).isEmpty())
+                return;
+        }
         if (!TransactionSynchronizationManager.isActualTransactionActive())
             throw new IllegalStateException("Mirror outbox requires the source event transaction");
-        String report = json(client.sessionEventReport(event, scope));
+        // Keep existing NOT NULL outbox schemas compatible. The empty value is local only;
+        // personal Chat reports omit the orchestration fence entirely.
+        String attemptId = captured.managed() ? captured.attemptId() : "";
+        String report = json(client.sessionEventReport(event, captured));
         var old = events.findById(event.id());
         if (old.isPresent()) {
             if (!old.get().sessionId.equals(event.sessionId())
-                    || !old.get().attemptId.equals(scope.attemptId())
+                    || !old.get().attemptId.equals(attemptId)
                     || !tree(old.get().reportJson).equals(tree(report)))
                 throw new IllegalStateException(
                         "Mirror event identity or fence changed: " + event.id());
             return;
         }
-        var fence = lockFence(event.sessionId(), scope.attemptId());
-        if (fence.sealed || (fence.closing && !scope.nativeFact()))
-            throw new IllegalStateException(
-                    "Managed Attempt events are permanently sealed: " + scope.attemptId());
+        if (captured.managed()) {
+            var fence = lockFence(event.sessionId(), attemptId);
+            if (fence.sealed || (fence.closing && !captured.nativeFact()))
+                throw new IllegalStateException(
+                        "Managed Attempt events are permanently sealed: " + attemptId);
+        }
         var row = new SessionEventOutboxEntity();
         row.eventId = event.id();
         row.sessionId = event.sessionId();
-        row.attemptId = scope.attemptId();
+        row.attemptId = attemptId;
         row.eventSeq = event.seq();
         row.reportJson = report;
         row.createdAt = System.currentTimeMillis();

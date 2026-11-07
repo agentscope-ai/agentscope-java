@@ -68,6 +68,8 @@ Reopen the original work and query saved events and current state. SSE ending is
 
 Diagnostic endpoints include `/messages` (`offset`, `limit`, `fromEnd`), `/context`, `/events`, `/events/stream`, and `/turns`. Availability depends on the runtime's observation and query capabilities. Registering an Agent does not imply full context access or recovery support. For business-facing session management, use the Agent API below.
 
+Managed Agent personal Chat also synchronizes messages and execution events to the control plane after execution is admitted, even though it has no orchestration Attempt. Delivery is asynchronous and retries after a temporary control-plane outage. Refresh the existing conversation to read delivered events instead of resubmitting the same message.
+
 ## Managed Session log and recovery entry points
 
 Agent API correlates session_id → turn_id → run_id; run_id is not an orchestration Run ID. Snapshot supplies items/tools/turns/required_actions and an as_of cursor for stream resumption. GET turns returns command states keyed by the submitted turn ID.
