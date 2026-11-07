@@ -223,6 +223,10 @@ public class OkHttpTransport implements HttpTransport {
         boolean isNdjson =
                 TransportConstants.STREAM_FORMAT_NDJSON.equals(
                         request.getHeaders().get(TransportConstants.STREAM_FORMAT_HEADER));
+        String terminator =
+                isNdjson
+                        ? null
+                        : request.getHeaders().get(TransportConstants.STREAM_TERMINATOR_HEADER);
         return Flux.<String>create(
                         sink -> {
                             Response response = null;
@@ -257,6 +261,8 @@ public class OkHttpTransport implements HttpTransport {
                                                         body.byteStream(), StandardCharsets.UTF_8));
 
                                 String line;
+                                boolean sawMarker = false;
+                                String marker = terminator != null ? terminator : SSE_DONE_MARKER;
                                 while ((line = reader.readLine()) != null) {
                                     if (sink.isCancelled()) {
                                         break;
@@ -279,8 +285,9 @@ public class OkHttpTransport implements HttpTransport {
                                                 line.substring(SSE_DATA_PREFIX.length()).trim();
 
                                         // Check for stream end marker
-                                        if (SSE_DONE_MARKER.equals(data)) {
-                                            log.debug("Received SSE [DONE] marker");
+                                        if (marker.equals(data)) {
+                                            sawMarker = true;
+                                            log.debug("Received SSE {} marker", marker);
                                             break;
                                         }
 
@@ -291,7 +298,14 @@ public class OkHttpTransport implements HttpTransport {
                                     // Skip other SSE fields (event:, id:, retry:, comments)
                                 }
 
-                                sink.complete();
+                                // A body that ends before the caller-declared terminator was cut
+                                // short; a clean close is not proof of complete content. Skip the
+                                // check on cancellation: an aborted read sees no marker by design.
+                                if (terminator != null && !sawMarker && !sink.isCancelled()) {
+                                    sink.error(new StreamTerminationException(terminator));
+                                } else {
+                                    sink.complete();
+                                }
                             } catch (IOException e) {
                                 if (!sink.isCancelled()) {
                                     sink.error(

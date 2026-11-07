@@ -15,14 +15,20 @@
  */
 package io.agentscope.extensions.model.openai;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.StreamTerminationException;
+import io.agentscope.core.model.transport.TransportConstants;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
+import io.agentscope.extensions.model.openai.exception.OpenAIException;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -76,6 +82,33 @@ class OpenAIStreamTerminationTest {
                 .build();
     }
 
+    /** A transport whose SSE body emits the given lines and then closes the connection. */
+    private static HttpTransport closingTransport(String... lines) {
+        return new HttpTransport() {
+            @Override
+            public HttpResponse execute(HttpRequest request) {
+                throw new UnsupportedOperationException("not used in this test");
+            }
+
+            @Override
+            public Flux<String> stream(HttpRequest request) {
+                return Flux.just(lines);
+            }
+
+            @Override
+            public void close() {}
+        };
+    }
+
+    private static Flux<?> streamOf(HttpTransport transport) {
+        return new OpenAIClient(transport)
+                .stream(
+                        "test-key",
+                        "http://localhost",
+                        sampleRequest(),
+                        GenerateOptions.builder().build());
+    }
+
     @Test
     @DisplayName("Stream should complete on [DONE] even if the connection stays open")
     void streamCompletesOnDoneSentinelWithoutWaitingForConnectionClose() {
@@ -88,6 +121,85 @@ class OpenAIStreamTerminationTest {
                                 sampleRequest(),
                                 GenerateOptions.builder().build()))
                 .expectNextCount(2)
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    @DisplayName("Client declares the [DONE] terminator so enforcing transports reject truncation")
+    void clientDeclaresStreamTerminatorHeader() {
+        AtomicReference<HttpRequest> captured = new AtomicReference<>();
+        HttpTransport capturing =
+                new HttpTransport() {
+                    @Override
+                    public HttpResponse execute(HttpRequest request) {
+                        throw new UnsupportedOperationException("not used in this test");
+                    }
+
+                    @Override
+                    public Flux<String> stream(HttpRequest request) {
+                        captured.set(request);
+                        return Flux.just(CHUNK_CONTENT, "[DONE]");
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+
+        StepVerifier.create(streamOf(capturing))
+                .expectNextCount(1)
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
+        assertEquals(
+                "[DONE]",
+                captured.get().getHeaders().get(TransportConstants.STREAM_TERMINATOR_HEADER));
+    }
+
+    @Test
+    @DisplayName("Transport-reported early termination maps to a stream_terminated_early error")
+    void earlyTerminationFromTransportFailsTheStream() {
+        // Simulates a transport honoring STREAM_TERMINATOR_HEADER: the body ended before [DONE].
+        HttpTransport truncating =
+                new HttpTransport() {
+                    @Override
+                    public HttpResponse execute(HttpRequest request) {
+                        throw new UnsupportedOperationException("not used in this test");
+                    }
+
+                    @Override
+                    public Flux<String> stream(HttpRequest request) {
+                        return Flux.just(CHUNK_CONTENT)
+                                .concatWith(Flux.error(new StreamTerminationException("[DONE]")));
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+
+        StepVerifier.create(streamOf(truncating))
+                .expectNextCount(1)
+                .expectErrorMatches(
+                        e ->
+                                e instanceof OpenAIException
+                                        && "stream_terminated_early"
+                                                .equals(((OpenAIException) e).getErrorCode()))
+                .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    @DisplayName("finish_reason without [DONE] is a normal completion (lenient gateways)")
+    void finishReasonWithoutDoneSentinelCompletes() {
+        StepVerifier.create(streamOf(closingTransport(CHUNK_CONTENT, CHUNK_FINISH)))
+                .expectNextCount(2)
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    @DisplayName("[DONE] without finish_reason is a normal completion")
+    void doneSentinelWithoutFinishReasonCompletes() {
+        StepVerifier.create(streamOf(closingTransport(CHUNK_CONTENT, "[DONE]")))
+                .expectNextCount(1)
                 .expectComplete()
                 .verify(Duration.ofSeconds(5));
     }
