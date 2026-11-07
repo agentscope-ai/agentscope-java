@@ -521,6 +521,8 @@ caller
         └─ AGENT_END                              ← parent done
 ```
 
+Nested synchronous local delegation also forwards lifecycle and intermediate events to the outermost streaming caller. Each event retains its originating instance's `source`; for a grandchild, the parent-session segment is its immediate parent's session. Consume the full source as an opaque grouping key rather than interpreting its segments as a hierarchy.
+
 ### Using `streamEvents()` (recommended)
 
 ```java

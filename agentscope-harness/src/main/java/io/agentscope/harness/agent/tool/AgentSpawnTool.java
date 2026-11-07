@@ -809,14 +809,22 @@ public class AgentSpawnTool {
                         ctxView -> {
                             DefaultAgentManager manager = managerFor(parentCtx);
                             // ── Path 1: streamEvents() — AgentEvent forwarding ──
+                            // A nested call's normal emitter can target its private result stream.
                             Optional<AgentEventEmitter> emitterOpt =
-                                    AgentEventEmitter.fromContext(ctxView);
+                                    AgentEventEmitter.fromForwardingContext(ctxView)
+                                            .or(() -> AgentEventEmitter.fromContext(ctxView));
                             if (emitterOpt.isPresent()) {
                                 AgentEventEmitter parentEmitter = emitterOpt.get();
                                 String sourcePath = buildSourcePath(spawned, parentCtx);
                                 String replyId = UUID.randomUUID().toString().replace("-", "");
                                 AgentEventEmitter taggedEmitter =
-                                        event -> parentEmitter.emit(event.withSource(sourcePath));
+                                        event ->
+                                                parentEmitter.emit(
+                                                        event.getSource() == null
+                                                                        || event.getSource()
+                                                                                .isBlank()
+                                                                ? event.withSource(sourcePath)
+                                                                : event);
 
                                 parentEmitter.emit(
                                         new AgentStartEvent(
