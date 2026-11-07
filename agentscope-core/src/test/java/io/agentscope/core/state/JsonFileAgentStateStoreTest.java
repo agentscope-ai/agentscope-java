@@ -163,11 +163,15 @@ class JsonFileAgentStateStoreTest {
                 tasks.add(
                         () -> {
                             for (int i = 0; i < iterations; i++) {
+                                // Both fields encode the writer so a torn document mixing
+                                // fields from two writes cannot pass the pair check below.
                                 store.save(
                                         null,
                                         "session1",
                                         "agent_state",
-                                        new TestState("v" + threadIndex, i));
+                                        new TestState(
+                                                "t" + threadIndex + "-" + i,
+                                                threadIndex * 1000 + i));
                             }
                             return null;
                         });
@@ -181,10 +185,75 @@ class JsonFileAgentStateStoreTest {
 
         var loaded = store.get(null, "session1", "agent_state", TestState.class);
         assertTrue(loaded.isPresent());
-        // The winner is whichever thread moved last; it must be a complete, intact document.
-        assertTrue(loaded.get().value().matches("v\\d+"));
-        assertTrue(loaded.get().count() >= 0 && loaded.get().count() < iterations);
+        // The winner is whichever thread moved last; it must be a complete, intact document
+        // whose two fields still describe the same write.
+        String[] parts = loaded.get().value().split("-");
+        int writer = Integer.parseInt(parts[0].substring(1));
+        int iteration = Integer.parseInt(parts[1]);
+        assertEquals(writer, loaded.get().count() / 1000);
+        assertEquals(iteration, loaded.get().count() % 1000);
+        assertTrue(writer < threads);
+        assertTrue(iteration < iterations);
         // No orphaned tmp files may survive a successful save.
+        try (Stream<Path> paths = Files.walk(tempDir)) {
+            assertEquals(0, paths.filter(p -> p.toString().endsWith(".tmp")).count());
+        }
+    }
+
+    @Test
+    @DisplayName("Should keep the list file intact under concurrent read-modify-write saves")
+    void saveListSurvivesConcurrentReadModifyWrite(@TempDir Path tempDir) throws Exception {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        int threads = 4;
+        int iterations = 20;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        try {
+            List<Callable<Void>> tasks = new ArrayList<>();
+            for (int t = 0; t < threads; t++) {
+                int threadIndex = t;
+                tasks.add(
+                        () -> {
+                            for (int i = 0; i < iterations; i++) {
+                                List<TestState> current =
+                                        new ArrayList<>(
+                                                store.getList(
+                                                        null,
+                                                        "session1",
+                                                        "memory_messages",
+                                                        TestState.class));
+                                current.add(
+                                        new TestState(
+                                                "t" + threadIndex + "-" + i,
+                                                threadIndex * 1000 + i));
+                                store.save(null, "session1", "memory_messages", current);
+                            }
+                            return null;
+                        });
+            }
+            for (Future<Void> future : pool.invokeAll(tasks)) {
+                future.get();
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        // Last-writer-wins may drop entries when two writers build from the same snapshot —
+        // that is the caller's CAS concern — but the file itself must stay parseable, with no
+        // duplicated or torn lines, and every surviving pair must describe one write.
+        List<TestState> loaded =
+                store.getList(null, "session1", "memory_messages", TestState.class);
+        assertTrue(loaded.size() <= threads * iterations);
+        assertTrue(loaded.size() > 0);
+        for (TestState item : loaded) {
+            String[] parts = item.value().split("-");
+            assertEquals(Integer.parseInt(parts[0].substring(1)), item.count() / 1000);
+            assertEquals(Integer.parseInt(parts[1]), item.count() % 1000);
+        }
+        // No line may appear twice: a rewrite fully replaces the file and an append only adds
+        // a snapshot's tail, so duplication means two writers interleaved on the same file.
+        assertEquals(
+                loaded.size(),
+                loaded.stream().map(TestState::value).distinct().count());
         try (Stream<Path> paths = Files.walk(tempDir)) {
             assertEquals(0, paths.filter(p -> p.toString().endsWith(".tmp")).count());
         }

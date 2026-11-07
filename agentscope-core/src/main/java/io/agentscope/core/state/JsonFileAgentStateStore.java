@@ -37,6 +37,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
@@ -75,6 +76,16 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     /** Pattern for file-system safe characters: alphanumeric, underscore, hyphen, dot. */
     private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-.]+$");
 
+    /**
+     * Striped write locks keyed by target file. A unique tmp name alone does not make write+move
+     * safe: two threads still replace the same target, and Windows rejects the replace while
+     * another thread holds the target (AccessDeniedException). Striping keeps the lock count
+     * bounded while giving each target file a stable lock.
+     */
+    private static final int LOCK_STRIPES = 64;
+
+    private final ReentrantLock[] writeLocks = createLockStripes();
+
     private final Path rootDirectory;
 
     /**
@@ -103,11 +114,15 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     public void save(String userId, String sessionId, String key, State value) {
         Path file = getStatePath(userId, sessionId, key);
         ensureDirectoryExists(file.getParent());
+        ReentrantLock lock = lockFor(file);
+        lock.lock();
         try {
             String json = JsonUtils.getJsonCodec().toPrettyJson(value);
             atomicWriteString(file, json);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save state: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -117,6 +132,12 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         Path hashFile = getHashPath(userId, sessionId, key);
         ensureDirectoryExists(file.getParent());
 
+        // The whole read-hash-count + append/rewrite sequence must be atomic per target file:
+        // two concurrent list saves would otherwise append the same tail twice, or interleave
+        // an append with a rewrite. The hash file is only written while holding the list
+        // file's lock, so it needs no separate lock.
+        ReentrantLock lock = lockFor(file);
+        lock.lock();
         try {
             String currentHash = ListHashUtil.computeHash(values);
             String storedHash = readHashFile(hashFile);
@@ -133,6 +154,8 @@ public class JsonFileAgentStateStore implements AgentStateStore {
             writeHashFile(hashFile, currentHash);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save list: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -152,9 +175,11 @@ public class JsonFileAgentStateStore implements AgentStateStore {
             }
             Files.move(
                     tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
+        } finally {
+            // toJson can throw a RuntimeException mid-write; the finally keeps unique tmp
+            // names (never reclaimed by a later write) from piling up. No-op after a
+            // successful move.
             deleteQuietly(tmp);
-            throw e;
         }
     }
 
@@ -335,10 +360,21 @@ public class JsonFileAgentStateStore implements AgentStateStore {
             }
             Files.move(
                     tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
+        } finally {
             deleteQuietly(tmp);
-            throw e;
         }
+    }
+
+    private static ReentrantLock[] createLockStripes() {
+        ReentrantLock[] locks = new ReentrantLock[LOCK_STRIPES];
+        for (int i = 0; i < locks.length; i++) {
+            locks[i] = new ReentrantLock();
+        }
+        return locks;
+    }
+
+    private ReentrantLock lockFor(Path file) {
+        return writeLocks[(file.hashCode() & 0x7fffffff) % writeLocks.length];
     }
 
     // Unique tmp names are never overwritten by a later write, so a failed one must be
