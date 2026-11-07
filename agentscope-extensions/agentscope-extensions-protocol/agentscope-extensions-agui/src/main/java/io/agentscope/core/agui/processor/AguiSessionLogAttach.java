@@ -360,7 +360,12 @@ final class AguiSessionLogAttach {
                                                         return Flux.<AguiFramedEvent>empty();
                                                     })
                                             .subscribeOn(Schedulers.boundedElastic());
-                            return Flux.concat(catchUp, Flux.fromIterable(buffered), tail, drain)
+                            return Flux.concat(
+                                            runStartedPrefix(input, log, after, executionRunId),
+                                            catchUp,
+                                            Flux.fromIterable(buffered),
+                                            tail,
+                                            drain)
                                     .doFinally(
                                             signal -> {
                                                 if (!tailSubscribed.get()) {
