@@ -36,6 +36,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
@@ -74,6 +76,16 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     /** Pattern for file-system safe characters: alphanumeric, underscore, hyphen, dot. */
     private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-.]+$");
 
+    /**
+     * Striped write locks keyed by target file. A unique tmp name alone does not make write+move
+     * safe: two threads still replace the same target, and Windows rejects the replace while
+     * another thread holds the target (AccessDeniedException). Striping keeps the lock count
+     * bounded while giving each target file a stable lock.
+     */
+    private static final int LOCK_STRIPES = 64;
+
+    private final ReentrantLock[] writeLocks = createLockStripes();
+
     private final Path rootDirectory;
 
     /**
@@ -102,11 +114,15 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     public void save(String userId, String sessionId, String key, State value) {
         Path file = getStatePath(userId, sessionId, key);
         ensureDirectoryExists(file.getParent());
+        ReentrantLock lock = lockFor(file);
+        lock.lock();
         try {
             String json = JsonUtils.getJsonCodec().toPrettyJson(value);
             atomicWriteString(file, json);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save state: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -116,6 +132,12 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         Path hashFile = getHashPath(userId, sessionId, key);
         ensureDirectoryExists(file.getParent());
 
+        // The whole read-hash-count + append/rewrite sequence must be atomic per target file:
+        // two concurrent list saves would otherwise append the same tail twice, or interleave
+        // an append with a rewrite. The hash file is only written while holding the list
+        // file's lock, so it needs no separate lock.
+        ReentrantLock lock = lockFor(file);
+        lock.lock();
         try {
             String currentHash = ListHashUtil.computeHash(values);
             String storedHash = readHashFile(hashFile);
@@ -132,23 +154,33 @@ public class JsonFileAgentStateStore implements AgentStateStore {
             writeHashFile(hashFile, currentHash);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save list: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
     private void rewriteEntireList(Path file, List<? extends State> values) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        try (BufferedWriter writer =
-                newUtf8ReplacingWriter(
-                        tmp,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING,
-                        StandardOpenOption.WRITE)) {
-            for (State item : values) {
-                writer.write(JsonUtils.getJsonCodec().toJson(item));
-                writer.newLine();
+        Path tmp = uniqueTmpSibling(file);
+        try {
+            try (BufferedWriter writer =
+                    newUtf8ReplacingWriter(
+                            tmp,
+                            StandardOpenOption.CREATE,
+                            StandardOpenOption.TRUNCATE_EXISTING,
+                            StandardOpenOption.WRITE)) {
+                for (State item : values) {
+                    writer.write(JsonUtils.getJsonCodec().toJson(item));
+                    writer.newLine();
+                }
             }
+            Files.move(
+                    tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            // toJson can throw a RuntimeException mid-write; the finally keeps unique tmp
+            // names (never reclaimed by a later write) from piling up. No-op after a
+            // successful move.
+            deleteQuietly(tmp);
         }
-        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private void appendToList(Path file, List<? extends State> items) throws IOException {
@@ -166,14 +198,23 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     public <T extends State> Optional<T> get(
             String userId, String sessionId, String key, Class<T> type) {
         Path file = getStatePath(userId, sessionId, key);
-        if (!Files.exists(file)) {
-            return Optional.empty();
-        }
+        // Readers take the same per-file lock as writers: on Windows an open read handle
+        // blocks another thread's replace of the same file (AccessDeniedException), so
+        // reads and writes must be mutually exclusive per target.
+        ReentrantLock lock = lockFor(file);
+        lock.lock();
         try {
-            String json = Files.readString(file, StandardCharsets.UTF_8);
-            return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to load state: " + key, e);
+            if (!Files.exists(file)) {
+                return Optional.empty();
+            }
+            try {
+                String json = Files.readString(file, StandardCharsets.UTF_8);
+                return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to load state: " + key, e);
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -181,22 +222,29 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     public <T extends State> List<T> getList(
             String userId, String sessionId, String key, Class<T> itemType) {
         Path file = getListPath(userId, sessionId, key);
-        if (!Files.exists(file)) {
-            return List.of();
-        }
+        ReentrantLock lock = lockFor(file);
+        lock.lock();
         try {
-            List<T> result = new ArrayList<>();
-            try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (!line.isBlank()) {
-                        result.add(JsonUtils.getJsonCodec().fromJson(line, itemType));
+            if (!Files.exists(file)) {
+                return List.of();
+            }
+            try {
+                List<T> result = new ArrayList<>();
+                try (BufferedReader reader =
+                        Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (!line.isBlank()) {
+                            result.add(JsonUtils.getJsonCodec().fromJson(line, itemType));
+                        }
                     }
                 }
+                return result;
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to load list: " + key, e);
             }
-            return result;
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to load list: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -215,10 +263,15 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     @Override
     public void delete(String userId, String sessionId, String key) {
+        Path file = getStatePath(userId, sessionId, key);
+        ReentrantLock lock = lockFor(file);
+        lock.lock();
         try {
-            Files.deleteIfExists(getStatePath(userId, sessionId, key));
+            Files.deleteIfExists(file);
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete state: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -316,16 +369,50 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     }
 
     private static void atomicWriteString(Path file, String content) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        try (BufferedWriter writer =
-                newUtf8ReplacingWriter(
-                        tmp,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING,
-                        StandardOpenOption.WRITE)) {
-            writer.write(content);
+        Path tmp = uniqueTmpSibling(file);
+        try {
+            try (BufferedWriter writer =
+                    newUtf8ReplacingWriter(
+                            tmp,
+                            StandardOpenOption.CREATE,
+                            StandardOpenOption.TRUNCATE_EXISTING,
+                            StandardOpenOption.WRITE)) {
+                writer.write(content);
+            }
+            Files.move(
+                    tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            deleteQuietly(tmp);
         }
-        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static ReentrantLock[] createLockStripes() {
+        ReentrantLock[] locks = new ReentrantLock[LOCK_STRIPES];
+        for (int i = 0; i < locks.length; i++) {
+            locks[i] = new ReentrantLock();
+        }
+        return locks;
+    }
+
+    private ReentrantLock lockFor(Path file) {
+        return writeLocks[(file.hashCode() & 0x7fffffff) % writeLocks.length];
+    }
+
+    // Unique tmp names are never overwritten by a later write, so a failed one must be
+    // removed explicitly or it stays on disk forever.
+    private static void deleteQuietly(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException ignored) {
+            // best-effort cleanup while propagating the original failure
+        }
+    }
+
+    // A fixed ".tmp" sibling races when two threads persist the same state concurrently: one
+    // thread's move consumes the file the other is still writing, surfacing as
+    // NoSuchFileException and potentially persisting interleaved (corrupt) content.
+    private static Path uniqueTmpSibling(Path file) {
+        return file.resolveSibling(file.getFileName() + "." + UUID.randomUUID() + ".tmp");
     }
 
     private static BufferedWriter newUtf8ReplacingWriter(Path file, StandardOpenOption... options)
