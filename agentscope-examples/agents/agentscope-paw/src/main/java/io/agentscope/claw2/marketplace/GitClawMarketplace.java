@@ -17,6 +17,7 @@ package io.agentscope.claw2.marketplace;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.GitSkillRepository;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -116,8 +117,8 @@ public class GitClawMarketplace implements ClawMarketplace {
         return new MarketSkillContent(
                 skill.getName(),
                 skill.getDescription(),
-                skill.getSkillContent(),
-                skill.getResources());
+                SkillFileSystemHelper.readSkillManifest(skill),
+                SkillFileSystemHelper.readAllResources(skill));
     }
 
     @Override

@@ -16,6 +16,7 @@
 
 package io.agentscope.core.skill;
 
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.skill.util.SkillUtil;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -32,9 +33,12 @@ import java.util.Set;
  * <p>A skill consists of:
  * <ul>
  *   <li>Name and description - identifying the skill
- *   <li>Skill content - the actual skill implementation or instructions
+ *   <li>Skill content - the actual skill implementation or instructions; {@code null} for a
+ *       descriptor-only summary (see {@link #getSkillContent()})
  *   <li>Resources - supporting files or data referenced by the skill
- *   <li>Version and source - tracking skill origin and versioning
+ *   <li>Source - the repository identity the skill was loaded from
+ *   <li>Version (nullable) - the repository-resolved version reference this instance was
+ *       loaded under; distinct from any author-declared {@code version} inside the metadata
  * </ul>
  *
  * <p><b>Creation options:</b>
@@ -62,9 +66,10 @@ import java.util.Set;
  *     .build();
  * }</pre>
  *
+ * SkillUtil and MarkdownSkillParser manage markdown skill catalogs in application code.
+ *
  * @see io.agentscope.core.skill.util.SkillUtil
  * @see io.agentscope.core.skill.util.MarkdownSkillParser
- * Manage markdown skill catalogs in application code.
  */
 public class AgentSkill {
     private final Map<String, Object> metadata;
@@ -81,6 +86,15 @@ public class AgentSkill {
     private final Path originDir;
 
     /**
+     * The repository-resolved version reference this instance was loaded under (see {@code
+     * AgentSkillRepository}'s class-level version semantics), or {@code null} when the loading
+     * repository has no version capability or resolved no version. Provenance only: it does
+     * not describe the content and is unrelated to any author-declared {@code version}
+     * inside the metadata map.
+     */
+    private final String version;
+
+    /**
      * Creates an AgentSkill with explicit parameters.
      *
      * <p>Use this constructor when you want to create a skill directly without parsing
@@ -88,9 +102,10 @@ public class AgentSkill {
      *
      * @param name Skill name (must not be null or empty)
      * @param description Skill description (must not be null or empty)
-     * @param skillContent The skill implementation or instructions (must not be null or empty)
+     * @param skillContent The skill body, or {@code null} for a descriptor-only summary whose
+     *     body is read on demand from {@code originDir}; when present it must not be empty
      * @param resources Supporting resources referenced by the skill (can be null)
-     * @throws IllegalArgumentException if name, description, or skillContent is null or empty
+     * @throws IllegalArgumentException if name, description, or skillContent is present but empty
      */
     public AgentSkill(
             String name, String description, String skillContent, Map<String, String> resources) {
@@ -105,10 +120,11 @@ public class AgentSkill {
      *
      * @param name Skill name (must not be null or empty)
      * @param description Skill description (must not be null or empty)
-     * @param skillContent The skill implementation or instructions (must not be null or empty)
+     * @param skillContent The skill body, or {@code null} for a descriptor-only summary whose
+     *     body is read on demand from {@code originDir}; when present it must not be empty
      * @param resources Supporting resources referenced by the skill (can be null)
      * @param source Source identifier for the skill (null defaults to "custom")
-     * @throws IllegalArgumentException if name, description, or skillContent is null or empty
+     * @throws IllegalArgumentException if name, description, or skillContent is present but empty
      */
     public AgentSkill(
             String name,
@@ -126,10 +142,11 @@ public class AgentSkill {
      * {@code description}. The metadata map is copied and stored as immutable.
      *
      * @param metadata Skill metadata including required {@code name} and {@code description}
-     * @param skillContent The skill implementation or instructions (must not be null or empty)
+     * @param skillContent The skill body, or {@code null} for a descriptor-only summary whose
+     *     body is read on demand from {@code originDir}; when present it must not be empty
      * @param resources Supporting resources referenced by the skill (can be null)
      * @param source Source identifier for the skill (null defaults to "custom")
-     * @throws IllegalArgumentException if metadata is invalid or skillContent is null or empty
+     * @throws IllegalArgumentException if metadata is invalid or skillContent is present but empty
      */
     public AgentSkill(
             Map<String, Object> metadata,
@@ -140,19 +157,21 @@ public class AgentSkill {
     }
 
     /**
-     * Creates an AgentSkill with explicit metadata and an on-disk origin directory.
+     * Creates an AgentSkill with explicit metadata and an on-disk origin directory; the
+     * resolved version is left {@code null}.
      *
      * <p>The {@code name} must conform to the standard naming rule ({@link
      * SkillUtil#VALID_SKILL_NAME_PATTERN}, at most {@link SkillUtil#MAX_SKILL_NAME_LENGTH}
      * characters) because names are used verbatim as directory keys during materialization.
      *
      * @param metadata Skill metadata including required {@code name} and {@code description}
-     * @param skillContent The skill implementation or instructions (must not be null or empty)
+     * @param skillContent The skill body, or {@code null} for a descriptor-only summary whose
+     *     body is read on demand from {@code originDir}; when present it must not be empty
      * @param resources Supporting resources referenced by the skill (can be null)
      * @param source Source identifier for the skill (null defaults to "custom")
      * @param originDir Absolute path to the skill's source directory, or {@code null} if not
      *                  filesystem-backed (e.g. classpath / remote / synthetic). Stored as-is.
-     * @throws IllegalArgumentException if metadata is invalid, skillContent is null or empty, or
+     * @throws IllegalArgumentException if metadata is invalid, skillContent is present but empty, or
      *                                  the name does not conform to the standard naming rule
      */
     public AgentSkill(
@@ -161,11 +180,38 @@ public class AgentSkill {
             Map<String, String> resources,
             String source,
             Path originDir) {
+        this(metadata, skillContent, resources, source, originDir, null);
+    }
+
+    /**
+     * Creates an AgentSkill with explicit metadata, an on-disk origin directory and the
+     * repository-resolved version this instance was loaded under.
+     *
+     * @param metadata Skill metadata including required {@code name} and {@code description}
+     * @param skillContent The skill body, or {@code null} for a descriptor-only summary whose
+     *     body is read on demand from {@code originDir}; when present it must not be empty
+     * @param resources Supporting resources referenced by the skill (can be null)
+     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param originDir Absolute path to the skill's source directory, or {@code null} if not
+     *                  filesystem-backed (e.g. classpath / remote / synthetic). Stored as-is.
+     * @param version The repository-resolved version reference this instance was loaded under,
+     *                or {@code null} when no version was resolved
+     * @throws IllegalArgumentException if metadata is invalid, skillContent is present but empty, or
+     *                                  the name does not conform to the standard naming rule
+     */
+    public AgentSkill(
+            Map<String, Object> metadata,
+            String skillContent,
+            Map<String, String> resources,
+            String source,
+            Path originDir,
+            String version) {
         String name = getRequiredMetadataString(metadata, "name");
         String description = getRequiredMetadataString(metadata, "description");
         SkillUtil.requireValidSkillName(name);
-        if (skillContent == null || skillContent.isEmpty()) {
-            throw new IllegalArgumentException("The skill must have content");
+        if (skillContent != null && skillContent.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "The skill content must not be empty when present (null = summary)");
         }
 
         LinkedHashMap<String, Object> metadataCopy = new LinkedHashMap<>(metadata);
@@ -177,6 +223,7 @@ public class AgentSkill {
         this.resources = resources != null ? new HashMap<>(resources) : new HashMap<>();
         this.source = source != null ? source : "custom";
         this.originDir = originDir;
+        this.version = version;
     }
 
     /**
@@ -219,9 +266,12 @@ public class AgentSkill {
     /**
      * Gets the skill content.
      *
-     * <p>This contains the actual skill implementation or instructions.
+     * <p>This contains the actual skill implementation or instructions, or {@code null} for a
+     * descriptor-only summary: repository summaries carry no body in memory — the body lives
+     * on disk at {@code originDir} and is read on demand (load tool / eager load).
      *
-     * @return The skill content (never null)
+     * @return The skill content, or {@code null} when this instance is a descriptor-only
+     *     summary
      */
     public String getSkillContent() {
         return skillContent;
@@ -239,6 +289,12 @@ public class AgentSkill {
     /**
      * Gets the skill resources.
      *
+     * <p>The map is a transport/write-time form: it is populated only while a skill is in
+     * flight (a remote fetch, or a {@code save()} writer holding in-memory content). A served
+     * skill typically has an empty map — its files live under {@link #getOriginDir()}: read
+     * them through {@link #getResource(String)} and enumerate them from the directory, not
+     * from this map.
+     *
      * @return The resources map (never null, may be empty)
      */
     public Map<String, String> getResources() {
@@ -246,17 +302,33 @@ public class AgentSkill {
     }
 
     /**
-     * Gets the resource content by path.
+     * Gets the resource content by path: the in-memory map first, then a read from {@link
+     * #getOriginDir()}.
+     *
+     * <p>The disk fallback resolves the path under {@code originDir}, refusing absolute and
+     * traversal-shaped paths, and returns the file as text (or as {@code base64:} content for
+     * binary files). Returns {@code null} when neither source has the path.
      *
      * @param resourcePath The resource path
      * @return The resource content, or null if not found
      */
     public String getResource(String resourcePath) {
-        return resources.get(resourcePath);
+        String content = resources.get(resourcePath);
+        if (content != null) {
+            return content;
+        }
+        if (originDir == null) {
+            return null;
+        }
+        return SkillFileSystemHelper.readResource(originDir, resourcePath).orElse(null);
     }
 
     /**
      * Gets all resource paths for this skill.
+     *
+     * <p>Memory only: this reflects the in-memory map (see {@link #getResources()}). A served
+     * skill's on-disk file set must be enumerated from {@link #getOriginDir()} (for example
+     * via {@link SkillFileSystemHelper#listResourcePaths}), never from this set.
      *
      * @return Unmodifiable set of resource paths
      */
@@ -292,6 +364,19 @@ public class AgentSkill {
     }
 
     /**
+     * Gets the repository-resolved version reference this instance was loaded under.
+     * Version-capable repositories stamp every skill they return, binding one loaded
+     * instance to one version; {@code null} means the loading repository has no version
+     * capability or resolved no version. Provenance only, and unrelated to any
+     * author-declared {@code version} in the metadata.
+     *
+     * @return the resolved version reference, or {@code null}
+     */
+    public String getVersion() {
+        return version;
+    }
+
+    /**
      * Creates a builder initialized with this skill's values.
      *
      * <p>This is useful for creating modified versions of existing skills.
@@ -324,6 +409,7 @@ public class AgentSkill {
                 + getDescription()
                 + "', source='"
                 + source
+                + (version != null ? "', version='" + version : "")
                 + "'}";
     }
 
@@ -356,6 +442,7 @@ public class AgentSkill {
         private Map<String, String> resources;
         private String source;
         private Path originDir;
+        private String version;
 
         /**
          * Creates an empty builder.
@@ -376,6 +463,7 @@ public class AgentSkill {
             this.resources = new HashMap<>(baseSkill.resources);
             this.source = baseSkill.source;
             this.originDir = baseSkill.originDir;
+            this.version = baseSkill.version;
         }
 
         /**
@@ -515,13 +603,25 @@ public class AgentSkill {
         }
 
         /**
+         * Sets the repository-resolved version reference this instance was loaded under
+         * (see {@link #getVersion()}).
+         *
+         * @param version the resolved version reference, or {@code null} for none
+         * @return This builder
+         */
+        public Builder version(String version) {
+            this.version = version;
+            return this;
+        }
+
+        /**
          * Builds the AgentSkill instance.
          *
          * @return A new AgentSkill instance
          * @throws IllegalArgumentException if required fields are missing
          */
         public AgentSkill build() {
-            return new AgentSkill(metadata, skillContent, resources, source, originDir);
+            return new AgentSkill(metadata, skillContent, resources, source, originDir, version);
         }
     }
 

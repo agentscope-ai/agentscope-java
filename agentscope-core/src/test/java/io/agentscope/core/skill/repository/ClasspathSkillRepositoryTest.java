@@ -17,7 +17,9 @@ package io.agentscope.core.skill.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -75,6 +77,9 @@ class ClasspathSkillRepositoryTest {
 
     @TempDir Path tempDir;
 
+    /** Isolated extraction cache root — JAR-mode serving never touches the real home. */
+    @TempDir Path cacheDir;
+
     private ClasspathSkillRepository repository;
 
     @AfterEach
@@ -97,7 +102,7 @@ class ClasspathSkillRepositoryTest {
         assertNotNull(skill);
         assertEquals("writing-skill", skill.getName());
         assertEquals("A skill for writing and content creation", skill.getDescription());
-        assertTrue(skill.getSkillContent().contains("Writing Skill"));
+        assertTrue(skillBody(skill).contains("Writing Skill"));
     }
 
     @Test
@@ -108,9 +113,10 @@ class ClasspathSkillRepositoryTest {
         AgentSkill skill = repository.getSkill("writing-skill");
         assertNotNull(skill);
 
-        // Verify nested resource is loaded
-        assertTrue(skill.getResources().containsKey("references/guide.md"));
-        String guideContent = skill.getResources().get("references/guide.md");
+        // Serving is summary-form: the nested resource resolves from originDir on demand,
+        // not from a preloaded in-memory map.
+        String guideContent = skill.getResource("references/guide.md");
+        assertNotNull(guideContent);
         assertTrue(guideContent.contains("Writing Guide"));
         assertTrue(guideContent.contains("Best Practices"));
     }
@@ -136,6 +142,170 @@ class ClasspathSkillRepositoryTest {
         assertTrue(loadedNames.contains("calculation-skill"));
     }
 
+    // ==================== Version Semantics Tests ====================
+
+    @Test
+    @DisplayName("Should return the content-addressed version for existing skills only")
+    void testVersionContract_ContentAddressedVersionForExistingSkills() throws IOException {
+        repository = new ClasspathSkillRepository("test-skills");
+
+        String version = latestVersionOf(repository, "writing-skill");
+        assertNotNull(version, "An existing skill must report a version");
+        assertTrue(
+                version.matches("[0-9a-f]{64}"),
+                "The version is the SHA-256 content hash of the skill's file set");
+        assertEquals(
+                version,
+                latestVersionOf(repository, "writing-skill"),
+                "Unchanged content must keep stamping the same version");
+        assertNull(
+                latestVersionOf(repository, "no-such-skill"),
+                "A missing skill must report no version");
+        assertNull(latestVersionOf(repository, " "), "A blank skill name must report no version");
+    }
+
+    @Test
+    @DisplayName("Should roundtrip the null-version pull → versioned read → current content")
+    void testVersionContract_RoundtripResolvesCurrentContent() throws IOException {
+        repository = new ClasspathSkillRepository("test-skills");
+
+        String version = latestVersionOf(repository, "writing-skill");
+        assertNotNull(version, "An existing skill must resolve a version");
+        AgentSkill atVersion = repository.getSkill("writing-skill", version);
+        assertNotNull(atVersion, "The resolved version must fetch content");
+
+        AgentSkill current = repository.getSkill("writing-skill");
+        assertEquals(
+                current.getSkillContent(),
+                atVersion.getSkillContent(),
+                "The reported version must roundtrip to the content getSkill serves");
+        assertEquals(
+                current.getResources(),
+                atVersion.getResources(),
+                "The roundtrip must return the whole skill including resources");
+    }
+
+    @Test
+    @DisplayName("Should record the current version on every returned skill")
+    void testVersionContract_ReturnedSkillsCarryTheirVersion() throws IOException {
+        repository = new ClasspathSkillRepository("test-skills");
+        String version = latestVersionOf(repository, "writing-skill");
+        assertNotNull(version, "An existing skill must resolve a version");
+
+        assertEquals(
+                version,
+                repository.getSkill("writing-skill").getVersion(),
+                "A direct read must carry the resolved version it was loaded under");
+        for (AgentSkill skill : repository.getAllSkills()) {
+            assertEquals(
+                    latestVersionOf(repository, skill.getName()),
+                    skill.getVersion(),
+                    "Every listed skill must carry its resolved version");
+        }
+        AgentSkill atVersion = repository.getSkill("writing-skill", version);
+        assertNotNull(atVersion, "The current version must resolve");
+        assertEquals(
+                version,
+                atVersion.getVersion(),
+                "A versioned read must record the version served on the returned skill");
+    }
+
+    @Test
+    @DisplayName("Should return null for unknown versions; blank means latest")
+    void testVersionContract_EmptyForUnknownReference() throws IOException {
+        repository = new ClasspathSkillRepository("test-skills");
+        String version = latestVersionOf(repository, "writing-skill");
+        assertNotNull(version, "An existing skill must resolve a version");
+
+        assertNull(
+                repository.getSkill("writing-skill", "v1.2.3"),
+                "A version this backend never produced must not resolve (no-mismatch)");
+        assertNull(
+                repository.getSkill("writing-skill", "classpath-immutable"),
+                "The retired constant label must not resolve (no-mismatch)");
+        AgentSkill latest = repository.getSkill("writing-skill", "");
+        assertNotNull(latest, "A blank version resolves the latest content");
+        assertEquals(version, latest.getVersion());
+        assertNull(
+                repository.getSkill("no-such-skill", version),
+                "A missing skill must not resolve even at the known version");
+        assertNull(repository.getSkill(null, version), "A null name must not resolve");
+    }
+
+    @Test
+    @DisplayName("A null version pull resolves the current version and carries originDir")
+    void testVersionContract_NullVersionServesLatest() throws IOException {
+        repository = new ClasspathSkillRepository("test-skills");
+        String version = latestVersionOf(repository, "writing-skill");
+        assertNotNull(version, "An existing skill must resolve a version");
+
+        AgentSkill byNull = repository.getSkill("writing-skill", null);
+
+        assertNotNull(byNull, "The null pull resolves the current version");
+        assertEquals(version, byNull.getVersion());
+        assertTrue(
+                byNull.getOriginDir().isPresent(),
+                "The load carries its directory as originDir (no store on this backend)");
+        assertTrue(
+                byNull.getResources().isEmpty(),
+                "The serving form carries no physical file content");
+        assertEquals(
+                repository.getSkill("writing-skill").getSkillContent(),
+                byNull.getSkillContent(),
+                "The null pull serves exactly the current content");
+    }
+
+    @Test
+    @DisplayName("Same skill bytes in different JARs mint one version and share one cache dir")
+    void testVersionContract_SameContentAcrossJarsSharesCacheEntry() throws Exception {
+        Path jarA =
+                createNamedTestJar(
+                        "same-bytes-a.jar", "stable-skill", "Stable Skill", "Same content");
+        Path jarB =
+                createNamedTestJar(
+                        "same-bytes-b.jar", "stable-skill", "Stable Skill", "Same content");
+        Path jarC =
+                createNamedTestJar(
+                        "changed-bytes.jar", "stable-skill", "Stable Skill", "Changed content");
+
+        try (URLClassLoader loaderA = new URLClassLoader(new URL[] {jarA.toUri().toURL()});
+                URLClassLoader loaderB = new URLClassLoader(new URL[] {jarB.toUri().toURL()});
+                URLClassLoader loaderC = new URLClassLoader(new URL[] {jarC.toUri().toURL()});
+                ClasspathSkillRepository repoA =
+                        new ClasspathSkillRepositoryWithClassLoader(
+                                "jar-skills", loaderA, cacheDir);
+                ClasspathSkillRepository repoB =
+                        new ClasspathSkillRepositoryWithClassLoader(
+                                "jar-skills", loaderB, cacheDir);
+                ClasspathSkillRepository repoC =
+                        new ClasspathSkillRepositoryWithClassLoader(
+                                "jar-skills", loaderC, cacheDir)) {
+
+            String tokenA = latestVersionOf(repoA, "stable-skill");
+            String tokenB = latestVersionOf(repoB, "stable-skill");
+            String tokenC = latestVersionOf(repoC, "stable-skill");
+            assertNotNull(tokenA, "The skill in jar A must resolve a version");
+            assertEquals(
+                    tokenA,
+                    tokenB,
+                    "Byte-identical skills in different JAR builds mint the same version (the"
+                            + " cross-pod contract: only bytes, never the jar file, decide)");
+            assertNotEquals(
+                    tokenA, tokenC, "Changed content in a later release must mint a new version");
+
+            // The same (repoIdentity, name, token) triple resolves to one shared
+            // materialized directory across processes sharing the cache root.
+            AgentSkill fromA = repoA.getSkill("stable-skill");
+            AgentSkill fromB = repoB.getSkill("stable-skill");
+            assertEquals(
+                    fromA.getOriginDir(),
+                    fromB.getOriginDir(),
+                    "Same bytes resolve to one shared cache directory");
+            assertEquals(
+                    tokenA, fromA.getVersion(), "The served skill carries its content version");
+        }
+    }
+
     // ==================== JAR Loading Tests ====================
 
     @Test
@@ -144,7 +314,9 @@ class ClasspathSkillRepositoryTest {
         Path jarPath = createTestJarInFolder("test-skill", "Test Skill", "Test content");
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            repository = new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader);
+            repository =
+                    new ClasspathSkillRepositoryWithClassLoader(
+                            "jar-skills", classLoader, cacheDir);
 
             assertTrue(repository.isJarEnvironment(), "Should detect JAR environment");
 
@@ -152,7 +324,7 @@ class ClasspathSkillRepositoryTest {
             assertNotNull(skill);
             assertEquals("test-skill", skill.getName());
             assertEquals("Test Skill", skill.getDescription());
-            assertTrue(skill.getSkillContent().contains("Test content"));
+            assertTrue(skillBody(skill).contains("Test content"));
         }
     }
 
@@ -162,7 +334,9 @@ class ClasspathSkillRepositoryTest {
         Path jarPath = createTestJarWithResources();
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            repository = new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader);
+            repository =
+                    new ClasspathSkillRepositoryWithClassLoader(
+                            "jar-skills", classLoader, cacheDir);
 
             assertTrue(repository.isJarEnvironment());
 
@@ -170,12 +344,10 @@ class ClasspathSkillRepositoryTest {
             assertNotNull(skill);
             assertEquals("jar-skill", skill.getName());
 
-            // Verify nested resources are loaded
-            assertTrue(skill.getResources().containsKey("config.json"));
-            assertEquals("{\"key\": \"value\"}", skill.getResources().get("config.json"));
-
-            assertTrue(skill.getResources().containsKey("data/sample.txt"));
-            assertEquals("Sample data", skill.getResources().get("data/sample.txt"));
+            // Serving is summary-form: nested resources resolve from originDir on demand,
+            // not from a preloaded in-memory map.
+            assertEquals("{\"key\": \"value\"}", skill.getResource("config.json"));
+            assertEquals("Sample data", skill.getResource("data/sample.txt"));
         }
     }
 
@@ -185,7 +357,9 @@ class ClasspathSkillRepositoryTest {
         Path jarPath = createTestJarWithMultipleSkills();
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            repository = new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader);
+            repository =
+                    new ClasspathSkillRepositoryWithClassLoader(
+                            "jar-skills", classLoader, cacheDir);
 
             assertTrue(repository.isJarEnvironment(), "Should detect JAR environment");
 
@@ -221,9 +395,11 @@ class ClasspathSkillRepositoryTest {
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()});
                 ClasspathSkillRepository firstRepository =
-                        new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader);
+                        new ClasspathSkillRepositoryWithClassLoader(
+                                "jar-skills", classLoader, cacheDir);
                 ClasspathSkillRepository secondRepository =
-                        new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader)) {
+                        new ClasspathSkillRepositoryWithClassLoader(
+                                "jar-skills", classLoader, cacheDir)) {
 
             AgentSkill firstSkill = firstRepository.getSkill("shared-skill");
             AgentSkill secondSkill = secondRepository.getSkill("shared-skill");
@@ -245,9 +421,11 @@ class ClasspathSkillRepositoryTest {
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()});
                 ClasspathSkillRepository firstRepository =
-                        new ClasspathSkillRepositoryWithClassLoader("jar-skills-a", classLoader);
+                        new ClasspathSkillRepositoryWithClassLoader(
+                                "jar-skills-a", classLoader, cacheDir);
                 ClasspathSkillRepository secondRepository =
-                        new ClasspathSkillRepositoryWithClassLoader("jar-skills-b", classLoader)) {
+                        new ClasspathSkillRepositoryWithClassLoader(
+                                "jar-skills-b", classLoader, cacheDir)) {
 
             AgentSkill firstSkill = firstRepository.getSkill("skill-a");
             AgentSkill secondSkill = secondRepository.getSkill("skill-b");
@@ -297,7 +475,7 @@ class ClasspathSkillRepositoryTest {
             assertNotNull(skill);
             assertEquals("sb-skill", skill.getName());
             assertEquals("SB Skill", skill.getDescription());
-            assertTrue(skill.getSkillContent().contains("SB content"));
+            assertTrue(skillBody(skill).contains("SB content"));
         }
     }
 
@@ -359,7 +537,7 @@ class ClasspathSkillRepositoryTest {
             assertNotNull(skill);
             assertEquals("nested-lib-skill", skill.getName());
             assertEquals("Nested Lib Skill", skill.getDescription());
-            assertTrue(skill.getSkillContent().contains("Nested lib content"));
+            assertTrue(skillBody(skill).contains("Nested lib content"));
         } finally {
             TestNestedFileSystemProvider.configuredInnerJarPath = null;
         }
@@ -431,14 +609,15 @@ class ClasspathSkillRepositoryTest {
     }
 
     @Test
-    @DisplayName("Should throw exception when skill directory not found")
+    @DisplayName("Should return null for a missing skill through the default version route")
     void testSkillDirectoryNotFound() throws IOException {
         repository = new ClasspathSkillRepository("test-skills");
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> repository.getSkill("non-existent"),
-                "Should throw exception when skill directory doesn't exist");
+        // getSkill is the interface default — a null-version pull through
+        // getSkill, which answers null for a missing skill.
+        assertNull(
+                repository.getSkill("non-existent"),
+                "A missing skill must resolve to null through the version route");
     }
 
     // ==================== Lifecycle Management Tests ====================
@@ -455,7 +634,8 @@ class ClasspathSkillRepositoryTest {
         Path jarPath = createTestJarInFolder("env-test", "Env Test", "Content");
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
             try (ClasspathSkillRepository jarRepository =
-                    new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader)) {
+                    new ClasspathSkillRepositoryWithClassLoader(
+                            "jar-skills", classLoader, cacheDir)) {
                 assertTrue(jarRepository.isJarEnvironment());
             }
         }
@@ -473,7 +653,9 @@ class ClasspathSkillRepositoryTest {
         // Test JAR adapter close
         Path jarPath = createTestJarInFolder("closeable-skill", "Closeable", "Content");
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            repository = new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader);
+            repository =
+                    new ClasspathSkillRepositoryWithClassLoader(
+                            "jar-skills", classLoader, cacheDir);
             assertTrue(repository.isJarEnvironment());
 
             repository.getSkill("closeable-skill"); // Load skill to ensure file system is created
@@ -514,7 +696,17 @@ class ClasspathSkillRepositoryTest {
      */
     private Path createTestJarInFolder(String skillName, String description, String content)
             throws IOException {
-        Path jarPath = tempDir.resolve(skillName + "-folder.jar");
+        return createNamedTestJar(skillName + "-folder.jar", skillName, description, content);
+    }
+
+    /**
+     * Creates a test JAR under an explicit file name — for tests building several jars
+     * holding the same skill name, which the skill-name-derived default would collide on.
+     */
+    private Path createNamedTestJar(
+            String jarFileName, String skillName, String description, String content)
+            throws IOException {
+        Path jarPath = tempDir.resolve(jarFileName);
 
         try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(jarPath))) {
             // Add parent directory
@@ -840,7 +1032,13 @@ class ClasspathSkillRepositoryTest {
 
         public ClasspathSkillRepositoryWithClassLoader(String resourcePath, ClassLoader classLoader)
                 throws IOException {
-            super(resourcePath, classLoader);
+            this(resourcePath, classLoader, null);
+        }
+
+        public ClasspathSkillRepositoryWithClassLoader(
+                String resourcePath, ClassLoader classLoader, java.nio.file.Path cacheDir)
+                throws IOException {
+            super(resourcePath, null, classLoader, cacheDir);
         }
     }
 
@@ -979,5 +1177,21 @@ class ClasspathSkillRepositoryTest {
         public void setAttribute(Path path, String attribute, Object value, LinkOption... options) {
             throw new UnsupportedOperationException();
         }
+    }
+
+    /**
+     * The current version through the serving method's stamp — a {@code null}-version pull.
+     * {@code null} when the skill does not resolve.
+     */
+    private static String latestVersionOf(ClasspathSkillRepository repo, String name) {
+        AgentSkill current = repo.getSkill(name, null);
+        return current != null ? current.getVersion() : null;
+    }
+
+    /** The SKILL.md body read from the summary's {@code originDir} — summaries carry no
+     * body in memory, so body assertions go to disk. */
+    private static String skillBody(AgentSkill skill) throws IOException {
+        return Files.readString(
+                skill.getOriginDir().orElseThrow().resolve("SKILL.md"), StandardCharsets.UTF_8);
     }
 }

@@ -90,13 +90,17 @@ public final class DefinitionStoreSkillRepository implements AgentSkillRepositor
         return listSkillNames();
     }
 
+    /**
+     * Serves the current definition for a latest pull ({@code null}/blank {@code version});
+     * any other version returns {@code null} — this store has no addressable skill
+     * versions, so current content is never served in place of a requested version.
+     */
     @Override
-    public AgentSkill getSkill(String name) {
-        return loadSkill(name)
-                .orElseThrow(
-                        () ->
-                                new IllegalArgumentException(
-                                        "Skill not found in definition store: " + name));
+    public AgentSkill getSkill(String name, String version) {
+        if (version != null && !version.isBlank()) {
+            return null;
+        }
+        return loadSkill(name).orElse(null);
     }
 
     @Override

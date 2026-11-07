@@ -151,7 +151,7 @@ Two behaviors to note:
 
 #### Scope isolation (namespaces)
 
-Reusing a skill name across teams is normal; `agentscope_skills` isolates scopes with a `namespace` column whose unique key is **`UNIQUE(namespace, name)`** — unique within a namespace, free to repeat across them. `skill_resources` carries the `namespace` column too, written with the skill row in one transaction. This is the `AgentSkillRepository` scope-isolation contract realized on a relational store: **one instance binds one namespace, and every no-argument method addresses the bound value**.
+Reusing a skill name across teams is normal; `agentscope_skills` isolates scopes with a `namespace` column whose unique key is **`UNIQUE(namespace, name)`** — unique within a namespace, free to repeat across them. `skill_resources` carries the `namespace` column too, written with the skill row in one transaction. This is the `AgentSkillRepository` scope-isolation contract realized on a relational store: **one instance binds one namespace, and every method addresses the bound value — no method takes a namespace parameter**.
 
 ```sql
 namespace VARCHAR(64) NOT NULL DEFAULT 'default'   -- existing rows fall into default
@@ -168,16 +168,13 @@ teamA.save(List.of(skill), false);                 // team A saves
 teamB.save(List.of(skill), false);                 // the same name in another namespace, independent
 teamA.getSkill("code-review");
 teamA.delete("code-review");                       // scoped to the bound namespace
-
-// Convenience overloads addressing another namespace on one instance
-teamA.save("team-b", List.of(otherSkill), false);
 ```
 
 - The constructors without a namespace bind `"default"`.
 - A `force=true` overwrite stays inside one namespace; it never deletes across namespaces.
-- Namespaces are validated at construction and on every convenience call: 1–64 characters from `[A-Za-z0-9._-]`, anything else throws `IllegalArgumentException`.
+- Namespaces are validated at construction: 1–64 characters from `[A-Za-z0-9._-]`, anything else throws `IllegalArgumentException`.
 - Namespace comparison is case-sensitive on every database; on MySQL the `namespace` columns are pinned to `utf8mb4_bin`, while `name` keeps the case-insensitive default.
-- `clearAllSkills()` clears all skills of one namespace (the no-argument form: the bound one).
+- `clearAllSkills()` clears all skills of the bound namespace.
 - `namespace` is **write-once** — no repository statement updates it.
 
 **Upgrading an existing table** (the framework never alters existing tables — run this once by hand):

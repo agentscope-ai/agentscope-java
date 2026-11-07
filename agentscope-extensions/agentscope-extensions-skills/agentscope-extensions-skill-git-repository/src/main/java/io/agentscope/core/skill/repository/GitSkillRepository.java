@@ -16,11 +16,21 @@
 package io.agentscope.core.skill.repository;
 
 import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.mirror.SkillMirrorStore;
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
+import io.agentscope.core.skill.util.SkillUtil;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -33,6 +43,10 @@ import org.eclipse.jgit.api.errors.TransportException;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.treewalk.TreeWalk;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -95,6 +109,12 @@ import org.slf4j.LoggerFactory;
  * java.nio.file.attribute.FileAttribute[])} to create a temporary directory. The directory is
  * automatically cleaned up on JVM shutdown or when {@link #close()} is called.
  *
+ * <p><b>Versioning:</b> the version token is the resolved commit sha (a sha always
+ * identifies the same content). A {@code null}-version pull serves HEAD after the usual
+ * sync-on-read; a commit id, tag, branch, or revision expression is also a legal version.
+ * Versioned reads materialize the commit tree (JGit blob reads — the working tree is never
+ * touched) into the version cache and return stamped summaries.
+ *
  * @see FileSystemSkillRepository
  * @see AgentSkillRepository
  */
@@ -112,6 +132,17 @@ public class GitSkillRepository implements AgentSkillRepository {
     private final Thread shutdownHook;
     private Path skillsPath;
     private volatile String lastRemoteRef;
+
+    /**
+     * Version-materialization cache root, resolved at construction (explicit {@code cacheDir}
+     * &gt; {@value SkillMirrorStore#CACHE_DIR_PROPERTY} property &gt; default home root). The
+     * store itself is only created on first serve ({@link SkillMirrorStore#of(Path)}), so
+     * construction never touches the disk.
+     */
+    private final Path cacheRoot;
+
+    /** The SKILL.md file name used to identify and parse skill directories in the tree. */
+    private static final String SKILL_FILE_NAME = "SKILL.md";
 
     /**
      * Creates a GitSkillRepository with the specified remote URL using the default branch.
@@ -243,6 +274,42 @@ public class GitSkillRepository implements AgentSkillRepository {
             String source,
             boolean autoSync,
             String skillsRoot) {
+        this(remoteUrl, branch, localPath, source, autoSync, skillsRoot, null);
+    }
+
+    /**
+     * Creates a GitSkillRepository with an explicit in-repo skills root directory and an
+     * explicit version-materialization cache root.
+     *
+     * <p>Every versioned read is materialized into an immutable version directory under the
+     * cache root and served in summary form from there; the cache root resolves as explicit
+     * {@code cacheDir} &gt; {@value SkillMirrorStore#CACHE_DIR_PROPERTY} system property
+     * &gt; {@code ~/.agentscope/skill-cache/<repoIdentity>/}. The cache identity derives
+     * from the remote URL, so multiple instances and processes share one tree.
+     *
+     * @param remoteUrl  The Git repository URL (HTTPS or SSH)
+     * @param branch     The branch name to clone (null for remote default branch)
+     * @param localPath  The local path to clone the repository (null to use temporary directory)
+     * @param source     The custom source identifier (null to use default)
+     * @param autoSync   Whether to auto-sync on read operations
+     * @param skillsRoot Optional in-repo subdirectory containing skill folders
+     * @param cacheDir   Explicit cache root for version materialization (null resolves the
+     *                   property / default root; the directory is created on first use, not
+     *                   at construction)
+     * @throws IllegalArgumentException if {@code remoteUrl} is blank, {@code skillsRoot} is
+     *     absolute / contains a {@code ..} segment / would escape the repo root, or no cache
+     *     root can be resolved ({@code user.home} unset without an explicit {@code cacheDir}
+     *     or property override)
+     * @throws RuntimeException if temporary directory creation fails
+     */
+    public GitSkillRepository(
+            String remoteUrl,
+            String branch,
+            Path localPath,
+            String source,
+            boolean autoSync,
+            String skillsRoot,
+            Path cacheDir) {
         if (remoteUrl == null || remoteUrl.trim().isEmpty()) {
             throw new IllegalArgumentException("Remote URL cannot be null or empty");
         }
@@ -251,6 +318,9 @@ public class GitSkillRepository implements AgentSkillRepository {
         this.source = source;
         this.autoSync = autoSync;
         this.skillsRoot = normalizeSkillsRoot(skillsRoot);
+        this.cacheRoot =
+                SkillMirrorStore.resolveBuiltinRoot(
+                        cacheDir, SkillMirrorStore.repoIdentity("git", remoteUrl.trim()));
 
         if (localPath != null) {
             // User-specified path - not temporary, will not be auto-deleted
@@ -263,7 +333,7 @@ public class GitSkillRepository implements AgentSkillRepository {
             try {
                 this.localPath = Files.createTempDirectory("agentscope-git-skills-");
                 this.tempDirectory = true;
-                logger.info("Created temporary directory for Git repository: {}", this.localPath);
+                logger.info("Created temporary directory for Git repository: {}", localPath);
 
                 this.shutdownHook =
                         SkillFileSystemHelper.registerTempDirectoryCleanup(this.localPath);
@@ -274,10 +344,232 @@ public class GitSkillRepository implements AgentSkillRepository {
         }
     }
 
+    /**
+     * Serves the named skill at the given version reference through the version cache (see
+     * the class-level versioning note). The reference is resolved to its underlying commit
+     * sha (annotated tags peeled), which is both the version stamp and the cache key — an
+     * immutable key, so a reference that later moves (a branch or a retagged release) can
+     * never serve a stale cache directory. A cache hit is a pure local read; a miss reads
+     * the commit's tree and installs the file set as an immutable version directory. An
+     * unknown revision, a skill absent from that commit, or a blank name answers {@code
+     * null}.
+     */
     @Override
-    public AgentSkill getSkill(String name) {
+    public AgentSkill getSkill(String name, String version) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
         ensureAutoSynced();
-        return SkillFileSystemHelper.loadSkill(skillsPath, name, getSource());
+        String ref = version == null || version.isBlank() ? "HEAD" : version;
+        String resolved = resolveCommitSha(ref);
+        if (resolved == null) {
+            return null;
+        }
+        return SkillMirrorStore.of(cacheRoot)
+                .serve(
+                        SkillMirrorStore.repoIdentity("git", remoteUrl),
+                        name,
+                        resolved,
+                        getSource(),
+                        () -> Optional.ofNullable(readSkillFromCommit(name, resolved)))
+                .orElse(null);
+    }
+
+    /**
+     * Resolves any revision string (sha, abbreviated sha, tag, branch, {@code HEAD~n}) to
+     * the peeled commit's full sha — the canonical version key and stamp — or {@code null}
+     * when the reference is unknown or does not point at a commit.
+     */
+    private String resolveCommitSha(String ref) {
+        try (Git git = Git.open(localPath.toFile())) {
+            Repository repo = git.getRepository();
+            ObjectId id = repo.resolve(ref);
+            if (id == null) {
+                return null;
+            }
+            try (RevWalk revWalk = new RevWalk(repo)) {
+                return revWalk.peel(revWalk.parseAny(id)).getName();
+            }
+        } catch (Exception e) {
+            logger.debug("Failed to resolve version reference '{}': {}", ref, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Reads the named skill's complete file set from the given commit's tree as in-memory
+     * transport content — the fetcher of the cache-miss path. Returns {@code null} for an
+     * unknown revision or a skill absent from that commit.
+     */
+    private AgentSkill readSkillFromCommit(String name, String version) {
+        try (Git git = Git.open(localPath.toFile())) {
+            Repository repo = git.getRepository();
+            ObjectId commitId = repo.resolve(version);
+            if (commitId == null) {
+                return null;
+            }
+            RevCommit commit;
+            try (RevWalk revWalk = new RevWalk(repo)) {
+                commit = revWalk.parseCommit(commitId);
+            }
+            String skillDir = locateSkillDir(repo, commit, name);
+            if (skillDir == null) {
+                return null;
+            }
+            String skillMd = null;
+            Map<String, String> resources = new LinkedHashMap<>();
+            try (TreeWalk walk = new TreeWalk(repo)) {
+                walk.addTree(commit.getTree());
+                walk.setRecursive(true);
+                while (walk.next()) {
+                    String relative = relativePathUnder(walk.getPathString(), skillDir);
+                    if (relative == null || isHiddenSegment(relative)) {
+                        continue;
+                    }
+                    byte[] bytes = walk.getObjectReader().open(walk.getObjectId(0)).getBytes();
+                    String content = decodeBlob(bytes);
+                    if (SKILL_FILE_NAME.equals(relative)) {
+                        skillMd = content;
+                    } else {
+                        resources.put(relative, content);
+                    }
+                }
+            }
+            if (skillMd == null) {
+                return null;
+            }
+            AgentSkill skill = SkillUtil.createFrom(skillMd, resources, getSource());
+            if (!Objects.equals(skill.getName(), name)) {
+                // The directory name matched but its manifest declares another name: the
+                // skill does not exist under the requested name at this commit. Null, like
+                // the store's own refusal to install a manifest that disagrees with its key.
+                return null;
+            }
+            return skill.toBuilder().version(version).build();
+        } catch (Exception e) {
+            logger.warn("Versioned read of '{}' at {} failed: {}", name, version, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Locates the named skill's directory inside the commit: the explicit {@code skillsRoot}
+     * when configured, else the legacy convention (a {@code skills/} subdir when the commit
+     * has one, else the repository root). The directory is matched first by the conventional
+     * {@code <dir> == <name>} layout, falling back to scanning each skill directory's
+     * SKILL.md frontmatter name (the working-tree loader matches by metadata name too).
+     */
+    private String locateSkillDir(Repository repo, RevCommit commit, String name)
+            throws IOException {
+        String direct;
+        String scanPrefix;
+        ObjectId scanTree;
+        if (skillsRoot != null) {
+            direct = skillsRoot + "/" + name;
+            scanPrefix = skillsRoot + "/";
+            scanTree = subtreeOf(repo, commit, skillsRoot);
+        } else if (hasTreeDir(repo, commit, "skills")) {
+            direct = "skills/" + name;
+            scanPrefix = "skills/";
+            scanTree = subtreeOf(repo, commit, "skills");
+        } else {
+            direct = name;
+            scanPrefix = "";
+            scanTree = commit.getTree();
+        }
+        if (hasTreeDir(repo, commit, direct)) {
+            return direct;
+        }
+        if (scanTree == null) {
+            return null;
+        }
+        // Fallback: match by the SKILL.md metadata name across the skill directories.
+        try (TreeWalk walk = new TreeWalk(repo)) {
+            walk.addTree(scanTree);
+            walk.setRecursive(false);
+            while (walk.next()) {
+                if (!walk.isSubtree() || isHiddenSegment(walk.getNameString())) {
+                    continue;
+                }
+                String candidate = scanPrefix + walk.getNameString();
+                String skillMd = readTreeFile(repo, commit, candidate + "/" + SKILL_FILE_NAME);
+                if (skillMd != null && matchesSkillName(skillMd, name)) {
+                    return candidate;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** The subtree id of an in-commit directory, or {@code null} when absent or a file. */
+    private ObjectId subtreeOf(Repository repo, RevCommit commit, String path) throws IOException {
+        try (TreeWalk walk = TreeWalk.forPath(repo, path, commit.getTree())) {
+            return walk != null && walk.isSubtree() ? walk.getObjectId(0) : null;
+        }
+    }
+
+    /** Whether the commit's root (or the given first-level path) is a directory in the tree. */
+    private boolean hasTreeDir(Repository repo, RevCommit commit, String path) throws IOException {
+        try (TreeWalk walk = TreeWalk.forPath(repo, path, commit.getTree())) {
+            return walk != null && walk.isSubtree();
+        }
+    }
+
+    /** Reads one file's bytes from the commit tree as UTF-8 text; {@code null} when absent. */
+    private String readTreeFile(Repository repo, RevCommit commit, String path) throws IOException {
+        try (TreeWalk walk = TreeWalk.forPath(repo, path, commit.getTree())) {
+            if (walk == null || walk.isSubtree()) {
+                return null;
+            }
+            return new String(
+                    walk.getObjectReader().open(walk.getObjectId(0)).getBytes(),
+                    StandardCharsets.UTF_8);
+        }
+    }
+
+    /** Whether the SKILL.md frontmatter declares the given skill name. */
+    private static boolean matchesSkillName(String skillMd, String name) {
+        try {
+            return name.equals(SkillUtil.createFrom(skillMd, null).getName());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** The walk path relative to the skill directory, or {@code null} when outside it. */
+    private static String relativePathUnder(String path, String skillDir) {
+        if (!path.startsWith(skillDir + "/")) {
+            return null;
+        }
+        return path.substring(skillDir.length() + 1);
+    }
+
+    /** Whether any segment of the relative path starts with a dot (hidden entry). */
+    private static boolean isHiddenSegment(String relativePath) {
+        for (String segment : relativePath.split("/")) {
+            if (segment.startsWith(".")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Decodes a blob as UTF-8 text, or wraps undecodable (binary) bytes in the {@code
+     * base64:} transport convention shared with SkillFileSystemHelper and SkillMirrorStore,
+     * so binary resources materialize byte-exact instead of as UTF-8 replacement characters.
+     */
+    private static String decodeBlob(byte[] bytes) {
+        try {
+            return StandardCharsets.UTF_8
+                    .newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
+        } catch (CharacterCodingException e) {
+            return "base64:" + Base64.getEncoder().encodeToString(bytes);
+        }
     }
 
     @Override
@@ -289,7 +581,16 @@ public class GitSkillRepository implements AgentSkillRepository {
     @Override
     public List<AgentSkill> getAllSkills() {
         ensureAutoSynced();
-        return SkillFileSystemHelper.getAllSkills(skillsPath, getSource());
+        List<AgentSkill> skills = SkillFileSystemHelper.getAllSkills(skillsPath, getSource());
+        String head = resolveLocalHead();
+        if (head == null) {
+            return skills;
+        }
+        List<AgentSkill> stamped = new ArrayList<>(skills.size());
+        for (AgentSkill skill : skills) {
+            stamped.add(skill == null ? null : skill.toBuilder().version(head).build());
+        }
+        return stamped;
     }
 
     @Override
@@ -349,7 +650,10 @@ public class GitSkillRepository implements AgentSkillRepository {
 
         try {
             SkillFileSystemHelper.deleteDirectory(localPath);
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // Cleanup is best-effort (the JVM shutdown hook retries): a RuntimeException
+            // escapes the helper on Windows when JGit's pack mmap is not yet released —
+            // close() must never blow up on a locked temporary clone.
             logger.warn("Failed to cleanup local repository directory: {}", localPath, e);
         }
     }

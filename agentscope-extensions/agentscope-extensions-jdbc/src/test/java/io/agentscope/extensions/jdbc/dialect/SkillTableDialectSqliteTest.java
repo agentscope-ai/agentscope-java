@@ -19,8 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.extensions.jdbc.dialect.vendor.SqliteDialect;
 import io.agentscope.extensions.jdbc.skill.JdbcAgentSkillRepository;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -95,7 +100,8 @@ class SkillTableDialectSqliteTest {
                         .enableBaseTables(false)
                         .enableSkillTables(true)
                         .build();
-        JdbcAgentSkillRepository repo = new JdbcAgentSkillRepository(ds, dialect);
+        JdbcAgentSkillRepository repo =
+                new JdbcAgentSkillRepository(ds, dialect, "default", true, tempDir);
 
         var skill =
                 new io.agentscope.core.skill.AgentSkill(
@@ -104,7 +110,7 @@ class SkillTableDialectSqliteTest {
                         Map.of("docs/readme.md", "hello"),
                         "test");
         assertTrue(repo.save(List.of(skill), false));
-        assertEquals("hello", repo.getSkill("sqlite-skill").getResource("docs/readme.md"));
+        assertEquals("hello", repo.getSkill("sqlite-skill", null).getResource("docs/readme.md"));
 
         // Foreign keys are off by default in SQLite, so this passing proves the repository
         // deletes the resource rows itself instead of relying on ON DELETE CASCADE.
@@ -127,7 +133,8 @@ class SkillTableDialectSqliteTest {
                         .enableBaseTables(false)
                         .enableSkillTables(true)
                         .build();
-        JdbcAgentSkillRepository repo = new JdbcAgentSkillRepository(ds, dialect);
+        var teamARepo = new JdbcAgentSkillRepository(ds, dialect, "team-a", true, tempDir);
+        var teamBRepo = new JdbcAgentSkillRepository(ds, dialect, "team-b", true, tempDir);
         var teamA =
                 new io.agentscope.core.skill.AgentSkill(
                         Map.of("name", "shared", "description", "team-a"),
@@ -141,15 +148,15 @@ class SkillTableDialectSqliteTest {
                         Map.of("docs/b.md", "b"),
                         "test");
 
-        assertTrue(repo.save("team-a", List.of(teamA), false));
-        assertTrue(repo.save("team-b", List.of(teamB), false), "the composite key admits both");
-        assertEquals("content-a", repo.getSkill("team-a", "shared").getSkillContent());
-        assertEquals("content-b", repo.getSkill("team-b", "shared").getSkillContent());
+        assertTrue(teamARepo.save(List.of(teamA), false));
+        assertTrue(teamBRepo.save(List.of(teamB), false), "the composite key admits both");
+        assertTrue(skillBody(teamARepo.getSkill("shared", null)).contains("content-a"));
+        assertTrue(skillBody(teamBRepo.getSkill("shared", null)).contains("content-b"));
 
         // Resources are deleted per skill id, so the surviving namespace keeps its own rows
         // even though SQLite enforces no cascading foreign key here.
-        assertTrue(repo.delete("team-a", "shared"));
-        assertEquals("b", repo.getSkill("team-b", "shared").getResource("docs/b.md"));
+        assertTrue(teamARepo.delete("shared"));
+        assertEquals("b", skillResource(teamBRepo.getSkill("shared", null), "docs/b.md"));
         try (Connection conn = ds.getConnection();
                 Statement stmt = conn.createStatement();
                 ResultSet rs =
@@ -164,5 +171,28 @@ class SkillTableDialectSqliteTest {
         SQLiteDataSource ds = new SQLiteDataSource();
         ds.setUrl("jdbc:sqlite:" + tempDir.resolve(name + ".db").toAbsolutePath());
         return ds;
+    }
+
+    /**
+     * Reads the SKILL.md body from the materialized origin directory — the descriptor
+     * contract keeps bodies on disk; {@code getSkill} summaries carry no content.
+     */
+    private static String skillBody(AgentSkill skill) {
+        try {
+            return Files.readString(
+                    skill.getOriginDir().orElseThrow().resolve("SKILL.md"), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Reads one resource from the materialized origin directory (descriptor contract). */
+    private static String skillResource(AgentSkill skill, String path) {
+        try {
+            return Files.readString(
+                    skill.getOriginDir().orElseThrow().resolve(path), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 }

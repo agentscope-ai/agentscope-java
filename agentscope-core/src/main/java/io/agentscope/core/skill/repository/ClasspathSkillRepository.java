@@ -16,8 +16,11 @@
 package io.agentscope.core.skill.repository;
 
 import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.mirror.SkillMirrorStore;
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
+import io.agentscope.core.skill.util.SkillUtil;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -25,16 +28,25 @@ import java.nio.file.FileSystem;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * ClasspathSkillRepository - Loads skills from classpath resources and JAR files.
+ *
+ * <p>Versions are content-addressed: each skill's version is the {@link
+ * SkillUtil#hashSkillDirectory(Path)} token over its complete file set, so the same bytes
+ * always mean the same version — across rebuilds, JVM runs and processes sharing a cache
+ * root. {@link #getSkill(String, String)} serves the current token; any other
+ * version reference yields {@code null}, because the classpath holds each skill's bytes only
+ * at their current token.
  *
  * <p>This repository bridges the gap between JAR resources and file system based skill loading by:
  * <ol>
@@ -63,14 +75,8 @@ import org.slf4j.LoggerFactory;
  * <pre>{@code
  * // Load from parent directory containing multiple skills
  * try (ClasspathSkillRepository repository = new ClasspathSkillRepository("skills")) {
- *     // Get all available skill names
- *     List<String> skillNames = repository.getAllSkillNames();
- *
- *     // Load a specific skill
+ *     // Latest pull by name — the serving read
  *     AgentSkill skillA = repository.getSkill("skill-a");
- *
- *     // Load all skills at once
- *     List<AgentSkill> allSkills = repository.getAllSkills();
  * }
  * }</pre>
  *
@@ -92,6 +98,28 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     /**
+     * Resolved extraction cache root (null in a directory-backed environment): the first pull
+     * of a skill at a version extracts its files from the JAR into that version's cache
+     * directory, so every later pull — in this run or a later one sharing the root — is a
+     * local read while the content is unchanged. Resolved at construction to fail fast on an
+     * unresolvable root; the store is acquired lazily through {@link
+     * SkillMirrorStore#of(Path)} on first serve, so construction never touches the disk.
+     */
+    private final Path cacheRoot;
+
+    /** Cache identity shared by all skills of this repository. */
+    private final String repoIdentity;
+
+    /**
+     * Content-addressed version per skill, keyed by the SKILL.md metadata name and minted
+     * once at construction ({@link SkillUtil#hashSkillDirectory} over each skill's complete
+     * file set) — JAR resources are immutable within a JVM run, so the tokens hold for the
+     * repository's lifetime. Null in a directory-backed environment, whose live tree is
+     * re-hashed per call instead.
+     */
+    private final Map<String, String> jarSkillTokens;
+
+    /**
      * Creates a repository for loading skills from resources.
      *
      * @param resourcePath The path to the skill under resources, e.g., "writing-skills"
@@ -110,6 +138,35 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
      */
     public ClasspathSkillRepository(String resourcePath, String source) throws IOException {
         this(resourcePath, source, ClasspathSkillRepository.class.getClassLoader());
+    }
+
+    /**
+     * Creates a repository for loading skills from resources with an explicit extraction
+     * cache directory (used only in JAR environments; a directory-backed repository serves
+     * its own tree).
+     *
+     * @param resourcePath The path to the skill under resources, e.g., "writing-skills"
+     * @param cacheDir explicit cache root for the JAR-extraction store (null resolves the
+     *     property / default root)
+     * @throws IOException if initialization fails
+     */
+    public ClasspathSkillRepository(String resourcePath, Path cacheDir) throws IOException {
+        this(resourcePath, null, ClasspathSkillRepository.class.getClassLoader(), cacheDir);
+    }
+
+    /**
+     * Creates a repository for loading skills from resources with a custom source and an
+     * explicit extraction cache directory (JAR environments only).
+     *
+     * @param resourcePath The path to the skill under resources, e.g., "writing-skills"
+     * @param source The custom source identifier (null to use default)
+     * @param cacheDir explicit cache root for the JAR-extraction store (null resolves the
+     *     property / default root)
+     * @throws IOException if initialization fails
+     */
+    public ClasspathSkillRepository(String resourcePath, String source, Path cacheDir)
+            throws IOException {
+        this(resourcePath, source, ClasspathSkillRepository.class.getClassLoader(), cacheDir);
     }
 
     /**
@@ -134,6 +191,23 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
      */
     protected ClasspathSkillRepository(String resourcePath, String source, ClassLoader classLoader)
             throws IOException {
+        this(resourcePath, source, classLoader, null);
+    }
+
+    /**
+     * Creates a repository for loading skills from resources using a specific ClassLoader and
+     * an explicit extraction cache directory (JAR environments only).
+     *
+     * @param resourcePath The path to the skill under resources, e.g., "writing-skills"
+     * @param source The custom source identifier (null to use default)
+     * @param classLoader The ClassLoader to use for loading resources
+     * @param cacheDir explicit cache root for the JAR-extraction store (null resolves the
+     *     property / default root)
+     * @throws IOException if initialization fails
+     */
+    protected ClasspathSkillRepository(
+            String resourcePath, String source, ClassLoader classLoader, Path cacheDir)
+            throws IOException {
         try {
             this.resourcePath = resourcePath;
             URL resourceUrl = classLoader.getResource(resourcePath);
@@ -154,31 +228,29 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
                         schemeSpecificUriPath.substring(schemeSpecificUriPath.lastIndexOf("!") + 1);
                 logger.info("Actual resource path: {}", actualResourcePath);
                 this.skillBasePath = fileSystem.getPath(actualResourcePath);
+                this.repoIdentity = SkillMirrorStore.repoIdentity("classpath", resourcePath);
+                // Fail fast on an unresolvable cache root; the store itself is bound
+                // lazily on first serve.
+                this.cacheRoot = SkillMirrorStore.resolveBuiltinRoot(cacheDir, repoIdentity);
             } else {
                 this.isJar = false;
                 this.fileSystem = null;
                 this.jarFileSystemUri = null;
                 this.skillBasePath = Path.of(uri);
+                // A real directory serves itself — no extraction cache, originDir = the dir.
+                this.repoIdentity = null;
+                this.cacheRoot = null;
             }
             logger.info("is in Jar environment: {}", this.isJar);
             this.source = source != null ? source : buildDefaultSource(resourcePath);
+            // JAR resources are immutable within a JVM run, so every skill's content
+            // version is minted once here and later serves are map lookups; a directory
+            // tree is live, so its version is re-hashed per call.
+            this.jarSkillTokens = isJar ? mintJarSkillTokens() : null;
 
         } catch (URISyntaxException e) {
             throw new IOException("Invalid resource URI", e);
         }
-    }
-
-    /**
-     * Gets a skill by name.
-     *
-     * @param skillName The skill name (from SKILL.md metadata)
-     * @return The loaded AgentSkill object
-     * @throws IllegalStateException if the repository has been closed
-     */
-    @Override
-    public AgentSkill getSkill(String skillName) {
-        checkNotClosed();
-        return SkillFileSystemHelper.loadSkill(skillBasePath, skillName, source);
     }
 
     /**
@@ -202,7 +274,73 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
     @Override
     public List<AgentSkill> getAllSkills() {
         checkNotClosed();
-        return SkillFileSystemHelper.getAllSkills(skillBasePath, source);
+        List<AgentSkill> skills =
+                new ArrayList<>(SkillFileSystemHelper.getAllSkills(skillBasePath, source));
+        skills.replaceAll(this::withCurrentVersion);
+        return skills;
+    }
+
+    /**
+     * Serves the skill at its content-addressed version — the {@link
+     * SkillUtil#hashSkillDirectory} token over the skill's complete file set. {@code
+     * null}/blank resolves and stamps the current version; any other reference yields {@code
+     * null}, because the classpath holds each skill's bytes only at their current token.
+     *
+     * <p><b>JAR environments:</b> the first pull at a token extracts the skill's files from
+     * the JAR into that token's cache directory; the returned summary carries {@code
+     * originDir} = that directory and an empty resource map, and every later pull —
+     * including in a later JVM run sharing the cache root — is a local read while the
+     * content is unchanged. <b>Directory environments:</b> the resource directory is served
+     * directly with {@code originDir} set, and the version is re-hashed per call because
+     * the tree is live.
+     *
+     * @param name the skill name to read
+     * @param version the version reference to resolve ({@code null}/blank = current)
+     * @return the skill at its content-addressed version, or {@code null} for a null/blank
+     *     name, a missing skill or a reference other than the current version
+     */
+    @Override
+    public AgentSkill getSkill(String name, String version) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        checkNotClosed();
+        if (jarSkillTokens != null) {
+            String token = jarSkillTokens.get(name);
+            if (token == null) {
+                return null;
+            }
+            if (version != null && !version.isBlank() && !token.equals(version)) {
+                return null;
+            }
+            return SkillMirrorStore.of(cacheRoot)
+                    .serve(
+                            repoIdentity,
+                            name,
+                            token,
+                            source,
+                            () -> {
+                                try {
+                                    return Optional.of(
+                                            SkillFileSystemHelper.loadSkill(
+                                                    skillBasePath, name, source));
+                                } catch (IllegalArgumentException e) {
+                                    return Optional.empty();
+                                }
+                            })
+                    .orElse(null);
+        }
+        // Directory branch — summary form (SKILL.md only, resources behind originDir);
+        // routing through the default getSkill would recurse back here.
+        if (!skillExists(name)) {
+            return null;
+        }
+        AgentSkill skill = SkillFileSystemHelper.loadSkill(skillBasePath, name, source, false);
+        String token = hashSkillVersion(skill.getOriginDir().orElseThrow());
+        if (version != null && !version.isBlank() && !token.equals(version)) {
+            return null;
+        }
+        return skill.toBuilder().version(token).build();
     }
 
     @Override
@@ -231,6 +369,51 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
     @Override
     public String getSource() {
         return source;
+    }
+
+    /**
+     * Records the skill's current content-addressed version on a loaded skill, so every
+     * instance this repository returns carries its own version: JAR skills read their
+     * construction-time token; a live directory tree is re-hashed per call. {@code null}
+     * input passes through untouched.
+     */
+    private AgentSkill withCurrentVersion(AgentSkill skill) {
+        if (skill == null) {
+            return null;
+        }
+        String token =
+                jarSkillTokens != null
+                        ? jarSkillTokens.get(skill.getName())
+                        : hashSkillVersion(skill.getOriginDir().orElseThrow());
+        return skill.toBuilder().version(token).build();
+    }
+
+    /**
+     * One pass at construction: every parseable skill directory keyed by its SKILL.md
+     * metadata name, valued by its content-addressed version. Unreadable entries the
+     * listing helper skips are exactly the skills serving must refuse anyway.
+     */
+    private Map<String, String> mintJarSkillTokens() {
+        Map<String, String> tokens = new HashMap<>();
+        for (AgentSkill summary :
+                SkillFileSystemHelper.getAllSkills(skillBasePath, source, false)) {
+            summary.getOriginDir()
+                    .ifPresent(dir -> tokens.put(summary.getName(), hashSkillVersion(dir)));
+        }
+        return Collections.unmodifiableMap(tokens);
+    }
+
+    /**
+     * The content-addressed version of a skill directory: the hash of its complete file
+     * set, so the same bytes carry the same version wherever and whenever they are hashed.
+     */
+    private static String hashSkillVersion(Path skillDir) {
+        try {
+            return SkillUtil.hashSkillDirectory(skillDir);
+        } catch (IOException e) {
+            throw new UncheckedIOException(
+                    "Cannot mint the content version of skill directory: " + skillDir, e);
+        }
     }
 
     private String buildDefaultSource(String resourcePath) {

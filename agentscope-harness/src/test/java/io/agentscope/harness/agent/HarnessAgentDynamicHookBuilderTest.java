@@ -174,13 +174,14 @@ class HarnessAgentDynamicHookBuilderTest {
                                 .workspace(workspace)
                                 .abstractFilesystem(new LocalFilesystem(workspace))
                                 .skillRepository(repository)
+                                .enableSkills("frozen-skill")
                                 .disableDynamicSkills()
                                 .build());
 
         assertEquals(
                 1,
                 repository.readCount(),
-                "Static mode must read each repository once while building the agent");
+                "Static mode must pull the selected skill once while building the agent");
         io.agentscope.harness.agent.middleware.HarnessSkillMiddleware skillMiddleware =
                 agent.getDelegate().getMiddlewares().stream()
                         .filter(
@@ -275,7 +276,11 @@ class HarnessAgentDynamicHookBuilderTest {
                 "beta",
                 middleware.runtime().currentCatalog(ctx).all().iterator().next().skill().getName(),
                 "The loader catalog must use the same filtered view as the prompt");
-        assertEquals(1, repository.readCount());
+        assertEquals(
+                2,
+                repository.readCount(),
+                "Each explicitly selected name (alpha, beta — the visibility gate then removes"
+                        + " alpha) is pulled exactly once");
     }
 
     @Test
@@ -302,7 +307,10 @@ class HarnessAgentDynamicHookBuilderTest {
 
         assertFalse(capturedModelInput(model).contains("must stay hidden"));
         assertTrue(frozenSkillMiddleware(agent).runtime().currentCatalog(ctx).isEmpty());
-        assertEquals(1, repository.readCount());
+        assertEquals(
+                0,
+                repository.readCount(),
+                "With skills disabled the repository declares no selection and is never read");
     }
 
     @Test
@@ -501,6 +509,13 @@ class HarnessAgentDynamicHookBuilderTest {
     }
 
     private static class EmptySkillRepository implements AgentSkillRepository {
+
+        /** Always {@code null}: no versioned reads on this stub. */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            return null;
+        }
+
         @Override
         public AgentSkill getSkill(String name) {
             return null;
@@ -560,10 +575,15 @@ class HarnessAgentDynamicHookBuilderTest {
             this.skills = skills;
         }
 
+        /** Latest pull serves the stored skill and counts the read; any explicit version
+         * answers {@code null} (no version capability on this stub). */
         @Override
-        public List<AgentSkill> getAllSkills() {
+        public AgentSkill getSkill(String name, String version) {
+            if (version != null && !version.isBlank()) {
+                return null;
+            }
             reads.incrementAndGet();
-            return skills;
+            return skills.stream().filter(s -> s.getName().equals(name)).findFirst().orElse(null);
         }
 
         private int readCount() {

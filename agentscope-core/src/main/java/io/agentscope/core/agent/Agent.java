@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.core.skill.SkillVersionPolicy;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
 
@@ -129,6 +130,14 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
      * allocation when {@code null}.
      */
     default Path getSkillWorkDir() {
+        return null;
+    }
+
+    /**
+     * Returns the agent's skill version policy, or {@code null} when this agent type does not
+     * expose one; {@code null} is treated as unset ({@link SkillVersionPolicy.Mode#LATEST}).
+     */
+    default SkillVersionPolicy getSkillVersionPolicy() {
         return null;
     }
 }

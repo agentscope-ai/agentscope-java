@@ -19,10 +19,14 @@ en_link: /v2/en/integration/skill/overview
 
 ```java
 AgentSkillRepository repo = ...;        // 任选一种实现
-List<AgentSkill> skills = repo.getAllSkills();
+
+// 按名字显式读取（latest 拉取）。批量枚举 —— getAllSkillNames() / getAllSkills() ——
+// 自 2.1.0 起对服务路径弃用：用显式选择约束 agent 的技能集，
+// 不要枚举规模未知的仓储。
+AgentSkill calculate = repo.getSkill("calculate");
 
 Toolkit toolkit = new Toolkit();
-skills.forEach(toolkit::registerSkill);
+toolkit.registerSkill(calculate);
 
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")

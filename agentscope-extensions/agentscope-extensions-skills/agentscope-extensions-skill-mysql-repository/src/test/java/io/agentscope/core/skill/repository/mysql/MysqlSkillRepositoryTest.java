@@ -18,6 +18,7 @@ package io.agentscope.core.skill.repository.mysql;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -30,6 +31,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -43,6 +45,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -560,40 +563,29 @@ public class MysqlSkillRepositoryTest {
         }
 
         @Test
-        @DisplayName("Should reject null skill name in getSkill")
+        @DisplayName("Should return null for null skill name in getSkill")
         void testGetSkillWithNullName() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill(null),
-                    "Skill name cannot be null or empty");
+            assertNull(repo.getSkill(null));
         }
 
         @Test
-        @DisplayName("Should reject empty skill name in getSkill")
+        @DisplayName("Should return null for empty skill name in getSkill")
         void testGetSkillWithEmptyName() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill(""),
-                    "Skill name cannot be null or empty");
+            assertNull(repo.getSkill(""));
         }
 
         @Test
-        @DisplayName("Should reject skill name with path traversal")
+        @DisplayName("Should return null for skill name with path traversal")
         void testGetSkillWithPathTraversal() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill("../etc/passwd"),
-                    "Skill name cannot contain path separators");
+            assertNull(repo.getSkill("../etc/passwd"));
         }
 
         @Test
-        @DisplayName("Should reject skill name exceeding max length")
+        @DisplayName("Should return null for skill name exceeding max length")
         void testGetSkillWithExceedingMaxLength() {
             String longName = "a".repeat(256);
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill(longName),
-                    "Skill name cannot exceed 255 characters");
+
+            assertNull(repo.getSkill(longName));
         }
     }
 
@@ -613,8 +605,10 @@ public class MysqlSkillRepositoryTest {
 
         @Test
         @DisplayName("Should get skill successfully")
-        void testGetSkill() throws SQLException {
-            when(mockResultSet.next()).thenReturn(true, true, false);
+        void testGetSkill(@TempDir Path cacheDir) throws SQLException {
+            // next(): detection (construction), latest version, skill row, resources end
+            when(mockResultSet.next()).thenReturn(true, true, true, false);
+            when(mockResultSet.getLong("id")).thenReturn(1000L);
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
@@ -625,28 +619,39 @@ public class MysqlSkillRepositoryTest {
                                     + "\"homepage\":\"https://example.com\"}");
 
             MysqlSkillRepository metadataRepo =
-                    new MysqlSkillRepository(mockDataSource, true, true);
+                    MysqlSkillRepository.builder(mockDataSource)
+                            .createIfNotExist(true)
+                            .writeable(true)
+                            .cacheDir(cacheDir)
+                            .build();
 
             AgentSkill skill = metadataRepo.getSkill("test-skill");
 
             assertNotNull(skill);
             assertEquals("test-skill", skill.getName());
             assertEquals("Test description", skill.getDescription());
-            assertEquals("Test content", skill.getSkillContent());
-            assertEquals("mysql_test", skill.getSource());
+            assertEquals("1000", skill.getVersion());
             assertEquals("https://example.com", skill.getMetadataValue("homepage"));
+            assertNotNull(skill.getOriginDir());
         }
 
         @Test
         @DisplayName("Should fall back to core metadata when metadata_json column is absent")
-        void testGetSkillLegacySchemaFallback() throws SQLException {
-            when(mockResultSet.next()).thenReturn(false, true, false);
+        void testGetSkillLegacySchemaFallback(@TempDir Path cacheDir) throws SQLException {
+            // next(): detection (construction), latest version, skill row, resources end
+            when(mockResultSet.next()).thenReturn(false, true, true, false);
+            when(mockResultSet.getLong("id")).thenReturn(2000L);
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
             when(mockResultSet.getString("source")).thenReturn("mysql_test");
 
-            MysqlSkillRepository legacyRepo = new MysqlSkillRepository(mockDataSource, true, true);
+            MysqlSkillRepository legacyRepo =
+                    MysqlSkillRepository.builder(mockDataSource)
+                            .createIfNotExist(true)
+                            .writeable(true)
+                            .cacheDir(cacheDir)
+                            .build();
             AgentSkill skill = legacyRepo.getSkill("test-skill");
 
             assertEquals(List.of("name", "description"), List.copyOf(skill.getMetadata().keySet()));
@@ -681,15 +686,12 @@ public class MysqlSkillRepositoryTest {
         }
 
         @Test
-        @DisplayName("Should throw exception when skill not found")
+        @DisplayName("Should return null when skill not found")
         void testGetSkillNotFound() throws SQLException {
             when(mockStatement.executeQuery()).thenReturn(mockResultSet);
             when(mockResultSet.next()).thenReturn(false);
 
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> repo.getSkill("non-existent"),
-                    "Skill not found");
+            assertNull(repo.getSkill("non-existent"));
         }
 
         @Test

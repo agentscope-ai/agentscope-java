@@ -630,10 +630,10 @@ public class SkillBox {
 
     /**
      * Sets a stable working directory for resource uploads and code execution. Callers can use
-     * this to share one workDir across multiple SkillBox instances (e.g. {@code
-     * DynamicSkillMiddleware} rebuilds the box every call, but the workDir lives for the agent's
-     * lifetime so {@code uploadSkillFiles} no longer mints a fresh {@code agentscope-code-execution-*}
-     * tempdir each round).
+     * this to share one workDir across multiple SkillBox instances — for example a caller that
+     * rebuilds its box per call but wants {@code uploadSkillFiles} to keep writing under one
+     * directory instead of minting a fresh {@code agentscope-code-execution-*} tempdir each
+     * round. Callers that need per-build isolation leave it {@code null} (the default).
      *
      * @param workDir the directory under which {@code skills/<skillId>/} subtrees are written;
      *                {@code null} (the default) preserves the legacy per-instance tempdir behavior
@@ -729,6 +729,13 @@ public class SkillBox {
      *   <li>Otherwise, use workDir/skills (workDir may be a temporary directory).</li>
      * </ul>
      *
+     * <p>The directory is allocated lazily at the first file actually written: a build whose
+     * every skill is already materialized ({@code originDir} set) or file-less mints no
+     * directory and registers no cleanup hook — boxes are rebuilt per call, so an eager
+     * allocation would leak one empty temp directory per call. With nothing written the
+     * prompt provider's upload path stays unset and its code-execution block degrades to
+     * empty, which is correct: there is nothing on disk to reference.
+     *
      * <p>Security gate: the skill directory (derived from the skill id, whose source part is
      * free-form) and every resource path must pass {@link SkillUtil#resolveContainedPath(Path,
      * String)} — an absolute or traversal-shaped segment would otherwise resolve outside the
@@ -739,8 +746,9 @@ public class SkillBox {
      *
      */
     public void uploadSkillFiles() {
-        Path targetDir = ensureUploadDirExists();
         SkillFileFilter filter = fileFilter != null ? fileFilter : SkillFileFilter.acceptAll();
+        // Null until the first accepted, readable resource is about to be written.
+        Path targetDir = null;
         int fileCount = 0;
 
         for (String skillId : getAllSkillIds()) {
@@ -759,16 +767,6 @@ public class SkillBox {
                 continue;
             }
 
-            Optional<Path> skillDir = SkillUtil.resolveContainedPath(targetDir, skillId);
-            if (skillDir.isEmpty()) {
-                logger.warn(
-                        "Refusing to materialize skill '{}': resolved directory escapes the"
-                                + " target directory '{}'",
-                        skillId,
-                        targetDir);
-                continue;
-            }
-
             for (String resourcePath : resourcePaths) {
                 if (!filter.accept(resourcePath)) {
                     continue;
@@ -778,6 +776,21 @@ public class SkillBox {
                 if (content == null) {
                     logger.warn("Resource not found: {} in skill {}", resourcePath, skillId);
                     continue;
+                }
+
+                if (targetDir == null) {
+                    // First real write of this build — allocate now, not before the loop.
+                    targetDir = ensureUploadDirExists();
+                }
+                Optional<Path> skillDir = SkillUtil.resolveContainedPath(targetDir, skillId);
+                if (skillDir.isEmpty()) {
+                    logger.warn(
+                            "Refusing to materialize skill '{}': resolved directory escapes the"
+                                    + " target directory '{}'",
+                            skillId,
+                            targetDir);
+                    // The skill id resolves the same way for every resource — stop this skill.
+                    break;
                 }
 
                 Optional<Path> containedPath =
@@ -812,7 +825,11 @@ public class SkillBox {
             }
         }
 
-        logger.info("Uploaded {} skill files to: {}", fileCount, targetDir);
+        if (targetDir != null) {
+            logger.info("Uploaded {} skill files to: {}", fileCount, targetDir);
+        } else {
+            logger.debug("No skill files to upload; no upload directory allocated");
+        }
     }
 
     private static class DefaultSkillFileFilter implements SkillFileFilter {

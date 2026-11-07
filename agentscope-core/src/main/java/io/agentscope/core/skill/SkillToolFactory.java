@@ -283,10 +283,17 @@ class SkillToolFactory {
     String loadSkillResourceImpl(String skillId, String path, ToolContextState tcs) {
         AgentSkill skill = validateSkillExists(skillId);
 
-        // Special handling for SKILL.md - return the skill's markdown content
+        // Special handling for SKILL.md - return the skill's markdown content. When an
+        // originDir is set, disk is authoritative: the in-memory snapshot may lag a
+        // version refresh, so prefer the on-disk SKILL.md.
         if ("SKILL.md".equals(path)) {
+            AgentSkill effectiveSkill =
+                    skill.getOriginDir()
+                            .flatMap(dir -> SkillFileSystemHelper.readResource(dir, "SKILL.md"))
+                            .map(content -> skill.toBuilder().skillContent(content).build())
+                            .orElse(skill);
             activateSkill(skillId, tcs);
-            return buildSkillMarkdownResponse(skillId, skill);
+            return buildSkillMarkdownResponse(skillId, effectiveSkill);
         }
 
         // 1. In-memory map (eager FS repos, classpath repos, marketplace prefetch).
@@ -329,7 +336,14 @@ class SkillToolFactory {
         result.append("Source: ").append(skill.getSource()).append("\n\n");
         result.append("Content:\n");
         result.append("---\n");
-        result.append(skill.getSkillContent());
+        // Summaries carry no body (null content); the disk-first dispatch above normally
+        // rebuilds it from originDir. Reaching here with null means neither disk nor memory
+        // could serve the body — say so instead of printing a literal "null".
+        result.append(
+                skill.getSkillContent() != null
+                        ? skill.getSkillContent()
+                        : "(SKILL.md body unavailable: not readable on disk and not held in"
+                                + " memory)");
         result.append("\n---\n");
         return result.toString();
     }

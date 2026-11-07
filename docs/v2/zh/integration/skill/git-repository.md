@@ -34,9 +34,10 @@ GitSkillRepository repo = new GitSkillRepository(
     "https://github.com/agentscope/skills.git"
 );
 
-// 取出全部技能注册到 Toolkit
+// 把选定的技能注册到 Toolkit。全量注册（repo.getAllSkills()）自 2.1.0 起对服务
+// 路径弃用 —— 枚举仅用于管理/批量工具，agent 保持按名字显式拉取。
 Toolkit toolkit = new Toolkit();
-repo.getAllSkills().forEach(toolkit::registerSkill);
+toolkit.registerSkill(repo.getSkill("calculator"));
 
 // 应用退出时清理临时目录
 Runtime.getRuntime().addShutdownHook(new Thread(repo::close));

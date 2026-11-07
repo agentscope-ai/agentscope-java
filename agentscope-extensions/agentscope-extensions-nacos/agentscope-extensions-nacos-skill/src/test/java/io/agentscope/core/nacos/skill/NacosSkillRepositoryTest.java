@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -77,63 +78,47 @@ class NacosSkillRepositoryTest {
     }
 
     @Test
-    @DisplayName("Should throw when getSkill is called with null name")
+    @DisplayName("Should return null when getSkill is called with null name")
     void testGetSkillWithNullName() {
-        IllegalArgumentException e =
-                assertThrows(IllegalArgumentException.class, () -> repository.getSkill(null));
-        assertEquals("Skill name cannot be null or empty", e.getMessage());
+        assertNull(repository.getSkill(null));
     }
 
     @Test
-    @DisplayName("Should throw when getSkill is called with blank name")
+    @DisplayName("Should return null when getSkill is called with blank name")
     void testGetSkillWithBlankName() {
-        IllegalArgumentException e =
-                assertThrows(IllegalArgumentException.class, () -> repository.getSkill("   "));
-        assertEquals("Skill name cannot be null or empty", e.getMessage());
+        assertNull(repository.getSkill("   "));
     }
 
     @Test
-    @DisplayName("Should throw when getSkill is called with empty name")
+    @DisplayName("Should return null when getSkill is called with empty name")
     void testGetSkillWithEmptyName() {
-        IllegalArgumentException e =
-                assertThrows(IllegalArgumentException.class, () -> repository.getSkill(""));
-        assertEquals("Skill name cannot be null or empty", e.getMessage());
+        assertNull(repository.getSkill(""));
     }
 
     @Test
-    @DisplayName("Should throw when skill not found (downloadSkillZip returns null)")
+    @DisplayName("Should return null when skill not found (downloadSkillZip returns null)")
     void testGetSkillWhenDownloadSkillZipReturnsNull() throws NacosException {
         when(aiService.downloadSkillZip("missing-skill")).thenReturn(null);
 
-        IllegalArgumentException e =
-                assertThrows(
-                        IllegalArgumentException.class, () -> repository.getSkill("missing-skill"));
-        assertEquals("Skill not found: missing-skill", e.getMessage());
+        assertNull(repository.getSkill("missing-skill"));
     }
 
     @Test
-    @DisplayName("Should throw IllegalArgumentException when NacosException is NOT_FOUND")
+    @DisplayName("Should return null when NacosException is NOT_FOUND")
     void testGetSkillWhenNacosExceptionNotFound() throws NacosException {
-        NacosException nacosEx = new NacosException(NacosException.NOT_FOUND, "not found");
-        when(aiService.downloadSkillZip("missing-skill")).thenThrow(nacosEx);
+        when(aiService.downloadSkillZip("missing-skill"))
+                .thenThrow(new NacosException(NacosException.NOT_FOUND, "not found"));
 
-        IllegalArgumentException e =
-                assertThrows(
-                        IllegalArgumentException.class, () -> repository.getSkill("missing-skill"));
-        assertEquals("Skill not found: missing-skill", e.getMessage());
-        assertEquals(nacosEx, e.getCause());
+        assertNull(repository.getSkill("missing-skill"));
     }
 
     @Test
-    @DisplayName("Should throw RuntimeException for other NacosException")
+    @DisplayName("Should return null for other NacosException")
     void testGetSkillWhenOtherNacosException() throws NacosException {
-        NacosException nacosEx = new NacosException(500, "server error");
-        when(aiService.downloadSkillZip("my-skill")).thenThrow(nacosEx);
+        when(aiService.downloadSkillZip("my-skill"))
+                .thenThrow(new NacosException(500, "server error"));
 
-        RuntimeException e =
-                assertThrows(RuntimeException.class, () -> repository.getSkill("my-skill"));
-        assertEquals("Failed to load skill from Nacos: my-skill", e.getMessage());
-        assertEquals(nacosEx, e.getCause());
+        assertNull(repository.getSkill("my-skill"));
     }
 
     @Test
@@ -194,19 +179,58 @@ class NacosSkillRepositoryTest {
     @Test
     @DisplayName(
             "Should use downloadSkillZipByVersion when version is set in application Properties")
-    void testGetSkillUsesByVersionWhenConfigured() throws NacosException, IOException {
+    void testGetSkillUsesByVersionWhenConfigured(@TempDir Path cacheDir)
+            throws NacosException, IOException {
         Properties props = new Properties();
         props.setProperty(NacosSkillRepository.SKILL_VERSION_PATH, "v1");
-        NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", props);
+        NacosSkillRepository repo =
+                new NacosSkillRepository(aiService, "public", props, null, cacheDir);
         when(aiService.downloadSkillZipByVersion("my-skill", "v1"))
                 .thenReturn(createSkillZip("my-skill", "Desc", "Content", null, (String) null));
 
         AgentSkill skill = repo.getSkill("my-skill");
 
         assertNotNull(skill);
+        assertEquals("v1", skill.getVersion());
         verify(aiService).downloadSkillZipByVersion("my-skill", "v1");
         verify(aiService, never()).downloadSkillZipByLabel(anyString(), anyString());
         verify(aiService, never()).downloadSkillZip(anyString());
+    }
+
+    @Test
+    @DisplayName("Two clusters sharing one cache root never swap content")
+    void testTwoClustersShareNoCacheEntries(@TempDir Path cacheDir)
+            throws NacosException, IOException {
+        Properties propsA = new Properties();
+        propsA.setProperty("serverAddr", "cluster-a:8848");
+        propsA.setProperty(NacosSkillRepository.SKILL_VERSION_PATH, "v1");
+        Properties propsB = new Properties();
+        propsB.setProperty("serverAddr", "cluster-b:8848");
+        propsB.setProperty(NacosSkillRepository.SKILL_VERSION_PATH, "v1");
+        AiService clusterB = org.mockito.Mockito.mock(AiService.class);
+
+        when(aiService.downloadSkillZipByVersion("my-skill", "v1"))
+                .thenReturn(
+                        createSkillZip("my-skill", "Desc", "Cluster A body", null, (String) null));
+        when(clusterB.downloadSkillZipByVersion("my-skill", "v1"))
+                .thenReturn(
+                        createSkillZip("my-skill", "Desc", "Cluster B body", null, (String) null));
+
+        NacosSkillRepository repoA =
+                new NacosSkillRepository(aiService, "public", propsA, null, cacheDir);
+        NacosSkillRepository repoB =
+                new NacosSkillRepository(clusterB, "public", propsB, null, cacheDir);
+
+        // Same namespace, same skill, same version key, one shared cache root — only the
+        // server address distinguishes the clusters, so each must serve its own bytes.
+        String manifestA =
+                Files.readString(
+                        repoA.getSkill("my-skill").getOriginDir().get().resolve("SKILL.md"));
+        String manifestB =
+                Files.readString(
+                        repoB.getSkill("my-skill").getOriginDir().get().resolve("SKILL.md"));
+        assertTrue(manifestA.contains("Cluster A body"), "cluster A serves its own content");
+        assertTrue(manifestB.contains("Cluster B body"), "cluster B serves its own content");
     }
 
     @Test
@@ -229,11 +253,13 @@ class NacosSkillRepositoryTest {
     @Test
     @DisplayName(
             "Should prefer downloadSkillZipByVersion when both version and label are configured")
-    void testGetSkillVersionTakesPrecedenceOverLabel() throws NacosException, IOException {
+    void testGetSkillVersionTakesPrecedenceOverLabel(@TempDir Path cacheDir)
+            throws NacosException, IOException {
         Properties props = new Properties();
         props.setProperty(NacosSkillRepository.SKILL_VERSION_PATH, "2.0");
         props.setProperty(NacosSkillRepository.SKILL_LABEL_PATH, "stable");
-        NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", props);
+        NacosSkillRepository repo =
+                new NacosSkillRepository(aiService, "public", props, null, cacheDir);
         when(aiService.downloadSkillZipByVersion("s", "2.0"))
                 .thenReturn(createSkillZip("s", "D", "C", null, (String) null));
 
@@ -245,12 +271,14 @@ class NacosSkillRepositoryTest {
 
     @Test
     @DisplayName("Should use JVM system property for version when Properties are absent")
-    void testVersionResolvedFromJvmProperty() throws NacosException, IOException {
+    void testVersionResolvedFromJvmProperty(@TempDir Path cacheDir)
+            throws NacosException, IOException {
         String key = NacosSkillRepository.SKILL_VERSION_PATH;
         String previous = System.getProperty(key);
         try {
             System.setProperty(key, "from-jvm");
-            NacosSkillRepository repo = new NacosSkillRepository(aiService, "public");
+            NacosSkillRepository repo =
+                    new NacosSkillRepository(aiService, "public", null, null, cacheDir);
             when(aiService.downloadSkillZipByVersion("n", "from-jvm"))
                     .thenReturn(createSkillZip("n", "D", "C", null, (String) null));
 
@@ -268,14 +296,16 @@ class NacosSkillRepositoryTest {
 
     @Test
     @DisplayName("Should prefer application Properties over JVM system property for version")
-    void testApplicationVersionOverridesJvm() throws NacosException, IOException {
+    void testApplicationVersionOverridesJvm(@TempDir Path cacheDir)
+            throws NacosException, IOException {
         String key = NacosSkillRepository.SKILL_VERSION_PATH;
         String previous = System.getProperty(key);
         try {
             System.setProperty(key, "jvm-ver");
             Properties props = new Properties();
             props.setProperty(key, "app-ver");
-            NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", props);
+            NacosSkillRepository repo =
+                    new NacosSkillRepository(aiService, "public", props, null, cacheDir);
             when(aiService.downloadSkillZipByVersion("n", "app-ver"))
                     .thenReturn(createSkillZip("n", "D", "C", null, (String) null));
 
@@ -293,14 +323,16 @@ class NacosSkillRepositoryTest {
 
     @Test
     @DisplayName("Should read version from application Properties before JVM system property")
-    void testApplicationPropertiesVersionBeforeJvm() throws NacosException, IOException {
+    void testApplicationPropertiesVersionBeforeJvm(@TempDir Path cacheDir)
+            throws NacosException, IOException {
         String key = NacosSkillRepository.SKILL_VERSION_PATH;
         String previous = System.getProperty(key);
         try {
             System.setProperty(key, "jvm-should-lose");
             Properties props = new Properties();
             props.setProperty(key, "from-properties-file");
-            NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", props);
+            NacosSkillRepository repo =
+                    new NacosSkillRepository(aiService, "public", props, null, cacheDir);
             when(aiService.downloadSkillZipByVersion("n", "from-properties-file"))
                     .thenReturn(createSkillZip("n", "D", "C", null, (String) null));
 

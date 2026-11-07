@@ -30,6 +30,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.Toolkit;
@@ -210,7 +211,7 @@ class SharedWorkspaceSkillStagingE2ETest {
         return new HarnessSkillMiddleware(
                 List.of(repo("market", "alpha", "beta")),
                 new Toolkit(),
-                null,
+                SkillFilter.only("alpha", "beta"),
                 perUser,
                 new MarketplaceStager(workspace),
                 ShellPathPolicy.localWithShell(workspace));
@@ -281,6 +282,7 @@ class SharedWorkspaceSkillStagingE2ETest {
                 // writes ~18 times with full sync — slow enough to hit the 120 s budget (#3514).
                 .sessionLogStore(new InMemorySessionLogStore())
                 .skillRepository(repo)
+                .skillFilter(SkillFilter.only("alpha", "beta"))
                 .build();
     }
 
@@ -316,6 +318,13 @@ class SharedWorkspaceSkillStagingE2ETest {
     }
 
     private static final class StubRepo implements AgentSkillRepository {
+
+        /** Latest pull serves the stored skill; any explicit version answers {@code null}
+         * (no version capability on this stub). */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            return version == null || version.isBlank() ? getSkill(name) : null;
+        }
 
         private final List<AgentSkill> skills;
         private final String source;
