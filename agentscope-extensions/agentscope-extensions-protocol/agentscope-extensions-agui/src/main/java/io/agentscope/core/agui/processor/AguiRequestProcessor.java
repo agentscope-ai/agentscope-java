@@ -74,6 +74,7 @@ public class AguiRequestProcessor {
     private final AguiAgentAdapterFactory adapterFactory;
     private final AguiResumeCoordinator resumeCoordinator;
     private final AguiRuntimeContextResolver runtimeContextResolver;
+    private final AguiRunBroadcaster broadcaster;
 
     private AguiRequestProcessor(Builder builder) {
         this.agentResolver =
@@ -85,6 +86,8 @@ public class AguiRequestProcessor {
                         : AguiAgentAdapterFactory.defaultFactory();
         this.resumeCoordinator = new AguiResumeCoordinator();
         this.runtimeContextResolver = builder.runtimeContextResolver;
+        this.broadcaster =
+                builder.broadcaster != null ? builder.broadcaster : new AguiRunBroadcaster();
     }
 
     /**
@@ -157,6 +160,7 @@ public class AguiRequestProcessor {
 
         // Resolve agent ID
         String agentId = resolveAgentId(input, headerAgentId, pathAgentId);
+        String broadcastKey = broadcastKey(agentId, runtimeContext, threadId);
 
         // Resolve agent
         Agent agent = agentResolver.resolveAgent(agentId, threadId, runtimeContext.getUserId());
@@ -193,12 +197,37 @@ public class AguiRequestProcessor {
                                 // Create adapter and run
                                 AguiAgentAdapter adapter = adapterFactory.create(agent, config);
                                 AtomicBoolean runErrorSeen = new AtomicBoolean(false);
+                                broadcaster.open(broadcastKey, runId);
+                                // Publish complete source events, not individual frames: a tail
+                                // snapshot must never land in the middle of one event.
+                                List<AguiFramedEvent> pendingFrames = new ArrayList<>();
+                                Runnable flushFrames =
+                                        () -> {
+                                            if (pendingFrames.isEmpty()) {
+                                                return;
+                                            }
+                                            List<AguiFramedEvent> batch =
+                                                    pendingFrames.stream()
+                                                            .filter(
+                                                                    frame ->
+                                                                            !(frame.event()
+                                                                                    instanceof
+                                                                                    AguiEvent
+                                                                                            .RunStarted))
+                                                            .toList();
+                                            pendingFrames.clear();
+                                            // RUN_STARTED is replayed from the session log.
+                                            if (!batch.isEmpty()) {
+                                                broadcaster.publish(broadcastKey, runId, batch);
+                                            }
+                                        };
                                 return Objects.requireNonNull(
-                                                adapter.run(
+                                                adapter.runFramed(
                                                         effectiveInput, effectiveRuntimeContext),
                                                 "adapter event stream is null")
                                         .doOnNext(
-                                                event -> {
+                                                frame -> {
+                                                    AguiEvent event = frame.event();
                                                     if (event instanceof AguiEvent.RunError) {
                                                         runErrorSeen.set(true);
                                                     }
@@ -207,7 +236,19 @@ public class AguiRequestProcessor {
                                                             runId,
                                                             event,
                                                             runErrorSeen.get());
+                                                    if (!pendingFrames.isEmpty()
+                                                            && pendingFrames.get(0).sourceSeq()
+                                                                    != frame.sourceSeq()) {
+                                                        flushFrames.run();
+                                                    }
+                                                    pendingFrames.add(frame);
+                                                    if (event instanceof AguiEvent.RunStarted) {
+                                                        flushFrames.run();
+                                                    }
                                                 })
+                                        .doOnComplete(flushFrames::run)
+                                        .doOnError(error -> flushFrames.run())
+                                        .map(AguiFramedEvent::event)
                                         // Finish the run before the terminal signal reaches
                                         // the caller. doFinally runs after onComplete/onError
                                         // is propagated, so a caller that collected this run's
@@ -225,15 +266,32 @@ public class AguiRequestProcessor {
                                                         resumeCoordinator.finishRun(
                                                                 threadId, runId))
                                         .doFinally(
-                                                signalType ->
-                                                        resumeCoordinator.finishRun(
-                                                                threadId, runId));
+                                                signalType -> {
+                                                    resumeCoordinator.finishRun(threadId, runId);
+                                                    broadcaster.close(broadcastKey, runId);
+                                                });
                             } catch (Throwable error) {
                                 resumeCoordinator.finishRun(threadId, runId);
+                                broadcaster.close(broadcastKey, runId);
                                 return Flux.fromIterable(processorErrorEvents(input, error));
                             }
                         });
         return new ProcessResult(agent, events, runtimeContext);
+    }
+
+    /**
+     * Identifies the live channel of a run.
+     *
+     * <p>A thread id alone is not unique across users and agents, and a shared processor would
+     * otherwise hand one session's live tail to another.
+     */
+    private static String broadcastKey(String agentId, RuntimeContext context, String threadId) {
+        String userId = context != null ? context.getUserId() : null;
+        return (userId == null ? "" : userId)
+                + '\u0000'
+                + (agentId == null ? "" : agentId)
+                + '\u0000'
+                + (threadId == null ? "" : threadId);
     }
 
     /**
@@ -332,7 +390,15 @@ public class AguiRequestProcessor {
                                                     + " SessionHistoryMode.EVENT_LOG")),
                             -1));
         }
-        return AguiSessionLogAttach.attach(input, sessionLog, after, executionRunId, config);
+        // Register the live tail only when the returned stream is subscribed: an attach that is
+        // never subscribed must not occupy a channel queue.
+        String broadcastKey = broadcastKey(agentId, runtimeContext, input.getThreadId());
+        return Flux.defer(
+                () -> {
+                    AguiRunBroadcaster.LiveRun live = broadcaster.live(broadcastKey);
+                    return AguiSessionLogAttach.attach(
+                            input, sessionLog, after, live, executionRunId, config);
+                });
     }
 
     /**
@@ -529,6 +595,7 @@ public class AguiRequestProcessor {
         private AguiAdapterConfig config;
         private AguiAgentAdapterFactory adapterFactory;
         private AguiRuntimeContextResolver runtimeContextResolver;
+        private AguiRunBroadcaster broadcaster;
 
         /**
          * Set the agent resolver.
@@ -572,6 +639,18 @@ public class AguiRequestProcessor {
          */
         public Builder runtimeContextResolver(AguiRuntimeContextResolver runtimeContextResolver) {
             this.runtimeContextResolver = runtimeContextResolver;
+            return this;
+        }
+
+        /**
+         * Set the live frame broadcaster used to hand a reconnecting client over to a running
+         * thread. Optional; when null, a process-local broadcaster is created.
+         *
+         * @param broadcaster The broadcaster shared by all runs of this processor
+         * @return This builder
+         */
+        public Builder broadcaster(AguiRunBroadcaster broadcaster) {
+            this.broadcaster = broadcaster;
             return this;
         }
 

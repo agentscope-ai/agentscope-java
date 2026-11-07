@@ -27,6 +27,7 @@ import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.converter.AguiToolConverter;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.event.AguiFramedEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
@@ -36,6 +37,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.ToolMergeMode;
 import io.agentscope.core.tool.ToolRequestConfig;
@@ -138,6 +140,32 @@ public class AguiAgentAdapter {
      * @return A Flux of AG-UI events
      */
     public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
+        return runFramed(input, runtimeContext).map(AguiFramedEvent::event);
+    }
+
+    /**
+     * Runs the agent with AG-UI protocol input and exposes framed events.
+     *
+     * @param input The AG-UI run input
+     * @return a Flux of framed AG-UI events
+     */
+    public Flux<AguiFramedEvent> runFramed(RunAgentInput input) {
+        return runFramed(input, null);
+    }
+
+    /**
+     * Runs the agent and exposes every AG-UI event together with its session log cursor.
+     *
+     * <p>The cursor of an event comes from the {@code agentscope.session.seq} metadata attached by
+     * the session recorder; only the last frame of one event carries it, while every frame carries
+     * its source event sequence. This lets a transport publish frames that a reconnecting client
+     * can deduplicate at event granularity.
+     *
+     * @param input The AG-UI run input
+     * @param runtimeContext Optional caller-provided runtime context
+     * @return a Flux of framed AG-UI events
+     */
+    public Flux<AguiFramedEvent> runFramed(RunAgentInput input, RuntimeContext runtimeContext) {
         return Flux.defer(
                 () -> {
                     String threadId = input.getThreadId();
@@ -164,7 +192,8 @@ public class AguiAgentAdapter {
                                 streamWithRuntimeContext(
                                         msgs, options, effectiveRuntimeContext, input);
                     } catch (Throwable error) {
-                        return errorEvents(threadId, runId, input, error, true);
+                        return errorEvents(threadId, runId, input, error, true)
+                                .map(AguiFramedEvent::uncursored);
                     }
 
                     AtomicBoolean eventSeen = new AtomicBoolean(false);
@@ -180,11 +209,12 @@ public class AguiAgentAdapter {
                             .onErrorResume(
                                     error ->
                                             errorEvents(
-                                                    threadId,
-                                                    runId,
-                                                    input,
-                                                    error,
-                                                    !eventSeen.get()));
+                                                            threadId,
+                                                            runId,
+                                                            input,
+                                                            error,
+                                                            !eventSeen.get())
+                                                    .map(AguiFramedEvent::uncursored));
                 });
     }
 
@@ -227,25 +257,65 @@ public class AguiAgentAdapter {
         Objects.requireNonNull(events, "agent stream is null");
         return new AgentStream(
                 Flux.concat(
-                        Flux.just(new AguiEvent.RunStarted(threadId, runId)),
-                        events.concatMapIterable(event -> convertEvent(event, state))),
-                () -> finishRun(state));
+                                Flux.just(new AguiEvent.RunStarted(threadId, runId)),
+                                events.concatMapIterable(event -> convertEvent(event, state)))
+                        .map(AguiFramedEvent::uncursored),
+                () -> finishRun(state).map(AguiFramedEvent::uncursored));
     }
 
-    private Flux<AguiEvent> convertAgentEvents(Flux<AgentEvent> events, AguiStreamContext context) {
+    private Flux<AguiFramedEvent> convertAgentEvents(
+            Flux<AgentEvent> events, AguiStreamContext context) {
         return events
                 // Use concatMapIterable to preserve strict event ordering
-                .concatMapIterable(event -> agentEventConverterRegistry.convert(event, context))
+                .concatMapIterable(event -> framesFor(event, context))
                 .onErrorResume(
                         error -> Flux.concat(finishPendingEvents(context), Flux.error(error)));
     }
 
-    private Flux<AguiEvent> finishPendingEvents(AguiStreamContext context) {
-        return Flux.fromIterable(
-                agentEventConverterRegistry.enrich(null, context.finishPendingEvents(), context));
+    /**
+     * Converts one agent event into framed AG-UI events, keeping the session log cursor attached
+     * to it by the session recorder.
+     */
+    private List<AguiFramedEvent> framesFor(AgentEvent event, AguiStreamContext context) {
+        List<AguiEvent> converted = agentEventConverterRegistry.convert(event, context);
+        if (converted.isEmpty()) {
+            return List.of();
+        }
+        // A forwarded child event carries its own journal's seq, which is not comparable with the
+        // parent's cursor. Keep it uncursored: only the live tail can deliver subagent content,
+        // and its sequence must not advance or leak into the parent's broadcast watermark.
+        boolean forwarded = event.getSource() != null && !event.getSource().isBlank();
+        // Every event of a chunk shares the source seq; only the last event of that chunk carries
+        // the cursor, so the cursor advances once the whole chunk has been delivered.
+        long sourceSeq =
+                forwarded ? -1 : metadataSeq(event, SessionRecorder.SESSION_SOURCE_SEQ_KEY);
+        if (sourceSeq < 0 && !forwarded) {
+            sourceSeq = metadataSeq(event, SessionRecorder.SESSION_SEQ_KEY);
+        }
+        long cursorSeq = forwarded ? -1 : metadataSeq(event, SessionRecorder.SESSION_SEQ_KEY);
+        List<AguiFramedEvent> frames = new ArrayList<>(converted.size());
+        for (int i = 0; i < converted.size(); i++) {
+            long seq = cursorSeq >= 0 && i == converted.size() - 1 ? cursorSeq : -1;
+            frames.add(new AguiFramedEvent(seq, sourceSeq, converted.get(i)));
+        }
+        return frames;
     }
 
-    private record AgentStream(Flux<AguiEvent> events, Supplier<Flux<AguiEvent>> finish) {}
+    private static long metadataSeq(AgentEvent event, String key) {
+        Map<String, Object> metadata = event.getMetadata();
+        Object value = metadata == null ? null : metadata.get(key);
+        return value instanceof Number number ? number.longValue() : -1L;
+    }
+
+    private Flux<AguiFramedEvent> finishPendingEvents(AguiStreamContext context) {
+        return Flux.fromIterable(
+                        agentEventConverterRegistry.enrich(
+                                null, context.finishPendingEvents(), context))
+                .map(AguiFramedEvent::uncursored);
+    }
+
+    private record AgentStream(
+            Flux<AguiFramedEvent> events, Supplier<Flux<AguiFramedEvent>> finish) {}
 
     @SuppressWarnings("unchecked")
     private Flux<AgentEvent> invokeHarnessStreamEvents(
@@ -292,6 +362,7 @@ public class AguiAgentAdapter {
             RunAgentInput input, RuntimeContext runtimeContext) {
         ToolRequestConfig perCallRequestConfig = buildToolRequestConfig(input);
         return RuntimeContext.builder(runtimeContext)
+                .runId(input.getRunId())
                 .sessionId(input.getThreadId())
                 .toolRequestConfig(perCallRequestConfig)
                 .put(RunAgentInput.class, input)

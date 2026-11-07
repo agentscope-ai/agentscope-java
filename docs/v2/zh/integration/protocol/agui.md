@@ -109,6 +109,8 @@ AG-UI 恢复路径是 AgentScope 扩展，不属于 AG-UI 协议。标准 `/agui
 - 应用保存 `threadId`、执行的 `runId` 和最后应用的 cursor。
 - 应用历史与 `SessionLog` 使用相同的消息身份，包括 assistant 消息中的工具调用，以及按 turn 复用的文本/推理 id。
 
+回放与实时投递共用同一套消息标识：文本消息使用已提交的 execution `turnId`，推理消息使用 `turnId + ":reasoning"`，工具中断 id 使用 `turnId + ":" + toolCallId`（reply id 仍保留在 interrupt metadata 中）。因此 live tail 会追加到 replay 已声明的消息，而不是再开一条 assistant 消息。
+
 ### 应用历史 + attach
 
 应用层提供基础对话和一个“展示边界”游标：
@@ -139,8 +141,9 @@ AG-UI 恢复路径是 AgentScope 扩展，不属于 AG-UI 协议。标准 `/agui
 
 attach 是已有 run 的重连路径。它是只读观察者：不启动、不继续、不中断 Agent，不调用模型，也不写会话日志。同一个游标始终得到相同的事件，因此重复重连是安全的。
 
-- 回放游标之后的已提交事件，并把每个 committed 事件的游标写入最后一帧的 SSE `id`。
-- run 仍在执行时，attach 通过轮询跟随会话日志。速度较慢，但结果始终正确。
+- 回放游标之后的已提交事件，并把每个 committed 事件的游标写入最后一帧的 SSE `id`。model chunk 属于流式内容而不是回放边界：它的帧只携带 source sequence、不带 `id`，因此重连永远不会落在一条消息中间；工具结果结束帧和 run 结束帧属于边界，会携带 `id`。
+- run 仍在当前进程执行时，attach 优先使用 broadcaster 的有界近期帧缓冲：游标落在缓冲内时直接从内存接续实时尾部，不需要等待日志提交；游标更老时先把日志追平到缓冲中最老的事件，再从缓冲和尾部接续。交接边界及更早的帧按 source sequence 丢弃，因此既不丢帧也不重复，文本按帧而不是按提交批次到达。
+- 没有实时尾部时（其他实例、进程重启、run 已结束），attach 通过轮询跟随会话日志。速度较慢，但结果始终正确。
 - run 已结束时，排空剩余事件并以 `RUN_FINISHED` / `RUN_ERROR` 结束。
 - 游标之后的文本和工具输出映射为 `TEXT_MESSAGE_*`、`REASONING_MESSAGE_*`、`TOOL_CALL_*`、`RUN_*`；
 - assistant 文本使用已提交的 `SessionEvent.turnId()` 作为 `messageId`；推理使用 `turnId + ":reasoning"`。`modelCallId` 只用于工具调用归属，不再参与文本或推理消息 id。同一 turn 内工具调用之后的文本复用该 id：已关闭的 id 通过新的 `TEXT_MESSAGE_START` 重新打开，仍处于 open 状态的 id 不会重复 Start；
@@ -160,7 +163,7 @@ attach 是已有 run 的重连路径。它是只读观察者：不启动、不�
 ### 限制
 
 - 完成态和 HITL 属于应用层历史/状态，不在本次恢复契约内。
-- 恢复路径基于轮询，提交批次按 recorder flush 粒度到达。
+- 没有实时尾部时恢复路径基于轮询，提交批次按 recorder flush 粒度到达；进程内近期帧缓冲可以让最近的交接立即完成，但它有界且只存在于当前进程，游标比缓冲更老时仍回退到日志。
 - 运行必须能在浏览器请求断开后继续；使用 `AgentSession` 或 `interrupt-on-disconnect=false` + 长期存活的 Agent。
 - 服务端重启需要 `AgentSession`/持久化调度；内存中的订阅不会存活。
 - 多实例需要共享 `SessionLogStore` 与 namespace。
@@ -180,7 +183,7 @@ attach 是已有 run 的重连路径。它是只读观察者：不启动、不�
 | `subagent.tool_result` | `ToolResultEndEvent` |
 | `subagent.require_confirm` | `RequireUserConfirmEvent` |
 
-payload 至少包含 `source` 与 `type`（以及 `delta`、`toolCallId` 等类型相关字段）。
+payload 至少包含 `source` 与 `type`（以及 `delta`、`toolCallId` 等类型相关字段）。转发的子 agent 帧不携带父级回放游标：子日志的 seq 与父日志不可比，因此只通过实时尾部投递，不带 SSE `id`。
 
 若要恢复子事件与父事件使用同一套原生 converter 的旧行为：
 
@@ -379,7 +382,7 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 将
     "type": "interrupt",
     "interrupts": [
       {
-        "id": "reply-1:call-1",
+        "id": "turn-1:call-1",
         "reason": "tool_call",
         "toolCallId": "call-1",
         "message": "Need approval before running this tool",
@@ -420,7 +423,7 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 将
   "messages": [],
   "resume": [
     {
-      "interruptId": "reply-1:call-1",
+      "interruptId": "turn-1:call-1",
       "status": "resolved",
       "payload": {
         "approved": true,

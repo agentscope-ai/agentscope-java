@@ -27,6 +27,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiFramedEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -34,9 +38,11 @@ import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.session.SessionLog;
 import io.agentscope.harness.agent.HarnessAgent;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 
 class AguiRequestProcessorSessionLogTest {
@@ -147,6 +153,54 @@ class AguiRequestProcessorSessionLogTest {
         AguiEvent.RunError error = (AguiEvent.RunError) frames.get(frames.size() - 1).event();
         assertEquals("INVALID_INPUT_ERROR", error.code());
         assertEquals(0, agent.getStreamCalls());
+    }
+
+    @Test
+    void attachUsesTheLiveTailOfAnActiveProcessRun() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        HarnessAgent agent = agent(log);
+        AguiRunBroadcaster broadcaster = new AguiRunBroadcaster();
+        AguiAgentAdapter liveAdapter =
+                new AguiAgentAdapter(mock(ReActAgent.class), AguiAdapterConfig.defaultConfig()) {
+                    @Override
+                    public Flux<AguiFramedEvent> runFramed(
+                            RunAgentInput input, RuntimeContext runtimeContext) {
+                        return Flux.just(
+                                        new AguiFramedEvent(
+                                                1,
+                                                1,
+                                                new AguiEvent.TextMessageContent(
+                                                        THREAD_ID,
+                                                        input.getRunId(),
+                                                        "m-1",
+                                                        "live")))
+                                .delayElements(Duration.ofMillis(100));
+                    }
+                };
+        AgentResolver resolver = mock(AgentResolver.class);
+        when(resolver.resolveAgent("default", THREAD_ID, null)).thenReturn(agent);
+        when(resolver.hasMemory(any())).thenReturn(false);
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory((resolvedAgent, config) -> liveAdapter)
+                        .broadcaster(broadcaster)
+                        .build();
+
+        Disposable run = processor.process(request(emptyInput())).events().subscribe();
+        try {
+            List<AguiFramedEvent> frames =
+                    processor
+                            .attach(request(emptyInput()), 0, null)
+                            .take(1)
+                            .collectList()
+                            .block(Duration.ofSeconds(2));
+
+            assertEquals(1, frames.size());
+            assertEquals("live", ((AguiEvent.TextMessageContent) frames.get(0).event()).delta());
+        } finally {
+            run.dispose();
+        }
     }
 
     private static HarnessAgent agent(SessionLog log) {
