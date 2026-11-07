@@ -161,3 +161,22 @@ def test_event_journal_rejects_oversized_record_before_write(tmp_path):
     else:
         raise AssertionError("oversized record was accepted")
     assert len(journal) == 0
+
+
+def test_service_client_local_mode_omits_credentials(monkeypatch):
+    from agentscope_service import service
+    requests = []
+    @contextmanager
+    def respond(request, timeout):
+        requests.append(request)
+        class Response:
+            def read(self): return b'{"items":[]}'
+        yield Response()
+    monkeypatch.setattr(service, "urlopen", respond)
+    client = ServiceClient("http://local-service")
+    assert client.sessions() == {"items": []}
+    assert not requests[0].has_header("Authorization")
+    assert not requests[0].has_header("X-api-key")
+    import pytest
+    with pytest.raises(ValueError):
+        ServiceClient("http://local-service", "application-key", api_token="platform-token")

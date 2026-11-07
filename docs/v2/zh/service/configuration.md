@@ -24,6 +24,7 @@ Docker 在 `.env` 中配置；Kubernetes 将敏感项放入已有 Secret，通�
 | `CONTROL_PLANE_BOOTSTRAP_ADMIN` / `PASSWORD` | 空数据库初始管理员 | 密码完整名称为 `CONTROL_PLANE_BOOTSTRAP_PASSWORD`，12–72 字节 |
 | `CONTROL_PLANE_SEED_USERS` | Go 演示账号初始化 | 发布配置固定为 `false` |
 | `BUILDER_SEED_USERS` | Java 演示账号初始化 | 发布配置固定为 `false` |
+| `BUILDER_LOCAL_DEV` | 本地免登录与免权限校验 | 进程默认 `false`；源码 Compose 和 `dev-up.sh` 默认 `true`；发布 Compose / Helm 保持 `false` |
 | `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | 是否允许 Local Environment | 默认 `false` |
 | `BUILDER_OAUTH_PUBLIC_URL` | 用户可访问的公开 origin | 必须与 OAuth 回调配置一致 |
 | `DASHSCOPE_API_KEY` | 默认 DashScope 模型凭据 | 只在使用该模型路径时需要 |

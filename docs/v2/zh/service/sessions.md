@@ -4,7 +4,7 @@ en_link: /v2/en/service/sessions
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 应用通常从 Agent API 会话、Issue 或Session API 提交工作。本页用于沿业务请求查找 Run、Task、Attempt 和 Session，理解它们的状态与控制接口。执行详情仍受空间、工作自身权限及运维能力约束。
@@ -22,7 +22,7 @@ en_link: /v2/en/service/sessions
 
 ## 查询执行的 API
 
-以下接口使用用户 Bearer token，并携带相同的 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`。列表查询还需显式提供 `tenant`、`namespace`。完整请求示例见 [Workflow API](/v2/zh/service/workflows) 与[任务 API](/v2/zh/service/issues)。
+以下接口可在本地模式直接调用。列表查询还需显式提供 `tenant`、`namespace`。完整请求示例见 [Workflow API](/v2/zh/service/workflows) 与[任务 API](/v2/zh/service/issues)。
 
 | 操作 | API | 查询参数 / 返回 |
 | --- | --- | --- |
@@ -36,6 +36,54 @@ en_link: /v2/en/service/sessions
 
 `RunEvent.sequence` 用于本 Run 内增量读取，`type` 表示事件类型，`nodeId` / `agentTaskId` / `attemptId` 关联受影响对象。这里的 events 是 JSON 查询，不是 SSE。发布服务的业务客户端应优先使用 Turn 返回的 statusUrl / eventsUrl，见[统一服务 API](/v2/zh/service/service-api)。
 
+以下示例沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的本地地址和默认空间变量。将资源 ID 替换为前面创建或查询得到的值。
+
+从实际工作记录取得 ISSUE_ID。列表可能包含多个 Run，先查看返回的 runs，再选择需要诊断的 RUN_ID；不要默认选择第一项。
+
+```bash
+ISSUE_ID="YOUR_ISSUE_ID"
+
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/orchestration-runs" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "issueId=$ISSUE_ID" \
+  --data-urlencode "limit=25"
+```
+
+```bash
+RUN_ID="RUN_ID_FROM_LIST"
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/graph"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/events" \
+  --data-urlencode "after=0" \
+  --data-urlencode "limit=50"
+```
+
+从执行图的 tasks 选取 TASK_ID，读取任务与全部尝试，再根据实际状态选择 ATTEMPT_ID。
+
+```bash
+TASK_ID="TASK_ID_FROM_GRAPH"
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/agent-tasks/$TASK_ID"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/execution-attempts" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "taskId=$TASK_ID" \
+  --data-urlencode "limit=25"
+```
+
+```bash
+ATTEMPT_ID="ATTEMPT_ID_FROM_LIST"
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/execution-attempts/$ATTEMPT_ID"
+```
+
 ## Run 状态与控制
 
 planned 表示尚未开始，running 表示正在推进，waiting 表示等待条件、信号或外部结果。paused 停止新节点派发，cancelling 等待取消收敛。终态为 cancelled、succeeded、partial_succeeded 或 failed。
@@ -45,6 +93,53 @@ Pause 不冻结已经开始的外部进程。Cancel 也不自动回滚已经产�
 控制 Run 使用 `POST /api/v1/orchestration-runs/{runId}/pause`、`/resume`、`/cancel`，请求体 `{}`，返回 `{run}`。终态后用 `/rerun` 提交必填 `idempotencyKey` 和可选 `input`，返回新的 `{run}`，其中 `rerunOfRunId` 保留来源。
 
 任务取消使用 `POST /api/v1/agent-tasks/{taskId}/cancel` 与当前 `expectedVersion`；任务重试使用 `/retry`。不要把 Task ID 传到 Run 控制接口，也不要直接改写 Attempt 状态来代替取消。
+
+<Accordion title="按需控制 Run">
+
+这些是互斥的运维选择。暂停停止新调度，取消请求结束整项运行；提交后重新 GET Run 确认状态。rerun 创建新的 Run，不恢复原 Attempt。
+
+<Tabs>
+<Tab title="暂停">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/pause"
+```
+
+</Tab>
+<Tab title="继续调度">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/resume"
+```
+
+</Tab>
+<Tab title="取消">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/cancel"
+```
+
+</Tab>
+<Tab title="Rerun">
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/rerun" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "idempotencyKey": "report-rerun-001"
+}
+JSON
+```
+
+</Tab>
+</Tabs>
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-runs/$RUN_ID"
+```
+
+</Accordion>
 
 ## 三种重复执行
 
@@ -63,6 +158,23 @@ Pause 不冻结已经开始的外部进程。Cancel 也不自动回滚已经产�
 刷新页面后重新打开原工作，查询当前状态和已保存事件。SSE 长连接结束不代表任务失败。代理应及时转发事件；不要因为前端连接断开就用新的幂等键重复提交。
 
 ## 查询 Session 诊断
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/sessions" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "limit=25"
+```
+
+使用列表中的 `sessions[].session.id` UUID；这是运行诊断记录 ID，不是 `/agent-sessions` 的业务 Session ID。
+
+```bash
+DIAGNOSTIC_SESSION_ID="SESSION_UUID_FROM_LIST"
+
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/sessions/$DIAGNOSTIC_SESSION_ID" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
+```
 
 `GET /api/v1/sessions` 列出授权范围内的会话；具体会话使用 `GET /api/v1/sessions/{sessionRef}`。优先使用 Attempt 返回的 `sessionRef`（控制面记录 ID），不要混用运行时的 `sessionId` 或 provider 的 `providerSessionId`。查询时同时携带正确的 tenant/namespace。
 

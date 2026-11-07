@@ -316,7 +316,7 @@ func probeAgentConfigToMap(cfg *prober.ProbeAgentConfig) map[string]interface{} 
 // internalTokenMiddleware authenticates data-plane self-registration calls.
 func (s *Server) internalTokenMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if s.internalToken == "" {
+		if s.localDev || s.internalToken == "" {
 			c.Next()
 			return
 		}

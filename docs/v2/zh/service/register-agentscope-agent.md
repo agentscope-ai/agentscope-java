@@ -5,7 +5,7 @@ description: 通过 API 注册自行部署的 Agent，接入运行实例，再�
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 如果你已经有一个运行中的 Agent 应用，可以把它注册为 **External Agent**。应用继续由你部署和运维，Service 为它分配统一的 `agentId`，用这个身份加入 Team、接受任务，或通过 [Session API](/v2/zh/service/service-api) 供业务调用。
@@ -21,21 +21,27 @@ External 可以单独接受 Session 调用，也可以为 Managed 团队提供�
 下面用 curl 展示注册协议。示例只登记身份，因此没有宣告执行能力；接入 SDK 后，应由适配器上报实际实现的能力。
 
 ```bash
-export SERVICE_URL="http://localhost:8081"
+export BASE_URL="http://localhost:8081"
 
-curl -sS "$SERVICE_URL/api/v1/agent-registrations" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "tenant": "default",
-    "namespace": "default",
-    "agentKey": "report-service",
-    "displayName": "报告助手",
-    "instanceKey": "replica-1",
-    "framework": "agentscope-java",
-    "routingKey": "http://report-agent:18090",
-    "capacity": 1,
-    "capabilities": []
-  }' > registration.json
+cat > request.json <<'JSON'
+{
+  "tenant": "default",
+  "namespace": "default",
+  "agentKey": "report-service",
+  "displayName": "报告助手",
+  "instanceKey": "replica-1",
+  "framework": "agentscope-java",
+  "routingKey": "http://report-agent:18090",
+  "capacity": 1,
+  "capabilities": []
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agent-registrations" \
+  -H "Content-Type: application/json" \
+  --data-binary @request.json > registration.json
 ```
 
 `routingKey` 是控制面能够访问的应用合约地址。容器里的 `localhost` 通常不能代表另一个容器中的应用。
@@ -58,19 +64,24 @@ Python 的 `agentscope_service.instrument()` 支持 HTTP 运行传输（`transpo
 
 ## 用 API 确认接入状态
 
-下面的 `TOKEN` 是有权查看目标 namespace 的平台账户访问令牌，与上一步的注册凭据不同。
+本地模式直接查询默认空间；生产调用身份配置见[生产部署](/v2/zh/service/kubernetes#production-api-access)。
 
 ```bash
+export TENANT="default"
+export NAMESPACE="default"
 AGENT_ID=$(jq -r '.agent.id' registration.json)
+```
 
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID" \
-  -H "Authorization: Bearer $TOKEN"
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID"
+```
 
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/instances" \
-  -H "Authorization: Bearer $TOKEN"
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/instances"
+```
 
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/runtime-inventory" \
-  -H "Authorization: Bearer $TOKEN"
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/runtime-inventory"
 ```
 
 Agent 记录说明逻辑身份已存在；实例记录反映实际副本及其能力。`runtime-inventory` 展示运行通道上报的信息，未上报时返回 `status: "not_reporting"`，不能仅凭注册成功判断实例可以执行任务。

@@ -16,29 +16,48 @@ en_link: /v2/en/service/cases/business-assistant
 
 ## 创建 Session 并提交任务
 
-先按[应用接入指南](/v2/zh/service/service-api)准备 Agent ID 和应用凭据。下面的命令使用 Bash、curl 和 jq，并将样例资料整理为 Managed Agent 的文本消息。Service 不会因为资料中写有仓库地址、文件路径或订单编号，就自动获得相应系统的访问权限。
+先按[应用接入指南](/v2/zh/service/service-api)准备 Agent ID。下面的命令使用 Bash、curl 和 jq，并将样例资料整理为 Managed Agent 的文本消息。Service 不会因为资料中写有仓库地址、文件路径或订单编号，就自动获得相应系统的访问权限。
 
 ```bash
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: business-assistant-session-001' \
-  --data "$(jq -n --arg id "$AGENT_ID" '{target:{type:"agent",id:$id}}')")
+set -euo pipefail
+
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H 'Idempotency-Key: business-assistant-session-001' \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "agent",
+    "id": "$AGENT_ID"
+  }
+}
+JSON
+)
 SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
 SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
-TURN_JSON=$(curl --fail-with-body -sS "$SESSION_URL/turns" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: business-assistant-task-001' \
-  --data "$(jq '{message:(.message // (.input | tojson))}' input.json)")
+jq '{message:(.message // (.input | tojson))}' input.json > turn-request.json
+```
+
+```bash
+TURN_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns" \
+    -H 'Idempotency-Key: business-assistant-task-001' \
+    -H "Content-Type: application/json" \
+    --data-binary @turn-request.json
+)
 TURN_ID=$(printf '%s' "$TURN_JSON" | jq -er '.id')
-curl --fail-with-body -sS "$SESSION_URL/turns/$TURN_ID" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
 ```
 
 返回 `202 Accepted` 表示任务已接收，尚不能据此判断完成。保存 Session 和 Turn ID，网络重试沿用相同 key 与请求内容；新任务才更换 key。需要查看进展时，读取 Session 的 snapshot，再从其 `as_of` 继续订阅事件。
 
 ## 接回业务应用
 
-Agent 等待确认时，页面读取 required_actions 并显示实际待执行操作。用户答复后，应用通过对应 Turn 的 actions 接口传回请求 ID 和决定；指定人员审批需要该人员的登录身份。刷新页面时恢复 Session 快照即可，不应重新提交“创建工单”的消息。
+Agent 等待确认时，页面读取 required_actions 并显示实际待执行操作。用户答复后，应用通过对应 Turn 的 actions 接口传回请求 ID 和决定；生产审批身份配置见[生产指南](/v2/zh/service/kubernetes#production-api-access)。刷新页面时恢复 Session 快照即可，不应重新提交“创建工单”的消息。
 
 ## 验收实际交付
 

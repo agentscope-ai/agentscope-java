@@ -4,19 +4,21 @@ zh_link: /v2/zh/service/runtime-host
 ---
 
 <Note>
-This guide uses the `2.1.0-BETA1` prerelease.
+Local development requires the current source; published production commands use `2.1.0-BETA1`.
 </Note>
 
 A Runtime Host runs on a computer or server with a Coding Agent provider installed. The control plane dispatches and records work; the Host executes it with the local provider.
 
 ## Install with Go
 
-Install [Go](https://go.dev/doc/install) 1.26 or newer on the target Linux or macOS host. Install both commands from the same published version; no repository checkout or Service deployment is required:
+Prepare Go 1.26 or newer. Install CLI and Runtime Host from the current source containing local development mode. Run from the repository root:
 
 ```bash
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
+cd agentscope-service/service-controlplane
+go install ./cmd/as ./cmd/agentscope-runtime-host
 ```
+
+The published `v2.1.0-BETA1` CLI does not automatically enter the local development identity. To connect to production, install the published version using the [production guide](/v2/en/service/kubernetes#production-cli-install).
 
 Go builds the binaries for the current machine and writes them to `GOBIN`, or `$(go env GOPATH)/bin` when `GOBIN` is unset. Add that directory to PATH and check both commands:
 
@@ -30,19 +32,19 @@ as version
 agentscope-runtime-host -help
 ```
 
-Persist the PATH setting in your shell configuration for later terminals. `as version` should report `2.1.0-BETA1`. The `/v2` module path and `@v2.1.0-BETA1` select the published prerelease.
+Persist the PATH setting in your shell configuration for later terminals.
 
-Install and authenticate a supported Coding Agent provider separately on this host, and verify that it can run a request. The CLI and Runtime Host connect to an existing Service; they do not deploy the platform. To update, stop the Runtime Host, rerun both `go install` commands with the same new version, and restart it while preserving its state directory.
+Install and authenticate a supported Coding Agent provider separately on this host, and verify that it can run a request. The CLI and Runtime Host connect to an existing Service; they do not deploy the platform. To update, stop the Runtime Host, reinstall both commands from the same source or release version, and restart it while preserving its state directory.
 
 ## Connect
 
 ```bash
-as connect https://agentscope.example.com
+as connect http://localhost:18080
 as runtime status
 as runtime probe
 ```
 
-Follow the CLI's login or enrollment prompts. Connection saves local configuration and starts the daemon. Normal operation does not require repeatedly supplying a shared internal service token.
+In local mode, the CLI automatically obtains the development identity, saves configuration, and starts the daemon. Production login and enrollment are described in the [production guide](/v2/en/service/kubernetes#production-api-access).
 
 ## Daily operation
 
@@ -97,15 +99,24 @@ The CLI uses these Host APIs. Platform account credentials authorize enrollment 
 | `POST /api/v1/runtime-hosts/{hostId}/drain` | Platform Bearer | `host`; stops taking new work |
 | `POST /api/v1/runtime-hosts/{hostId}/resume` | Platform Bearer | `host`; restores scheduling availability |
 
-Single-scope deployments use the configured scope. Multi-scope deployments require `tenant` and `namespace` when issuing an enrollment token. Exchange cannot override the token's scope. Draining prepares a Host for maintenance; use the [AgentTask API](/v2/en/service/issues) to cancel active work.
+Single-scope deployments use the configured scope. Multi-scope deployments require `tenant` and `namespace` when issuing an enrollment token. Exchange cannot override the token's scope. Draining prepares a Host for maintenance; use the [AgentTask API](/v2/en/service/issues#curl-management) to cancel active work.
 
 For example, issue an enrollment token from a terminal with management access configured:
 
 ```bash
-curl -sS "$SERVICE_URL/api/v1/runtime-host-enrollment-tokens" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"tenant":"default","namespace":"default"}'
+set -euo pipefail
+
+ENROLLMENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/runtime-host-enrollment-tokens" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE"
+}
+JSON
+)
+ENROLLMENT_TOKEN=$(jq -er '.enrollmentToken' <<< "$ENROLLMENT_JSON")
 ```
 
 Pass `enrollmentToken` securely to the target machine and run `as connect`. Business applications do not need to call Host register, heartbeat, or claim themselves.
@@ -173,10 +184,80 @@ Platform accounts assign work through Issues or Sessions. Host credentials are f
 | Read AgentTask | `GET /api/v1/agent-tasks/{taskId}` | Task state and execution references |
 | List physical attempts | `GET /api/v1/execution-attempts?tenant=...&namespace=...&taskId=...`; optional `state`, `limit` | `attempts`; retries have separate records |
 | Read an Attempt | `GET /api/v1/execution-attempts/{attemptId}` | `attempt`, including backend, Host, lease, failure, and recovery data |
-| Request cancellation or retry | `POST /api/v1/agent-tasks/{taskId}/cancel`, `/retry` | Submit version fields as described in [Issue API](/v2/en/service/issues); then inspect final state |
+| Request cancellation or retry | `POST /api/v1/agent-tasks/{taskId}/cancel`, `/retry` | Submit version fields as described in [Issue API](/v2/en/service/issues#curl-management); then inspect final state |
 | Read Workflow progress | `GET /api/v1/orchestration-runs/{runId}/graph`, `/events` | Node graph and run events reflecting execution results |
 | Restore an application view | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}/snapshot`, then `/events/stream` | Resume SSE from the snapshot cursor with the invocation credential |
 
 The Host protocol's `/checkpoint` operation saves `providerSessionId` and checkpoint data for supported adapter recovery. It is not an application API for restoring any backend from an arbitrary checkpoint. Unified invocations currently report `checkpoint_restore: false`. Hosted conversations support cancellation; do not assume Managed input, approval, or resume features are available. Read `available_commands` from `/api/v1/agent-sessions/{sessionId}/turns/{turnId}/capabilities` before offering interactions.
 
 SSE reconnection restores recorded output. It does not rerun tools or recover a Host process. Upload durable deliverables as Artifacts; Host files, provider sessions, and framework state retain their own lifecycles. See [Runtime Host protocol](/v2/en/service/runtime-host#runtime-host-protocol) for API parameters.
+
+<span id="curl-management"></span>
+
+## Host management examples
+
+Use the platform identity and scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup). Use resource IDs returned by creation or lookup.
+
+After issuing an enrollment token, the target host exchanges that short-lived token for its runtime token. Use a stable `HOST_KEY` unique to that host. Do not substitute the platform token for the enrollment token. `as connect` normally handles this exchange.
+
+```bash
+HOST_KEY="report-worker-1"
+```
+
+```bash
+ENROLLED_HOST=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/runtime-host-enrollments/exchange" \
+    -H "Authorization: Bearer $ENROLLMENT_TOKEN" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "hostKey": "$HOST_KEY"
+}
+JSON
+)
+RUNTIME_TOKEN=$(jq -er '.runtimeToken' <<< "$ENROLLED_HOST")
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-hosts" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
+```
+
+Choose HOST_ID from the host list, then read its current capacity.
+
+```bash
+HOST_ID="HOST_ID_FROM_LIST"
+```
+
+```bash
+HOST_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/runtime-hosts/$HOST_ID"
+)
+HOST_CAPACITY=$(jq -er '.host.capacity' <<< "$HOST_JSON")
+```
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/runtime-hosts/$HOST_ID/capacity" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "capacity": 2,
+  "expectedCapacity": $HOST_CAPACITY
+}
+JSON
+```
+
+<Accordion title="Drain and resume a host">
+
+Drain before maintenance to stop new claims, and wait for claimed work to finish. Resume after maintenance. Draining does not cancel claimed tasks.
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/runtime-hosts/$HOST_ID/drain"
+```
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/runtime-hosts/$HOST_ID/resume"
+```
+
+</Accordion>

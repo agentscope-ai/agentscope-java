@@ -13,6 +13,7 @@
 #   db         postgres (schemas cp + rt + dp)
 
 x-builder-env: &builder-env
+  BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-true}
   SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-jdbc}
   BUILDER_DB_URL: jdbc:postgresql://db:5432/builder?currentSchema=dp
   BUILDER_DB_DRIVER: org.postgresql.Driver
@@ -47,7 +48,7 @@ services:
       - db-data:/var/lib/postgresql/data
       - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-schemas.sql:ro
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   control:
     build:
@@ -58,6 +59,7 @@ services:
       - --storage-dsn=postgres://builder:builder@db:5432/builder?sslmode=disable&search_path=rt
       - --log-format=console
     environment:
+      BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-true}
       CONTROL_PLANE_ENABLE_KUBERNETES: "false"
       CONTROL_PLANE_PRODUCT_DSN: postgres://builder:builder@db:5432/builder?sslmode=disable
       CONTROL_PLANE_HTTP_BIND: ":8081"
@@ -68,7 +70,7 @@ services:
       # filesystem/shell, not the developer host.
       BUILDER_ALLOW_LOCAL_ENVIRONMENT: "true"
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     healthcheck:
       test: ["CMD", "/service-controlplane", "--healthcheck"]
       interval: 5s
@@ -127,7 +129,7 @@ services:
       BUILDER_DATA_URL: http://data:8082
       BUILDER_SCHEDULER_URL: http://scheduler:8083
     ports:
-      - "${BUILDER_GATEWAY_PORT:-18080}:8080"
+      - "127.0.0.1:${BUILDER_GATEWAY_PORT:-18080}:8080"
     healthcheck:
       << : *plane-health
     depends_on:

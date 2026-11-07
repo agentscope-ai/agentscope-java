@@ -4,14 +4,14 @@ en_link: /v2/en/service/team-configuration
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 Team 由一个 Leader 和可委派的成员组成。先按[Team API 指南](/v2/zh/service/create-team)创建团队，再用本页参数维护成员、协作策略与运行策略。
 
 ## 管理 API
 
-所有路径相对 Service 地址，使用用户 Bearer token 和已授权空间。列表请求必须提供 `tenant`、`namespace`；创建时将两者写入 JSON。示例与认证函数见 [Team API 指南](/v2/zh/service/create-team)。
+所有路径相对 Service 地址，使用用户 Bearer token 和已授权空间。列表请求必须提供 `tenant`、`namespace`；创建时将两者写入 JSON。创建示例见 [Team API 指南](/v2/zh/service/create-team)。
 
 | 操作 | API | 请求与返回 |
 | --- | --- | --- |
@@ -102,6 +102,31 @@ Leader 必须具备团队协调能力，包括委派、查看结果和节点完�
 
 ## Runtime policy
 
+<Accordion title="保留已有候选并修改运行策略">
+
+沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)的本地地址和默认空间变量。
+
+先读取当前 Agent policy；下面只关闭候选回退，保留绑定候选、能力约束、重试与并发设置。PUT 替换整个策略，版本来自当前 policy。成员覆盖使用成员 PATCH，不能替代 Agent 的全局策略。
+
+```bash
+POLICY_JSON=$(
+  curl -sS --fail-with-body -G "$BASE_URL/api/v1/agent-runtime-policies/$AGENT_ID" \
+    --data-urlencode "tenant=$TENANT" \
+    --data-urlencode "namespace=$NAMESPACE"
+)
+
+jq '.policy | {tenant,namespace,agentId,candidates,selectionMode,fallbackMode,maxConcurrency,queueTimeoutSeconds,attemptTimeoutSeconds,retryPolicy,version}
+  | .fallbackMode = "disabled"' <<< "$POLICY_JSON" > runtime-policy.json
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/v1/agent-runtime-policies/$AGENT_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @runtime-policy.json
+```
+
+</Accordion>
+
 `runtimeBindingPolicy` 包含有序 `candidates`、`selectionMode`、`fallbackMode` 和可选 `retryPolicy`。候选中的 `binding` 指定执行后端，`requiredCapabilities` 与 `securityConstraints` 限制选择条件。成员覆盖要求显式设置 `selectionMode:"ordered"`、`fallbackMode:"disabled"` 或 `"fresh"`，并提供至少一个有效 candidate。候选 binding 使用实际运行绑定结构，不填写主机进程号或任意 URL。
 
 选择遵循节点覆盖、成员覆盖、Agent 策略的层次。显式 fresh fallback 是新执行上下文，保留的工作证据必须在 Issue、评论与 Artifact 中。先验证单候选，再增加回退；扩容与回退都不会自动解决共享文件冲突。
@@ -109,3 +134,81 @@ Leader 必须具备团队协调能力，包括委派、查看结果和节点完�
 Agent 级默认策略通过 `GET/PUT /api/v1/agent-runtime-policies/{agentId}` 管理。PUT 提交 `tenant`、`namespace`、非空 `candidates`，每个 candidate 的 `binding.bindingId` 必须属于该 Agent 且可用；服务会解析实际后端。可设置 `selectionMode`、`fallbackMode`、`maxConcurrency`、`queueTimeoutSeconds`、`attemptTimeoutSeconds`、`retryPolicy`，响应为 `{policy}`。GET 查询仍需携带 tenant/namespace。
 
 下一步：[协作用法](/v2/zh/service/create-team#team-collaboration) · [工作原理](/v2/zh/service/create-team#team-execution)。
+
+<span id="curl-management"></span>
+
+## 维护团队与成员
+
+以下示例沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的本地地址和默认空间变量。将资源 ID 替换为前面创建或查询得到的值。
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/teams" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
+```
+
+```bash
+TEAM_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/teams/$TEAM_ID"
+)
+```
+
+以下只更改团队名称，保留 Leader、说明和策略。修改成员后版本也会变化，每次保存前重新读取。
+
+```bash
+jq '.team | {name,description,instructions,status,leaderAgentId,policy,expectedVersion:.version}
+  | .name = "Evidence review team"' <<< "$TEAM_JSON" > team-update.json
+```
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/teams/$TEAM_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @team-update.json
+```
+
+新增成员使用 Agent ID；更新和移除则使用返回的 member.id。
+
+```bash
+MEMBER_AGENT_ID="YOUR_MEMBER_AGENT_ID"
+```
+
+```bash
+MEMBER_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/teams/$TEAM_ID/members" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "agentId": "$MEMBER_AGENT_ID",
+  "role": "researcher",
+  "instructions": "Collect evidence and cite sources."
+}
+JSON
+)
+MEMBER_ID=$(jq -er '.member.id' <<< "$MEMBER_JSON")
+```
+
+```bash
+TEAM_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/teams/$TEAM_ID"
+)
+
+jq --arg member "$MEMBER_ID" '.team as $team | $team.members[] | select(.id == $member)
+  | {role,instructions,capabilityRequirements,runtimeBindingPolicy,expectedTeamVersion:$team.version}
+  | .instructions = "Collect evidence, cite sources and flag missing dates."' <<< "$TEAM_JSON" > member-update.json
+```
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/teams/$TEAM_ID/members/$MEMBER_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @member-update.json
+```
+
+<Accordion title="移除成员">
+
+只在不再需要该成员时执行。移除成员不会取消它已经开始的任务。
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/v1/teams/$TEAM_ID/members/$MEMBER_ID"
+```
+
+</Accordion>

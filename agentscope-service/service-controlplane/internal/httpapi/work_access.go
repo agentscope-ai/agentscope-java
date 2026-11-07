@@ -30,6 +30,9 @@ import (
 )
 
 func (s *Server) canReceiveWorkEvent(ctx context.Context, a *namespaceAccess, event *controlmodel.OutboxEvent) bool {
+	if s.localDev {
+		return event.Tenant == s.defaultTenant && event.Namespace == s.defaultNamespace
+	}
 	n, err := s.store.Access().GetNamespace(ctx, a.Namespace.Tenant, a.Namespace.Name)
 	if err != nil || len(n.Roles(a.User)) == 0 {
 		return false
@@ -78,6 +81,9 @@ func (s *Server) canReceiveWorkEvent(ctx context.Context, a *namespaceAccess, ev
 }
 
 func (s *Server) authorizeWorkObject(c *gin.Context, body map[string]json.RawMessage) bool {
+	if s.localDev {
+		return true
+	}
 	a := accessFrom(c)
 	if a == nil {
 		return true
@@ -256,6 +262,9 @@ func (s *Server) authorizeWorkObject(c *gin.Context, body map[string]json.RawMes
 }
 
 func (s *Server) canAccessSession(ctx context.Context, a *namespaceAccess, session *store.Session, write bool) bool {
+	if s.localDev {
+		return true
+	}
 	if session == nil || session.Tenant != a.Namespace.Tenant || session.Namespace != a.Namespace.Name {
 		return false
 	}
@@ -301,6 +310,9 @@ func (s *Server) canAccessSession(ctx context.Context, a *namespaceAccess, sessi
 }
 
 func (s *Server) canAccessArtifact(ctx context.Context, a *namespaceAccess, id uuid.UUID, write bool) bool {
+	if s.localDev {
+		return true
+	}
 	v, links, err := s.store.Collaboration().GetArtifact(ctx, id)
 	if err != nil || v.Tenant != a.Namespace.Tenant || v.Namespace != a.Namespace.Name {
 		return false
@@ -335,6 +347,9 @@ func (s *Server) canAccessArtifact(ctx context.Context, a *namespaceAccess, id u
 }
 
 func (s *Server) authorizeApprovalWork(c *gin.Context, v *controlmodel.Approval, write bool) bool {
+	if s.localDev {
+		return true
+	}
 	a := accessFrom(c)
 	if a == nil {
 		return true

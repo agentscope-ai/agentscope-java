@@ -5,11 +5,11 @@ zh_link: /v2/zh/service/api-reference
 
 Applications use the Session API for Agents, Teams, and Workflows. Management APIs prepare resources, permissions, and published Workflow revisions. Callers select a target when creating a Session; there is no separate service publication step. Follow the [API guide](/v2/en/service/service-api) for the complete flow and use this page as a path and parameter reference.
 
-## Authentication and scope
+<span id="authentication-and-scope"></span>
 
-Platform users log in with `POST /api/auth/login` and `{"username":"...","password":"..."}`, then send the returned `token` as `Authorization: Bearer TOKEN`. This identity manages Agents, Teams, Workflows, and Applications. Application backends instead use `X-API-Key` credentials issued under an Application, restricted to explicit target grants and scopes.
+## Prepare local API calls
 
-Set `X-AgentScope-Tenant` and `X-AgentScope-Namespace` for scoped requests. Body and query scope fields, when supplied, must agree. Runtime Host, Task/Attempt, and Environment credentials belong to their execution protocols and cannot substitute for Session API credentials.
+Complete [local deployment](/v2/en/service/quickstart) and set `BASE_URL` and the default scope using [API setup](/v2/en/service/create-managed-agent#api-setup). Local mode needs no credentials or resource grants; management and Session API examples below work directly. See [production deployment](/v2/en/service/kubernetes#production-api-access) for accounts, grants, application keys, and authentication headers. Runtime-issued Task/Attempt credentials identify the current execution and still follow their protocol.
 
 ## Applications and credentials
 
@@ -58,7 +58,7 @@ Managed `/budget`, `/checkpoints`, `/fork`, `/inputs/inject`, `/subagents`, and 
 <span id="agents"></span>
 ## Agent catalog and runtime bindings
 
-These operations use platform identity. Keep tenant/namespace fields, query parameters, and headers consistent. An Agent ID, business key, and display name are distinct. See [Agent management](/v2/en/service/api-reference#agents) for creation and registration workflows.
+These operations use platform identity. Keep tenant/namespace fields, query parameters, and headers consistent. An Agent ID, business key, and display name are distinct. See [Managed Agent](/v2/en/service/create-managed-agent), [Hosted Agent](/v2/en/service/connect-hosted-agent), and [External registration](/v2/en/service/register-agentscope-agent) for creation examples.
 
 | Method and route | Request parameters | Response and purpose |
 | --- | --- | --- |
@@ -75,6 +75,26 @@ These operations use platform identity. Keep tenant/namespace fields, query para
 `binding.kind` is `managed`, `hosted-runtime`, or `external-application`. Managed creation generates its configuration. Hosted uses `runtimeProfileId` and `runtimePoolId`. External applications use registration rather than creating a supposedly online instance through the catalog endpoint.
 
 `POST /api/v1/agent-registrations` accepts `agentKey`, `instanceKey`, scope, `framework`, `routingKey`, `capabilities`, and related fields. It returns `agent`, `binding`, `instance`, and `registrationCredential`. This entry point currently does not authenticate callers; deployment must restrict it to trusted registration traffic. Returning a credential does not mean initial registration was authenticated. See [External configuration](/v2/en/service/external-agent#external-agent-configuration).
+
+Use the local URL and default scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup).
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agents" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "status=active" \
+  --data-urlencode "limit=25"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/bindings"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agent-runtime-policies/$AGENT_ID" \
+    --data-urlencode "tenant=$TENANT" \
+    --data-urlencode "namespace=$NAMESPACE"
+```
 
 ## Work, orchestration, automation, and resource parameters
 
@@ -105,7 +125,7 @@ Python `ManagementClient` prepares resources and credentials; `ServiceClient` cr
 import os
 from agentscope_service import ServiceClient
 
-client = ServiceClient(os.environ["BASE_URL"], api_key=os.environ["AGENTSCOPE_API_KEY"])
+client = ServiceClient(os.environ["BASE_URL"])
 session = client.create_session(
     {"type": "agent", "id": os.environ["AGENT_ID"]},
     idempotency_key="review-session-001",

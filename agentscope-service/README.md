@@ -65,66 +65,25 @@ Application developers can validate a call with the [API quickstart](../docs/v2/
 
 ## Quick start with Docker Compose
 
-Use the published `2.1.0-BETA1` prerelease. Install Docker Engine or Docker Desktop
-with Compose v2, Bash, curl and OpenSSL; have a model API credential available.
-No source checkout, Java, Maven or Go is needed to start the platform.
-
-### 1. Download and initialize
+Build the current source in local development mode. Prepare Docker Compose v2 and a model credential, then run from the repository root:
 
 ```bash
-curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/agentscope-service-2.1.0-BETA1-compose.tar.gz
-curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/SHA256SUMS
-awk '$2 == "agentscope-service-2.1.0-BETA1-compose.tar.gz"' SHA256SUMS > compose.sha256
-if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum -c compose.sha256
-else
-  shasum -a 256 -c compose.sha256
-fi
-```
-
-```bash
-tar -xzf agentscope-service-2.1.0-BETA1-compose.tar.gz
 cd agentscope-service
-./init-env.sh 2.1.0-BETA1 sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope
+export DASHSCOPE_API_KEY="YOUR_DASHSCOPE_API_KEY"
+docker compose up -d --build --wait --wait-timeout 600
 ```
 
-Edit the generated `.env` to set `DASHSCOPE_API_KEY`. For a trusted local evaluation,
-set `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`; tools then run inside the Dataplane
-container. Other installations should prepare an isolated execution Environment.
-Initialization preserves an existing `.env`; keep its credentials and Vault key
-with your backups.
+Open http://localhost:18080. Console automatically uses the development identity and default scope; APIs require no login, user token, Application key, or grants. Source Compose defaults to `BUILDER_LOCAL_DEV=true` and binds host ports to loopback. Models and external tools still need provider credentials.
 
-### 2. Start and use Service
-
-```bash
-docker compose pull
-docker compose up -d --wait --wait-timeout 600
-docker compose ps
-curl -fsS http://localhost:18080/actuator/health
-```
-
-The stack starts PostgreSQL, Control Plane with Dashboard, Dataplane, Scheduler
-and Gateway using published amd64/arm64 images. Open http://localhost:18080 and
-sign in as `admin` with `CONTROL_PLANE_BOOTSTRAP_PASSWORD` from `.env`, then change
-the password. The release installation creates no demo users.
-
-Follow [Deploy and prepare Service](https://java.agentscope.io/v2/en/service/quickstart)
-to configure accounts, a model and an execution Environment, then
-[create your first Managed Agent](https://java.agentscope.io/v2/en/service/create-managed-agent).
-For the DSH plugin, see its [installation guide](service-controlplane/sdk/dsh/README.md).
-
-Stop with `docker compose down`. Data volumes are retained; do not use `-v` for an
-ordinary shutdown. See [operations](https://java.agentscope.io/v2/en/service/operations)
-before upgrading or restoring data.
+Published `2.1.0-BETA1` images do not support this mode. See [production deployment](../docs/v2/en/service/kubernetes.md) for released Compose, Helm, accounts, and permissions; continue with [your first Agent](../docs/v2/en/service/create-managed-agent.md).
 
 ## Install CLI and Runtime Host with Go
 
-To connect a Coding Agent on a separate Linux/macOS host, install Go 1.26+ and
-both commands at the same version:
+To connect a Coding Agent to local development, install Go 1.26+ and build both commands from the current source. Run from the repository root:
 
 ```bash
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
+cd agentscope-service/service-controlplane
+go install ./cmd/as ./cmd/agentscope-runtime-host
 AS_CLI_BIN_DIR="$(go env GOBIN)"
 if [ -z "$AS_CLI_BIN_DIR" ]; then
   AS_CLI_BIN_DIR="$(go env GOPATH)/bin"
@@ -172,7 +131,7 @@ BUILDER_REBUILD=1 scripts/dev-up.sh
 # Stop later with scripts/dev-down.sh.
 ```
 
-The development stack seeds demo users and uses development secrets. A full
+The development stack enables `BUILDER_LOCAL_DEV=true`, automatically uses one development identity, and uses development secrets. A full
 rebuild resets the disposable `cp`, `rt` and `dp` schemas by default; set
 `BUILDER_RESET_DB=0` only to retain an existing compatible development database.
 It is separate from the release Compose installation above.
@@ -231,6 +190,7 @@ Java services use `builder.*` properties and `BUILDER_*` environment variables. 
 | `BUILDER_DB_URL`, `BUILDER_DB_USER`, `BUILDER_DB_PASSWORD` | Java data-plane database |
 | `BUILDER_CONTROL_URL`, `BUILDER_DATA_URL`, `BUILDER_SCHEDULER_URL` | Internal service endpoints |
 | `BUILDER_E2B_API_KEY` | E2B credential for `sandbox` environments |
+| `BUILDER_LOCAL_DEV` | Defaults to `false`; source Compose and development scripts default to `true`, bypassing platform authentication and authorization; release Compose / Helm keep it disabled. |
 | `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | Allows new `local` Environment bindings. Defaults to `false` in `service-controlplane`; `scripts/dev-up.sh` and the development Compose stack opt in. Keep disabled in production. |
 | `CONTROL_PLANE_PRODUCT_DSN` | Product database used by `service-controlplane` |
 | `CONTROL_PLANE_ENABLE_KUBERNETES` | Enables Control Plane CRD reconcilers and Kubernetes integration |

@@ -4,7 +4,7 @@ zh_link: /v2/zh/service/hosted-agent-configuration
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This page uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 If you have not connected a Hosted Agent yet, follow [Connect a Hosted Agent](/v2/en/service/connect-hosted-agent) to bring the execution host online and create an Agent. Use this page to adjust configuration after connection, and [Runtime Host setup and operations](/v2/en/service/runtime-host) for installation and ongoing maintenance.
@@ -72,19 +72,20 @@ Creation requires `runtimeProfileId` and `runtimePoolId` in `binding.configurati
 
 `providerConfiguration` is an object and `customArgs` is an argv string array. Provider validation rejects invalid or reserved options. Prefer per-Agent overrides for individual preferences instead of changing a shared Profile.
 
-This example updates only concurrency. `AGENT_ID` is an existing Agent UUID; `SERVICE_URL` and `TOKEN` configure management access:
+This example updates only concurrency. `AGENT_ID` is an existing Agent UUID; `BASE_URL` selects the local Service:
 
 ```bash
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/hosted-settings" \
-  -H "Authorization: Bearer $TOKEN" > hosted-settings.json
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/hosted-settings" \
+  > hosted-settings.json
 
 jq '{bindingVersion: .settings.bindingVersion,
      policyVersion: .settings.policyVersion,
      maxConcurrency: 2}' hosted-settings.json > hosted-settings-update.json
+```
 
-curl -sS -X PATCH "$SERVICE_URL/api/v1/agents/$AGENT_ID/hosted-settings" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/hosted-settings" \
+  -H "Content-Type: application/json" \
   --data-binary @hosted-settings-update.json
 ```
 
@@ -155,8 +156,9 @@ Codex, Qoder and QwenPaw provide control-plane tool approval integration. Claude
 The tables explain mappings; actual availability comes from Host reports. Query with a platform account Bearer token:
 
 ```bash
-curl -sS "$SERVICE_URL/api/v1/agents/runtime-options?tenant=default&namespace=default" \
-  -H "Authorization: Bearer $TOKEN"
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agents/runtime-options" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
 ```
 
 Select an entry in `runtimes`. Each entry provides `provider`, `version`, `runtimeProfileId`, `runtimePoolId`, `hostCount`, and `capabilities`. The descriptor contains `instructions`, `workspace`, `skills`, `subagents`, `tools`, `shell`, `mcp`, `model`, `customArgs`, `approval`, and `resume`. `resume` is a boolean; other capability entries use `supported`, `mode`, and `target` to describe support and its mapping.
@@ -164,3 +166,70 @@ Select an entry in `runtimes`. Each entry provides `provider`, `version`, `runti
 `GET /api/v1/runtime-hosts?tenant=...&namespace=...` returns per-Host provider versions/descriptors in `items[].capabilities`. Put the selected profile/pool UUIDs in the Agent binding. Update per-Agent provider options through `/api/v1/agents/{agentId}/hosted-settings`; see [configuration](/v2/en/service/hosted-agent-configuration) for fields.
 
 Provider `resume` describes native runtime recovery, which does not automatically provide a public Turn resume command. Applications should read Session and Turn capabilities and display commands only when `available_commands` includes them.
+
+<span id="curl-management"></span>
+
+## Inspect and maintain shared runtime configuration
+
+Use the platform identity and scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup). Use resource IDs returned by creation or lookup.
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-profiles" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-pools" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
+```
+
+Take the name from the list. Read a Profile and preserve its configuration. Edit the file using provider parameters before PUT. This updates the complete shared configuration and affects Agents that use it.
+
+```bash
+PROFILE_NAME="PROFILE_NAME_FROM_LIST"
+```
+
+```bash
+PROFILE_JSON=$(
+  curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-profiles/$PROFILE_NAME" \
+    --data-urlencode "tenant=$TENANT" \
+    --data-urlencode "namespace=$NAMESPACE"
+)
+
+jq '.profile | {tenant,namespace,name,provider,runtime,configuration,requirements}' <<< "$PROFILE_JSON" > runtime-profile.json
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/v1/runtime-profiles/$PROFILE_NAME" \
+  -H "Content-Type: application/json" \
+  --data-binary @runtime-profile.json
+```
+
+
+<Accordion title="Maintain a shared Runtime Pool">
+
+Read a Pool using the name from its list. Edit hostSelector or configuration and retain other fields before PUT. The Pool name differs from a Runtime Host UUID.
+
+```bash
+POOL_NAME="POOL_NAME_FROM_LIST"
+```
+
+```bash
+POOL_JSON=$(
+  curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-pools/$POOL_NAME" \
+    --data-urlencode "tenant=$TENANT" \
+    --data-urlencode "namespace=$NAMESPACE"
+)
+
+jq '.pool | {tenant,namespace,name,hostSelector,configuration}' <<< "$POOL_JSON" > runtime-pool.json
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/v1/runtime-pools/$POOL_NAME" \
+  -H "Content-Type: application/json" \
+  --data-binary @runtime-pool.json
+```
+
+</Accordion>

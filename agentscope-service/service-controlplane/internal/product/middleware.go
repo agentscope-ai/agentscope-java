@@ -29,8 +29,15 @@ const (
 
 func (s *Server) jwtMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if s.cfg.LocalDev {
+			c.Set(ctxUserID, LocalDeveloperID)
+			c.Set(ctxUsername, LocalDeveloperID)
+			c.Set(ctxRoles, LocalDeveloperClaims().Roles)
+			c.Next()
+			return
+		}
 		path := c.Request.URL.Path
-		if path == "/api/auth/login" ||
+		if path == "/api/auth/login" || path == "/api/auth/dev-session" ||
 			(c.Request.Method == http.MethodGet && strings.HasPrefix(path, oauthCallbackPrefix)) ||
 			path == "/actuator/health" ||
 			path == "/healthz" ||
@@ -67,7 +74,7 @@ func (s *Server) internalMiddleware() gin.HandlerFunc {
 			return
 		}
 		tok := c.GetHeader("X-Builder-Internal-Token")
-		if s.cfg.InternalToken == "" || tok != s.cfg.InternalToken {
+		if !s.cfg.LocalDev && (s.cfg.InternalToken == "" || tok != s.cfg.InternalToken) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid internal token"})
 			return
 		}

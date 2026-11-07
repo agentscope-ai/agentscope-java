@@ -24,6 +24,7 @@ Use `.env` for Docker. On Kubernetes, keep sensitive settings in an existing Sec
 | `CONTROL_PLANE_BOOTSTRAP_ADMIN` / `PASSWORD` | Initial administrator | Full password name: `CONTROL_PLANE_BOOTSTRAP_PASSWORD`; 12–72 bytes |
 | `CONTROL_PLANE_SEED_USERS` | Go demo-account seeding | Release configuration sets `false` |
 | `BUILDER_SEED_USERS` | Java demo-account seeding | Release configuration sets `false` |
+| `BUILDER_LOCAL_DEV` | Local authentication and authorization bypass | Process default `false`; source Compose and `dev-up.sh` default `true`; release Compose / Helm keep `false` |
 | `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | Permit Local Environments | Defaults to `false` |
 | `BUILDER_OAUTH_PUBLIC_URL` | Public origin | Must match OAuth callback configuration |
 | `DASHSCOPE_API_KEY` | Default DashScope model credentials | Required only for that model path |

@@ -36,6 +36,7 @@ type AccessRepository interface {
 // WorkAccess is attached only by the authenticated API boundary. Empty Refs with
 // Restricted=true grants no private work; absence is for trusted background work.
 type WorkAccess struct {
+	LocalDev   bool // Set only by the explicitly enabled local development API boundary.
 	Refs       []string
 	Restricted bool
 }

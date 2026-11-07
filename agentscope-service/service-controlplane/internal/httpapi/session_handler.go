@@ -413,7 +413,7 @@ func (s *Server) streamSessionEvents(c *gin.Context) {
 	prepareEventStream(c)
 	flusher, _ := c.Writer.(http.Flusher)
 	for {
-		if a := accessFrom(c); a != nil {
+		if a := accessFrom(c); a != nil && !s.localDev {
 			n, err := s.store.Access().GetNamespace(c.Request.Context(), a.Namespace.Tenant, a.Namespace.Name)
 			if err != nil || len(n.Roles(a.User)) == 0 {
 				return

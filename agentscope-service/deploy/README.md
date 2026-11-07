@@ -1,7 +1,9 @@
 # Deploy AgentScope Service
 
-Quick startup uses the published Docker Compose bundle. Follow the
-[download and SHA-256 verification steps](https://java.agentscope.io/v2/en/service/quickstart)
+This directory installs published images with authentication and authorization enabled. For local development without credentials, use the source Compose file one directory above with `docker compose up -d --build`. Published `2.1.0-BETA1` images do not support that mode.
+
+Published installation uses the Docker Compose bundle. Follow the
+[download and SHA-256 verification steps](https://java.agentscope.io/v2/en/service/kubernetes)
 and run these commands from the extracted `agentscope-service` directory.
 The current example uses the `2.1.0-BETA1` prerelease and its published ACR images;
 no Java, Maven, Go or source build is required.
@@ -53,8 +55,8 @@ The CLI connects to a running Service; it is not required to start Compose or He
 
 ## 中文
 
-本机快速启动默认使用已发布的 Docker Compose 安装包。按
-[快速开始](https://java.agentscope.io/v2/zh/service/quickstart)下载和校验安装包，
+本目录部署需要身份认证的发布版镜像。免鉴权本地开发使用上一级目录的源码 Compose；已发布的 `2.1.0-BETA1` 镜像不支持免鉴权模式。发布版安装使用 Docker Compose 安装包。按
+[生产部署](https://java.agentscope.io/v2/zh/service/kubernetes)下载和校验安装包，
 进入解压后的 `agentscope-service` 目录，再运行上面的初始化和 Compose 命令。
 填写模型凭据；可信本机体验时才启用 Local 执行环境。
 打开 `http://localhost:18080`，以 `admin` 和 `.env` 中的初始密码登录，然后修改密码。

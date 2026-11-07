@@ -4,19 +4,21 @@ en_link: /v2/en/service/runtime-host
 ---
 
 <Note>
-本页使用 `2.1.0-BETA1` 预发布版本。
+本地免鉴权开发需要当前源码；生产发布命令使用 `2.1.0-BETA1`。
 </Note>
 
 Runtime Host 运行在安装 Coding Agent 的电脑或服务器上。控制面负责派发和记录工作，Host 使用本地 provider 执行。
 
 ## 使用 Go 安装
 
-在目标 Linux 或 macOS 主机安装 [Go](https://go.dev/doc/install) 1.26 或更新版本。从同一个已发布版本安装两个命令，无需下载仓库源码或在该主机部署 Service：
+准备 Go 1.26 或更新版本。从包含本地开发模式的当前源码安装 CLI 与 Runtime Host，在仓库根目录运行：
 
 ```bash
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
-go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
+cd agentscope-service/service-controlplane
+go install ./cmd/as ./cmd/agentscope-runtime-host
 ```
+
+已发布的 `v2.1.0-BETA1` CLI 不支持自动进入本地开发身份。连接生产服务时可以安装发布版本，命令见[生产安装指南](/v2/zh/service/kubernetes#production-cli-install)。
 
 Go 为当前机器编译二进制，安装到 `GOBIN`；未设置时使用 `$(go env GOPATH)/bin`。将该目录加入 PATH，并检查两个命令：
 
@@ -30,19 +32,19 @@ as version
 agentscope-runtime-host -help
 ```
 
-将 PATH 配置写入 shell 配置文件，以便新终端使用。`as version` 应显示 `2.1.0-BETA1`。`/v2` 模块路径和 `@v2.1.0-BETA1` 指定本次已发布的预发布版本。
+将 PATH 配置写入 shell 配置文件，以便新终端使用。源码安装的版本输出以当前源码的构建信息为准。
 
-另外在这台主机安装、登录所需的 Coding Agent provider，并确认它能完成一次请求。CLI 和 Runtime Host 连接已有 Service，不负责部署平台。升级时先停止 Runtime Host，将两个 `go install` 命令中的版本一起更新，安装后重启，并保留原状态目录。
+另外在这台主机安装、登录所需的 Coding Agent provider，并确认它能完成一次请求。CLI 和 Runtime Host 连接已有 Service，不负责部署平台。升级时先停止 Runtime Host，从同一源码或发布版本重新安装两个命令，安装后重启，并保留原状态目录。
 
 ## 连接
 
 ```bash
-as connect https://agentscope.example.com
+as connect http://localhost:18080
 as runtime status
 as runtime probe
 ```
 
-按 CLI 提示完成登录或 enrollment。连接会保存本机配置并启动守护进程；用户正常使用无需反复传递共享内部令牌。
+本地模式下 CLI 自动取得开发身份，保存本机配置并启动守护进程，无需输入账号密码。生产登录与 enrollment 见[生产指南](/v2/zh/service/kubernetes#production-api-access)。
 
 ## 日常操作
 
@@ -97,15 +99,24 @@ CLI 使用同一套 Host API。平台账户凭据用于授权接入和管理主�
 | `POST /api/v1/runtime-hosts/{hostId}/drain` | 平台 Bearer | `host`；停止领取新工作 |
 | `POST /api/v1/runtime-hosts/{hostId}/resume` | 平台 Bearer | `host`；恢复可调度状态 |
 
-单 scope 部署使用服务配置的固定 scope；多 scope 部署创建 enrollment token 时必须指定 `tenant`、`namespace`。交换请求不能更改 token 中的范围。drain 用于维护前停止接收新任务，取消正在执行的任务仍使用 [AgentTask API](/v2/zh/service/issues)。
+单 scope 部署使用服务配置的固定 scope；多 scope 部署创建 enrollment token 时必须指定 `tenant`、`namespace`。交换请求不能更改 token 中的范围。drain 用于维护前停止接收新任务，取消正在执行的任务仍使用 [AgentTask API](/v2/zh/service/issues#curl-management)。
 
 例如，在已经配置管理访问的终端生成接入凭据：
 
 ```bash
-curl -sS "$SERVICE_URL/api/v1/runtime-host-enrollment-tokens" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"tenant":"default","namespace":"default"}'
+set -euo pipefail
+
+ENROLLMENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/runtime-host-enrollment-tokens" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE"
+}
+JSON
+)
+ENROLLMENT_TOKEN=$(jq -er '.enrollmentToken' <<< "$ENROLLMENT_JSON")
 ```
 
 把响应的 `enrollmentToken` 安全地传到目标主机，再运行 `as connect`，无需业务应用手动调用 Host register、heartbeat 或 claim。
@@ -173,10 +184,80 @@ Host 保留日志、provider 会话标识和 checkpoint，用于支持的恢复�
 | 读取 AgentTask | `GET /api/v1/agent-tasks/{taskId}` | 当前任务状态与执行关联 |
 | 查询物理尝试 | `GET /api/v1/execution-attempts?tenant=...&namespace=...&taskId=...`，可选 `state`、`limit` | `attempts`，每次重试有独立记录 |
 | 读取单个 Attempt | `GET /api/v1/execution-attempts/{attemptId}` | `attempt`，包含 backend、Host、租约、失败与恢复信息 |
-| 请求任务取消或重试 | `POST /api/v1/agent-tasks/{taskId}/cancel`、`/retry` | 按 [Issue API](/v2/zh/service/issues) 提交版本等参数；随后读取最终状态 |
+| 请求任务取消或重试 | `POST /api/v1/agent-tasks/{taskId}/cancel`、`/retry` | 按 [Issue API](/v2/zh/service/issues#curl-management) 提交版本等参数；随后读取最终状态 |
 | 查看 Workflow 运行过程 | `GET /api/v1/orchestration-runs/{runId}/graph`、`/events` | 节点图和运行事件，反映 Host 的执行结果 |
 | 恢复应用画面 | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}/snapshot`，再连接 `/events/stream` | 按 snapshot 游标接续 SSE；使用对应业务调用凭据 |
 
 Host 运行协议中的 `/checkpoint` 保存 `providerSessionId` 和 checkpoint，供适配器与任务恢复路径使用。它不是供应用任意选择 checkpoint 并恢复所有后端的接口。统一 invocation 的 `checkpoint_restore` 当前为 false；Hosted conversation 支持取消，补充输入、审批与 resume 则不能套用 Managed 的能力承诺。始终读取 `/api/v1/agent-sessions/{sessionId}/turns/{turnId}/capabilities` 的 `available_commands` 后再显示交互操作。
 
 SSE 断线续传只恢复已经记录的输出，不重新执行工具，也不等于恢复 Host 进程。需要保留的交付物应上传为 Artifact；Host 磁盘、provider 会话和框架内部状态仍有各自生命周期。Host 接口与参数见 [Runtime Host API](/v2/zh/service/runtime-host#runtime-host-协议接口)。
+
+<span id="curl-management"></span>
+
+## 主机管理示例
+
+以下示例沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的本地地址和默认空间变量。将资源 ID 替换为前面创建或查询得到的值。
+
+发行 enrollment token 后，可让目标主机用这个短期 token 换取自己的 runtime token。`HOST_KEY` 应稳定且只属于这台主机；不要使用平台 token 替代 enrollment token。通常由 `as connect` 自动完成交换。
+
+```bash
+HOST_KEY="report-worker-1"
+```
+
+```bash
+ENROLLED_HOST=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/runtime-host-enrollments/exchange" \
+    -H "Authorization: Bearer $ENROLLMENT_TOKEN" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "hostKey": "$HOST_KEY"
+}
+JSON
+)
+RUNTIME_TOKEN=$(jq -er '.runtimeToken' <<< "$ENROLLED_HOST")
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-hosts" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
+```
+
+从主机列表选择 HOST_ID，再读取当前容量。
+
+```bash
+HOST_ID="HOST_ID_FROM_LIST"
+```
+
+```bash
+HOST_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/runtime-hosts/$HOST_ID"
+)
+HOST_CAPACITY=$(jq -er '.host.capacity' <<< "$HOST_JSON")
+```
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/runtime-hosts/$HOST_ID/capacity" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "capacity": 2,
+  "expectedCapacity": $HOST_CAPACITY
+}
+JSON
+```
+
+<Accordion title="排空与恢复主机">
+
+维护前排空以停止领取新工作，等待已领取任务结束。维护完成后再恢复。排空不会取消已领取任务。
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/runtime-hosts/$HOST_ID/drain"
+```
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/runtime-hosts/$HOST_ID/resume"
+```
+
+</Accordion>

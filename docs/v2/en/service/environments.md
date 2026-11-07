@@ -5,14 +5,14 @@ zh_link: /v2/zh/service/environments
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This page uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 An Environment selects the execution backend for a Managed Agent's file, Shell, and related tools. After creating it, save its ID as `defaultEnvironmentId` in the Agent definition or select it through `environmentId` when creating a Session. The first supplies a default for the Agent's new Sessions; the second selects the location for this Session only. [Agent tool configuration](/v2/en/service/tools) still controls tool availability and confirmation.
 
 A [Workspace](/v2/en/service/workspaces) supplies instructions, Skills, and tool definitions, while the Environment determines where files and commands are executed. Managed model calls and reasoning remain in Dataplane even when tools run on a self_hosted Worker. A Hosted Agent's Runtime Host runs another kind of Agent runtime; its enrollment credentials cannot replace an Environment Worker's credentials.
 
-Use the platform identity variables from the [API identity setup](/v2/en/service/create-managed-agent#api-setup) and `AGENT_ID` from [your first Managed Agent](/v2/en/service/create-managed-agent) to verify file tools. If a suitable Environment already exists, retain its ID and continue to binding. When creating one yourself, also prepare its execution backend: a successful resource creation does not establish that a Worker is online or sandbox credentials are usable.
+Use the local URL and default scope variables from the [API identity setup](/v2/en/service/create-managed-agent#api-setup) and `AGENT_ID` from [your first Managed Agent](/v2/en/service/create-managed-agent) to verify file tools. If a suitable Environment already exists, retain its ID and continue to binding. When creating one yourself, also prepare its execution backend: a successful resource creation does not establish that a Worker is online or sandbox credentials are usable.
 
 ## Choose a type
 
@@ -27,15 +27,24 @@ In Docker, Local means inside the Dataplane container, not arbitrary access to t
 
 ## Create an execution environment
 
-This request creates a `self_hosted` Environment and returns its resource ID and a one-time `apiKey`. The ID selects the resource for an Agent or Session, while the key authenticates the Worker connecting to the platform. Neither serves the same purpose as the user `TOKEN` used for management APIs.
+This request creates a `self_hosted` Environment and returns its resource ID and a one-time `apiKey`. The ID selects the resource for an Agent or Session, while the key authenticates the Worker connecting to the platform. The CLI/Worker handles this runtime credential; local management APIs need no user credential.
 
 ```bash
-ENVIRONMENT_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/environments" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"name":"Report worker","type":"self_hosted","config":{}}')
-ENVIRONMENT_ID=$(printf '%s' "$ENVIRONMENT_JSON" | jq -er '.id')
-ENVIRONMENT_KEY=$(printf '%s' "$ENVIRONMENT_JSON" | jq -er '.apiKey')
+set -euo pipefail
+
+ENVIRONMENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/environments" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<'JSON'
+{
+  "name": "Report worker",
+  "type": "self_hosted",
+  "config": {}
+}
+JSON
+)
+ENVIRONMENT_ID=$(jq -er '.id' <<< "$ENVIRONMENT_JSON")
+ENVIRONMENT_KEY=$(jq -er '.apiKey' <<< "$ENVIRONMENT_JSON")
 ```
 
 Retain `ENVIRONMENT_ID` and `ENVIRONMENT_KEY`, then start the Worker below. Other types require their own backend preparation: Local requires administrator permission, while Sandbox requires working E2B configuration. Changing `type` in the request does not perform that preparation.
@@ -71,14 +80,23 @@ Use your process/container manager for restarts and distinct worker IDs for mult
 Once the Worker or other execution backend is ready, pass `ENVIRONMENT_ID` when creating a Session. This does not change the Agent's default, so it is useful for verifying a new environment or running the same Agent in different environments for different work. The resource must be accessible to the current identity.
 
 ```bash
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --arg agent "$AGENT_ID" --arg env "$ENVIRONMENT_ID" \
-    '{target:{type:"agent",id:$agent},environmentId:$env}')")
-SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: environment-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "agent",
+    "id": "$AGENT_ID"
+  },
+  "environmentId": "$ENVIRONMENT_ID"
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
 SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
-printf '%s' "$SESSION_JSON" | jq '{id, target, environmentId}'
+printf '%s\n' "$SESSION_JSON" | jq '{id, target, environmentId}'
 ```
 
 ### Set the Agent's default environment
@@ -92,6 +110,24 @@ jq -n --arg env "$ENVIRONMENT_ID" '{defaultEnvironmentId:$env}' > resource-defau
 New Sessions then inherit the default when they omit `environmentId`. An explicit ID overrides the environment only for that Session. Changing the default does not move existing Sessions. An existing Managed Session can PATCH its own `environmentId`; do so after current work finishes and verify subsequent tasks. Changing the binding does not copy working files from the previous environment.
 
 ### Verify actual execution
+
+```bash
+TURN_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: environment-check-001" \
+    --data-binary @- <<'JSON'
+{
+  "message": "Use file tools to write environment ready to environment-check.txt, then read it back and report the contents."
+}
+JSON
+)
+TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/snapshot"
+```
 
 Creating a Session records the environment selection without executing tools. With the file tools already enabled by [your first Managed Agent](/v2/en/service/create-managed-agent), submit a task to `$SESSION_URL/turns` that writes and reads back `environment-check.txt`. Inspect tool records in snapshots and events. The file belongs in the selected backend's working directory, not the terminal directory running curl. For a Worker, also inspect its tool claims and returned results.
 
@@ -145,7 +181,7 @@ Environment `config` belongs to the resource, and PATCH replaces the entire obje
 
 ## Management APIs
 
-Use a platform user Bearer token with `X-AgentScope-Tenant` and `X-AgentScope-Namespace`; prepare variables as in the [API identity setup](/v2/en/service/create-managed-agent#api-setup). Listings are filtered to inspectable resources. Reads require inspect, mutations require edit, and creation requires namespace resource creation rights.
+Local examples use the default scope without authentication headers. See [production deployment](/v2/en/service/kubernetes#production-api-access) for production grants.
 
 | Operation | API | Parameters and response |
 | --- | --- | --- |
@@ -158,3 +194,64 @@ Use a platform user Bearer token with `X-AgentScope-Tenant` and `X-AgentScope-Na
 | Delete | `DELETE /api/environments/{id}` | Returns 204 |
 
 These mutations have no version condition. Read config and retain other required settings before replacing it. Archived resources cannot be patched. Check Agent and Session usage before archival or deletion; resource maintenance does not cancel running work.
+
+<span id="curl-management"></span>
+
+## Query and maintenance examples
+
+Use the platform identity and scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup). Use resource IDs returned by creation or lookup.
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/environments" \
+  --data-urlencode "limit=25" \
+  --data-urlencode "offset=0"
+```
+
+```bash
+ENVIRONMENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/environments/$ENVIRONMENT_ID"
+)
+```
+
+<Accordion title="Change configuration or maintain a Worker key">
+
+PATCH replaces the complete config. The following changes only the name and retains existing configuration. Archiving, rotation and deletion are separate choices. Rotation invalidates the old key immediately; update Workers. Resource maintenance does not cancel a Turn.
+
+```bash
+jq '{name:"Report worker updated",config}' <<< "$ENVIRONMENT_JSON" > environment-update.json
+```
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/environments/$ENVIRONMENT_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @environment-update.json
+```
+
+<Tabs>
+<Tab title="Archive">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/environments/$ENVIRONMENT_ID/archive"
+```
+
+</Tab>
+<Tab title="Rotate key">
+
+```bash
+ROTATED_ENVIRONMENT=$(
+  curl -sS --fail-with-body -X POST "$BASE_URL/api/environments/$ENVIRONMENT_ID/rotate-key"
+)
+ENVIRONMENT_KEY=$(jq -er '.apiKey' <<< "$ROTATED_ENVIRONMENT")
+```
+
+</Tab>
+<Tab title="Delete">
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/environments/$ENVIRONMENT_ID"
+```
+
+</Tab>
+</Tabs>
+
+</Accordion>

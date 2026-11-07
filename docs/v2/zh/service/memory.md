@@ -5,32 +5,44 @@ en_link: /v2/en/service/memory
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 Memory Store 保存多个任务可以复用的知识文档，例如产品术语、操作说明和已核对的事实。创建 Store 并写入内容后，还需要把它的 ID 加入 Agent 的 `defaultMemoryStoreIds`，或在创建 Session 时通过 `memoryStoreIds` 选择它。运行中的 Agent 通过 `memory_store_list` 和 `memory_store_read` 按需读取这些文档，正文不会自动出现在每次模型请求中。
 
 共享知识与会话记录分别管理。当前 Managed HarnessAgent 将共享 Store 按只读方式挂载，文档的新增和修改由有权限的用户或业务后端通过管理 API 完成。Agent 在会话里形成的工作笔记、聊天历史和任务产物不会自动写回 Store；可复用的行为步骤则更适合放入 [Workspace / Skills](/v2/zh/service/workspaces)。
 
-下面沿用[部署指南](/v2/zh/service/quickstart)中的平台身份变量和可用的 `ENVIRONMENT_ID`，先创建一个有明确来源的术语文档，再通过一个 Managed Agent 验证它确实被读取。
+下面沿用[部署指南](/v2/zh/service/quickstart)中的本地地址和默认空间变量和可用的 `ENVIRONMENT_ID`，先创建一个有明确来源的术语文档，再通过一个 Managed Agent 验证它确实被读取。
 
 ## 创建 Store 并写入知识
 
 下面先创建“产品知识”Store，并把项目对 Lark 的定义写入 `product/glossary.md`。`expectedVersion: 0` 表示这个路径应当还不存在，能够避免重复练习时意外覆盖已有正文。保存响应中的 `STORE_ID`，后面用它建立资源关联。
 
 ```bash
-STORE_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/memory-stores" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"name":"产品知识","description":"已核对的术语与说明"}')
-STORE_ID=$(printf '%s' "$STORE_JSON" | jq -er '.id')
+set -euo pipefail
 
-curl --fail-with-body -sS -X PUT \
-  "$BASE_URL/api/memory-stores/$STORE_ID/memories/product/glossary.md" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"content":"本项目将 Lark 定义为周报归档任务。来源：项目术语表。","expectedVersion":0}' \
-  | jq '{id, path, headVersion}'
+STORE_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/memory-stores" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<'JSON'
+{
+  "name": "产品知识",
+  "description": "已核对的术语与说明"
+}
+JSON
+)
+STORE_ID=$(jq -er '.id' <<< "$STORE_JSON")
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/memory-stores/$STORE_ID/memories/product/glossary.md" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "content": "本项目将 Lark 定义为周报归档任务。来源：项目术语表。",
+  "expectedVersion": 0
+}
+JSON
 ```
 
 Store 和文档创建响应都是对象，ID 分别为 Store 的 `id` 和文档的 `id`。把已核对、可复用的结论放入共享知识，并记录来源；不要将未经确认的推测当作事实维护。
@@ -40,41 +52,97 @@ Store 和文档创建响应都是对象，ID 分别为 Store 的 `id` 和文档�
 Store 绑定和工具配置需要一起生效：绑定决定 Agent 可以访问哪份知识，工具决定它通过什么操作读取内容。下面创建一个专门查询知识的 Managed Agent，把 `STORE_ID` 设为默认知识来源，并在定义中显式启用两个只读工具。若要复用已有 Agent，可按[默认资源配置](/v2/zh/service/managed-agent-configuration#设置-agent-的默认资源)更新 `defaultMemoryStoreIds`，再按[工具指南](/v2/zh/service/tools#将配置保存到-agent)保留其他工具并启用这两个操作，无需另建 Agent。
 
 ```bash
-AGENT_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
-    --arg env "$ENVIRONMENT_ID" --arg store "$STORE_ID" '{
-      tenant:$tenant, namespace:$namespace,
-      agentKey:"knowledge-assistant", displayName:"知识查询助手",
-      binding:{kind:"managed"},
-      definition:{name:"知识查询助手", defaultEnvironmentId:$env,
-        defaultMemoryStoreIds:[$store],
-        system:"使用已绑定知识文档回答问题。先查找并读取相关来源，回答时注明文档路径；未找到时明确说明，不根据名称猜测含义。",
-        tools:[{type:"agent_toolset", defaultConfig:{enabled:false}, configs:[
-          {name:"memory_store_list",enabled:true,permissionPolicy:{type:"always_allow"}},
-          {name:"memory_store_read",enabled:true,permissionPolicy:{type:"always_allow"}}
-        ]}]}
-    }')")
-AGENT_ID=$(printf '%s' "$AGENT_JSON" | jq -er '.agent.id')
-printf '%s' "$AGENT_JSON" | jq '.definition | {version, defaultMemoryStoreIds, tools}'
+AGENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE",
+  "agentKey": "knowledge-assistant",
+  "displayName": "知识查询助手",
+  "binding": {
+    "kind": "managed"
+  },
+  "definition": {
+    "name": "知识查询助手",
+    "defaultEnvironmentId": "$ENVIRONMENT_ID",
+    "defaultMemoryStoreIds": [
+      "$STORE_ID"
+    ],
+    "system": "使用已绑定知识文档回答问题。先查找并读取相关来源，回答时注明文档路径；未找到时明确说明，不根据名称猜测含义。",
+    "tools": [
+      {
+        "type": "agent_toolset",
+        "defaultConfig": {
+          "enabled": false
+        },
+        "configs": [
+          {
+            "name": "memory_store_list",
+            "enabled": true,
+            "permissionPolicy": {
+              "type": "always_allow"
+            }
+          },
+          {
+            "name": "memory_store_read",
+            "enabled": true,
+            "permissionPolicy": {
+              "type": "always_allow"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+JSON
+)
+AGENT_ID=$(jq -er '.agent.id' <<< "$AGENT_JSON")
 ```
 
 创建成功后，`definition.defaultMemoryStoreIds` 应包含这个 Store。`agentKey` 为 `knowledge-assistant`；重复练习时可以保留已返回的 `AGENT_ID`，或更换 key 创建另一个 Agent。接着创建 Session，省略 `memoryStoreIds`，让它继承刚才的默认绑定。
 
 ```bash
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --arg agent "$AGENT_ID" '{target:{type:"agent",id:$agent}}')")
-SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: memory-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "agent",
+    "id": "$AGENT_ID"
+  }
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
 SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
-printf '%s' "$SESSION_JSON" | jq '{id, target, memoryStoreIds}'
+printf '%s\n' "$SESSION_JSON" | jq '{id, target, memoryStoreIds}'
 ```
 
 检查响应中的 `memoryStoreIds` 是否包含实际的 `STORE_ID`，再提交“请读取项目术语表，解释 Lark 并注明来源路径”的任务。按照[会话指南](/v2/zh/service/session-event-log)观察 `$SESSION_URL` 的快照和事件，应能看到知识工具读取 `product/glossary.md`，并在最终答案中保留“周报归档任务”这一事实。只有模型回答了相似内容，却没有相应读取记录，不能证明它使用了 Store。
 
 如果只希望某一次会话使用这个 Store，也可以在创建 Session 的请求中显式传入 `memoryStoreIds: ["实际的 Store ID"]`。这个数组替换该次会话的完整知识列表，不会追加到 Agent 的默认列表；需要同时使用多个 Store 时，应传入所有需要的 ID。省略字段时继承 Agent 默认值，`[]` 则表示本次不挂载默认 Store。已有 Session 不会因为 Agent 默认列表被修改而自动改变自己的选择。
+
+先提交一个需要读取知识的任务，再检查快照中的工具调用和回答来源：
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: knowledge-query-001" \
+  --data-binary @- <<'JSON'
+{
+  "message": "本项目中的 Lark 是什么？请读取已绑定知识并引用文档路径。"
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/snapshot"
+```
 
 ## 读取与写入权限
 
@@ -106,7 +174,7 @@ Session 固定的是 Store ID，并未把共享正文冻结成会话快照。管
 
 ## 管理 API 与版本
 
-请求使用平台用户 Bearer token 和 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`，变量准备见[部署准备](/v2/zh/service/quickstart)。读取需要资源 inspect 权限，修改需要 edit，创建需要空间资源创建权限；列表只返回当前身份可检查的 Store。
+本地示例无需认证请求头。生产权限配置见[生产部署指南](/v2/zh/service/kubernetes#production-api-access)。下文 `{id}` 是创建或查询得到的资源 ID；URL 参数需编码。
 
 下表 `path` 是 Store 内的文档路径，例如 `product/glossary.md`。URL 按路径段编码，保留目录分隔符。`versions/` 是读取历史的保留前缀，不应用作文档路径前缀。
 
@@ -124,3 +192,87 @@ Session 固定的是 Store ID，并未把共享正文冻结成会话快照。管
 Store 列表支持 `limit`（1–500）、`offset`（须与 limit 一起使用），总数在 `X-Total-Count`。当前没有 Store 名称或描述的 PATCH 接口。
 
 文档每次 PUT 都生成新版本。建议新建时传 `expectedVersion:0`，更新时先读取并传入当前 `headVersion`；版本已变化则返回 409，重新读取后再合并。省略条件表示允许覆盖当前正文。普通更新保留旧版本，Redact 会移除旧版本中的敏感内容，但不会自动修改此前已经复制到会话、产物或其他系统的文本。
+
+<span id="curl-management"></span>
+
+## 查询、版本更新与移除
+
+以下示例沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的本地地址和默认空间变量。将资源 ID 替换为前面创建或查询得到的值。
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/memory-stores" \
+  --data-urlencode "limit=25" \
+  --data-urlencode "offset=0"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/memory-stores/$STORE_ID/memories"
+```
+
+更新已有文档时，使用刚读取的 `headVersion`。409 冲突时重新读取并核对内容；不要改为 0 强行覆盖。
+
+```bash
+MEMORY_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/memory-stores/$STORE_ID/memories/product/glossary.md"
+)
+MEMORY_VERSION=$(jq -er '.headVersion' <<< "$MEMORY_JSON")
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/memory-stores/$STORE_ID/memories/product/glossary.md" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "content": "Lark is the weekly report archiving task. Source: verified project glossary.",
+  "expectedVersion": $MEMORY_VERSION
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/memory-stores/$STORE_ID/memories/versions/product/glossary.md"
+```
+
+<Accordion title="按需移除知识">
+
+以下操作分别用于删除单篇文档、永久清除其历史内容、归档 Store 或删除 Store。请选择一个符合目的的操作；redact 无法恢复旧版本。
+
+<Tabs>
+<Tab title="删除文档">
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/memory-stores/$STORE_ID/memories/product/glossary.md"
+```
+
+</Tab>
+<Tab title="Redact">
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/memory-stores/$STORE_ID/redact" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "path": "product/glossary.md",
+  "replacement": "[REDACTED]"
+}
+JSON
+```
+
+</Tab>
+<Tab title="归档 Store">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/memory-stores/$STORE_ID/archive"
+```
+
+</Tab>
+<Tab title="删除 Store">
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/memory-stores/$STORE_ID"
+```
+
+</Tab>
+</Tabs>
+
+</Accordion>

@@ -5,11 +5,11 @@ en_link: /v2/en/service/api-reference
 
 业务应用统一通过 Session API 调用 Agent、Team 和 Workflow。管理 API 用于准备这些资源、配置权限和发布 Workflow revision；应用调用时直接选择目标创建 Session，不需要再发布一层服务入口。完整接入流程见[通过 API 使用 Agent](/v2/zh/service/service-api)，本页用于查找路径和参数。
 
-## 认证与空间
+<span id="认证与空间"></span>
 
-平台用户通过 `POST /api/auth/login` 登录，请求体为 `{"username":"...","password":"..."}`，将返回的 `token` 放入 `Authorization: Bearer TOKEN`。管理 Agent、Team、Workflow 和 Application 时使用这个身份。应用后端则使用 Application 下签发的 `X-API-Key`，只能访问凭据明确授权的目标和操作。
+## 本地 API 准备
 
-空间请求使用 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`。如果请求体或查询参数中也包含空间字段，它们必须一致。Runtime Host、Task/Attempt 和 Environment 的执行凭据只用于相应运行协议，不能拿来调用业务 Session API。
+先完成[本地部署](/v2/zh/service/quickstart)，按[API 准备](/v2/zh/service/create-managed-agent#api-setup)设置 `BASE_URL` 和默认空间。本地模式无需凭据或资源授权；下文管理与 Session API 示例可以直接执行。账号、空间权限、应用 key 及对应请求头见[生产部署](/v2/zh/service/kubernetes#production-api-access)。运行时自动下发的 Task/Attempt 凭据用于识别当前执行，继续按相应协议使用。
 
 ## Application 与调用凭据
 
@@ -58,7 +58,7 @@ Managed Agent 的 `/budget`、`/checkpoints`、`/fork`、`/inputs/inject`、`/su
 <span id="agents"></span>
 ## 统一 Agent 目录与运行绑定
 
-以下接口使用平台身份；创建和列表的 `tenant`、`namespace` 与请求头范围保持一致。Agent 的 `id`、`agentKey` 和展示名称不是同一个字段。创建/注册的操作示例见[Agent 管理](/v2/zh/service/api-reference#agents)。
+以下接口使用平台身份；创建和列表的 `tenant`、`namespace` 与请求头范围保持一致。Agent 的 `id`、`agentKey` 和展示名称不是同一个字段。创建示例见[Managed Agent](/v2/zh/service/create-managed-agent)、[Hosted Agent](/v2/zh/service/connect-hosted-agent)与[External 注册](/v2/zh/service/register-agentscope-agent)。
 
 | 方法和路径 | 请求参数 | 响应与用途 |
 | --- | --- | --- |
@@ -75,6 +75,26 @@ Managed Agent 的 `/budget`、`/checkpoints`、`/fork`、`/inputs/inject`、`/su
 `binding.kind` 使用 `managed`、`hosted-runtime` 或 `external-application`。Managed 创建时由平台生成绑定配置；Hosted 配置使用 `runtimeProfileId`、`runtimePoolId`。External 使用独立注册流程，不通过普通创建接口直接伪造一个在线实例。
 
 `POST /api/v1/agent-registrations` 接受 `agentKey`、`instanceKey`、范围、`framework`、`routingKey`、`capabilities` 等，返回 `agent`、`binding`、`instance`、`registrationCredential`。当前注册入口不校验调用身份，需由部署方限制受信任接入范围；返回注册凭据不代表首次注册已经通过身份认证。字段和实际传输接入见[External 参数参考](/v2/zh/service/external-agent#external-agent-configuration)。
+
+沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)的本地地址和默认空间变量。
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agents" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "status=active" \
+  --data-urlencode "limit=25"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/bindings"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agent-runtime-policies/$AGENT_ID" \
+    --data-urlencode "tenant=$TENANT" \
+    --data-urlencode "namespace=$NAMESPACE"
+```
 
 ## 任务、编排、自动化与资源参数
 
@@ -105,7 +125,7 @@ Python 的 `ManagementClient` 用于准备资源与凭据，`ServiceClient` 用�
 import os
 from agentscope_service import ServiceClient
 
-client = ServiceClient(os.environ["BASE_URL"], api_key=os.environ["AGENTSCOPE_API_KEY"])
+client = ServiceClient(os.environ["BASE_URL"])
 session = client.create_session(
     {"type": "agent", "id": os.environ["AGENT_ID"]},
     idempotency_key="review-session-001",
