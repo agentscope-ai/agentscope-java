@@ -56,4 +56,31 @@ public final class AguiSessionLogReplay {
             AguiAdapterConfig config) {
         return AguiSessionLogAttach.attach(input, log, after, executionRunId, config);
     }
+
+    /**
+     * Reconnects to a run and hands the tail over to a live source.
+     *
+     * <p>The log is replayed up to {@link AguiRunBroadcaster.LiveRun#lastSeq()} and the live frames
+     * continue from there without a gap or a duplicate. When {@code live} is {@code null} the
+     * call is equivalent to {@link #attach(RunAgentInput, SessionLog, long, String,
+     * AguiAdapterConfig)}.
+     *
+     * @param input the AG-UI input
+     * @param log the session log to observe
+     * @param after the last sequence already represented by the application history
+     * @param live the live tail of the running thread, or {@code null}
+     * @param executionRunId the session log execution run id, or {@code null} to follow any active
+     *     run
+     * @param config the adapter config controlling replay detail
+     * @return framed AG-UI reconnect events
+     */
+    public static Flux<AguiFramedEvent> attach(
+            RunAgentInput input,
+            SessionLog log,
+            long after,
+            AguiRunBroadcaster.LiveRun live,
+            String executionRunId,
+            AguiAdapterConfig config) {
+        return AguiSessionLogAttach.attach(input, log, after, live, executionRunId, config);
+    }
 }

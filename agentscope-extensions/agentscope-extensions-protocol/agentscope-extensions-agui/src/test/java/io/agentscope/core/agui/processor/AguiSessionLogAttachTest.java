@@ -47,6 +47,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 
 /** Attach stream tests for the SessionLog-backed AG-UI recovery path. */
 class AguiSessionLogAttachTest {
@@ -878,6 +879,304 @@ class AguiSessionLogAttachTest {
                 frames.stream().filter(AguiFramedEvent::hasCursor).toList();
         assertEquals(1, cursored.size(), "only the completed event advances the cursor");
         assertEquals(endSeq, cursored.get(0).seq());
+    }
+
+    @Test
+    void attachDeliversATerminalFrameBroadcastBeforeTheTailWasTaken() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            append(log, writer, "model/chunk", modelChunk("call-1", "chat-1", textBlock("hi")));
+            append(log, writer, "model/end", Map.of("modelCallId", "call-1"));
+        } finally {
+            log.release(writer);
+        }
+        AguiRunBroadcaster broadcaster = new AguiRunBroadcaster();
+        broadcaster.open(THREAD_ID, "exec-1");
+        // What the adapter produces today: a chunk event carries its seq, a model/end event does
+        // not, so the broadcast watermark stops at the chunk.
+        broadcaster.publish(
+                THREAD_ID,
+                "exec-1",
+                new AguiFramedEvent(
+                        2, 2, new AguiEvent.TextMessageContent(THREAD_ID, "run-1", "m-1", "hi")));
+        broadcaster.publish(
+                THREAD_ID,
+                "exec-1",
+                new AguiFramedEvent(
+                        -1, -1, new AguiEvent.TextMessageEnd(THREAD_ID, "run-1", "m-1")));
+        AguiRunBroadcaster.LiveRun live = broadcaster.live(THREAD_ID);
+        broadcaster.close(THREAD_ID, "exec-1");
+
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attach(input(), log, 1, live, "exec-1", CONFIG)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        assertTrue(
+                frames.stream()
+                        .anyMatch(frame -> frame.event() instanceof AguiEvent.TextMessageEnd),
+                "the terminal frame must be delivered even when it was broadcast with no source"
+                        + " seq");
+    }
+
+    @Test
+    void attachResumesFromLiveTailWithoutDuplicatingTheReplayBoundary() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        long firstChunk;
+        long secondChunk;
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            firstChunk =
+                    append(
+                            log,
+                            writer,
+                            "model/chunk",
+                            modelChunk("call-1", "chat-1", textBlock("a")));
+            secondChunk =
+                    append(
+                            log,
+                            writer,
+                            "model/chunk",
+                            modelChunk("call-1", "chat-1", textBlock("b")));
+        } finally {
+            log.release(writer);
+        }
+        AguiRunBroadcaster broadcaster = new AguiRunBroadcaster();
+        broadcaster.open(THREAD_ID, "exec-1");
+        broadcaster.publish(
+                THREAD_ID,
+                "exec-1",
+                List.of(
+                        new AguiFramedEvent(
+                                -1,
+                                firstChunk,
+                                new AguiEvent.TextMessageStart(
+                                        THREAD_ID, "run-1", "m-1", "assistant")),
+                        new AguiFramedEvent(
+                                firstChunk,
+                                firstChunk,
+                                new AguiEvent.TextMessageContent(THREAD_ID, "run-1", "m-1", "a"))));
+        AguiRunBroadcaster.LiveRun live = broadcaster.live(THREAD_ID);
+        broadcaster.publish(
+                THREAD_ID,
+                "exec-1",
+                new AguiFramedEvent(
+                        secondChunk,
+                        secondChunk,
+                        new AguiEvent.TextMessageContent(THREAD_ID, "run-1", "m-1", "b")));
+        broadcaster.close(THREAD_ID, "exec-1");
+
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attach(input(), log, firstChunk - 1, live, "exec-1", CONFIG)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        List<String> deltas =
+                frames.stream()
+                        .filter(frame -> frame.event() instanceof AguiEvent.TextMessageContent)
+                        .map(frame -> ((AguiEvent.TextMessageContent) frame.event()).delta())
+                        .toList();
+        assertEquals(List.of("a", "b"), deltas);
+        assertEquals(
+                1,
+                frames.stream()
+                        .filter(frame -> frame.event() instanceof AguiEvent.TextMessageStart)
+                        .count(),
+                "the replay boundary must not be announced twice");
+    }
+
+    @Test
+    void attachReconnectsFromACursorInsideAStreamedMessage() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        long firstChunk;
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            firstChunk =
+                    append(
+                            log,
+                            writer,
+                            "model/chunk",
+                            modelChunk("call-1", "chat-1", textBlock("a")));
+        } finally {
+            log.release(writer);
+        }
+        AguiRunBroadcaster broadcaster = new AguiRunBroadcaster();
+        broadcaster.open(THREAD_ID, "exec-1");
+        AguiRunBroadcaster.LiveRun live = broadcaster.live(THREAD_ID);
+        // The second chunk is produced after the tail was taken; the client already holds the
+        // first one, so the cursor is a chunk sequence, not an event boundary.
+        broadcaster.publish(
+                THREAD_ID,
+                "exec-1",
+                new AguiFramedEvent(
+                        -1,
+                        firstChunk + 1,
+                        new AguiEvent.TextMessageContent(THREAD_ID, "run-1", "m-1", "b")));
+        broadcaster.close(THREAD_ID, "exec-1");
+
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attach(input(), log, firstChunk, live, "exec-1", CONFIG)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        List<String> deltas =
+                frames.stream()
+                        .filter(frame -> frame.event() instanceof AguiEvent.TextMessageContent)
+                        .map(frame -> ((AguiEvent.TextMessageContent) frame.event()).delta())
+                        .toList();
+        assertEquals(
+                List.of("b"),
+                deltas,
+                "a cursor on a chunk must not drop the message tail or replay the chunk");
+    }
+
+    @Test
+    void attachServesRecentFramesWithoutWaitingForTheLog() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        AguiRunBroadcaster broadcaster = new AguiRunBroadcaster();
+        broadcaster.open(THREAD_ID, "exec-1");
+        broadcaster.publish(
+                THREAD_ID,
+                "exec-1",
+                List.of(
+                        new AguiFramedEvent(
+                                -1,
+                                5,
+                                new AguiEvent.TextMessageStart(
+                                        THREAD_ID, "run-1", "m-1", "assistant")),
+                        new AguiFramedEvent(
+                                5,
+                                5,
+                                new AguiEvent.TextMessageContent(THREAD_ID, "run-1", "m-1", "a"))));
+        AguiRunBroadcaster.LiveRun live = broadcaster.live(THREAD_ID);
+        broadcaster.close(THREAD_ID, "exec-1");
+
+        // The log is empty: only the recent buffer can serve this cursor.
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attach(input(), log, 4, live, "exec-1", CONFIG)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        assertFalse(
+                frames.stream().anyMatch(frame -> frame.event() instanceof AguiEvent.RunError),
+                "the recent buffer must bridge the cursor without a log error");
+        List<String> deltas =
+                frames.stream()
+                        .filter(frame -> frame.event() instanceof AguiEvent.TextMessageContent)
+                        .map(frame -> ((AguiEvent.TextMessageContent) frame.event()).delta())
+                        .toList();
+        assertEquals(List.of("a"), deltas);
+    }
+
+    @Test
+    void attachReplaysTheLogBeforeTheRecentBuffer() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            append(log, writer, "model/chunk", modelChunk("call-1", "chat-1", textBlock("a")));
+        } finally {
+            log.release(writer);
+        }
+        AguiRunBroadcaster broadcaster = new AguiRunBroadcaster();
+        broadcaster.open(THREAD_ID, "exec-1");
+        broadcaster.publish(
+                THREAD_ID,
+                "exec-1",
+                new AguiFramedEvent(
+                        -1, 3, new AguiEvent.TextMessageContent(THREAD_ID, "run-1", "m-1", "b")));
+        AguiRunBroadcaster.LiveRun live = broadcaster.live(THREAD_ID);
+        broadcaster.close(THREAD_ID, "exec-1");
+
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attach(input(), log, 1, live, "exec-1", CONFIG)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        List<String> deltas =
+                frames.stream()
+                        .filter(frame -> frame.event() instanceof AguiEvent.TextMessageContent)
+                        .map(frame -> ((AguiEvent.TextMessageContent) frame.event()).delta())
+                        .toList();
+        assertEquals(List.of("a", "b"), deltas);
+    }
+
+    @Test
+    void attachFallsBackWhenLiveFramesCarryNoSequence() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            append(log, writer, "model/chunk", modelChunk("call-1", "chat-1", textBlock("logged")));
+            append(log, writer, "run/end", Map.of("status", "completed"));
+        } finally {
+            log.release(writer);
+        }
+        AguiFramedEvent liveFrame =
+                new AguiFramedEvent(
+                        -1,
+                        -1,
+                        new AguiEvent.TextMessageContent(THREAD_ID, "run-1", "m-1", "live"));
+        AguiRunBroadcaster.LiveRun live =
+                new AguiRunBroadcaster.LiveRun(
+                        "exec-1", -1, -1, List.of(liveFrame), Flux.just(liveFrame));
+
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attach(input(), log, 0, live, "exec-1", CONFIG)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        List<String> deltas =
+                frames.stream()
+                        .filter(frame -> frame.event() instanceof AguiEvent.TextMessageContent)
+                        .map(frame -> ((AguiEvent.TextMessageContent) frame.event()).delta())
+                        .toList();
+        assertEquals(
+                List.of("logged"),
+                deltas,
+                "an all-uncursored live tail must not duplicate the replayed log");
+    }
+
+    @Test
+    void attachFallsBackToTheLogWhenTheLiveTailFails() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            append(log, writer, "model/chunk", modelChunk("call-1", "chat-1", textBlock("a")));
+            append(log, writer, "run/end", Map.of("status", "completed"));
+        } finally {
+            log.release(writer);
+        }
+        AguiRunBroadcaster.LiveRun live =
+                new AguiRunBroadcaster.LiveRun(
+                        "exec-1",
+                        0,
+                        -1,
+                        List.of(),
+                        Flux.error(new IllegalStateException("tail overflow")));
+
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attach(input(), log, 0, live, "exec-1", CONFIG)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        assertFalse(
+                frames.stream().anyMatch(frame -> frame.event() instanceof AguiEvent.RunError),
+                "a tail failure must degrade to log replay, not abort the stream");
+        assertTrue(
+                frames.stream().anyMatch(frame -> frame.event() instanceof AguiEvent.RunFinished));
     }
 
     private static RunAgentInput input() {

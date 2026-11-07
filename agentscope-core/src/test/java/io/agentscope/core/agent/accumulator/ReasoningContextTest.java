@@ -29,6 +29,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.session.SessionRecorder;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -389,6 +390,29 @@ class ReasoningContextTest {
         assertNotNull(msg.getMetadata());
         assertEquals("enc_12345", msg.getMetadata().get("openai.reasoning.encrypted_content"));
         assertEquals("resp_abc", msg.getMetadata().get("openai.response.id"));
+    }
+
+    @Test
+    @DisplayName("Should keep the session log seq out of the persisted message metadata")
+    void testSessionSeqMetadataIsNotPropagated() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("openai.response.id", "resp_abc");
+        metadata.put(SessionRecorder.SESSION_SEQ_KEY, 42L);
+
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .metadata(metadata)
+                        .build();
+
+        context.processChunk(chunk);
+        Msg msg = context.buildFinalMessage();
+
+        assertNotNull(msg);
+        assertNotNull(msg.getMetadata());
+        assertEquals("resp_abc", msg.getMetadata().get("openai.response.id"));
+        assertFalse(msg.getMetadata().containsKey(SessionRecorder.SESSION_SEQ_KEY));
     }
 
     @Test
