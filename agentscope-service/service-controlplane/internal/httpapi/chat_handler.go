@@ -19,6 +19,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -190,6 +191,38 @@ func (s *Server) patchChat(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"chat": updated})
 }
 
+// ensureChatConversation creates the public conversation row a managed chat
+// session needs before its transcript can be projected.
+//
+// projectPublicManagedEvents returns early (silently) when no conversation
+// exists for the session, so Console chats always read an empty event list
+// even though the data plane ran the turn. The Session API path is covered
+// by ensurePublicConversation; this brings the chat path to parity.
+// principalRef is the chat owner (catalogOwnerRef), required NOT NULL by the
+// endpoint_conversations schema.
+func (s *Server) ensureChatConversation(ctx context.Context, session *store.Session, principalRef string) error {
+	if _, err := s.store.Endpoints().GetConversation(ctx, session.ID); err == nil {
+		return nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	_, err := s.store.Endpoints().CreateConversation(ctx, &controlmodel.EndpointConversation{
+		ID:                 session.ID,
+		EndpointID:         session.ID,
+		AgentID:            session.AgentID,
+		SessionID:          session.SessionID,
+		BindingID:          session.BindingID,
+		AgentInstanceID:    session.AgentInstanceID,
+		InstanceGeneration: session.InstanceGeneration,
+		Status:             controlmodel.EndpointConversationActive,
+		PrincipalRef:       principalRef,
+	})
+	if err != nil && errors.Is(err, store.ErrConflict) {
+		return nil // a racing writer created it first
+	}
+	return err
+}
+
 func (s *Server) sendChatTurn(c *gin.Context) {
 	value, ok := s.ownedChat(c)
 	if !ok {
@@ -215,6 +248,10 @@ func (s *Server) sendChatTurn(c *gin.Context) {
 	session, err := s.store.Sessions().GetByID(c, value.SessionID)
 	if err != nil || session.AgentID != value.AgentID || session.Tenant != value.Tenant || session.Namespace != value.Namespace {
 		c.JSON(http.StatusConflict, ErrorResponse{Error: "Chat runtime session is unavailable"})
+		return
+	}
+	if err = s.ensureChatConversation(c, session, catalogOwnerRef(c, "")); err != nil {
+		writeConversationTurnError(c, err)
 		return
 	}
 	if err = s.sendAgentConversationTurn(c, session, strings.TrimSpace(req.Message), "chat", value.ID.String()); err != nil {
