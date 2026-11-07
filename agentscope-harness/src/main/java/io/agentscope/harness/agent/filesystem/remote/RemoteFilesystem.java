@@ -219,6 +219,16 @@ public class RemoteFilesystem implements AbstractFilesystem {
                 .collect(java.util.stream.Collectors.joining("."));
     }
 
+    /**
+     * Returns the effective storage namespace for this call as an immutable snapshot.
+     *
+     * @param rc call identity; null is treated as an empty context
+     * @return the namespace used for remote file operations
+     */
+    public List<String> storageNamespace(RuntimeContext rc) {
+        return List.copyOf(getNamespace(rc != null ? rc : RuntimeContext.empty()));
+    }
+
     private List<String> getNamespace(RuntimeContext rc) {
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
