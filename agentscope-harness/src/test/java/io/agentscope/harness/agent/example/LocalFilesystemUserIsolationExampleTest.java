@@ -486,7 +486,9 @@ class LocalFilesystemUserIsolationExampleTest {
 
             assertEquals("", wm.readMemoryMd(ctx("s1", "alice")));
             assertEquals("", wm.readMemoryMd(ctx("s2", "bob")));
-            assertTrue(wm.listMemoryFilePaths(ctx("s1", "alice")).isEmpty());
+            assertFalse(
+                    wm.listMemoryFilePaths(ctx("s1", "alice")).contains("MEMORY.md"),
+                    "the root-level leftover must not be listed for an identified caller");
             assertEquals("legacy-root-note", wm.readMemoryMd(RuntimeContext.empty()));
 
             wm.writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice-fact");

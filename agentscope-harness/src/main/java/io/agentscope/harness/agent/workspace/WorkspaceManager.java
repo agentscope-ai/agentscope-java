@@ -386,6 +386,10 @@ public class WorkspaceManager implements AutoCloseable {
     /**
      * Reads a UTF-8 file under the workspace, using the two-layer pattern:
      * filesystem first, then local disk fallback.
+     *
+     * <p>Same namespace caveat as {@link #readWithOverride}: the fallback reads the workspace
+     * root, so this suits build-time configuration files ({@code additionalContextFiles},
+     * {@code tools.json}), not per-identity runtime data.
      */
     public String readManagedWorkspaceFileUtf8(RuntimeContext rc, String relativePath) {
         if (relativePath == null || relativePath.isBlank()) {
@@ -1028,8 +1032,11 @@ public class WorkspaceManager implements AutoCloseable {
     // ==================== Two-layer read/write helpers ====================
 
     /**
-     * Two-layer read: filesystem first (namespaced by {@link
-     * NamespaceFactory}), local disk fallback.
+     * Two-layer read for shared, non-identity content ({@code AGENTS.md}, {@code knowledge/*}):
+     * filesystem first (namespaced by {@link NamespaceFactory}), then the workspace-root disk
+     * copy. The fallback deliberately stays outside the namespace — those files are
+     * configuration shared by every caller. Per-identity runtime data must use
+     * {@link #readNamespacedRuntimeData} instead.
      */
     private String readWithOverride(RuntimeContext rc, String relativePath) {
         String fsContent = readTextThroughFilesystem(rc, relativePath);
