@@ -34,6 +34,7 @@ import io.agentscope.harness.agent.bus.MessageBus;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -75,6 +76,16 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                     + "1. Continue with other independent tasks;\n"
                     + "2. If nothing else to do, give a text reply without calling any tool."
                     + "</system-reminder>";
+
+    /**
+     * Background completion notice. Names the tool call by both name and id — the id is what the
+     * placeholder used, so the model can tie the result back to the call it is waiting for.
+     */
+    private static final String RESULT_TEMPLATE =
+            "<system-reminder>Tool '%s' (id=%s) running in background has completed.\n\n"
+                    + "Result:\n\n%s</system-reminder>";
+
+    private static final String NO_OUTPUT = "(no output)";
 
     private final MessageBus messageBus;
     private final Duration offloadTimeout;
@@ -250,37 +261,69 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
             return;
         }
 
-        StringBuilder resultText = new StringBuilder();
+        // One acting step can offload several calls, and their output arrives interleaved in
+        // whichever order the tools finish. Grouping by tool-call id keeps every result attached
+        // to the call that produced it: a single blob labelled with all the names leaves the
+        // model unable to tell which text belongs to which call, so it can answer from the wrong
+        // tool's output and retry the wrong one.
+        Map<String, StringBuilder> textByCallId = new LinkedHashMap<>();
+        StringBuilder unattributed = new StringBuilder();
         for (AgentEvent event : backgroundBuffer) {
             if (event instanceof ToolResultTextDeltaEvent delta) {
-                resultText.append(delta.getDelta());
+                String toolCallId = delta.getToolCallId();
+                if (toolCallId == null || toolCallId.isBlank()) {
+                    unattributed.append(delta.getDelta());
+                } else {
+                    textByCallId
+                            .computeIfAbsent(toolCallId, key -> new StringBuilder())
+                            .append(delta.getDelta());
+                }
             }
         }
+        // Kept so a single-tool offload whose deltas carry no id still delivers its output.
+        String unattributedText =
+                textByCallId.isEmpty() && unattributed.length() > 0
+                        ? unattributed.toString()
+                        : null;
 
-        String toolNames =
-                toolCalls.stream()
-                        .map(ToolUseBlock::getName)
-                        .reduce((a, b) -> a + ", " + b)
-                        .orElse("unknown");
+        for (ToolUseBlock toolCall : toolCalls) {
+            StringBuilder own = textByCallId.get(toolCall.getId());
+            String resultText =
+                    own != null && own.length() > 0
+                            ? own.toString()
+                            : unattributedText != null ? unattributedText : NO_OUTPUT;
 
-        String hintContent =
-                String.format(
-                        "<system-reminder>Tool '%s' running in background has completed.\n\n"
-                                + "Result:\n\n%s</system-reminder>",
-                        toolNames, resultText.length() > 0 ? resultText.toString() : "(no output)");
+            String hintContent =
+                    String.format(
+                            RESULT_TEMPLATE, toolCall.getName(), toolCall.getId(), resultText);
+            String hintId = UUID.randomUUID().toString().replace("-", "");
+            Map<String, Object> hintPayload =
+                    Map.of(
+                            "type",
+                            "hint",
+                            "id",
+                            hintId,
+                            "hint",
+                            hintContent,
+                            "source",
+                            "tool_output");
 
-        String hintId = UUID.randomUUID().toString().replace("-", "");
-        Map<String, Object> hintPayload =
-                Map.of("type", "hint", "id", hintId, "hint", hintContent, "source", "tool_output");
-
-        if (asyncToolRegistry != null) {
-            String resultStr = resultText.length() > 0 ? resultText.toString() : "(no output)";
-            for (ToolUseBlock tc : toolCalls) {
-                asyncToolRegistry.complete(tc.getId(), resultStr).subscribe();
+            if (asyncToolRegistry != null) {
+                asyncToolRegistry.complete(toolCall.getId(), resultText).subscribe();
             }
-        }
 
-        messageBus.inboxPush(sessionId, hintPayload).subscribe();
+            messageBus
+                    .inboxPush(sessionId, hintPayload)
+                    .subscribe(
+                            unused -> {},
+                            error ->
+                                    log.warn(
+                                            "Failed to push background result for tool call {} in"
+                                                    + " session {}: {}",
+                                            toolCall.getId(),
+                                            sessionId,
+                                            error.getMessage()));
+        }
 
         String agentId = ctx.get("agentId");
         String userId = ctx.getUserId();
@@ -296,8 +339,9 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                                         error.getMessage()));
 
         log.info(
-                "Background tool '{}' completed, pushed result to inbox: session={}",
-                toolNames,
+                "Background tool(s) {} completed, pushed {} result(s) to inbox: session={}",
+                toolCalls.stream().map(ToolUseBlock::getName).toList(),
+                toolCalls.size(),
                 sessionId);
     }
 }
