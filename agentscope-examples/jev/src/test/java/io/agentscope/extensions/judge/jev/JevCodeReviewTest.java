@@ -37,6 +37,9 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 class JevCodeReviewTest {
+    private static final Duration FUNCTIONAL_TEST_BUDGET = Duration.ofSeconds(30);
+    private static final Duration TIMEOUT_TEST_BUDGET = Duration.ofSeconds(2);
+
     static JevReviewInput input(String revision) {
         return new JevReviewInput(
                 revision,
@@ -53,14 +56,23 @@ class JevCodeReviewTest {
     }
 
     static JevExecution.Options options(JevExecution.Mode mode) {
-        return new JevExecution.Options(mode, Duration.ofSeconds(2), "review-test", (ctx, r) -> {});
+        return options(mode, FUNCTIONAL_TEST_BUDGET);
+    }
+
+    static JevExecution.Options options(JevExecution.Mode mode, Duration budget) {
+        return new JevExecution.Options(mode, budget, "review-test", (ctx, r) -> {});
     }
 
     static JevCodeReviewer reviewer(Function<SystemOneRequest, Mono<SystemOneResult>> caller) {
+        return reviewer(caller, FUNCTIONAL_TEST_BUDGET);
+    }
+
+    static JevCodeReviewer reviewer(
+            Function<SystemOneRequest, Mono<SystemOneResult>> caller, Duration budget) {
         return new JevCodeReviewer(
                 caller,
                 JevCodeReviewer.Config.referencePolicy(),
-                options(JevExecution.Mode.SHADOW));
+                options(JevExecution.Mode.SHADOW, budget));
     }
 
     static Mono<SystemOneResult> answer(SystemOneRequest request) {
@@ -298,13 +310,37 @@ class JevCodeReviewTest {
     }
 
     @Test
+    void functionalBudgetAllowsDelayedEvidenceAcquisition() {
+        StepVerifier.withVirtualTime(
+                        () ->
+                                reviewer(JevCodeReviewTest::answer)
+                                        .review(
+                                                null,
+                                                () ->
+                                                        Mono.delay(Duration.ofSeconds(3))
+                                                                .thenReturn(input("delayed"))))
+                .thenAwait(Duration.ofSeconds(3))
+                .assertNext(
+                        decision -> {
+                            assertEquals(JevExecution.Status.DECIDED, decision.status());
+                            assertEquals(6, decision.value().calls().size());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
     void acquisitionAndModelTimeoutAreBothBounded() {
         StepVerifier.withVirtualTime(
-                        () -> reviewer(JevCodeReviewTest::answer).review(null, Mono::never))
+                        () ->
+                                reviewer(JevCodeReviewTest::answer, TIMEOUT_TEST_BUDGET)
+                                        .review(null, Mono::never))
                 .thenAwait(Duration.ofSeconds(3))
                 .assertNext(d -> assertEquals("TIMEOUT", d.reason()))
                 .verifyComplete();
-        StepVerifier.withVirtualTime(() -> reviewer(r -> Mono.never()).review(null, input("r")))
+        StepVerifier.withVirtualTime(
+                        () ->
+                                reviewer(r -> Mono.never(), TIMEOUT_TEST_BUDGET)
+                                        .review(null, input("r")))
                 .thenAwait(Duration.ofSeconds(3))
                 .assertNext(
                         d -> {
