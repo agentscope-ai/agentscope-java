@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
@@ -136,7 +137,7 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     }
 
     private void rewriteEntireList(Path file, List<? extends State> values) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Path tmp = uniqueTmpSibling(file);
         try (BufferedWriter writer =
                 newUtf8ReplacingWriter(
                         tmp,
@@ -316,7 +317,7 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     }
 
     private static void atomicWriteString(Path file, String content) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Path tmp = uniqueTmpSibling(file);
         try (BufferedWriter writer =
                 newUtf8ReplacingWriter(
                         tmp,
@@ -326,6 +327,13 @@ public class JsonFileAgentStateStore implements AgentStateStore {
             writer.write(content);
         }
         Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    // A fixed ".tmp" sibling races when two threads persist the same state concurrently: one
+    // thread's move consumes the file the other is still writing, surfacing as
+    // NoSuchFileException and potentially persisting interleaved (corrupt) content.
+    private static Path uniqueTmpSibling(Path file) {
+        return file.resolveSibling(file.getFileName() + "." + UUID.randomUUID() + ".tmp");
     }
 
     private static BufferedWriter newUtf8ReplacingWriter(Path file, StandardOpenOption... options)

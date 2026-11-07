@@ -28,6 +28,10 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -143,6 +147,41 @@ class JsonFileAgentStateStoreTest {
         store.save(null, "session1", "memory_messages", conversation("hi there, again"));
 
         assertNotEquals(untouched, Files.getLastModifiedTime(listFile));
+    }
+
+    @Test
+    @DisplayName("Should tolerate concurrent saves of the same state key")
+    void saveSurvivesConcurrentWritesToSameKey(@TempDir Path tempDir) throws Exception {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        int threads = 8;
+        int iterations = 50;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        try {
+            List<Callable<Void>> tasks = new ArrayList<>();
+            for (int t = 0; t < threads; t++) {
+                int threadIndex = t;
+                tasks.add(
+                        () -> {
+                            for (int i = 0; i < iterations; i++) {
+                                store.save(
+                                        null,
+                                        "session1",
+                                        "agent_state",
+                                        new TestState("v" + threadIndex, i));
+                            }
+                            return null;
+                        });
+            }
+            for (Future<Void> future : pool.invokeAll(tasks)) {
+                future.get();
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        var loaded = store.get(null, "session1", "agent_state", TestState.class);
+        assertTrue(loaded.isPresent());
+        assertTrue(loaded.get().count() >= 0);
     }
 
     private static List<Msg> conversation(String reply) {
