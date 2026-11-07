@@ -59,6 +59,10 @@ Flush（路径 1）会在以下三个时机被触发：
 
 这三处用的是 **同一份** `flushPrompt`，定制后三处行为一致。
 
+通过 `HarnessAgent.builder().memory(MemoryConfig.builder().flushPrompt(...).build())` 设置。
+无论使用 `call()` 还是 `streamEvents()`，达到阈值触发压缩和上下文溢出恢复时的预提取都会使用这份提示词。
+未设置时使用 `MemoryFlushManager.DEFAULT_FLUSH_PROMPT`；该配置不改变压缩摘要的提示词。
+
 每轮结束后的长期记忆 Flush 在后台执行；压缩前 Flush 属于压缩步骤。原生 Session Log 在执行边界提交，不能把它当作异步日志副本：关键事实提交失败会阻止继续执行。
 
 <span id="开启压缩" />

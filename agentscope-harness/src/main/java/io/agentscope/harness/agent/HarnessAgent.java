@@ -2943,7 +2943,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     // time. The gate above still requires a dedicated or default model to exist.
                     compactionHook =
                             new CompactionMiddleware(
-                                    wsManager, compactionConfig.getModel(), compactionConfig);
+                                    wsManager,
+                                    compactionConfig.getModel(),
+                                    compactionConfig,
+                                    memoryConfig.flushPrompt());
                     inner.middleware(compactionHook.overflowRecovery());
                 }
             }

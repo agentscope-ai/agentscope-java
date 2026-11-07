@@ -60,6 +60,11 @@ Flush (path 1) is triggered at three different moments:
 
 All three sites share the **same** `flushPrompt`, so customizing it changes all three.
 
+Set it through `HarnessAgent.builder().memory(MemoryConfig.builder().flushPrompt(...).build())`.
+Pre-compaction extraction uses this prompt for both threshold-triggered compaction and
+context-overflow recovery, with either `call()` or `streamEvents()`. Leaving it unset uses
+`MemoryFlushManager.DEFAULT_FLUSH_PROMPT`; it does not change the compaction summary prompt.
+
 Per-call long-term memory flush runs in the background; pre-compaction flush belongs to the compaction step. Native Session Log commits at execution boundaries: it is not a background copy, and failure to commit required facts stops further execution.
 
 <span id="enable-compaction" />

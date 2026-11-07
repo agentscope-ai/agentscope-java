@@ -87,12 +87,26 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private final CompactionConfig config;
+    private final String flushPrompt;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
+        this(workspaceManager, model, config, null);
+    }
+
+    /**
+     * @param flushPrompt system prompt for pre-compaction memory extraction; {@code null} uses
+     *     {@link MemoryFlushManager#DEFAULT_FLUSH_PROMPT}
+     */
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            String flushPrompt) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.config = config;
+        this.flushPrompt = flushPrompt;
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -198,7 +212,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                             .keepTokens(0)
                                                             .flushBeforeCompact(
                                                                     config.isFlushBeforeCompact())
-                                                            .build());
+                                                            .build(),
+                                                    flushPrompt);
                                     return forced.prepareCandidate(
                                                     agent,
                                                     ctx,
@@ -347,7 +362,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     ConversationCompactor compactor =
                             new ConversationCompactor(
                                     compactModel,
-                                    new MemoryFlushManager(workspaceManager, compactModel),
+                                    new MemoryFlushManager(
+                                            workspaceManager, compactModel, flushPrompt),
                                     tokenCounter,
                                     toolResultTokenCounter);
                     // Copies may retain message IDs. Only an unchanged view can become durable;
