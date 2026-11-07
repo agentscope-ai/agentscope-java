@@ -134,6 +134,11 @@ public class AguiStreamContext {
     public void startTextMessage(String messageId) {
         if (startedTextMessages.add(messageId)) {
             emit(new AguiEvent.TextMessageStart(threadId, runId, messageId, "assistant"));
+        } else if (endedTextMessages.remove(messageId)) {
+            // A stable messageId reused for a later text segment (text -> tool -> text).
+            // Re-emit START: per AG-UI #1580 clients treat a repeated START with the same id
+            // as a no-op, while the segment still gets its own START/END boundary.
+            emit(new AguiEvent.TextMessageStart(threadId, runId, messageId, "assistant"));
         }
         currentTextMessageId = messageId;
     }
@@ -167,6 +172,9 @@ public class AguiStreamContext {
 
     public void startReasoningMessage(String messageId) {
         if (startedReasoningMessages.add(messageId)) {
+            emit(new AguiEvent.ReasoningMessageStart(threadId, runId, messageId, "reasoning"));
+        } else if (endedReasoningMessages.remove(messageId)) {
+            // Same stable reasoning id reused for a new segment.
             emit(new AguiEvent.ReasoningMessageStart(threadId, runId, messageId, "reasoning"));
         }
         currentReasoningMessageId = messageId;

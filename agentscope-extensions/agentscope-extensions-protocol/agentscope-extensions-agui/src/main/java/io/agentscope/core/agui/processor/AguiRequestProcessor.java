@@ -245,6 +245,13 @@ public class AguiRequestProcessor {
                                                     if (event instanceof AguiEvent.RunStarted) {
                                                         flushFrames.run();
                                                     }
+                                                    // Live frames carry no session cursor
+                                                    // (sourceSeq = -1), so waiting for it to
+                                                    // change would hold them until the run ends
+                                                    // and a live tail would never see them.
+                                                    if (frame.sourceSeq() < 0) {
+                                                        flushFrames.run();
+                                                    }
                                                 })
                                         .doOnComplete(flushFrames::run)
                                         .doOnError(error -> flushFrames.run())
