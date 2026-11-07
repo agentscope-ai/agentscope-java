@@ -33,6 +33,7 @@ import io.agentscope.core.agui.model.DocumentInputContent;
 import io.agentscope.core.agui.model.ImageInputContent;
 import io.agentscope.core.agui.model.InputContent;
 import io.agentscope.core.agui.model.InputContentDataSource;
+import io.agentscope.core.agui.model.InputContentFileSource;
 import io.agentscope.core.agui.model.InputContentSource;
 import io.agentscope.core.agui.model.InputContentUrlSource;
 import io.agentscope.core.agui.model.MessageContent;
@@ -40,12 +41,14 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.model.TextInputContent;
 import io.agentscope.core.agui.model.VideoInputContent;
 import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -87,6 +90,9 @@ public class AguiMessageConverter {
     /** AG-UI resume payload key: optional reason supplied when denying the tool call. */
     private static final String RESUME_PAYLOAD_REASON = "reason";
 
+    /** Provider name for a protocol file handle that arrived without one. */
+    private static final String AGUI_FILE_PROVIDER = "agui";
+
     /**
      * Creates a new AguiMessageConverter
      */
@@ -115,9 +121,9 @@ public class AguiMessageConverter {
      * Convert an AgentScope message to one or more AG-UI messages.
      *
      * <p>A message mixing {@link ThinkingBlock} with other content is split into a reasoning
-     * message and the remaining content. A TOOL message with multiple tool results is expanded
-     * into one AG-UI tool message per result, preserving each result's {@code toolCallId},
-     * content, and error state.
+     * message and the remaining content. A TOOL message with tool results is expanded into one
+     * AG-UI tool message per result, preserving each result's {@code toolCallId}, content, and
+     * error state.
      *
      * <p>Each generated AG-UI message receives a unique ID in the format
      * {@code agui::sourceId-UUID}. An ID that already carries the prefix is reused, so repeated
@@ -127,9 +133,14 @@ public class AguiMessageConverter {
      * @return The converted AG-UI messages, never empty
      */
     public List<AguiMessage> toAguiMessages(Msg msg) {
+        return buildAguiMessages(msg);
+    }
+
+    /** Build reasoning, standard content, and expanded tool-result messages together. */
+    private List<AguiMessage> buildAguiMessages(Msg msg) {
         if (msg.getRole() == MsgRole.TOOL) {
             List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
-            if (toolResults.size() > 1) {
+            if (!toolResults.isEmpty()) {
                 List<AguiMessage> messages = new ArrayList<>();
                 for (ToolResultBlock toolResult : toolResults) {
                     messages.add(toolResultMessage(msg, toolResult));
@@ -137,27 +148,19 @@ public class AguiMessageConverter {
                 return List.copyOf(messages);
             }
         }
-        return splitReasoningMessage(msg, toSingleAguiMessage(msg));
-    }
-
-    /**
-     * Convert an AgentScope message that carries at most one tool result.
-     *
-     * @param msg The AgentScope message to convert
-     * @return The converted AG-UI message
-     */
-    private AguiMessage toSingleAguiMessage(Msg msg) {
         String role = convertRole(msg.getRole());
         StringBuilder content = new StringBuilder();
+        StringBuilder reasoningContent = new StringBuilder();
+        List<InputContent> inputContents = new ArrayList<>();
         List<AguiToolCall> toolCalls = new ArrayList<>();
         String toolCallId = null;
         String error = null;
         boolean toolMessage = msg.getRole() == MsgRole.TOOL;
-        String reasoningContent = thinkingContent(msg);
-        List<InputContent> inputContents = new ArrayList<>();
 
         for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock tb) {
+            if (block instanceof ThinkingBlock tb) {
+                appendContent(reasoningContent, tb.getThinking());
+            } else if (block instanceof TextBlock tb) {
                 appendContent(content, tb.getText());
             } else if (block instanceof ToolUseBlock tub) {
                 toolCalls.add(toAguiToolCall(tub));
@@ -188,54 +191,96 @@ public class AguiMessageConverter {
                 if (inputContent != null) {
                     inputContents.add(inputContent);
                 }
-            } else if (block instanceof DocumentBlock db
-                    && db.getSource() instanceof URLSource urlSource) {
-                String mimeType =
-                        db.getMimeType() != null ? db.getMimeType() : urlSource.getMimeType();
-                inputContents.add(
-                        new DocumentInputContent(
-                                new InputContentUrlSource(urlSource.getUrl(), mimeType),
-                                db.getMetadata() == null
-                                        ? Collections.emptyMap()
-                                        : db.getMetadata()));
+            } else if (block instanceof DocumentBlock db) {
+                InputContent attachment = toDocumentInputContent(db);
+                if (attachment != null) {
+                    inputContents.add(attachment);
+                } else {
+                    appendContent(content, DocumentReferenceRenderer.render(db));
+                }
             }
         }
 
-        if (reasoningContent.length() > 0
-                && content.length() == 0
-                && toolCalls.isEmpty()
-                && toolCallId == null) {
-            return AguiMessage.reasoningMessage(
-                    generatedMessageId(msg), reasoningContent.toString());
+        List<AguiMessage> messages = new ArrayList<>();
+        if (reasoningContent.length() > 0) {
+            messages.add(
+                    AguiMessage.reasoningMessage(
+                            generatedMessageId(msg), reasoningContent.toString()));
+            if (content.length() == 0
+                    && inputContents.isEmpty()
+                    && toolCalls.isEmpty()
+                    && toolCallId == null) {
+                return List.copyOf(messages);
+            }
         }
 
         // The protocol lists `content` as required on a tool message and does not accept null
         String contentText = content.toString();
-
+        MessageContent wireContent;
         if (inputContents.isEmpty()) {
-            MessageContent wireContent =
+            wireContent =
                     contentText.isEmpty() && !toolMessage
                             ? null
                             : new MessageContent.Text(contentText);
-            return new AguiMessage(
-                    generatedMessageId(msg),
-                    role,
-                    wireContent,
-                    toolCalls.isEmpty() ? null : toolCalls,
-                    toolCallId,
-                    error);
+        } else {
+            if (!contentText.isEmpty() || toolMessage) {
+                inputContents.add(new TextInputContent(contentText));
+            }
+            wireContent = new MessageContent.Blocks(inputContents);
         }
+        messages.add(
+                new AguiMessage(
+                        generatedMessageId(msg),
+                        role,
+                        wireContent,
+                        toolCalls.isEmpty() ? null : toolCalls,
+                        toolCallId,
+                        error));
+        return List.copyOf(messages);
+    }
 
-        if (!contentText.isEmpty() || toolMessage) {
-            inputContents.add(new TextInputContent(contentText));
+    /**
+     * Maps a document block onto the AG-UI content model.
+     *
+     * <p>The protocol can carry a URL source, inline data, or a provider file handle. {@code null}
+     * tells the caller to fall back to a text reference.
+     *
+     * @param block document block
+     * @return AG-UI content part, or {@code null} when the source cannot be expressed
+     */
+    private static InputContent toDocumentInputContent(DocumentBlock block) {
+        Source source = block.getSource();
+        Map<String, Object> metadata = block.getMetadata();
+        String name = block.getName();
+        if (source instanceof URLSource url) {
+            String mimeType = block.getMimeType() != null ? block.getMimeType() : url.getMimeType();
+            return new DocumentInputContent(
+                    block.getId(), new InputContentUrlSource(url.getUrl(), mimeType), metadata);
         }
-        return new AguiMessage(
-                generatedMessageId(msg),
-                role,
-                new MessageContent.Blocks(inputContents),
-                toolCalls.isEmpty() ? null : toolCalls,
-                toolCallId,
-                error);
+        if (source instanceof Base64Source base64) {
+            String mimeType =
+                    block.getMimeType() != null ? block.getMimeType() : base64.getMediaType();
+            return new DocumentInputContent(
+                    block.getId(),
+                    new InputContentDataSource(base64.getData(), mimeType),
+                    metadata);
+        }
+        if (source instanceof FileIdSource fileId) {
+            // The protocol's file source carries an opaque provider handle, which is exactly what
+            // a FileIdSource is; the peer resolves it against the named provider.
+            String mimeType = block.getMimeType();
+            if (mimeType == null || mimeType.isBlank()) {
+                String inferred = name != null ? MediaUtils.determineMediaType(name) : null;
+                if (inferred != null && !"application/octet-stream".equals(inferred)) {
+                    mimeType = inferred;
+                }
+            }
+            return new DocumentInputContent(
+                    block.getId(),
+                    new InputContentFileSource(fileId.getFileId(), fileId.getProvider(), mimeType),
+                    metadata);
+        }
+        return null;
     }
 
     /**
@@ -276,12 +321,31 @@ public class AguiMessageConverter {
                 addTextBlock(blocks, text.value(), aguiMessage);
             }
         } else if (content instanceof MessageContent.Blocks blocksContent) {
-            if (!aguiMessage.isUserMessage()) {
+            if (!aguiMessage.isUserMessage() && !aguiMessage.isToolMessage()) {
                 throw new IllegalArgumentException(
-                        "Structured content blocks are only supported for AG-UI user messages");
+                        "Structured content blocks are only supported for AG-UI user and tool"
+                                + " messages");
             }
+            List<ContentBlock> contentBlocks = new ArrayList<>();
             for (InputContent input : blocksContent.parts()) {
-                blocks.add(toContentBlock(input));
+                contentBlocks.add(toContentBlock(input));
+            }
+            if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+                if (aguiMessage.getError() != null && !aguiMessage.getError().isBlank()) {
+                    contentBlocks.add(0, TextBlock.builder().text(aguiMessage.getError()).build());
+                }
+                blocks.add(
+                        ToolResultBlock.builder()
+                                .id(aguiMessage.getToolCallId())
+                                .output(contentBlocks)
+                                .state(
+                                        aguiMessage.getError() != null
+                                                        && !aguiMessage.getError().isBlank()
+                                                ? ToolResultState.ERROR
+                                                : ToolResultState.SUCCESS)
+                                .build());
+            } else {
+                blocks.addAll(contentBlocks);
             }
         } else if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
             // Tool message with no content (e.g. frontend tool returning nothing): still
@@ -451,13 +515,15 @@ public class AguiMessageConverter {
     }
 
     /**
-     * Join the text blocks of a tool result into a single string
+     * Join the text and document-reference parts of a tool result into a single string.
      */
     private static String toolResultText(ToolResultBlock trb) {
         StringBuilder text = new StringBuilder();
         for (ContentBlock output : trb.getOutput()) {
             if (output instanceof TextBlock tb) {
                 appendContent(text, tb.getText());
+            } else if (output instanceof DocumentBlock db) {
+                appendContent(text, DocumentReferenceRenderer.render(db));
             }
         }
         return text.toString();
@@ -468,36 +534,43 @@ public class AguiMessageConverter {
      */
     private AguiMessage toolResultMessage(Msg msg, ToolResultBlock result) {
         String id = generatedMessageId(msg);
-        String text = toolResultText(result);
         boolean error = result.getState() == ToolResultState.ERROR;
-        MessageContent content = new MessageContent.Text(text);
-        return new AguiMessage(
-                id, convertRole(msg.getRole()), content, null, result.getId(), error ? text : null);
-    }
-
-    private List<AguiMessage> splitReasoningMessage(Msg msg, AguiMessage standardMessage) {
-        String reasoningContent = thinkingContent(msg);
-        if (reasoningContent.isEmpty() || standardMessage.isReasoningMessage()) {
-            return List.of(standardMessage);
+        StringBuilder text = new StringBuilder();
+        List<InputContent> parts = new ArrayList<>();
+        for (ContentBlock output : result.getOutput()) {
+            if (output instanceof TextBlock textBlock) {
+                appendContent(text, textBlock.getText());
+            }
+            if (output instanceof DocumentBlock document) {
+                InputContent documentContent = toDocumentInputContent(document);
+                if (documentContent != null) {
+                    parts.add(documentContent);
+                } else {
+                    appendContent(text, DocumentReferenceRenderer.render(document));
+                }
+            }
         }
-        return List.of(
-                AguiMessage.reasoningMessage(generatedMessageId(msg), reasoningContent),
-                standardMessage);
+        MessageContent content;
+        if (parts.isEmpty()) {
+            content = new MessageContent.Text(text.toString());
+        } else {
+            if (!text.isEmpty()) {
+                parts.add(new TextInputContent(text.toString()));
+            }
+            content = new MessageContent.Blocks(parts);
+        }
+        return new AguiMessage(
+                id,
+                convertRole(msg.getRole()),
+                content,
+                null,
+                result.getId(),
+                error ? text.toString() : null);
     }
 
     private static String generatedMessageId(Msg msg) {
         String id = msg.getId();
         return id.startsWith("agui::") ? id : "agui::" + id + "-" + UUID.randomUUID();
-    }
-
-    private static String thinkingContent(Msg msg) {
-        StringBuilder reasoningContent = new StringBuilder();
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof ThinkingBlock tb) {
-                appendContent(reasoningContent, tb.getThinking());
-            }
-        }
-        return reasoningContent.toString();
     }
 
     /**
@@ -526,8 +599,9 @@ public class AguiMessageConverter {
         }
         if (input instanceof DocumentInputContent document) {
             return DocumentBlock.builder()
+                    .id(document.id())
                     .source(toSource(document.source()))
-                    .mimeType(sourceMimeType(document.source()))
+                    .mimeType(mimeTypeOf(document.source()))
                     .metadata(document.metadata())
                     .build();
         }
@@ -537,12 +611,34 @@ public class AguiMessageConverter {
     }
 
     /**
+     * Reads the MIME type an AG-UI content source declares, if any.
+     *
+     * @param inputSource the AG-UI protocol source
+     * @return declared MIME type, or {@code null}
+     */
+    private static String mimeTypeOf(InputContentSource inputSource) {
+        if (inputSource instanceof InputContentUrlSource url) {
+            return url.mimeType();
+        }
+        if (inputSource instanceof InputContentDataSource data) {
+            return data.mimeType();
+        }
+        if (inputSource instanceof InputContentFileSource file) {
+            return file.mimeType();
+        }
+        return null;
+    }
+
+    /**
      * Convert an AG-UI protocol {@link InputContentSource} to an AgentScope {@link Source}.
      *
      * <p>Mapping:
      * <ul>
      *   <li>{@link InputContentUrlSource} (type:"url", value) &rarr; {@link URLSource} (url)</li>
      *   <li>{@link InputContentDataSource} (type:"data", value) &rarr; {@link Base64Source} (data)</li>
+     *   <li>{@link InputContentFileSource} (type:"file", value, provider) &rarr; {@link FileIdSource}
+     *       (fileId, provider); a handle without a provider keeps the round trip with the neutral
+     *       {@code agui} provider name, since {@link FileIdSource} requires one</li>
      * </ul>
      *
      * @param inputSource the AG-UI protocol source
@@ -555,17 +651,11 @@ public class AguiMessageConverter {
         if (inputSource instanceof InputContentDataSource data) {
             return new Base64Source(data.mimeType(), data.value());
         }
+        if (inputSource instanceof InputContentFileSource file) {
+            return new FileIdSource(
+                    file.provider() != null ? file.provider() : AGUI_FILE_PROVIDER, file.value());
+        }
         throw new IllegalStateException("Unhandled InputContentSource type: " + inputSource);
-    }
-
-    private static String sourceMimeType(InputContentSource source) {
-        if (source instanceof InputContentUrlSource url) {
-            return url.mimeType();
-        }
-        if (source instanceof InputContentDataSource data) {
-            return data.mimeType();
-        }
-        return null;
     }
 
     private static InputContentUrlSource toInputContentUrlSource(URLSource source) {
