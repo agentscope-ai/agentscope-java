@@ -16,7 +16,10 @@
 package io.agentscope.harness.agent.filesystem.remote.store;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,13 +34,24 @@ import java.util.concurrent.ConcurrentMap;
  * <p>Every successful {@link #put} and {@link #putIfVersion} increments the item's
  * {@link StoreItem#version()} counter, enabling optimistic concurrency control.
  */
-public class InMemoryStore implements BaseStore {
+public class InMemoryStore implements BulkReadableStore {
 
     private final ConcurrentMap<String, StoreItem> store = new ConcurrentHashMap<>();
 
     @Override
     public StoreItem get(List<String> namespace, String key) {
         return store.get(compoundKey(namespace, key));
+    }
+
+    @Override
+    public Map<String, StoreItem> getAll(List<String> namespace, Collection<String> keys) {
+        String prefix = namespacePrefix(namespace);
+        var result = new HashMap<String, StoreItem>();
+        for (String key : new LinkedHashSet<>(keys)) {
+            var item = store.get(prefix + key);
+            if (item != null) result.put(key, item);
+        }
+        return result;
     }
 
     @Override

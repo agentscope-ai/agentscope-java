@@ -95,6 +95,22 @@ class BaseStoreContractTest {
     }
 
     @Test
+    void getAll_returnsExistingItemsAndOmitsMissingKeys() {
+        BulkReadableStore store = (BulkReadableStore) newStore();
+        List<String> ns = List.of("batch");
+
+        store.put(ns, "a", Map.of("v", 1));
+        store.put(ns, "b", Map.of("v", 2));
+
+        Map<String, StoreItem> items = store.getAll(ns, List.of("a", "missing", "b", "a"));
+
+        assertEquals(Set.of("a", "b"), items.keySet());
+        assertEquals(1, items.get("a").value().get("v"));
+        assertEquals(2, items.get("b").value().get("v"));
+        assertEquals(1L, items.get("a").version());
+    }
+
+    @Test
     void delete_isIdempotent() {
         BaseStore store = newStore();
         List<String> ns = List.of("del");

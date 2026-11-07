@@ -276,6 +276,29 @@ class MongoBaseStoreTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void getAllReturnsRequestedItemsAndOmitsMissing() {
+        Document doc1 =
+                new Document()
+                        .append("key", "a")
+                        .append("value", new Document("x", "1"))
+                        .append("version", 1L);
+        Document doc2 =
+                new Document()
+                        .append("key", "b")
+                        .append("value", new Document("x", "2"))
+                        .append("version", 2L);
+        when(findIterable.into(any())).thenReturn(new ArrayList<>(List.of(doc1, doc2)));
+
+        Map<String, StoreItem> items = store.getAll(List.of("ns"), List.of("a", "missing", "b"));
+
+        assertEquals(2, items.size());
+        assertEquals("1", items.get("a").value().get("x"));
+        assertEquals(2L, items.get("b").version());
+        assertFalse(items.containsKey("missing"));
+    }
+
+    @Test
     void deleteRemovesItem() {
         store.delete(List.of("ns"), "key");
         verify(collection).deleteOne(any(Bson.class));

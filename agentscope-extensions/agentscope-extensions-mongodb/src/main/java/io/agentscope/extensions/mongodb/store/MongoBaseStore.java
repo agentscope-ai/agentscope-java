@@ -34,8 +34,12 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.mongodb.MongoIndexUtils;
 import io.agentscope.extensions.mongodb.MongoKeyEscaper;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BulkReadableStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -54,7 +58,7 @@ import org.bson.conversions.Bson;
  * <p>Supports optimistic concurrency via a {@code version} field. Value serialization uses
  * {@link JsonCodec#convertValue} to avoid an intermediate JSON string round-trip.
  */
-public class MongoBaseStore implements BaseStore {
+public class MongoBaseStore implements BulkReadableStore {
 
     private static final String FIELD_ID = "_id";
     private static final String FIELD_KEY = "key";
@@ -63,6 +67,9 @@ public class MongoBaseStore implements BaseStore {
     private static final String FIELD_VERSION = "version";
 
     static final char NS_SEPARATOR = '\u001F';
+
+    /** Bound on {@code $in} values for a single batch read. */
+    private static final int GET_ALL_CHUNK = 256;
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -109,6 +116,35 @@ public class MongoBaseStore implements BaseStore {
         Map<String, Object> value = parseValue(doc.get(FIELD_VALUE));
         long version = doc.containsKey(FIELD_VERSION) ? doc.getLong(FIELD_VERSION) : 0L;
         return new StoreItem(key, value, version);
+    }
+
+    @Override
+    public Map<String, StoreItem> getAll(List<String> namespace, Collection<String> keys) {
+        var unique = new LinkedHashSet<String>();
+        for (String key : keys) {
+            validateKey(key);
+            unique.add(key);
+        }
+        if (unique.isEmpty()) return Map.of();
+        var result = new HashMap<String, StoreItem>();
+        var list = new ArrayList<>(unique);
+        for (int start = 0; start < list.size(); start += GET_ALL_CHUNK) {
+            var chunk = list.subList(start, Math.min(start + GET_ALL_CHUNK, list.size()));
+            var ids = new ArrayList<String>(chunk.size());
+            for (String key : chunk) ids.add(itemDocId(namespace, key));
+            var docs =
+                    collection
+                            .find(Filters.in(FIELD_ID, ids))
+                            .projection(Projections.include(FIELD_KEY, FIELD_VALUE, FIELD_VERSION))
+                            .into(new ArrayList<>());
+            for (Document doc : docs) {
+                String key = doc.getString(FIELD_KEY);
+                Map<String, Object> value = parseValue(doc.get(FIELD_VALUE));
+                long version = doc.containsKey(FIELD_VERSION) ? doc.getLong(FIELD_VERSION) : 0L;
+                result.put(key, new StoreItem(key, value, version));
+            }
+        }
+        return result;
     }
 
     @Override

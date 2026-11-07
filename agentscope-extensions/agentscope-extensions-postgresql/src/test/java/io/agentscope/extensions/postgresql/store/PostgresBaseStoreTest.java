@@ -335,6 +335,22 @@ class PostgresBaseStoreTest {
     }
 
     @Test
+    void getAllReturnsExistingItems() throws SQLException {
+        when(resultSet.next()).thenReturn(true, false);
+        when(resultSet.getString(1)).thenReturn("key1");
+        when(resultSet.getString(2)).thenReturn("{\"a\":1}");
+        when(resultSet.getLong(3)).thenReturn(1L);
+
+        PostgresBaseStore store = PostgresBaseStore.builder(dataSource).build();
+        Map<String, StoreItem> items = store.getAll(List.of("ns"), List.of("key1", "missing"));
+
+        assertEquals(1, items.size());
+        assertEquals("key1", items.get("key1").key());
+        assertEquals(1L, items.get("key1").version());
+        assertEquals(1, items.get("key1").value().get("a"));
+    }
+
+    @Test
     void searchEscapesLikeSpecialCharacters() throws SQLException {
         when(resultSet.next()).thenReturn(false);
 
