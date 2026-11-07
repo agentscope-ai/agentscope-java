@@ -331,16 +331,22 @@ public class AguiMessageConverter {
                 contentBlocks.add(toContentBlock(input));
             }
             if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
-                if (aguiMessage.getError() != null && !aguiMessage.getError().isBlank()) {
-                    contentBlocks.add(0, TextBlock.builder().text(aguiMessage.getError()).build());
+                String error = aguiMessage.getError();
+                if (error != null
+                        && !error.isBlank()
+                        && contentBlocks.stream()
+                                .noneMatch(
+                                        block ->
+                                                block instanceof TextBlock text
+                                                        && error.equals(text.getText()))) {
+                    contentBlocks.add(0, TextBlock.builder().text(error).build());
                 }
                 blocks.add(
                         ToolResultBlock.builder()
                                 .id(aguiMessage.getToolCallId())
                                 .output(contentBlocks)
                                 .state(
-                                        aguiMessage.getError() != null
-                                                        && !aguiMessage.getError().isBlank()
+                                        error != null && !error.isBlank()
                                                 ? ToolResultState.ERROR
                                                 : ToolResultState.SUCCESS)
                                 .build());
@@ -550,6 +556,11 @@ public class AguiMessageConverter {
                 }
             }
         }
+        if (error && text.toString().isBlank()) {
+            String fallback = toolResultText(result);
+            text.setLength(0);
+            text.append(fallback.isBlank() ? "Tool execution failed" : fallback);
+        }
         MessageContent content;
         if (parts.isEmpty()) {
             content = new MessageContent.Text(text.toString());
@@ -559,13 +570,9 @@ public class AguiMessageConverter {
             }
             content = new MessageContent.Blocks(parts);
         }
+        String errorText = error ? text.toString() : null;
         return new AguiMessage(
-                id,
-                convertRole(msg.getRole()),
-                content,
-                null,
-                result.getId(),
-                error ? text.toString() : null);
+                id, convertRole(msg.getRole()), content, null, result.getId(), errorText);
     }
 
     private static String generatedMessageId(Msg msg) {
