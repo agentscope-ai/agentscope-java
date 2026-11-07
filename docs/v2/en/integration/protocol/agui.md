@@ -94,6 +94,76 @@ The v2 path consumes `AgentEvent`. Built-in converters handle semantic mapping, 
 
 Normal `RUN_STARTED` and `RUN_FINISHED` events are driven by upstream `AgentStartEvent` and `AgentEndEvent`. If a normal stream completes without an upstream `AgentEndEvent`, the adapter does not synthesize `RUN_FINISHED`. On errors, the adapter emits a `RUN_ERROR` with a `timestamp`. `RUN_ERROR` and `RUN_FINISHED` are mutually exclusive terminal events. Set `emitRunFinishedAfterError=true` (or Spring Boot `agentscope.agui.emit-run-finished-after-error=true`) only for legacy clients that still expect a finish event after an error.
 
+## SessionLog recovery (HarnessAgent only)
+
+Recovery here means one narrow case: an Agent run is still executing in the background, and the browser refreshes or restarts. The application then reattaches to that run. Loading a completed conversation, showing a suspended HITL interaction, or resuming an interrupted turn is application-level history/state handling, not AG-UI recovery.
+
+The AG-UI recovery path is an AgentScope extension, not part of the AG-UI protocol. The standard `/agui/run` endpoint always starts an ordinary run; it does not infer recovery from empty messages.
+
+### Requirements
+
+- Execution is owned outside the browser request: retain a `HarnessAgent` and run the task through `AgentSession`, or keep the original run alive with `agentscope.agui.interrupt-on-disconnect=false` and a long-lived agent.
+- The resolved agent is a `HarnessAgent` with `SessionHistoryMode.EVENT_LOG`.
+- The application stores `threadId`, the execution `runId`, and the last applied cursor.
+- History and `SessionLog` share the same message identities, including assistant tool calls.
+
+### Application history + attach
+
+The application supplies the base conversation and a cursor that is a presentation boundary:
+
+1. Load committed messages from the application's history store.
+2. Return `asOfSeq`: the last committed event covered by those messages. It must not include in-flight text or tool arguments that the history does not contain.
+3. If the run is still executing, call the AgentScope attach extension from `asOfSeq`.
+
+```json
+{
+  "threadId": "conversation-001",
+  "runId": "recovery-1",
+  "messages": [],
+  "forwardedProps": {
+    "agentscope": {
+      "afterSequence": 42,
+      "runId": "exec-1"
+    }
+  }
+}
+```
+
+`afterSequence` may also come from `Last-Event-ID`. `runId` scopes the stream to one execution. This is an AgentScope extension.
+
+The reusable entry point is `AguiRequestProcessor.attach(AguiRuntimeContextRequest)`, which returns `Flux<AguiFramedEvent>`. The application owns the HTTP endpoint, authorization, history store, and SSE writing; the starter does not add an implicit attach path to `/agui/run`.
+
+### What attach does
+
+Attach is the reconnect path of an existing run. It is a read-only observer: it never starts, resumes, or interrupts an Agent run, never calls a model, and never writes to the session log. The same cursor always produces the same events, so retrying a reconnect is safe.
+
+- It replays committed events after the cursor, and exposes the cursor as the SSE `id` on the last frame produced by each committed event.
+- While the run is still active, attach follows the session log by polling. This is slower than a live feed, but always correct.
+- If the run already ended, it drains the remaining events and finishes with `RUN_FINISHED` or `RUN_ERROR`.
+- Text and tool output after the cursor become `TEXT_MESSAGE_*`, `REASONING_MESSAGE_*`, `TOOL_CALL_*`, and `RUN_*` events.
+- A tool call that is already part of the application history is not restarted: a later result becomes `TOOL_CALL_RESULT` for the existing tool-call id.
+- `RUN_STARTED` is replayed from the committed `run/start` event, so a cursor past it does not announce a new run.
+
+The cursor is a native `SessionEvent.seq()`, not an AG-UI field and not interchangeable with another session or the Service SSE cursor.
+
+### Cursor must be a presentation boundary
+
+Use the last committed event whose effects are fully present in the application history. Do not use `head().seq()` if the run has in-flight text or tool arguments; attach would then skip them. Do not use a cursor from the middle of a message. With this boundary, attach needs no snapshot and no list of known ids.
+
+### Run status is optional
+
+A status query is useful for choosing between history-only and attach, but attach itself does not require the run to be active. If the run ends between the history query and attach, attach replays the remaining events and terminates with `RUN_FINISHED` or `RUN_ERROR`. If the cursor is already past the terminal event, attach finishes immediately and the final status comes from the application history.
+
+### Limitations
+
+- Completed turns and HITL are application-level history/state; they are not part of this recovery contract.
+- The recovery path is poll-based, so commits are delivered in batches at the recorder flush granularity.
+- The run must survive the disconnected browser request. Use `AgentSession` or a long-lived agent with `interrupt-on-disconnect=false`.
+- Server restarts require `AgentSession`/durable scheduling; an in-memory subscription does not survive.
+- Multi-instance deployments need the same `SessionLogStore` and namespace.
+- The cursor must belong to the same session and must not exceed the current head.
+- Partial model output is recovered by replaying `model/chunk` events, not by a snapshot.
+
 ## Subagent events
 
 By default (`emitSubagentEventsAsNative=false`), AgentEvents with a non-null `source` (child / remote subagent events) are **not** mapped to native `TEXT_MESSAGE_*` / `RUN_*` / tool-call events. They become AG-UI `CUSTOM` events under the `subagent.*` namespace so they do not pollute the parent run lifecycle or text stream:
