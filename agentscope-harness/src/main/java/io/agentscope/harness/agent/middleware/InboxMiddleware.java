@@ -129,8 +129,17 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                 .flatMap(
                                         staleRecords -> {
                                             List<HintBlock> hints = new ArrayList<>();
+                                            List<Mono<Void>> markers = new ArrayList<>();
                                             for (AsyncToolRecord rec : staleRecords) {
-                                                asyncToolRegistry.markTimeout(rec.id()).subscribe();
+                                                // Chain the marker so a failure propagates to
+                                                // the turn instead of vanishing into Reactor's
+                                                // global error hook — an un-marked record is
+                                                // re-reported as stale on every subsequent
+                                                // reasoning round (#3973).
+                                                markers.add(
+                                                        asyncToolRegistry
+                                                                .markTimeout(rec.id())
+                                                                .then());
                                                 hints.add(
                                                         new HintBlock(
                                                                 UUID.randomUUID()
@@ -148,11 +157,31 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                                                         + "</system-reminder>",
                                                                 "system"));
                                             }
-                                            return Mono.just(hints);
+                                            return markers.isEmpty()
+                                                    ? Mono.just(hints)
+                                                    : Mono.when(markers).thenReturn(hints);
                                         })
                         : Mono.just(List.of());
 
-        return Mono.zip(inboxHints, staleHints)
+        // zipDelayError lets both sources attempt; per-source onErrorResume degrades to the
+        // surviving source instead of one flaky registry read killing the whole turn (#3973).
+        return Mono.zipDelayError(
+                        inboxHints.onErrorResume(
+                                e -> {
+                                    log.warn(
+                                            "InboxMiddleware: inbox drain failed, degrading to"
+                                                    + " stale-tool hints only",
+                                            e);
+                                    return Mono.just(List.of());
+                                }),
+                        staleHints.onErrorResume(
+                                e -> {
+                                    log.warn(
+                                            "InboxMiddleware: stale-tool scan failed, degrading"
+                                                    + " to inbox hints only",
+                                            e);
+                                    return Mono.just(List.of());
+                                }))
                 .flatMapMany(
                         tuple -> {
                             List<HintBlock> allHints = new ArrayList<>(tuple.getT1());
@@ -175,6 +204,17 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                             List<Msg> notifications = List.of();
                             if (state != null) {
                                 notifications = injectHintsToContext(state, allHints);
+                            } else {
+                                // The hints were already destructively drained from the bus —
+                                // without this WARN the consumed-and-emitted-but-never-injected
+                                // loss is invisible (#3971).
+                                log.warn(
+                                        "InboxMiddleware: {} hint(s) drained but agent state is"
+                                                + " null for session {}; they are emitted as"
+                                                + " events but NOT injected into the reasoning"
+                                                + " input",
+                                        allHints.size(),
+                                        sessionId);
                             }
 
                             String replyId =
@@ -251,6 +291,9 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
     }
 
     static HintBlock deserializeHintBlock(Map<String, Object> payload) {
+        if (payload == null) {
+            return null;
+        }
         Object id = payload.get("id");
         Object hint = payload.get("hint");
         Object source = payload.get("source");
