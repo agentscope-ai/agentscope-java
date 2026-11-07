@@ -41,7 +41,7 @@ public final class TextChunker {
      * @param chunkSize the target size for each chunk (interpreted based on strategy)
      * @param strategy the splitting strategy
      * @param overlapSize the number of characters/tokens to overlap between chunks
-     * @return a list of text chunks
+     * @return a list of non-blank text chunks
      */
     public static List<String> chunkText(
             String text, int chunkSize, SplitStrategy strategy, int overlapSize) {
@@ -58,16 +58,33 @@ public final class TextChunker {
             throw new IllegalArgumentException("Overlap size must be less than chunk size");
         }
 
-        if (text.isEmpty()) {
-            return List.of("");
+        if (isBlank(text)) {
+            return List.of();
         }
 
-        return switch (strategy) {
-            case CHARACTER -> chunkByCharacter(text, chunkSize, overlapSize);
-            case PARAGRAPH -> chunkByParagraph(text, chunkSize, overlapSize);
-            case TOKEN -> chunkByToken(text, chunkSize, overlapSize);
-            case SEMANTIC -> chunkBySemantic(text, chunkSize, overlapSize);
-        };
+        List<String> chunks =
+                switch (strategy) {
+                    case CHARACTER -> chunkByCharacter(text, chunkSize, overlapSize);
+                    case PARAGRAPH -> chunkByParagraph(text, chunkSize, overlapSize);
+                    case TOKEN -> chunkByToken(text, chunkSize, overlapSize);
+                    case SEMANTIC -> chunkBySemantic(text, chunkSize, overlapSize);
+                };
+        List<String> nonBlankChunks = new ArrayList<>(chunks.size());
+        for (String chunk : chunks) {
+            if (!isBlank(chunk)) {
+                nonBlankChunks.add(chunk);
+            }
+        }
+        return nonBlankChunks;
+    }
+
+    private static boolean isBlank(String text) {
+        return text.codePoints()
+                .allMatch(
+                        codePoint ->
+                                Character.isWhitespace(codePoint)
+                                        || Character.isSpaceChar(codePoint)
+                                        || codePoint == 0x85);
     }
 
     /**
