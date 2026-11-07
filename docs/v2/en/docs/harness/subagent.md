@@ -465,6 +465,12 @@ While awaiting confirmation, task status stays `RUNNING` (`awaitingConfirm=true`
 
 ## Background task storage
 
+`WorkspaceTaskRepository` scopes its local task handles by the workspace namespace, parent
+session ID, and task ID. With user-isolated workspaces, knowing another user's task ID does
+not grant access to their local task or allow cancelling it. Shared scopes (`AGENT` and
+`GLOBAL`) retain their configured sharing behavior. When supplying a custom filesystem and
+namespace factory, configure both to use the same isolation boundary.
+
 Background task state is written by default to `workspace/agents/<parentAgentId>/tasks/<sessionId>.json`. So:
 
 - In shared-store mode (multi-replica) any node can read task state;

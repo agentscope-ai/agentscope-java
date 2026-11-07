@@ -34,6 +34,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
@@ -591,7 +592,7 @@ public class WorkspaceManager implements AutoCloseable {
                 });
     }
 
-    private RemoteFilesystem taskRemoteFilesystem(String rel) {
+    private AbstractFilesystem taskFilesystem(String rel) {
         AbstractFilesystem fs = filesystem;
         while (fs != null) {
             if (fs instanceof CompositeFilesystem composite) {
@@ -601,10 +602,42 @@ public class WorkspaceManager implements AutoCloseable {
             } else if (fs instanceof OverlayFilesystem overlay) {
                 fs = overlay.upper();
             } else {
-                return fs instanceof RemoteFilesystem remote ? remote : null;
+                return fs;
             }
         }
         return null;
+    }
+
+    private RemoteFilesystem taskRemoteFilesystem(String rel) {
+        AbstractFilesystem fs = taskFilesystem(rel);
+        return fs instanceof RemoteFilesystem remote ? remote : null;
+    }
+
+    /**
+     * Resolves the storage namespace for local task-handle identity. Uses the actual task
+     * backend rather than the manager's host-path factory, which may have different anonymous
+     * user rules or may be ignored by a shared local backend.
+     *
+     * @param rc call identity
+     * @param agentId parent agent identifier
+     * @param sessionId parent session identifier
+     * @return an immutable namespace snapshot; empty for shared host task storage
+     */
+    public List<String> taskStorageNamespace(RuntimeContext rc, String agentId, String sessionId) {
+        AbstractFilesystem fs = taskFilesystem(taskRecordPath(agentId, sessionId));
+        if (fs == null || fs instanceof SandboxBackedFilesystem) {
+            return List.of();
+        }
+        RuntimeContext context = rc != null ? rc : RuntimeContext.empty();
+        if (fs instanceof RemoteFilesystem remote) {
+            return remote.storageNamespace(context);
+        }
+        if (fs instanceof LocalFilesystem local) {
+            return local.storageNamespace(context);
+        }
+        NamespaceFactory factory = namespaceFactory;
+        List<String> namespace = factory == null ? List.of() : factory.getNamespace(context);
+        return namespace == null ? List.of() : List.copyOf(namespace);
     }
 
     private void registerTaskScope(RuntimeContext rc, String agentId) {
