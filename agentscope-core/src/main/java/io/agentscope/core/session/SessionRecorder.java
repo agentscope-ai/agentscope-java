@@ -58,6 +58,7 @@ public final class SessionRecorder {
     public static final String CONTEXT_KEY = "agentscope.session.recorder";
     public static final String PARENT_KEY = "agentscope.session.parent";
     private final AtomicBoolean exporting = new AtomicBoolean();
+    private final AtomicBoolean exportRequested = new AtomicBoolean();
     public static final String TURN_ID_KEY = "agentscope.session.turnId";
     private static final Duration LEASE = Duration.ofMinutes(2);
     private final SessionLog log;
@@ -270,18 +271,27 @@ public final class SessionRecorder {
 
     private void exportCommitted() {
         if (exporter == null) return;
+        exportRequested.set(true);
         if (!exporting.compareAndSet(false, true)) return;
         Schedulers.boundedElastic()
                 .schedule(
                         () -> {
                             try {
-                                exporter.drain();
+                                // A commit that arrives while a drain runs must not be
+                                // dropped: keep draining until no request is left, or the
+                                // last events of a run wait for a retry after the heartbeat
+                                // is gone.
+                                while (exportRequested.compareAndSet(true, false)) {
+                                    exporter.drain();
+                                }
                             } catch (RuntimeException error) {
+                                exportRequested.set(false);
                                 LOGGER.warn(
                                         "Committed session export pending retry: {}",
                                         error.toString());
                             } finally {
                                 exporting.set(false);
+                                if (exportRequested.get()) exportCommitted();
                             }
                         });
     }
