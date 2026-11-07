@@ -126,6 +126,25 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
     }
 
+    /**
+     * Upper bound on the maintenance run (gate claim + retention sweep + consolidation LLM
+     * call), so a hung model cannot keep the JVM-wide quiescence count above zero for the rest
+     * of the process lifetime. Mirrors {@code MemoryFlushMiddleware#FLUSH_TIMEOUT}.
+     */
+    static final Duration MAINTENANCE_TIMEOUT = Duration.ofMinutes(5);
+
+    /**
+     * Timeout applied to the maintenance pipeline; production uses {@link
+     * #MAINTENANCE_TIMEOUT}. Volatile: written by the test hook from another thread, read on
+     * the dispatch thread.
+     */
+    private volatile Duration maintenanceTimeout = MAINTENANCE_TIMEOUT;
+
+    /** Test hook to shrink the maintenance timeout; keeps timeout behaviour unit-testable. */
+    void setMaintenanceTimeoutForTests(Duration timeout) {
+        this.maintenanceTimeout = timeout != null ? timeout : MAINTENANCE_TIMEOUT;
+    }
+
     public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager, MemoryConsolidator consolidator) {
         this(workspaceManager, consolidator, 90, DEFAULT_MIN_GAP);
@@ -160,14 +179,31 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
 
     private void scheduleMaintenance(RuntimeContext rc, ContextView contextView) {
         MemoryBackgroundTasks.begin();
-        Mono.defer(() -> doMaintenance(rc))
+        // The timeout bounds the work, not the scheduler wait (same rationale as
+        // MemoryFlushMiddleware#runFlush): a budget that starts at enqueue could elapse while
+        // the run is still queued and cancel it before the worker ever picks it up.
+        Mono.defer(() -> doMaintenance(rc).timeout(maintenanceTimeout))
                 .subscribeOn(Schedulers.boundedElastic())
                 .contextWrite(context -> context.putAll(contextView))
                 .doFinally(signal -> MemoryBackgroundTasks.end())
-                .subscribe(null, e -> log.warn("Memory maintenance failed: {}", e.getMessage()));
+                .subscribe(
+                        null,
+                        e -> {
+                            if (e instanceof java.util.concurrent.TimeoutException) {
+                                log.warn(
+                                        "Memory maintenance timed out after {}; the run was"
+                                                + " abandoned and its throttle slot was consumed",
+                                        maintenanceTimeout);
+                            } else {
+                                log.warn("Memory maintenance failed: {}", e.getMessage());
+                            }
+                        });
     }
 
     private Mono<Void> doMaintenance(RuntimeContext rc) {
+        // The gate is claimed before the stages run, so a run killed by the timeout still
+        // consumes its slot: the throttle window is per attempt, not per completion —
+        // refunding a claim under cancellation races would let hung runs re-enter every cycle.
         if (!periodicGate.tryClaim(compositeTimerKey(rc), minGap)) {
             // Throttled out; the in-flight slot acquired at dispatch is released when this
             // Mono completes.
