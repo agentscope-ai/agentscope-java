@@ -367,6 +367,7 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 语义:
 
 - **fail-fast,绝不静默回退**:设置了但为空白或无法解析的 id 会让本次调用失败(`IllegalArgumentException` 以 error event 呈现),而不是悄悄用默认模型——多租户下用错模型通常意味着用错凭证、算错账单。`null`(未设置)就是用 Agent 的默认模型。
+- **结构化输出重试使用所选模型的能力**:合成的 `generate_response` 重试需要指定工具时，会检查本次调用所选模型是否支持。能力不同的默认模型不会导致发送不支持的强制参数，或漏掉所选模型支持的约束。
 - **辅助调用跟随 effective 模型**:压缩、记忆清洗、超轮摘要使用解析出的模型;若为它们配置了专用模型(`CompactionConfig.getModel()` / `MemoryConfig.model()`)则专用模型优先。压缩触发阈值按 effective 模型的上下文窗口计算。后台的定期记忆整合不在此列——它不属于任何调用,始终使用构建期配置的模型。
 - **子代理不继承**:子代理派生上下文时会清空调用方的 `modelId`——子代理的模型是构建期契约(`SubagentDeclaration.getModel()`),调用方的运行时选择不得悄悄改变 worker 模型或其成本面。
 - **provider 故障仍然 failover**:选中的模型运行期出错时,已配置的 `fallbackModel` 照常接管——failover 管可用性,选择本身已被尊重。

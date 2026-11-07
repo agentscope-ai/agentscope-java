@@ -2932,7 +2932,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // (soTool != null), where nativeResponseFormat is always null.
                                 if (soForceToolChoiceCount > 0
                                         && soTool != null
-                                        && model.supportsToolChoiceSpecific()) {
+                                        && getModel(rc).supportsToolChoiceSpecific()) {
                                     options =
                                             GenerateOptions.mergeOptions(
                                                     GenerateOptions.builder()
