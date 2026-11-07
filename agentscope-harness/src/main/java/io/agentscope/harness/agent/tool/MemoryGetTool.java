@@ -57,13 +57,25 @@ public class MemoryGetTool {
             return ToolResultBlock.error("path is required");
         }
 
-        Path resolved = workspaceManager.getWorkspace().resolve(path).normalize();
-        if (!resolved.startsWith(workspaceManager.getWorkspace())) {
+        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+
+        // Validate the path the caller will actually be resolved against, not the bare
+        // workspace-relative spelling: with a per-user namespace the two differ, and a path
+        // naming another user's directory must not pass containment by accident.
+        Path workspace = workspaceManager.getWorkspace();
+        Path resolved = workspaceManager.resolveRuntimeDataPath(rc, path).normalize();
+        if (!resolved.startsWith(workspace)) {
             return ToolResultBlock.error("path traversal not allowed");
         }
 
-        RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        String text = workspaceManager.readMemoryFileUtf8(rc, path);
+        String text;
+        try {
+            text = workspaceManager.readMemoryFileUtf8(rc, path);
+        } catch (IllegalArgumentException e) {
+            // A path the underlying reader rejects (e.g. a '..' segment) is a bad tool argument,
+            // not a failed turn.
+            return ToolResultBlock.error(e.getMessage());
+        }
         if (text == null || text.isBlank()) {
             return ToolResultBlock.error("file not found: " + path);
         }

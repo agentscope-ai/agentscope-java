@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.example;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -28,6 +29,8 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -37,6 +40,8 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
+import io.agentscope.harness.agent.tool.MemoryGetTool;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -420,6 +425,73 @@ class LocalFilesystemUserIsolationExampleTest {
                                     + unexpected);
                 }
             }
+        }
+    }
+
+    /**
+     * Reads are anchored to the caller's namespace too: naming a sibling user's directory must
+     * not resolve to that user's file, neither through {@code memory_get} nor through the
+     * workspace manager's read path.
+     */
+    @Test
+    void memoryRead_doesNotCrossIntoSiblingNamespace() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("assistant")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .build()) {
+
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            WorkspaceManager wm = agent.getWorkspaceManager();
+            wm.writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice-private-note");
+
+            assertEquals("alice-private-note", wm.readMemoryMd(ctx("s1", "alice")));
+            assertEquals("", wm.readMemoryMd(ctx("s2", "bob")));
+            assertEquals("", wm.readMemoryFileUtf8(ctx("s2", "bob"), "alice/MEMORY.md"));
+
+            ToolResultBlock viaTool =
+                    new MemoryGetTool(wm).memoryGet(ctx("s2", "bob"), "alice/MEMORY.md", 1, 5);
+            assertNotEquals(
+                    ToolResultState.SUCCESS,
+                    viaTool.getState(),
+                    "memory_get must not read across the namespace boundary");
+        }
+    }
+
+    /**
+     * A root-level {@code MEMORY.md} is either a pre-namespace leftover or an explicitly shared
+     * file. An identified caller must not be served it — {@code memory_search} cannot see it
+     * either, so reading it would advertise content the tool surface cannot find again — while
+     * an identity-less read keeps the historical single-tenant behaviour.
+     */
+    @Test
+    void memoryRead_ignoresUnnamespacedRootCopyForIdentifiedCaller() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
+        Files.writeString(workspace.resolve("MEMORY.md"), "legacy-root-note");
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("assistant")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .build()) {
+
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            WorkspaceManager wm = agent.getWorkspaceManager();
+
+            assertEquals("", wm.readMemoryMd(ctx("s1", "alice")));
+            assertEquals("", wm.readMemoryMd(ctx("s2", "bob")));
+            assertTrue(wm.listMemoryFilePaths(ctx("s1", "alice")).isEmpty());
+            assertEquals("legacy-root-note", wm.readMemoryMd(RuntimeContext.empty()));
+
+            wm.writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice-fact");
+            assertEquals("alice-fact", wm.readMemoryMd(ctx("s1", "alice")));
+            assertEquals("", wm.readMemoryMd(ctx("s2", "bob")));
         }
     }
 
