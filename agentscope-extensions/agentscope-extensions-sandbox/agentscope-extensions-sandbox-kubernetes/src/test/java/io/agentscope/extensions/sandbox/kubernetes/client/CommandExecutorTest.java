@@ -142,19 +142,25 @@ class CommandExecutorTest {
     }
 
     @Test
-    void legacyRuntimeIsRejectedBeforeCommandStarts() {
+    void legacyRuntimeUsesOriginalRequestFormat() {
         capabilitiesSupported = false;
+        assertEquals(0, executor(Duration.ofSeconds(2)).run("echo legacy").getExitCode());
+        assertEquals("echo legacy", payload.get().path("command").asText());
+        assertFalse(payload.get().has("timeout_seconds"));
+        assertEquals(1, executions.get());
+    }
+
+    @Test
+    void legacyRuntimeHttpFailureHasUnknownOutcomeAndIsNotRetried() {
+        capabilitiesSupported = false;
+        responseStatus = 404;
         SandboxRequestException error =
                 assertThrows(
                         SandboxRequestException.class,
-                        () ->
-                                executor(Duration.ofSeconds(2))
-                                        .run("write-side-effect", Duration.ofSeconds(300)));
-        assertTrue(error instanceof SandboxRequestException.RuntimeCapabilityException);
+                        () -> executor(Duration.ofSeconds(2)).run("side-effect"));
         assertEquals(404, error.getStatusCode());
-        assertFalse(error.isExecutionOutcomeUnknown());
-        assertTrue(error.getMessage().contains("timeout"));
-        assertEquals(0, executions.get());
+        assertTrue(error.isExecutionOutcomeUnknown());
+        assertEquals(1, executions.get());
     }
 
     @Test
