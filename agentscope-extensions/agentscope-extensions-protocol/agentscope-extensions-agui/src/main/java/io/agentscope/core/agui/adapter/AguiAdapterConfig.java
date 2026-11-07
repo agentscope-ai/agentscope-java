@@ -173,11 +173,15 @@ public class AguiAdapterConfig {
     }
 
     /**
-     * When {@code false} (default), AgentEvents with a non-null {@code source} (subagent events)
-     * are emitted as AG-UI {@code CUSTOM} events under the {@code subagent.*} namespace instead of
-     * native {@code TEXT_MESSAGE_*} / run lifecycle events.
+     * When {@code true}, AgentEvents with a non-null {@code source} use the same converters as the
+     * parent (flatten into the parent stream), ignoring {@code RunAgentInput.protocolVersion}
+     * negotiation.
      *
-     * @return true to keep the legacy native presentation for subagent events
+     * <p>When {@code false} (default), presentation follows the consumer's {@code
+     * protocolVersion}: pre-1.0.0 → {@code CUSTOM subagent.*}; {@code >= 1.0.0} → native {@code
+     * SUBAGENT_*} plus attributed content events.
+     *
+     * @return true to flatten subagent events into parent converters
      */
     public boolean isEmitSubagentEventsAsNative() {
         return emitSubagentEventsAsNative;
@@ -394,13 +398,13 @@ public class AguiAdapterConfig {
         }
 
         /**
-         * Set whether subagent-sourced events should use native AG-UI event types.
+         * Set whether subagent-sourced events should flatten into parent converters.
          *
-         * <p>Default is {@code false}: subagent events become {@code CUSTOM} events named {@code
-         * subagent.*}. Set {@code true} to restore the previous behavior where child text and
-         * lifecycle events map to the same AG-UI types as the parent.
+         * <p>Default is {@code false}: presentation follows {@code RunAgentInput.protocolVersion}
+         * (CUSTOM {@code subagent.*} for pre-1.0.0; attributed {@code SUBAGENT_*} for 1.0.0+). Set
+         * {@code true} to always map child events with the same converters as the parent.
          *
-         * @param emitSubagentEventsAsNative true for legacy native presentation
+         * @param emitSubagentEventsAsNative true to flatten into parent converters
          * @return This builder
          */
         public Builder emitSubagentEventsAsNative(boolean emitSubagentEventsAsNative) {
