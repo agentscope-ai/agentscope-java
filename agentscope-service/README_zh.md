@@ -16,7 +16,7 @@ AgentScope Service 将能够研究、使用工具和验证结果的 Agent 发布
 
 Endpoint 定义输入输出契约和发布版本。应用可以通过查询、SSE 或 Webhook 获取变化，参与人工确认，并把经过验证的结果接回业务流程。执行完成与业务验收分别处理。
 
-从 [API 快速开始](../docs/v2/zh/service/first-session.md)开始，按[发布 Endpoint](../docs/v2/zh/service/endpoints.md)与[统一服务 API](../docs/v2/zh/service/service-api.md)完成接入。Managed 原生会话、文件、子 Agent 和 checkpoint 接口用于相应扩展能力，不能与公共 Invocation 的 ID、认证和事件游标混用。
+从 [API 快速开始](../docs/v2/zh/service/quickstart.md)开始，按[发布 Endpoint](../docs/v2/zh/service/endpoints.md)与[统一服务 API](../docs/v2/zh/service/service-api.md)完成接入。Managed 原生会话、文件、子 Agent 和 checkpoint 接口用于相应扩展能力，不能与公共 Invocation 的 ID、认证和事件游标混用。
 
 ### 按任务选择执行方式
 
@@ -62,7 +62,7 @@ Workspace、Environment、Memory 和 Vault 组织执行资源。应用身份与�
 
 ## Agent 如何接入
 
-业务开发者从 [API 快速开始](../docs/v2/zh/service/first-session.md)验证调用；平台团队准备模型、执行环境、身份与发布资源。已有 Agent 应用按 [External 接入指南](../docs/v2/zh/service/register-agentscope-agent.md)实现执行适配，再发布为服务。
+业务开发者从 [API 快速开始](../docs/v2/zh/service/quickstart.md)验证调用；平台团队准备模型、执行环境、身份与发布资源。已有 Agent 应用按 [External 接入指南](../docs/v2/zh/service/register-agentscope-agent.md)实现执行适配，再发布为服务。
 
 ## 发布部署与文档
 
@@ -249,7 +249,7 @@ Java Service 使用 `builder.*` 属性与 `BUILDER_*` 环境变量。各平面�
 
 - [Service 定位与介绍](../docs/v2/zh/service/index.md)
 - [场景案例与接入设计](../docs/v2/zh/service/usecases.md)
-- [API 快速开始](../docs/v2/zh/service/first-session.md)
+- [API 快速开始](../docs/v2/zh/service/quickstart.md)
 - [统一服务 API](../docs/v2/zh/service/service-api.md)
 - [Managed 原生会话与任务](../docs/v2/zh/service/session-event-log.md)
 - [API 参考](../docs/v2/zh/service/api-reference.md)
