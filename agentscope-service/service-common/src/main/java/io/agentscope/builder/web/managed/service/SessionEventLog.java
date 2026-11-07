@@ -30,10 +30,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -45,9 +45,9 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Append-only session event log. Sequence numbers are allocated with conflict retry so control and
- * data planes can append concurrently against the shared {@code (session_id, seq)} unique
- * constraint. Live SSE fan-out is notification-driven and always reads from the durable sequence
+ * Append-only session event log. A transactional per-session counter serializes writers across
+ * replicas, including the first append to an empty log. Live SSE fan-out is notification-driven
+ * and always reads from the durable sequence
  * cursor, so events written by any plane or replica are visible without treating notifications as
  * data.
  */
@@ -55,11 +55,10 @@ import reactor.core.scheduler.Schedulers;
 public class SessionEventLog {
 
     private static final Logger log = LoggerFactory.getLogger(SessionEventLog.class);
-    private static final int MAX_SEQ_RETRIES = 16;
-
     private final SessionEventEntityRepository repository;
     private final ManagedJsonHelper jsonHelper;
     private final TransactionTemplate transactionTemplate;
+    private final TransactionTemplate writeTransactionTemplate;
     private final DeletedSessionRegistry deletedSessions;
     private final SessionEventNotifier notifier;
     private final List<SessionEventMirror> mirrors;
@@ -77,6 +76,13 @@ public class SessionEventLog {
         this.repository = repository;
         this.jsonHelper = jsonHelper;
         this.transactionTemplate = transactionTemplate;
+        this.writeTransactionTemplate =
+                new TransactionTemplate(
+                        transactionTemplate.getTransactionManager(), transactionTemplate);
+        this.writeTransactionTemplate.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRED);
+        this.writeTransactionTemplate.setIsolationLevel(
+                TransactionDefinition.ISOLATION_READ_COMMITTED);
         this.deletedSessions = deletedSessions;
         this.notifier = notifier;
         this.mirrors = mirrors != null ? List.copyOf(mirrors) : List.of();
@@ -102,9 +108,8 @@ public class SessionEventLog {
     }
 
     /**
-     * Appends an event with the next monotonic sequence number. Retries on unique-constraint
-     * conflicts caused by concurrent appends from another process. Each attempt runs in its own
-     * transaction so a constraint failure does not poison the outer transaction.
+     * Appends an event with the next monotonic sequence number. The counter, event and mirror
+     * commit together, joining a caller transaction when present. Readers are notified after commit.
      */
     public SessionEventDto append(String sessionId, String type, Map<String, Object> payload) {
         return append(sessionId, type, payload, null);
@@ -145,43 +150,13 @@ public class SessionEventLog {
             log.debug("Dropping {} event for deleted session {}", type, sessionId);
             return droppedEvent(sessionId, type, payload, eventId);
         }
-        RuntimeException lastConflict = null;
-        for (int attempt = 0; attempt < MAX_SEQ_RETRIES; attempt++) {
-            try {
-                SessionEventDto appended =
-                        transactionTemplate.execute(
-                                status -> {
-                                    var event = appendOnce(sessionId, type, payload, eventId);
-                                    if (mirror) enqueueMirrors(event, scope);
-                                    return event;
-                                });
-                notifier.publish(sessionId);
-                return appended;
-            } catch (RuntimeException ex) {
-                if (!isSeqConflict(ex)) {
-                    throw ex;
-                }
-                // A concurrent exporter may have committed this immutable event. Increasing
-                // its sequence cannot fix an event-id conflict: let appendIdempotent validate
-                // and reuse the winner immediately, instead of retrying the same INSERT.
-                if (eventId != null && repository.findByEventId(eventId).isPresent()) {
-                    throw ex;
-                }
-                lastConflict = ex;
-                log.debug(
-                        "Session event seq conflict for {} (attempt {}/{}): {}",
-                        sessionId,
-                        attempt + 1,
-                        MAX_SEQ_RETRIES,
-                        ex.getMessage());
-            }
-        }
-        throw new IllegalStateException(
-                "Failed to append session event after "
-                        + MAX_SEQ_RETRIES
-                        + " seq retries: "
-                        + sessionId,
-                lastConflict);
+        return writeTransactionTemplate.execute(
+                status -> {
+                    var event = appendOnce(sessionId, type, payload, eventId);
+                    if (mirror) enqueueMirrors(event, scope);
+                    notifyAfterCommit(sessionId);
+                    return event;
+                });
     }
 
     /**
@@ -219,32 +194,32 @@ public class SessionEventLog {
         if (eventId == null || eventId.isBlank()) {
             throw new IllegalArgumentException("eventId is required for idempotent append");
         }
-        var existing = repository.findByEventId(eventId);
-        if (existing.isEmpty()) {
-            try {
-                return appendInternal(sessionId, type, payload, eventId, mirror, scope);
-            } catch (RuntimeException error) {
-                if (repository.findByEventId(eventId).isPresent())
-                    return appendIdempotent(sessionId, type, payload, eventId, mirror, scope);
-                throw error;
-            }
+        if (deletedSessions.isDeleted(sessionId)) {
+            return droppedEvent(sessionId, type, payload, eventId);
         }
-        if (!sessionId.equals(existing.get().getSessionId())
-                || !type.equals(existing.get().getEventType())) {
+        return writeTransactionTemplate.execute(
+                status -> {
+                    var candidate = newEvent(sessionId, type, payload, eventId);
+                    var result = repository.appendIdempotentEvent(candidate);
+                    var event = toDto(result.event());
+                    if (!result.inserted()) validateReplay(event, candidate);
+                    if (mirror) enqueueMirrors(event, scope);
+                    if (result.inserted()) notifyAfterCommit(sessionId);
+                    return event;
+                });
+    }
+
+    private void validateReplay(SessionEventDto existing, SessionEventEntity candidate) {
+        if (!candidate.getSessionId().equals(existing.sessionId())
+                || !candidate.getEventType().equals(existing.type())) {
             throw new IllegalStateException(
-                    "eventId already belongs to another session/event type: " + eventId);
+                    "eventId already belongs to another session/event type: "
+                            + candidate.getEventId());
         }
-        if (!Objects.equals(
-                jsonHelper.readMap(existing.get().getPayloadJson()),
-                jsonHelper.readMap(jsonHelper.writeJson(payload)))) {
+        if (!Objects.equals(existing.payload(), jsonHelper.readMap(candidate.getPayloadJson()))) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "eventId reused with different payload");
         }
-        SessionEventDto replay = toDto(existing.get());
-        if (mirror) {
-            transactionTemplate.executeWithoutResult(status -> enqueueMirrors(replay, scope));
-        }
-        return replay;
     }
 
     /** Command admission and its public fact commit together. Publish only after commit. */
@@ -253,6 +228,15 @@ public class SessionEventLog {
             String sessionId, String type, Map<String, Object> payload, String eventId) {
         var event = appendOnce(sessionId, type, payload, eventId);
         enqueueMirrors(event, null);
+        notifyAfterCommit(sessionId);
+        return event;
+    }
+
+    private void notifyAfterCommit(String sessionId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            notifier.publish(sessionId);
+            return;
+        }
         TransactionSynchronizationManager.registerSynchronization(
                 new TransactionSynchronization() {
                     @Override
@@ -260,7 +244,6 @@ public class SessionEventLog {
                         notifier.publish(sessionId);
                     }
                 });
-        return event;
     }
 
     private void enqueueMirrors(SessionEventDto event, SessionEventScope scope) {
@@ -272,42 +255,23 @@ public class SessionEventLog {
 
     private SessionEventDto appendOnce(
             String sessionId, String type, Map<String, Object> payload, String eventId) {
+        return toDto(repository.appendEvent(newEvent(sessionId, type, payload, eventId)));
+    }
+
+    private SessionEventEntity newEvent(
+            String sessionId, String type, Map<String, Object> payload, String eventId) {
         long now = System.currentTimeMillis();
-        long seq = repository.maxSeq(sessionId) + 1;
         SessionEventEntity entity = new SessionEventEntity();
         entity.setEventId(
                 eventId != null && !eventId.isBlank()
                         ? eventId
                         : "evt_" + UUID.randomUUID().toString().replace("-", ""));
         entity.setSessionId(sessionId);
-        entity.setSeq(seq);
         entity.setEventType(type);
         entity.setPayloadJson(jsonHelper.writeJson(payload));
         entity.setProcessedAt(now);
         entity.setCreatedAt(now);
-        return toDto(repository.saveAndFlush(entity));
-    }
-
-    private static boolean isSeqConflict(Throwable ex) {
-        Throwable cur = ex;
-        while (cur != null) {
-            if (cur instanceof DataIntegrityViolationException) {
-                return true;
-            }
-            String name = cur.getClass().getName();
-            if (name.contains("ConstraintViolation") || name.contains("SQLIntegrityConstraint")) {
-                return true;
-            }
-            String message = cur.getMessage();
-            if (message != null
-                    && (message.contains("ux_builder_session_event_seq")
-                            || message.contains("Unique index")
-                            || message.contains("unique constraint"))) {
-                return true;
-            }
-            cur = cur.getCause();
-        }
-        return false;
+        return entity;
     }
 
     /** Lists all events for a session in sequence order. */
@@ -456,9 +420,9 @@ public class SessionEventLog {
     }
 
     /** Deletes all persisted events for a session that keeps running (transcript clear). */
-    @Transactional
     public void deleteBySessionId(String sessionId) {
-        repository.deleteBySessionId(sessionId);
+        writeTransactionTemplate.executeWithoutResult(
+                status -> repository.deleteBySessionId(sessionId));
     }
 
     /**
@@ -471,7 +435,7 @@ public class SessionEventLog {
             return;
         }
         deletedSessions.markDeleted(sessionId);
-        transactionTemplate.executeWithoutResult(status -> repository.deleteBySessionId(sessionId));
+        deleteBySessionId(sessionId);
     }
 
     /**

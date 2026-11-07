@@ -400,6 +400,8 @@ exporter.drain();
 
 `sink.accept` 返回应表示目标已经持久接收。导出失败后可能重复投递同一事件，目标端需按 `eventId` 去重；`sink.name()` 应跨部署保持稳定，框架用它保存各目标的导出进度。应用可以在启动、空闲时或定时任务中再次 `drain()` 补投，并协调多副本对同一会话和目标的导出。
 
+如果 `sink.accept` 加入的事务在返回时尚未提交，应使用 `drain(Consumer<Runnable> acknowledge)` 延迟更新游标。收集传入的确认回调，在目标事务提交后按顺序执行；事务回滚时丢弃这些回调。在确认之前，事件仍可重放。无参 `drain()` 保持逐条立即确认的行为。
+
 需要执行时自动触发导出时，先将 sink 放入 RuntimeContext 的 `SessionExportSink.CONTEXT_KEY`，再首次调用当前 Agent 实例的 `agent.session(ctx)`。这不能替代失败后的补投安排。Service 已提供公共事件导出与 SSE，使用托管接口的业务通常不必自行实现这一层。
 
 ## 记录应用自己的事件

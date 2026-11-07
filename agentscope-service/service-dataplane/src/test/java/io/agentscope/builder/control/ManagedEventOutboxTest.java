@@ -32,6 +32,7 @@ import io.agentscope.builder.web.managed.service.SessionEventScope;
 import io.agentscope.builder.web.persistence.jpa.SessionEventFenceEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionEventFenceRepository;
 import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxEntity;
+import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxOperations.StoredReport;
 import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxRepository;
 import io.agentscope.builder.web.persistence.jpa.SessionExecutionScopeEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionExecutionScopeRepository;
@@ -76,16 +77,18 @@ class ManagedEventOutboxTest {
                             savedFences.put(row.attemptId, row);
                             return row;
                         });
-        when(events.findById(anyString()))
-                .thenAnswer(call -> Optional.ofNullable(savedEvents.get(call.getArgument(0))));
         when(events.lockById(anyString()))
                 .thenAnswer(call -> Optional.ofNullable(savedEvents.get(call.getArgument(0))));
-        when(events.saveAndFlush(any()))
+        when(events.lockReportById(anyString()))
+                .thenAnswer(
+                        call ->
+                                Optional.ofNullable(savedEvents.get(call.getArgument(0)))
+                                        .map(ManagedEventOutboxTest::report));
+        when(events.insertIfAbsent(any()))
                 .thenAnswer(
                         call -> {
                             SessionEventOutboxEntity row = call.getArgument(0);
-                            savedEvents.put(row.eventId, row);
-                            return row;
+                            return report(savedEvents.computeIfAbsent(row.eventId, ignored -> row));
                         });
         when(events.save(any())).thenAnswer(call -> call.getArgument(0));
         when(events.findBySessionIdAndAttemptIdOrderByEventSeqAsc(anyString(), anyString()))
@@ -117,6 +120,10 @@ class ManagedEventOutboxTest {
                         });
         TransactionSynchronizationManager.setActualTransactionActive(true);
         outbox = new ManagedEventOutbox(events, scopes, fences, tx, mapper, client);
+    }
+
+    private static StoredReport report(SessionEventOutboxEntity row) {
+        return new StoredReport(row.sessionId, row.attemptId, row.reportJson);
     }
 
     @AfterEach
