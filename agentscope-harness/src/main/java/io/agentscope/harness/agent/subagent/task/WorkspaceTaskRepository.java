@@ -524,7 +524,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
 
     @Override
     public BackgroundTask getTask(RuntimeContext rc, String sessionId, String taskId) {
-        BackgroundTask local = localTasks.get(localKey(sessionId, taskId));
+        BackgroundTask local = ownedLocalTask(rc, sessionId, taskId);
         if (local != null) {
             return local;
         }
@@ -568,7 +568,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
         RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
         boolean found = false;
 
-        BackgroundTask local = localTasks.get(localKey(sessionId, taskId));
+        BackgroundTask local = ownedLocalTask(effRc, sessionId, taskId);
         if (local != null) {
             found = true;
         }
@@ -819,6 +819,23 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     // ---- private helpers ----
+
+    /**
+     * Returns the in-memory handle only when the caller belongs to the same user as the context
+     * captured at {@code putTask} time. The local key is {@code sessionId:taskId}, so without this
+     * check another user presenting the same sessionId would reach (or cancel) the handle.
+     */
+    private BackgroundTask ownedLocalTask(RuntimeContext rc, String sessionId, String taskId) {
+        String key = localKey(sessionId, taskId);
+        BackgroundTask local = localTasks.get(key);
+        if (local == null) {
+            return null;
+        }
+        RuntimeContext owner = localTaskContexts.get(key);
+        String ownerUser = owner != null ? owner.getUserId() : null;
+        String callerUser = rc != null ? rc.getUserId() : null;
+        return Objects.equals(ownerUser, callerUser) ? local : null;
+    }
 
     private static String localKey(String sessionId, String taskId) {
         String s = sessionId != null ? sessionId : "_";
