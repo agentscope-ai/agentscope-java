@@ -335,20 +335,23 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testTextSegmentsSeparatedByToolCallUseDistinctMessageIds() {
+        void testTextSegmentsSeparatedByToolCallShareOneMessageIdPerAssistantReply() {
             List<AguiEvent> events =
                     runReActEvents(
-                            new TextBlockStartEvent("reply-mixed", "text"),
-                            new TextBlockDeltaEvent("reply-mixed", "text", "before"),
-                            new TextBlockEndEvent("reply-mixed", "text"),
-                            new ToolCallStartEvent("reply-mixed", "tool-1", "lookup"),
-                            new ToolCallEndEvent("reply-mixed", "tool-1", "lookup"),
-                            new TextBlockStartEvent("reply-mixed", "text-2"),
-                            new TextBlockDeltaEvent("reply-mixed", "text-2", "after"),
-                            new TextBlockEndEvent("reply-mixed", "text-2"));
+                            new AgentStartEvent("thread-v2", "reply-assistant", "react"),
+                            new TextBlockStartEvent("call-1", "text"),
+                            new TextBlockDeltaEvent("call-1", "text", "before"),
+                            new TextBlockEndEvent("call-1", "text"),
+                            new ToolCallStartEvent("call-1", "tool-1", "lookup"),
+                            new ToolCallEndEvent("call-1", "tool-1", "lookup"),
+                            new TextBlockStartEvent("call-2", "text"),
+                            new TextBlockDeltaEvent("call-2", "text", "after"),
+                            new TextBlockEndEvent("call-2", "text"),
+                            new AgentEndEvent("reply-assistant"));
 
             assertEquals(
                     List.of(
+                            AguiEventType.RUN_STARTED,
                             AguiEventType.TEXT_MESSAGE_START,
                             AguiEventType.TEXT_MESSAGE_CONTENT,
                             AguiEventType.TEXT_MESSAGE_END,
@@ -356,36 +359,195 @@ class AguiAgentAdapterV2Test {
                             AguiEventType.TOOL_CALL_END,
                             AguiEventType.TEXT_MESSAGE_START,
                             AguiEventType.TEXT_MESSAGE_CONTENT,
-                            AguiEventType.TEXT_MESSAGE_END),
+                            AguiEventType.TEXT_MESSAGE_END,
+                            AguiEventType.RUN_FINISHED),
                     types(events));
 
-            List<String> messageIds =
-                    events.stream()
-                            .filter(
-                                    event ->
-                                            event instanceof AguiEvent.TextMessageStart
-                                                    || event instanceof AguiEvent.TextMessageContent
-                                                    || event instanceof AguiEvent.TextMessageEnd)
-                            .map(
-                                    event -> {
-                                        if (event instanceof AguiEvent.TextMessageStart start) {
-                                            return start.messageId();
-                                        }
-                                        if (event instanceof AguiEvent.TextMessageContent content) {
-                                            return content.messageId();
-                                        }
-                                        return ((AguiEvent.TextMessageEnd) event).messageId();
-                                    })
-                            .toList();
+            List<AguiEvent> textEvents =
+                    events.stream().filter(AguiAgentAdapterV2Test::isTextMessage).toList();
+            assertEquals(6, textEvents.size());
+            assertTrue(
+                    textEvents.stream()
+                            .allMatch(event -> "reply-assistant".equals(textMessageId(event))),
+                    "one assistant reply pins one text message id: " + textEvents);
+            assertEquals(
+                    2,
+                    textEvents.stream()
+                            .filter(AguiEvent.TextMessageStart.class::isInstance)
+                            .count());
+            assertEquals(
+                    2,
+                    textEvents.stream().filter(AguiEvent.TextMessageEnd.class::isInstance).count());
+        }
+
+        @Test
+        void testTextAfterSecondToolCallStillUsesThePinnedMessageId() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-assistant", "react"),
+                            new TextBlockDeltaEvent("call-1", "text", "one"),
+                            new TextBlockEndEvent("call-1", "text"),
+                            new ToolCallStartEvent("call-1", "tool-1", "lookup"),
+                            new ToolCallEndEvent("call-1", "tool-1", "lookup"),
+                            new TextBlockDeltaEvent("call-2", "text-2", "two"),
+                            new TextBlockEndEvent("call-2", "text-2"),
+                            new ToolCallStartEvent("call-2", "tool-2", "search"),
+                            new ToolCallEndEvent("call-2", "tool-2", "search"),
+                            new TextBlockDeltaEvent("call-3", "text-3", "three"),
+                            new TextBlockEndEvent("call-3", "text-3"),
+                            new AgentEndEvent("reply-assistant"));
+
+            List<AguiEvent> textEvents =
+                    events.stream().filter(AguiAgentAdapterV2Test::isTextMessage).toList();
+            assertEquals(9, textEvents.size());
+            assertTrue(
+                    textEvents.stream()
+                            .allMatch(event -> "reply-assistant".equals(textMessageId(event))),
+                    "the pinned id survives every tool round: " + textEvents);
+            assertEquals(
+                    3,
+                    textEvents.stream()
+                            .filter(AguiEvent.TextMessageStart.class::isInstance)
+                            .count());
+            assertEquals(
+                    3,
+                    textEvents.stream().filter(AguiEvent.TextMessageEnd.class::isInstance).count());
+        }
+
+        @Test
+        void testPinnedTextMessageIdDoesNotPinReasoningMessageIds() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().enableReasoning(true).build(),
+                            new AgentStartEvent("thread-v2", "reply-assistant", "react"),
+                            new ThinkingBlockDeltaEvent("call-1", "thinking", "think"),
+                            new ThinkingBlockEndEvent("call-1", "thinking"),
+                            new TextBlockDeltaEvent("call-1", "text", "answer"),
+                            new TextBlockEndEvent("call-1", "text"),
+                            new ToolCallStartEvent("call-1", "tool-1", "lookup"),
+                            new ToolCallEndEvent("call-1", "tool-1", "lookup"),
+                            new ThinkingBlockDeltaEvent("call-2", "thinking-2", "again"),
+                            new ThinkingBlockEndEvent("call-2", "thinking-2"),
+                            new TextBlockDeltaEvent("call-2", "text-2", "more"),
+                            new TextBlockEndEvent("call-2", "text-2"),
+                            new AgentEndEvent("reply-assistant"));
+
             assertEquals(
                     List.of(
-                            "reply-mixed-text",
-                            "reply-mixed-text",
-                            "reply-mixed-text",
-                            "reply-mixed-text-2",
-                            "reply-mixed-text-2",
-                            "reply-mixed-text-2"),
-                    messageIds);
+                            "reply-assistant",
+                            "reply-assistant",
+                            "reply-assistant",
+                            "reply-assistant",
+                            "reply-assistant",
+                            "reply-assistant"),
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isTextMessage)
+                            .map(AguiAgentAdapterV2Test::textMessageId)
+                            .toList());
+            assertEquals(
+                    List.of(
+                            "call-1-thinking",
+                            "call-1-thinking",
+                            "call-1-thinking",
+                            "call-2-thinking-2",
+                            "call-2-thinking-2",
+                            "call-2-thinking-2"),
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isReasoningMessage)
+                            .map(AguiAgentAdapterV2Test::reasoningMessageId)
+                            .toList());
+        }
+
+        @Test
+        void testEachAssistantReplyPinsItsOwnTextMessageId() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-1", "react"),
+                            new TextBlockDeltaEvent("call-1", "text", "first"),
+                            new TextBlockEndEvent("call-1", "text"),
+                            new AgentEndEvent("reply-1"),
+                            new AgentStartEvent("thread-v2", "reply-2", "react"),
+                            new TextBlockDeltaEvent("call-2", "text", "second"),
+                            new TextBlockEndEvent("call-2", "text"),
+                            new AgentEndEvent("reply-2"));
+
+            assertEquals(
+                    List.of("reply-1", "reply-1", "reply-1", "reply-2", "reply-2", "reply-2"),
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isTextMessage)
+                            .map(AguiAgentAdapterV2Test::textMessageId)
+                            .toList());
+        }
+
+        @Test
+        void testForwardedTextDoesNotInheritParentPinnedMessageId() {
+            TextBlockDeltaEvent childDelta = new TextBlockDeltaEvent("child-call", "text", "child");
+            childDelta.withSource("thread-v2/researcher/child-session");
+            TextBlockEndEvent childEnd = new TextBlockEndEvent("child-call", "text");
+            childEnd.withSource("thread-v2/researcher/child-session");
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-parent", "react"),
+                            new TextBlockDeltaEvent("call-1", "text", "before"),
+                            new TextBlockEndEvent("call-1", "text"),
+                            childDelta,
+                            childEnd,
+                            new TextBlockDeltaEvent("call-2", "text", "after"),
+                            new TextBlockEndEvent("call-2", "text"),
+                            new AgentEndEvent("reply-parent"));
+
+            List<AguiEvent> textEvents =
+                    events.stream().filter(AguiAgentAdapterV2Test::isTextMessage).toList();
+            assertEquals(6, textEvents.size());
+            assertTrue(
+                    textEvents.stream()
+                            .allMatch(event -> "reply-parent".equals(textMessageId(event))),
+                    "forwarded text must not take over the parent pin: " + textEvents);
+            assertTrue(
+                    events.stream()
+                            .filter(AguiEvent.Custom.class::isInstance)
+                            .map(AguiEvent.Custom.class::cast)
+                            .anyMatch(custom -> "subagent.text".equals(custom.name())),
+                    "forwarded text is a CUSTOM event in the default mode");
+        }
+
+        @Test
+        void testForwardedTextKeepsItsOwnMessageIdWhenSubagentEventsAreNative() {
+            TextBlockDeltaEvent childDelta = new TextBlockDeltaEvent("child-call", "text", "child");
+            childDelta.withSource("thread-v2/researcher/child-session");
+            TextBlockEndEvent childEnd = new TextBlockEndEvent("child-call", "text");
+            childEnd.withSource("thread-v2/researcher/child-session");
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().emitSubagentEventsAsNative(true).build(),
+                            new AgentStartEvent("thread-v2", "reply-parent", "react"),
+                            new TextBlockDeltaEvent("call-1", "text", "before"),
+                            new TextBlockEndEvent("call-1", "text"),
+                            childDelta,
+                            childEnd,
+                            new TextBlockDeltaEvent("call-2", "text", "after"),
+                            new TextBlockEndEvent("call-2", "text"),
+                            new AgentEndEvent("reply-parent"));
+
+            List<String> parentMessageIds =
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isTextMessage)
+                            .map(AguiAgentAdapterV2Test::textMessageId)
+                            .filter("reply-parent"::equals)
+                            .toList();
+            List<String> childMessageIds =
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isTextMessage)
+                            .map(AguiAgentAdapterV2Test::textMessageId)
+                            .filter(messageId -> !"reply-parent".equals(messageId))
+                            .toList();
+            assertEquals(6, parentMessageIds.size());
+            assertEquals(
+                    List.of("child-call-text", "child-call-text", "child-call-text"),
+                    childMessageIds,
+                    "forwarded text keeps its own id instead of the parent pin");
         }
 
         @Test
@@ -2548,6 +2710,44 @@ class AguiAgentAdapterV2Test {
         Field field = AguiStreamContext.class.getDeclaredField("warnedMissingToolCallIdOperations");
         field.setAccessible(true);
         return Set.copyOf((Set<String>) field.get(context));
+    }
+
+    private static boolean isTextMessage(AguiEvent event) {
+        return event instanceof AguiEvent.TextMessageStart
+                || event instanceof AguiEvent.TextMessageContent
+                || event instanceof AguiEvent.TextMessageEnd;
+    }
+
+    private static String textMessageId(AguiEvent event) {
+        if (event instanceof AguiEvent.TextMessageStart start) {
+            return start.messageId();
+        }
+        if (event instanceof AguiEvent.TextMessageContent content) {
+            return content.messageId();
+        }
+        if (event instanceof AguiEvent.TextMessageEnd end) {
+            return end.messageId();
+        }
+        throw new AssertionError("Not a text message event: " + event);
+    }
+
+    private static boolean isReasoningMessage(AguiEvent event) {
+        return event instanceof AguiEvent.ReasoningMessageStart
+                || event instanceof AguiEvent.ReasoningMessageContent
+                || event instanceof AguiEvent.ReasoningMessageEnd;
+    }
+
+    private static String reasoningMessageId(AguiEvent event) {
+        if (event instanceof AguiEvent.ReasoningMessageStart start) {
+            return start.messageId();
+        }
+        if (event instanceof AguiEvent.ReasoningMessageContent content) {
+            return content.messageId();
+        }
+        if (event instanceof AguiEvent.ReasoningMessageEnd end) {
+            return end.messageId();
+        }
+        throw new AssertionError("Not a reasoning message event: " + event);
     }
 
     private static List<AguiEventType> types(List<AguiEvent> events) {

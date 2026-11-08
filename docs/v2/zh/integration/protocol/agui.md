@@ -94,6 +94,8 @@ v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射�
 
 正常运行的 `RUN_STARTED` 和 `RUN_FINISHED` 由上游 `AgentStartEvent` / `AgentEndEvent` 决定。正常流结束但上游没有发 `AgentEndEvent` 时，adapter 不会额外补 `RUN_FINISHED`。异常路径会输出带 `timestamp` 的 `RUN_ERROR`。 `RUN_ERROR` 和 `RUN_FINISHED` 是互斥终态事件。只有旧客户端仍依赖错误后补发完成事件时，才设置 `emitRunFinishedAfterError=true`（Spring Boot 配置为 `agentscope.agui.emit-run-finished-after-error=true`）。
 
+同一次 assistant reply 内的所有文本段共享一个固定的文本 `messageId`：工具调用前后的文本会追加到同一条 AG-UI assistant 消息中。每个文本段仍会发出各自的 `TEXT_MESSAGE_START` / `TEXT_MESSAGE_END`，文本恢复时通过新的 `TEXT_MESSAGE_START` 重新打开已关闭的 id。推理消息仍按推理段保持独立 id，转发的子 agent 文本不会复用父级文本 id。
+
 ## 子 agent 事件
 
 默认（`emitSubagentEventsAsNative=false`）下，带非空 `source` 的 AgentEvent（子 / 远程子 agent 事件）**不会**映射为原生的 `TEXT_MESSAGE_*` / `RUN_*` / 工具调用事件，而是变成 `subagent.*` 命名空间下的 AG-UI `CUSTOM` 事件，避免污染父 run 的生命周期与文本流：

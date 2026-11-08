@@ -34,13 +34,20 @@ final class TextBlockEventConverter implements AgentEventConverter {
         if (event instanceof TextBlockDeltaEvent delta) {
             // AguiEvent.TextMessageStart delays sending when content arrives
             context.appendTextDelta(
-                    messageId(delta.getReplyId(), delta.getBlockId()), delta.getDelta());
+                    textMessageId(event, delta.getReplyId(), delta.getBlockId(), context),
+                    delta.getDelta());
         } else if (event instanceof TextBlockEndEvent end) {
-            context.closeTextMessage(messageId(end.getReplyId(), end.getBlockId()));
+            context.closeTextMessage(
+                    textMessageId(event, end.getReplyId(), end.getBlockId(), context));
         }
     }
 
-    private String messageId(String replyId, String blockId) {
-        return replyId + "-" + blockId;
+    private String textMessageId(
+            AgentEvent event, String replyId, String blockId, AguiStreamContext context) {
+        // Forwarded subagent text keeps its own identity and must not reuse the parent pin.
+        if (event.getSource() != null && !event.getSource().isBlank()) {
+            return replyId + "-" + blockId;
+        }
+        return context.resolveTextMessageId(replyId, blockId);
     }
 }

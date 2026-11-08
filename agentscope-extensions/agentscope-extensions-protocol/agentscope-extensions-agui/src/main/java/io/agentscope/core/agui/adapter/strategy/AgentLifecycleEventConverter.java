@@ -69,7 +69,10 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
      */
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
-        if (event instanceof AgentStartEvent) {
+        if (event instanceof AgentStartEvent start) {
+            if (!isForwarded(start)) {
+                context.beginAssistantReply(start.getReplyId());
+            }
             context.emit(
                     new AguiEvent.RunStarted(
                             context.getThreadId(),
@@ -78,9 +81,12 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
                             context.getRunInput()));
         } else if (event instanceof AgentResultEvent resultEvent) {
             collectSuspendedToolInterrupts(resultEvent, context);
-        } else if (event instanceof AgentEndEvent) {
+        } else if (event instanceof AgentEndEvent end) {
             for (AguiEvent pendingEvent : context.finishPendingEvents()) {
                 context.emit(pendingEvent);
+            }
+            if (!isForwarded(end)) {
+                context.endAssistantReply(end.getReplyId());
             }
             List<AguiEvent.Interrupt> interrupts = context.getPendingInterrupts();
             AguiEvent.RunFinishedOutcome outcome =
@@ -91,6 +97,10 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
                     new AguiEvent.RunFinished(
                             context.getThreadId(), context.getRunId(), null, outcome));
         }
+    }
+
+    private static boolean isForwarded(AgentEvent event) {
+        return event.getSource() != null && !event.getSource().isBlank();
     }
 
     private static void collectSuspendedToolInterrupts(

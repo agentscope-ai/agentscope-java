@@ -56,6 +56,8 @@ public class AguiStreamContext {
     private final Set<String> adoptedToolCalls = new LinkedHashSet<>();
     private String currentTextMessageId;
     private String currentReasoningMessageId;
+    private String assistantReplyId;
+    private String pinnedTextMessageId;
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
     private final Map<String, AguiEvent.Interrupt> pendingInterrupts = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
@@ -131,8 +133,55 @@ public class AguiStreamContext {
         return tokenUsageAccumulator;
     }
 
+    /**
+     * Start a new assistant reply and reset the text message pin.
+     *
+     * <p>Only top-level lifecycle events should call this; forwarded subagent events keep their
+     * own identity and never inherit the parent pin.
+     *
+     * @param replyId stable outer reply id from {@code AgentStartEvent}
+     */
+    public void beginAssistantReply(String replyId) {
+        this.assistantReplyId = replyId;
+        this.pinnedTextMessageId = null;
+    }
+
+    /**
+     * Clear the text message pin when the matching assistant reply ends.
+     *
+     * @param replyId stable outer reply id from {@code AgentEndEvent}
+     */
+    public void endAssistantReply(String replyId) {
+        if (assistantReplyId == null || !Objects.equals(assistantReplyId, replyId)) {
+            return;
+        }
+        assistantReplyId = null;
+        pinnedTextMessageId = null;
+    }
+
+    /**
+     * Resolve the text message id for one text block event.
+     *
+     * <p>One assistant reply pins one text message id, so text before and after a tool call
+     * aggregates into the same AG-UI assistant message. The outer reply id is the stable identity;
+     * a text block's own reply id is only a per-model-call id. Without a lifecycle event (for
+     * example a replayed stream) the block id keeps the id unique.
+     *
+     * @param replyId text block reply id, usually the per-model-call id
+     * @param blockId text block id within the model call
+     * @return the pinned message id for this assistant reply
+     */
+    public String resolveTextMessageId(String replyId, String blockId) {
+        if (pinnedTextMessageId == null) {
+            pinnedTextMessageId =
+                    isBlank(assistantReplyId) ? replyId + "-" + blockId : assistantReplyId;
+        }
+        return pinnedTextMessageId;
+    }
+
     public void startTextMessage(String messageId) {
-        if (startedTextMessages.add(messageId)) {
+        boolean reopening = endedTextMessages.remove(messageId);
+        if (reopening || startedTextMessages.add(messageId)) {
             emit(new AguiEvent.TextMessageStart(threadId, runId, messageId, "assistant"));
         }
         currentTextMessageId = messageId;
