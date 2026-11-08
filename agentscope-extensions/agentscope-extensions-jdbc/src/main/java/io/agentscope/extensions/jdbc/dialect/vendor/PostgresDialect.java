@@ -58,12 +58,13 @@ public class PostgresDialect extends AbstractJdbcDialect {
                         + storeTableName()
                         + " ("
                         + "  namespace_path VARCHAR(2048) NOT NULL,"
-                        + "  item_key       VARCHAR(255)  NOT NULL,"
+                        + "  item_key       VARCHAR(2048) NOT NULL,"
                         + "  value_json     TEXT          NOT NULL,"
                         + "  version        BIGINT        NOT NULL,"
                         + "  updated_at     BIGINT        NOT NULL,"
                         + "  PRIMARY KEY (namespace_path, item_key)"
                         + ")",
+                "ALTER TABLE " + storeTableName() + " ALTER COLUMN item_key TYPE VARCHAR(2048)",
                 // PostgreSQL cannot express a secondary index inside CREATE TABLE.
                 "CREATE INDEX IF NOT EXISTS "
                         + storeTableName()

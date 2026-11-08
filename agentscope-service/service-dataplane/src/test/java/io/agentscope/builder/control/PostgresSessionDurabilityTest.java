@@ -24,6 +24,7 @@ import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxRepository;
 import io.agentscope.core.session.JournalSessionLog;
 import io.agentscope.core.session.SessionEvent;
+import io.agentscope.core.session.SessionKey;
 import io.agentscope.core.session.SessionLogException;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.store.JdbcStore;
@@ -113,6 +114,37 @@ class PostgresSessionDurabilityTest {
                                 .head()
                                 .seq())
                 .isZero();
+    }
+
+    @Test
+    void upgradesLegacyStoreAndPersistsLongSessionJournalKey() throws Exception {
+        var dataSource = new DriverManagerDataSource(scopedUrl(), user, password);
+        try (var connection = dataSource.getConnection();
+                var statement = connection.createStatement()) {
+            statement.execute(
+                    "CREATE TABLE agentscope_store ("
+                            + "namespace_path VARCHAR(2048) NOT NULL,"
+                            + "item_key VARCHAR(255) NOT NULL,"
+                            + "value_json TEXT NOT NULL,"
+                            + "version BIGINT NOT NULL,"
+                            + "updated_at BIGINT NOT NULL,"
+                            + "PRIMARY KEY (namespace_path, item_key))");
+        }
+
+        var dialect = AbstractJdbcDialect.from(dataSource).build();
+        var store = JdbcStore.builder(dataSource).dialect(dialect).build();
+        String agentId =
+                "dpa-user-f30b305e0c7c-260aa286-001a-46bd-bd0a-632a355a7d14-sess_e19020b502ec";
+        String sessionPath =
+                new SessionKey("user-1234567890", agentId, "session-1234567890").storagePath();
+        var log =
+                new JournalSessionLog(
+                        new StoreSessionStorage(store, List.of("tenant-a")), sessionPath);
+
+        assertThat(sessionPath + "/writer-seals/" + "0".repeat(64) + ".json")
+                .hasSizeGreaterThan(255);
+        log.acquire("run-a", Duration.ofMinutes(1));
+        log.sealWriter("run-a");
     }
 
     @Test

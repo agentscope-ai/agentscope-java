@@ -93,6 +93,17 @@ class DialectSqlTests {
     }
 
     @Test
+    @DisplayName("Postgres store DDL supports long item keys and upgrades existing tables")
+    void postgresStoreDdlWidensItemKey() {
+        List<String> ddls = new PostgresDialect().storeCreateTableDdls();
+
+        assertTrue(ddls.get(0).contains("item_key       VARCHAR(2048)"));
+        assertTrue(
+                ddls.stream()
+                        .anyMatch(ddl -> ddl.contains("ALTER COLUMN item_key TYPE VARCHAR(2048)")));
+    }
+
+    @Test
     @DisplayName("MysqlDialect storeUpsert uses ON DUPLICATE KEY")
     void mysqlStoreUpsertUsesOnDuplicateKey() {
         BoundSql bs = new MysqlDialect().storeUpsert("ns", "k", "{}", 1L);
@@ -223,10 +234,13 @@ class DialectSqlTests {
 
     private static void assertStoreAndSessionIndexes(AbstractJdbcDialect d) {
         List<String> store = d.storeCreateTableDdls();
-        assertEquals(2, store.size());
         assertTrue(store.get(0).startsWith("CREATE TABLE IF NOT EXISTS"));
-        assertTrue(store.get(1).startsWith("CREATE INDEX IF NOT EXISTS"));
-        assertTrue(store.get(1).contains("namespace_path"));
+        assertTrue(
+                store.stream()
+                        .anyMatch(
+                                ddl ->
+                                        ddl.startsWith("CREATE INDEX IF NOT EXISTS")
+                                                && ddl.contains("namespace_path")));
 
         List<String> session = d.sessionStateCreateTableDdls();
         assertEquals(2, session.size());
