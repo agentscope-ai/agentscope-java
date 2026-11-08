@@ -381,6 +381,29 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testTextSegmentsWithoutAssistantReplyLifecycleKeepBlockMessageIds() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new TextBlockDeltaEvent("call-1", "text", "before"),
+                            new TextBlockEndEvent("call-1", "text"),
+                            new TextBlockDeltaEvent("call-2", "text", "after"),
+                            new TextBlockEndEvent("call-2", "text"));
+
+            assertEquals(
+                    List.of(
+                            "call-1-text",
+                            "call-1-text",
+                            "call-1-text",
+                            "call-2-text",
+                            "call-2-text",
+                            "call-2-text"),
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isTextMessage)
+                            .map(AguiAgentAdapterV2Test::textMessageId)
+                            .toList());
+        }
+
+        @Test
         void testTextAfterSecondToolCallStillUsesThePinnedMessageId() {
             List<AguiEvent> events =
                     runReActEvents(

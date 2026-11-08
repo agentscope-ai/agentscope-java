@@ -172,9 +172,11 @@ public class AguiStreamContext {
      * @return the pinned message id for this assistant reply
      */
     public String resolveTextMessageId(String replyId, String blockId) {
+        if (isBlank(assistantReplyId)) {
+            return replyId + "-" + blockId;
+        }
         if (pinnedTextMessageId == null) {
-            pinnedTextMessageId =
-                    isBlank(assistantReplyId) ? replyId + "-" + blockId : assistantReplyId;
+            pinnedTextMessageId = assistantReplyId;
         }
         return pinnedTextMessageId;
     }
