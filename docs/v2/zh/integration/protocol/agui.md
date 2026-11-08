@@ -94,7 +94,7 @@ v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射�
 
 正常运行的 `RUN_STARTED` 和 `RUN_FINISHED` 由上游 `AgentStartEvent` / `AgentEndEvent` 决定。正常流结束但上游没有发 `AgentEndEvent` 时，adapter 不会额外补 `RUN_FINISHED`。异常路径会输出带 `timestamp` 的 `RUN_ERROR`。 `RUN_ERROR` 和 `RUN_FINISHED` 是互斥终态事件。只有旧客户端仍依赖错误后补发完成事件时，才设置 `emitRunFinishedAfterError=true`（Spring Boot 配置为 `agentscope.agui.emit-run-finished-after-error=true`）。
 
-同一次 assistant turn 内的所有文本段共享一个文本 `messageId`，其来源是稳定的 session turn id（`ExecutionIdentity.turnId`，与 session log 记录的 turn id 相同）。工具调用前后的文本会追加到同一条 AG-UI assistant 消息中。每个文本段仍会发出各自的 `TEXT_MESSAGE_START` / `TEXT_MESSAGE_END`，文本恢复时通过新的 `TEXT_MESSAGE_START` 重新打开已关闭的 id。当 turn id 不可用时（例如转发的子 agent 事件），adapter 回退到事件自身的 reply/block id，且不会复用父级文本 id。推理消息使用独立的 id 命名空间，不会复用裸文本 id。
+同一次 assistant turn 内的所有文本段共享一个文本 `messageId`，其来源是稳定的 session turn id（`ExecutionIdentity.turnId`，与 session log 记录的 turn id 相同）。工具调用前后的文本会追加到同一条 AG-UI assistant 消息中。每个文本段仍会发出各自的 `TEXT_MESSAGE_START` / `TEXT_MESSAGE_END`，文本恢复时通过新的 `TEXT_MESSAGE_START` 重新打开已关闭的 id。转发的子 agent 文本在带自身 execution 时使用子事件的 turn id；没有 execution 的转发事件回退到自身的 reply/block id，且不会复用父级文本 id。推理消息使用独立的 id 命名空间，不会复用裸文本 id。
 
 ## 子 agent 事件
 
