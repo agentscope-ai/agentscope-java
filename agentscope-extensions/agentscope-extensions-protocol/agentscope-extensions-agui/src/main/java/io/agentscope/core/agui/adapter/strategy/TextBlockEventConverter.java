@@ -42,10 +42,6 @@ final class TextBlockEventConverter implements AgentEventConverter {
     }
 
     private String textMessageId(AgentEvent event, String replyId, String blockId) {
-        // Forwarded subagent text keeps its own identity and must not reuse the parent turn id.
-        if (event.getSource() != null && !event.getSource().isBlank()) {
-            return replyId + "-" + blockId;
-        }
         ExecutionIdentity execution = event.getExecution();
         String turnId = execution != null ? execution.turnId() : null;
         return turnId == null || turnId.isBlank() ? replyId + "-" + blockId : turnId;
