@@ -56,8 +56,7 @@ public class AguiStreamContext {
     private final Set<String> adoptedToolCalls = new LinkedHashSet<>();
     private String currentTextMessageId;
     private String currentReasoningMessageId;
-    private String assistantReplyId;
-    private String pinnedTextMessageId;
+    private String assistantTurnId;
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
     private final Map<String, AguiEvent.Interrupt> pendingInterrupts = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
@@ -134,51 +133,42 @@ public class AguiStreamContext {
     }
 
     /**
-     * Start a new assistant reply and reset the text message pin.
+     * Start an assistant turn and use its stable session turn id for text messages.
      *
-     * <p>Only top-level lifecycle events should call this; forwarded subagent events keep their
-     * own identity and never inherit the parent pin.
+     * <p>Only top-level lifecycle events should call this. A blank turn id clears the identity so
+     * text falls back to per-block ids instead of inheriting an earlier turn.
      *
-     * @param replyId stable outer reply id from {@code AgentStartEvent}
+     * @param turnId stable session turn id from the event execution identity
      */
-    public void beginAssistantReply(String replyId) {
-        this.assistantReplyId = replyId;
-        this.pinnedTextMessageId = null;
+    public void beginAssistantTurn(String turnId) {
+        this.assistantTurnId = isBlank(turnId) ? null : turnId;
     }
 
     /**
-     * Clear the text message pin when the matching assistant reply ends.
+     * Clear the assistant turn identity when the matching turn ends.
      *
-     * @param replyId stable outer reply id from {@code AgentEndEvent}
+     * @param turnId stable session turn id from the event execution identity
      */
-    public void endAssistantReply(String replyId) {
-        if (assistantReplyId == null || !Objects.equals(assistantReplyId, replyId)) {
-            return;
+    public void endAssistantTurn(String turnId) {
+        if (isBlank(turnId) || Objects.equals(assistantTurnId, turnId)) {
+            assistantTurnId = null;
         }
-        assistantReplyId = null;
-        pinnedTextMessageId = null;
     }
 
     /**
      * Resolve the text message id for one text block event.
      *
-     * <p>One assistant reply pins one text message id, so text before and after a tool call
-     * aggregates into the same AG-UI assistant message. The outer reply id is the stable identity;
-     * a text block's own reply id is only a per-model-call id. Without a lifecycle event (for
-     * example a replayed stream) the block id keeps the id unique.
+     * <p>Within one assistant turn every text segment reuses the stable session turn id, so text
+     * before and after a tool call aggregates into the same AG-UI assistant message. A text
+     * block's own reply id is only a per-model-call id. When no turn id is available (for example
+     * a forwarded subagent event or a lifecycle-less stream), the block id keeps the id unique.
      *
      * @param replyId text block reply id, usually the per-model-call id
      * @param blockId text block id within the model call
-     * @return the pinned message id for this assistant reply
+     * @return the stable text message id for this assistant turn
      */
     public String resolveTextMessageId(String replyId, String blockId) {
-        if (isBlank(assistantReplyId)) {
-            return replyId + "-" + blockId;
-        }
-        if (pinnedTextMessageId == null) {
-            pinnedTextMessageId = assistantReplyId;
-        }
-        return pinnedTextMessageId;
+        return isBlank(assistantTurnId) ? replyId + "-" + blockId : assistantTurnId;
     }
 
     public void startTextMessage(String messageId) {
