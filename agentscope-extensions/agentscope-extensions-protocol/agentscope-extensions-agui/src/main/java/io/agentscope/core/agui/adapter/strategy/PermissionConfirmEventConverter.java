@@ -68,6 +68,7 @@ final class PermissionConfirmEventConverter implements AgentEventConverter {
         }
         RequireUserConfirmEvent confirmEvent = (RequireUserConfirmEvent) event;
         String replyId = confirmEvent.getReplyId();
+        String turnId = AgentEventIds.turnId(confirmEvent);
 
         List<ToolUseBlock> toolCalls = confirmEvent.getToolCalls();
         for (ToolUseBlock toolUse : toolCalls) {
@@ -76,7 +77,7 @@ final class PermissionConfirmEventConverter implements AgentEventConverter {
                 throw new IllegalStateException(
                         "RequireUserConfirmEvent contains a tool call without a stable id");
             }
-            context.addInterrupt(AguiInterrupts.permissionConfirm(replyId, toolUse));
+            context.addInterrupt(AguiInterrupts.permissionConfirm(turnId, replyId, toolUse));
         }
     }
 

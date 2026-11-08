@@ -115,6 +115,7 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
             }
             context.addInterrupt(
                     AguiInterrupts.externalExecution(
+                            AgentEventIds.turnId(resultEvent),
                             result.getId(),
                             toolUse,
                             toolResult.getSuspendReason() != null

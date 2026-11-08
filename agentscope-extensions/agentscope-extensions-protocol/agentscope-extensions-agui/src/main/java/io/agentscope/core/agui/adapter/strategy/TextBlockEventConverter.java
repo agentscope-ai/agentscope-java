@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.agui.adapter.strategy;
 
-import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
@@ -35,15 +34,11 @@ final class TextBlockEventConverter implements AgentEventConverter {
         if (event instanceof TextBlockDeltaEvent delta) {
             // AguiEvent.TextMessageStart delays sending when content arrives
             context.appendTextDelta(
-                    textMessageId(event, delta.getReplyId(), delta.getBlockId()), delta.getDelta());
+                    AgentEventIds.textMessageId(event, delta.getReplyId(), delta.getBlockId()),
+                    delta.getDelta());
         } else if (event instanceof TextBlockEndEvent end) {
-            context.closeTextMessage(textMessageId(event, end.getReplyId(), end.getBlockId()));
+            context.closeTextMessage(
+                    AgentEventIds.textMessageId(event, end.getReplyId(), end.getBlockId()));
         }
-    }
-
-    private String textMessageId(AgentEvent event, String replyId, String blockId) {
-        ExecutionIdentity execution = event.getExecution();
-        String turnId = execution != null ? execution.turnId() : null;
-        return turnId == null || turnId.isBlank() ? replyId + "-" + blockId : turnId;
     }
 }

@@ -146,9 +146,9 @@ final class AguiSessionPresentation {
                                 .build();
             }
             if ("confirmation".equalsIgnoreCase(interaction.kind)) {
-                out.add(AguiInterrupts.permissionConfirm(null, call));
+                out.add(AguiInterrupts.permissionConfirm(interaction.turnId, null, call));
             } else {
-                out.add(AguiInterrupts.externalExecution(null, call, null));
+                out.add(AguiInterrupts.externalExecution(interaction.turnId, null, call, null));
             }
         }
         return List.copyOf(out);
@@ -384,7 +384,7 @@ final class AguiSessionPresentation {
         }
         String kind = string(data.get("kind"));
         ToolUseBlock call = toolUse(data.get("call"));
-        pending.put(requestId, new Interaction(requestId, kind, call));
+        pending.put(requestId, new Interaction(requestId, kind, call, event.turnId()));
     }
 
     private void interactionResolved(SessionEvent event) {
@@ -460,7 +460,7 @@ final class AguiSessionPresentation {
         return isBlank(name) ? UNKNOWN_TOOL : name;
     }
 
-    private record Interaction(String requestId, String kind, ToolUseBlock call) {}
+    private record Interaction(String requestId, String kind, ToolUseBlock call, String turnId) {}
 
     private static final class ToolCallState {
         private final String id;

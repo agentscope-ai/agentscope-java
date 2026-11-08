@@ -770,6 +770,28 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testExecutionTurnIdOverridesPerBlockMessageIds() {
+            ExecutionIdentity identity =
+                    new ExecutionIdentity("agent-1", "thread-v2", "turn-1", "run-1");
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().enableReasoning(true).build(),
+                            new TextBlockDeltaEvent("reply-text", "text", "answer")
+                                    .withExecution(identity),
+                            new TextBlockEndEvent("reply-text", "text").withExecution(identity),
+                            new ThinkingBlockDeltaEvent("reply-thinking", "thinking", "think")
+                                    .withExecution(identity),
+                            new ThinkingBlockEndEvent("reply-thinking", "thinking")
+                                    .withExecution(identity));
+
+            assertEquals(List.of("turn-1", "turn-1", "turn-1"), textMessageIds(events));
+            assertEquals(
+                    List.of("turn-1:reasoning", "turn-1:reasoning", "turn-1:reasoning"),
+                    reasoningMessageIds(events));
+        }
+
+        @Test
         void testTextAndThinkingStartOnlyEventsDoNotEmitEmptyMessages() {
             List<AguiEvent> textEvents =
                     runReActEvents(
@@ -1400,6 +1422,45 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testSuspendedToolInterruptUsesExecutionTurnId() {
+            ExecutionIdentity identity =
+                    new ExecutionIdentity("agent-1", "thread-v2", "turn-1", "run-1");
+            ToolUseBlock toolUse =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("lookup")
+                            .input(Map.of("city", "Paris"))
+                            .build();
+            Msg suspendedResult =
+                    suspendedToolResult(
+                            "reply-suspended",
+                            toolUse,
+                            ToolResultBlock.builder()
+                                    .id("tool-1")
+                                    .name("lookup")
+                                    .state(ToolResultState.SUSPENDED)
+                                    .metadata(
+                                            Map.of(
+                                                    ToolResultBlock.METADATA_SUSPEND_REASON,
+                                                    "Execute lookup externally"))
+                                    .build());
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentResultEvent(suspendedResult).withExecution(identity),
+                            new AgentEndEvent("reply-suspended"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(0));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            AguiEvent.Interrupt interrupt = outcome.interrupts().get(0);
+            assertEquals("turn-1:tool-1", interrupt.id());
+            assertEquals("reply-suspended", interrupt.metadata().get("replyId"));
+        }
+
+        @Test
         void testSuspendedFrontendToolDoesNotEmitInterrupt() {
             ToolUseBlock toolUse =
                     ToolUseBlock.builder()
@@ -1654,6 +1715,27 @@ class AguiAgentAdapterV2Test {
             assertEquals(
                     List.of("reply-confirm:tool-1", "reply-confirm:tool-2"),
                     outcome.interrupts().stream().map(AguiEvent.Interrupt::id).toList());
+        }
+
+        @Test
+        void testPermissionConfirmInterruptUsesExecutionTurnId() {
+            ExecutionIdentity identity =
+                    new ExecutionIdentity("agent-1", "thread-v2", "turn-1", "run-1");
+            ToolUseBlock pending = ToolUseBlock.builder().id("tool-1").name("echo").build();
+            RequireUserConfirmEvent confirm =
+                    new RequireUserConfirmEvent("reply-confirm", List.of(pending));
+            confirm.withExecution(identity);
+
+            List<AguiEvent> events = runReActEvents(confirm, new AgentEndEvent("reply-confirm"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(0));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            AguiEvent.Interrupt interrupt = outcome.interrupts().get(0);
+            assertEquals("turn-1:tool-1", interrupt.id());
+            assertEquals("reply-confirm", interrupt.metadata().get("replyId"));
         }
 
         @Test
@@ -2661,6 +2743,46 @@ class AguiAgentAdapterV2Test {
             AguiEvent.Custom custom = assertInstanceOf(AguiEvent.Custom.class, events.get(0));
             assertEquals("external.required", custom.name());
         }
+    }
+
+    private static List<String> textMessageIds(List<AguiEvent> events) {
+        return events.stream()
+                .filter(
+                        event ->
+                                event instanceof AguiEvent.TextMessageStart
+                                        || event instanceof AguiEvent.TextMessageContent
+                                        || event instanceof AguiEvent.TextMessageEnd)
+                .map(
+                        event -> {
+                            if (event instanceof AguiEvent.TextMessageStart start) {
+                                return start.messageId();
+                            }
+                            if (event instanceof AguiEvent.TextMessageContent content) {
+                                return content.messageId();
+                            }
+                            return ((AguiEvent.TextMessageEnd) event).messageId();
+                        })
+                .toList();
+    }
+
+    private static List<String> reasoningMessageIds(List<AguiEvent> events) {
+        return events.stream()
+                .filter(
+                        event ->
+                                event instanceof AguiEvent.ReasoningMessageStart
+                                        || event instanceof AguiEvent.ReasoningMessageContent
+                                        || event instanceof AguiEvent.ReasoningMessageEnd)
+                .map(
+                        event -> {
+                            if (event instanceof AguiEvent.ReasoningMessageStart start) {
+                                return start.messageId();
+                            }
+                            if (event instanceof AguiEvent.ReasoningMessageContent content) {
+                                return content.messageId();
+                            }
+                            return ((AguiEvent.ReasoningMessageEnd) event).messageId();
+                        })
+                .toList();
     }
 
     private static List<AguiEvent> runReActEvents(AgentEvent... agentEvents) {

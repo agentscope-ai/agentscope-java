@@ -75,6 +75,19 @@ public final class AguiInterrupts {
      * @return the AG-UI interrupt
      */
     public static AguiEvent.Interrupt permissionConfirm(String replyId, ToolUseBlock toolUse) {
+        return permissionConfirm(null, replyId, toolUse);
+    }
+
+    /**
+     * Builds a permission-mode confirmation interrupt scoped to its execution turn.
+     *
+     * @param turnId execution turn id, or {@code null} to fall back to the reply id
+     * @param replyId originating reply id, may be {@code null} when unknown
+     * @param toolUse pending tool call
+     * @return the AG-UI interrupt
+     */
+    public static AguiEvent.Interrupt permissionConfirm(
+            String turnId, String replyId, ToolUseBlock toolUse) {
         String toolCallId = toolUse.getId();
         Map<String, Object> metadata = toolMetadata(toolUse);
         metadata.put(METADATA_AGENTSCOPE_INTERRUPT_KIND, INTERRUPT_KIND_PERMISSION_CONFIRM);
@@ -82,7 +95,7 @@ public final class AguiInterrupts {
             metadata.put(METADATA_REPLY_ID, replyId);
         }
         return new AguiEvent.Interrupt(
-                interruptId(replyId, toolCallId),
+                interruptId(turnId, replyId, toolCallId),
                 TOOL_CALL_INTERRUPT_REASON,
                 confirmMessage(toolUse),
                 toolCallId,
@@ -101,13 +114,27 @@ public final class AguiInterrupts {
      */
     public static AguiEvent.Interrupt externalExecution(
             String replyId, ToolUseBlock toolUse, String message) {
+        return externalExecution(null, replyId, toolUse, message);
+    }
+
+    /**
+     * Builds an external-execution interrupt scoped to its execution turn.
+     *
+     * @param turnId execution turn id, or {@code null} to fall back to the reply id
+     * @param replyId originating reply id, may be {@code null} when unknown
+     * @param toolUse suspended tool call
+     * @param message suspension message, or {@code null} for the default
+     * @return the AG-UI interrupt
+     */
+    public static AguiEvent.Interrupt externalExecution(
+            String turnId, String replyId, ToolUseBlock toolUse, String message) {
         String toolCallId = toolUse.getId();
         Map<String, Object> metadata = toolMetadata(toolUse);
         if (!isBlank(replyId)) {
             metadata.put(METADATA_REPLY_ID, replyId);
         }
         return new AguiEvent.Interrupt(
-                interruptId(replyId, toolCallId),
+                interruptId(turnId, replyId, toolCallId),
                 TOOL_CALL_INTERRUPT_REASON,
                 message != null ? message : DEFAULT_EXTERNAL_EXECUTION_MESSAGE,
                 toolCallId,
@@ -117,16 +144,29 @@ public final class AguiInterrupts {
     }
 
     /**
-     * Interrupt identity: {@code replyId:toolCallId} when the reply is known, otherwise the tool
-     * call id alone.
+     * Interrupt identity: {@code turnId:toolCallId} when the turn is known, otherwise the legacy
+     * {@code replyId:toolCallId} or the tool call id alone.
      *
+     * @param turnId execution turn id, may be {@code null}
      * @param replyId originating reply id, may be {@code null}
      * @param toolCallId tool call id
      * @return stable interrupt id
      */
-    public static String interruptId(String replyId, String toolCallId) {
-        if (!isBlank(replyId)) {
-            return replyId + ":" + toolCallId;
+    public static String interruptId(String turnId, String replyId, String toolCallId) {
+        return isBlank(turnId) ? interruptId(replyId, toolCallId) : turnId + ":" + toolCallId;
+    }
+
+    /**
+     * Interrupt identity: {@code scopeId:toolCallId} when the scope is known, otherwise the tool
+     * call id alone.
+     *
+     * @param scopeId execution turn id or originating reply id, may be {@code null}
+     * @param toolCallId tool call id
+     * @return stable interrupt id
+     */
+    public static String interruptId(String scopeId, String toolCallId) {
+        if (!isBlank(scopeId)) {
+            return scopeId + ":" + toolCallId;
         }
         return toolCallId;
     }

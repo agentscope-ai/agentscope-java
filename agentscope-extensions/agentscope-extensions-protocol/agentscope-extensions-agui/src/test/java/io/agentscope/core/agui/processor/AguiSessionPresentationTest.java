@@ -18,6 +18,7 @@ package io.agentscope.core.agui.processor;
 import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.REASONING_MESSAGE_ID;
 import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.TEXT_MESSAGE_ID;
 import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.THREAD_ID;
+import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.TURN_ID;
 import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.append;
 import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.message;
 import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.modelChunk;
@@ -63,9 +64,11 @@ class AguiSessionPresentationTest {
             assertEquals(TEXT_MESSAGE_ID, start.messageId());
             AguiEvent.TextMessageContent first =
                     assertInstanceOf(AguiEvent.TextMessageContent.class, events.get(1));
+            assertEquals(TURN_ID, first.messageId());
             assertEquals("Hel", first.delta());
             AguiEvent.TextMessageContent second =
                     assertInstanceOf(AguiEvent.TextMessageContent.class, events.get(2));
+            assertEquals(TURN_ID, second.messageId());
             assertEquals("lo", second.delta());
         } finally {
             log.release(writer);
@@ -308,10 +311,38 @@ class AguiSessionPresentationTest {
 
             AguiSessionPresentation presentation = presentation(log);
             assertEquals(1, presentation.interrupts().size());
-            assertEquals("tool-1", presentation.interrupts().get(0).id());
+            assertEquals(TURN_ID + ":tool-1", presentation.interrupts().get(0).id());
 
             append(log, writer, "interaction/resolved", Map.of("requestId", "tool-1"));
             assertTrue(presentation(log).interrupts().isEmpty());
+        } finally {
+            log.release(writer);
+        }
+    }
+
+    @Test
+    void replaysBothInterruptKindsWithTurnScopedIds() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        try {
+            Map<String, Object> confirm = new LinkedHashMap<>();
+            confirm.put("requestId", "tool-1");
+            confirm.put("kind", "confirmation");
+            confirm.put(
+                    "call", toolUseBlock("tool-1", "search", Map.of("q", "x"), "{\"q\":\"x\"}"));
+            append(log, writer, "interaction/requested", confirm);
+
+            Map<String, Object> external = new LinkedHashMap<>();
+            external.put("requestId", "tool-2");
+            external.put("kind", "external");
+            external.put(
+                    "call", toolUseBlock("tool-2", "lookup", Map.of("q", "y"), "{\"q\":\"y\"}"));
+            append(log, writer, "interaction/requested", external);
+
+            List<String> ids =
+                    presentation(log).interrupts().stream().map(AguiEvent.Interrupt::id).toList();
+
+            assertEquals(List.of(TURN_ID + ":tool-1", TURN_ID + ":tool-2"), ids);
         } finally {
             log.release(writer);
         }
@@ -333,9 +364,12 @@ class AguiSessionPresentationTest {
             List<AguiEvent> events =
                     replay(log, AguiAdapterConfig.builder().enableReasoning(true).build());
             assertEquals(2, events.size());
-            assertInstanceOf(AguiEvent.ReasoningMessageStart.class, events.get(0));
+            AguiEvent.ReasoningMessageStart start =
+                    assertInstanceOf(AguiEvent.ReasoningMessageStart.class, events.get(0));
+            assertEquals(TURN_ID + ":reasoning", start.messageId());
             AguiEvent.ReasoningMessageContent content =
                     assertInstanceOf(AguiEvent.ReasoningMessageContent.class, events.get(1));
+            assertEquals(TURN_ID + ":reasoning", content.messageId());
             assertEquals("think", content.delta());
         } finally {
             log.release(writer);

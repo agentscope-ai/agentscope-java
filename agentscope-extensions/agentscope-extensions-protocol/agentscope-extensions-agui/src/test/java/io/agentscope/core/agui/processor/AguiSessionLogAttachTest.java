@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.processor;
 
 import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.THREAD_ID;
+import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.TURN_ID;
 import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.append;
 import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.assistantToolCall;
 import static io.agentscope.core.agui.processor.AguiSessionLogTestSupport.message;
@@ -32,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agui.AguiInterrupts;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiFramedEvent;
@@ -1177,6 +1179,167 @@ class AguiSessionLogAttachTest {
                 "a tail failure must degrade to log replay, not abort the stream");
         assertTrue(
                 frames.stream().anyMatch(frame -> frame.event() instanceof AguiEvent.RunFinished));
+    }
+
+    @Test
+    void attachReplayAndLiveTailUseTheSameTurnScopedTextMessageId() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        long firstChunk;
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            firstChunk =
+                    append(
+                            log,
+                            writer,
+                            "model/chunk",
+                            modelChunk("call-1", "chat-1", textBlock("a")));
+        } finally {
+            log.release(writer);
+        }
+        AguiRunBroadcaster broadcaster = new AguiRunBroadcaster();
+        broadcaster.open(THREAD_ID, "exec-1");
+        broadcaster.publish(
+                THREAD_ID,
+                "exec-1",
+                List.of(
+                        new AguiFramedEvent(
+                                -1,
+                                firstChunk,
+                                new AguiEvent.TextMessageStart(
+                                        THREAD_ID, "run-1", TURN_ID, "assistant")),
+                        new AguiFramedEvent(
+                                firstChunk,
+                                firstChunk,
+                                new AguiEvent.TextMessageContent(
+                                        THREAD_ID, "run-1", TURN_ID, "a"))));
+        AguiRunBroadcaster.LiveRun live = broadcaster.live(THREAD_ID);
+        broadcaster.publish(
+                THREAD_ID,
+                "exec-1",
+                new AguiFramedEvent(
+                        firstChunk + 1,
+                        firstChunk + 1,
+                        new AguiEvent.TextMessageContent(THREAD_ID, "run-1", TURN_ID, "b")));
+        broadcaster.close(THREAD_ID, "exec-1");
+
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attach(input(), log, firstChunk - 1, live, "exec-1", CONFIG)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        List<String> startIds =
+                frames.stream()
+                        .filter(frame -> frame.event() instanceof AguiEvent.TextMessageStart)
+                        .map(frame -> ((AguiEvent.TextMessageStart) frame.event()).messageId())
+                        .toList();
+        List<String> contentIds =
+                frames.stream()
+                        .filter(frame -> frame.event() instanceof AguiEvent.TextMessageContent)
+                        .map(frame -> ((AguiEvent.TextMessageContent) frame.event()).messageId())
+                        .distinct()
+                        .toList();
+        assertEquals(List.of(TURN_ID), startIds);
+        assertEquals(List.of(TURN_ID), contentIds);
+    }
+
+    @Test
+    void attachDoesNotDuplicateTheAssistantMessageAcrossTheHandoff() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        long firstChunk;
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            firstChunk =
+                    append(
+                            log,
+                            writer,
+                            "model/chunk",
+                            modelChunk("call-1", "chat-1", textBlock("a")));
+        } finally {
+            log.release(writer);
+        }
+        AguiRunBroadcaster broadcaster = new AguiRunBroadcaster();
+        broadcaster.open(THREAD_ID, "exec-1");
+        broadcaster.publish(
+                THREAD_ID,
+                "exec-1",
+                List.of(
+                        new AguiFramedEvent(
+                                -1,
+                                firstChunk,
+                                new AguiEvent.TextMessageStart(
+                                        THREAD_ID, "run-1", TURN_ID, "assistant")),
+                        new AguiFramedEvent(
+                                firstChunk,
+                                firstChunk,
+                                new AguiEvent.TextMessageContent(
+                                        THREAD_ID, "run-1", TURN_ID, "a"))));
+        AguiRunBroadcaster.LiveRun live = broadcaster.live(THREAD_ID);
+        broadcaster.publish(
+                THREAD_ID,
+                "exec-1",
+                new AguiFramedEvent(
+                        firstChunk + 1,
+                        firstChunk + 1,
+                        new AguiEvent.TextMessageContent(THREAD_ID, "run-1", TURN_ID, "b")));
+        broadcaster.close(THREAD_ID, "exec-1");
+
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attach(input(), log, firstChunk - 1, live, "exec-1", CONFIG)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        assertEquals(
+                1,
+                frames.stream()
+                        .filter(frame -> frame.event() instanceof AguiEvent.TextMessageStart)
+                        .count(),
+                "the assistant message must be announced once across the handoff");
+        List<String> deltas =
+                frames.stream()
+                        .filter(frame -> frame.event() instanceof AguiEvent.TextMessageContent)
+                        .map(frame -> ((AguiEvent.TextMessageContent) frame.event()).delta())
+                        .toList();
+        assertEquals(List.of("a", "b"), deltas, "the replay boundary must not repeat text");
+    }
+
+    @Test
+    void attachReplayAndLiveInterruptsShareTheTurnScopedId() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            Map<String, Object> request = new LinkedHashMap<>();
+            request.put("requestId", "tool-1");
+            request.put("kind", "confirmation");
+            request.put(
+                    "call", toolUseBlock("tool-1", "search", Map.of("q", "x"), "{\"q\":\"x\"}"));
+            append(log, writer, "interaction/requested", request);
+            append(log, writer, "run/end", Map.of("status", "completed"));
+        } finally {
+            log.release(writer);
+        }
+
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attach(input(), log, 0, "exec-1", CONFIG, POLL)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        AguiEvent.RunFinished finished =
+                (AguiEvent.RunFinished) frames.get(frames.size() - 1).event();
+        AguiEvent.RunFinishedInterruptOutcome outcome =
+                (AguiEvent.RunFinishedInterruptOutcome) finished.outcome();
+        String replayId = outcome.interrupts().get(0).id();
+        String liveId =
+                AguiInterrupts.permissionConfirm(
+                                TURN_ID, "reply-1", toolUse("tool-1", "search", "{\"q\":\"x\"}"))
+                        .id();
+        assertEquals(TURN_ID + ":tool-1", replayId);
+        assertEquals(replayId, liveId);
     }
 
     private static RunAgentInput input() {
