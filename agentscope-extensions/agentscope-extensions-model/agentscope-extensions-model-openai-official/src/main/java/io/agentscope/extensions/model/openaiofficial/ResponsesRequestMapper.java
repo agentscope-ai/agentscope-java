@@ -86,6 +86,9 @@ import java.util.function.Function;
  */
 final class ResponsesRequestMapper {
 
+    // Keep inline documents consistent with MediaUtils.fileToBase64's existing limit.
+    private static final long MAX_DOCUMENT_SIZE_BYTES = 50L * 1024 * 1024;
+
     private ResponsesRequestMapper() {}
 
     /**
@@ -939,9 +942,7 @@ final class ResponsesRequestMapper {
             return ResponseInputFile.builder().fileId(fileId.getFileId()).build();
         }
         if (source instanceof Base64Source base64) {
-            if (base64.getData().isBlank()) {
-                throw new OpenAIOfficialModelException("Document Base64 data must not be blank.");
-            }
+            validateDocumentData(base64.getData());
             String mimeType = documentMimeType(document, base64.getMediaType());
             return ResponseInputFile.builder()
                     .filename(documentFilename(document.getName(), mimeType))
@@ -976,6 +977,7 @@ final class ResponsesRequestMapper {
                 }
                 String mimeType = documentMimeType(document, sourceMimeType);
                 String data = MediaUtils.fileToBase64(path.toString());
+                validateDocumentData(data);
                 String name = document.getName();
                 if (name == null || name.isBlank()) {
                     name = path.getFileName().toString();
@@ -991,6 +993,23 @@ final class ResponsesRequestMapper {
         }
         throw new OpenAIOfficialModelException(
                 "Unsupported document source type: " + source.getClass().getSimpleName());
+    }
+
+    private static void validateDocumentData(String data) {
+        if (data.isBlank()) {
+            throw new OpenAIOfficialModelException("Document data must not be empty.");
+        }
+        // Raw Base64 may be padded or unpadded. Avoid allocating a decoded copy just to size it.
+        long decodedSize = (long) data.length() * 3 / 4;
+        if (data.endsWith("==")) {
+            decodedSize -= 2;
+        } else if (data.endsWith("=")) {
+            decodedSize--;
+        }
+        if (decodedSize > MAX_DOCUMENT_SIZE_BYTES) {
+            throw new OpenAIOfficialModelException(
+                    "Document data exceeds the 50 MB decoded-size limit.");
+        }
     }
 
     private static String documentMimeType(DocumentBlock document, String sourceMimeType) {

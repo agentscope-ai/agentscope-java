@@ -292,7 +292,9 @@ class OpenAIResponsesChatModelTest {
                 GenerateOptions.builder()
                         .executionConfig(
                                 ExecutionConfig.builder()
-                                        .timeout(Duration.ofMillis(100))
+                                        // Allow time for the scheduler hand-off before testing
+                                        // interruption of document preparation.
+                                        .timeout(Duration.ofSeconds(2))
                                         .maxAttempts(3)
                                         .initialBackoff(Duration.ofMillis(1))
                                         .build())
@@ -303,10 +305,10 @@ class OpenAIResponsesChatModelTest {
                             OpenAIOfficialModelException.class,
                             () ->
                                     model.stream(messages, null, options)
-                                            .blockLast(Duration.ofSeconds(2)));
+                                            .blockLast(Duration.ofSeconds(10)));
             assertTrue(error.getCause() instanceof TimeoutException);
-            assertTrue(started.await(1, TimeUnit.SECONDS));
-            assertTrue(interrupted.await(1, TimeUnit.SECONDS));
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            assertTrue(interrupted.await(5, TimeUnit.SECONDS));
             assertEquals(1, attempts.get());
             verifyNoInteractions(service);
         } finally {

@@ -87,8 +87,10 @@ Request preparation uses the configured execution timeout and is not retried.
 Provider calls retain their existing timeout and retry configuration. Preparation
 and provider calls have separate timeout budgets, not a shared overall deadline.
 
-For inline data, use `Base64Source` with raw Base64 bytes and the MIME type. For
-local documents, `DocumentBlock.mimeType` takes priority over `URLSource.mimeType`
+For inline data, use `Base64Source` with raw Base64 bytes and the MIME type. Both
+local and Base64 documents must be non-empty. Base64 documents use the same 50 MB
+per-file limit, measured by decoded size. For local documents,
+`DocumentBlock.mimeType` takes priority over `URLSource.mimeType`
 and extension-based inference for common document formats, including PDF, Word,
 spreadsheets, presentations, and text files. If the local MIME type cannot be
 inferred, mapping fails with an error asking for an explicit MIME type.

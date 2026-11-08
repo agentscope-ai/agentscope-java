@@ -84,6 +84,8 @@ HTTP(S) 来源会直接作为 `file_url` 发送给 OpenAI，AgentScope 不下载
 配置。准备阶段与提供方调用分别计时，不共享一个覆盖整个请求的截止时间。
 
 使用 `Base64Source` 传入已经编码的文件时，提供原始 Base64 字符串和 MIME 类型。
+本地文档和 Base64 文档都不能为空。Base64 文档按解码后的大小沿用相同的单文件
+50 MB 限制。
 本地文档的 MIME 类型优先使用 `DocumentBlock.mimeType`，其次使用
 `URLSource.mimeType`，最后根据扩展名推断 PDF、Word、电子表格、演示文稿和文本等
 常见文档格式。无法推断本地文件的 MIME 类型时，映射会报错，提示显式填写 MIME 类型。

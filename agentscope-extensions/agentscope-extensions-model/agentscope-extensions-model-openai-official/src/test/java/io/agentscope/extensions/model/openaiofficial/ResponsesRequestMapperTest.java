@@ -65,6 +65,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Nested;
@@ -893,6 +894,33 @@ class ResponsesRequestMapperTest {
             assertEquals("document." + extension, file.filename().orElseThrow());
         }
 
+        @ParameterizedTest
+        @ValueSource(strings = {"text/plain;charset=utf-8", "TEXT/PLAIN;charset=UTF-8"})
+        void base64MimeParametersArePreservedWithTheDefaultFilename(String mimeType) {
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new Base64Source(mimeType, "YWJj"))
+                                    .build());
+            assertEquals("document.txt", file.filename().orElseThrow());
+            assertEquals("data:" + mimeType + ";base64,YWJj", file.fileData().orElseThrow());
+        }
+
+        @Test
+        void localDocumentPreservesDeclaredMimeParameters() throws Exception {
+            Path path = directory.resolve("report.txt");
+            Files.writeString(path, "abc");
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new URLSource(path.toString()))
+                                    .mimeType("text/plain;charset=utf-8")
+                                    .build());
+            assertEquals("report.txt", file.filename().orElseThrow());
+            assertEquals(
+                    "data:text/plain;charset=utf-8;base64,YWJj", file.fileData().orElseThrow());
+        }
+
         @Test
         void explicitNameDoesNotRequireAMimeTypeWhitelist() {
             ResponseInputFile file =
@@ -1075,6 +1103,58 @@ class ResponsesRequestMapperTest {
                                                     .build()));
             assertTrue(error.getCause() instanceof java.io.IOException);
             assertTrue(error.getCause().getMessage().contains("File too large"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(booleans = {true, false})
+        void base64AtTheDecodedSizeLimitIsAccepted(boolean padded) {
+            Base64.Encoder encoder = Base64.getEncoder();
+            if (!padded) {
+                encoder = encoder.withoutPadding();
+            }
+            String data = encoder.encodeToString(new byte[50 * 1024 * 1024]);
+            ResponseInputFile file =
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new Base64Source("application/pdf", data))
+                                    .build());
+            assertEquals("document.pdf", file.filename().orElseThrow());
+            assertEquals(
+                    "data:application/pdf;base64,".length() + data.length(),
+                    file.fileData().orElseThrow().length());
+        }
+
+        @ParameterizedTest
+        @ValueSource(ints = {1, 2, 3})
+        void oversizedBase64IsRejectedRegardlessOfSizeMetadata(int extraBytes) {
+            String data =
+                    Base64.getEncoder().encodeToString(new byte[50 * 1024 * 1024 + extraBytes]);
+            OpenAIOfficialModelException error =
+                    assertThrows(
+                            OpenAIOfficialModelException.class,
+                            () ->
+                                    file(
+                                            DocumentBlock.builder()
+                                                    .source(
+                                                            new Base64Source(
+                                                                    "application/pdf", data))
+                                                    .sizeBytes(1L)
+                                                    .build()));
+            assertTrue(error.getMessage().contains("50 MB"));
+        }
+
+        @Test
+        void emptyLocalDocumentIsRejected() throws Exception {
+            Path path = Files.createFile(directory.resolve("empty.pdf"));
+            OpenAIOfficialModelException error =
+                    assertThrows(
+                            OpenAIOfficialModelException.class,
+                            () ->
+                                    file(
+                                            DocumentBlock.builder()
+                                                    .source(new URLSource(path.toString()))
+                                                    .build()));
+            assertTrue(error.getMessage().contains("must not be empty"));
         }
 
         @Test
