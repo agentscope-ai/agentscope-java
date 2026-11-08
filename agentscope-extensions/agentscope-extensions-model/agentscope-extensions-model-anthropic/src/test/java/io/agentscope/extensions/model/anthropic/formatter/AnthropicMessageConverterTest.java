@@ -634,6 +634,59 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testAssistantWithClientToolResultPreservesAssistantContent() {
+        Msg mixedAssistant =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Checking sales.").build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_sales")
+                                                .name("get_sales")
+                                                .input(Map.of("store_id", "S001"))
+                                                .build(),
+                                        ToolResultBlock.builder()
+                                                .id("call_sales")
+                                                .name("get_sales")
+                                                .output(TextBlock.builder().text("100").build())
+                                                .build()))
+                        .build();
+        Msg nextAssistant =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Sales are 100.").build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(mixedAssistant, nextAssistant));
+
+        assertEquals(3, result.size());
+        assertEquals(MessageParam.Role.ASSISTANT, result.get(0).role());
+        List<ContentBlockParam> assistantBlocks = result.get(0).content().asBlockParams();
+        assertEquals(2, assistantBlocks.size());
+        assertEquals("Checking sales.", assistantBlocks.get(0).asText().text());
+        assertEquals("call_sales", assistantBlocks.get(1).asToolUse().id());
+        assertEquals(MessageParam.Role.USER, result.get(1).role());
+        List<ContentBlockParam> resultBlocks = result.get(1).content().asBlockParams();
+        assertEquals(1, resultBlocks.size());
+        assertEquals("call_sales", resultBlocks.get(0).asToolResult().toolUseId());
+        assertEquals(
+                "100",
+                resultBlocks
+                        .get(0)
+                        .asToolResult()
+                        .content()
+                        .orElseThrow()
+                        .asBlocks()
+                        .get(0)
+                        .asText()
+                        .text());
+        assertEquals(MessageParam.Role.ASSISTANT, result.get(2).role());
+        assertEquals(
+                "Sales are 100.", result.get(2).content().asBlockParams().get(0).asText().text());
+    }
+
+    @Test
     void testConvertToolResultBlockNullOutput() {
         // Builder without output() call will have null output, which becomes empty list
         Msg msg =

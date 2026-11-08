@@ -81,20 +81,22 @@ public class AnthropicMessageConverter {
     public List<MessageParam> convert(List<Msg> messages) {
         List<MessageParam> result = new ArrayList<>();
 
-        for (int i = 0; i < messages.size(); i++) {
+        for (int i = 0; i < messages.size(); ) {
             Msg msg = messages.get(i);
             if (!hasClientToolResults(msg)) {
                 MessageParam param = convertMessageContent(msg, msg.getContent(), i == 0);
                 if (param != null) {
                     result.add(param);
                 }
+                i++;
                 continue;
             }
 
             List<ContentBlockParam> toolResults = new ArrayList<>();
-            List<ContentBlockParam> otherContent = new ArrayList<>();
+            List<ContentBlockParam> trailingContent = new ArrayList<>();
+            int end = i;
             do {
-                msg = messages.get(i);
+                msg = messages.get(end);
                 List<ContentBlock> nonToolBlocks = new ArrayList<>();
                 for (ContentBlock block : msg.getContent()) {
                     if (block instanceof ToolResultBlock tr && !tr.isServerTool()) {
@@ -103,21 +105,21 @@ public class AnthropicMessageConverter {
                         nonToolBlocks.add(block);
                     }
                 }
-                MessageParam regular = convertMessageContent(msg, nonToolBlocks, i == 0);
+                MessageParam regular = convertMessageContent(msg, nonToolBlocks, end == 0);
                 if (regular != null) {
-                    if (regular.role().equals(Role.ASSISTANT)) {
+                    if (msg.getRole() == MsgRole.ASSISTANT) {
                         result.add(regular);
                     } else {
-                        otherContent.addAll(regular.content().asBlockParams());
+                        trailingContent.addAll(regular.content().asBlockParams());
                     }
                 }
-                i++;
-            } while (i < messages.size()
-                    && messages.get(i).getRole() != MsgRole.ASSISTANT
-                    && hasClientToolResults(messages.get(i)));
-            i--;
+                end++;
+            } while (end < messages.size()
+                    && messages.get(end).getRole() != MsgRole.ASSISTANT
+                    && hasClientToolResults(messages.get(end)));
+            i = end;
 
-            toolResults.addAll(otherContent);
+            toolResults.addAll(trailingContent);
             result.add(
                     MessageParam.builder()
                             .role(Role.USER)
