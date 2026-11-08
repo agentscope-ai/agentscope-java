@@ -162,7 +162,13 @@ public class WorkspaceManager implements AutoCloseable {
             WorkspaceIndex index,
             NamespaceFactory namespaceFactory,
             boolean ownsIndex) {
-        this.workspace = workspace;
+        // Normalize eagerly (absolute + no redundant segments). The field feeds element-wise
+        // containment guards such as `resolved.normalize().startsWith(workspace)` in
+        // readManagedWorkspaceFileUtf8; when a caller passes a relative path with redundant
+        // segments (e.g. "./ws" or "target/./ws") the raw field can never match its own
+        // normalized resolution, so every managed-file read was rejected as a traversal
+        // and memory_search saw empty content (#1441).
+        this.workspace = workspace == null ? null : workspace.toAbsolutePath().normalize();
         this.filesystem = filesystem;
         this.index = index;
         this.namespaceFactory = namespaceFactory;
