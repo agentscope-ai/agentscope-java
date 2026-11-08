@@ -107,7 +107,7 @@ AG-UI 恢复路径是 AgentScope 扩展，不属于 AG-UI 协议。标准 `/agui
 - 执行不归浏览器请求所有：长期保留 `HarnessAgent` 并通过 `AgentSession` 执行，或使用 `agentscope.agui.interrupt-on-disconnect=false` 加长期存活的 Agent。
 - 解析出的 Agent 是 `HarnessAgent`，并使用 `SessionHistoryMode.EVENT_LOG`。
 - 应用保存 `threadId`、执行的 `runId` 和最后应用的 cursor。
-- 应用历史与 `SessionLog` 使用相同的消息身份，包括 assistant 消息中的工具调用。
+- 应用历史与 `SessionLog` 使用相同的消息身份，包括 assistant 消息中的工具调用，以及按 turn 复用的文本/推理 id。
 
 ### 应用历史 + attach
 
@@ -143,8 +143,9 @@ attach 是已有 run 的重连路径。它是只读观察者：不启动、不�
 - run 仍在执行时，attach 通过轮询跟随会话日志。速度较慢，但结果始终正确。
 - run 已结束时，排空剩余事件并以 `RUN_FINISHED` / `RUN_ERROR` 结束。
 - 游标之后的文本和工具输出映射为 `TEXT_MESSAGE_*`、`REASONING_MESSAGE_*`、`TOOL_CALL_*`、`RUN_*`；
+- assistant 文本使用已提交的 `SessionEvent.turnId()` 作为 `messageId`；推理使用 `turnId + ":reasoning"`。`modelCallId` 只用于工具调用归属，不再参与文本或推理消息 id。同一 turn 内工具调用之后的文本复用该 id：已关闭的 id 通过新的 `TEXT_MESSAGE_START` 重新打开，仍处于 open 状态的 id 不会重复 Start；
 - 已经在应用历史中的工具调用不会重新 Start；后续结果以 `TOOL_CALL_RESULT` 关联已有 toolCallId；
-- `RUN_STARTED` 由已提交的 `run/start` 事件产生，游标越过它时不会再次宣告新 run。
+- `RUN_STARTED` 由已提交的 `run/start` 事件产生。游标已越过它时，attach 会先补发一个合成的不带游标的 `RUN_STARTED`，使官方 AG-UI 客户端仍能接受该流。
 
 游标是原生 `SessionEvent.seq()`，不是 AG-UI 字段，也不能与其他会话或 Service SSE 游标混用。
 

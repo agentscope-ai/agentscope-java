@@ -107,7 +107,7 @@ The AG-UI recovery path is an AgentScope extension, not part of the AG-UI protoc
 - Execution is owned outside the browser request: retain a `HarnessAgent` and run the task through `AgentSession`, or keep the original run alive with `agentscope.agui.interrupt-on-disconnect=false` and a long-lived agent.
 - The resolved agent is a `HarnessAgent` with `SessionHistoryMode.EVENT_LOG`.
 - The application stores `threadId`, the execution `runId`, and the last applied cursor.
-- History and `SessionLog` share the same message identities, including assistant tool calls.
+- History and `SessionLog` share the same message identities, including assistant tool calls and turn-scoped text/reasoning ids.
 
 ### Application history + attach
 
@@ -143,8 +143,9 @@ Attach is the reconnect path of an existing run. It is a read-only observer: it 
 - While the run is still active, attach follows the session log by polling. This is slower than a live feed, but always correct.
 - If the run already ended, it drains the remaining events and finishes with `RUN_FINISHED` or `RUN_ERROR`.
 - Text and tool output after the cursor become `TEXT_MESSAGE_*`, `REASONING_MESSAGE_*`, `TOOL_CALL_*`, and `RUN_*` events.
+- Assistant text uses the committed `SessionEvent.turnId()` as `messageId`; reasoning uses `turnId + ":reasoning"`. `modelCallId` is only used to attribute tool calls, not to name text or reasoning messages. Text after a tool call inside one turn reuses the id: a closed id is reopened with a new `TEXT_MESSAGE_START`, while an id that is still open is not started twice.
 - A tool call that is already part of the application history is not restarted: a later result becomes `TOOL_CALL_RESULT` for the existing tool-call id.
-- `RUN_STARTED` is replayed from the committed `run/start` event, so a cursor past it does not announce a new run.
+- `RUN_STARTED` is projected from the committed `run/start` event. When the cursor already passed it, attach emits one synthetic, uncursored `RUN_STARTED` first so official AG-UI clients still accept the stream.
 
 The cursor is a native `SessionEvent.seq()`, not an AG-UI field and not interchangeable with another session or the Service SSE cursor.
 
