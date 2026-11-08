@@ -338,13 +338,14 @@ class AguiAgentAdapterV2Test {
         @Test
         void testTextSegmentsSeparatedByToolCallShareOneMessageIdPerAssistantTurn() {
             String turnId = "turn-assistant";
+            TextBlockDeltaEvent firstDelta = new TextBlockDeltaEvent("call-1", "text", "before");
             List<AguiEvent> events =
                     runReActEvents(
                             onTurn(
                                     turnId,
                                     new AgentStartEvent("thread-v2", "reply-assistant", "react"),
                                     new TextBlockStartEvent("call-1", "text"),
-                                    new TextBlockDeltaEvent("call-1", "text", "before"),
+                                    firstDelta,
                                     new TextBlockEndEvent("call-1", "text"),
                                     new ToolCallStartEvent("call-1", "tool-1", "lookup"),
                                     new ToolCallEndEvent("call-1", "tool-1", "lookup"),
@@ -370,10 +371,11 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> textEvents =
                     events.stream().filter(AguiAgentAdapterV2Test::isTextMessage).toList();
             assertEquals(6, textEvents.size());
+            String expectedTextMessageId = firstDelta.getExecution().turnId();
             assertTrue(
-                    textEvents.stream().allMatch(event -> turnId.equals(textMessageId(event))),
-                    "one assistant turn pins the session turn id as the text message id: "
-                            + textEvents);
+                    textEvents.stream()
+                            .allMatch(event -> expectedTextMessageId.equals(textMessageId(event))),
+                    "text message id must equal the event execution turn id: " + textEvents);
             assertEquals(
                     2,
                     textEvents.stream()
@@ -446,7 +448,7 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testTurnMessageIdDoesNotAffectReasoningMessageIds() {
+        void testTextMessageIdDoesNotCollideWithReasoningMessageId() {
             String turnId = "turn-assistant";
             List<AguiEvent> events =
                     runReActEvents(
@@ -472,18 +474,15 @@ class AguiAgentAdapterV2Test {
                             .filter(AguiAgentAdapterV2Test::isTextMessage)
                             .map(AguiAgentAdapterV2Test::textMessageId)
                             .toList());
-            assertEquals(
-                    List.of(
-                            "call-1-thinking",
-                            "call-1-thinking",
-                            "call-1-thinking",
-                            "call-2-thinking-2",
-                            "call-2-thinking-2",
-                            "call-2-thinking-2"),
+            List<String> reasoningMessageIds =
                     events.stream()
                             .filter(AguiAgentAdapterV2Test::isReasoningMessage)
                             .map(AguiAgentAdapterV2Test::reasoningMessageId)
-                            .toList());
+                            .toList();
+            assertFalse(reasoningMessageIds.isEmpty());
+            assertTrue(
+                    reasoningMessageIds.stream().noneMatch(turnId::equals),
+                    "reasoning must not share the bare text id: " + reasoningMessageIds);
         }
 
         @Test
@@ -494,13 +493,15 @@ class AguiAgentAdapterV2Test {
                     runReActEvents(
                             new AgentStartEvent("thread-v2", "reply-1", "react")
                                     .withExecution(firstTurn),
-                            new TextBlockDeltaEvent("call-1", "text", "first"),
-                            new TextBlockEndEvent("call-1", "text"),
+                            new TextBlockDeltaEvent("call-1", "text", "first")
+                                    .withExecution(firstTurn),
+                            new TextBlockEndEvent("call-1", "text").withExecution(firstTurn),
                             new AgentEndEvent("reply-1").withExecution(firstTurn),
                             new AgentStartEvent("thread-v2", "reply-2", "react")
                                     .withExecution(secondTurn),
-                            new TextBlockDeltaEvent("call-2", "text", "second"),
-                            new TextBlockEndEvent("call-2", "text"),
+                            new TextBlockDeltaEvent("call-2", "text", "second")
+                                    .withExecution(secondTurn),
+                            new TextBlockEndEvent("call-2", "text").withExecution(secondTurn),
                             new AgentEndEvent("reply-2").withExecution(secondTurn));
 
             assertEquals(
@@ -513,6 +514,7 @@ class AguiAgentAdapterV2Test {
 
         @Test
         void testForwardedTextDoesNotInheritParentTurnMessageId() {
+            ExecutionIdentity parentTurn = turnIdentity("parent-turn");
             TextBlockDeltaEvent childDelta = new TextBlockDeltaEvent("child-call", "text", "child");
             childDelta.withSource("thread-v2/researcher/child-session");
             TextBlockEndEvent childEnd = new TextBlockEndEvent("child-call", "text");
@@ -521,15 +523,16 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> events =
                     runReActEvents(
                             new AgentStartEvent("thread-v2", "reply-parent", "react")
-                                    .withExecution(turnIdentity("parent-turn")),
-                            new TextBlockDeltaEvent("call-1", "text", "before"),
-                            new TextBlockEndEvent("call-1", "text"),
+                                    .withExecution(parentTurn),
+                            new TextBlockDeltaEvent("call-1", "text", "before")
+                                    .withExecution(parentTurn),
+                            new TextBlockEndEvent("call-1", "text").withExecution(parentTurn),
                             childDelta,
                             childEnd,
-                            new TextBlockDeltaEvent("call-2", "text", "after"),
-                            new TextBlockEndEvent("call-2", "text"),
-                            new AgentEndEvent("reply-parent")
-                                    .withExecution(turnIdentity("parent-turn")));
+                            new TextBlockDeltaEvent("call-2", "text", "after")
+                                    .withExecution(parentTurn),
+                            new TextBlockEndEvent("call-2", "text").withExecution(parentTurn),
+                            new AgentEndEvent("reply-parent").withExecution(parentTurn));
 
             List<AguiEvent> textEvents =
                     events.stream().filter(AguiAgentAdapterV2Test::isTextMessage).toList();
@@ -548,6 +551,7 @@ class AguiAgentAdapterV2Test {
 
         @Test
         void testForwardedTextKeepsItsOwnMessageIdWhenSubagentEventsAreNative() {
+            ExecutionIdentity parentTurn = turnIdentity("parent-turn");
             TextBlockDeltaEvent childDelta = new TextBlockDeltaEvent("child-call", "text", "child");
             childDelta.withSource("thread-v2/researcher/child-session");
             TextBlockEndEvent childEnd = new TextBlockEndEvent("child-call", "text");
@@ -557,15 +561,16 @@ class AguiAgentAdapterV2Test {
                     runReActEvents(
                             AguiAdapterConfig.builder().emitSubagentEventsAsNative(true).build(),
                             new AgentStartEvent("thread-v2", "reply-parent", "react")
-                                    .withExecution(turnIdentity("parent-turn")),
-                            new TextBlockDeltaEvent("call-1", "text", "before"),
-                            new TextBlockEndEvent("call-1", "text"),
+                                    .withExecution(parentTurn),
+                            new TextBlockDeltaEvent("call-1", "text", "before")
+                                    .withExecution(parentTurn),
+                            new TextBlockEndEvent("call-1", "text").withExecution(parentTurn),
                             childDelta,
                             childEnd,
-                            new TextBlockDeltaEvent("call-2", "text", "after"),
-                            new TextBlockEndEvent("call-2", "text"),
-                            new AgentEndEvent("reply-parent")
-                                    .withExecution(turnIdentity("parent-turn")));
+                            new TextBlockDeltaEvent("call-2", "text", "after")
+                                    .withExecution(parentTurn),
+                            new TextBlockEndEvent("call-2", "text").withExecution(parentTurn),
+                            new AgentEndEvent("reply-parent").withExecution(parentTurn));
 
             List<String> parentMessageIds =
                     events.stream()
