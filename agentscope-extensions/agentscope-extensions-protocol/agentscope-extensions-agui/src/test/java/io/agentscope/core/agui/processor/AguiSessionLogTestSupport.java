@@ -40,6 +40,8 @@ final class AguiSessionLogTestSupport {
     static final String THREAD_ID = "thread-1";
     static final String RUN_ID = "exec-1";
     static final String TURN_ID = "turn-1";
+    static final String TEXT_MESSAGE_ID = TURN_ID;
+    static final String REASONING_MESSAGE_ID = TURN_ID + ":reasoning";
 
     private AguiSessionLogTestSupport() {}
 
