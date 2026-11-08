@@ -97,7 +97,7 @@
         <opentelemetry-reactor.version>2.33.1-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.41.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.2.0</redisson.version>
-        <a2a-java-sdk.version>1.4.0.Final</a2a-java-sdk.version>
+        <a2a-java-sdk.version>1.5.0.Final</a2a-java-sdk.version>
         <jedis.version>7.4.1</jedis.version>
         <lettuce.version>6.4.2.RELEASE</lettuce.version>
         <mongodb-driver.version>5.3.1</mongodb-driver.version>
