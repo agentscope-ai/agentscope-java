@@ -84,7 +84,7 @@ public class AnthropicMessageConverter {
         for (int i = 0; i < messages.size(); ) {
             Msg msg = messages.get(i);
             if (!hasClientToolResults(msg)) {
-                MessageParam param = convertMessageContent(msg, msg.getContent(), i == 0);
+                MessageParam param = convertMessageContent(msg, msg.getContent());
                 if (param != null) {
                     result.add(param);
                 }
@@ -105,7 +105,7 @@ public class AnthropicMessageConverter {
                         nonToolBlocks.add(block);
                     }
                 }
-                MessageParam regular = convertMessageContent(msg, nonToolBlocks, end == 0);
+                MessageParam regular = convertMessageContent(msg, nonToolBlocks);
                 if (regular != null) {
                     if (msg.getRole() == MsgRole.ASSISTANT) {
                         result.add(regular);
@@ -137,9 +137,8 @@ public class AnthropicMessageConverter {
     /**
      * Convert message content to MessageParam.
      */
-    private MessageParam convertMessageContent(
-            Msg msg, List<ContentBlock> blocks, boolean isFirstMessage) {
-        Role role = convertRole(msg.getRole(), isFirstMessage);
+    private MessageParam convertMessageContent(Msg msg, List<ContentBlock> blocks) {
+        Role role = convertRole(msg.getRole());
         List<ContentBlockParam> contentBlocks = new ArrayList<>();
 
         for (ContentBlock block : blocks) {
@@ -150,7 +149,6 @@ public class AnthropicMessageConverter {
                         ContentBlockParam.ofText(
                                 TextBlockParam.builder().text(hb.getHint()).build()));
             } else if (block instanceof ThinkingBlock thinkingBlock) {
-                // Anthropic supports thinking blocks natively
                 contentBlocks.add(
                         ContentBlockParam.ofText(
                                 TextBlockParam.builder()
@@ -325,10 +323,9 @@ public class AnthropicMessageConverter {
      * Convert AgentScope MsgRole to Anthropic Role. Important: Anthropic only allows the first
      * message to be system. Non-first system messages are converted to user.
      */
-    private Role convertRole(MsgRole msgRole, boolean isFirstMessage) {
+    private Role convertRole(MsgRole msgRole) {
         return switch (msgRole) {
-            case SYSTEM -> isFirstMessage ? Role.USER : Role.USER; // Anthropic uses user for
-            // system messages
+            case SYSTEM -> Role.USER;
             case USER -> Role.USER;
             case ASSISTANT -> Role.ASSISTANT;
             case TOOL -> Role.USER; // Tool results are always user messages
