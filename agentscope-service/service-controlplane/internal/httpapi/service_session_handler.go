@@ -458,6 +458,17 @@ func (s *Server) publicSessionState(c *gin.Context, status string) {
 		return
 	}
 	err := s.store.WithSessionLock(c, "public-session:"+v.ID.String(), func(ctx context.Context) error {
+		// Terminal states are projected lazily on read; refresh active turns first
+		// so a finished cancellation does not block archiving or deleting.
+		active, e := s.store.Endpoints().ListInvocations(ctx, store.EndpointInvocationFilter{EndpointID: v.ID, ActiveOnly: true, Limit: 100})
+		if e != nil {
+			return e
+		}
+		for _, inv := range active {
+			if _, e = s.refreshServiceInvocation(ctx, inv.ID); e != nil {
+				return e
+			}
+		}
 		count, e := s.store.Endpoints().CountActiveInvocations(ctx, store.EndpointInvocationFilter{EndpointID: v.ID})
 		if e != nil {
 			return e

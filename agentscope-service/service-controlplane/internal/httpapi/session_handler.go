@@ -405,11 +405,6 @@ func (s *Server) streamSessionEvents(c *gin.Context) {
 	if headerAfter, err := strconv.Atoi(c.GetHeader("Last-Event-ID")); err == nil && headerAfter > after {
 		after = headerAfter
 	}
-	// http.Server.WriteTimeout is an absolute deadline for the whole response,
-	// not an idle timeout. Clear it for this long-lived stream; heartbeat frames
-	// keep intermediaries alive and the request context still handles clients
-	// that disconnect.
-	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
 	prepareEventStream(c)
 	flusher, _ := c.Writer.(http.Flusher)
 	for {

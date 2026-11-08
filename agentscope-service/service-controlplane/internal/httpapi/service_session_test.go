@@ -355,3 +355,36 @@ func TestPublicSessionHostedConversationCompletion(t *testing.T) {
 		t.Fatal("hosted completion not visible", result)
 	}
 }
+
+func TestPublicSessionDeleteRefreshesFinishedCancellation(t *testing.T) {
+	s, st, a := sessionTestFixture(t)
+	session := decodeSessionTest(t, sessionTestRequest(s, "POST", "/api/v1/agent-sessions", `{"target":{"type":"agent","id":"`+a.ID.String()+`"}}`, "", ""), 201)
+	base := "/api/v1/agent-sessions/" + session["id"].(string)
+	turn := decodeSessionTest(t, sessionTestRequest(s, "POST", base+"/turns", `{"message":"Report"}`, "turn", ""), 202)
+	if w := sessionTestRequest(s, "DELETE", base, "", "", ""); w.Code != 409 {
+		t.Fatal("Session with active Turn deleted", w.Code, w.Body)
+	}
+	// A force-cancelled Turn stays cancel_requested until a read projects the
+	// terminal state; DELETE must not be blocked by that lag.
+	inv, err := st.Endpoints().GetInvocation(t.Context(), uuid.MustParse(turn["id"].(string)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.Orchestration().CreateRun(t.Context(), &model.OrchestrationRun{Tenant: "t", Namespace: "n", RootIssueID: uuid.New(), State: model.RunCancelled, Mode: model.RunModeDirect})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv.RunID = &run.ID
+	inv.Status = model.EndpointInvocationCancelRequested
+	if _, err = st.Endpoints().UpdateInvocation(t.Context(), inv); err != nil {
+		t.Fatal(err)
+	}
+	decodeSessionTest(t, sessionTestRequest(s, "DELETE", base, "", "", ""), 200)
+	inv, err = st.Endpoints().GetInvocation(t.Context(), inv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv.Status != model.EndpointInvocationCancelled {
+		t.Fatal("cancel_requested Turn was not finalized", inv.Status)
+	}
+}

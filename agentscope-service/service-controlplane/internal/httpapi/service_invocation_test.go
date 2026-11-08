@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -136,5 +137,36 @@ func TestServiceReplaySurvivesInputSchemaChange(t *testing.T) {
 	request.IdempotencyKey = "new-job"
 	if _, _, err = server.reserveServiceInvocation(ctx, ep, request); !errors.Is(err, errServiceInput) {
 		t.Fatalf("new request should enforce current schema: %v", err)
+	}
+}
+
+func TestServiceCommandAcceptsEmptyChunkedBody(t *testing.T) {
+	ctx := context.Background()
+	st, _ := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	defer st.Close()
+	ep, err := st.Endpoints().Create(ctx, &model.Endpoint{Tenant: "t", Namespace: "n", Slug: "service", Name: "service", TargetType: model.EndpointTargetAgent, TargetRef: uuid.New(), InvocationMode: model.EndpointJobMode, Status: model.EndpointPublished, AuthPolicy: json.RawMessage(`{"type":"platform"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := serviceapi.Freeze(ctx, st, ep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, _, err := st.Endpoints().ReserveInvocation(ctx, &model.EndpointInvocation{EndpointID: ep.ID, Mode: model.EndpointJobMode, PrincipalRef: "platform-static", IdempotencyKey: "job", Status: model.EndpointInvocationAccepted, Contract: contract, Input: json.RawMessage(`{"title":"hello","input":{}}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := newLegacyEndpointTestServer(ServerOptions{Store: st, AuthToken: "key"})
+	// Clients that stream requests may send a bodiless command with chunked
+	// encoding (ContentLength == -1); it must be accepted like an empty body.
+	r := httptest.NewRequest("POST", "/invoke/v1/invocations/"+inv.ID.String()+"/cancel", http.NoBody)
+	r.ContentLength = -1
+	r.Header.Set("Authorization", "Bearer key")
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Idempotency-Key", "cancel-empty")
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, r)
+	if w.Code != 202 {
+		t.Fatalf("empty chunked body rejected: %d %s", w.Code, w.Body)
 	}
 }
