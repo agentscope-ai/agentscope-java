@@ -94,7 +94,7 @@ The v2 path consumes `AgentEvent`. Built-in converters handle semantic mapping, 
 
 Normal `RUN_STARTED` and `RUN_FINISHED` events are driven by upstream `AgentStartEvent` and `AgentEndEvent`. If a normal stream completes without an upstream `AgentEndEvent`, the adapter does not synthesize `RUN_FINISHED`. On errors, the adapter emits a `RUN_ERROR` with a `timestamp`. `RUN_ERROR` and `RUN_FINISHED` are mutually exclusive terminal events. Set `emitRunFinishedAfterError=true` (or Spring Boot `agentscope.agui.emit-run-finished-after-error=true`) only for legacy clients that still expect a finish event after an error.
 
-Within one assistant reply, every text segment shares one pinned text `messageId`: text before and after a tool call is appended to the same AG-UI assistant message. Each segment still emits its own `TEXT_MESSAGE_START` / `TEXT_MESSAGE_END` pair, and a closed id is reopened with a new `TEXT_MESSAGE_START` when text resumes. Reasoning messages keep one id per reasoning segment, and forwarded subagent text never reuses the parent text id.
+Within one assistant turn, every text segment shares one text `messageId` derived from the stable session turn id (`ExecutionIdentity.turnId`, the same id recorded by the session log). Text before and after a tool call is appended to the same AG-UI assistant message. Each segment still emits its own `TEXT_MESSAGE_START` / `TEXT_MESSAGE_END` pair, and a closed id is reopened with a new `TEXT_MESSAGE_START` when text resumes. When the turn id is unavailable (for example a forwarded subagent event), the adapter falls back to the event reply/block id and never reuses the parent text id; reasoning messages keep one id per reasoning segment.
 
 ## Subagent events
 
