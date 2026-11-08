@@ -1832,7 +1832,44 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         for (Msg msg : original) {
             if (!isStructuredOutputRelated(msg)) {
                 contextMutable.add(msg);
+                continue;
             }
+            if (Boolean.TRUE.equals(
+                    msg.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER))) {
+                continue;
+            }
+            List<ContentBlock> retained =
+                    msg.getContent().stream()
+                            .filter(
+                                    block -> {
+                                        if (block instanceof ToolUseBlock use) {
+                                            return !STRUCTURED_OUTPUT_TOOL_NAME.equals(
+                                                    use.getName());
+                                        }
+                                        if (block instanceof ToolResultBlock result) {
+                                            return !STRUCTURED_OUTPUT_TOOL_NAME.equals(
+                                                    result.getName());
+                                        }
+                                        return true;
+                                    })
+                            .toList();
+            // Pure output messages keep the existing compression behavior. A mixed message
+            // must retain its business calls, otherwise their results become orphaned.
+            if (retained.stream().noneMatch(ToolUseBlock.class::isInstance)) {
+                continue;
+            }
+            // This usage has already been collected for the final structured result.
+            // Do not also charge it to the retained copy of the mixed message.
+            Map<String, Object> metadata = new HashMap<>(msg.getMetadata());
+            metadata.remove(MessageMetadataKeys.CHAT_USAGE);
+            contextMutable.add(
+                    Msg.builderForRole(msg.getRole())
+                            .id(msg.getId())
+                            .name(msg.getName())
+                            .content(retained)
+                            .metadata(metadata)
+                            .timestamp(msg.getTimestamp())
+                            .build());
         }
     }
 
