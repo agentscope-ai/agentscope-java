@@ -21,7 +21,6 @@ import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_INPUT
 import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_NAME;
 import static io.agentscope.core.agui.AguiInterruptConstants.TOOL_CALL_INTERRUPT_REASON;
 
-import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -70,10 +69,7 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
      */
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
-        if (event instanceof AgentStartEvent start) {
-            if (!isForwarded(start)) {
-                context.beginAssistantTurn(turnId(start));
-            }
+        if (event instanceof AgentStartEvent) {
             context.emit(
                     new AguiEvent.RunStarted(
                             context.getThreadId(),
@@ -82,12 +78,9 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
                             context.getRunInput()));
         } else if (event instanceof AgentResultEvent resultEvent) {
             collectSuspendedToolInterrupts(resultEvent, context);
-        } else if (event instanceof AgentEndEvent end) {
+        } else if (event instanceof AgentEndEvent) {
             for (AguiEvent pendingEvent : context.finishPendingEvents()) {
                 context.emit(pendingEvent);
-            }
-            if (!isForwarded(end)) {
-                context.endAssistantTurn(turnId(end));
             }
             List<AguiEvent.Interrupt> interrupts = context.getPendingInterrupts();
             AguiEvent.RunFinishedOutcome outcome =
@@ -98,15 +91,6 @@ final class AgentLifecycleEventConverter implements AgentEventConverter {
                     new AguiEvent.RunFinished(
                             context.getThreadId(), context.getRunId(), null, outcome));
         }
-    }
-
-    private static String turnId(AgentEvent event) {
-        ExecutionIdentity execution = event.getExecution();
-        return execution != null ? execution.turnId() : null;
-    }
-
-    private static boolean isForwarded(AgentEvent event) {
-        return event.getSource() != null && !event.getSource().isBlank();
     }
 
     private static void collectSuspendedToolInterrupts(
