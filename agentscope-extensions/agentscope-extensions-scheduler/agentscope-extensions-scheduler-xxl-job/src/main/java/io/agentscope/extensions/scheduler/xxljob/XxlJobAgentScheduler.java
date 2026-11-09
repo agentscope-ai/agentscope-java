@@ -272,8 +272,8 @@ public class XxlJobAgentScheduler implements AgentScheduler {
             // Create a fresh Agent instance for this execution
             Msg result = scheduleAgentTask.run(inputMsg).block();
 
-            // Increment execution count
-            scheduleAgentTask.incrementExecutionCount();
+            // BaseScheduleAgentTask.run(...) already counts this execution; counting it here
+            // as well would report two executions for a single job trigger.
 
             logger.info(
                     "Successfully executed scheduled task '{}'. Result: {}",

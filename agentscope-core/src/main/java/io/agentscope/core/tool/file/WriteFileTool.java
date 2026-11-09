@@ -219,8 +219,7 @@ public class WriteFileTool implements ToolFilePathResolver {
 
                             // Get the content snippet to show
                             String showContent =
-                                    FileToolUtils.viewTextFile(
-                                            filePath, viewRange[0], viewRange[1]);
+                                    FileToolUtils.viewTextFile(path, viewRange[0], viewRange[1]);
 
                             return ToolResultBlock.text(
                                     String.format(
@@ -397,7 +396,7 @@ public class WriteFileTool implements ToolFilePathResolver {
                                 // Get content snippet
                                 String snippet =
                                         FileToolUtils.viewTextFile(
-                                                filePath, viewRange[0], viewRange[1]);
+                                                path, viewRange[0], viewRange[1]);
 
                                 return ToolResultBlock.text(
                                         String.format(

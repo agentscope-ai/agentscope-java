@@ -11,11 +11,15 @@ zh_link: /v2/zh/integration/protocol/agui
 
 `AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
 
-Multimodal input supports text, image, audio, and video. Document input is not supported yet: the adapter rejects it with `RUN_ERROR` and code `INVALID_INPUT_ERROR`, without including the document source or metadata in the error message.
+Multimodal input supports image/audio/video/document. Document parts are converted to `DocumentBlock`; model providers that cannot consume a document report an error instead of silently dropping the content.
 
-This protection applies only to the `RUN_ERROR` message, not to the entire event stream. The preceding `RUN_STARTED.input` retains the original request, including rejected document content. Consumers that log or forward events must redact sensitive input themselves.
+`RUN_STARTED.input` retains the original request, including any document content. Consumers that log or forward events must redact sensitive input themselves.
 
-`AguiMessageConverter.toAguiMessageList()` expands a TOOL `Msg` containing multiple `ToolResultBlock`s into one AG-UI tool message per tool result. `toAguiMessage()` remains for messages with at most one tool result and rejects a multi-result TOOL message; use `toAguiMessages()` for the expanded form. It currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.
+`AguiMessageConverter.toAguiMessageList()` expands a TOOL `Msg` containing multiple `ToolResultBlock`s into one AG-UI tool message per tool result. `toAguiMessage()` remains for messages with at most one tool result and rejects a multi-result TOOL message; use `toAguiMessages()` for the expanded form.
+
+On the outbound path, URL-backed `ImageBlock` / `AudioBlock` / `VideoBlock` / `DocumentBlock` content is serialized into AG-UI `MessageContent.Blocks` (`image` / `audio` / `video` / `document`); URL-backed `DataBlock` is routed by its resolved MIME type. Base64 media sources are skipped on outbound conversion for now.
+
+When an assistant message contains reasoning and supported URL media without text, `toAguiMessages()` and `toAguiMessageList()` preserve both as a reasoning message followed by an assistant message containing the media.
 
 ## When To Use
 
@@ -198,6 +202,7 @@ When enabled, every `ModelCallEndEvent` with usage emits a `CUSTOM` event: `delt
 | RuntimeContext entry | Source |
 | --- | --- |
 | `sessionId` | `RunAgentInput.threadId` |
+| `userId` | Resolver-provided id, else the request's first-class userId (see below) |
 | `RunAgentInput.class` | Full `RunAgentInput` |
 | `agui.threadId` | `RunAgentInput.threadId` |
 | `agui.runId` | `RunAgentInput.runId` |
@@ -209,6 +214,22 @@ When enabled, every `ModelCallEndEvent` with usage emits a `CUSTOM` event: `delt
 | `agui.resume` | `RunAgentInput.resume` |
 
 `sessionId` comes from `threadId`. With the same user, thread and persistent storage configuration, a new instance can continue the conversation; different threads use separate session identities.
+
+`userId` is not part of the AG-UI protocol payload. Hosts provide it through two entry points, merged in priority order:
+
+1. `AguiRuntimeContextResolver` — the deployer's decision (e.g. derived from the authenticated principal). Takes precedence.
+2. `AguiRuntimeContextRequest.getUserId()` — a caller assertion set programmatically on the request. Adopted only when the resolver provided no id.
+
+Hosts driving `AguiRequestProcessor` directly (custom transports) pass the authenticated id as a first-class field instead of inventing a resolver convention:
+
+```java
+AguiRuntimeContextRequest<?> request = AguiRuntimeContextRequest.builder()
+    .input(input)
+    .userId(authenticatedUserId)
+    .build();
+```
+
+When both entry points provide an id and they differ, a WARN is logged and the resolver value wins — a caller assertion must not override a server-verified identity. Hosts that provide no user id run anonymously. The official starter does not know the host identity model, so starter users should expose an `AguiRuntimeContextResolver` bean (see Spring Boot Integration below).
 
 ## Spring Boot Integration
 
@@ -256,7 +277,7 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 }
 ```
 
-`forwardedProps` comes from the client request body and is suitable for UI options or frontend context. Do not treat it as a trusted identity source; server-side user identity should come from authentication or a server-side resolver.
+`forwardedProps` comes from the client request body and is suitable for UI options or frontend context. Do not treat it as a trusted identity source; server-side user identity should come from authentication, injected via a server-side resolver or the request's first-class userId.
 
 ## Frontend Tools And Merge Mode
 

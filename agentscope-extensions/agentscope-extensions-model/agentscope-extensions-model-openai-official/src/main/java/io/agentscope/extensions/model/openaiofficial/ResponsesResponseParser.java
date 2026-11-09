@@ -29,6 +29,7 @@ import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openaiofficial.tool.ResponsesServerToolHelper;
+import io.agentscope.extensions.model.openaiofficial.tool.ResponsesToolHelper;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -80,6 +81,8 @@ final class ResponsesResponseParser {
                 if (toolUse != null) {
                     toolBlocks.add(toolUse);
                 }
+            } else if (ResponsesToolHelper.isClientToolSearch(item)) {
+                toolBlocks.add(ResponsesToolHelper.decodeClientToolSearch(item));
             } else if (ResponsesServerToolHelper.isSupportedServerToolItem(item)) {
                 toolBlocks.addAll(
                         ResponsesServerToolHelper.decodeBlocks(

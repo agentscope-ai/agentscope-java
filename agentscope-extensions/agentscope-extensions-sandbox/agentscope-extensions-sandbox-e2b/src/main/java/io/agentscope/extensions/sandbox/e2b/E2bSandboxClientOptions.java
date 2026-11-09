@@ -17,7 +17,9 @@ package io.agentscope.extensions.sandbox.e2b;
 
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import okhttp3.OkHttpClient;
@@ -49,6 +51,10 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
     private String runUser = "user";
     private E2bPersistenceMode persistenceMode = E2bPersistenceMode.TAR;
     private E2bCodec codec = E2bCodec.PROTO;
+
+    /** Pre-existing E2B volumes to mount at sandbox creation time. */
+    private List<E2bVolumeMount> volumeMounts = new ArrayList<>();
+
     private int connectTimeoutSeconds = 30;
     private int readTimeoutSeconds = 120;
     private int maxRetries = 3;
@@ -197,6 +203,53 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
 
     public void setCodec(E2bCodec codec) {
         this.codec = codec != null ? codec : E2bCodec.PROTO;
+    }
+
+    /**
+     * Returns the volume mounts attached at sandbox creation time.
+     *
+     * @return defensive copy of the configured mounts (never null)
+     */
+    public List<E2bVolumeMount> getVolumeMounts() {
+        if (volumeMounts == null) {
+            return new ArrayList<>();
+        }
+        List<E2bVolumeMount> out = new ArrayList<>(volumeMounts.size());
+        for (E2bVolumeMount m : volumeMounts) {
+            if (m == null) {
+                continue;
+            }
+            out.add(new E2bVolumeMount(m.getName(), m.getPath()));
+        }
+        return out;
+    }
+
+    public void setVolumeMounts(List<E2bVolumeMount> volumeMounts) {
+        List<E2bVolumeMount> checked = new ArrayList<>();
+        if (volumeMounts != null) {
+            for (E2bVolumeMount m : volumeMounts) {
+                if (m == null) {
+                    continue;
+                }
+                checked.add(new E2bVolumeMount(m.getName(), m.getPath()));
+            }
+        }
+        E2bVolumeMount.requireDistinctMountPaths(checked);
+        this.volumeMounts = checked;
+    }
+
+    public E2bSandboxClientOptions addVolumeMount(String name, String path) {
+        List<E2bVolumeMount> next = getVolumeMounts();
+        next.add(new E2bVolumeMount(name, path));
+        setVolumeMounts(next);
+        return this;
+    }
+
+    public E2bSandboxClientOptions addVolumeMount(E2bVolumeMount mount) {
+        if (mount == null) {
+            return this;
+        }
+        return addVolumeMount(mount.getName(), mount.getPath());
     }
 
     public int getConnectTimeoutSeconds() {

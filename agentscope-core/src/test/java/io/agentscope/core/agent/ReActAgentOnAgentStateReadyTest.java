@@ -36,6 +36,11 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.session.SessionExecution;
+import io.agentscope.core.session.SessionInbox;
+import io.agentscope.core.session.SessionRecorder;
+import io.agentscope.core.session.SessionTurns;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.Toolkit;
@@ -54,6 +59,8 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -207,6 +214,98 @@ class ReActAgentOnAgentStateReadyTest {
                 userTexts(model.rounds.get(0)),
                 "model must see the adjusted input");
         assertEquals(List.of("hello"), userTexts(original), "caller's original list is untouched");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void durableCommandPreservesMiddlewareInputChanges(boolean streaming) {
+        CapturingModel model = new CapturingModel();
+        MiddlewareBase rewrite =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onAgent(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            AgentInput input,
+                            Function<AgentInput, Flux<AgentEvent>> next) {
+                        return next.apply(new AgentInput(List.of(new UserMessage("rewritten"))));
+                    }
+
+                    @Override
+                    public void onAgentStateReady(
+                            Agent agent, RuntimeContext ctx, AgentState state, List<Msg> input) {
+                        input.add(new UserMessage("ready"));
+                    }
+                };
+        ReActAgent agent =
+                baseBuilder(model)
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .middleware(rewrite)
+                        .build();
+        RuntimeContext context = rc("u", "durable");
+        var log = agent.sessionLog(context);
+        List<Msg> original = List.of(new UserMessage("original"));
+        var command = new SessionInbox.Command("submit", "submit", "turn", original, List.of());
+        new SessionInbox(log).locked(tx -> tx.accept(command));
+        context.put(SessionRecorder.TURN_ID_KEY, command.turnId());
+        context.put(SessionExecution.CONTEXT_KEY, new SessionExecution(log, command));
+
+        if (streaming) {
+            agent.streamEvents(original, context).collectList().block(TIMEOUT);
+        } else {
+            agent.call(original, context).block(TIMEOUT);
+        }
+
+        assertEquals(List.of("rewritten", "ready"), userTexts(model.rounds.get(0)));
+        assertEquals(
+                List.of("rewritten", "ready"),
+                userTexts(SessionTurns.read(log).inputs().get(command.turnId())));
+        assertEquals(List.of("original"), userTexts(original));
+        assertEquals(
+                List.of("original"),
+                userTexts(new SessionInbox(log).snapshot().commands().get(0).messages()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void resumedInputsReachStateReadyWithoutRepeatingCheckpointedMessages(boolean checkpointed) {
+        CapturingModel model = new CapturingModel();
+        var observedInputs = new CopyOnWriteArrayList<Msg>();
+        ReActAgent agent =
+                baseBuilder(model)
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .middleware(
+                                new ReadyRecorder(
+                                        "r",
+                                        1,
+                                        new CopyOnWriteArrayList<>(),
+                                        (state, input) -> {
+                                            observedInputs.addAll(input);
+                                            input.add(new UserMessage("ready"));
+                                        }))
+                        .build();
+        RuntimeContext context = rc("u", "resumed");
+        var log = agent.sessionLog(context);
+        List<Msg> original = List.of(new UserMessage("accepted before interruption"));
+        var state = AgentState.builder().userId("u").sessionId("resumed").build();
+        var recorder = new SessionRecorder(log, "turn", "interrupted-run", null);
+        recorder.start(original, state).block(TIMEOUT);
+        if (checkpointed) {
+            state.contextMutable().addAll(original);
+            recorder.checkpoint(state, "input_consumed").block(TIMEOUT);
+        }
+        recorder.finish(state, "failed").block(TIMEOUT);
+        var command = new SessionInbox.Command("resume", "resume", "turn", List.of(), List.of());
+        new SessionInbox(log).locked(tx -> tx.accept(command));
+        context.put(SessionRecorder.TURN_ID_KEY, command.turnId());
+        context.put(SessionExecution.CONTEXT_KEY, new SessionExecution(log, command));
+
+        agent.call(command.messages(), context).block(TIMEOUT);
+
+        assertEquals(userTexts(original), userTexts(observedInputs));
+        assertEquals(
+                List.of("accepted before interruption", "ready"), userTexts(model.rounds.get(0)));
+        assertTrue(command.messages().isEmpty(), "the durable resume command stays unchanged");
     }
 
     @Test

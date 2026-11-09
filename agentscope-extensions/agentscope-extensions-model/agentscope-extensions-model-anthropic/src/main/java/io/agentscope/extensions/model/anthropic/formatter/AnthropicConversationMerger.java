@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.anthropic.formatter;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -58,6 +59,12 @@ public class AnthropicConversationMerger {
                     }
                     conversationBlocks.add(ib);
                 } else if (block instanceof DataBlock db) {
+                    if (!accumulatedText.isEmpty()) {
+                        conversationBlocks.add(String.join("\n", accumulatedText));
+                        accumulatedText.clear();
+                    }
+                    conversationBlocks.add(db);
+                } else if (block instanceof DocumentBlock db) {
                     if (!accumulatedText.isEmpty()) {
                         conversationBlocks.add(String.join("\n", accumulatedText));
                         accumulatedText.clear();
