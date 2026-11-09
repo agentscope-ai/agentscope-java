@@ -67,6 +67,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -163,7 +164,11 @@ class OpenAIResponsesChatModelTest {
         List<Msg> messages =
                 List.of(
                         UserMessage.builder()
-                                .content(DocumentBlock.builder().source(source).build())
+                                .content(
+                                        DocumentBlock.builder()
+                                                .source(source)
+                                                .mimeType("application/pdf")
+                                                .build())
                                 .build());
         OpenAIClient client = mockClientWithResponseService();
         ResponseService service = client.responses();
@@ -215,7 +220,8 @@ class OpenAIResponsesChatModelTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void localDocumentReadErrorsAreNotRetried(boolean stream, @TempDir Path directory) {
+    void localDocumentReadErrorsFollowTheConfiguredRetryPolicy(
+            boolean stream, @TempDir Path directory) {
         AtomicInteger attempts = new AtomicInteger();
         URLSource source =
                 new URLSource(directory.resolve("missing.pdf").toString()) {
@@ -228,7 +234,11 @@ class OpenAIResponsesChatModelTest {
         List<Msg> messages =
                 List.of(
                         UserMessage.builder()
-                                .content(DocumentBlock.builder().source(source).build())
+                                .content(
+                                        DocumentBlock.builder()
+                                                .source(source)
+                                                .mimeType("application/pdf")
+                                                .build())
                                 .build());
         OpenAIClient client = mockClientWithResponseService();
         ResponseService service = client.responses();
@@ -243,22 +253,24 @@ class OpenAIResponsesChatModelTest {
                                         .build())
                         .build();
 
-        OpenAIOfficialModelException error =
+        RuntimeException error =
                 assertThrows(
-                        OpenAIOfficialModelException.class,
+                        RuntimeException.class,
                         () ->
                                 model.stream(messages, null, options)
                                         .blockLast(Duration.ofSeconds(10)));
 
-        assertTrue(error.getCause() instanceof java.io.IOException);
-        assertEquals(1, attempts.get());
+        assertTrue(Exceptions.isRetryExhausted(error));
+        assertTrue(error.getCause() instanceof OpenAIOfficialModelException);
+        assertTrue(error.getCause().getCause() instanceof java.io.IOException);
+        assertEquals(3, attempts.get());
         verifyNoInteractions(service);
     }
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void documentPreparationTimesOutWithoutRetrying(boolean stream, @TempDir Path directory)
-            throws Exception {
+    void documentPreparationTimeoutIsRetriedAndInterruptsEachAttempt(
+            boolean stream, @TempDir Path directory) throws Exception {
         Path path = directory.resolve("report.pdf");
         Files.writeString(path, "abc");
         AtomicInteger attempts = new AtomicInteger();
@@ -293,23 +305,25 @@ class OpenAIResponsesChatModelTest {
                         .executionConfig(
                                 ExecutionConfig.builder()
                                         // Allow time for the scheduler hand-off before testing
-                                        // interruption of document preparation.
-                                        .timeout(Duration.ofSeconds(2))
+                                        // interruption of each preparation attempt.
+                                        .timeout(Duration.ofSeconds(1))
                                         .maxAttempts(3)
                                         .initialBackoff(Duration.ofMillis(1))
                                         .build())
                         .build();
         try {
-            OpenAIOfficialModelException error =
+            RuntimeException error =
                     assertThrows(
-                            OpenAIOfficialModelException.class,
+                            RuntimeException.class,
                             () ->
                                     model.stream(messages, null, options)
                                             .blockLast(Duration.ofSeconds(10)));
-            assertTrue(error.getCause() instanceof TimeoutException);
+            assertTrue(Exceptions.isRetryExhausted(error));
+            assertTrue(error.getCause() instanceof ModelException);
+            assertTrue(error.getCause().getCause() instanceof TimeoutException);
             assertTrue(started.await(5, TimeUnit.SECONDS));
             assertTrue(interrupted.await(5, TimeUnit.SECONDS));
-            assertEquals(1, attempts.get());
+            assertEquals(3, attempts.get());
             verifyNoInteractions(service);
         } finally {
             release.countDown();
@@ -318,7 +332,7 @@ class OpenAIResponsesChatModelTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void providerRetriesDoNotRepeatDocumentPreparation(boolean stream) {
+    void providerRetriesRepeatDocumentPreparation(boolean stream) {
         AtomicInteger mappings = new AtomicInteger();
         URLSource source =
                 new URLSource("https://example.invalid/report.pdf") {
@@ -352,7 +366,7 @@ class OpenAIResponsesChatModelTest {
                 GenerateOptions.builder()
                         .executionConfig(
                                 ExecutionConfig.builder()
-                                        .timeout(Duration.ofMillis(100))
+                                        .timeout(Duration.ofSeconds(2))
                                         .maxAttempts(2)
                                         .initialBackoff(Duration.ofMillis(200))
                                         .maxBackoff(Duration.ofMillis(200))
@@ -364,7 +378,7 @@ class OpenAIResponsesChatModelTest {
                         .block(Duration.ofSeconds(5));
         assertNotNull(results);
         assertFalse(results.isEmpty());
-        assertEquals(1, mappings.get());
+        assertEquals(2, mappings.get());
         if (stream) {
             verify(service, times(2)).createStreaming(any(ResponseCreateParams.class));
         } else {

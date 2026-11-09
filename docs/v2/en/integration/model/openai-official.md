@@ -47,8 +47,13 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
 Send documents in user messages with `DocumentBlock`. Both the default formatter
 and `ResponsesMultiAgentFormatter` preserve documents as native `input_file`
 content parts, including their position among text and images. File formats and
-model support follow the [OpenAI file inputs guide](https://developers.openai.com/api/docs/guides/file-inputs);
-this adapter does not restrict documents to PDF.
+model support follow the [OpenAI file inputs guide](https://developers.openai.com/api/docs/guides/file-inputs).
+
+OpenAI requires each file to be under 50 MB, and the combined size of all files
+in one request to be at most 50 MB.
+For documents reused across requests, upload the file to OpenAI first, then use a
+`FileIdSource` to reference the returned file ID; this avoids
+repeated local reads and encoding.
 
 ```java
 import io.agentscope.core.message.DocumentBlock;
@@ -67,66 +72,6 @@ model.stream(List.of(UserMessage.builder()
     .doOnNext(System.out::println)
     .blockLast();
 ```
-
-`content(...)` replaces the message content; pass all blocks in one call.
-
-HTTP(S) sources are passed to OpenAI as `file_url` without downloading them in
-AgentScope. Local paths and `file://` URIs are read and encoded as `file_data`;
-local reads require regular files and use the existing 50 MB per-file limit.
-Only use trusted local paths: the adapter reads the supplied path without
-restricting it to a directory.
-
-When using `model.stream(...)`, request mapping runs on a worker thread at
-subscription time. Each new subscription rereads local documents; provider
-retries reuse the prepared request. Direct calls to
-`ResponsesMultiAgentFormatter.formatHistory(...)` run synchronously on the caller's
-thread. For documents reused across requests, a pre-uploaded `FileIdSource` avoids
-repeated local reads and encoding.
-
-Request preparation uses the configured execution timeout and is not retried.
-Provider calls retain their existing timeout and retry configuration. Preparation
-and provider calls have separate timeout budgets, not a shared overall deadline.
-
-For inline data, use `Base64Source` with raw Base64 bytes and the MIME type. Both
-local and Base64 documents must be non-empty. Base64 documents use the same 50 MB
-per-file limit, measured by decoded size. For local documents,
-`DocumentBlock.mimeType` takes priority over `URLSource.mimeType`
-and extension-based inference for common document formats, including PDF, Word,
-spreadsheets, presentations, and text files. If the local MIME type cannot be
-inferred, mapping fails with an error asking for an explicit MIME type.
-
-```java
-import io.agentscope.core.message.Base64Source;
-import io.agentscope.core.message.FileIdSource;
-import java.nio.file.Path;
-
-DocumentBlock local = DocumentBlock.builder()
-    .source(new URLSource(Path.of("report.pdf").toUri().toString()))
-    .build();
-
-DocumentBlock inline = DocumentBlock.builder()
-    .source(new Base64Source("text/csv", "bmFtZSx2YWx1ZQphLDEK"))
-    .name("report.csv")
-    .build();
-
-DocumentBlock uploaded = DocumentBlock.builder()
-    .source(new FileIdSource("openai", "file-123"))
-    .build();
-```
-
-Inline filenames use `DocumentBlock.name` when supplied. Local files otherwise
-keep their original filename; Base64 sources use a MIME-based default such as
-`document.pdf`, `document.txt`, `document.docx`, or `document.xlsx`. If no default
-is known for a MIME type, provide `name` explicitly. These defaults do not limit
-which formats can be sent with an explicit filename.
-
-File IDs accept provider `openai` or `openai-official` and are sent as `file_id`.
-Upload files separately before referencing their IDs. Invalid providers,
-unsupported URL schemes, and local file read failures raise an error rather than
-dropping the document. A document mapping failure aborts the entire request,
-including multi-agent history mapping. This support covers user-message input;
-document tool results, file uploads, and response-side file output are outside its
-scope.
 
 ## Server-side built-in tools
 

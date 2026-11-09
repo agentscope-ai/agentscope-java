@@ -38,7 +38,6 @@ import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.core.tool.search.ToolSearchMode;
 import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
 import java.io.IOException;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +48,6 @@ import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
@@ -112,57 +110,50 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
     @Override
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-        GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, configuredOptions);
-        // Request mapping may read local documents; keep it off reactive event-loop threads.
-        Mono<Flux<ChatResponse>> preparation =
-                Mono.fromCallable(() -> doStream0(messages, tools, effectiveOptions))
-                        .subscribeOn(Schedulers.boundedElastic());
-        ExecutionConfig executionConfig = effectiveOptions.getExecutionConfig();
-        Duration timeout = executionConfig != null ? executionConfig.getTimeout() : null;
-        if (timeout != null) {
-            String message = "Model request preparation timeout after " + timeout;
-            preparation =
-                    preparation.timeout(
-                            timeout,
-                            Mono.error(
-                                    new OpenAIOfficialModelException(
-                                            message,
-                                            new TimeoutException(message),
-                                            effectiveOptions.getModelName())));
-        }
-        return preparation.flatMapMany(Function.identity());
+        return ModelUtils.applyTimeoutAndRetry(
+                doStream0(messages, tools, options),
+                options,
+                configuredOptions,
+                configuredOptions.getModelName(),
+                OpenAIOfficialConstants.PROVIDER_ID);
     }
 
     private Flux<ChatResponse> doStream0(
-            List<Msg> messages, List<ToolSchema> tools, GenerateOptions effectiveOptions) {
+            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
 
-        validateConnectionFields(effectiveOptions);
+        GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, configuredOptions);
+        return Flux.defer(
+                        () -> {
+                            validateConnectionFields(effectiveOptions);
 
-        boolean stream = effectiveOptions.getStream() != null ? effectiveOptions.getStream() : true;
+                            boolean stream =
+                                    effectiveOptions.getStream() != null
+                                            ? effectiveOptions.getStream()
+                                            : true;
 
-        String modelName = effectiveOptions.getModelName();
-        log.debug("OpenAI API call: model={}", modelName);
+                            String modelName = effectiveOptions.getModelName();
+                            log.debug("OpenAI API call: model={}", modelName);
 
-        Function<List<Msg>, List<ResponseInputItem>> historyMapper =
-                formatter != null ? formatter::formatHistory : ResponsesRequestMapper::mapHistory;
+                            Function<List<Msg>, List<ResponseInputItem>> historyMapper =
+                                    formatter != null
+                                            ? formatter::formatHistory
+                                            : ResponsesRequestMapper::mapHistory;
 
-        ResponseCreateParams params =
-                ResponsesRequestMapper.map(
-                        messages,
-                        tools,
-                        serverTools,
-                        effectiveOptions,
-                        strictTools,
-                        strictJsonSchema,
-                        historyMapper);
+                            ResponseCreateParams params =
+                                    ResponsesRequestMapper.map(
+                                            messages,
+                                            tools,
+                                            serverTools,
+                                            effectiveOptions,
+                                            strictTools,
+                                            strictJsonSchema,
+                                            historyMapper);
 
-        // Retry only provider calls, not deterministic local document input failures.
-        Flux<ChatResponse> response =
-                stream
-                        ? buildStreamingFlux(params, modelName)
-                        : buildNonStreamingFlux(params, modelName);
-        return ModelUtils.applyTimeoutAndRetry(
-                response, effectiveOptions, null, modelName, OpenAIOfficialConstants.PROVIDER_ID);
+                            return stream
+                                    ? buildStreamingFlux(params, modelName)
+                                    : buildNonStreamingFlux(params, modelName);
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     private Flux<ChatResponse> buildNonStreamingFlux(

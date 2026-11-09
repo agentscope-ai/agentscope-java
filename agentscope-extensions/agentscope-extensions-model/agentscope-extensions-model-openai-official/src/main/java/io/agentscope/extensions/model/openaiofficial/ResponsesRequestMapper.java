@@ -41,6 +41,7 @@ import com.openai.models.responses.ResponseToolSearchOutputItemParam;
 import com.openai.models.responses.Tool;
 import com.openai.models.responses.ToolChoiceFunction;
 import com.openai.models.responses.ToolChoiceOptions;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.ResponseFormat;
@@ -73,7 +74,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -541,7 +541,7 @@ final class ResponsesRequestMapper {
             mapReasoningReplay(msg, encryptedContent, items);
         }
 
-        String text = collectText(msg);
+        String text = collectAssistantText(msg);
         if (text != null && !text.isEmpty()) {
             items.add(
                     ResponseInputItem.ofEasyInputMessage(
@@ -565,6 +565,8 @@ final class ResponsesRequestMapper {
                                 "Cannot map ThinkingBlock to a Responses reasoning"
                                         + " input item without encrypted_content.");
                     }
+                } else if (block instanceof DocumentBlock) {
+                    // Rendered by collectAssistantText; keep the block visible in history.
                 } else if (!(block instanceof TextBlock)) {
                     throw new OpenAIOfficialModelException(
                             "Unsupported content block in assistant message: "
@@ -738,6 +740,12 @@ final class ResponsesRequestMapper {
                 result.add(buildImageOutputItem(resolveImageUrl(ib.getSource())));
             } else if (block instanceof DataBlock db) {
                 result.add(buildImageOutputItem(resolveDataBlockImageUrl(db)));
+            } else if (block instanceof DocumentBlock document) {
+                result.add(
+                        ResponseFunctionCallOutputItem.ofInputText(
+                                ResponseInputTextContent.builder()
+                                        .text(DocumentReferenceRenderer.render(document))
+                                        .build()));
             } else {
                 throw new OpenAIOfficialModelException(
                         "Unsupported output block in ToolResultBlock: "
@@ -925,6 +933,28 @@ final class ResponsesRequestMapper {
         return sb.length() > 0 ? sb.toString() : null;
     }
 
+    private static String collectAssistantText(Msg msg) {
+        StringBuilder result = new StringBuilder();
+        List<?> blocks = msg.getContent();
+        if (blocks == null) {
+            return null;
+        }
+        for (Object block : blocks) {
+            if (block instanceof TextBlock textBlock) {
+                if (result.length() > 0) {
+                    result.append('\n');
+                }
+                result.append(textBlock.getText());
+            } else if (block instanceof DocumentBlock document) {
+                if (result.length() > 0) {
+                    result.append('\n');
+                }
+                result.append(DocumentReferenceRenderer.render(document));
+            }
+        }
+        return result.length() > 0 ? result.toString() : null;
+    }
+
     /** Converts user documents for both direct mapping and multi-agent history merging. */
     static ResponseInputFile mapDocument(DocumentBlock document) {
         Source source = document.getSource();
@@ -943,9 +973,14 @@ final class ResponsesRequestMapper {
         }
         if (source instanceof Base64Source base64) {
             validateDocumentData(base64.getData());
-            String mimeType = documentMimeType(document, base64.getMediaType());
+            String mimeType =
+                    documentMimeType(
+                            document,
+                            base64.getMediaType(),
+                            "Set the MIME type for Base64 document input; use"
+                                    + " DocumentBlock.mimeType or Base64Source.mediaType.");
             return ResponseInputFile.builder()
-                    .filename(documentFilename(document.getName(), mimeType))
+                    .filename(documentFilename(document.getName(), null))
                     .fileData("data:" + mimeType + ";base64," + base64.getData())
                     .build();
         }
@@ -971,17 +1006,15 @@ final class ResponsesRequestMapper {
                     throw new IOException("Local document must be a regular file: " + path);
                 }
                 String sourceMimeType = urlSource.getMimeType();
-                if ((document.getMimeType() == null || document.getMimeType().isBlank())
-                        && (sourceMimeType == null || sourceMimeType.isBlank())) {
-                    sourceMimeType = localDocumentMimeType(path);
-                }
-                String mimeType = documentMimeType(document, sourceMimeType);
+                String mimeType =
+                        documentMimeType(
+                                document,
+                                sourceMimeType,
+                                "Set the MIME type for local document input; use"
+                                        + " DocumentBlock.mimeType or URLSource.mimeType.");
                 String data = MediaUtils.fileToBase64(path.toString());
                 validateDocumentData(data);
-                String name = document.getName();
-                if (name == null || name.isBlank()) {
-                    name = path.getFileName().toString();
-                }
+                String name = documentFilename(document.getName(), path.getFileName().toString());
                 return ResponseInputFile.builder()
                         .filename(name)
                         .fileData("data:" + mimeType + ";base64," + data)
@@ -1012,86 +1045,26 @@ final class ResponsesRequestMapper {
         }
     }
 
-    private static String documentMimeType(DocumentBlock document, String sourceMimeType) {
+    private static String documentMimeType(
+            DocumentBlock document, String sourceMimeType, String missingMimeTypeMessage) {
         String mimeType = document.getMimeType();
         if (mimeType == null || mimeType.isBlank()) {
             mimeType = sourceMimeType;
         }
         if (mimeType == null || mimeType.isBlank()) {
-            throw new OpenAIOfficialModelException(
-                    "Set the document MIME type for inline file input.");
+            throw new OpenAIOfficialModelException(missingMimeTypeMessage);
         }
         return mimeType;
     }
 
-    private static String localDocumentMimeType(Path path) {
-        String name = path.getFileName().toString();
-        int dot = name.lastIndexOf('.');
-        String extension = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
-        String mimeType =
-                switch (extension) {
-                    case "txt" -> "text/plain";
-                    case "md" -> "text/markdown";
-                    case "csv" -> "text/csv";
-                    case "tsv" -> "text/tsv";
-                    case "json" -> "application/json";
-                    case "xml" -> "text/xml";
-                    case "html", "htm" -> "text/html";
-                    case "rtf" -> "application/rtf";
-                    case "doc" -> "application/msword";
-                    case "docx" ->
-                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-                    case "xls" -> "application/vnd.ms-excel";
-                    case "xlsx" ->
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-                    case "ppt" -> "application/vnd.ms-powerpoint";
-                    case "pptx" ->
-                            "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-                    case "odt" -> "application/vnd.oasis.opendocument.text";
-                    default -> MediaUtils.determineMediaType(path.toString());
-                };
-        if ("application/octet-stream".equals(mimeType)) {
-            throw new OpenAIOfficialModelException(
-                    "Cannot infer a document MIME type from local path '"
-                            + path
-                            + "'; set DocumentBlock.mimeType or URLSource.mimeType explicitly.");
-        }
-        return mimeType;
-    }
-
-    private static String documentFilename(String name, String mimeType) {
+    private static String documentFilename(String name, String fallbackName) {
         if (name != null && !name.isBlank()) {
             return name;
         }
-        // These are filename defaults, not a whitelist of accepted document formats.
-        String extension =
-                switch (mimeType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT)) {
-                    case "application/pdf" -> "pdf";
-                    case "text/plain" -> "txt";
-                    case "text/markdown" -> "md";
-                    case "text/csv" -> "csv";
-                    case "text/tsv", "text/tab-separated-values" -> "tsv";
-                    case "application/json" -> "json";
-                    case "application/xml", "text/xml" -> "xml";
-                    case "text/html" -> "html";
-                    case "application/rtf", "text/rtf" -> "rtf";
-                    case "application/msword" -> "doc";
-                    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ->
-                            "docx";
-                    case "application/vnd.ms-excel" -> "xls";
-                    case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ->
-                            "xlsx";
-                    case "application/vnd.ms-powerpoint" -> "ppt";
-                    case "application/vnd.openxmlformats-officedocument.presentationml.presentation" ->
-                            "pptx";
-                    case "application/vnd.oasis.opendocument.text" -> "odt";
-                    default ->
-                            throw new OpenAIOfficialModelException(
-                                    "Cannot infer a document filename from MIME type '"
-                                            + mimeType
-                                            + "'; set DocumentBlock.name explicitly.");
-                };
-        return "document." + extension;
+        if (fallbackName != null && !fallbackName.isBlank()) {
+            return fallbackName;
+        }
+        throw new OpenAIOfficialModelException("Set DocumentBlock.name for document input.");
     }
 
     static String resolveImageUrl(Source source) {

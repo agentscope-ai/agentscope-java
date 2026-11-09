@@ -20,6 +20,7 @@ import com.openai.models.responses.ResponseInputContent;
 import com.openai.models.responses.ResponseInputImage;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseInputText;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.DocumentBlock;
@@ -306,10 +307,17 @@ public class ResponsesMultiAgentFormatter {
                     textBuffer.append("[Image - processing failed]\n");
                 }
             } else if (block instanceof DocumentBlock document) {
-                flushText(textBuffer, parts);
-                parts.add(
-                        ResponseInputContent.ofInputFile(
-                                ResponsesRequestMapper.mapDocument(document)));
+                if (msg.getRole() == MsgRole.USER) {
+                    flushText(textBuffer, parts);
+                    parts.add(
+                            ResponseInputContent.ofInputFile(
+                                    ResponsesRequestMapper.mapDocument(document)));
+                } else {
+                    if (includePrefix) {
+                        appendNamePrefix(textBuffer, agentName);
+                    }
+                    textBuffer.append(DocumentReferenceRenderer.render(document)).append("\n");
+                }
             } else if (block instanceof DataBlock db) {
                 flushText(textBuffer, parts);
                 try {

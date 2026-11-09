@@ -793,6 +793,34 @@ class ResponsesMultiAgentFormatterTest {
         }
 
         @Test
+        void assistantDocumentIsRenderedAsATextReference() {
+            DocumentBlock document =
+                    DocumentBlock.builder()
+                            .source(new FileIdSource("anthropic", "file-123"))
+                            .name("report.pdf")
+                            .mimeType("application/pdf")
+                            .build();
+
+            List<ResponseInputContent> parts =
+                    formatter
+                            .formatHistory(List.of(assistant(document)))
+                            .get(0)
+                            .asEasyInputMessage()
+                            .content()
+                            .asResponseInputMessageContentList();
+
+            assertEquals(1, parts.size());
+            assertFalse(parts.get(0).isInputFile());
+            assertTrue(
+                    parts.get(0)
+                            .asInputText()
+                            .text()
+                            .contains(
+                                    "[document: report.pdf, application/pdf, provider file id:"
+                                            + " file-123 (anthropic)]"));
+        }
+
+        @Test
         void mergedLocalDocumentUsesSameConversionAsDirectMapping() throws Exception {
             Path path = directory.resolve("报告 #1.pdf");
             Files.writeString(path, "abc");
@@ -800,6 +828,7 @@ class ResponsesMultiAgentFormatterTest {
                     user(
                             DocumentBlock.builder()
                                     .source(new URLSource(path.toUri().toString()))
+                                    .mimeType("application/pdf")
                                     .build());
             List<ResponseInputContent> merged =
                     formatter

@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.openai.core.JsonValue;
 import com.openai.core.ObjectMappers;
+import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.FunctionTool;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseFunctionCallOutputItem;
@@ -72,7 +73,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -631,6 +631,26 @@ class ResponsesRequestMapperTest {
         }
 
         @Test
+        void assistantDocumentIsPreservedAsATextReference() {
+            DocumentBlock document =
+                    DocumentBlock.builder()
+                            .source(new URLSource("https://example.com/report.pdf"))
+                            .name("report.pdf")
+                            .mimeType("application/pdf")
+                            .build();
+            List<Msg> messages = List.of(AssistantMessage.builder().content(document).build());
+
+            ResponseCreateParams params = mapHistory(baseOptions(), messages);
+
+            ResponseInputItem item = params.input().orElseThrow().asResponse().get(0);
+            assertEquals(EasyInputMessage.Role.ASSISTANT, item.asEasyInputMessage().role());
+            assertEquals(
+                    "[document: report.pdf, application/pdf, url:"
+                            + " https://example.com/report.pdf]",
+                    item.asEasyInputMessage().content().asTextInput());
+        }
+
+        @Test
         void toolResultMappedAsFunctionCallOutput() {
             List<Msg> messages =
                     List.of(
@@ -748,6 +768,39 @@ class ResponsesRequestMapperTest {
                     fco.output().asResponseFunctionCallOutputItemList();
             assertEquals(1, outputItems.size());
             assertTrue(outputItems.get(0).isInputImage());
+        }
+
+        @Test
+        void toolResultDocumentIsPreservedAsATextReference() {
+            DocumentBlock document =
+                    DocumentBlock.builder()
+                            .source(new FileIdSource("anthropic", "file-123"))
+                            .name("report.pdf")
+                            .mimeType("application/pdf")
+                            .build();
+            List<Msg> messages =
+                    List.of(
+                            ToolResultMessage.builder()
+                                    .content(
+                                            ToolResultBlock.builder()
+                                                    .id("call_1")
+                                                    .name("read_report")
+                                                    .output(document)
+                                                    .build())
+                                    .build());
+
+            ResponseCreateParams params = mapHistory(baseOptions(), messages);
+
+            ResponseInputItem.FunctionCallOutput output =
+                    params.input().orElseThrow().asResponse().get(0).asFunctionCallOutput();
+            assertTrue(output.output().isResponseFunctionCallOutputItemList());
+            List<ResponseFunctionCallOutputItem> outputItems =
+                    output.output().asResponseFunctionCallOutputItemList();
+            assertEquals(1, outputItems.size());
+            assertEquals(
+                    "[document: report.pdf, application/pdf, provider file id:"
+                            + " file-123 (anthropic)]",
+                    outputItems.get(0).asInputText().text());
         }
 
         @Test
@@ -873,36 +926,31 @@ class ResponsesRequestMapperTest {
             assertTrue(file.fileId().isEmpty());
         }
 
-        @ParameterizedTest
-        @CsvSource({
-            "application/pdf,pdf",
-            "text/plain,txt",
-            "text/markdown,md",
-            "text/csv,csv",
-            "text/tsv,tsv",
-            "application/json,json",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document,docx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,xlsx",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation,pptx"
-        })
-        void missingBase64NameUsesMimeType(String mimeType, String extension) {
-            ResponseInputFile file =
-                    file(
-                            DocumentBlock.builder()
-                                    .source(new Base64Source(mimeType, "YWJj"))
-                                    .build());
-            assertEquals("document." + extension, file.filename().orElseThrow());
+        @Test
+        void missingBase64NameAsksForFilename() {
+            OpenAIOfficialModelException error =
+                    assertThrows(
+                            OpenAIOfficialModelException.class,
+                            () ->
+                                    file(
+                                            DocumentBlock.builder()
+                                                    .source(
+                                                            new Base64Source(
+                                                                    "application/pdf", "YWJj"))
+                                                    .build()));
+            assertTrue(error.getMessage().contains("DocumentBlock.name"));
         }
 
         @ParameterizedTest
         @ValueSource(strings = {"text/plain;charset=utf-8", "TEXT/PLAIN;charset=UTF-8"})
-        void base64MimeParametersArePreservedWithTheDefaultFilename(String mimeType) {
+        void base64MimeParametersArePreserved(String mimeType) {
             ResponseInputFile file =
                     file(
                             DocumentBlock.builder()
                                     .source(new Base64Source(mimeType, "YWJj"))
+                                    .name("report.txt")
                                     .build());
-            assertEquals("document.txt", file.filename().orElseThrow());
+            assertEquals("report.txt", file.filename().orElseThrow());
             assertEquals("data:" + mimeType + ";base64,YWJj", file.fileData().orElseThrow());
         }
 
@@ -955,44 +1003,19 @@ class ResponsesRequestMapperTest {
             Files.writeString(path, "abc");
             String url = useUri ? path.toUri().toString() : path.toString();
             ResponseInputFile file =
-                    file(DocumentBlock.builder().source(new URLSource(url)).build());
+                    file(
+                            DocumentBlock.builder()
+                                    .source(new URLSource(url))
+                                    .mimeType("application/pdf")
+                                    .build());
             assertEquals("报告 #1.pdf", file.filename().orElseThrow());
             assertEquals("data:application/pdf;base64,YWJj", file.fileData().orElseThrow());
             assertTrue(file.fileUrl().isEmpty());
         }
 
         @ParameterizedTest
-        @CsvSource({
-            "txt,text/plain",
-            "md,text/markdown",
-            "csv,text/csv",
-            "tsv,text/tsv",
-            "json,application/json",
-            "xml,text/xml",
-            "html,text/html",
-            "rtf,application/rtf",
-            "doc,application/msword",
-            "docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "DOCX,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "xls,application/vnd.ms-excel",
-            "xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "ppt,application/vnd.ms-powerpoint",
-            "pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "odt,application/vnd.oasis.opendocument.text"
-        })
-        void localDocumentMimeIsInferredFromItsExtension(String extension, String mimeType)
-                throws Exception {
-            Path path = directory.resolve("report." + extension);
-            Files.writeString(path, "abc");
-            ResponseInputFile file =
-                    file(DocumentBlock.builder().source(new URLSource(path.toString())).build());
-            assertEquals(path.getFileName().toString(), file.filename().orElseThrow());
-            assertEquals("data:" + mimeType + ";base64,YWJj", file.fileData().orElseThrow());
-        }
-
-        @ParameterizedTest
         @ValueSource(strings = {"report.xyz", "report"})
-        void unknownLocalMimeAsksForAnExplicitMimeType(String filename) throws Exception {
+        void localDocumentMimeIsRequired(String filename) throws Exception {
             Path path = directory.resolve(filename);
             Files.writeString(path, "abc");
             OpenAIOfficialModelException error =
@@ -1003,7 +1026,6 @@ class ResponsesRequestMapperTest {
                                             DocumentBlock.builder()
                                                     .source(new URLSource(path.toString()))
                                                     .build()));
-            assertTrue(error.getMessage().contains("Cannot infer a document MIME type"));
             assertTrue(error.getMessage().contains("DocumentBlock.mimeType"));
             assertTrue(error.getMessage().contains("URLSource.mimeType"));
         }
@@ -1100,6 +1122,7 @@ class ResponsesRequestMapperTest {
                                     file(
                                             DocumentBlock.builder()
                                                     .source(new URLSource(path.toString()))
+                                                    .mimeType("application/pdf")
                                                     .build()));
             assertTrue(error.getCause() instanceof java.io.IOException);
             assertTrue(error.getCause().getMessage().contains("File too large"));
@@ -1117,8 +1140,9 @@ class ResponsesRequestMapperTest {
                     file(
                             DocumentBlock.builder()
                                     .source(new Base64Source("application/pdf", data))
+                                    .name("report.pdf")
                                     .build());
-            assertEquals("document.pdf", file.filename().orElseThrow());
+            assertEquals("report.pdf", file.filename().orElseThrow());
             assertEquals(
                     "data:application/pdf;base64,".length() + data.length(),
                     file.fileData().orElseThrow().length());
@@ -1153,6 +1177,7 @@ class ResponsesRequestMapperTest {
                                     file(
                                             DocumentBlock.builder()
                                                     .source(new URLSource(path.toString()))
+                                                    .mimeType("application/pdf")
                                                     .build()));
             assertTrue(error.getMessage().contains("must not be empty"));
         }
@@ -1190,8 +1215,9 @@ class ResponsesRequestMapperTest {
                             DocumentBlock.builder()
                                     .source(new Base64Source("", "YWJj"))
                                     .mimeType("text/plain")
+                                    .name("report.txt")
                                     .build());
-            assertEquals("document.txt", file.filename().orElseThrow());
+            assertEquals("report.txt", file.filename().orElseThrow());
             assertEquals("data:text/plain;base64,YWJj", file.fileData().orElseThrow());
         }
 
