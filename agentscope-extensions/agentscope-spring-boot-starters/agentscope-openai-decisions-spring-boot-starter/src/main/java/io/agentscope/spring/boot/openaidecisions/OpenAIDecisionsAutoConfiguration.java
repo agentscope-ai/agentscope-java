@@ -16,6 +16,7 @@
 package io.agentscope.spring.boot.openaidecisions;
 
 import io.agentscope.extensions.judge.openaidecisions.OpenAIDecisionsClient;
+import io.agentscope.extensions.judge.openaidecisions.OpenAIDecisionsRetryPolicy;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
 import java.time.Duration;
 import org.springframework.beans.factory.ObjectProvider;
@@ -63,6 +64,10 @@ public class OpenAIDecisionsAutoConfiguration {
         if (timeout != null) {
             builder.timeout(timeout);
         }
+
+        var retry = properties.getRetry();
+        builder.retryPolicy(
+                new OpenAIDecisionsRetryPolicy(retry.getMaxRetries(), retry.getInitialBackoff()));
 
         customizerObjectProvider
                 .orderedStream()

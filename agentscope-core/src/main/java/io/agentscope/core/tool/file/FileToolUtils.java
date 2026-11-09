@@ -110,14 +110,14 @@ public class FileToolUtils {
     /**
      * View a specific range of lines from a text file.
      *
-     * @param filePath The file path
+     * @param path The resolved file path
      * @param startLine Start line number (1-based)
      * @param endLine End line number (1-based, inclusive)
      * @return The content with line numbers
      */
-    static String viewTextFile(String filePath, int startLine, int endLine) {
+    static String viewTextFile(Path path, int startLine, int endLine) {
         try {
-            List<String> lines = Files.readAllLines(Paths.get(filePath), StandardCharsets.UTF_8);
+            List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
             StringBuilder result = new StringBuilder();
 
             int start = Math.max(0, startLine - 1);

@@ -127,6 +127,10 @@ public class AguiRequestProcessor {
      * and enriched by {@link AguiAgentAdapter}, so callers can provide custom attributes without
      * replacing the standard AG-UI metadata.
      *
+     * <p>The user id comes from the resolver (deployer decision) when it provides one, otherwise
+     * from {@link AguiRuntimeContextRequest#getUserId()} (caller assertion); see {@link
+     * #resolveRuntimeContext(AguiRuntimeContextRequest)}.
+     *
      * @param request The AG-UI request context carrying input, agent IDs, transport details and the
      *     native request
      * @return A ProcessResult containing the agent and event stream
@@ -138,10 +142,7 @@ public class AguiRequestProcessor {
         String threadId = input.getThreadId();
         String runId = input.getRunId();
 
-        RuntimeContext resolved =
-                runtimeContextResolver != null ? runtimeContextResolver.resolve(request) : null;
-        RuntimeContext runtimeContext =
-                RuntimeContext.builder(resolved).sessionId(threadId).build();
+        RuntimeContext runtimeContext = resolveRuntimeContext(request);
 
         // Resolve agent ID
         String agentId = resolveAgentId(input, headerAgentId, pathAgentId);
@@ -222,6 +223,41 @@ public class AguiRequestProcessor {
                             }
                         });
         return new ProcessResult(agent, events, runtimeContext);
+    }
+
+    /**
+     * Builds the {@link RuntimeContext} for a request, merging the two user-id sources.
+     *
+     * <p>Priority: {@link AguiRuntimeContextResolver} (deployer decision) &gt; {@code
+     * AguiRuntimeContextRequest.getUserId()} (caller assertion) &gt; none. The resolver is
+     * assembled by the deployer and receives this very request, so it can validate or override
+     * the caller-asserted id; an assertion must never silently override a server-verified
+     * identity. When both provide an id and they differ, a WARN is logged to expose the drift.
+     *
+     * @param request The AG-UI request context
+     * @return The runtime context for this request
+     */
+    private RuntimeContext resolveRuntimeContext(AguiRuntimeContextRequest<?> request) {
+        RuntimeContext resolved =
+                runtimeContextResolver != null ? runtimeContextResolver.resolve(request) : null;
+        RuntimeContext.Builder contextBuilder =
+                RuntimeContext.builder(resolved).sessionId(request.getInput().getThreadId());
+        String requestUserId = request.getUserId();
+        String resolvedUserId = resolved != null ? resolved.getUserId() : null;
+        boolean hasRequestUserId = requestUserId != null && !requestUserId.isBlank();
+        boolean hasResolvedUserId = resolvedUserId != null && !resolvedUserId.isBlank();
+        if (hasResolvedUserId && hasRequestUserId && !resolvedUserId.equals(requestUserId)) {
+            logger.warn(
+                    "AG-UI user identity conflict: resolver={} vs request={}; resolver wins",
+                    resolvedUserId,
+                    requestUserId);
+        }
+        if (!hasResolvedUserId && hasRequestUserId) {
+            // Adopt the caller-asserted id only when the resolver made no decision; setting it
+            // unconditionally would overwrite the resolver value copied by Builder#from.
+            contextBuilder.userId(requestUserId);
+        }
+        return contextBuilder.build();
     }
 
     private Flux<AguiEvent> processorErrorEvents(RunAgentInput input, Throwable error) {

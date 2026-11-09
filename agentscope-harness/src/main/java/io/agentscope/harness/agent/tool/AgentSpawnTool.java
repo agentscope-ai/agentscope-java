@@ -27,6 +27,7 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -193,7 +194,8 @@ public class AgentSpawnTool {
      *
      * <p>When present (and force-sync is on), this value fully replaces the LLM's {@code
      * timeout_seconds} for the call. Values {@code <= 0} fall back to the default sync timeout
-     * (30s); values above 600 are clamped.
+     * (30s). Positive values are honored as-is — the deployer owns the sync-wait budget; the
+     * 600s ceiling ({@code MAX_TIMEOUT_SECONDS}) applies only to LLM-requested timeouts.
      *
      * <p>Ignored when force-sync is off.
      *
@@ -215,7 +217,10 @@ public class AgentSpawnTool {
             wait_async_results(task_ids=...) to wait for a chosen group, \
             wait_async_results(wait_all=true) to wait for all current background tasks, \
             task_cancel(task_id='%s') to cancel, or task_list() to see all tasks. \
-            Do NOT call task_output immediately — the task has just started.\
+            Do NOT call task_output immediately — the task has just started. \
+            Do not redo the task's work yourself while it runs in the background. \
+            Never mention task_id, agent_key, or session_id to the user — they are internal handles. \
+            Do not read the task's output files to watch progress; wait for the result instead.\
             """;
 
     /** Short poll interval used while waiting for a remote sync task, to detect awaiting_confirm promptly. */
@@ -293,6 +298,7 @@ public class AgentSpawnTool {
     @Tool(
             name = "agent_spawn",
             stateInjected = true,
+            timeoutManaged = true,
             description =
                     """
                     Spawn an isolated subagent for delegated or background work. \
@@ -302,7 +308,12 @@ public class AgentSpawnTool {
                     async (timeout_seconds=0) adds task_id for task_output or wait_async_results; \
                     task_id is NOT agent_key. Multiple sync tool calls in one turn run in parallel \
                     by default; pass a Toolkit with parallel=false to serialize, \
-                    or use async tasks for fire-and-forget parallelism.\
+                    or use async tasks for fire-and-forget parallelism. \
+                    The subagent does not inherit the parent conversation, so include every \
+                    file path, constraint, and expected output format the task needs. New \
+                    sessions start from the supplied task; persistent sessions may retain their own history. \
+                    Do not re-spawn the same task reworded to bypass a permission denial; \
+                    report the limitation instead.\
                     """)
     public Mono<ToolResultBlock> agentSpawn(
             RuntimeContext runtimeContext,
@@ -505,7 +516,7 @@ public class AgentSpawnTool {
                                                             capturedTask,
                                                             runtimeContext)
                                                     .block();
-                                    return reply != null ? reply.getTextContent() : "";
+                                    return textOf(reply);
                                 });
             }
             taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
@@ -570,12 +581,16 @@ public class AgentSpawnTool {
     @Tool(
             name = "agent_send",
             stateInjected = true,
+            timeoutManaged = true,
             description =
                     """
                     Send a message to an existing subagent. Use the exact string from the \
                     agent_key line of agent_spawn output (starts with agent:), or the label \
                     you set at spawn. Do not pass agent_id, session_id, or task_id here. \
-                    timeout_seconds=0 returns task_id for task_output or wait_async_results.\
+                    timeout_seconds=0 returns task_id for task_output or wait_async_results. \
+                    Sends are follow-ups to a subagent that already holds the context you \
+                    gave it. Use follow-ups to steer the task or continue its work. Do not \
+                    re-send the same request reworded to bypass a permission denial.\
                     """)
     public Mono<ToolResultBlock> agentSend(
             RuntimeContext runtimeContext,
@@ -677,7 +692,7 @@ public class AgentSpawnTool {
                                                             capturedMessage,
                                                             runtimeContext)
                                                     .block();
-                                    return reply != null ? reply.getTextContent() : "";
+                                    return textOf(reply);
                                 });
             }
             taskRepository.putTask(
@@ -1174,8 +1189,14 @@ public class AgentSpawnTool {
         return restored;
     }
 
+    /**
+     * Renders a subagent reply as text for the task result.
+     *
+     * <p>The background task contract stores a string, so a delivered document cannot travel as
+     * a block here. It is named in a reference instead of disappearing.
+     */
     private static String textOf(Msg msg) {
-        return msg != null ? msg.getTextContent() : "";
+        return DocumentReferenceRenderer.renderMessageText(msg);
     }
 
     private static String formatTimeoutPromoted(String taskId, long timeoutMs) {
@@ -1196,7 +1217,8 @@ public class AgentSpawnTool {
         return String.format(
                 """
                 status: timeout
-                The task exceeded the %ds sync timeout and was interrupted because force_sync                 is enabled. Background promotion is disabled for this call.\
+                The task exceeded the %ds sync timeout and was interrupted because force_sync \
+                is enabled. Background promotion is disabled for this call.\
                 """,
                 timeoutMs / 1000);
     }
@@ -1222,26 +1244,28 @@ public class AgentSpawnTool {
     }
 
     /**
-     * Builds a source path string for the {@link AgentEvent#withSource} tag. Uses the same
-     * parent-session / child-agent-id convention as {@link #buildChildSource}.
+     * Builds a source path string for the {@link AgentEvent#withSource} tag. The child's own
+     * session id is the final segment so consumers can distinguish multiple instances of the same
+     * subagent type within one parent session.
      */
     private String buildSourcePath(SpawnedAgent spawned, RuntimeContext parentCtx) {
         String parentName =
                 (parentCtx != null && parentCtx.getSessionId() != null)
                         ? parentCtx.getSessionId()
                         : "main";
-        return parentName + "/" + spawned.agentId();
+        return parentName + "/" + spawned.agentId() + "/" + spawned.sessionId();
     }
 
     /**
-     * Builds a {@code parentSession/agentId} source path for remote events forwarded into the
-     * parent's stream.
+     * Builds a {@code parentSession/agentId/taskId} source path for remote events forwarded into
+     * the parent's stream. The task id is the remote invocation discriminator.
      */
-    static String buildRemoteSourcePath(String parentSessionId, String agentId) {
+    static String buildRemoteSourcePath(String parentSessionId, String agentId, String taskId) {
         String parent =
                 parentSessionId != null && !parentSessionId.isBlank() ? parentSessionId : "main";
         String child = agentId != null && !agentId.isBlank() ? agentId : "remote";
-        return parent + "/" + child;
+        String invocation = taskId != null && !taskId.isBlank() ? taskId.trim() : "task";
+        return parent + "/" + child + "/" + invocation;
     }
 
     /**
@@ -1406,7 +1430,7 @@ public class AgentSpawnTool {
 
         RemoteTarget target = new RemoteTarget(decl.getUrl(), decl.getHeaders());
         RemoteSubagentTransport transport = this.remoteTransport;
-        String sourcePath = buildRemoteSourcePath(parentSessionId, agentId);
+        String sourcePath = buildRemoteSourcePath(parentSessionId, agentId, taskId);
         boolean wantStream = emitter != null && decl.isRemoteStreaming();
         AtomicBoolean autoDenied = new AtomicBoolean(false);
         AtomicBoolean resumedEpisode = new AtomicBoolean(false);
@@ -1597,7 +1621,7 @@ public class AgentSpawnTool {
             Integer override = forceSyncTimeoutSeconds(ctx);
             if (override != null) {
                 int seconds = override <= 0 ? DEFAULT_TIMEOUT_SECONDS : override;
-                return (long) Math.min(seconds, MAX_TIMEOUT_SECONDS) * 1_000;
+                return (long) seconds * 1_000;
             }
         }
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
@@ -1717,7 +1741,7 @@ public class AgentSpawnTool {
                                                             capturedTask,
                                                             runtimeContext)
                                                     .block();
-                                    return reply != null ? reply.getTextContent() : "";
+                                    return textOf(reply);
                                 });
             }
             taskRepository.putTask(

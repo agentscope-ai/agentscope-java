@@ -19,12 +19,19 @@ package io.agentscope.core.skill;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Unit tests for SkillRegistry, including the id-collision tripwire: underscore-free names make
+ * the {@code name_source} id split deterministic, so a same-id overwrite of a different (name,
+ * source) pair can only arrive via caller-supplied keys and is flagged rather than silent.
+ */
 class SkillRegistryTest {
 
     private SkillRegistry registry;
@@ -60,6 +67,39 @@ class SkillRegistryTest {
 
         assertTrue(registry.exists("test_custom"));
         assertEquals(skill2, registry.getSkill("test_custom"));
+    }
+
+    @Test
+    @DisplayName("Should keep ids unambiguous by rejecting underscore names at construction")
+    void testUnderscoreNamesAreRejectedSoIdsSplitDeterministically() {
+        // Names cannot contain the id separator "_", so "name_source" always splits at the
+        // first underscore and distinct (name, source) pairs cannot share an id.
+        assertThrows(IllegalArgumentException.class, () -> createSkill("a_b"));
+        assertThrows(IllegalArgumentException.class, () -> createSkill("b-c_d"));
+
+        AgentSkill a = new AgentSkill("a", "desc", "content", null, "b-c");
+        assertEquals("a_b-c", a.getSkillId());
+    }
+
+    @Test
+    @DisplayName("Should flag same-id overwrite of a different pair but not normal re-registration")
+    void testMismatchedIdOverwriteIsFlaggedButNormalReregistrationIsNot() {
+        AgentSkill first = new AgentSkill("a", "desc-1", "content-1", null, "custom");
+        AgentSkill updated = new AgentSkill("a", "desc-1", "content-2", null, "custom");
+        AgentSkill differentPair = new AgentSkill("a", "desc-2", "content-2", null, "other");
+
+        // Normal re-registration (same name + source, new content) and a free id are not
+        // collisions; only a different (name, source) pair under the same id is.
+        assertFalse(SkillRegistry.isAmbiguousIdCollision(first, updated));
+        assertFalse(SkillRegistry.isAmbiguousIdCollision(null, first));
+        assertTrue(SkillRegistry.isAmbiguousIdCollision(first, differentPair));
+
+        // Through caller-supplied keys the tripwire must still fire and the last skill wins.
+        registry.registerSkill("a_custom", first);
+        registry.registerSkill("a_custom", differentPair);
+
+        assertEquals(Set.of("a_custom"), registry.getSkillIds());
+        assertEquals(differentPair, registry.getSkill("a_custom"));
     }
 
     @Test

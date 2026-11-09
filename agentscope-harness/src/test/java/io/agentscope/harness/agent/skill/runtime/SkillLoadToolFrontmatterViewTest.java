@@ -29,6 +29,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Verifies the #7-B change: {@code load_skill_through_path(path="SKILL.md")} now returns the
@@ -75,7 +77,7 @@ class SkillLoadToolFrontmatterViewTest {
     }
 
     @Test
-    @DisplayName("Resource view also uses 4-backtick fence to avoid collision with body")
+    @DisplayName("Resource view keeps a 4-backtick minimum fence")
     void resourceFenceConsistent() {
         AgentSkill skill =
                 new AgentSkill(
@@ -98,6 +100,62 @@ class SkillLoadToolFrontmatterViewTest {
         // Count the number of `````` fence occurrences (open + close).
         int fenceCount = countOccurrences(text, "````");
         assertEquals(2, fenceCount, "expected exactly one open + one close fence, got " + text);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {3, 4, 7})
+    void skillMarkdownFenceContainsNestedBackticks(int backticks) {
+        String body =
+                "# Body\n"
+                        + "`".repeat(backticks)
+                        + "\nnested content\n"
+                        + "`".repeat(backticks)
+                        + "\n";
+        AgentSkill skill = new AgentSkill("alpha", "alpha skill", body, null, "custom");
+        RuntimeContext ctx = RuntimeContext.empty();
+        ctx.put(
+                SkillCatalog.class,
+                SkillCatalog.of(java.util.List.of(HarnessSkillEntry.of(skill, null))));
+
+        String text =
+                runTool(
+                        new SkillLoadTool(),
+                        ctx,
+                        Map.of("skillId", skill.getSkillId(), "path", "SKILL.md"));
+        String fence = "`".repeat(Math.max(4, backticks + 1));
+
+        assertTrue(text.contains("\n" + fence + "markdown\n"));
+        assertTrue(text.contains(body));
+        assertTrue(text.endsWith("\n" + fence + "\n"));
+        assertEquals(2, countOccurrences(text, fence));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {3, 4, 7})
+    void resourceFenceContainsNestedBackticks(int backticks) {
+        String content = "`".repeat(backticks) + "\nnested content\n" + "`".repeat(backticks);
+        AgentSkill skill =
+                new AgentSkill(
+                        "alpha",
+                        "alpha skill",
+                        "body",
+                        Map.of("references/guide.md", content),
+                        "custom");
+        RuntimeContext ctx = RuntimeContext.empty();
+        ctx.put(
+                SkillCatalog.class,
+                SkillCatalog.of(java.util.List.of(HarnessSkillEntry.of(skill, null))));
+
+        String text =
+                runTool(
+                        new SkillLoadTool(),
+                        ctx,
+                        Map.of("skillId", skill.getSkillId(), "path", "references/guide.md"));
+        String fence = "`".repeat(Math.max(4, backticks + 1));
+
+        assertTrue(text.contains("\n" + fence + "\n" + content));
+        assertTrue(text.endsWith("\n" + fence + "\n"));
+        assertEquals(2, countOccurrences(text, fence));
     }
 
     private static String runTool(

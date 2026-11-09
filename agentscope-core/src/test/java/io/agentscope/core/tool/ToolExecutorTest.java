@@ -117,6 +117,27 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should execute input-only tool call when raw content is absent")
+    void shouldExecuteInputOnlyToolCallWithoutContent() {
+        ToolUseBlock addCall =
+                ToolUseBlock.builder()
+                        .id("call-input-only")
+                        .name("add")
+                        .input(Map.of("a", 10, "b", 20))
+                        .build();
+
+        ToolResultBlock response =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(addCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(response, "Executor should return a response for input-only calls");
+        assertEquals(
+                "30",
+                extractFirstText(response),
+                "Schema validation must validate the parsed input when raw content is absent");
+    }
+
+    @Test
     @DisplayName("Should wrap tool errors inside executor response")
     void shouldReturnErrorWhenToolThrows() {
         Map<String, Object> errorInput = Map.of("message", "test failure");
@@ -704,6 +725,21 @@ class ToolExecutorTest {
 
         assertEquals(1, responses.size());
         assertEquals("\"recovered\"", extractFirstText(responses.get(0)));
+        assertEquals(2, flaky.calls.get());
+    }
+
+    @Test
+    void shouldRetryDirectToolkitCallsWithPerCallConfig() {
+        FlakyTools flaky = new FlakyTools();
+        toolkit.registerTool(flaky);
+        ToolUseBlock call = toolCall("call-direct-retry", "flaky_sync");
+        ToolCallParam param = ToolCallParam.builder().toolUseBlock(call).build();
+
+        ToolResultBlock result = toolkit.callTool(param, retryConfig(2)).block(TIMEOUT);
+
+        assertEquals("\"recovered\"", extractFirstText(result));
+        assertEquals(call.getId(), result.getId());
+        assertEquals(call.getName(), result.getName());
         assertEquals(2, flaky.calls.get());
     }
 
@@ -1387,9 +1423,9 @@ class ToolExecutorTest {
     }
 
     @Test
-    @DisplayName("Should keep the callAsync error-result contract on direct calls")
-    void shouldKeepCallAsyncContractOnDirectCalls() {
-        // Custom tool failing with an error signal: direct calls still receive an error result
+    @DisplayName("Should map errors in direct Toolkit calls and preserve AgentTool.callAsync")
+    void shouldKeepErrorResultsForDirectCalls() {
+        // Toolkit still maps a custom tool's error signal to an error result.
         toolkit.registerTool(
                 new AgentTool() {
                     @Override
@@ -1420,9 +1456,10 @@ class ToolExecutorTest {
                         .block(TIMEOUT);
         assertEquals("Error: Tool execution failed: Direct failure", extractFirstText(result));
 
-        // Annotation tools keep converting exceptions to error results on the direct path
+        // Calling an annotation tool's public API directly still returns an error result.
         ToolResultBlock annotationResult =
-                toolkit.callTool(
+                toolkit.getTool("error_tool")
+                        .callAsync(
                                 ToolCallParam.builder()
                                         .toolUseBlock(
                                                 toolCall(
@@ -1436,15 +1473,14 @@ class ToolExecutorTest {
                 "Error: Tool execution failed: Tool error: direct",
                 extractFirstText(annotationResult));
 
-        // MCP tools keep their own error formatting on the direct path
+        // MCP's direct API keeps its error formatting.
         McpClientWrapper wrapper = mock(McpClientWrapper.class);
         when(wrapper.getName()).thenReturn("test-client");
         McpTool mcpTool = new McpTool("direct_mcp", "Direct MCP tool", emptySchema(), wrapper);
         when(wrapper.callTool(eq("direct_mcp"), any(), any()))
                 .thenReturn(Mono.error(new RuntimeException("Network error")));
-        toolkit.registerTool(mcpTool);
         ToolResultBlock mcpResult =
-                toolkit.callTool(
+                mcpTool.callAsync(
                                 ToolCallParam.builder()
                                         .toolUseBlock(toolCall("call-direct-mcp", "direct_mcp"))
                                         .build())

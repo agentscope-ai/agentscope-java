@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.agentscope.builder.web.managed.ManagedSessionDto;
 import io.agentscope.builder.web.managed.SessionAgentBuildSpec;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionEngine;
@@ -58,6 +59,46 @@ class HarnessAgentBuildServiceCacheKeyTest {
                 0L,
                 0L,
                 null);
+    }
+
+    @Test
+    void sessionLogAgentIdIsValidForNamespacedOwnerIds() {
+        ManagedSessionDto namespaced =
+                new ManagedSessionDto(
+                        "sess_62a374ad4da7",
+                        "namespace:default",
+                        "default-92145f4c-2392-448d-b506-2ac9a13e13f0",
+                        "namespace:default",
+                        1,
+                        "latest",
+                        null,
+                        "env-1",
+                        null,
+                        null,
+                        null,
+                        null,
+                        "idle",
+                        null,
+                        0L,
+                        0L,
+                        null);
+
+        String agentId = HarnessAgentBuildService.sessionLogAgentId(namespaced);
+
+        assertThat(agentId)
+                .isEqualTo(
+                        "dpa-namespace-default-default-92145f4c-2392-448d-b506-2ac9a13e13f0"
+                                + "-sess_62a374ad4da7");
+        // The assembled id is handed to HarnessAgent.Builder#agentId, whose validation matches
+        // [A-Za-z0-9._-]+ only. With a namespaced owner id it used to throw
+        // "Invalid agentId 'dpa-namespace:default:...'" and the managed session never ran.
+        assertThat(AgentBase.normalizeAgentId(agentId)).isEqualTo(agentId);
+    }
+
+    @Test
+    void sessionLogAgentIdLeavesValidIdsUntouched() {
+        assertThat(HarnessAgentBuildService.sessionLogAgentId(session("sess_1", null)))
+                .isEqualTo("dpa-owner-1-bbb-sess_1");
     }
 
     @Test

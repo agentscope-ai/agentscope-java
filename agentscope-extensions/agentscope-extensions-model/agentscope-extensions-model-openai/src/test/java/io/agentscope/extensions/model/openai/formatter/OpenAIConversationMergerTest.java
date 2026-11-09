@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -1014,5 +1015,38 @@ class OpenAIConversationMergerTest {
         String content = result.getContentAsString();
         assertNotNull(content);
         assertTrue(content.contains("Empty name"), "Should handle empty agent name");
+    }
+
+    @Test
+    @DisplayName("Should keep a reference for DocumentBlock in merged history")
+    void testDocumentBlockBecomesReference() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Summarize this").build(),
+                                        DocumentBlock.builder()
+                                                .name("report.pdf")
+                                                .mimeType("application/pdf")
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/report.pdf")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(List.of(msg), Msg::getName, blocks -> "Tool result");
+
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(
+                content.contains(
+                        "[document: report.pdf, application/pdf, url:"
+                                + " https://example.com/report.pdf]"),
+                "Merged history must mention the document instead of dropping it");
     }
 }

@@ -316,6 +316,8 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 
 需要替换流入下一层的字段时，构造一个新的 input record 后再调用 `next.apply(...)`。
 
+`onModelCall` 中的修改只影响该次模型请求，不会自动改写已保存的对话历史。对于旧版 `PostActingEvent`，`setToolResult(...)` 会更新下一轮推理读取的工具消息；显式替换的 `Msg` 优先，原始工具调用标识保持一致。`returnDirect` 仍按原有方式直接返回；替换结果不会改写已经发出的流式 delta。
+
 完整可运行示例：`agentscope-examples/documentation/.../middleware/CustomizedMiddlewareExample.java`、`middleware/ModelCallMiddlewareExample.java`、`middleware/SystemPromptMiddlewareExample.java`。
 
 ### 状态就绪通知

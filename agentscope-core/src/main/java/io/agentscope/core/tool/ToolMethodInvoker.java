@@ -107,12 +107,10 @@ class ToolMethodInvoker {
                             })
                     .flatMap(
                             future ->
-                                    Mono.fromFuture(future)
-                                            .map(
-                                                    r ->
-                                                            converter.convert(
-                                                                    r,
-                                                                    extractGenericType(method))));
+                                    convertAsyncResult(
+                                            Mono.fromFuture(future),
+                                            extractGenericType(method),
+                                            converter));
 
         } else if (returnType == Mono.class) {
             // Async method returning Mono: invoke and flatMap
@@ -128,8 +126,8 @@ class ToolMethodInvoker {
                             })
                     .flatMap(
                             mono ->
-                                    mono.map(
-                                            r -> converter.convert(r, extractGenericType(method))));
+                                    convertAsyncResult(
+                                            mono, extractGenericType(method), converter));
 
         } else {
             // Sync method: wrap in Mono.fromCallable
@@ -142,6 +140,14 @@ class ToolMethodInvoker {
                         return converter.convert(result, method.getGenericReturnType());
                     });
         }
+    }
+
+    private Mono<ToolResultBlock> convertAsyncResult(
+            Mono<Object> result, Type returnType, ToolResultConverter converter) {
+        if (returnType == Void.class) {
+            return result.then(Mono.fromSupplier(() -> converter.convert(null, returnType)));
+        }
+        return result.map(value -> converter.convert(value, returnType));
     }
 
     /**
