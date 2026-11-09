@@ -279,6 +279,7 @@ class InboxMiddlewareTest {
                 HarnessAgent.builder()
                         .name("inbox-agent")
                         .model(model)
+                        .disableMemoryHooks()
                         .workspace(wsDir)
                         .abstractFilesystem(new LocalFilesystem(wsDir))
                         .stateStore(stateStore)

@@ -157,6 +157,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
+                        .disableMemoryHooks()
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
@@ -258,6 +259,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
+                        .disableMemoryHooks()
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
@@ -363,6 +365,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
+                        .disableMemoryHooks()
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .asyncToolTimeout(Duration.ofSeconds(30))
@@ -448,6 +451,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
+                        .disableMemoryHooks()
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
@@ -515,6 +519,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
+                        .disableMemoryHooks()
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
@@ -595,6 +600,7 @@ class HarnessAgentSubagentStreamEventsTest {
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
+                        .disableMemoryHooks()
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
                         .build();
