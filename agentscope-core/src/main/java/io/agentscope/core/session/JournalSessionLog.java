@@ -348,7 +348,10 @@ public final class JournalSessionLog implements SessionLog {
         // One round-trip per journal instead of one per segment: bulk-load the committed
         // segments up front when the backend can list and batch-read, and walk the commit
         // chain in memory. Backends without discovery fall back to per-segment reads.
-        Map<String, AtomicSessionStorage.Value> loadedSegments = loadCommitSegments();
+        // This is only worth it for a full replay (after == 0); an incremental read covers
+        // just the head -> after suffix and reads those segments one by one.
+        Map<String, AtomicSessionStorage.Value> loadedSegments =
+                after == 0 ? loadCommitSegments() : null;
         var ids = new ArrayDeque<String>();
         var seen = new HashSet<String>();
         long expected = head.seq();

@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,44 @@ class JournalSessionLogTest {
 
     private SessionEvent event(long seq, String type) {
         return new SessionEvent(1, "e" + seq, seq, 1, type, "r", "t", true, "{}");
+    }
+
+    private static List<SessionEvent> collect(Iterable<SessionEvent> events) {
+        var result = new ArrayList<SessionEvent>();
+        for (var event : events) result.add(event);
+        return result;
+    }
+
+    private static final class CountingStorage implements AtomicSessionStorage {
+        final Map<String, Value> values = new HashMap<>();
+        int listPathsCalls;
+        int readAllCalls;
+
+        public Value read(String path) {
+            return values.get(path);
+        }
+
+        public boolean compareAndSet(String path, long version, byte[] bytes) {
+            var old = values.get(path);
+            if ((old == null ? 0 : old.version()) != version) return false;
+            values.put(path, new Value(version + 1, bytes));
+            return true;
+        }
+
+        @Override
+        public List<String> listPaths(String prefix) {
+            listPathsCalls++;
+            return values.keySet().stream()
+                    .filter(path -> path.startsWith(prefix))
+                    .sorted()
+                    .toList();
+        }
+
+        @Override
+        public Map<String, Value> readAll(Collection<String> paths) {
+            readAllCalls++;
+            return AtomicSessionStorage.super.readAll(paths);
+        }
     }
 
     @Test
@@ -147,6 +187,50 @@ class JournalSessionLogTest {
         var batch = List.of(event(1, "run/start"), event(2, "run/end"));
         log.commit(writer, "b", 0, batch);
         assertEquals(batch, log.readAfter(0, 10));
+    }
+
+    @Test
+    void incrementalScanDoesNotBulkLoadTheJournal() {
+        var storage = new CountingStorage();
+        var log = new JournalSessionLog(storage, "test");
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        var batch = List.of(event(1, "run/start"), event(2, "run/end"));
+        log.commit(writer, "b", 0, batch);
+        storage.listPathsCalls = 0;
+        storage.readAllCalls = 0;
+        assertEquals(List.of(batch.get(1)), collect(log.scan(1, 2)));
+        assertEquals(0, storage.listPathsCalls);
+        assertEquals(0, storage.readAllCalls);
+    }
+
+    @Test
+    void fullReplayStillBulkLoadsCommitSegments() {
+        var storage = new CountingStorage();
+        var log = new JournalSessionLog(storage, "test");
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        var first = List.of(event(1, "run/start"), event(2, "run/end"));
+        var second = List.of(event(3, "run/start"), event(4, "run/end"));
+        log.commit(writer, "a", 0, first);
+        log.commit(writer, "b", 2, second);
+        storage.listPathsCalls = 0;
+        storage.readAllCalls = 0;
+        assertEquals(4, collect(log.scan(0, 4)).size());
+        assertEquals(1, storage.listPathsCalls);
+        assertEquals(1, storage.readAllCalls);
+    }
+
+    @Test
+    void incrementalAndBulkReplayReturnTheSameEvents() {
+        var storage = new CountingStorage();
+        var log = new JournalSessionLog(storage, "test");
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        var first = List.of(event(1, "run/start"), event(2, "run/end"));
+        var second = List.of(event(3, "run/start"), event(4, "run/end"));
+        log.commit(writer, "a", 0, first);
+        log.commit(writer, "b", 2, second);
+        var full = collect(log.scan(0, 4));
+        assertEquals(first.size() + second.size(), full.size());
+        assertEquals(full.subList(2, 4), collect(log.scan(2, 4)));
     }
 
     @Test
