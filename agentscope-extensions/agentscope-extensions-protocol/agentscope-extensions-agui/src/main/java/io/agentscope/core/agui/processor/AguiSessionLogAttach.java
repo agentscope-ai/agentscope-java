@@ -109,7 +109,12 @@ final class AguiSessionLogAttach {
         return Flux.defer(
                         () -> {
                             try {
-                                long runStart = lastRunStartSeq(log);
+                                // 优先用恢复锚点（JournalSessionLog 走 anchors.json，一次小读）。
+                                // 不支持锚点的实现默认返回 0，退回按段回溯，保持原行为。
+                                long runStart = log.lastRunStartSeq();
+                                if (runStart <= 0) {
+                                    runStart = lastRunStartSeq(log);
+                                }
                                 if (runStart > 0 && after >= runStart) {
                                     String runId =
                                             executionRunId == null || executionRunId.isBlank()
