@@ -63,7 +63,12 @@ public class GLMMultiAgentFormatter extends OpenAIMultiAgentFormatter {
 
     @Override
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
-        List<OpenAIMessage> messages = super.doFormat(msgs);
+        return doFormat(msgs, null);
+    }
+
+    @Override
+    protected List<OpenAIMessage> doFormat(List<Msg> msgs, GenerateOptions options) {
+        List<OpenAIMessage> messages = super.doFormat(msgs, options);
         return GLMFormatter.ensureUserMessage(messages);
     }
 

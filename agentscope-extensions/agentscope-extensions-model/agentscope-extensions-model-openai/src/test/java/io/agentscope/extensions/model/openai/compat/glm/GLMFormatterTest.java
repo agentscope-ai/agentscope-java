@@ -422,6 +422,28 @@ class GLMFormatterTest {
         }
 
         @Test
+        @DisplayName("Should ensure user message on the options-aware format path")
+        void testFormatWithOptionsEnsuresUserMessage() {
+            List<Msg> messages =
+                    List.of(
+                            Msg.builder()
+                                    .role(MsgRole.SYSTEM)
+                                    .content(
+                                            List.of(
+                                                    TextBlock.builder()
+                                                            .text("You are helpful")
+                                                            .build()))
+                                    .build());
+
+            List<OpenAIMessage> result =
+                    formatter.format(messages, GenerateOptions.builder().build());
+
+            assertEquals(2, result.size());
+            assertEquals("system", result.get(0).getRole());
+            assertEquals("user", result.get(1).getRole());
+        }
+
+        @Test
         @DisplayName("Should not add placeholder if user message exists")
         void testFormatWithExistingUserMessage() {
             List<Msg> messages =

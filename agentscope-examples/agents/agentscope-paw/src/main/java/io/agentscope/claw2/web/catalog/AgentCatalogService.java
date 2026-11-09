@@ -23,8 +23,8 @@ import io.agentscope.claw2.web.template.TemplateRegistry;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.session.SessionLogStore;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.transcript.TranscriptStore;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -68,8 +68,7 @@ public class AgentCatalogService {
     private final Model model;
     private final ToolEventBus toolEventBus;
     private final TemplateRegistry templateRegistry;
-    private final Optional<TranscriptStore> transcriptStore;
-    private final String transcriptTenant;
+    private final Optional<SessionLogStore> sessionLogStore;
 
     /** Custom agent ids that have been built and registered in the gateway during this run. */
     private final ConcurrentHashMap<String, String> registeredCustomIds = new ConcurrentHashMap<>();
@@ -80,18 +79,13 @@ public class AgentCatalogService {
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
             TemplateRegistry templateRegistry,
-            Optional<TranscriptStore> transcriptStore,
-            String pawTranscriptTenant) {
+            Optional<SessionLogStore> sessionLogStore) {
         this.bootstrap = bootstrap;
         this.store = store;
         this.model = modelOpt.orElse(null);
         this.toolEventBus = toolEventBus;
         this.templateRegistry = templateRegistry;
-        this.transcriptStore = transcriptStore != null ? transcriptStore : Optional.empty();
-        this.transcriptTenant =
-                pawTranscriptTenant != null && !pawTranscriptTenant.isBlank()
-                        ? pawTranscriptTenant
-                        : "default";
+        this.sessionLogStore = sessionLogStore != null ? sessionLogStore : Optional.empty();
     }
 
     // -----------------------------------------------------------------
@@ -368,8 +362,7 @@ public class AgentCatalogService {
         }
         b.workspace(workspace);
         b.middleware(new ToolNotificationMiddleware(toolEventBus));
-        transcriptStore.ifPresent(
-                store -> b.transcriptStore(store).transcriptTenant(transcriptTenant));
+        sessionLogStore.ifPresent(b::sessionLogStore);
 
         HarnessAgent agent = b.build();
         HarnessGateway gateway = bootstrap.gateway();

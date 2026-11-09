@@ -29,10 +29,14 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.Usage;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -499,5 +503,180 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.size());
         // Tool results are converted to USER messages
         assertEquals(MessageParam.Role.USER, result.get(0).role());
+    }
+
+    @Test
+    void testFormatPdfDocumentBlockEnablesCitations() {
+        DocumentBlock pdf =
+                DocumentBlock.builder()
+                        .name("guide.pdf")
+                        .mimeType("application/pdf")
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("application/pdf")
+                                        .data("JVBERi0xLjQK")
+                                        .build())
+                        .build();
+        Msg msg = Msg.builder().role(MsgRole.USER).content(pdf).build();
+
+        List<MessageParam> result = formatter.format(List.of(msg));
+
+        ContentBlockParam document = result.get(0).content().asBlockParams().get(0);
+        assertTrue(document.isDocument());
+        assertTrue(document.asDocument().citations().orElseThrow().enabled().orElseThrow());
+    }
+
+    @Test
+    void testFormatDocumentBlockWithAnthropicFileId() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .name("guide.pdf")
+                                        .source(
+                                                FileIdSource.builder()
+                                                        .provider("anthropic")
+                                                        .fileId("file-abc")
+                                                        .build())
+                                        .build())
+                        .build();
+
+        ContentBlockParam document =
+                formatter.format(List.of(msg)).get(0).content().asBlockParams().get(0);
+
+        assertTrue(document.isDocument());
+        assertEquals("file-abc", document.asDocument().source().asFile().fileId());
+        assertEquals("guide.pdf", document.asDocument().title().orElseThrow());
+    }
+
+    @Test
+    void defaultFormatterPreservesSystemTextNewlines() {
+        Msg system =
+                Msg.builder().role(MsgRole.SYSTEM).textContent("first\nsecond\n\nthird").build();
+        var params =
+                MessageCreateParams.builder()
+                        .model("claude-test")
+                        .maxTokens(32)
+                        .messages(
+                                List.of(
+                                        MessageParam.builder()
+                                                .role(MessageParam.Role.USER)
+                                                .content("hello")
+                                                .build()));
+        formatter.applySystemMessage(params, List.of(system));
+        assertEquals("first\nsecond\n\nthird", params.build().system().orElseThrow().asString());
+    }
+
+    @Test
+    void defaultFormatterMarksFailedToolResultAsError() {
+        Msg error =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("failed-call")
+                                        .name("search")
+                                        .state(ToolResultState.ERROR)
+                                        .output(TextBlock.builder().text("diagnostic").build())
+                                        .build())
+                        .build();
+        var result =
+                formatter
+                        .format(List.of(error))
+                        .get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asToolResult();
+        assertEquals("failed-call", result.toolUseId());
+        assertTrue(result.isError().orElse(false));
+    }
+
+    @Test
+    void testCitationsApplyToAllDocumentsAndSupportCacheControl() {
+        DocumentBlock pdf =
+                DocumentBlock.builder()
+                        .name("guide.pdf")
+                        .mimeType("application/pdf")
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("application/pdf")
+                                        .data("JVBERi0xLjQK")
+                                        .build())
+                        .build();
+        List<Msg> messages =
+                List.of(
+                        Msg.builder().role(MsgRole.USER).content(pdf).build(),
+                        Msg.builder()
+                                .role(MsgRole.TOOL)
+                                .content(
+                                        ToolResultBlock.builder()
+                                                .id("pdf-tool")
+                                                .name("read_pdf")
+                                                .output(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("attached")
+                                                                        .build(),
+                                                                pdf))
+                                                .build())
+                                .build());
+        var enabled = formatter.format(messages);
+        assertTrue(
+                enabled.get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asDocument()
+                        .citations()
+                        .orElseThrow()
+                        .enabled()
+                        .orElseThrow());
+        assertTrue(
+                enabled.get(1)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asToolResult()
+                        .content()
+                        .orElseThrow()
+                        .asBlocks()
+                        .get(1)
+                        .asDocument()
+                        .citations()
+                        .orElseThrow()
+                        .enabled()
+                        .orElseThrow());
+        // Configuring a later request must not mutate an earlier request.
+        assertTrue(
+                enabled.get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asDocument()
+                        .citations()
+                        .orElseThrow()
+                        .enabled()
+                        .orElseThrow());
+        var cached = formatter.applyCacheControl(enabled.subList(0, 1));
+        assertTrue(
+                cached.get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asDocument()
+                        .cacheControl()
+                        .isPresent());
+        assertTrue(
+                cached.get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asDocument()
+                        .citations()
+                        .orElseThrow()
+                        .enabled()
+                        .orElseThrow());
     }
 }

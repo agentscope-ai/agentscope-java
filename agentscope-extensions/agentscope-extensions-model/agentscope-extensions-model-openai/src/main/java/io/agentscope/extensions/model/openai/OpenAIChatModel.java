@@ -16,6 +16,8 @@
 package io.agentscope.extensions.model.openai;
 
 import io.agentscope.core.formatter.Formatter;
+import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
@@ -33,7 +35,6 @@ import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.dto.OpenAIStreamOptions;
-import io.agentscope.extensions.model.openai.formatter.OpenAIBaseFormatter;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 import java.time.Instant;
 import java.util.List;
@@ -74,6 +75,7 @@ public class OpenAIChatModel extends ChatModelBase {
     private final OpenAIClient client;
     private final Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
     private final GenerateOptions configuredOptions;
+    private final Boolean strictJsonSchema;
 
     /**
      * Creates a new OpenAI chat model instance with pre-configured options.
@@ -85,10 +87,12 @@ public class OpenAIChatModel extends ChatModelBase {
     private OpenAIChatModel(
             OpenAIClient client,
             Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter,
-            GenerateOptions configuredOptions) {
+            GenerateOptions configuredOptions,
+            Boolean strictJsonSchema) {
         this.client = client != null ? client : new OpenAIClient();
         this.formatter = formatter != null ? formatter : new OpenAIChatFormatter();
         this.configuredOptions = configuredOptions;
+        this.strictJsonSchema = strictJsonSchema;
     }
 
     @Override
@@ -127,7 +131,7 @@ public class OpenAIChatModel extends ChatModelBase {
         Instant start = Instant.now();
 
         // Format messages using formatter (handles provider-specific transformations)
-        List<OpenAIMessage> openaiMessages = formatter.format(messages);
+        List<OpenAIMessage> openaiMessages = formatter.format(messages, effectiveOptions);
 
         // Build request
         OpenAIRequest.Builder requestBuilder =
@@ -149,16 +153,11 @@ public class OpenAIChatModel extends ChatModelBase {
 
         // Apply generation options (formatter handles provider-specific options)
         formatter.applyOptions(request, effectiveOptions, null);
+        applyStrictJsonSchemaDefault(request);
 
         // Apply tool choice if specified (formatter handles provider-specific tool choice)
         if (effectiveOptions.getToolChoice() != null) {
             formatter.applyToolChoice(request, effectiveOptions.getToolChoice());
-        }
-
-        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
-        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())
-                && formatter instanceof OpenAIBaseFormatter openAIFormatter) {
-            openAIFormatter.applyCacheControl(request.getMessages());
         }
 
         // Make the API call
@@ -199,6 +198,32 @@ public class OpenAIChatModel extends ChatModelBase {
     }
 
     /**
+     * Applies the model-level strict JSON schema default without changing a schema that already
+     * carries a request-scoped strict value.
+     */
+    private void applyStrictJsonSchemaDefault(OpenAIRequest request) {
+        if (strictJsonSchema == null
+                || !(request.getResponseFormat() instanceof ResponseFormat responseFormat)
+                || !"json_schema".equals(responseFormat.getType())) {
+            return;
+        }
+
+        JsonSchema jsonSchema = responseFormat.getJsonSchema();
+        if (jsonSchema == null || jsonSchema.getStrict() != null) {
+            return;
+        }
+
+        request.setResponseFormat(
+                ResponseFormat.jsonSchema(
+                        JsonSchema.builder()
+                                .name(jsonSchema.getName())
+                                .description(jsonSchema.getDescription())
+                                .schema(jsonSchema.getSchema())
+                                .strict(strictJsonSchema)
+                                .build()));
+    }
+
+    /**
      * Gets the model name for logging and identification.
      *
      * @return the model name, or null if not configured
@@ -206,6 +231,11 @@ public class OpenAIChatModel extends ChatModelBase {
     @Override
     public String getModelName() {
         return configuredOptions != null ? configuredOptions.getModelName() : null;
+    }
+
+    /** Package-private test seam for verifying model-level strict JSON schema configuration. */
+    Boolean getStrictJsonSchema() {
+        return strictJsonSchema;
     }
 
     /**
@@ -236,6 +266,8 @@ public class OpenAIChatModel extends ChatModelBase {
         private int contextWindowSize = -1;
         private Boolean nativeStructuredOutput;
         private Boolean nativeStructuredOutputWithTools;
+        private Boolean supportsToolChoiceSpecific;
+        private Boolean strictJsonSchema;
 
         /**
          * Sets the API key for OpenAI authentication.
@@ -424,6 +456,38 @@ public class OpenAIChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets whether this model supports forcing a specific tool call via {@code tool_choice}
+         * (i.e. {@link io.agentscope.core.model.ToolChoice.Specific}).
+         *
+         * <p>Defaults to {@code false} because this builder can target any OpenAI-compatible
+         * endpoint. Set to {@code true} only when the endpoint supports forcing a named function
+         * via {@code tool_choice}; otherwise the agent will use a prompt reminder when it needs to
+         * force the {@code generate_response} tool.
+         *
+         * @param supportsToolChoiceSpecific false if {@code ToolChoice.Specific} is unsupported
+         * @return this builder instance
+         */
+        public Builder supportsToolChoiceSpecific(boolean supportsToolChoiceSpecific) {
+            this.supportsToolChoiceSpecific = supportsToolChoiceSpecific;
+            return this;
+        }
+
+        /**
+         * Sets the default strict value for JSON schema response formats.
+         *
+         * <p>A request-scoped schema strict value takes precedence over this setting. When this
+         * value is {@code null}, the schema's strict value is sent as-is and is omitted when the
+         * schema also leaves it unset.
+         *
+         * @param strictJsonSchema the model-level strict JSON schema setting
+         * @return this builder instance
+         */
+        public Builder strictJsonSchema(Boolean strictJsonSchema) {
+            this.strictJsonSchema = strictJsonSchema;
+            return this;
+        }
+
+        /**
          * Builds the OpenAIChatModel instance.
          *
          * @return configured OpenAIChatModel instance
@@ -460,7 +524,8 @@ public class OpenAIChatModel extends ChatModelBase {
             Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> fmt =
                     formatter != null ? formatter : new OpenAIChatFormatter();
 
-            OpenAIChatModel model = new OpenAIChatModel(client, fmt, effectiveOptions);
+            OpenAIChatModel model =
+                    new OpenAIChatModel(client, fmt, effectiveOptions, strictJsonSchema);
             model.setContextWindowSize(
                     contextWindowSize >= 0
                             ? contextWindowSize
@@ -469,6 +534,9 @@ public class OpenAIChatModel extends ChatModelBase {
                     nativeStructuredOutput != null ? nativeStructuredOutput : true);
             if (nativeStructuredOutputWithTools != null) {
                 model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
+            }
+            if (supportsToolChoiceSpecific != null) {
+                model.setSupportsToolChoiceSpecific(supportsToolChoiceSpecific);
             }
             return model;
         }

@@ -1,5 +1,6 @@
 ---
 title: 子 Agent
+en_link: /v1/en/docs/harness/subagent
 ---
 
 ## 作用

@@ -1,5 +1,6 @@
 ---
 title: 会话管理
+en_link: /v1/en/docs/task/session
 ---
 
 Session 支持 Agent 状态的持久化存储和恢复，让对话能够跨应用运行保持连续性。

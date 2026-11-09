@@ -16,8 +16,10 @@
 
 package io.agentscope.core.util;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import io.agentscope.core.message.ToolUseBlock;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +51,7 @@ import org.slf4j.LoggerFactory;
 public final class JsonUtils {
 
     private static final Logger log = LoggerFactory.getLogger(JsonUtils.class);
+    private static final JsonFactory JSON_FACTORY = new JsonFactory();
 
     private static volatile JsonCodec codec = new JacksonJsonCodec();
 
@@ -91,8 +94,8 @@ public final class JsonUtils {
     }
 
     /**
-     * Check whether the given string is a valid JSON object (i.e. starts with '{' and
-     * can be parsed into a {@link Map}).
+     * Check whether the entire string contains exactly one complete JSON object, allowing
+     * trailing whitespace but no additional values or malformed suffix.
      *
      * <p>Tool call {@code arguments} must be JSON objects, so plain JSON values like
      * {@code null}, arrays, or strings are rejected.
@@ -100,14 +103,16 @@ public final class JsonUtils {
      * @param str the string to validate
      * @return {@code true} if {@code str} is a non-null, parseable JSON object
      */
-    @SuppressWarnings("unchecked")
     public static boolean isValidJsonObject(String str) {
         if (str == null || str.isEmpty()) {
             return false;
         }
-        try {
-            Map<String, Object> parsed = codec.fromJson(str, Map.class);
-            return parsed != null;
+        try (JsonParser parser = JSON_FACTORY.createParser(str)) {
+            if (parser.nextToken() != JsonToken.START_OBJECT) {
+                return false;
+            }
+            parser.skipChildren();
+            return parser.nextToken() == null;
         } catch (Exception e) {
             return false;
         }

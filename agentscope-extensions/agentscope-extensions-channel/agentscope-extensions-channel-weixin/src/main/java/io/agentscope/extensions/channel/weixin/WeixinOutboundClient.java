@@ -115,10 +115,10 @@ public final class WeixinOutboundClient {
                             "message_id");
             String receipt = response.path("message_id").asText("");
             if (receipt.isBlank()) {
-                throw new IllegalStateException("iLink sendmessage returned no receipt");
+                throw new WeixinOperationException("iLink sendmessage returned no receipt");
             }
             return receipt;
-        } catch (WeixinCredentialRejectedException | IllegalStateException e) {
+        } catch (WeixinCredentialRejectedException | WeixinOperationException e) {
             // Provider outcome and credential failures keep their type: wrapping them hides the
             // reason from the caller's onError.
             throw e;
@@ -190,7 +190,7 @@ public final class WeixinOutboundClient {
         beforeSend.run();
         HttpResponse<String> r = http.send(req, HttpResponse.BodyHandlers.ofString());
         if (r.statusCode() / 100 != 2)
-            throw new IllegalStateException("iLink HTTP " + r.statusCode());
+            throw new WeixinOperationException("iLink HTTP " + r.statusCode());
         return r.body();
     }
 
@@ -228,7 +228,7 @@ public final class WeixinOutboundClient {
             if (ret == -14 || errcode == -14) {
                 throw new WeixinCredentialRejectedException(operation, -14);
             }
-            throw new IllegalStateException(
+            throw new WeixinOperationException(
                     "iLink " + operation + " failed ret=" + ret + " errcode=" + errcode);
         }
         return response;
@@ -243,7 +243,7 @@ public final class WeixinOutboundClient {
             return JSON.readTree(body);
         } catch (com.fasterxml.jackson.core.JsonProcessingException error) {
             com.fasterxml.jackson.core.JsonLocation where = error.getLocation();
-            throw new IllegalStateException(
+            throw new WeixinOperationException(
                     "iLink returned an unparseable response"
                             + (where == null
                                     ? ""
@@ -277,7 +277,8 @@ public final class WeixinOutboundClient {
                 return;
             }
         }
-        throw new IllegalStateException("iLink " + operation + " response carries no ret/errcode");
+        throw new WeixinOperationException(
+                "iLink " + operation + " response carries no ret/errcode");
     }
 
     private static String peer(OutboundAddress a) {

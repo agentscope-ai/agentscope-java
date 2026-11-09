@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.util.JsonCodec;
@@ -361,6 +362,22 @@ class DashScopeDtoSerializationTest {
     }
 
     @Test
+    void testDashScopeParametersReasoningEffort() {
+        DashScopeParameters params = DashScopeParameters.builder().reasoningEffort("high").build();
+
+        assertEquals("high", params.getReasoningEffort());
+
+        String json = jsonCodec.toJson(params);
+        assertTrue(json.contains("\"reasoning_effort\":\"high\""));
+
+        DashScopeParameters deserialized = jsonCodec.fromJson(json, DashScopeParameters.class);
+        assertEquals("high", deserialized.getReasoningEffort());
+
+        String emptyJson = jsonCodec.toJson(DashScopeParameters.builder().build());
+        assertFalse(emptyJson.contains("reasoning_effort"));
+    }
+
+    @Test
     void testDashScopeContentPartWithImagePixels() throws Exception {
         DashScopeContentPart imagePart =
                 DashScopeContentPart.builder()
@@ -433,6 +450,86 @@ class DashScopeDtoSerializationTest {
         assertEquals(256, part.getMinPixels());
         assertEquals(512000, part.getMaxPixels());
         assertEquals(8192000, part.getTotalPixels());
+    }
+
+    @Test
+    void testDashScopeContentPartWithDocUrl() throws Exception {
+        DashScopeContentPart part =
+                DashScopeContentPart.builder()
+                        .docUrl(List.of("https://example.com/report.pdf"))
+                        .fileParsingStrategy("text_and_images")
+                        .build();
+
+        String json = jsonCodec.toJson(part);
+        assertTrue(json.contains("\"type\":\"doc_url\""), json);
+        assertTrue(json.contains("\"doc_url\":[\"https://example.com/report.pdf\"]"), json);
+        assertTrue(json.contains("\"file_parsing_strategy\":\"text_and_images\""), json);
+
+        DashScopeContentPart deserialized = jsonCodec.fromJson(json, DashScopeContentPart.class);
+        assertEquals("doc_url", deserialized.getType());
+        assertEquals(List.of("https://example.com/report.pdf"), deserialized.getDocUrl());
+        assertEquals("text_and_images", deserialized.getFileParsingStrategy());
+    }
+
+    @Test
+    void testDashScopeContentPartWithoutDocUrlOmitsType() {
+        String json = jsonCodec.toJson(DashScopeContentPart.text("Hello"));
+
+        assertFalse(json.contains("\"type\""), json);
+        assertFalse(json.contains("doc_url"), json);
+    }
+
+    @Test
+    void testDashScopeSkillSerialization() throws Exception {
+        DashScopeSkill skill = DashScopeSkill.pptTemplate(DashScopeSkill.TEMPLATE_NEWS);
+
+        String json = jsonCodec.toJson(skill);
+        assertTrue(json.contains("\"type\":\"ppt\""), json);
+        assertTrue(json.contains("\"mode\":\"general\""), json);
+        assertTrue(json.contains("\"template_id\":\"news_01\""), json);
+
+        DashScopeSkill deserialized = jsonCodec.fromJson(json, DashScopeSkill.class);
+        assertEquals("ppt", deserialized.getType());
+        assertEquals("general", deserialized.getMode());
+        assertEquals("news_01", deserialized.getTemplateId());
+    }
+
+    @Test
+    void testDashScopeParametersSkill() {
+        DashScopeParameters params =
+                DashScopeParameters.builder().skill(List.of(DashScopeSkill.pptCreative())).build();
+
+        String json = jsonCodec.toJson(params);
+        assertTrue(json.contains("\"skill\":[{\"type\":\"ppt\",\"mode\":\"creative\"}]"), json);
+
+        DashScopeParameters deserialized = jsonCodec.fromJson(json, DashScopeParameters.class);
+        assertEquals(1, deserialized.getSkill().size());
+        assertEquals("creative", deserialized.getSkill().get(0).getMode());
+
+        String emptyJson = jsonCodec.toJson(DashScopeParameters.builder().build());
+        assertFalse(emptyJson.contains("\"skill\""), emptyJson);
+    }
+
+    @Test
+    void testDashScopeSkillValidation() {
+        assertThrows(
+                IllegalArgumentException.class, () -> DashScopeSkill.builder().type("pdf").build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> DashScopeSkill.builder().type("ppt").mode("fancy").build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        DashScopeSkill.builder()
+                                .type("ppt")
+                                .mode("creative")
+                                .templateId("news_01")
+                                .build());
+
+        // Creative mode without a template and template mode with one are both valid.
+        assertEquals("ppt", DashScopeSkill.pptCreative().getType());
+        assertNull(DashScopeSkill.pptCreative().getTemplateId());
+        assertEquals("news_01", DashScopeSkill.pptTemplate("news_01").getTemplateId());
     }
 
     @Test

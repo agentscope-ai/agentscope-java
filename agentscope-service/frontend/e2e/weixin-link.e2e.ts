@@ -136,6 +136,7 @@ test('verification code and refresh resume never persist QR or code and never st
   expect(storage).toContain('flow-1'); expect(storage).not.toContain('928314'); expect(storage).not.toContain('ticket');
   await page.getByRole('button', { name: '取消授权' }).click();
   expect(state.cancels).toBe(1);
+  await expect(page.getByRole('button', { name: '扫码连接微信', exact: true })).toBeVisible();
   expect(await page.evaluate(() => JSON.stringify({ ...sessionStorage }))).not.toContain('flow-1');
   expect(state.errors).toEqual([]);
 });

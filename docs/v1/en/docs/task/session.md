@@ -1,5 +1,6 @@
 ---
 title: Session Management
+zh_link: /v1/zh/docs/task/session
 ---
 
 Session enables persistent storage and recovery of Agent state, allowing conversations to maintain continuity across application runs.

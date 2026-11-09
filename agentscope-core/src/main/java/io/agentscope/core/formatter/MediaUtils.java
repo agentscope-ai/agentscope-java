@@ -276,6 +276,9 @@ public class MediaUtils {
             case "flv" -> "video/x-flv";
             case "3gpp", "3gp" -> "video/3gpp";
 
+            // Document formats
+            case "pdf" -> "application/pdf";
+
             default -> "application/octet-stream";
         };
     }

@@ -118,14 +118,12 @@ public class DataSessionService {
         if (stopReason != null) {
             payload.put("stopReason", stopReason);
         }
-        SessionEventDto statusEvent =
-                scope == null
-                        ? eventLog.append(sessionId, "session.status_" + status, payload)
-                        : eventLog.appendLocal(
-                                sessionId, "session.status_" + status, payload, null);
-        if (scope != null) {
-            controlPlaneClient.appendSessionEvent(statusEvent, scope);
-        }
+        eventLog.appendScoped(
+                sessionId,
+                "session.status_" + status,
+                payload,
+                null,
+                ControlPlaneClient.eventScope(scope));
         long now = System.currentTimeMillis();
         return new ManagedSessionDto(
                 current.id(),

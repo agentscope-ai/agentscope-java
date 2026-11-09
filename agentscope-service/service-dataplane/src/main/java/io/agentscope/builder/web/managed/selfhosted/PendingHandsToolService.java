@@ -26,7 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 
-/** Resolves pending {@code agent.tool_use} events that still lack a matching tool result. */
+/** Resolves committed external-execution requests, with read-only support for older rows. */
 @Service
 public class PendingHandsToolService {
 
@@ -41,7 +41,40 @@ public class PendingHandsToolService {
         List<SessionEventDto> events = eventLog.list(sessionId);
         Map<String, Map<String, Object>> byId = new LinkedHashMap<>();
         Set<String> completed = new LinkedHashSet<>();
+        Map<String, String> requests = new LinkedHashMap<>();
         for (SessionEventDto event : events) {
+            Map<String, Object> data = event.payload() == null ? Map.of() : event.payload();
+            if ("required_action.created".equals(event.type())
+                    && "external_execution".equals(data.get("kind"))
+                    && data.get("tool_call") instanceof Map<?, ?> call) {
+                String id = stringOf(call.get("id"));
+                if (id != null) {
+                    Map<String, Object> pending = new LinkedHashMap<>();
+                    pending.put("id", id);
+                    pending.put("name", call.get("name"));
+                    pending.put("input", call.get("input"));
+                    pending.put("state", "pending");
+                    pending.put("requestId", data.get("request_id"));
+                    pending.put("turnId", data.get("turn_id"));
+                    pending.put("eventId", event.id());
+                    pending.put("seq", event.seq());
+                    byId.put(id, pending);
+                    requests.put(stringOf(data.get("request_id")), id);
+                }
+            } else if ("required_action.resolved".equals(event.type())) {
+                String id = requests.get(stringOf(data.get("request_id")));
+                if (id != null) completed.add(id);
+            } else if ("item.completed".equals(event.type())
+                    && data.get("item") instanceof Map<?, ?> item
+                    && item.get("content") instanceof List<?> blocks) {
+                for (Object block : blocks)
+                    if (block instanceof Map<?, ?> value
+                            && "tool_result".equals(value.get("type"))) {
+                        String id = stringOf(value.get("id"));
+                        if (id != null) completed.add(id);
+                    }
+            }
+
             if (SessionEventTypes.AGENT_TOOL_USE.equals(event.type())
                     || SessionEventTypes.AGENT_CUSTOM_TOOL_USE.equals(event.type())) {
                 Map<String, Object> payload = event.payload() != null ? event.payload() : Map.of();

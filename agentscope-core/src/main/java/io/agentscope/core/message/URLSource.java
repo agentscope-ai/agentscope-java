@@ -103,6 +103,22 @@ public class URLSource extends Source {
         return new Builder();
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof URLSource other)) {
+            return false;
+        }
+        return Objects.equals(url, other.url) && Objects.equals(mimeType, other.mimeType);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(url, mimeType);
+    }
+
     /**
      * Builder for constructing URLSource instances.
      */

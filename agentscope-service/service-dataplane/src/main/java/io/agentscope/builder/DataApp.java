@@ -34,8 +34,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  *       (environment-key authenticated)
  *   <li>{@code /api/environments/{id}/sessions/{sessionId}/pending-tools|tool-results|skills} —
  *       self-hosted worker session operations (environment-key authenticated)
- *   <li>{@code /agentscope/**} — aistio data-plane HTTP contract (info / health / sessions /
- *       context / messages / compress / terminate) plus self-registration with aistiod
+ *   <li>{@code /agentscope/**} — controlplane data-plane HTTP contract (info / health / sessions /
+ *       context / messages / compress / terminate) plus self-registration with service-controlplane
  * </ul>
  *
  * <p>The data plane instantiates {@code HarnessAgent} instances from the version snapshot pinned

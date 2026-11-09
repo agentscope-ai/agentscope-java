@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/root/.m2 \
         '</settings>' > /tmp/maven-settings.xml; \
       settings_args="-s /tmp/maven-settings.xml"; \
     fi; \
-    mvn -B -ntp $settings_args \
+    mvn -B -ntp -T1 $settings_args \
       -Dmaven.wagon.http.retryHandler.count=5 \
       -Dmaven.wagon.httpconnectionManager.ttlSeconds=60 \
       -pl agentscope-service/$MODULE -am package -DskipTests \
@@ -25,9 +25,11 @@ RUN --mount=type=cache,target=/root/.m2 \
        ! -name '*sources*' ! -name '*javadoc*' -exec cp {} /out/app.jar \;
 
 FROM eclipse-temurin:21-jre
-RUN apt-get -o Acquire::Retries=5 update \
-    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/* \
+RUN if ! command -v curl >/dev/null 2>&1; then \
+        apt-get -o Acquire::Retries=5 update \
+        && apt-get -o Acquire::Retries=5 install -y --no-install-recommends curl \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi \
     && groupadd --gid 65532 agentscope \
     && useradd --uid 65532 --gid 65532 --home-dir /data --no-create-home agentscope \
     && mkdir -p /data/workspaces /data/artifacts \

@@ -18,12 +18,13 @@ package io.agentscope.extensions.model.dashscope.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DashScope content part DTO for multimodal messages.
  *
  * <p>Each content part can contain one type of content:
- * text, image, audio, or video.
+ * text, document, image, audio, or video.
  *
  * <p>Example text part:
  * <pre>{@code
@@ -39,9 +40,23 @@ import java.util.List;
  * <pre>{@code
  * {"image": "data:image/png;base64,iVBORw0KGgo..."}
  * }</pre>
+ * <p>Example document part (qwen-doc-turbo):
+ * <pre>{@code
+ * {"type": "doc_url", "doc_url": ["https://example.com/report.pdf"], "file_parsing_strategy": "auto"}
+ * }</pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class DashScopeContentPart {
+
+    /** Part type value for document URL parts. */
+    public static final String TYPE_DOC_URL = "doc_url";
+
+    /** Part type value for plain text parts. */
+    public static final String TYPE_TEXT = "text";
+
+    /** Part type discriminator, for example {@code "doc_url"}. */
+    @JsonProperty("type")
+    private String type;
 
     /** Text content. */
     @JsonProperty("text")
@@ -79,7 +94,80 @@ public class DashScopeContentPart {
     @JsonProperty("total_pixels")
     private Integer totalPixels;
 
+    /**
+     * Document URLs for document-aware models such as {@code qwen-doc-turbo}. Up to 10 URLs are
+     * accepted per request and each must be publicly reachable.
+     */
+    @JsonProperty("doc_url")
+    private List<String> docUrl;
+
+    /**
+     * How the documents of a {@code doc_url} part are parsed: {@code auto}, {@code text_only} or
+     * {@code text_and_images}.
+     */
+    @JsonProperty("file_parsing_strategy")
+    private String fileParsingStrategy;
+
+    /** Cache control configuration for this content part. */
+    @JsonProperty("cache_control")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private Map<String, String> cacheControl;
+
     public DashScopeContentPart() {}
+
+    /**
+     * Get the part type discriminator.
+     *
+     * @return the part type, or null when the part is not typed
+     */
+    public String getType() {
+        return type;
+    }
+
+    /**
+     * Set the part type discriminator.
+     *
+     * @param type the part type (e.g. "doc_url")
+     */
+    public void setType(String type) {
+        this.type = type;
+    }
+
+    /**
+     * Get the document URLs carried by this part.
+     *
+     * @return the document URLs, or null when this is not a doc_url part
+     */
+    public List<String> getDocUrl() {
+        return docUrl;
+    }
+
+    /**
+     * Set the document URLs carried by this part.
+     *
+     * @param docUrl the document URLs
+     */
+    public void setDocUrl(List<String> docUrl) {
+        this.docUrl = docUrl;
+    }
+
+    /**
+     * Get the parsing strategy for the documents of this part.
+     *
+     * @return the parsing strategy, or null when not configured
+     */
+    public String getFileParsingStrategy() {
+        return fileParsingStrategy;
+    }
+
+    /**
+     * Set the parsing strategy for the documents of this part.
+     *
+     * @param fileParsingStrategy one of "auto", "text_only" or "text_and_images"
+     */
+    public void setFileParsingStrategy(String fileParsingStrategy) {
+        this.fileParsingStrategy = fileParsingStrategy;
+    }
 
     public String getText() {
         return text;
@@ -151,6 +239,24 @@ public class DashScopeContentPart {
 
     public void setTotalPixels(Integer totalPixels) {
         this.totalPixels = totalPixels;
+    }
+
+    /**
+     * Get the cache control configuration.
+     *
+     * @return the cache control configuration, or null when not configured
+     */
+    public Map<String, String> getCacheControl() {
+        return cacheControl;
+    }
+
+    /**
+     * Set the cache control configuration.
+     *
+     * @param cacheControl the cache control configuration
+     */
+    public void setCacheControl(Map<String, String> cacheControl) {
+        this.cacheControl = cacheControl;
     }
 
     /**
@@ -238,12 +344,65 @@ public class DashScopeContentPart {
         return part;
     }
 
+    /**
+     * Create a document content part with a parsing strategy.
+     *
+     * @param urls the publicly reachable document URLs (up to 10 per request)
+     * @param fileParsingStrategy one of "auto", "text_only" or "text_and_images"; may be null
+     * @return a new DashScopeContentPart typed as "doc_url"
+     */
+    public static DashScopeContentPart docUrl(List<String> urls, String fileParsingStrategy) {
+        DashScopeContentPart part = new DashScopeContentPart();
+        part.setType(TYPE_DOC_URL);
+        part.setDocUrl(urls);
+        part.setFileParsingStrategy(fileParsingStrategy);
+        return part;
+    }
+
+    /**
+     * Create a document content part without an explicit parsing strategy.
+     *
+     * @param urls the publicly reachable document URLs (up to 10 per request)
+     * @return a new DashScopeContentPart typed as "doc_url"
+     */
+    public static DashScopeContentPart docUrl(List<String> urls) {
+        return docUrl(urls, null);
+    }
+
     public static Builder builder() {
         return new Builder();
     }
 
     public static class Builder {
         private final DashScopeContentPart part = new DashScopeContentPart();
+
+        public Builder type(String type) {
+            part.setType(type);
+            return this;
+        }
+
+        /**
+         * Set the document URLs of this part and mark it as a "doc_url" part.
+         *
+         * @param docUrl the publicly reachable document URLs
+         * @return this builder
+         */
+        public Builder docUrl(List<String> docUrl) {
+            part.setType(TYPE_DOC_URL);
+            part.setDocUrl(docUrl);
+            return this;
+        }
+
+        /**
+         * Set the parsing strategy applied to the documents of this part.
+         *
+         * @param fileParsingStrategy one of "auto", "text_only" or "text_and_images"
+         * @return this builder
+         */
+        public Builder fileParsingStrategy(String fileParsingStrategy) {
+            part.setFileParsingStrategy(fileParsingStrategy);
+            return this;
+        }
 
         public Builder text(String text) {
             part.setText(text);
@@ -287,6 +446,17 @@ public class DashScopeContentPart {
 
         public Builder totalPixels(Integer totalPixels) {
             part.setTotalPixels(totalPixels);
+            return this;
+        }
+
+        /**
+         * Set the cache control configuration.
+         *
+         * @param cacheControl the cache control configuration
+         * @return this builder
+         */
+        public Builder cacheControl(Map<String, String> cacheControl) {
+            part.setCacheControl(cacheControl);
             return this;
         }
 

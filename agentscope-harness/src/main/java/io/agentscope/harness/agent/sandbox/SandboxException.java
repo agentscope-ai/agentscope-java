@@ -215,6 +215,14 @@ public class SandboxException extends RuntimeException {
         }
     }
 
+    /** Command submission was attempted, but its completion and exit code cannot be confirmed. */
+    public static class ExecStatusUnknownException extends SandboxException {
+
+        public ExecStatusUnknownException(String message, Throwable cause) {
+            super(SandboxErrorCode.EXEC_STATUS_UNKNOWN, message, cause);
+        }
+    }
+
     /**
      * Thrown when a sandbox command exits with a non-zero exit code.
      */
@@ -223,6 +231,7 @@ public class SandboxException extends RuntimeException {
         private final int exitCode;
         private final String stdout;
         private final String stderr;
+        private final boolean timedOut;
 
         /**
          * Creates an exec exception.
@@ -232,12 +241,17 @@ public class SandboxException extends RuntimeException {
          * @param stderr captured standard error
          */
         public ExecException(int exitCode, String stdout, String stderr) {
+            this(exitCode, stdout, stderr, false);
+        }
+
+        public ExecException(int exitCode, String stdout, String stderr, boolean timedOut) {
             super(
                     SandboxErrorCode.EXEC_NONZERO,
                     "Command exited with code " + exitCode + ": " + stderr);
             this.exitCode = exitCode;
             this.stdout = stdout;
             this.stderr = stderr;
+            this.timedOut = timedOut;
         }
 
         /**
@@ -266,23 +280,45 @@ public class SandboxException extends RuntimeException {
         public String getStderr() {
             return stderr;
         }
+
+        public boolean isTimedOut() {
+            return timedOut;
+        }
     }
 
     /**
      * Thrown when a sandbox command times out.
+     *
+     * <p>The message carries only the timeout duration, never the command text: commands
+     * are model-generated and may inline secrets, while the caller already holds the
+     * command in its own context. This matches the official E2B SDKs' fixed timeout
+     * wording.
      */
     public static class ExecTimeoutException extends SandboxException {
 
         /**
          * Creates an exec timeout exception.
          *
-         * @param command the command that timed out
+         * @param command the command that timed out (retained for signature
+         *     compatibility; not included in the message)
          * @param timeoutSeconds the timeout that was exceeded
          */
         public ExecTimeoutException(String command, int timeoutSeconds) {
+            super(SandboxErrorCode.EXEC_TIMEOUT, "Command timed out after " + timeoutSeconds + "s");
+        }
+
+        /**
+         * Creates an exec timeout exception with the underlying timeout cause.
+         *
+         * @param command the command that timed out (not included in the message)
+         * @param timeoutSeconds the timeout that was exceeded
+         * @param cause the underlying timeout
+         */
+        public ExecTimeoutException(String command, int timeoutSeconds, Throwable cause) {
             super(
                     SandboxErrorCode.EXEC_TIMEOUT,
-                    "Command timed out after " + timeoutSeconds + "s: " + command);
+                    "Command timed out after " + timeoutSeconds + "s",
+                    cause);
         }
     }
 

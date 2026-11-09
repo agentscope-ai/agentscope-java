@@ -17,13 +17,17 @@ package io.agentscope.extensions.model.ollama.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
@@ -39,6 +43,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -526,8 +531,209 @@ class OllamaChatFormatterTest {
         assertEquals(stream, request.getStream());
     }
 
+    @Test
+    @DisplayName("Should serialize request messages without thinking key when thinking is null")
+    void testRequestSerializationOmitsThinkingWhenNull() {
+        OllamaMessage userMsg = new OllamaMessage("user", "Hello");
+        OllamaMessage assistantMsg = new OllamaMessage("assistant", "Hi there");
+
+        List<OllamaMessage> messages = Arrays.asList(userMsg, assistantMsg);
+        OllamaRequest request =
+                formatter.buildRequest("test-model", messages, false, null, null, null, null);
+
+        assertNotNull(request);
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(request);
+        assertFalse(json.contains("\"thinking\""));
+    }
+
+    @Test
+    @DisplayName("Should serialize request message with thinking key when thinking is present")
+    void testRequestSerializationIncludesThinkingWhenPresent() {
+        OllamaMessage assistantMsg = new OllamaMessage("assistant", "I will run a tool");
+        assistantMsg.setThinking("Planning tool call");
+
+        OllamaRequest request =
+                formatter.buildRequest(
+                        "test-model",
+                        Collections.singletonList(assistantMsg),
+                        false,
+                        null,
+                        null,
+                        null,
+                        null);
+
+        assertNotNull(request);
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(request);
+        assertTrue(json.contains("\"thinking\":\"Planning tool call\""));
+    }
+
+    @Test
+    @DisplayName("Should preserve assistant ThinkingBlock in the formatted request")
+    void testFormatPreservesAssistantThinkingBlock() {
+        Msg assistantMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(
+                                Arrays.asList(
+                                        ThinkingBlock.builder()
+                                                .thinking("I should call the weather tool.")
+                                                .build(),
+                                        TextBlock.builder()
+                                                .text("Let me check the weather.")
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call-123")
+                                                .name("get_weather")
+                                                .input(Collections.singletonMap("city", "Tokyo"))
+                                                .build()))
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(Collections.singletonList(assistantMsg));
+        OllamaRequest request =
+                formatter.buildRequest("test-model", formatted, false, null, null, null, null);
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(request);
+
+        assertEquals(1, formatted.size());
+        assertEquals("assistant", formatted.get(0).getRole());
+        assertEquals("I should call the weather tool.", formatted.get(0).getThinking());
+        assertEquals("Let me check the weather.", formatted.get(0).getContent());
+        assertNotNull(formatted.get(0).getToolCalls());
+        assertTrue(json.contains("\"thinking\":\"I should call the weather tool.\""));
+    }
+
+    @Test
+    @DisplayName("Should keep a document reference instead of dropping the block")
+    void testDocumentBlockKeepsReference() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                Arrays.asList(
+                                        TextBlock.builder().text("Summarise this").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("dashscope")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(List.of(msg));
+
+        assertEquals(1, formatted.size());
+        assertTrue(formatted.get(0).getContent().contains("Summarise this"));
+        assertTrue(
+                formatted
+                        .get(0)
+                        .getContent()
+                        .contains(
+                                "[document: report.pdf, provider file id: file-abc"
+                                        + " (dashscope)]"),
+                formatted.get(0).getContent());
+    }
+
+    @Test
+    @DisplayName("Should keep a document-only message instead of dropping the turn")
+    void testDocumentOnlyMessageIsNotDropped() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .source(
+                                                FileIdSource.builder()
+                                                        .provider("dashscope")
+                                                        .fileId("file-abc")
+                                                        .build())
+                                        .name("report.pdf")
+                                        .build())
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(List.of(msg));
+
+        assertEquals(1, formatted.size());
+        assertEquals(
+                "[document: report.pdf, provider file id: file-abc (dashscope)]",
+                formatted.get(0).getContent().strip(),
+                "a document-only turn must still produce the reference");
+    }
+
+    @Test
+    @DisplayName("Should keep a document reference in a tool result")
+    void testDocumentInToolResultKeepsReference() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .name("report_tool")
+                        .content(
+                                ToolResultBlock.of(
+                                        "1",
+                                        "report_tool",
+                                        Arrays.asList(
+                                                TextBlock.builder().text("Generated.").build(),
+                                                DocumentBlock.builder()
+                                                        .source(
+                                                                FileIdSource.builder()
+                                                                        .provider("dashscope")
+                                                                        .fileId("file-abc")
+                                                                        .build())
+                                                        .name("report.pdf")
+                                                        .build())))
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(List.of(msg));
+
+        assertEquals(1, formatted.size());
+        assertEquals("tool", formatted.get(0).getRole());
+        assertTrue(formatted.get(0).getContent().contains("Generated."));
+        assertTrue(
+                formatted
+                        .get(0)
+                        .getContent()
+                        .contains(
+                                "[document: report.pdf, provider file id: file-abc"
+                                        + " (dashscope)]"),
+                formatted.get(0).getContent());
+    }
+
     // Helper method to concatenate lists
     private <T> List<T> concatLists(List<T>... lists) {
         return Arrays.stream(lists).flatMap(List::stream).toList();
+    }
+
+    @Test
+    @DisplayName("An assistant turn with text, a document and a tool call keeps all three")
+    void assistantDocumentKeepsReference() {
+        Msg assistant =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder().text("Generated the report").build(),
+                                DocumentBlock.builder()
+                                        .name("report.pdf")
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/report.pdf")
+                                                        .build())
+                                        .build(),
+                                ToolUseBlock.builder()
+                                        .id("call-1")
+                                        .name("generate_report")
+                                        .input(Map.of("file", "report.pdf"))
+                                        .build())
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(List.of(assistant));
+
+        assertEquals(1, formatted.size());
+        assertEquals("assistant", formatted.get(0).getRole());
+        String content = formatted.get(0).getContent();
+        assertTrue(content.contains("Generated the report"), content);
+        assertTrue(content.contains("[document: report.pdf"), content);
+        assertNotNull(formatted.get(0).getToolCalls());
+        assertEquals(1, formatted.get(0).getToolCalls().size());
     }
 }

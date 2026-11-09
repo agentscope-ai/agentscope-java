@@ -77,6 +77,60 @@ class SelfHostedHandsDataPlaneTest {
     }
 
     @Test
+    void committedExternalActionsArePendingUntilTheirNativeResultArrives() {
+        SessionEventLog log = mock(SessionEventLog.class);
+        var requested =
+                new SessionEventDto(
+                        "created",
+                        "s",
+                        1,
+                        "required_action.created",
+                        Map.of(
+                                "kind",
+                                "external_execution",
+                                "request_id",
+                                "request",
+                                "turn_id",
+                                "turn",
+                                "tool_call",
+                                Map.of(
+                                        "id",
+                                        "call",
+                                        "name",
+                                        "execute",
+                                        "input",
+                                        Map.of("command", "ls"))),
+                        null,
+                        1);
+        when(log.list("s")).thenReturn(List.of(requested));
+        var service = new PendingHandsToolService(log);
+        assertThat(service.listPending("s"))
+                .singleElement()
+                .satisfies(
+                        value -> {
+                            assertThat(value)
+                                    .containsEntry("id", "call")
+                                    .containsEntry("requestId", "request");
+                            assertThat(value.get("input")).isEqualTo(Map.of("command", "ls"));
+                        });
+        var completed =
+                new SessionEventDto(
+                        "result",
+                        "s",
+                        2,
+                        "item.completed",
+                        Map.of(
+                                "item",
+                                Map.of(
+                                        "content",
+                                        List.of(Map.of("type", "tool_result", "id", "call")))),
+                        null,
+                        2);
+        when(log.list("s")).thenReturn(List.of(requested, completed));
+        assertThat(service.listPending("s")).isEmpty();
+    }
+
+    @Test
     void toolResultFromPayloadBuildsErrorMetadata() {
         ToolResultBlock ok =
                 SessionTurnRunner.toolResultFromPayload(

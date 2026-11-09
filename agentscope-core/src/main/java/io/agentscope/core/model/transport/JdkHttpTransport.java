@@ -113,7 +113,13 @@ public class JdkHttpTransport implements HttpTransport {
     private static HttpClient buildClient(HttpTransportConfig config) {
         HttpClient.Builder builder =
                 HttpClient.newBuilder()
-                        .version(config.getHttpVersion().toJdkHttpVersion())
+                        // Client-level HTTP/2 serves https via ALPN; cleartext requests are
+                        // downgraded per request in buildJdkRequest, so one connection per
+                        // version per origin — intentional.
+                        .version(
+                                config.getHttpVersion() != null
+                                        ? config.getHttpVersion().toJdkHttpVersion()
+                                        : HttpClient.Version.HTTP_2)
                         .followRedirects(Redirect.NORMAL)
                         .connectTimeout(config.getConnectTimeout());
 
@@ -210,8 +216,8 @@ public class JdkHttpTransport implements HttpTransport {
                                                     request,
                                                     responseBody,
                                                     requestStartNanos))
-                            .doFinally(signal -> closeQuietly(responseBody.getAndSet(null)))
-                            .onErrorMap(this::mapStreamError);
+                            .doFinally(signal -> closeResponseBody(responseBody))
+                            .onErrorResume(error -> Flux.error(mapStreamError(error)));
                 });
     }
 
@@ -307,13 +313,18 @@ public class JdkHttpTransport implements HttpTransport {
                 TransportConstants.STREAM_FORMAT_NDJSON.equals(
                         request.getHeaders().get(TransportConstants.STREAM_FORMAT_HEADER));
 
-        // Use Flux.using to manage resource lifecycle
-        return Flux.using(
-                        () ->
-                                new BufferedReader(
-                                        new InputStreamReader(inputStream, StandardCharsets.UTF_8)),
-                        reader -> isNdjson ? readNdJsonLines(reader) : readSseLines(reader),
-                        this::closeQuietly)
+        // The body is closed by the terminal signal's doFinally, never the reader: BufferedReader
+        // close() contends for the monitor held by a parked readLine(), which is the hang
+        // cancellation must avoid. Closing the raw stream does not take that monitor and wakes the
+        // parked read up instead.
+        return Flux.defer(
+                        () -> {
+                            BufferedReader reader =
+                                    new BufferedReader(
+                                            new InputStreamReader(
+                                                    inputStream, StandardCharsets.UTF_8));
+                            return isNdjson ? readNdJsonLines(reader) : readSseLines(reader);
+                        })
                 // reader.lines() uses blocking I/O internally
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -384,6 +395,11 @@ public class JdkHttpTransport implements HttpTransport {
 
         var builder = java.net.http.HttpRequest.newBuilder().uri(uri);
 
+        HttpClient.Version requestVersion = resolveRequestVersion(config.getHttpVersion(), uri);
+        if (requestVersion != null) {
+            builder.version(requestVersion);
+        }
+
         if (!isStreaming && config.getReadTimeout() != null) {
             builder.timeout(config.getReadTimeout());
         }
@@ -413,6 +429,24 @@ public class JdkHttpTransport implements HttpTransport {
         }
 
         return builder.build();
+    }
+
+    /**
+     * Resolves the per-request HTTP version: explicit values win verbatim (including HTTP_2 on
+     * cleartext as an h2c opt-in); null (auto) downgrades cleartext requests to HTTP/1.1 (the
+     * JDK's h2c upgrade makes some servers drop the request body) and lets https requests
+     * return null to inherit the client-level version (HTTP/2 via ALPN).
+     *
+     * @param configured the configured version, or null for auto
+     * @param uri the request URI
+     * @return the version to set on the request, or null to inherit the client version
+     */
+    static HttpClient.Version resolveRequestVersion(HttpVersion configured, URI uri) {
+        if (configured != null) {
+            return configured.toJdkHttpVersion();
+        }
+        boolean isCleartext = uri == null || !"https".equalsIgnoreCase(uri.getScheme());
+        return isCleartext ? HttpClient.Version.HTTP_1_1 : null;
     }
 
     private java.net.http.HttpRequest.BodyPublisher bodyPublisher(String body) {
@@ -500,6 +534,23 @@ public class JdkHttpTransport implements HttpTransport {
             return cause;
         }
         return new HttpTransportException("SSE/NDJSON stream failed: " + e.getMessage(), e);
+    }
+
+    /**
+     * Closes the streaming response body when the stream terminates.
+     *
+     * <p>The body is closed on whichever thread delivers the terminal signal, including a
+     * cancelling thread. That is safe for the raw {@link InputStream}: closing it does not take
+     * the reader's monitor, so it cannot block behind a parked {@code readLine()} - it wakes that
+     * read up instead. The {@link java.io.BufferedReader} is deliberately never closed from
+     * cleanup for the same reason: its {@code close()} contends for the monitor held by the parked
+     * read, which is the hang this transport must avoid. The reader only wraps the body and owns no
+     * resource of its own, so leaving it to the collector is harmless.
+     *
+     * @param responseBody holder of the current body, cleared as it is closed
+     */
+    private void closeResponseBody(AtomicReference<InputStream> responseBody) {
+        closeQuietly(responseBody.getAndSet(null));
     }
 
     private void closeQuietly(AutoCloseable closeable) {

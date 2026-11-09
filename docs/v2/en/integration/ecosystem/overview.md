@@ -1,5 +1,6 @@
 ---
 title: Overview
+zh_link: /v2/zh/integration/ecosystem/overview
 ---
 
 This group covers extensions that don't belong to a specific category like memory or RAG, but extend the runtime, language ecosystem, debugging tools, or training pipeline:

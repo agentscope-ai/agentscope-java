@@ -16,11 +16,14 @@
 package io.agentscope.extensions.model.ollama.formatter;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
@@ -97,8 +100,9 @@ public class OllamaChatFormatter
             }
         }
 
-        // Create and add the main message if it has content, images, or tool calls
+        // Create and add the main message if it has content, thinking, images, or tool calls
         if (!messageContent.textBlocks.isEmpty()
+                || !messageContent.thinkingBlocks.isEmpty()
                 || !messageContent.images.isEmpty()
                 || !messageContent.toolUseBlocks.isEmpty()) {
 
@@ -106,10 +110,12 @@ public class OllamaChatFormatter
                     createMainOllamaMessage(
                             msg,
                             messageContent.textBlocks,
+                            messageContent.thinkingBlocks,
                             messageContent.toolUseBlocks,
                             messageContent.images);
 
             if (mainMessage.getContent() != null
+                    || mainMessage.getThinking() != null
                     || mainMessage.getImages() != null
                     || mainMessage.getToolCalls() != null) {
                 result.add(mainMessage);
@@ -129,12 +135,25 @@ public class OllamaChatFormatter
         for (ContentBlock block : contentBlocks) {
             if (block instanceof TextBlock) {
                 messageContent.textBlocks.add(block);
+            } else if (block instanceof ThinkingBlock) {
+                messageContent.thinkingBlocks.add(block);
             } else if (block instanceof ToolUseBlock) {
                 messageContent.toolUseBlocks.add(block);
             } else if (block instanceof ToolResultBlock) {
                 messageContent.toolResultBlocks.add(block);
             } else if (block instanceof ImageBlock) {
                 processImageBlock((ImageBlock) block, messageContent.images);
+            } else if (block instanceof DocumentBlock documentBlock) {
+                log.debug(
+                        "DocumentBlock is not supported by Ollama; rendering a text reference"
+                                + " for '{}'",
+                        documentBlock.getName() != null
+                                ? documentBlock.getName()
+                                : documentBlock.getId());
+                messageContent.textBlocks.add(
+                        TextBlock.builder()
+                                .text(DocumentReferenceRenderer.render(documentBlock))
+                                .build());
             } else {
                 log.warn(
                         "Unsupported block type {} in the message, skipped.",
@@ -185,6 +204,11 @@ public class OllamaChatFormatter
                 textualOutput.append(((TextBlock) outputBlock).getText());
             } else if (outputBlock instanceof ImageBlock) {
                 multimodalData.add(outputBlock);
+            } else if (outputBlock instanceof DocumentBlock documentBlock) {
+                if (textualOutput.length() > 0) {
+                    textualOutput.append("\n");
+                }
+                textualOutput.append(DocumentReferenceRenderer.render(documentBlock));
             }
         }
 
@@ -268,10 +292,11 @@ public class OllamaChatFormatter
     }
 
     /**
-     * Create the main OllamaMessage from text content, tool calls, and images.
+     * Create the main OllamaMessage from text/thinking content, tool calls, and images.
      *
      * @param msg the original message
      * @param textBlocks the text content blocks
+     * @param thinkingBlocks the thinking content blocks
      * @param toolUseBlocks the tool use blocks
      * @param images the base64 encoded images
      * @return the formatted OllamaMessage
@@ -279,6 +304,7 @@ public class OllamaChatFormatter
     private OllamaMessage createMainOllamaMessage(
             Msg msg,
             List<ContentBlock> textBlocks,
+            List<ContentBlock> thinkingBlocks,
             List<ContentBlock> toolUseBlocks,
             List<String> images) {
         // Create tool calls from tool use blocks
@@ -294,9 +320,18 @@ public class OllamaChatFormatter
             contentMsg.append(((TextBlock) textBlocks.get(j)).getText());
         }
 
+        StringBuilder thinkingMsg = new StringBuilder();
+        for (ContentBlock block : thinkingBlocks) {
+            String thinking = ((ThinkingBlock) block).getThinking();
+            if (thinking != null) {
+                thinkingMsg.append(thinking);
+            }
+        }
+
         OllamaMessage msgOllama = new OllamaMessage();
         msgOllama.setRole(msg.getRole().name().toLowerCase());
         msgOllama.setContent(contentMsg.length() > 0 ? contentMsg.toString() : null);
+        msgOllama.setThinking(thinkingMsg.length() > 0 ? thinkingMsg.toString() : null);
 
         if (!images.isEmpty()) {
             msgOllama.setImages(images);
@@ -466,6 +501,7 @@ public class OllamaChatFormatter
      */
     private static class MessageContent {
         List<ContentBlock> textBlocks = new ArrayList<>();
+        List<ContentBlock> thinkingBlocks = new ArrayList<>();
         List<ContentBlock> toolUseBlocks = new ArrayList<>();
         List<ContentBlock> toolResultBlocks = new ArrayList<>();
         List<String> images = new ArrayList<>();

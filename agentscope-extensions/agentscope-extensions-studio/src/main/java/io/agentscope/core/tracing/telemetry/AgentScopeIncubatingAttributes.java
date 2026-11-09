@@ -16,6 +16,7 @@
 
 package io.agentscope.core.tracing.telemetry;
 
+import static io.opentelemetry.api.common.AttributeKey.longKey;
 import static io.opentelemetry.api.common.AttributeKey.stringKey;
 
 import io.opentelemetry.api.common.AttributeKey;
@@ -36,6 +37,9 @@ public class AgentScopeIncubatingAttributes {
 
     static final AttributeKey<String> AGENTSCOPE_FORMAT_COUNT =
             stringKey("agentscope.format.count");
+
+    static final AttributeKey<Long> AGENTSCOPE_USAGE_TOOL_USE_PROMPT_TOKENS =
+            longKey("agentscope.usage.tool_use_prompt_tokens");
 
     static final class GenAiOperationNameAgentScopeIncubatingValues {
         static final String FORMAT = "format";

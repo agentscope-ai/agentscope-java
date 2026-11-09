@@ -19,6 +19,7 @@ package io.agentscope.core.tracing.telemetry;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_FORMAT_TARGET;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_INPUT;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_OUTPUT;
+import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_USAGE_TOOL_USE_PROMPT_TOKENS;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.GenAiOperationNameAgentScopeIncubatingValues.FORMAT;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.GenAiProviderNameAgentScopeIncubatingValues.DASHSCOPE;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_AGENT_DESCRIPTION;
@@ -45,8 +46,11 @@ import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_TOOL_DEFINITIONS;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_TOOL_DESCRIPTION;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_TOOL_NAME;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_USAGE_INPUT_TOKENS;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_USAGE_OUTPUT_TOKENS;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_USAGE_REASONING_OUTPUT_TOKENS;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.CHAT;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.EXECUTE_TOOL;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.INVOKE_AGENT;
@@ -56,8 +60,11 @@ import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.Gen
 
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -217,14 +224,27 @@ final class AttributesExtractors {
                         Collections.singletonList(response.getFinishReason()));
             }
             internalSet(builder, GEN_AI_RESPONSE_ID, response.getId());
-            internalSet(
-                    builder,
-                    GEN_AI_USAGE_INPUT_TOKENS,
-                    (long) response.getUsage().getInputTokens());
-            internalSet(
-                    builder,
-                    GEN_AI_USAGE_OUTPUT_TOKENS,
-                    (long) response.getUsage().getOutputTokens());
+            if (response.getUsage() != null) {
+                var usage = response.getUsage();
+                internalSet(builder, GEN_AI_USAGE_INPUT_TOKENS, (long) usage.getInputTokens());
+                internalSet(builder, GEN_AI_USAGE_OUTPUT_TOKENS, (long) usage.getOutputTokens());
+                internalSet(
+                        builder,
+                        GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS,
+                        (long) usage.getCacheCreationTokens());
+                internalSet(
+                        builder,
+                        GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS,
+                        (long) usage.getCachedTokens());
+                internalSet(
+                        builder,
+                        GEN_AI_USAGE_REASONING_OUTPUT_TOKENS,
+                        (long) usage.getReasoningTokens());
+                internalSet(
+                        builder,
+                        AGENTSCOPE_USAGE_TOOL_USE_PROMPT_TOKENS,
+                        (long) usage.getToolUsePromptTokens());
+            }
             internalSet(builder, GEN_AI_OUTPUT_MESSAGES, getOutputMessages(response));
         }
 
@@ -301,7 +321,10 @@ final class AttributesExtractors {
                 AGENTSCOPE_FORMAT_TARGET,
                 FormatterConverter.getFormatterTarget(instance.getClass().getSimpleName()));
         if (msgList != null) {
-            internalSet(builder, AGENTSCOPE_FUNCTION_INPUT, serializeToStr(msgList));
+            internalSet(
+                    builder,
+                    AGENTSCOPE_FUNCTION_INPUT,
+                    serializeToStr(redactMessagePayloads(msgList)));
         }
         return builder.build();
     }
@@ -524,33 +547,106 @@ final class AttributesExtractors {
     }
 
     private static String getToolCallResult(List<ContentBlock> result) {
-        List<ContentBlock> blocks =
-                result.stream()
-                        .map(
-                                block -> {
-                                    // TODO: support multi modal content
-                                    if (block instanceof VideoBlock) {
-                                        return TextBlock.builder()
-                                                .text("<VideoBlock is not supported>")
-                                                .build();
-                                    } else if (block instanceof AudioBlock) {
-                                        return TextBlock.builder()
-                                                .text("<AudioBlock is not supported>")
-                                                .build();
-                                    } else if (block instanceof ImageBlock) {
-                                        return TextBlock.builder()
-                                                .text("<ImageBlock is not supported>")
-                                                .build();
-                                    }
-                                    return block;
-                                })
-                        .toList();
+        List<ContentBlock> blocks = redactMediaPayloads(result);
         try {
             return JsonUtils.getJsonCodec().toJson(blocks);
         } catch (JsonException e) {
             LOGGER.warn("Failed to serialize tool call result, due to: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Copies a message list with every media payload replaced by a description.
+     *
+     * <p>Span attributes are not a data channel: a base64 attachment would bloat or overflow the
+     * attribute and leak content into telemetry backends. Messages without media are passed
+     * through untouched so the common case keeps its exact shape.
+     *
+     * @param msgs the messages about to be serialized into an attribute
+     * @return a list safe to serialize, identical to the input when no media is present
+     */
+    private static List<Msg> redactMessagePayloads(List<Msg> msgs) {
+        boolean hasMedia =
+                msgs.stream()
+                        .flatMap(msg -> msg.getContent().stream())
+                        .anyMatch(AttributesExtractors::isMediaPayload);
+        if (!hasMedia) {
+            return msgs;
+        }
+        return msgs.stream().map(AttributesExtractors::redactMessagePayloads).toList();
+    }
+
+    private static Msg redactMessagePayloads(Msg msg) {
+        if (msg.getContent().stream().noneMatch(AttributesExtractors::isMediaPayload)) {
+            return msg;
+        }
+        return Msg.builder()
+                .id(msg.getId())
+                .name(msg.getName())
+                .role(msg.getRole())
+                .content(redactMediaPayloads(msg.getContent()))
+                .metadata(msg.getMetadata())
+                .timestamp(msg.getTimestamp())
+                .usage(msg.getUsage())
+                .generateReason(msg.getGenerateReason())
+                .build();
+    }
+
+    private static List<ContentBlock> redactMediaPayloads(List<ContentBlock> blocks) {
+        return blocks.stream().map(AttributesExtractors::redactMediaPayload).toList();
+    }
+
+    private static boolean isMediaPayload(ContentBlock block) {
+        if (block instanceof ToolResultBlock result) {
+            // The payload often hides one level down: a tool result reporting a generated file
+            // carries the document among its output blocks.
+            return result.getOutput() != null
+                    && result.getOutput().stream().anyMatch(AttributesExtractors::isMediaPayload);
+        }
+        return block instanceof VideoBlock
+                || block instanceof AudioBlock
+                || block instanceof ImageBlock
+                || block instanceof DocumentBlock
+                || block instanceof DataBlock;
+    }
+
+    private static ContentBlock redactMediaPayload(ContentBlock block) {
+        // Media payloads have no place in a span attribute: they would bloat or overflow it, so
+        // keep only a description.
+        if (block instanceof ToolResultBlock result) {
+            List<ContentBlock> output = result.getOutput();
+            if (output == null || output.stream().noneMatch(AttributesExtractors::isMediaPayload)) {
+                return block;
+            }
+            return ToolResultBlock.builder()
+                    .id(result.getId())
+                    .name(result.getName())
+                    .output(redactMediaPayloads(output))
+                    .executionDetails(result.getExecutionDetails())
+                    .state(result.getState())
+                    .metadata(result.getMetadata())
+                    .build();
+        }
+        if (block instanceof VideoBlock) {
+            return TextBlock.builder().text("<VideoBlock is not supported>").build();
+        } else if (block instanceof AudioBlock) {
+            return TextBlock.builder().text("<AudioBlock is not supported>").build();
+        } else if (block instanceof ImageBlock) {
+            return TextBlock.builder().text("<ImageBlock is not supported>").build();
+        } else if (block instanceof DocumentBlock document) {
+            // Keep the identity of the document (name, MIME type, location) without any payload
+            // bytes.
+            return TextBlock.builder().text(DocumentReferenceRenderer.render(document)).build();
+        } else if (block instanceof DataBlock data) {
+            return TextBlock.builder()
+                    .text(
+                            "<DataBlock "
+                                    + (data.getName() != null ? data.getName() : data.getId())
+                                    + " is not supported>")
+                    .build();
+        }
+        return block;
     }
 
     private static String getRole(MsgRole msgRole) {

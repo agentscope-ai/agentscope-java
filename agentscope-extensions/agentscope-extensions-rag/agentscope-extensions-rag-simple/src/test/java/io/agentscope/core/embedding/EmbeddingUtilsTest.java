@@ -48,13 +48,14 @@ class EmbeddingUtilsTest {
     @DisplayName("Should return original Mono when config is null")
     void testNullConfig() {
         double[] testEmbedding = new double[] {0.1, 0.2, 0.3};
-        Mono<double[]> originalMono = Mono.just(testEmbedding);
+        EmbeddingResponse testResponse = new EmbeddingResponse(testEmbedding, null);
+        Mono<EmbeddingResponse> originalMono = Mono.just(testResponse);
 
-        Mono<double[]> result =
+        Mono<EmbeddingResponse> result =
                 EmbeddingUtils.applyTimeoutAndRetry(
                         originalMono, null, "test-model", "test-provider", log);
 
-        StepVerifier.create(result).expectNext(testEmbedding).verifyComplete();
+        StepVerifier.create(result).expectNext(testResponse).verifyComplete();
     }
 
     @Test
@@ -63,10 +64,11 @@ class EmbeddingUtilsTest {
         ExecutionConfig config = ExecutionConfig.builder().timeout(Duration.ofMillis(100)).build();
 
         // Create a Mono that delays longer than timeout
-        Mono<double[]> slowMono =
-                Mono.just(new double[] {0.1, 0.2}).delayElement(Duration.ofMillis(200));
+        Mono<EmbeddingResponse> slowMono =
+                Mono.just(new EmbeddingResponse(new double[] {0.1, 0.2}, null))
+                        .delayElement(Duration.ofMillis(200));
 
-        Mono<double[]> result =
+        Mono<EmbeddingResponse> result =
                 EmbeddingUtils.applyTimeoutAndRetry(
                         slowMono, config, "test-model", "test-provider", log);
 
@@ -79,13 +81,14 @@ class EmbeddingUtilsTest {
         ExecutionConfig config = ExecutionConfig.builder().timeout(Duration.ofSeconds(1)).build();
 
         double[] testEmbedding = new double[] {0.1, 0.2, 0.3};
-        Mono<double[]> fastMono = Mono.just(testEmbedding);
+        EmbeddingResponse testResponse = new EmbeddingResponse(testEmbedding, null);
+        Mono<EmbeddingResponse> fastMono = Mono.just(testResponse);
 
-        Mono<double[]> result =
+        Mono<EmbeddingResponse> result =
                 EmbeddingUtils.applyTimeoutAndRetry(
                         fastMono, config, "test-model", "test-provider", log);
 
-        StepVerifier.create(result).expectNext(testEmbedding).verifyComplete();
+        StepVerifier.create(result).expectNext(testResponse).verifyComplete();
     }
 
     @Test
@@ -100,29 +103,29 @@ class EmbeddingUtilsTest {
                         .build();
 
         // Create a Mono that fails twice then succeeds
-        Mono<double[]> retryableMono =
+        Mono<EmbeddingResponse> retryableMono =
                 Mono.fromCallable(
                                 () -> {
                                     int attempt = attemptCount.incrementAndGet();
                                     if (attempt < 3) {
                                         throw new RuntimeException("Temporary error");
                                     }
-                                    return new double[] {0.1, 0.2};
+                                    return new EmbeddingResponse(new double[] {0.1, 0.2}, null);
                                 })
                         .retryWhen(
                                 Retry.backoff(2, Duration.ofMillis(10))
                                         .filter(error -> error instanceof RuntimeException));
 
-        Mono<double[]> result =
+        Mono<EmbeddingResponse> result =
                 EmbeddingUtils.applyTimeoutAndRetry(
                         retryableMono, config, "test-model", "test-provider", log);
 
         StepVerifier.create(result)
                 .assertNext(
-                        embedding -> {
-                            assertEquals(2, embedding.length);
-                            assertEquals(0.1, embedding[0], 0.001);
-                            assertEquals(0.2, embedding[1], 0.001);
+                        response -> {
+                            assertEquals(2, response.getEmbedding().length);
+                            assertEquals(0.1, response.getEmbedding()[0], 0.001);
+                            assertEquals(0.2, response.getEmbedding()[1], 0.001);
                         })
                 .verifyComplete();
         assertEquals(3, attemptCount.get(), "Should have retried 2 times (3 total attempts)");
@@ -134,14 +137,14 @@ class EmbeddingUtilsTest {
         AtomicInteger attemptCount = new AtomicInteger(0);
         ExecutionConfig config = ExecutionConfig.builder().maxAttempts(1).build();
 
-        Mono<double[]> failingMono =
+        Mono<EmbeddingResponse> failingMono =
                 Mono.fromCallable(
                         () -> {
                             attemptCount.incrementAndGet();
                             throw new RuntimeException("Error");
                         });
 
-        Mono<double[]> result =
+        Mono<EmbeddingResponse> result =
                 EmbeddingUtils.applyTimeoutAndRetry(
                         failingMono, config, "test-model", "test-provider", log);
 

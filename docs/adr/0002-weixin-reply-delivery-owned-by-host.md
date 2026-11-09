@@ -43,9 +43,9 @@ message ID so a caller can keep a notification pending.
   no Agent ran and a failed send cannot replay one.
 - The message completes once the reply is persisted, not once it is delivered. A delivery failure
   never replays the Agent.
-- Standalone deployments keep the inline path, where a single attempt is made and a failure is
-  reported through `WeixinRuntimeListener.onDeliveryFailed`; they have no durable queue to hand a
-  reply to, and the extension README says so.
+- Standalone deployments keep the inline path. A failed send is reported through
+  `WeixinRuntimeListener.onDeliveryFailed` and leaves the message pending for another dispatch
+  attempt, which may run the Agent again. The extension README documents the dispatch retry budget.
 
 ## Consequences
 

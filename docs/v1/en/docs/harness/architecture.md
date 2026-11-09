@@ -1,5 +1,6 @@
 ---
 title: Architecture
+zh_link: /v1/zh/docs/harness/architecture
 ---
 
 [Overview](/v1/en/docs/harness/overview) introduces Harness capabilities through the lens of "what problem they solve". This page takes a different angle: **explaining the architecture itself** — why it is designed this way, what each layer is responsible for, what happens during a `call()`, and how state flows through the system.
@@ -172,7 +173,7 @@ sequenceDiagram
     end
 
     RA->>H: PostCallEvent
-    Note over H: Trace(0) · MemFlush(5): flush facts + offload JSONL<br/>MemMaint(6): requestConsolidation<br/>Session(900): saveTo(session, key)
+    Note over H: Trace(0) · MemFlush(5): flush facts<br/>MemMaint(6): requestConsolidation<br/>Session(900): saveTo(session, key)
 
     RA-->>HA: final Msg
     HA-->>User: ② final Msg
@@ -195,7 +196,7 @@ graph LR
 
     subgraph CROSSCALL["Cross-call\npersistent within same sessionId"]
         SP["WorkspaceSession\nagents/&lt;id&gt;/context/&lt;sess&gt;/*.json\nMemory snapshot + StateModule"]
-        JSONL["sessions/&lt;sess&gt;.log.jsonl\nfull conversation log (append-only)"]
+        JNL[".agentscope-runtime/\nnative session journal\n(append-only, lossless)"]
     end
 
     subgraph LONGTERM["Long-term\naccumulates across sessions"]
@@ -206,7 +207,7 @@ graph LR
 
     IM -- "PostCallEvent\nMemoryFlushHook.flush()" --> DAILY
     IM -- "PostCallEvent\nSessionPersistenceHook.saveTo()" --> SP
-    IM -- "compaction / offload\nMemoryFlushHook.offload()" --> JSONL
+    IM -- "every turn\nruntime journal append" --> JNL
 
     DAILY -- "background 6h\nMemoryConsolidator" --> MMEM
     DAILY -- "after incremental write\nMemoryIndex" --> FTS
@@ -258,7 +259,7 @@ sequenceDiagram
 graph TD
     A["conversation accumulates → CompactionHook threshold hit"] --> B["ConversationCompactor.compactIfNeeded"]
     B --> C["MemoryFlushManager.flushMemories(prefix)\n→ LLM extracts new facts"]
-    B --> D["offloadMessages\n→ sessions/&lt;sess&gt;.log.jsonl"]
+    B --> D["full history already in the\nnative session journal (untouched)"]
     B --> E["LLM distill summary\n→ replace Memory + setInputMessages"]
 
     C --> C1["append to memory/YYYY-MM-DD.md"]
@@ -277,7 +278,7 @@ graph TD
 graph LR
     subgraph T1["Turn 1: call(msg1, ctx{sess=A})"]
         A1["bindRuntimeContext\nloadIfExists → Memory empty (first time)"] --> B1["ReAct loop"]
-        B1 --> C1["PostCallEvent\nMemoryFlushHook: flush + offload\nSessionPersistenceHook: saveTo → write to disk"]
+        B1 --> C1["PostCallEvent\nMemoryFlushMiddleware: flush facts\nruntime journal commit → write to disk"]
     end
 
     subgraph T2["Turn 2: call(msg2, ctx{sess=A})"]

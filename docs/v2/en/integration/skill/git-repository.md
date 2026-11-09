@@ -1,5 +1,6 @@
 ---
 title: Git Skill Repository
+zh_link: /v2/zh/integration/skill/git-repository
 ---
 
 `agentscope-extensions-skill-git-repository` treats a remote Git repo as a skill repository. It runs a lightweight remote-ref check on each read and only pulls when the remote HEAD changes — near-zero overhead at idle.
