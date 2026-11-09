@@ -13,7 +13,7 @@ en_link: /v2/en/integration/protocol/agui
 
 多模态输入支持 image/audio/video/document。document part 会转换为 `DocumentBlock`；无法消费文档的模型提供方会返回错误，而不是静默丢弃内容。
 
-`RUN_STARTED.input` 会保留原始请求，记录日志或转发事件的使用方需要自行对敏感输入脱敏。
+`RUN_STARTED.input` 保留原始请求，包括文档内容。记录日志或转发事件的使用方需要自行对敏感输入脱敏。
 
 `AguiMessageConverter.toAguiMessageList()` 会把包含多个 `ToolResultBlock` 的 TOOL `Msg` 展开成每个 tool result 一条 AG-UI tool message。`toAguiMessage()` 仅用于最多一个 tool result 的消息，多结果时会拒绝；需要展开结果时请使用 `toAguiMessages()`。
 

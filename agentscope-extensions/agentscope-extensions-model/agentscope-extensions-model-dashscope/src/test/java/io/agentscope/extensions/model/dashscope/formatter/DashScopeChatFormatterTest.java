@@ -17,7 +17,9 @@ package io.agentscope.extensions.model.dashscope.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -104,7 +106,40 @@ class DashScopeChatFormatterTest {
         assertEquals("system", result.get(0).getRole());
         assertEquals("fileid://file-abc", result.get(0).getContentAsString());
         assertEquals("user", result.get(1).getRole());
-        assertEquals("Summarise this", result.get(1).getContentAsString());
+        // The turn text names the document next to the fileid:// system message that delivers it.
+        assertEquals(
+                "Summarise this\n[document: report.pdf, application/pdf,"
+                        + " provider file id: file-abc (dashscope)]",
+                result.get(1).getContentAsString());
+    }
+
+    @Test
+    void testDocumentOnlyMessageKeepsANonEmptyTurn() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("dashscope")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .mimeType("application/pdf")
+                                                .build()))
+                        .build();
+
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
+
+        assertEquals(2, result.size());
+        assertEquals("system", result.get(0).getRole());
+        assertEquals("fileid://file-abc", result.get(0).getContentAsString());
+        assertEquals("user", result.get(1).getRole());
+        assertEquals(
+                "[document: report.pdf, application/pdf, provider file id: file-abc (dashscope)]",
+                result.get(1).getContentAsString());
     }
 
     @Test
@@ -136,9 +171,9 @@ class DashScopeChatFormatterTest {
     }
 
     @Test
-    void testDocumentBlockOnNonUserTurnIsLeftAlone() {
-        // ASSISTANT/TOOL accept arbitrary blocks for back-compat; a document there is
-        // aberrant input and must neither be mapped nor rejected, just ignored.
+    void testDocumentBlockOnNonUserTurnKeepsAReference() {
+        // returnDirect tool deliveries put documents on assistant turns; the formatter keeps a
+        // text reference there instead of dropping the attachment from the history.
         Msg assistant =
                 Msg.builder()
                         .role(MsgRole.ASSISTANT)
@@ -157,10 +192,180 @@ class DashScopeChatFormatterTest {
 
         assertEquals(1, result.size());
         assertEquals("assistant", result.get(0).getRole());
+        String content = result.get(0).getContentAsString();
+        assertTrue(content.contains("reply"), content);
+        assertTrue(content.contains("[document: ") && content.contains("a.pdf"), content);
     }
 
     @Test
-    void testDocumentBlockRejectsNonFileIdSource() {
+    void testDocumentUrlIsSentAsDocUrlPartWithoutSystemMessage() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Summarise this").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.pdf")
+                                                                .build())
+                                                .name("a.pdf")
+                                                .build()))
+                        .build();
+
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
+
+        // No fileid:// system message is injected; the URL travels inside the user turn itself.
+        assertEquals(1, result.size());
+        assertEquals("user", result.get(0).getRole());
+        List<DashScopeContentPart> parts = docUrlTestParts(result.get(0));
+        assertEquals(2, parts.size());
+        // Document-capable models validate the type discriminator on every part of the turn.
+        assertEquals(DashScopeContentPart.TYPE_TEXT, parts.get(0).getType());
+        assertEquals("Summarise this", parts.get(0).getText());
+        assertEquals(DashScopeContentPart.TYPE_DOC_URL, parts.get(1).getType());
+        assertEquals(List.of("https://example.com/a.pdf"), parts.get(1).getDocUrl());
+        assertNull(parts.get(1).getFileParsingStrategy());
+    }
+
+    @Test
+    void testDocumentUrlOnlyTurnUsesDocUrlPart() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.pdf")
+                                                                .build())
+                                                .name("a.pdf")
+                                                .build()))
+                        .build();
+
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        List<DashScopeContentPart> parts = docUrlTestParts(result.get(0));
+        assertEquals(1, parts.size());
+        assertEquals(List.of("https://example.com/a.pdf"), parts.get(0).getDocUrl());
+    }
+
+    @Test
+    void testDocumentUrlParsingStrategyComesFromMetadata() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.pdf")
+                                                                .build())
+                                                .name("a.pdf")
+                                                .metadata(
+                                                        Map.of(
+                                                                "file_parsing_strategy",
+                                                                "text_and_images"))
+                                                .build()))
+                        .build();
+
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
+
+        List<DashScopeContentPart> parts = docUrlTestParts(result.get(0));
+        assertEquals("text_and_images", parts.get(0).getFileParsingStrategy());
+    }
+
+    @Test
+    void testDocumentUrlUnknownParsingStrategyIsRejected() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.pdf")
+                                                                .build())
+                                                .metadata(Map.of("file_parsing_strategy", "images"))
+                                                .build()))
+                        .build();
+
+        IllegalArgumentException ex =
+                assertThrows(IllegalArgumentException.class, () -> formatter.format(List.of(msg)));
+        assertTrue(ex.getMessage().contains("file_parsing_strategy"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("images"), ex.getMessage());
+    }
+
+    @Test
+    void testBase64DocumentIsStillRejected() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType("application/pdf")
+                                                                .data("aGVsbG8=")
+                                                                .build())
+                                                .name("a.pdf")
+                                                .build()))
+                        .build();
+
+        IllegalArgumentException ex =
+                assertThrows(IllegalArgumentException.class, () -> formatter.format(List.of(msg)));
+        assertTrue(ex.getMessage().contains("Base64Source"), ex.getMessage());
+    }
+
+    @Test
+    void testMoreThanTenDocumentUrlsAreRejected() {
+        List<ContentBlock> blocks = new ArrayList<>();
+        for (int i = 0; i < 11; i++) {
+            blocks.add(
+                    DocumentBlock.builder()
+                            .source(
+                                    URLSource.builder()
+                                            .url("https://example.com/doc-" + i + ".pdf")
+                                            .build())
+                            .build());
+        }
+        Msg msg = Msg.builder().role(MsgRole.USER).content(blocks).build();
+
+        IllegalArgumentException ex =
+                assertThrows(IllegalArgumentException.class, () -> formatter.format(List.of(msg)));
+        assertTrue(ex.getMessage().contains("at most 10"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("11"), ex.getMessage());
+    }
+
+    @Test
+    void testTenDocumentUrlsAreAccepted() {
+        List<ContentBlock> blocks = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            blocks.add(
+                    DocumentBlock.builder()
+                            .source(
+                                    URLSource.builder()
+                                            .url("https://example.com/doc-" + i + ".pdf")
+                                            .build())
+                            .build());
+        }
+        Msg msg = Msg.builder().role(MsgRole.USER).content(blocks).build();
+
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        List<DashScopeContentPart> parts = docUrlTestParts(result.get(0));
+        assertEquals(10, parts.size());
+    }
+
+    @Test
+    void testDocumentUrlOnMultimodalEndpointIsRejected() {
         Msg msg =
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -176,9 +381,84 @@ class DashScopeChatFormatterTest {
                         .build();
 
         IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> formatter.formatMultiModal(List.of(msg)));
+        assertTrue(ex.getMessage().contains("multimodal endpoint"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("qwen-doc-turbo"), ex.getMessage());
+    }
+
+    @Test
+    void testDocumentUrlMustBePubliclyReachable() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("file:///tmp/report.pdf")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        IllegalArgumentException ex =
                 assertThrows(IllegalArgumentException.class, () -> formatter.format(List.of(msg)));
-        assertTrue(ex.getMessage().contains("file id"), ex.getMessage());
-        assertTrue(ex.getMessage().contains("URLSource"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("http(s)"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("file:///tmp/report.pdf"), ex.getMessage());
+    }
+
+    @Test
+    void testMixedFileIdAndUrlDocumentsInOneTurn() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Compare these").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("dashscope")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("local.pdf")
+                                                .build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.pdf")
+                                                                .build())
+                                                .name("remote.pdf")
+                                                .build()))
+                        .build();
+
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
+
+        // The file-id document rides on the injected system message, the URL document travels in
+        // the user turn itself.
+        assertEquals(2, result.size());
+        assertEquals("system", result.get(0).getRole());
+        assertEquals("fileid://file-abc", result.get(0).getContentAsString());
+        List<DashScopeContentPart> parts = docUrlTestParts(result.get(1));
+        assertEquals(3, parts.size());
+        assertEquals("Compare these", parts.get(0).getText());
+        assertTrue(parts.get(1).getText().contains("local.pdf"));
+        assertEquals(List.of("https://example.com/a.pdf"), parts.get(2).getDocUrl());
+    }
+
+    private static List<DashScopeContentPart> docUrlTestParts(DashScopeMessage message) {
+        assertTrue(message.getContent() instanceof List, "expected multimodal content parts");
+        return ((List<?>) message.getContent())
+                .stream()
+                        .map(
+                                part -> {
+                                    assertInstanceOf(DashScopeContentPart.class, part);
+                                    return (DashScopeContentPart) part;
+                                })
+                        .toList();
     }
 
     @Test
@@ -802,6 +1082,35 @@ class DashScopeChatFormatterTest {
 
         DashScopeContentPart part = multiModalMsg.getContentAsList().get(0);
         assertEquals("Hello", part.getText());
+    }
+
+    @Test
+    void testFormat_AssistantWithTextDocumentAndToolCallKeepsAllThree() {
+        Msg assistant =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder().text("Generated the report").build(),
+                                DocumentBlock.builder()
+                                        .name("report.pdf")
+                                        .source(new FileIdSource("dashscope", "file-1"))
+                                        .build(),
+                                ToolUseBlock.builder()
+                                        .id("call-1")
+                                        .name("generate_report")
+                                        .input(Map.of("file", "report.pdf"))
+                                        .build())
+                        .build();
+
+        List<DashScopeMessage> result = formatter.format(List.of(assistant));
+
+        assertEquals(1, result.size());
+        assertEquals("assistant", result.get(0).getRole());
+        String content = result.get(0).getContentAsString();
+        assertTrue(content.contains("Generated the report"), content);
+        assertTrue(content.contains("[document: report.pdf"), content);
+        assertNotNull(result.get(0).getToolCalls());
+        assertEquals(1, result.get(0).getToolCalls().size());
     }
 
     @Test

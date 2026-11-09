@@ -16,7 +16,9 @@
 package io.agentscope.harness.agent.memory.compaction;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -658,7 +660,9 @@ public class ConversationCompactor {
      * Formats a list of messages as a human-readable text block for the summarization LLM.
      *
      * <p>Tool calls retain their names and argument previews; tool results retain their names,
-     * error state, and head+tail previews. Omitted content is marked explicitly.
+     * error state, and head+tail previews. Documents retain a reference (name, MIME type, and
+     * where the bytes live) so a compacted conversation still records that a file was part of it.
+     * Omitted content is marked explicitly.
      */
     static String formatMessagesForSummary(List<Msg> messages) {
         return messages.stream()
@@ -699,6 +703,11 @@ public class ConversationCompactor {
                 }
                 sb.append("] ");
                 sb.append(buildPrunePreview(extractToolResultText(tr), SUMMARY_PREVIEW_CHARS));
+                for (DocumentBlock doc : extractToolResultDocuments(tr)) {
+                    sb.append(" ").append(DocumentReferenceRenderer.render(doc));
+                }
+            } else if (block instanceof DocumentBlock doc) {
+                sb.append(DocumentReferenceRenderer.render(doc));
             }
         }
         return sb.toString().strip();
@@ -726,10 +735,24 @@ public class ConversationCompactor {
     private static String extractToolResultText(ToolResultBlock tr) {
         if (tr.getOutput() == null) return "";
         return tr.getOutput().stream()
-                .filter(b -> b instanceof TextBlock)
+                .filter(TextBlock.class::isInstance)
                 .map(b -> ((TextBlock) b).getText())
                 .filter(t -> t != null && !t.isBlank())
                 .collect(Collectors.joining(" "));
+    }
+
+    /**
+     * Collects the documents of a tool result.
+     *
+     * <p>They are rendered outside the preview budget on purpose: a long result would otherwise
+     * truncate the reference away and the attachment would disappear from the summary again.
+     */
+    private static List<DocumentBlock> extractToolResultDocuments(ToolResultBlock tr) {
+        if (tr.getOutput() == null) return List.of();
+        return tr.getOutput().stream()
+                .filter(DocumentBlock.class::isInstance)
+                .map(DocumentBlock.class::cast)
+                .toList();
     }
 
     // -------------------------------------------------------------------------
