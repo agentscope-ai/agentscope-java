@@ -84,6 +84,7 @@ public final class SessionRecorder {
     private final Disposable heartbeat;
     private final SessionProjection initial;
     private final SessionLogExporter exporter;
+    private final SessionRequestRecording requestRecording;
     private static final Logger LOGGER = LoggerFactory.getLogger(SessionRecorder.class);
 
     public SessionRecorder(SessionLog log, String turnId) {
@@ -95,6 +96,17 @@ public final class SessionRecorder {
     }
 
     public SessionRecorder(SessionLog log, String turnId, String runId, SessionExportSink sink) {
+        this(log, turnId, runId, sink, SessionRequestRecording.FULL);
+    }
+
+    /** Creates a recorder with an explicit model-request recording policy. */
+    public SessionRecorder(
+            SessionLog log,
+            String turnId,
+            String runId,
+            SessionExportSink sink,
+            SessionRequestRecording requestRecording) {
+        this.requestRecording = Objects.requireNonNull(requestRecording, "requestRecording");
         this.runId = Objects.requireNonNull(runId, "runId");
         if (runId.isBlank() || (turnId != null && turnId.isBlank()))
             throw new IllegalArgumentException("Run and turn IDs must not be blank");
@@ -599,9 +611,17 @@ public final class SessionRecorder {
                         payload.put("modelCallId", callId);
                         payload.put("purpose", purpose);
                         payload.put("model", input.model().getModelName());
-                        payload.put("messages", input.messages());
-                        payload.put("tools", input.tools());
-                        payload.put("options", input.options());
+                        if (requestRecording == SessionRequestRecording.FULL) {
+                            payload.put("messages", input.messages());
+                            payload.put("tools", input.tools());
+                            payload.put("options", input.options());
+                        } else {
+                            payload.put("payloadMode", "metadata");
+                            payload.put(
+                                    "messageCount",
+                                    input.messages() == null ? 0 : input.messages().size());
+                            payload.put("toolCount", input.tools().size());
+                        }
                         append("request/prepared", payload);
                         append(
                                 "model/dispatch",
