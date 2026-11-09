@@ -263,11 +263,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final Model model;
 
     /**
-     * Model identity string set by {@link Builder#model(String)}; resolved lazily through
-     * {@link ModelRegistry} on every call. Either the composite form {@code contextId@modelId}
-     * (e.g. {@code mytokenplan01@dashscope:qwen-plus}) or a plain registry string (named
-     * binding, bare modelId, user factory). {@code null} when the agent was given a {@link
-     * Model} instance.
+     * Model identity string set by {@link Builder#model(String)} — a reference-style alternative
+     * to the instance form, resolved once per run at run entry through {@link ModelRegistry}
+     * (composite {@code contextId@modelId} or a plain registry string). {@code null} when the
+     * agent was given a {@link Model} instance.
      */
     private final String modelIdentity;
 
@@ -1355,24 +1354,46 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     effective.put(SessionRecorder.TURN_ID_KEY, identity.turnId());
                     effective.put(ExecutionIdentity.CONTEXT_KEY, identity);
                     Flux<AgentEvent> events =
-                            buildIdentifiedAgentStream(msgs, effective, doCallFn)
-                                    .doOnNext(
-                                            event -> {
-                                                if (event.getSource() == null
-                                                        || event.getSource().isBlank())
-                                                    event.withExecution(identity);
-                                            })
-                                    .doOnEach(
-                                            signal -> {
-                                                if (signal.isOnComplete() || signal.isOnError())
-                                                    source.setAgentState(effective.getAgentState());
-                                            })
-                                    .contextWrite(control::attach);
+                            resolveModelAtEntry(
+                                    effective,
+                                    buildIdentifiedAgentStream(msgs, effective, doCallFn)
+                                            .doOnNext(
+                                                    event -> {
+                                                        if (event.getSource() == null
+                                                                || event.getSource().isBlank())
+                                                            event.withExecution(identity);
+                                                    })
+                                            .doOnEach(
+                                                    signal -> {
+                                                        if (signal.isOnComplete()
+                                                                || signal.isOnError())
+                                                            source.setAgentState(
+                                                                    effective.getAgentState());
+                                                    })
+                                            .contextWrite(control::attach));
                     if (inherited != null) return events;
                     return events.doOnComplete(() -> control.finish(AgentRun.Status.COMPLETED))
                             .doOnError(error -> control.finish(AgentRun.Status.FAILED))
                             .doOnCancel(control::cancel);
                 });
+    }
+
+    /**
+     * Resolves the agent's identity string once at run entry, off the subscriber's thread: {@code
+     * ModelRegistry.resolve} may run a factory or wait on a shared in-flight creation, which
+     * must never block a Reactor event-loop thread. The resolved instance is memoized into
+     * {@code effective} by {@link #getModel(RuntimeContext)}, so every later model boundary of
+     * the run is a plain cache read. Runs with a pinned model, and agents configured with a
+     * {@link Model} instance, skip the scheduler hop — there is nothing to resolve.
+     */
+    private Flux<AgentEvent> resolveModelAtEntry(
+            RuntimeContext effective, Flux<AgentEvent> events) {
+        if (modelIdentity == null || effective.get(Model.class) != null) {
+            return events;
+        }
+        return Mono.fromCallable(() -> getModel(effective))
+                .subscribeOn(Schedulers.boundedElastic())
+                .thenMany(events);
     }
 
     private Flux<AgentEvent> buildIdentifiedAgentStream(
@@ -5344,28 +5365,43 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Returns the model effective for a call carrying {@code ctx}, by priority: the context's
-     * {@code modelIdentity}, then this agent's identity string (both resolved through {@link
-     * ModelRegistry} on every call), then the configured {@link Model} instance. A set-but-blank
-     * or unresolvable identity throws {@link IllegalArgumentException} — an explicit model
-     * choice fails loudly rather than silently falling back (wrong model, wrong credentials in
-     * multi-tenant setups).
+     * Returns the model effective for a call carrying {@code ctx}, by priority: a {@link Model}
+     * pinned on the context's typed bag ({@code ctx.put(Model.class, ...)} — pinned by the
+     * caller, or memoized at run entry by the {@code call()}/{@code streamEvents()} pipeline),
+     * then this agent's identity string resolved through {@link ModelRegistry}, then the
+     * configured {@link Model} instance. The result is memoized into {@code ctx} on first
+     * resolution, so the model is determined once at the start of the run and never switches
+     * mid-response; a fresh context re-resolves. Run-entry resolution happens on a
+     * boundedElastic scheduler ({@code ModelRegistry.resolve} may run a factory), so the
+     * subscriber's thread — possibly a Reactor event loop — is never blocked. A
+     * set-but-unresolvable identity throws {@link IllegalArgumentException} — an explicit
+     * model choice fails loudly rather than silently falling back (wrong model, wrong
+     * credentials in multi-tenant setups).
      *
-     * @param ctx the per-call runtime context (may be {@code null}, meaning no per-call
-     *     override)
+     * @param ctx the per-call runtime context (may be {@code null}, meaning no per-call pin
+     *     and no memoization)
      */
     public Model getModel(RuntimeContext ctx) {
-        String identity =
-                ctx != null && ctx.getModelIdentity() != null
-                        ? ctx.getModelIdentity()
-                        : modelIdentity;
-        if (identity != null) {
-            // Composite contextId@modelId and legacy-chain strings both resolve here; a named
-            // reference carries its own (contextId, modelId) pairing, so cross-provider
-            // per-call switching needs no agent-level context assumptions.
-            return ModelRegistry.resolve(identity);
+        if (ctx != null) {
+            Model pinned = ctx.get(Model.class);
+            if (pinned != null) {
+                return pinned;
+            }
         }
-        return Objects.requireNonNull(model, "agent has neither a model nor a modelIdentity");
+        Model resolved;
+        if (modelIdentity != null) {
+            // Composite contextId@modelId and plain registry strings both resolve here; a
+            // named reference carries its own (contextId, modelId) pairing, so per-call
+            // switching needs no agent-level context assumptions.
+            resolved = ModelRegistry.resolve(modelIdentity);
+        } else {
+            resolved =
+                    Objects.requireNonNull(model, "agent has neither a model nor a modelIdentity");
+        }
+        if (ctx != null) {
+            ctx.put(Model.class, resolved); // memoize: decided once at the start of the run
+        }
+        return resolved;
     }
 
     public int getMaxIters() {
@@ -6155,9 +6191,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Sets the language model for this agent. This overload and {@link #model(String)} are
          * two forms of one configuration slot: the last setter wins, and this call clears any
-         * previously configured identity string. At runtime an identity string outranks the
-         * instance wherever both could apply ({@link #getModel(RuntimeContext)}), but the
-         * mutual clearing means only the last setting is ever active.
+         * previously configured identity string.
          *
          * @param model The language model to use for reasoning, must not be null
          * @return This builder instance for method chaining
@@ -6169,25 +6203,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Sets the model by identity string, resolved lazily via {@link ModelRegistry} on every
-         * call. Accepted forms: the composite {@code contextId@modelId} (e.g. {@code
-         * mytokenplan01@dashscope:qwen-plus}, pairing a creation context registered via {@code
-         * ModelRegistry#registerCreationContext} with the model id — the credentials/endpoint
-         * travel with the identity itself), or a plain registry string (modelInstanceId,
-         * bare modelId, user factory match). Registration state at call time applies, so
-         * re-registering a binding, context, or factory takes effect for calls that start
-         * afterwards; an unresolvable identity fails the call with {@link
-         * IllegalArgumentException} instead of silently falling back.
+         * Sets the model by identity string, held as a lazy reference and resolved through
+         * {@link ModelRegistry} once at run entry, off the subscriber's thread (boundedElastic)
+         * — reference-style usage: after registering models/contexts in the registry, the agent
+         * refers to them by string, and registry re-registrations apply to runs that start
+         * afterwards. Accepted forms: the composite {@code contextId@modelId} (e.g. {@code
+         * mytokenplan01@dashscope:qwen-plus}), a registered instance id, a bare modelId, or a
+         * factory-matched string; an unresolvable identity fails the run at entry with {@link
+         * IllegalArgumentException} instead of silently falling back. This
+         * overload and {@link #model(Model)} are two forms of one configuration slot: the
+         * last setter wins, and this call clears any previously configured instance. Per-call
+         * selection pins an instance on the context ({@code ctx.put(Model.class, ...)}),
+         * which outranks both forms.
          *
-         * <p>This overload and {@link #model(Model)} are two forms of one configuration slot:
-         * the last setter wins, and this call clears any previously configured {@link Model}
-         * instance. Runtime precedence is {@code RuntimeContext.modelIdentity} &gt; this
-         * identity &gt; a configured instance — but the mutual clearing means only the last
-         * setting is ever active.
-         *
-         * @param modelIdentity a composite {@code contextId@modelId}, a modelId, a
-         *     modelInstanceId, or a factory-matched string; resolved via ModelRegistry; itself never a
-         *     {@link Model} instance
+         * @param modelIdentity a registry-resolvable identity string
          * @return this builder
          */
         public Builder model(String modelIdentity) {
@@ -6486,8 +6515,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * {@link ModelRegistry#resolve(String)} (a modelInstanceId or
          * {@code provider:model} pattern like {@code openai:gpt-5.5}, {@code dashscope:qwen-max}).
          *
-         * <p>Legacy eager semantics: resolution happens once at build time, unlike the lazy
-         * string reference of {@link #model(String)}.
          *
          * @throws IllegalArgumentException if the id cannot be resolved
          */

@@ -19,7 +19,7 @@ en_link: /v2/en/integration/model/index
 
 provider 前缀与下方模块列表对应（`openai:`、`openai-official:`、`deepseek:`、`glm:`、`kimi:`、`minimax:`、`dashscope:`、`gemini:`、`anthropic:`、`ollama:`）。model id 无法解析时，错误信息会列出 classpath 上实际已安装的 provider id。
 
-本节的 `modelId` 是注册表路由层的词汇，区别于 `modelIdentity`——后者是模型选择串（组合形式 `contextId@modelId` 或裸 modelId），`ReActAgent.builder().model(...)` 与 `RuntimeContext.builder().modelIdentity(...)` 接受该形式，参见[模型标识符](/v2/zh/docs/building-blocks/model#模型标识符)。
+本节的 `modelId` 是注册表路由层的词汇，区别于 `modelIdentity`——后者是 `ModelRegistry.resolve` 的解析入参（组合形式 `contextId@modelId` 或裸 modelId），参见[模型标识符](/v2/zh/docs/building-blocks/model#模型标识符)。
 
 - [OpenAI](/v2/zh/integration/model/openai)
 - [OpenAI Official](/v2/zh/integration/model/openai-official)

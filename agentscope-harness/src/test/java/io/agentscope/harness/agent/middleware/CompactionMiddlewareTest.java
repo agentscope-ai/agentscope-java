@@ -550,7 +550,7 @@ class CompactionMiddlewareTest {
 
     /**
      * Without a dedicated config model, the per-call model of the executing agent (its {@code
-     * RuntimeContext} modelIdentity) drives compaction; the build-time field model must not serve it.
+     * RuntimeContext}) drives compaction; the build-time field model must not serve it.
      */
     @Test
     void perCallModelDrivesCompactionWhenNoDedicatedModel() {
@@ -595,7 +595,7 @@ class CompactionMiddlewareTest {
         when(agent.getModel(any(RuntimeContext.class))).thenReturn(perCall);
         when(agent.getModel()).thenReturn(defaultModel);
         // No dedicated compaction model: the field is null, so compaction resolves the
-        // agent's per-call (RuntimeContext modelIdentity) model instead of its default.
+        // agent's per-call (context-pinned) model instead of its default.
         CompactionMiddleware middleware = new CompactionMiddleware(null, null, fixedConfig());
 
         List<Msg> downstream = new ArrayList<>();

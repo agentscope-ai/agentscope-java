@@ -342,13 +342,13 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 | `resolveAgentState(ctx, agent)` | 静态辅助方法:优先返回 `ctx.getAgentState()`,回退到 `agent.getAgentState()`。执行期间应确保当前调用已注入状态；回退不保证选中正确业务会话 |
 | `get(String)` / `put(String, Object)` | 字符串键存取 |
 | `get(Class<T>)` / `put(Class<T>, T)` | 按类型存取(typed singleton) |
-| `getModelIdentity()` | 按调用选择模型(见下方[按调用选择模型](#按调用选择模型)) |
+| `get(Model.class)` / `put(Model.class, ...)` | 按调用钉定模型(见下方[按调用选择模型](#按调用选择模型)) |
 | `getExtra()` | 直接拿到字符串属性 map(可变视图) |
 | `RuntimeContext.empty()` | 空上下文 |
 
 ### 按调用选择模型
 
-`builder().modelIdentity(...)` 为单次调用选择模型——即 LLM API 的 per-request 模型惯例。取值是模型身份串:组合形式 `contextId@modelId`(例如 `mytokenplan01@dashscope:qwen-plus`,即经 `ModelRegistry.registerCreationContext` 注册的命名创建上下文与 model id 的组合),或普通注册表字符串(modelInstanceId、裸 modelId、工厂匹配串)。它在本次 run 的每一次模型调用(推理、摘要、压缩、记忆清洗)中都经 `ModelRegistry` 解析,因此单例 Agent 无需反射、也无需为每个租户实例化一个 Agent,就能服务需要不同模型的多个会话。模型选择对整个调用是确定性的:由不可变的 `RuntimeContext` 携带,而非可变的 Agent 状态,不存在调用中途切换,也不会跨会话泄漏。
+`ctx.put(Model.class, model)` 为单次调用钉定模型——即 LLM API 的 per-request 模型惯例。agent 在本次 run 的每一次模型边界(推理、摘要、压缩、记忆清洗)都读取该钉定,因此单例 Agent 无需反射、也无需为每个租户实例化一个 Agent,就能服务需要不同模型的多个会话。选择对整个调用是确定性的:实例引用不可变,不存在调用中途切换,也不会跨会话泄漏。
 
 ```java
 // 启动时注册一次模型与命名创建上下文:
@@ -357,23 +357,24 @@ ModelRegistry.registerFactory("dashscope:.*", id -> dashscopeModel(id));
 ModelRegistry.registerCreationContext("mytokenplan01",
         ModelCreationContext.builder().apiKey(tenantApiKey).build());
 
-// 每个请求携带调用方的选择:
+// 每个请求:由你的应用层解析调用方的选择(认证/白名单在这一步),
+// 再把实例钉定到本次调用的 context 上:
+Model choice = ModelRegistry.resolve("mytokenplan01@dashscope:qwen-plus");
 RuntimeContext ctx = RuntimeContext.builder()
         .userId("alice")
         .sessionId("s-001")
-        .modelIdentity("mytokenplan01@dashscope:qwen-plus")   // null = Agent 的默认模型
         .build();
+ctx.put(Model.class, choice);   // 不钉定 = Agent 构建期默认模型
 Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 ```
 
 语义:
 
-- **fail-fast,绝不静默回退**:设置了但为空白或无法解析的身份串会让本次调用失败(`IllegalArgumentException` 以 error event 呈现),而不是悄悄用默认模型——多租户下用错模型通常意味着用错凭证、算错账单。`null`(未设置)就是用 Agent 的默认模型。
-- **组合形式自带凭据配对**:`contextId@modelId` 用注册的创建上下文解析模型,正确的(凭据, 模型)配对随身份串本身携带——跨 provider 的按调用切换无需 agent 级 context 假设。
-- **辅助调用跟随 effective 模型**:压缩、记忆清洗、超轮摘要使用解析出的模型;若为它们配置了专用模型(`CompactionConfig.getModel()` / `MemoryConfig.model()`)则专用模型优先。压缩触发阈值按 effective 模型的上下文窗口计算。后台的定期记忆整合不在此列——它不属于任何调用,始终使用构建期配置的模型。
-- **子代理不继承**:子代理派生上下文时会清空调用方的 `modelIdentity`——子代理的模型是构建期契约(`SubagentDeclaration.getModel()`),调用方的运行时选择不得悄悄改变 worker 模型或其成本面。
-- **provider 故障仍然 failover**:选中的模型运行期出错时,已配置的 `fallbackModel` 照常接管——failover 管可用性,选择本身已被尊重。
-- 会话级粘性(跨请求记住选择)是应用自己的职责:存在你自己的会话记录里,每个请求 stamp 到 context 的 `modelIdentity` 上。选择不进 `AgentState`,事实源只有一个。
+- **优先级与确定性**:钉定优先于 agent 的两种构建期设置(惰性身份串、直给实例)。胜出者只决定一次——agent 会把自身首次解析结果记忆化到同一 typed 槽位——因此模型不会在响应中途切换;换新 context 重新决定。路由不可信选择时,请在自己的认证/白名单之后解析并钉定实例,绝不透传客户端提交的身份串。
+- **辅助调用跟随 effective 模型**:压缩、记忆清洗、超轮摘要使用钉定(或默认)模型;若为它们配置了专用模型(`CompactionConfig.getModel()` / `MemoryConfig.model()`)则专用模型优先。压缩触发阈值按 effective 模型的上下文窗口计算。后台的定期记忆整合不在此列——它不属于任何调用,始终使用构建期配置的模型。
+- **子代理不继承**:子代理派生上下文时会清空调用方的钉定——子代理的模型是构建期契约(`SubagentDeclaration.getModel()`),调用方的运行时选择不得悄悄改变 worker 模型或其成本面。
+- **provider 故障仍然 failover**:钉定的模型运行期出错时,已配置的 `fallbackModel` 照常接管——failover 管可用性,选择本身已被尊重。
+- 会话级粘性(跨请求记住选择)是应用自己的职责:把解析结果(或待重解析的身份串)存在你自己的会话记录里;选择不进 `AgentState`,事实源只有一个。
 - 不要与 `GenerateOptions.getModelName()` 混淆——那是 provider 侧的路由提示,不参与模型选择。
 
 ### runId 关联

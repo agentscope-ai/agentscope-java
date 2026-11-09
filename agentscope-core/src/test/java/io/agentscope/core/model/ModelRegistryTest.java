@@ -867,6 +867,46 @@ class ModelRegistryTest {
     }
 
     @Test
+    void creationContext_rotation_inFlightOldResolutionCannotPoisonNewGeneration()
+            throws Exception {
+        CountDownLatch firstCreateStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirstCreate = new CountDownLatch(1);
+        ModelRegistry.registerFactory(
+                "local:(.+)",
+                (id, context) -> {
+                    if ("old-key".equals(context.getApiKey())) {
+                        firstCreateStarted.countDown();
+                        await(releaseFirstCreate);
+                    }
+                    return new StubModel(context.getApiKey() + "/" + id);
+                });
+        ModelRegistry.registerCreationContext(
+                "t", ModelCreationContext.builder().apiKey("old-key").build());
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Model> inFlight = pool.submit(() -> ModelRegistry.resolve("t@local:alpha"));
+            assertTrue(firstCreateStarted.await(5, TimeUnit.SECONDS));
+
+            // Rotate while the old-context creation is still in flight.
+            ModelRegistry.registerCreationContext(
+                    "t", ModelCreationContext.builder().apiKey("new-key").build());
+
+            // A resolution starting AFTER the rotation must see the new credentials, even
+            // though the stale creation publishes its entry afterwards (retired generation).
+            Model fresh = ModelRegistry.resolve("t@local:alpha");
+            assertEquals("new-key/local:alpha", fresh.getModelName());
+
+            releaseFirstCreate.countDown();
+            Model stale = inFlight.get(5, TimeUnit.SECONDS);
+            assertEquals("old-key/local:alpha", stale.getModelName());
+        } finally {
+            releaseFirstCreate.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
     void creationContext_reRegister_rotatesForResolutionsStartedAfter() {
         ModelRegistry.registerFactory(
                 "local:(.+)", (id, context) -> new StubModel(context.getApiKey() + "/" + id));
@@ -900,13 +940,13 @@ class ModelRegistryTest {
         assertEquals("key-a", removed.getApiKey());
         assertThrows(
                 IllegalArgumentException.class, () -> ModelRegistry.getCreationContext("tenant"));
-        ModelCreationContext sameIdentity =
-                ModelCreationContext.builder()
-                        .apiKey("other-key")
-                        .cachePolicy(CachePolicy.ENABLED)
-                        .cacheId("tenant")
-                        .build();
-        assertNotSame(first, ModelRegistry.resolve("local:alpha", sameIdentity));
+
+        // Re-registration starts a new generation: the old entry must not be reused.
+        ModelRegistry.registerCreationContext(
+                "tenant", ModelCreationContext.builder().apiKey("key-b").build());
+        Model second =
+                ModelRegistry.resolve("local:alpha", ModelRegistry.getCreationContext("tenant"));
+        assertNotSame(first, second);
     }
 
     @Test
@@ -1028,23 +1068,19 @@ class ModelRegistryTest {
     }
 
     @Test
-    void creationContext_normalizedToEnabledAndCacheId() {
+    void creationContext_normalizedToEnabledWithGenerationCacheId() {
         ModelRegistry.registerFactory("local:(.+)", (id, context) -> new StubModel(id));
         ModelRegistry.registerCreationContext(
                 "norm", ModelCreationContext.builder().apiKey("key-a").build());
 
+        // Generation-suffixed cacheId: one cache identity per registration generation.
         ModelCreationContext normalized = ModelRegistry.getCreationContext("norm");
         assertTrue(normalized.getCachePolicy() == CachePolicy.ENABLED);
-        assertEquals("norm", normalized.getCacheId());
+        assertEquals("norm#1", normalized.getCacheId());
 
-        Model viaRegistry = ModelRegistry.resolve("local:alpha", normalized);
-        ModelCreationContext manualSameIdentity =
-                ModelCreationContext.builder()
-                        .apiKey("key-a")
-                        .cachePolicy(CachePolicy.ENABLED)
-                        .cacheId("norm")
-                        .build();
-        assertSame(viaRegistry, ModelRegistry.resolve("local:alpha", manualSameIdentity));
+        // Both the composite form and the two-step composition share that identity.
+        Model viaComposite = ModelRegistry.resolve("norm@local:alpha");
+        assertSame(viaComposite, ModelRegistry.resolve("local:alpha", normalized));
     }
 
     @Test

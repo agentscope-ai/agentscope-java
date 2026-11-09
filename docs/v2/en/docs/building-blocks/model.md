@@ -65,14 +65,15 @@ Other provider artifacts follow the same pattern: `agentscope-extensions-model-o
 
 ### Model identifiers
 
-Four nouns cover the whole vocabulary:
+Five nouns cover the whole vocabulary. They are the registry layer's canonical terms — kept stable regardless of which API consumes them — so any current or future surface can pick the exact noun instead of overloading one word:
 
 | Term | Example | Meaning |
 |------|---------|---------|
 | `providerId` | `dashscope` | Routing key, the prefix of a `modelId` |
 | `modelId` | `dashscope:qwen-max` | Recipe `providerId + ":" + modelName` (the bare catalog name sent to the upstream API) — *what to create*, the routing argument of the registry layer |
 | `modelCreationContextId` (API arg: `contextId`) | `mytokenplan01` | Handle naming one `ModelCreationContext` registered via `ModelRegistry.registerCreationContext` — a credentials/endpoint set ("with what to build it") |
-| `modelIdentity` | `mytokenplan01@dashscope:qwen-max` | Model selection string — *which model to use*: composite `contextId@modelId`, or a bare `modelId` |
+| `modelInstanceId` | `my-prod-model-01` | Handle of a whole pinned instance — the `register` / `unregister` / `getRegistered` family |
+| `modelIdentity` | `mytokenplan01@dashscope:qwen-max` | Model selection string — resolution input of `ModelRegistry.resolve` and the agent-level `model(String)` lazy reference: composite `contextId@modelId`, or a bare `modelId` |
 
 ```text
 modelId       = providerId + ":" + modelName
@@ -82,7 +83,7 @@ modelIdentity = modelCreationContextId + "@" + modelId   (composite form; a bare
 **`modelId` vs `modelIdentity`** — near-twin names, two different layers:
 
 - `modelId` answers *what to create*: the recipe, no credentials dimension. It is the vocabulary of the registry routing layer — `ModelRegistry.resolve`, `registerFactory`, and provider `supports` all speak modelId.
-- `modelIdentity` answers *which model to use*: the selection string of the consumer layer — `ReActAgent.builder().model(...)`, `RuntimeContext.builder().modelIdentity(...)`, and `ModelRegistry.resolve(...)`. Its bare form is just a modelId (credentials come from the provider's standard environment variables); the composite form adds the credentials/endpoint dimension via a `modelCreationContextId`, so the correct (credentials, model) pairing travels with one string.
+- `modelIdentity` answers *which model to use*: the selection string — the input of `ModelRegistry.resolve(...)`, and the agent-level `model(String)` lazy reference. Applications that route untrusted choices own the auth/allowlist decision and pin a resolved instance on the context. Its bare form is just a modelId (credentials come from the provider's standard environment variables); the composite form adds the credentials/endpoint dimension via a `modelCreationContextId`, so the correct (credentials, model) pairing travels with one string.
 - The reserved `@` character is the visible boundary between `modelCreationContextId` and `modelId` inside an identity string; model ids themselves never contain it.
 
 `ModelRegistry.resolve("provider:model")` routes by the full id. `ModelRegistry.register(modelInstanceId, model)` additionally registers a whole instance under an id of your choice: `resolve(modelInstanceId)` (single-argument form) returns that exact instance, shadowing factory and SPI routing for the same string. Re-registering an id replaces the registration; `getRegistered(modelInstanceId)` looks it up without creating anything. Instance ids and model ids share one string namespace, so prefer canonical `provider:model` ids for factory/SPI routing.
@@ -109,7 +110,7 @@ ReActAgent tenantAgent =
                 .build();
 ```
 
-The string is a model identity, stored lazily and resolved through `ModelRegistry.resolve` on every call: registrations present at call time apply, re-registering a name takes effect for calls that start afterwards, and an unresolvable identity fails the call instead of silently falling back. It also accepts the composite form `contextId@modelId` (for example `mytokenplan01@dashscope:qwen-plus`), which resolves the model with the [named creation context](#named-creation-contexts) registered under `contextId` — the credentials/endpoint pairing travels with the identity itself. The `@` character is reserved for this form: instance ids and context ids containing `@` are rejected at registration, so a composite identity can never be shadowed. The same forms are accepted per call via `RuntimeContext.builder().modelIdentity(...)`.
+The string is a model identity held as a lazy reference: it is resolved through `ModelRegistry.resolve` once at run entry (on a boundedElastic scheduler, so a slow factory never blocks the subscriber's thread), registry re-registrations apply to runs that start afterwards, and an unresolvable identity fails the run at entry with `IllegalArgumentException` instead of silently falling back. It accepts the composite form `contextId@modelId` (for example `mytokenplan01@dashscope:qwen-plus`), which resolves the model with the [named creation context](#named-creation-contexts) registered under `contextId` — the credentials/endpoint pairing travels with the identity itself. The `@` character is reserved for this form: instance ids and context ids containing `@` are rejected at registration, so a composite identity can never be shadowed. For per-call selection, pin an instance on the call's context (`ctx.put(Model.class, model)`), which outranks the agent's setting.
 
 The extension module is discovered through Java SPI. The model provider reads its standard environment variables such as `DASHSCOPE_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GLM_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Ollama reads `OLLAMA_BASE_URL` when present and otherwise defaults to the local Ollama endpoint.
 
@@ -239,7 +240,7 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 | `DISABLED` | Never cache; every resolution creates a new model instance. |
 | `ENABLED` | Cache only when the caller explicitly opts in. Use `cacheId(...)` for tenant- or configuration-specific identity. |
 
-If `CachePolicy.ENABLED` is used with `option(...)` or `component(...)`, the user must provide a `cacheId`.
+If `CachePolicy.ENABLED` is used with `option(...)` or `component(...)`, the user must provide a `cacheId`. A hand-built `cacheId` declares the identity yourself and is authoritative: resolving the same `cacheId` with different credential fields only logs a drift warning and still returns the cached instance. Do not vary credentials through a hand-built `cacheId` — rotate credentials via `registerCreationContext` instead.
 
 An `ENABLED` context with no standard fields expresses the same creation inputs as the empty context, so both resolve to the same cached instance (the shared legacy bucket). Resolving with the same explicit `cacheId` but different standard fields logs a drift warning — the `cacheId` stays authoritative — so re-registering a context (below) is the supported way to rotate one.
 
@@ -257,7 +258,7 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini",
         ModelRegistry.getCreationContext("tenant-a"));
 ```
 
-Registration normalizes the context to `CachePolicy.ENABLED` with `cacheId = contextId`, so all resolutions through it share one cached instance per model id (`explicit:<contextId>` identity). Re-registering the same `contextId` rotates the credentials: cached entries are evicted and resolutions that *start* after the re-registration use the new context. `unregisterCreationContext(contextId)` removes the registration, evicts its cached entries, and returns the removed context. Two context ids for the same model id produce distinct instances. Already-created `Model` instances are not affected: they permanently hold the credentials they were created with. `getCreationContext(contextId)` fails fast with an `IllegalArgumentException` when no context is registered under the id; `hasCreationContext(contextId)` is the non-throwing probe (`false` for a `null`, blank, or unregistered id) for guarding the two-step composition above. A registered context pairs naturally with the composite model identity form `contextId@modelId` (for example `mytokenplan01@dashscope:qwen-plus`) accepted by `ReActAgent.builder().model(...)` and `RuntimeContext.builder().modelIdentity(...)`.
+Registration normalizes the context to `CachePolicy.ENABLED` with `cacheId = contextId`, so all resolutions through it share one cached instance per model id (`explicit:<contextId>` identity). Re-registering the same `contextId` rotates the credentials: cached entries are evicted and resolutions that *start* after the re-registration use the new context. `unregisterCreationContext(contextId)` removes the registration, evicts its cached entries, and returns the removed context. Two context ids for the same model id produce distinct instances. Already-created `Model` instances are not affected: they permanently hold the credentials they were created with. `getCreationContext(contextId)` fails fast with an `IllegalArgumentException` when no context is registered under the id; `hasCreationContext(contextId)` is the non-throwing probe (`false` for a `null`, blank, or unregistered id) for guarding the two-step composition above. A registered context pairs naturally with the composite model identity form `contextId@modelId` (for example `mytokenplan01@dashscope:qwen-plus`) accepted by `ModelRegistry.resolve(...)`.
 
 ### Registry lifecycle
 
@@ -271,7 +272,7 @@ Both methods only change registry mappings: instances already held by callers ke
 
 ```java
 Model removed = ModelRegistry.unregister("my-gpt4o"); // null if never registered
-ModelRegistry.evictResolvedCache(null, "openai:gpt-4.1-mini"); // all entries with a matching modelId
+ModelRegistry.evictResolvedCache((ModelCreationContext) null, "openai:gpt-4.1-mini"); // all entries with a matching modelId
 ModelRegistry.evictResolvedCache(context, null); // all ids cached for this context
 ModelRegistry.evictResolvedCache(context, "openai:gpt-4.1-mini"); // one precise entry
 ```

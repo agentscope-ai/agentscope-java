@@ -33,6 +33,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -123,8 +124,20 @@ public final class ModelRegistry {
     private static final ThreadLocal<Set<ModelCacheKey>> CREATING =
             ThreadLocal.withInitial(HashSet::new);
 
-    /** Creation contexts keyed by contextId, normalized to ENABLED with cacheId = contextId. */
+    /**
+     * Creation contexts keyed by contextId, normalized to ENABLED with a generation-suffixed
+     * cacheId ({@code contextId#<generation>}).
+     */
     private static final ConcurrentHashMap<String, ModelCreationContext> creationContexts =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Rotation generations per contextId. The suffix flows into the cache identity ({@code
+     * explicit:<contextId>#<generation>}), so a stale entry published by an in-flight
+     * pre-rotation resolution is keyed under a retired generation and can never be read by a
+     * resolution that starts after the rotation.
+     */
+    private static final ConcurrentHashMap<String, AtomicLong> contextGenerations =
             new ConcurrentHashMap<>();
 
     /**
@@ -281,16 +294,18 @@ public final class ModelRegistry {
 
     /**
      * Evicts every cached entry created under the creation context registered as {@code
-     * contextId} (identity {@code explicit:<contextId>}), regardless of model id — the
-     * explicit by-context form of {@link #evictResolvedCache(ModelCreationContext, String)}'s
-     * identity wildcard. Instance registrations and user factories are not affected; evicted
-     * instances are not closed.
+     * contextId} — across all registration generations (identity {@code explicit:<contextId>}
+     * and {@code explicit:<contextId>#<generation>}), regardless of model id — the explicit
+     * by-context form of {@link #evictResolvedCache(ModelCreationContext, String)}'s identity
+     * wildcard. Instance registrations and user factories are not affected; evicted instances
+     * are not closed.
      *
      * @throws IllegalArgumentException if the {@code contextId} is blank or not registered
      */
     public static void evictResolvedCacheForContext(String contextId) {
-        evictExplicitIdentity(
-                getCreationContext(requireNonBlank(contextId, "contextId")).getCacheId());
+        String trimmed = requireNonBlank(contextId, "contextId");
+        getCreationContext(trimmed); // fail fast on unregistered ids
+        evictContextIdentity(trimmed);
     }
 
     /**
@@ -350,9 +365,10 @@ public final class ModelRegistry {
     /**
      * Resolves a model identity string. The composite form {@code contextId@modelId} (e.g.
      * {@code mytokenplan01@dashscope:qwen-plus}) resolves the model id with the creation
-     * context registered under {@code contextId} — cached under the {@code
-     * explicit:<contextId>} identity, so rotation via {@link #registerCreationContext(String,
-     * ModelCreationContext)} applies to resolutions started after it. Any other string resolves
+     * context registered under {@code contextId} — cached under the current registration
+     * generation's identity ({@code explicit:<contextId>#<generation>}), so rotation via
+     * {@link #registerCreationContext(String, ModelCreationContext)} applies to resolutions
+     * started after it. Any other string resolves
      * as: registered instance ({@code modelInstanceId}) first, then the flat chain of {@link
      * #resolve(String, ModelCreationContext)} with the empty context (cache → user factory →
      * SPI). The instance check comes first on purpose: an explicit pin via {@link
@@ -547,19 +563,18 @@ public final class ModelRegistry {
 
     /**
      * Registers a creation context under {@code contextId}, normalized so resolutions via
-     * {@link #getCreationContext(String)} cache under the single identity {@code
-     * explicit:<contextId>}: the context is rebuilt with {@link CachePolicy#ENABLED} and
-     * {@code cacheId(contextId)}; all other fields are kept as supplied.
+     * {@link #getCreationContext(String)} cache under one identity per registration
+     * generation: the context is rebuilt with {@link CachePolicy#ENABLED} and {@code
+     * cacheId(contextId + "#" + generation)}, where the generation increments on every
+     * re-registration; all other fields are kept as supplied.
      *
-     * <p><b>Rotation semantics.</b> Re-registering the same {@code contextId} replaces the
-     * registration and evicts every cached entry under {@code explicit:<contextId>}. The
-     * rotation takes effect for resolutions that <em>start</em> after the re-registration,
-     * including the cache path (eviction and identity share the same key). Residual window:
-     * the context is read in a caller-side step (getCreationContext → resolve), so a
-     * resolution that already obtained the old context and is in flight across a
-     * re-registration may publish an entry created from it; that entry lives until the next
-     * rotation. The impact is an instance with the old configuration (not data corruption)
-     * and the next rotation self-heals; an epoch mechanism is deliberately not used.
+     * <p><b>Rotation semantics.</b> Re-registering the same {@code contextId} starts a new
+     * generation and purges every cached entry of previous generations. The rotation takes
+     * effect for resolutions that <em>start</em> after the re-registration, including the
+     * cache path: a new-generation resolution never reads a previous generation's entry. An
+     * in-flight pre-rotation resolution may still complete with — and locally return — the
+     * old configuration, and may publish under its retired generation key; that key is
+     * unreachable for post-rotation resolutions and is removed by the next rotation's purge.
      *
      * <p><b>Credential copy boundary.</b> Providers copy context fields into the instances
      * they create, and contexts are immutable — rotation replaces the registry entry with a
@@ -588,13 +603,21 @@ public final class ModelRegistry {
                             + trimmed
                             + "\"");
         }
+        long generation =
+                contextGenerations
+                        .computeIfAbsent(trimmed, k -> new AtomicLong())
+                        .incrementAndGet();
         ModelCreationContext normalized =
-                context.toBuilder().cachePolicy(CachePolicy.ENABLED).cacheId(trimmed).build();
-        // Add first, then evict — same shape as registerFactory: an in-flight resolution that
-        // raced past the put and read the old context may publish an entry created from it;
-        // the eviction below removes that entry.
+                context.toBuilder()
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .cacheId(trimmed + "#" + generation)
+                        .build();
         creationContexts.put(trimmed, normalized);
-        evictExplicitIdentity(trimmed);
+        // Purge every generation's entries (the previous one included): an in-flight
+        // resolution holding the old context may still publish under the retired generation
+        // key afterwards — that key is unreachable for post-rotation resolutions and is
+        // removed by the next rotation's purge.
+        evictContextIdentity(trimmed);
     }
 
     /**
@@ -627,30 +650,36 @@ public final class ModelRegistry {
     }
 
     /**
-     * Removes the registration for {@code contextId} and evicts cached entries created from
-     * it (identity {@code explicit:<contextId>}). Returns the removed context, or {@code
+     * Removes the registration for {@code contextId} and evicts every cached entry created
+     * from it, across all registration generations. Returns the removed context, or {@code
      * null} if nothing was registered. Instances already created are not closed: the
      * registry does not own them.
+     *
+     * <p>The internal rotation-generation counter for this id is deliberately kept: it must
+     * stay monotonic across unregister/re-register cycles, otherwise a re-registration would
+     * restart at generation 1 and could collide with a stale retired-generation entry from
+     * the previous cycle.
      */
     public static ModelCreationContext unregisterCreationContext(String contextId) {
         Objects.requireNonNull(contextId, "contextId");
         String trimmed = contextId.trim();
         ModelCreationContext removed = creationContexts.remove(trimmed);
         if (removed != null) {
-            evictExplicitIdentity(trimmed);
+            evictContextIdentity(trimmed);
         }
         return removed;
     }
 
     /**
-     * Clears registered instances, user-registered factories, registered creation contexts, the
-     * factory-resolution cache with its drift-warning side table, and cached SPI providers.
-     * Intended for tests.
+     * Clears registered instances, user-registered factories, registered creation contexts
+     * with their rotation generations, the factory-resolution cache with its drift-warning
+     * side table, and cached SPI providers. Intended for tests.
      */
     public static void reset() {
         modelInstances.clear();
         userFactories.clear();
         creationContexts.clear();
+        contextGenerations.clear();
         explicitFingerprints.clear();
         resolvedCache.clear();
         reloadProviders();
@@ -915,17 +944,22 @@ public final class ModelRegistry {
     }
 
     /**
-     * Evicts every cached entry created under {@code explicit:<contextId>}, regardless of model
-     * id — the cache-side half of context rotation.
+     * Evicts every cached entry created under {@code explicit:<contextId>} or any of its
+     * generation-suffixed identities ({@code explicit:<contextId>#<generation>}), regardless of
+     * model id — the cache-side half of context rotation.
      */
-    private static void evictExplicitIdentity(String contextId) {
+    private static void evictContextIdentity(String contextId) {
         String identity = "explicit:" + contextId;
+        String generational = identity + "#";
         resolvedCache
                 .keySet()
                 .removeIf(
-                        key ->
-                                key.modelCreationContextIdentity().equals(identity)
-                                        && evictEntry(key));
+                        key -> {
+                            String candidate = key.modelCreationContextIdentity();
+                            return (candidate.equals(identity)
+                                            || candidate.startsWith(generational))
+                                    && evictEntry(key);
+                        });
     }
 
     /** Hex SHA-256 digest, or the {@code "<null>"} sentinel for absent values. */

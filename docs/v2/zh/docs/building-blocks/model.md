@@ -65,14 +65,15 @@ CredentialBase/
 
 ### 模型标识符
 
-四个名词覆盖全部词汇：
+五个名词覆盖全部词汇。它们是注册表层的规范术语——不随消费 API 变化而漂移——当前与未来的任何接口都应精确取用对应名词，而不是让一个词承载多种含义：
 
 | 术语 | 示例 | 含义 |
 |------|------|------|
 | `providerId` | `dashscope` | 路由键，`modelId` 的前缀 |
 | `modelId` | `dashscope:qwen-max` | 配方 `providerId + ":" + modelName`（发往上游 API 的裸目录名）——"造什么"，注册表路由层的路由参数 |
 | `modelCreationContextId`（API 参数名：`contextId`） | `mytokenplan01` | 经 `ModelRegistry.registerCreationContext` 注册的 `ModelCreationContext` 的句柄——命名一套凭据/端点（"用什么造"） |
-| `modelIdentity` | `mytokenplan01@dashscope:qwen-max` | 模型选择串——"用哪个模型"：组合形式 `contextId@modelId`，或裸 `modelId` |
+| `modelInstanceId` | `my-prod-model-01` | 完整钉定实例的句柄——`register` / `unregister` / `getRegistered` 三件套 |
+| `modelIdentity` | `mytokenplan01@dashscope:qwen-max` | 模型选择串——`ModelRegistry.resolve` 的解析入参，也是 agent 级 `model(String)` 的惰性引用：组合形式 `contextId@modelId`，或裸 `modelId` |
 
 ```text
 modelId       = providerId + ":" + modelName
@@ -82,7 +83,7 @@ modelIdentity = modelCreationContextId + "@" + modelId   （组合形式；裸 m
 **`modelId` 与 `modelIdentity` 的区别**——近形词，两个层面：
 
 - `modelId` 回答"造什么"：配方串，不含凭据维度。它是注册表路由层的词——`ModelRegistry.resolve`、`registerFactory`、provider 的 `supports` 说的都是 modelId。
-- `modelIdentity` 回答"用哪个模型"：消费层的选择串——`ReActAgent.builder().model(...)`、`RuntimeContext.builder().modelIdentity(...)`、`ModelRegistry.resolve(...)`。裸形式就是 modelId（凭据来自 provider 标准环境变量）；组合形式经 `modelCreationContextId` 补上凭据/端点维度，正确的（凭据, 模型）配对随一个字符串携带。
+- `modelIdentity` 回答"用哪个模型"：选择串——`ModelRegistry.resolve(...)` 的入参，也是 agent 级 `model(String)` 的惰性引用。路由不可信选择的场景由应用自行掌握认证/白名单，并把解析出的实例钉定到 context 上。裸形式就是 modelId（凭据来自 provider 标准环境变量）；组合形式经 `modelCreationContextId` 补上凭据/端点维度，正确的（凭据, 模型）配对随一个字符串携带。
 - 保留字符 `@` 是身份串内 `modelCreationContextId` 与 `modelId` 的可见分界；modelId 本身不含 `@`。
 
 `ModelRegistry.resolve("provider:model")` 按完整 id 路由。`ModelRegistry.register(modelInstanceId, model)` 还可以用你选定的 id 注册一个完整实例：`resolve(modelInstanceId)`（单参形式）会精确返回该实例，并遮蔽同一字符串的工厂与 SPI 路由。同 id 重注册即替换注册；`getRegistered(modelInstanceId)` 只查表、不创建。实例 id 与 model id 共享同一个字符串命名空间，工厂/SPI 路由请优先使用规范的 `provider:model` id。
@@ -109,7 +110,7 @@ ReActAgent tenantAgent =
                 .build();
 ```
 
-该字符串是模型身份串（model identity），以惰性形式保存、每次调用时经 `ModelRegistry.resolve` 解析：调用时刻的注册状态生效，同名重注册对之后开始的调用生效，无法解析的身份串会让调用失败而不是静默回退。它还接受组合形式 `contextId@modelId`（例如 `mytokenplan01@dashscope:qwen-plus`），即用注册在 `contextId` 下的[命名创建上下文](#命名创建上下文)解析模型——凭据/端点配对随身份串本身携带。`@` 字符为该形式保留：包含 `@` 的实例 id 与 contextId 会在注册时被拒绝，因此组合身份永远不会被遮蔽。按调用选择时，`RuntimeContext.builder().modelIdentity(...)` 接受同样的形式。
+该字符串是模型身份串（model identity），以惰性引用形式保存：在本 run 入口经 `ModelRegistry.resolve` 解析一次（在 boundedElastic 调度器上执行，慢速 factory 不会阻塞订阅线程），注册表重注册对之后开始的 run 生效，无法解析的身份串会在 run 入口以 `IllegalArgumentException` 失败而不是静默回退。它接受组合形式 `contextId@modelId`（例如 `mytokenplan01@dashscope:qwen-plus`），即用注册在 `contextId` 下的[命名创建上下文](#命名创建上下文)解析模型——凭据/端点配对随身份串本身携带。`@` 字符为该形式保留：包含 `@` 的实例 id 与 contextId 会在注册时被拒绝，因此组合身份永远不会被遮蔽。按调用选择时，把实例钉定到调用的 context 上（`ctx.put(Model.class, model)`），其优先级高于 agent 的设置。
 
 扩展模块会通过 Java SPI 被自动发现。模型提供商会读取自己的标准环境变量，例如 `DASHSCOPE_API_KEY`、`OPENAI_API_KEY`、`GLM_API_KEY`、`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`。Ollama 会在存在时读取 `OLLAMA_BASE_URL`，否则默认使用本地 Ollama endpoint。
 
@@ -237,7 +238,7 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 | `DISABLED` | 永不缓存，每次解析都会创建新的模型实例。 |
 | `ENABLED` | 显式开启缓存。建议用 `cacheId(...)` 表达租户或配置维度的身份。 |
 
-如果 `CachePolicy.ENABLED` 搭配 `option(...)` 或 `component(...)` 使用，用户必须提供 `cacheId`。
+如果 `CachePolicy.ENABLED` 搭配 `option(...)` 或 `component(...)` 使用，用户必须提供 `cacheId`。手工构造的 `cacheId` 由你亲自声明身份、具有权威性：同一 `cacheId` 以不同凭据字段解析只会记录一次漂移告警，仍返回缓存实例。不要通过手工 `cacheId` 变换凭据——凭据轮换请使用 `registerCreationContext`。
 
 标准字段全空的 `ENABLED` context 与空 context 表达的是同一套创建输入，两者解析到同一个缓存实例（共享 legacy 桶）。以相同显式 `cacheId` 但不同标准字段解析时会记录一次漂移告警——`cacheId` 始终是权威身份——轮换 context 请使用下面的重注册机制。
 
@@ -255,7 +256,7 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini",
         ModelRegistry.getCreationContext("tenant-a"));
 ```
 
-注册时会把 context 规范化为 `CachePolicy.ENABLED` 且 `cacheId = contextId`，因此经它解析的所有调用共享每个 model id 一个的缓存实例（`explicit:<contextId>` 身份）。同名重注册即轮换凭据：缓存条目被清除，重注册之后**开始**的解析使用新 context。`unregisterCreationContext(contextId)` 移除注册、清除其缓存条目并返回被移除的 context。两个不同 contextId 解析同一 model id 得到不同实例。已创建的 `Model` 实例不受影响：它们永久持有创建时刻的凭据。`getCreationContext(contextId)` 在该 id 未注册时以 `IllegalArgumentException` 快速失败；`hasCreationContext(contextId)` 是不抛异常的探测方法（`null`、空白或未注册的 id 均返回 `false`），可用于在上述两步组合前做防护。注册的 context 与组合模型身份形式 `contextId@modelId`（例如 `mytokenplan01@dashscope:qwen-plus`）天然配套，`ReActAgent.builder().model(...)` 与 `RuntimeContext.builder().modelIdentity(...)` 都接受该形式。
+注册时会把 context 规范化为 `CachePolicy.ENABLED` 且 `cacheId = contextId`，因此经它解析的所有调用共享每个 model id 一个的缓存实例（`explicit:<contextId>` 身份）。同名重注册即轮换凭据：缓存条目被清除，重注册之后**开始**的解析使用新 context。`unregisterCreationContext(contextId)` 移除注册、清除其缓存条目并返回被移除的 context。两个不同 contextId 解析同一 model id 得到不同实例。已创建的 `Model` 实例不受影响：它们永久持有创建时刻的凭据。`getCreationContext(contextId)` 在该 id 未注册时以 `IllegalArgumentException` 快速失败；`hasCreationContext(contextId)` 是不抛异常的探测方法（`null`、空白或未注册的 id 均返回 `false`），可用于在上述两步组合前做防护。注册的 context 与组合模型身份形式 `contextId@modelId`（例如 `mytokenplan01@dashscope:qwen-plus`）天然配套，`ModelRegistry.resolve(...)` 接受该形式。
 
 ### 注册中心生命周期
 
@@ -269,7 +270,7 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini",
 
 ```java
 Model removed = ModelRegistry.unregister("my-gpt4o"); // 从未注册过则返回 null
-ModelRegistry.evictResolvedCache(null, "openai:gpt-4.1-mini"); // modelId 相等的所有条目
+ModelRegistry.evictResolvedCache((ModelCreationContext) null, "openai:gpt-4.1-mini"); // modelId 相等的所有条目
 ModelRegistry.evictResolvedCache(context, null); // 该 context 下的所有缓存条目
 ModelRegistry.evictResolvedCache(context, "openai:gpt-4.1-mini"); // 精确一条
 ```

@@ -346,13 +346,13 @@ Available accessors:
 | `resolveAgentState(ctx, agent)` | Static helper: returns `ctx.getAgentState()` if available, falls back to `agent.getAgentState()`. Ensure the current call has injected its state; fallback does not guarantee the intended business session |
 | `get(String)` / `put(String, Object)` | String-keyed get/put |
 | `get(Class<T>)` / `put(Class<T>, T)` | Typed singleton get/put |
-| `getModelIdentity()` | Per-call model selection (see [per-call model selection](#per-call-model-selection) below) |
+| `get(Model.class)` / `put(Model.class, ...)` | Per-call model pin (see [per-call model selection](#per-call-model-selection) below) |
 | `getExtra()` | Direct access to the string-attribute map (mutable view) |
 | `RuntimeContext.empty()` | Empty context |
 
 ### Per-call model selection
 
-`builder().modelIdentity(...)` selects the model for one call — the per-request model convention of LLM APIs. The value is a model identity string: either the composite form `contextId@modelId` (for example `mytokenplan01@dashscope:qwen-plus`, pairing a creation context registered via `ModelRegistry.registerCreationContext` with the model id) or a plain registry string (modelInstanceId, bare modelId, factory match). It is resolved through `ModelRegistry` on every model call of the run (reasoning, summary, compaction, memory flush), so a singleton agent can serve sessions that need different models without reflection or per-tenant agent instances. The model choice is deterministic for the whole call: it is carried by the immutable `RuntimeContext`, not by mutable agent state, so there is no mid-call switch and no cross-session leakage.
+`ctx.put(Model.class, model)` pins the model for one call — the per-request model convention of LLM APIs. The agent reads the pin on every model boundary of the run (reasoning, summary, compaction, memory flush), so a singleton agent serves sessions that need different models without reflection or per-tenant agent instances. The choice is deterministic for the whole call: an instance reference is immutable, so there is no mid-call switch and no cross-session leakage.
 
 ```java
 // Register models and named creation contexts once at startup:
@@ -361,23 +361,24 @@ ModelRegistry.registerFactory("dashscope:.*", id -> dashscopeModel(id));
 ModelRegistry.registerCreationContext("mytokenplan01",
         ModelCreationContext.builder().apiKey(tenantApiKey).build());
 
-// Every request carries the caller's choice:
+// Per request: resolve the caller's choice YOURSELF (auth/allowlist lives here),
+// then pin the instance on the call's context:
+Model choice = ModelRegistry.resolve("mytokenplan01@dashscope:qwen-plus");
 RuntimeContext ctx = RuntimeContext.builder()
         .userId("alice")
         .sessionId("s-001")
-        .modelIdentity("mytokenplan01@dashscope:qwen-plus")   // null = the agent's default model
         .build();
+ctx.put(Model.class, choice);   // no pin = the agent's build-time default model
 Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 ```
 
 Semantics:
 
-- **Fail-fast, never silent fallback**: a set-but-blank or unresolvable identity fails the call (`IllegalArgumentException` surfaced as an error event) instead of quietly using the default model — a wrong model usually means wrong credentials and wrong billing in multi-tenant setups. `null` (unset) simply uses the agent's default model.
-- **The composite form carries its own credentials**: `contextId@modelId` resolves the model with the registered creation context, so the correct (credentials, model) pairing travels with the identity string itself — per-call switching across providers needs no agent-level context assumption.
-- **Auxiliary calls follow the effective model**: compaction, memory flush and max-iteration summaries use the resolved model unless a dedicated model is configured for them (`CompactionConfig.getModel()` / `MemoryConfig.model()`), in which case the dedicated one wins. Compaction trigger budgets are computed from the effective model's context window. Periodic background memory maintenance is not part of any call and always uses the build-time configured model.
-- **Subagents do not inherit it**: subagent spawning clears the caller's `modelIdentity` — a subagent's model is a build-time contract (`SubagentDeclaration.getModel()`), and a caller's runtime choice must not silently change worker models or their cost envelope.
-- **Provider failures still fail over**: if the selected model fails at runtime, the configured `fallbackModel` takes over as usual — failover covers availability, the selection itself was honored.
-- Session-sticky switching (remember the choice across requests) is the application's concern: persist it in your own session record and stamp `modelIdentity` on each request's context. Keeping the choice out of `AgentState` leaves a single source of truth.
+- **Priority and determinism**: the pin outranks the agent's two build-time forms (a lazy identity string, or a direct instance). Whatever wins is decided once — the agent memoizes its own first resolution into the same typed slot — so the model never switches mid-response; a fresh context re-decides. Routing untrusted choices? Resolve behind your own auth/allowlist and pin the instance; never pass a client-supplied identity string through.
+- **Auxiliary calls follow the effective model**: compaction, memory flush and max-iteration summaries use the pinned (or default) model unless a dedicated model is configured for them (`CompactionConfig.getModel()` / `MemoryConfig.model()`), in which case the dedicated one wins. Compaction trigger budgets are computed from the effective model's context window. Periodic background memory maintenance is not part of any call and always uses the build-time configured model.
+- **Subagents do not inherit it**: subagent spawning clears the caller's pin — a subagent's model is a build-time contract (`SubagentDeclaration.getModel()`), and a caller's runtime choice must not silently change worker models or their cost envelope.
+- **Provider failures still fail over**: if the pinned model fails at runtime, the configured `fallbackModel` takes over as usual — failover covers availability, the selection itself was honored.
+- Session-sticky switching (remember the choice across requests) is the application's concern: persist the resolved choice (or the identity to re-resolve) in your own session record; keeping it out of `AgentState` leaves a single source of truth.
 - Not to be confused with `GenerateOptions.getModelName()`, which providers treat as a routing hint and no provider consumes for model selection.
 
 ### runId correlation

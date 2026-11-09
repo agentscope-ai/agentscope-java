@@ -47,23 +47,6 @@ public class RuntimeContext {
     private final String runId;
 
     /**
-     * Per-call model selection: a model identity string resolved through {@code ModelRegistry}.
-     * Either the composite form {@code contextId@modelId} (e.g. {@code
-     * mytokenplan01@dashscope:qwen-plus}, pairing a registered creation context with the model
-     * id) or a plain registry string (modelInstanceId, bare modelId, factory match). When set
-     * (non-{@code null}), the agent resolves it for every model call of this run instead of its
-     * build-time default; blank or unresolvable values fail the call rather than silently
-     * falling back to the default model. Not an attribute, so not projected to tools. Distinct
-     * from {@code GenerateOptions#getModelName()}-style request fields, which providers treat as
-     * routing hints: this field selects which {@code Model} instance handles the call.
-     *
-     * <p>Copied by {@link Builder#from} so the agent's internal per-run derivations keep it.
-     * Subagent spawning paths clear it explicitly: a subagent's model is a build-time contract,
-     * not overridable by the caller's runtime selection.
-     */
-    private final String modelIdentity;
-
-    /**
      * Call-scoped {@link AgentState} for the active {@code (userId, sessionId)} slot. Set once at
      * call entry by the agent and read by middlewares / tools that need the live conversational
      * state during the call (instead of {@code agent.getAgentState()}, which is not call-scoped
@@ -95,7 +78,6 @@ public class RuntimeContext {
         // Generated here (not cached on the builder) so reusing one Builder yields distinct ids.
         this.runId =
                 builder.runId == null || builder.runId.isBlank() ? generateRunId() : builder.runId;
-        this.modelIdentity = builder.modelIdentity;
         this.stringAttributes = new ConcurrentHashMap<>();
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
@@ -148,15 +130,6 @@ public class RuntimeContext {
     /** Generates a fresh opaque runId (32-char hex); the single source for default ids. */
     public static String generateRunId() {
         return UUID.randomUUID().toString().replace("-", "");
-    }
-
-    /**
-     * Returns the per-call model identity, or {@code null} when the call uses the agent's
-     * default model. See {@link Builder#modelIdentity(String)} for the accepted forms and
-     * inheritance semantics.
-     */
-    public String getModelIdentity() {
-        return modelIdentity;
     }
 
     /**
@@ -404,7 +377,6 @@ public class RuntimeContext {
         private String sessionId;
         private String userId;
         private String runId;
-        private String modelIdentity;
         private Map<String, Object> stringExtras;
         private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
@@ -428,23 +400,6 @@ public class RuntimeContext {
          */
         public Builder runId(String runId) {
             this.runId = runId;
-            return this;
-        }
-
-        /**
-         * Selects the model for this call by identity string, resolved through {@code
-         * ModelRegistry}: the composite form {@code contextId@modelId} (e.g. {@code
-         * mytokenplan01@dashscope:qwen-plus}, pairing a creation context registered via {@code
-         * ModelRegistry#registerCreationContext} with the model id) or a plain registry string
-         * (modelInstanceId, bare modelId, factory match). A non-{@code null} value that is blank
-         * or unresolvable fails the call (IllegalArgumentException surfaced as an error event)
-         * instead of silently falling back to the agent's default model; {@code null} (the
-         * default) uses the agent's default model. Copied by {@link #from(RuntimeContext)};
-         * subagent spawning clears it explicitly so subagents keep their build-time model
-         * contract.
-         */
-        public Builder modelIdentity(String modelIdentity) {
-            this.modelIdentity = modelIdentity;
             return this;
         }
 
@@ -493,7 +448,6 @@ public class RuntimeContext {
             // Derived contexts intentionally share the source's runId (agent_spawn chains); a
             // later runId(x) overrides it.
             this.runId = source.runId;
-            this.modelIdentity = source.modelIdentity;
             this.agentState = source.agentState;
             this.toolExecutionContext = source.toolExecutionContext;
             this.toolRequestConfig = source.toolRequestConfig;

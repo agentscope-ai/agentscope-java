@@ -336,7 +336,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                     Math.max(1, trigger),
                                     Math.min(keep, Math.max(0, conversationBudget / 2)));
                     // Dedicated compaction model when configured; otherwise the executing
-                    // agent's per-call model (RuntimeContext modelIdentity when set, else its
+                    // agent's per-call model (context pin or identity resolution, else its
                     // default), so the summary follows the model serving the conversation.
                     Model compactModel = model;
                     if (compactModel == null && agent instanceof ReActAgent react) {

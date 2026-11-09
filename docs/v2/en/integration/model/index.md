@@ -19,7 +19,7 @@ Model provider extensions connect AgentScope Java to hosted or local chat model 
 
 Provider prefixes follow the module list below (`openai:`, `openai-official:`, `deepseek:`, `glm:`, `kimi:`, `minimax:`, `dashscope:`, `gemini:`, `anthropic:`, `ollama:`). When a model id cannot be resolved, the error message lists the provider ids actually installed on the classpath.
 
-`modelId` here is the registry routing vocabulary. It is distinct from `modelIdentity`, the model selection string (composite `contextId@modelId` or bare modelId) accepted by `ReActAgent.builder().model(...)` and `RuntimeContext.builder().modelIdentity(...)` — see [Model identifiers](/v2/en/docs/building-blocks/model#model-identifiers).
+`modelId` here is the registry routing vocabulary. It is distinct from `modelIdentity`, the resolution input of `ModelRegistry.resolve` (composite `contextId@modelId` or bare modelId) — see [Model identifiers](/v2/en/docs/building-blocks/model#model-identifiers).
 
 - [OpenAI](/v2/en/integration/model/openai)
 - [OpenAI Official](/v2/en/integration/model/openai-official)

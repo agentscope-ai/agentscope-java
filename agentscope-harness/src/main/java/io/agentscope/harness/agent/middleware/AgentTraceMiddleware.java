@@ -265,9 +265,9 @@ public class AgentTraceMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Resolves the model name serving this call — the per-call model (the {@link RuntimeContext}
-     * model identity when set, else the build-time default) — so traces attribute the model
-     * actually executing the run.
+     * Resolves the model name serving this call — the model pinned on the {@link RuntimeContext}
+     * when set, else the agent's identity resolution or build-time default — so traces attribute
+     * the model actually executing the run.
      */
     private static String resolveModelName(Agent agent, RuntimeContext ctx) {
         if (agent instanceof ReActAgent r) {
@@ -276,10 +276,10 @@ public class AgentTraceMiddleware implements HarnessRuntimeMiddleware {
                 if (effective != null) {
                     return effective.getModelName();
                 }
-            } catch (IllegalArgumentException e) {
-                // Unresolvable per-call identity: the call itself fails fast at the model
-                // boundary; the trace reports the raw identity instead of failing the turn here.
-                return "<unresolved:" + ctx.getModelIdentity() + ">";
+            } catch (RuntimeException e) {
+                // Unresolvable identity: the run itself fails fast at the model boundary; the
+                // trace reports the raw identity instead of failing the trace here.
+                return "<unresolved:" + r.getModelIdentity() + ">";
             }
         }
         return "<unknown>";
