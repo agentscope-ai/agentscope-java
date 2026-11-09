@@ -49,13 +49,16 @@ class InputMessageDeduplicationMiddlewareConverterTest {
         private final AguiMessageConverter converter = new AguiMessageConverter();
 
         @Test
-        @DisplayName("native multi-block assistant message: id survives the round trip and anchors")
-        void multiBlockAssistant_roundTrip_anchorsById() {
-            Msg nativeAssistant = assistantMsgWithImage("a1", "here is the chart", "img");
-            List<Msg> context = List.of(userMsg("u1", "hello"), nativeAssistant);
+        @DisplayName("native multi-block media message: id survives the round trip and anchors")
+        void multiBlockMedia_roundTrip_anchorsById() {
+            // Media blocks round-trip through AG-UI structured contents on user and tool
+            // messages; an assistant message carrying media converts forward but is rejected
+            // by toMsg by design (see unmappableStructuredContent_failsExplicitly).
+            Msg nativeMedia = userMsgWithImage("m1", "here is the chart", "img");
+            List<Msg> context = List.of(userMsg("u1", "hello"), nativeMedia);
 
-            Msg back = converter.toMsg(converter.toAguiMessage(nativeAssistant));
-            assertEquals("a1", back.getId(), "converter must preserve the message id (R2 basis)");
+            Msg back = converter.toMsg(converter.toAguiMessage(nativeMedia));
+            assertEquals("m1", back.getId(), "converter must preserve the message id (R2 basis)");
 
             List<Msg> delta =
                     InputMessageDeduplicationMiddleware.extractDelta(
@@ -96,10 +99,10 @@ class InputMessageDeduplicationMiddlewareConverterTest {
                 .build();
     }
 
-    private static Msg assistantMsgWithImage(String id, String text, String imageUrl) {
+    private static Msg userMsgWithImage(String id, String text, String imageUrl) {
         return Msg.builder()
                 .id(id)
-                .role(MsgRole.ASSISTANT)
+                .role(MsgRole.USER)
                 .content(
                         TextBlock.builder().text(text).build(),
                         ImageBlock.builder().source(new URLSource(imageUrl)).build())

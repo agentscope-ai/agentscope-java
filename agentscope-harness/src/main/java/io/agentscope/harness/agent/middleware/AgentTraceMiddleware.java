@@ -24,6 +24,7 @@ import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
@@ -80,7 +81,9 @@ public class AgentTraceMiddleware implements HarnessRuntimeMiddleware {
                         "[{}] PRE_CALL  |   [{}] {}",
                         name,
                         msg.getRole(),
-                        truncate(msg.getTextContent(), 200));
+                        // Documents are invisible to getTextContent(); the reference keeps the
+                        // trace showing what the model actually received.
+                        truncate(DocumentReferenceRenderer.renderMessageText(msg), 200));
             }
         }
         return next.apply(input)

@@ -20,7 +20,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
@@ -971,12 +973,19 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         if (msg == null) {
             return "";
         }
-        String text = msg.getTextContent();
-        if (text != null && !text.isEmpty()) {
+        // Message text and message-level documents first; tool results are rendered from their
+        // own blocks so a result's text output survives next to its document references instead
+        // of being displaced by them.
+        String text = DocumentReferenceRenderer.renderMessageText(msg, false);
+        ToolResultBlock result = firstBlock(msg, ToolResultBlock.class);
+        String toolText = result != null ? blocksText(result.getOutput()) : "";
+        if (toolText.isEmpty()) {
             return text;
         }
-        ToolResultBlock result = firstBlock(msg, ToolResultBlock.class);
-        return result != null ? blocksText(result.getOutput()) : "";
+        if (text.isEmpty()) {
+            return toolText;
+        }
+        return text + "\n" + toolText;
     }
 
     static String blocksText(List<ContentBlock> blocks) {
@@ -985,11 +994,17 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         }
         StringBuilder sb = new StringBuilder();
         for (ContentBlock block : blocks) {
+            String rendered = null;
             if (block instanceof io.agentscope.core.message.TextBlock text) {
+                rendered = text.getText();
+            } else if (block instanceof DocumentBlock document) {
+                rendered = DocumentReferenceRenderer.render(document);
+            }
+            if (rendered != null && !rendered.isEmpty()) {
                 if (sb.length() > 0) {
                     sb.append('\n');
                 }
-                sb.append(text.getText());
+                sb.append(rendered);
             }
         }
         return sb.toString();
