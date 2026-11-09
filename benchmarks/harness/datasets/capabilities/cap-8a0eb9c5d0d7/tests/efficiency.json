@@ -1,0 +1,33 @@
+{
+  "agent_steps": 4,
+  "tool_call_requests": 3,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "find_services_by_name",
+      "step": 1,
+      "args_contains": {
+        "name": "payments-api"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_service_runbook",
+      "step": 2,
+      "args_contains": {
+        "service_id": 8401
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_runbook_url",
+      "step": 3,
+      "args_contains": {
+        "runbook_id": 12041
+      }
+    }
+  ]
+}

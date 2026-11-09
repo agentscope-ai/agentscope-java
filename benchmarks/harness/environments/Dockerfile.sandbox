@@ -1,0 +1,54 @@
+ARG NODE_IMAGE
+ARG MAVEN_IMAGE
+ARG PYTHON_IMAGE
+FROM ${NODE_IMAGE} AS node
+FROM ${MAVEN_IMAGE} AS java
+ARG CANDIDATE_SOURCE_SHA256
+ARG CANDIDATE_VERSION
+RUN mkdir -p /root/.m2 && printf '%s' '<settings><mirrors><mirror><id>aliyun-central</id><mirrorOf>central</mirrorOf><url>https://maven.aliyun.com/repository/public</url></mirror></mirrors></settings>' > /root/.m2/settings.xml
+WORKDIR /candidate
+COPY candidate-source.tgz /tmp/source.tgz
+RUN echo "${CANDIDATE_SOURCE_SHA256}  /tmp/source.tgz" | sha256sum -c - \
+    && tar xzf /tmp/source.tgz -C /candidate && rm /tmp/source.tgz \
+    && mvn -B -T1 -pl agentscope-harness,agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-openai -am install -DskipTests -Dmaven.javadoc.skip=true -Dgpg.skip=true
+ARG FRAMEWORK_CONTRACT_TESTS
+RUN mkdir -p /contract-reports/core /contract-reports/harness \
+    && if [ -n "${FRAMEWORK_CONTRACT_TESTS}" ]; then \
+      mvn -B -T1 -pl agentscope-harness -am test -Dtest="${FRAMEWORK_CONTRACT_TESTS}" -Dsurefire.failIfNoSpecifiedTests=false \
+      && cp agentscope-core/target/surefire-reports/TEST-*.xml /contract-reports/core/ \
+      && cp agentscope-harness/target/surefire-reports/TEST-*.xml /contract-reports/harness/; fi
+WORKDIR /runner
+COPY adapters/agentscope-java /runner
+RUN mvn -B -T1 package dependency:copy-dependencies -DincludeScope=runtime -Dcandidate.version=${CANDIDATE_VERSION} \
+    && sha256sum target/dependency/agentscope-*.jar > /runner-jars.sha256
+
+FROM ${PYTHON_IMAGE}
+ARG CANDIDATE_SHA
+ARG CANDIDATE_SOURCE_SHA256
+ARG CODEX_VERSION=0.167.0
+ARG PI_VERSION=1.5.0
+ENV CANDIDATE_SHA=${CANDIDATE_SHA} CANDIDATE_SOURCE_SHA256=${CANDIDATE_SOURCE_SHA256}
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+COPY --from=java /opt/java/openjdk /opt/java/openjdk
+COPY --from=java /runner/target/classes /opt/harness/classes
+COPY --from=java /runner/target/dependency /opt/harness/dependency
+COPY --from=java /runner-jars.sha256 /opt/harness/runner-jars.sha256
+ENV JAVA_HOME=/opt/java/openjdk PATH=/opt/java/openjdk/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && sed -i 's|http://deb.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g; s|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends bash curl git jq ripgrep patch procps util-linux ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g --registry=https://registry.npmmirror.com @openai/codex@${CODEX_VERSION} @earendil-works/pi-coding-agent@${PI_VERSION} \
+    && mkdir -p /root/.nvm /workspace \
+    && printf '%s\n' '# Node is preinstalled in /usr/local/bin; no per-trial nvm install.' > /root/.nvm/nvm.sh \
+    && codex --version && pi --version && java -version \
+    && npm list -g --json > /native-packages.lock.json
+COPY --from=java /contract-reports /opt/harness/contracts
+COPY contracts/framework-v1.json /opt/harness/contract-suite.json
+COPY runtime/framework_contract.py /opt/harness/check_contracts.py
+ARG FRAMEWORK_CONTRACT_TESTS
+RUN if [ -n "${FRAMEWORK_CONTRACT_TESTS}" ]; then python /opt/harness/check_contracts.py --root /opt/harness/contracts --manifest /opt/harness/contract-suite.json --output /opt/harness/contracts/summary.json; fi
+WORKDIR /workspace
+CMD ["sleep", "infinity"]

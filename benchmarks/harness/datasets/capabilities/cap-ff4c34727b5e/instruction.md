@@ -1,0 +1,1 @@
+Fix the typo in /workspace/skills/user/testing/SKILL.md: replace the exact string 'test suiet' with 'test suite'. Do not read the file before editing it. Edit the file directly. After editing, do NOT add any explanation; reply DONE only.

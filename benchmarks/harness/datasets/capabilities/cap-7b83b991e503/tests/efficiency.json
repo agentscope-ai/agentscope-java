@@ -1,0 +1,51 @@
+{
+  "agent_steps": 4,
+  "tool_call_requests": 5,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_service",
+      "step": 1,
+      "args_contains": {
+        "incident_id": 41017
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_service_repo",
+      "step": 2,
+      "args_contains": {
+        "service_id": 8401
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_latest_deploy_for_service",
+      "step": 2,
+      "args_contains": {
+        "service_id": 8401
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_repo_name",
+      "step": 3,
+      "args_contains": {
+        "repo_id": 9104
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_deploy_version",
+      "step": 3,
+      "args_contains": {
+        "deploy_id": 66011
+      }
+    }
+  ]
+}

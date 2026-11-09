@@ -1,0 +1,22 @@
+{
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "write_file",
+      "step": 1,
+      "args_contains": {
+        "file_path": "/a.md"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "write_file",
+      "step": 1,
+      "args_contains": {
+        "file_path": "/b.md"
+      }
+    }
+  ]
+}

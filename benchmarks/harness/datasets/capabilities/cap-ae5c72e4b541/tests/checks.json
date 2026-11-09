@@ -1,0 +1,20 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "/workspace/a.txt"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "/workspace/c.md"
+    ]
+  },
+  {
+    "kind": "final_text_excludes",
+    "args": [
+      "/workspace/b.txt"
+    ]
+  }
+]

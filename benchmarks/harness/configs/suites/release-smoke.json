@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "suite": "release-smoke",
+  "model": "qwen3.8-max",
+  "model_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "model_snapshot_locked": false,
+  "monetary_budget_limit": null,
+  "agents": [
+    {
+      "name": "agentscope",
+      "version": "1.2.0",
+      "profile": "local-project-writable",
+      "api": "chat_completions"
+    }
+  ],
+  "tasks": [
+    "repair-empty-input",
+    "tool-arguments",
+    "session-restart"
+  ],
+  "rollouts": 3,
+  "concurrency": 2,
+  "trial_timeout_seconds": 1800,
+  "job_timeout_seconds": 14400,
+  "max_turns": 60,
+  "retry_attempts": 0,
+  "harbor": {
+    "version": "0.25.0",
+    "source_revision": "fdba28fc411e47e8765420a1a063b4918fce3def"
+  },
+  "environment_start_timeout_seconds": 900,
+  "score_version": "task-outcome-v1",
+  "release": {
+    "preflight_tasks": [
+      "repair-empty-input"
+    ],
+    "policy": {
+      "version": "release-gate-v1",
+      "score_version": "task-outcome-v1",
+      "minimum_rollouts": 3,
+      "max_pass_rate_drop": 0.05,
+      "critical_tasks": [
+        "repair-empty-input",
+        "tool-arguments",
+        "session-restart"
+      ]
+    }
+  }
+}

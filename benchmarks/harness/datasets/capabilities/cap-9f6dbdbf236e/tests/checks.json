@@ -1,0 +1,9 @@
+[
+  {
+    "kind": "llm_judge",
+    "args": [
+      "The agent should ask exactly one followup question about how the user wants to receive the brief (email, Slack, SMS, etc.).",
+      "The agent should NOT ask about schedule timing or scope because those were already provided."
+    ]
+  }
+]

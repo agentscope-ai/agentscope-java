@@ -1,0 +1,14 @@
+{"type":"user.message","id":"sevt_user","processed_at":null,"content":[{"type":"text","text":"Read the fixture value."}]}
+{"type":"session.status_running","id":"sevt_running","processed_at":"2026-11-07T12:00:00Z"}
+{"type":"user.message","id":"sevt_user","processed_at":"2026-11-07T12:00:00Z","content":[{"type":"text","text":"Read the fixture value."}]}
+{"type":"span.model_request_start","id":"sevt_model_1","processed_at":"2026-11-07T12:00:00Z"}
+{"type":"agent.custom_tool_use","id":"sevt_lookup","processed_at":"2026-11-07T12:00:00Z","name":"lookup_fixture","input":{"key":"answer"}}
+{"type":"span.model_request_end","id":"sevt_model_1_end","processed_at":"2026-11-07T12:00:00Z","model_request_start_id":"sevt_model_1","model_usage":{"input_tokens":20,"output_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}
+{"type":"user.custom_tool_result","id":"sevt_lookup_result","processed_at":"2026-11-07T12:00:00Z","custom_tool_use_id":"sevt_lookup","content":[{"type":"text","text":"42"}]}
+{"type":"session.status_idle","id":"sevt_waiting","processed_at":"2026-11-07T12:00:00Z","stop_reason":{"type":"requires_action","event_ids":["sevt_lookup"]}}
+{"type":"span.model_request_start","id":"sevt_model_2","processed_at":"2026-11-07T12:00:00Z"}
+{"type":"event_start","event":{"type":"agent.message","id":"sevt_answer"}}
+{"type":"event_delta","event_id":"sevt_answer","delta":{"type":"content_delta","index":0,"content":{"type":"text","text":"The value"}}}
+{"type":"agent.message","id":"sevt_answer","processed_at":"2026-11-07T12:00:00Z","content":[{"type":"text","text":"The value is 42."}]}
+{"type":"span.model_request_end","id":"sevt_model_2_end","processed_at":"2026-11-07T12:00:00Z","model_request_start_id":"sevt_model_2","model_usage":{"input_tokens":30,"output_tokens":6,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}
+{"type":"session.status_idle","id":"sevt_idle","processed_at":"2026-11-07T12:00:00Z","stop_reason":{"type":"end_turn"}}

@@ -1,0 +1,6 @@
+{
+  "category": "capabilities/conversation",
+  "capabilities": true,
+  "variant": "vague_monitor_system",
+  "system_context": ""
+}

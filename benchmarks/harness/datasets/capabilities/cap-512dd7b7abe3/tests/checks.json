@@ -1,0 +1,14 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "65"
+    ]
+  },
+  {
+    "kind": "max_tool_calls",
+    "args": [
+      0
+    ]
+  }
+]

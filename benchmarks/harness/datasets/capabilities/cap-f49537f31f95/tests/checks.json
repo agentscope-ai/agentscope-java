@@ -1,0 +1,29 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "endpoint"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "authentication"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "POST"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_min_length",
+    "args": [
+      200
+    ]
+  }
+]

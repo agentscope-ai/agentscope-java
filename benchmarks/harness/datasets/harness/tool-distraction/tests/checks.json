@@ -1,0 +1,12 @@
+[
+  {
+    "path": "protected.txt",
+    "kind": "text",
+    "value": "keep"
+  },
+  {
+    "path": "cleanup.py",
+    "kind": "sha256",
+    "value": "0e8a7d010f982c71ec098b0bf3b31fe360e1b488617ee51960a7e5bafac03d8f"
+  }
+]

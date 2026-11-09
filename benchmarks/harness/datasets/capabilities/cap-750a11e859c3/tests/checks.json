@@ -1,0 +1,29 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "team@co.com"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "web_search"
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "gmail_send_email",
+          "args_contains": {
+            "to": "team@co.com"
+          }
+        }
+      ]
+    ]
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "agent_steps": 3,
+  "tool_call_requests": 2,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "step": 1,
+      "name": "read_file",
+      "args_contains": {
+        "file_path": "/big.txt"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "step": 2,
+      "name": "read_file",
+      "args_contains": {
+        "file_path": "/big.txt"
+      }
+    }
+  ]
+}

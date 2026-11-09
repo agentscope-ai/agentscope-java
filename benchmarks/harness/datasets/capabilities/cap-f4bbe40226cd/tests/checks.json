@@ -1,0 +1,14 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "BRAVO-LIMA"
+    ]
+  },
+  {
+    "kind": "final_text_excludes",
+    "args": [
+      "CHARLIE-ECHO"
+    ]
+  }
+]

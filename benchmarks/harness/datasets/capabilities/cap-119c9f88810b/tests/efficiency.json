@@ -1,0 +1,78 @@
+{
+  "agent_steps": 4,
+  "tool_call_requests": 8,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "find_users_by_name",
+      "step": 1,
+      "args_contains": {
+        "name": "Alice"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_user_favorite_foods",
+      "step": 2,
+      "args_contains": {
+        "user_id": 1
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_food_name",
+      "step": 3,
+      "args_contains": {
+        "food_id": 1
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_food_name",
+      "step": 3,
+      "args_contains": {
+        "food_id": 2
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_food_name",
+      "step": 3,
+      "args_contains": {
+        "food_id": 3
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_food_allergic_ingredients",
+      "step": 3,
+      "args_contains": {
+        "food_id": 1
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_food_allergic_ingredients",
+      "step": 3,
+      "args_contains": {
+        "food_id": 2
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_food_allergic_ingredients",
+      "step": 3,
+      "args_contains": {
+        "food_id": 3
+      }
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/out.txt",
+      "gamma\nbeta\nalpha"
+    ]
+  },
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/out.txt",
+      "gamma"
+    ]
+  },
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/out.txt",
+      "beta"
+    ]
+  },
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/out.txt",
+      "alpha"
+    ]
+  }
+]

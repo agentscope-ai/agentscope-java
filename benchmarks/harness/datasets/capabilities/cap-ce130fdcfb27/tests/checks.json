@@ -1,0 +1,24 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "200"
+    ]
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_food_calories",
+          "step": 1,
+          "args_contains": {
+            "food_id": 5
+          }
+        }
+      ]
+    ]
+  }
+]

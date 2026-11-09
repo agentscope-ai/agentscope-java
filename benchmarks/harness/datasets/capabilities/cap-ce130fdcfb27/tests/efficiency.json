@@ -1,0 +1,15 @@
+{
+  "agent_steps": 2,
+  "tool_call_requests": 1,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_food_calories",
+      "step": 1,
+      "args_contains": {
+        "food_id": 5
+      }
+    }
+  ]
+}

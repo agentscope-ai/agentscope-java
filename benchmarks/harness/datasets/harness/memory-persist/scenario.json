@@ -1,0 +1,12 @@
+{
+  "category": "memory",
+  "turns": [
+    "In this new session, retrieve the saved deployment region and release code, and write them separated by a space in answer.txt."
+  ],
+  "new_session_at": [
+    1
+  ],
+  "evidence": "persistent_memory",
+  "score_version": "task-outcome-v1",
+  "release_core": true
+}

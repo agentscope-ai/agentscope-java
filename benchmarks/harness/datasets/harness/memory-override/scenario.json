@@ -1,0 +1,8 @@
+{
+  "category": "memory",
+  "turns": [
+    "For this task only, override my default: write exactly the two Chinese characters \u5b8c\u6210 into answer.txt without extra explanation."
+  ],
+  "score_version": "task-outcome-v1",
+  "release_core": true
+}

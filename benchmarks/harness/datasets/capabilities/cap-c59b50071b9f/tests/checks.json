@@ -1,0 +1,9 @@
+[
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/config_api.txt",
+      "API_KEY=secret"
+    ]
+  }
+]

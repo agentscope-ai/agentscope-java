@@ -1,0 +1,21 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "standup"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "calendar_create_event"
+        }
+      ]
+    ]
+  }
+]

@@ -1,0 +1,1130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Managed Agents text profile v1",
+  "description": "An explicit subset, reviewed 2026-11-07. See upstream.json and docs/agent-protocol.md. No eval metadata belongs in these events.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/persisted"
+    },
+    {
+      "$ref": "#/$defs/eventStart"
+    },
+    {
+      "$ref": "#/$defs/eventDelta"
+    }
+  ],
+  "$defs": {
+    "text": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "redacted": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "redacted"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "stopReason": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "end_turn"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "budget_reached"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "retries_exhausted"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "refusal"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "requires_action"
+            },
+            "event_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "type",
+            "event_ids"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "unknownError": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "unknown_error"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retry_status": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "retrying",
+                "exhausted",
+                "terminal"
+              ]
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "message",
+        "retry_status"
+      ],
+      "additionalProperties": false
+    },
+    "modelUsage": {
+      "type": "object",
+      "properties": {
+        "cache_creation_input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cache_read_input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "speed": {
+          "enum": [
+            "standard",
+            "fast",
+            null
+          ]
+        }
+      },
+      "required": [
+        "cache_creation_input_tokens",
+        "cache_read_input_tokens",
+        "input_tokens",
+        "output_tokens"
+      ],
+      "additionalProperties": false
+    },
+    "userMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "user.message"
+        },
+        "processed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "userInterrupt": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "user.interrupt"
+        },
+        "processed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "userCustomResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "user.custom_tool_result"
+        },
+        "processed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "custom_tool_use_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/text"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_error": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "session_thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "custom_tool_use_id"
+      ],
+      "additionalProperties": false
+    },
+    "userConfirmation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "user.tool_confirmation"
+        },
+        "processed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tool_use_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "result": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "deny_message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "tool_use_id",
+        "result"
+      ],
+      "additionalProperties": false
+    },
+    "agentMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "agent.message"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/text"
+              },
+              {
+                "$ref": "#/$defs/redacted"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "running": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "session.status_running"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at"
+      ],
+      "additionalProperties": false
+    },
+    "terminated": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "session.status_terminated"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at"
+      ],
+      "additionalProperties": false
+    },
+    "rescheduled": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "session.status_rescheduled"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at"
+      ],
+      "additionalProperties": false
+    },
+    "thinking": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "agent.thinking"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at"
+      ],
+      "additionalProperties": false
+    },
+    "compacted": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "agent.thread_context_compacted"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at"
+      ],
+      "additionalProperties": false
+    },
+    "modelStart": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "span.model_request_start"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at"
+      ],
+      "additionalProperties": false
+    },
+    "idle": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "session.status_idle"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "stop_reason": {
+          "$ref": "#/$defs/stopReason"
+        },
+        "stop_details": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "refusal"
+                },
+                "category": {
+                  "enum": [
+                    "cyber",
+                    "bio",
+                    "frontier_llm",
+                    "reasoning_extraction",
+                    "general_harms",
+                    null
+                  ]
+                },
+                "explanation": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at",
+        "stop_reason"
+      ],
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "session.error"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "error": {
+          "$ref": "#/$defs/unknownError"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "modelEnd": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "span.model_request_end"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "model_request_start_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_usage": {
+          "$ref": "#/$defs/modelUsage"
+        },
+        "is_error": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at",
+        "model_request_start_id",
+        "model_usage"
+      ],
+      "additionalProperties": false
+    },
+    "customUse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "agent.custom_tool_use"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input": {
+          "type": "object"
+        },
+        "session_thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at",
+        "name",
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "toolUse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "agent.tool_use"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input": {
+          "type": "object"
+        },
+        "session_thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evaluated_permission": {
+          "enum": [
+            "allow",
+            "ask",
+            "deny",
+            null
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at",
+        "name",
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "mcpUse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "agent.mcp_tool_use"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input": {
+          "type": "object"
+        },
+        "session_thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evaluated_permission": {
+          "enum": [
+            "allow",
+            "ask",
+            "deny",
+            null
+          ]
+        },
+        "mcp_server_name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at",
+        "name",
+        "input",
+        "mcp_server_name"
+      ],
+      "additionalProperties": false
+    },
+    "toolResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "agent.tool_result"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/text"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_error": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tool_use_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at",
+        "tool_use_id"
+      ],
+      "additionalProperties": false
+    },
+    "mcpResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "agent.mcp_tool_result"
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/text"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_error": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "mcp_tool_use_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "processed_at",
+        "mcp_tool_use_id"
+      ],
+      "additionalProperties": false
+    },
+    "persisted": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/userMessage"
+        },
+        {
+          "$ref": "#/$defs/userInterrupt"
+        },
+        {
+          "$ref": "#/$defs/userCustomResult"
+        },
+        {
+          "$ref": "#/$defs/userConfirmation"
+        },
+        {
+          "$ref": "#/$defs/agentMessage"
+        },
+        {
+          "$ref": "#/$defs/running"
+        },
+        {
+          "$ref": "#/$defs/terminated"
+        },
+        {
+          "$ref": "#/$defs/rescheduled"
+        },
+        {
+          "$ref": "#/$defs/thinking"
+        },
+        {
+          "$ref": "#/$defs/compacted"
+        },
+        {
+          "$ref": "#/$defs/modelStart"
+        },
+        {
+          "$ref": "#/$defs/idle"
+        },
+        {
+          "$ref": "#/$defs/error"
+        },
+        {
+          "$ref": "#/$defs/modelEnd"
+        },
+        {
+          "$ref": "#/$defs/customUse"
+        },
+        {
+          "$ref": "#/$defs/toolUse"
+        },
+        {
+          "$ref": "#/$defs/mcpUse"
+        },
+        {
+          "$ref": "#/$defs/toolResult"
+        },
+        {
+          "$ref": "#/$defs/mcpResult"
+        }
+      ]
+    },
+    "eventStart": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "event_start"
+        },
+        "event": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "agent.message",
+                "agent.thinking"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "event"
+      ],
+      "additionalProperties": false
+    },
+    "eventDelta": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "event_delta"
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "delta": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "content_delta"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "content": {
+              "$ref": "#/$defs/text"
+            }
+          },
+          "required": [
+            "type",
+            "index",
+            "content"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "event_id",
+        "delta"
+      ],
+      "additionalProperties": false
+    },
+    "sendRequest": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "const": "user.message"
+                  },
+                  "content": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/text"
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "type",
+                  "content"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "const": "user.interrupt"
+                  },
+                  "session_thread_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "const": "user.custom_tool_result"
+                  },
+                  "custom_tool_use_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "content": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/text"
+                    }
+                  },
+                  "is_error": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "custom_tool_use_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "const": "user.tool_confirmation"
+                  },
+                  "tool_use_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "result": {
+                    "enum": [
+                      "allow",
+                      "deny"
+                    ]
+                  },
+                  "deny_message": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "tool_use_id",
+                  "result"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "events"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

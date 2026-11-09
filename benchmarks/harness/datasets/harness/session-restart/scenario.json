@@ -1,0 +1,9 @@
+{
+  "category": "lifecycle",
+  "turns": [
+    "After process restart, recover this same conversation and write its private session marker into answer.txt."
+  ],
+  "evidence": "process_resume",
+  "score_version": "task-outcome-v1",
+  "release_core": true
+}

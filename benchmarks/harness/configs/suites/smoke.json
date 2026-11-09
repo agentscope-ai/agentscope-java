@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "suite": "smoke",
+  "model": "qwen3.8-max",
+  "model_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "model_snapshot_locked": false,
+  "monetary_budget_limit": null,
+  "agents": [
+    {
+      "name": "agentscope",
+      "version": "1.2.0",
+      "profile": "local-project-writable",
+      "api": "chat_completions"
+    },
+    {
+      "name": "codex",
+      "version": "0.167.0",
+      "api": "responses"
+    },
+    {
+      "name": "pi",
+      "version": "1.5.0",
+      "api": "chat_completions"
+    }
+  ],
+  "tasks": [
+    "repair-empty-input",
+    "aggregate-ledger"
+  ],
+  "rollouts": 1,
+  "concurrency": 3,
+  "trial_timeout_seconds": 600,
+  "job_timeout_seconds": 3600,
+  "max_turns": 60,
+  "retry_attempts": 0,
+  "harbor": {
+    "version": "0.25.0",
+    "source_revision": "fdba28fc411e47e8765420a1a063b4918fce3def"
+  },
+  "score_version": "task-outcome-v1"
+}

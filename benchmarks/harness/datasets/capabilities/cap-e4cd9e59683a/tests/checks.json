@@ -1,0 +1,37 @@
+[
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/project/AGENTS.md",
+      "concise"
+    ]
+  },
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/project/AGENTS.md",
+      "User preferences."
+    ]
+  },
+  {
+    "kind": "all_text_contains",
+    "args": [
+      "greet"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "all_text_contains",
+    "args": [
+      "hello"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "read_before_memory_write",
+    "args": [
+      "/workspace/project/app.py",
+      "/workspace/project/AGENTS.md"
+    ]
+  }
+]

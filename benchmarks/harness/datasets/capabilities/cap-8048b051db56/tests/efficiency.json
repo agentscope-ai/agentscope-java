@@ -1,0 +1,120 @@
+{
+  "agent_steps": 6,
+  "tool_call_requests": 13,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "list_incident_ids",
+      "step": 1
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_status",
+      "step": 2,
+      "args_contains": {
+        "incident_id": 41017
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_status",
+      "step": 2,
+      "args_contains": {
+        "incident_id": 41029
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_status",
+      "step": 2,
+      "args_contains": {
+        "incident_id": 41043
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_status",
+      "step": 2,
+      "args_contains": {
+        "incident_id": 41058
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_service",
+      "step": 3,
+      "args_contains": {
+        "incident_id": 41017
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_service",
+      "step": 3,
+      "args_contains": {
+        "incident_id": 41029
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_service",
+      "step": 3,
+      "args_contains": {
+        "incident_id": 41058
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_service_team",
+      "step": 4,
+      "args_contains": {
+        "service_id": 8401
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_service_team",
+      "step": 4,
+      "args_contains": {
+        "service_id": 8514
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_service_team",
+      "step": 4,
+      "args_contains": {
+        "service_id": 8799
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_team_name",
+      "step": 5,
+      "args_contains": {
+        "team_id": 481
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_team_name",
+      "step": 5,
+      "args_contains": {
+        "team_id": 562
+      }
+    }
+  ]
+}

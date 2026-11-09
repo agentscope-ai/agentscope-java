@@ -1,0 +1,1 @@
+Design a small REST API for a todo-list application. Use a todo list to plan and track your work. Cover at minimum: endpoints with their HTTP methods, request/response shape, and authentication approach.

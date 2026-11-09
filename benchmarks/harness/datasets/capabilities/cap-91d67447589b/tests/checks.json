@@ -1,0 +1,39 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "payments-api"
+    ]
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_current_incident_id",
+          "step": 1
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_incident_service",
+          "step": 2,
+          "args_contains": {
+            "incident_id": 41017
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_service_name",
+          "step": 3,
+          "args_contains": {
+            "service_id": 8401
+          }
+        }
+      ]
+    ]
+  }
+]

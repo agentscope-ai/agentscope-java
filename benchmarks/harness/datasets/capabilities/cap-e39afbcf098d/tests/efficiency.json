@@ -1,0 +1,12 @@
+{
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "edit_file",
+      "args_contains": {
+        "file_path": "/project/AGENTS.md"
+      }
+    }
+  ]
+}

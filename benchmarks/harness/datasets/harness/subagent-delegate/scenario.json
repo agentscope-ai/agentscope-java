@@ -1,0 +1,7 @@
+{
+  "category": "skills",
+  "requires": [
+    "native_subagent"
+  ],
+  "evidence": "subagent"
+}

@@ -1,0 +1,6 @@
+{
+  "category": "capabilities/conversation",
+  "capabilities": true,
+  "variant": "vague_send_report",
+  "system_context": ""
+}

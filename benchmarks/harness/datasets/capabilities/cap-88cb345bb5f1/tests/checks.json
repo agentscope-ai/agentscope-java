@@ -1,0 +1,9 @@
+[
+  {
+    "kind": "file_equals",
+    "args": [
+      "/workspace/note.md",
+      "dog dog dog\n"
+    ]
+  }
+]

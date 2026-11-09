@@ -1,0 +1,10 @@
+[
+  {
+    "path": "config.json",
+    "kind": "json",
+    "value": {
+      "region": "west",
+      "retries": 2
+    }
+  }
+]

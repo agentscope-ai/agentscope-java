@@ -1,0 +1,6 @@
+{
+  "category": "capabilities/conversation",
+  "capabilities": true,
+  "variant": "vague_customer_support",
+  "system_context": ""
+}

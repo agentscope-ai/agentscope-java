@@ -1,0 +1,16 @@
+{
+  "category": "compression",
+  "turns": [
+    "Continue the previously specified task and finish all outstanding outputs."
+  ],
+  "requires": [
+    "observable_compaction"
+  ],
+  "evidence": "compaction",
+  "java": {
+    "compaction_messages": 4,
+    "compaction_tokens": 12000,
+    "flush_before_compact": true
+  },
+  "flush_expected": true
+}

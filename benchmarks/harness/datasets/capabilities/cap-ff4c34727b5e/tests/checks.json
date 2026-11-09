@@ -1,0 +1,22 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "DONE"
+    ]
+  },
+  {
+    "kind": "file_excludes",
+    "args": [
+      "/workspace/skills/user/testing/SKILL.md",
+      "test suiet"
+    ]
+  },
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/skills/user/testing/SKILL.md",
+      "test suite"
+    ]
+  }
+]

@@ -1,0 +1,15 @@
+[
+  {
+    "path": "result.json",
+    "kind": "json",
+    "value": {
+      "bytes": 0,
+      "lines": 0
+    }
+  },
+  {
+    "path": "blank.txt",
+    "kind": "text",
+    "value": ""
+  }
+]

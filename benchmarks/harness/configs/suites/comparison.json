@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "suite": "comparison",
+  "model": "qwen3.8-max",
+  "model_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "model_snapshot_locked": false,
+  "monetary_budget_limit": null,
+  "agents": [
+    {
+      "name": "agentscope",
+      "version": "1.2.0",
+      "profile": "local-project-writable",
+      "api": "chat_completions"
+    },
+    {
+      "name": "codex",
+      "version": "0.167.0",
+      "api": "responses"
+    },
+    {
+      "name": "pi",
+      "version": "1.5.0",
+      "api": "chat_completions"
+    }
+  ],
+  "tasks": [
+    "repair-empty-input",
+    "aggregate-ledger",
+    "file-empty",
+    "file-local-edit",
+    "file-nested",
+    "file-tail",
+    "tool-arguments",
+    "tool-dependency",
+    "tool-distraction",
+    "tool-recover",
+    "memory-ephemeral",
+    "memory-override",
+    "memory-persist",
+    "memory-update",
+    "skill-discovery",
+    "session-multiturn",
+    "session-restart"
+  ],
+  "rollouts": 3,
+  "concurrency": 4,
+  "trial_timeout_seconds": 1800,
+  "job_timeout_seconds": 86400,
+  "max_turns": 60,
+  "retry_attempts": 0,
+  "harbor": {
+    "version": "0.25.0",
+    "source_revision": "fdba28fc411e47e8765420a1a063b4918fce3def"
+  },
+  "environment_start_timeout_seconds": 900,
+  "score_version": "task-outcome-v1"
+}

@@ -1,0 +1,15 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "NOT_FOUND"
+    ]
+  },
+  {
+    "kind": "file_equals",
+    "args": [
+      "/workspace/exists.md",
+      "still here\n"
+    ]
+  }
+]

@@ -1,0 +1,22 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "DONE"
+    ]
+  },
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/note.md",
+      "lion"
+    ]
+  },
+  {
+    "kind": "file_excludes",
+    "args": [
+      "/workspace/note.md",
+      "cat"
+    ]
+  }
+]

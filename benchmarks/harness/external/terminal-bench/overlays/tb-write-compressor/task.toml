@@ -1,0 +1,43 @@
+schema_version = "1.1"
+artifacts = [ "/app",]
+
+[task]
+name = "terminal-bench/write-compressor"
+description = "Evaluates the agent's ability to reverse-engineer a custom compression format and write a compatible compressor program."
+keywords = [ "coding", "software-engineering",]
+[[task.authors]]
+name = "Nicholas Carlini"
+email = "nicholas@carlini.com"
+
+[metadata]
+author_name = "Nicholas Carlini"
+author_email = "nicholas@carlini.com"
+difficulty = "hard"
+category = "software-engineering"
+tags = [ "coding",]
+expert_time_estimate_min = 1440.0
+junior_time_estimate_min = 4800.0
+
+[verifier]
+timeout_sec = 900
+environment_mode = "separate"
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+build_timeout_sec = 600.0
+docker_image = "alexgshaw/write-compressor:20251031"
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+gpus = 0
+allow_internet = true
+mcp_servers = []
+workdir = "/app"
+
+[verifier.env]
+
+[environment.env]
+
+[solution.env]

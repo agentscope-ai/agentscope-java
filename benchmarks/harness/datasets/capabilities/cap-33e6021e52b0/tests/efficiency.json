@@ -1,0 +1,14 @@
+{
+  "agent_steps": 2,
+  "tool_call_requests": 1,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "gmail_send_email",
+      "args_contains": {
+        "to": "manager@company.com"
+      }
+    }
+  ]
+}

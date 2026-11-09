@@ -1,0 +1,17 @@
+[
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/project/AGENTS.md",
+      "Pacific"
+    ]
+  },
+  {
+    "kind": "llm_judge",
+    "args": [
+      "The agent should record the user's timezone preference (Pacific Time) in its memory file.",
+      "The memory update should be a durable preference, not a one-off conversion."
+    ],
+    "include_tool_calls": true
+  }
+]

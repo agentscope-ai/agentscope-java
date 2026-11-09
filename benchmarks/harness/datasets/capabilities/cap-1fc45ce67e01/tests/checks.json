@@ -1,0 +1,9 @@
+[
+  {
+    "kind": "all_text_contains",
+    "args": [
+      "fastapi"
+    ],
+    "case_insensitive": true
+  }
+]

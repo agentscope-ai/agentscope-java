@@ -1,0 +1,15 @@
+{
+  "category": "capabilities/summarization",
+  "capabilities": true,
+  "variant": 0,
+  "evidence": "compaction",
+  "requires": [
+    "observable_compaction"
+  ],
+  "java": {
+    "compaction_messages": 6,
+    "compaction_tokens": 12000
+  },
+  "adaptation": "Original pinned large source and task. Native compaction must be observed; native archival differs from reference agent conversation_history paths.",
+  "system_context": ""
+}

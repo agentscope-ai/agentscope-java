@@ -1,0 +1,9 @@
+{
+  "category": "memory",
+  "turns": [
+    "Correction: the project release code is now NEW-83; OLD-17 is obsolete.",
+    "Write the current release code, and nothing else, into answer.txt."
+  ],
+  "score_version": "task-outcome-v1",
+  "release_core": true
+}

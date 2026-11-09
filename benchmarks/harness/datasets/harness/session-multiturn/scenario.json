@@ -1,0 +1,8 @@
+{
+  "category": "lifecycle",
+  "turns": [
+    "Change only the region to west, preserving retries."
+  ],
+  "score_version": "task-outcome-v1",
+  "release_core": true
+}

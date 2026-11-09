@@ -1,0 +1,27 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "delhi"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_contains_any",
+    "args": [
+      "18,940,000",
+      "18940000",
+      "18.94 million",
+      "18.9 million",
+      "19 million",
+      "18 million"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_min_length",
+    "args": [
+      50
+    ]
+  }
+]

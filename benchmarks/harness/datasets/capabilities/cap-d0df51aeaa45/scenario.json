@@ -1,0 +1,19 @@
+{
+  "category": "capabilities/unit_test",
+  "capabilities": true,
+  "variant": 0,
+  "requires": [
+    "native_subagent"
+  ],
+  "evidence": "subagent",
+  "unsupported_profiles": {
+    "codex": "Pinned Codex 0.167.0 spawn_agent rejects qwen3.8-max and its supported child models fail at the configured DashScope endpoint. Do not silently switch the requested model."
+  },
+  "fixture_tools": {
+    "module": "test_subagents.py",
+    "names": [
+      "get_weather_fake"
+    ]
+  },
+  "system_context": ""
+}

@@ -1,0 +1,24 @@
+{
+  "agent_steps": 2,
+  "tool_call_requests": 2,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "delete",
+      "step": 1,
+      "args_contains": {
+        "file_path": "/a.md"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "delete",
+      "step": 1,
+      "args_contains": {
+        "file_path": "/b.md"
+      }
+    }
+  ]
+}

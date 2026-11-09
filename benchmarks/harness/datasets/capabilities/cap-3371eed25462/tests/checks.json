@@ -1,0 +1,14 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "DONE"
+    ]
+  },
+  {
+    "kind": "todo_sequence",
+    "args": [
+      3
+    ]
+  }
+]

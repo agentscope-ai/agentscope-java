@@ -1,0 +1,70 @@
+{
+  "agent_steps": 5,
+  "tool_call_requests": 8,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_service",
+      "args_contains": {
+        "incident_id": 41029
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_service_team",
+      "args_contains": {
+        "service_id": 8514
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_team_oncall_engineer",
+      "args_contains": {
+        "team_id": 562
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_engineer_name",
+      "args_contains": {
+        "engineer_id": 7381
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_service",
+      "args_contains": {
+        "incident_id": 41058
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_service_environment",
+      "args_contains": {
+        "service_id": 8799
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_environment_name",
+      "args_contains": {
+        "environment_id": 442
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_environment_region",
+      "args_contains": {
+        "environment_id": 442
+      }
+    }
+  ]
+}

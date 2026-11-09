@@ -1,0 +1,1 @@
+Delegate inspection of payload.json to a native subagent, telling it to count only enabled records and not modify any input. Use its result to write the count in answer.txt. Do not solve the delegated inspection yourself.

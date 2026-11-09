@@ -1,0 +1,6 @@
+{
+  "category": "capabilities/conversation",
+  "capabilities": true,
+  "variant": "detailed_calendar_brief",
+  "system_context": ""
+}

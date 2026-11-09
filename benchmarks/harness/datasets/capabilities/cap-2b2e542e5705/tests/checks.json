@@ -1,0 +1,39 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "41017"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "41029"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "41043"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "41058"
+    ]
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "list_incident_ids",
+          "step": 1
+        }
+      ]
+    ]
+  }
+]

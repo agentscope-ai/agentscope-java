@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "llm_judge",
+    "args": [
+      "The agent should ask what the report should contain or what data to include.",
+      "The agent should ask how the report should be delivered (email, Slack, etc.).",
+      "The agent should NOT ask about scheduling details since the user already specified 'every week'."
+    ]
+  }
+]

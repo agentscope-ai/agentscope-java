@@ -1,0 +1,15 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "4"
+    ]
+  },
+  {
+    "kind": "file_excludes",
+    "args": [
+      "/workspace/project/AGENTS.md",
+      "coffee shop"
+    ]
+  }
+]

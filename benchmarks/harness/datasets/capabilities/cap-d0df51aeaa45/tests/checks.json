@@ -1,0 +1,24 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "89"
+    ]
+  },
+  {
+    "kind": "successful_delegation",
+    "args": [
+      "89"
+    ]
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "name": "get_weather_fake"
+        }
+      ]
+    ]
+  }
+]

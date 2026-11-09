@@ -1,0 +1,46 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "tokyo"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "cairo"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "atlantis"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_contains_any",
+    "args": [
+      "unknown",
+      "no data",
+      "n/a",
+      "unable",
+      "cannot be ranked",
+      "not available",
+      "no information",
+      "missing",
+      "mythical",
+      "fictional",
+      "legendary"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_min_length",
+    "args": [
+      150
+    ]
+  }
+]

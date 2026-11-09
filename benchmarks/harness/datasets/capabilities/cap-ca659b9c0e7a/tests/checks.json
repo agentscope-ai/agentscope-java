@@ -1,0 +1,22 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "DONE"
+    ]
+  },
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/log.txt",
+      "fresh line"
+    ]
+  },
+  {
+    "kind": "file_excludes",
+    "args": [
+      "/workspace/log.txt",
+      "stale"
+    ]
+  }
+]

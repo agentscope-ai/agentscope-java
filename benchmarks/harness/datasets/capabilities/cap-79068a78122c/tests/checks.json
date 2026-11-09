@@ -1,0 +1,16 @@
+[
+  {
+    "kind": "final_text_excludes",
+    "args": [
+      "snake_case"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_excludes",
+    "args": [
+      "pytest"
+    ],
+    "case_insensitive": true
+  }
+]

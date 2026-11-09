@@ -1,0 +1,24 @@
+{
+  "agent_steps": 3,
+  "tool_call_requests": 2,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "write_file",
+      "step": 1,
+      "args_contains": {
+        "file_path": "/tmp.md"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "delete",
+      "step": 2,
+      "args_contains": {
+        "file_path": "/tmp.md"
+      }
+    }
+  ]
+}

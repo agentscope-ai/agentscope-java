@@ -1,0 +1,17 @@
+[
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/project/AGENTS.md",
+      "emoji"
+    ]
+  },
+  {
+    "kind": "llm_judge",
+    "args": [
+      "The agent should record the no-emojis preference in its memory file.",
+      "The memory update should be a durable instruction, not a one-off correction."
+    ],
+    "include_tool_calls": true
+  }
+]

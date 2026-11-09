@@ -1,0 +1,68 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "Cara Singh"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "payments-api"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "2"
+    ],
+    "case_insensitive": false
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_incident_service",
+          "args_contains": {
+            "incident_id": 41029
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_service_team",
+          "args_contains": {
+            "service_id": 8514
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_team_oncall_engineer",
+          "args_contains": {
+            "team_id": 562
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_engineer_name",
+          "args_contains": {
+            "engineer_id": 7381
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_service_name",
+          "args_contains": {
+            "service_id": 8401
+          }
+        }
+      ]
+    ]
+  }
+]

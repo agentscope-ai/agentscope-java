@@ -1,0 +1,10 @@
+{
+  "category": "capabilities/unit_test",
+  "capabilities": true,
+  "variant": 0,
+  "skills": true,
+  "skills_paths": [
+    "/workspace/skills/user/"
+  ],
+  "system_context": ""
+}

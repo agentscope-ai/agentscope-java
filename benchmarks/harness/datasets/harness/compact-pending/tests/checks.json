@@ -1,0 +1,12 @@
+[
+  {
+    "path": "answer.txt",
+    "kind": "text",
+    "value": "beta"
+  },
+  {
+    "path": "step1.txt",
+    "kind": "text",
+    "value": "alpha"
+  }
+]

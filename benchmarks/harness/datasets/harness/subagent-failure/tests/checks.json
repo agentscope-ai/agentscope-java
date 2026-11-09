@@ -1,0 +1,11 @@
+[
+  {
+    "path": "answer.txt",
+    "kind": "text",
+    "value": "MISSING"
+  },
+  {
+    "path": "missing-source.txt",
+    "kind": "absent"
+  }
+]

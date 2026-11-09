@@ -1,0 +1,15 @@
+{
+  "agent_steps": 2,
+  "tool_call_requests": 1,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "grep",
+      "step": 1,
+      "args_contains": {
+        "pattern": "MAGIC_PHRASE:"
+      }
+    }
+  ]
+}

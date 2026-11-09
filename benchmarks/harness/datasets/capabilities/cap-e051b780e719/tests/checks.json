@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "llm_judge",
+    "args": [
+      "The agent should ask what metrics or signals define 'something going wrong'.",
+      "The agent should ask how the user wants to be alerted (Slack, email, PagerDuty, etc.).",
+      "The agent should NOT assume specific thresholds without asking."
+    ]
+  }
+]

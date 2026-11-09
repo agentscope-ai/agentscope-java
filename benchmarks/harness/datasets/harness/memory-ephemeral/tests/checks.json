@@ -1,0 +1,12 @@
+[
+  {
+    "path": "ready.txt",
+    "kind": "text",
+    "value": "ready"
+  },
+  {
+    "path": "answer.txt",
+    "kind": "text",
+    "value": "unknown"
+  }
+]

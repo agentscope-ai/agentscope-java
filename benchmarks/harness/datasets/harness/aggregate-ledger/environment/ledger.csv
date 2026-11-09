@@ -1,0 +1,9 @@
+account,amount_cents,status
+beta,420,settled
+alpha,1000,settled
+beta,700,pending
+alpha,-125,settled
+gamma,900,rejected
+beta,-20,settled
+delta,0,settled
+alpha,75,settled

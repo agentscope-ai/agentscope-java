@@ -1,0 +1,30 @@
+{
+  "agent_steps": 2,
+  "tool_call_requests": 3,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_title",
+      "args_contains": {
+        "incident_id": 41043
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_severity",
+      "args_contains": {
+        "incident_id": 41043
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_status",
+      "args_contains": {
+        "incident_id": 41043
+      }
+    }
+  ]
+}

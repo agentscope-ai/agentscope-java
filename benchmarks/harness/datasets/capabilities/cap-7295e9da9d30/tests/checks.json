@@ -1,0 +1,57 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "identity-service"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "main"
+    ]
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "find_services_by_name",
+          "step": 1,
+          "args_contains": {
+            "name": "identity-api"
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_service_repo",
+          "step": 2,
+          "args_contains": {
+            "service_id": 8627
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_repo_name",
+          "step": 3,
+          "args_contains": {
+            "repo_id": 9346
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_repo_default_branch",
+          "step": 3,
+          "args_contains": {
+            "repo_id": 9346
+          }
+        }
+      ]
+    ]
+  }
+]

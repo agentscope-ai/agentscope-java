@@ -1,0 +1,13 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "logging"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "history_retrieval",
+    "args": []
+  }
+]

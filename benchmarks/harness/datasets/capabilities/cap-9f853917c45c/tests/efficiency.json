@@ -1,0 +1,15 @@
+{
+  "agent_steps": 2,
+  "tool_call_requests": 1,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "write_file",
+      "step": 1,
+      "args_contains": {
+        "file_path": "/note.md"
+      }
+    }
+  ]
+}

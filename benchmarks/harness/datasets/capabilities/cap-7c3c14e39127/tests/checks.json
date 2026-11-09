@@ -1,0 +1,20 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "/workspace/pets/a.txt"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "/workspace/pets/b.txt"
+    ]
+  },
+  {
+    "kind": "final_text_excludes",
+    "args": [
+      "/workspace/pets/c.txt"
+    ]
+  }
+]
