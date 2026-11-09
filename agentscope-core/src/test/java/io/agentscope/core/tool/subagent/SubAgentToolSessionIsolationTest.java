@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,78 @@ import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 class SubAgentToolSessionIsolationTest {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void childUsesOwnModelWithoutChangingParentSelection(boolean streaming) {
+        RuntimeContext parent =
+                RuntimeContext.builder()
+                        .userId("alice")
+                        .sessionId("parent")
+                        .modelId("parent-only-model")
+                        .build();
+        SubAgentTool tool =
+                new SubAgentTool(
+                        () ->
+                                ReActAgent.builder()
+                                        .name("child")
+                                        .model(new MockModel("child reply"))
+                                        .build(),
+                        SubAgentConfig.builder().forwardEvents(streaming).build());
+
+        ToolResultBlock result =
+                tool.callAsync(
+                                ToolCallParam.builder()
+                                        .input(Map.of("message", "hello", "session_id", "child"))
+                                        .runtimeContext(parent)
+                                        .emitter(chunk -> {})
+                                        .build())
+                        .block(Duration.ofSeconds(5));
+
+        assertTrue(((TextBlock) result.getOutput().get(0)).getText().contains("child reply"));
+        assertEquals("parent-only-model", parent.getModelId());
+    }
+
+    @Test
+    void sessionStateDeletedBetweenCallsIsSavedAgain() {
+        var store = new InMemoryAgentStateStore();
+        SubAgentTool tool =
+                new SubAgentTool(
+                        () ->
+                                ReActAgent.builder()
+                                        .name("factory")
+                                        .model(new MockModel("OK"))
+                                        .build(),
+                        SubAgentConfig.builder().forwardEvents(false).stateStore(store).build());
+        // Run persistence and cleanup inline so deletion happens after the first lease is released.
+        String hook = "subagent-session-delete";
+        Schedulers.onScheduleHook(
+                hook,
+                task -> {
+                    throw new RejectedExecutionException("run inline for test");
+                });
+        try {
+            tool.callAsync(param("first", "child", "alice", "parent")).block(Duration.ofSeconds(5));
+            assertTrue(store.get("alice", "child", "agent_state", AgentState.class).isPresent());
+            store.delete("alice", "child", "agent_state");
+
+            tool.callAsync(param("second", "child", "alice", "parent"))
+                    .block(Duration.ofSeconds(5));
+
+            assertEquals(
+                    List.of("second"),
+                    store
+                            .get("alice", "child", "agent_state", AgentState.class)
+                            .orElseThrow()
+                            .getContext()
+                            .stream()
+                            .filter(m -> m.getRole() == MsgRole.USER)
+                            .map(Msg::getTextContent)
+                            .toList());
+        } finally {
+            Schedulers.resetOnScheduleHook(hook);
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void singletonDirectAndDelegatedSessionsKeepSeparateHistories(boolean streaming) {

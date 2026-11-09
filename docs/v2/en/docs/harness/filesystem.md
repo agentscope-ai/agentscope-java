@@ -56,6 +56,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addSharedPrefix(String)` | Route additional workspace-relative prefixes to the KV (e.g. `"prompts/"`, `"configs/"`) | none |
 | `workspaceIndex(WorkspaceIndex)` | SQLite index to accelerate remote ls/glob/grep | none (falls back to full store scan) |
 
+`WorkspaceIndex.open(workspaceRoot)` returns `null` when the optional local index cannot initialize, for example if `.index/workspace.db` is corrupt. It closes any connection acquired during that failed attempt, so callers can fall back to remote scans without retaining the failed connection. A successfully returned index keeps its connection until `close()` is called.
+
 #### Built-in routing rules
 
 The framework automatically routes the following paths to the shared KV, each in its own namespace segment to prevent key collisions:
@@ -515,6 +517,12 @@ The four-layer priority is unchanged (low â†’ high): `projectGlobalSkillsDir` â†
 ### File tools (read_file / write_file / edit_file / ...)
 
 All file tools call through the `AbstractFilesystem` interface, passing the current `RuntimeContext` on every operation. The filesystem implementation decides the actual read/write location. Agent code is completely unaware of the mode.
+
+`read_file` bounds each response to 16,000 Unicode code points by default, even when `limit` is omitted or a single line is very long. Set the optional `max_chars` to request a different page size, clamped to the application-configured maximum (32,000 by default). `offset` and `limit` still select lines; `char_offset` selects a character page **within that same line selection**, starting at zero. When truncated, the result supplies the next `char_offset`: keep the same path, `offset`, and `limit` to continue. Unicode surrogate pairs are never split. Read a stable file when assembling multiple pages; offsets do not identify an immutable snapshot.
+
+Configure the maximum with `HarnessAgent.Builder.readFileMaxChars(int)`. For example, `.readFileMaxChars(64_000)` permits a tool call to request up to 64,000 code points. The configured maximum must be at least 16,000; smaller values cause `IllegalArgumentException`. Automatically constructed general-purpose and declared subagents inherit the setting. Raising the maximum does not change the 16,000-code-point page size when `max_chars` is omitted. Direct users of `FilesystemTool` can pass the maximum to its `(filesystem, pathNormalizer, readFileMaxChars)` constructor; existing constructors retain the default maximum.
+
+This also bounds reads of offloaded tool artifacts. These limits apply to tool output for all filesystem backends; they do not bound the backend's allocation or I/O when producing the selected content. Binary content is paged as its encoded text and must be reassembled before decoding.
 
 | Mode | Read/write behavior |
 |------|-------------------|

@@ -95,6 +95,24 @@ public final class DataBlock extends ContentBlock {
         return new Builder();
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof DataBlock other)) {
+            return false;
+        }
+        return Objects.equals(source, other.source)
+                && Objects.equals(id, other.id)
+                && Objects.equals(name, other.name);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(source, id, name);
+    }
+
     /**
      * Builder for constructing DataBlock instances.
      */

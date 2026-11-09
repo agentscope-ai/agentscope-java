@@ -240,6 +240,14 @@ The `Sandbox` abstraction's primary data-plane entry point is `exec(command)`. T
 
 **Crossing the boundary from the model's point of view.** The file API (upload/download) above is an internal mechanism — invisible to the LLM, and `FilesystemTool` exposes no transfer tools. The supported way for a sandboxed agent to hand an artifact it produced to a destination outside the sandbox is the generic **`deliver_artifact`** tool. It is registered only when you configure an `ArtifactDeliveryTarget` via `HarnessAgent.builder().artifactDeliveryTarget(...)`. The SPI stays business-agnostic — `deliver(RuntimeContext, ArtifactDeliveryRequest) -> ArtifactDeliveryResult` — so destination logic (e.g. WebDAV upload) lives in your application. The tool downloads the file bytes from the sandbox workspace and delegates the transport to the target. Without a configured target, the sandbox workspace prompt states plainly that files cannot leave the container.
 
+## Kubernetes HTTP exchange timeouts
+
+Kubernetes sandbox requests bound the wait for both response headers and the complete response body. A server that sends headers and then stalls cannot keep the caller waiting indefinitely. Command requests use the requested timeout plus 30 seconds for transport (60 + 30 seconds by default). Existing request timeouts can fail earlier. An expired command exchange raises `SandboxTimeoutException`, which the Harness maps to `SandboxException.ExecTimeoutException`.
+
+File uploads and downloads default to a 10-minute exchange budget. Directory listing and existence checks default to 60 seconds. The client methods accepting a `Duration` use that value as the exchange budget; retries and backoff share it.
+
+These deadlines bound HTTP waits. Connection discovery and pod IP lookup retain their own timeout behavior. Cancelling the client exchange does not guarantee that the remote command has stopped; use runtime-side process limits when remote termination is required.
+
 ## Kubernetes state persistence: PVC is the first layer
 
 The Kubernetes store is fully based on agent-sandbox: sandbox pods are managed by the agent-sandbox controller, and image, resources, and storage are all declared cluster-side in a `SandboxTemplate` / `SandboxWarmPool` — the Java side only claims instances (`SandboxClaim`) and connects. This makes it different from other stores in one important way: **workspace data persistence is primarily the PVC's job, not the Harness snapshot's**. The two layers each own one thing:
@@ -286,6 +294,15 @@ spec:
 One more reminder: the `SandboxState` identity layer is never optional — in multi-replica deployments configure a distributed `AgentStateStore`, otherwise other replicas can't learn the claimName and the data on the PVC is unreachable no matter how intact it is.
 
 ## How the workspace maps into the sandbox
+
+For a shared Kubernetes PVC, pass a stable directory from authenticated identity at Claim creation:
+
+```java
+.claimEnv(List.of(new SandboxClaimSpec.EnvVar(
+    "WORKSPACE_SUBPATH", "users/1001/2001", "python-runtime")))
+```
+
+`KubernetesFilesystemSpec.claimEnv` forwards these entries to `SandboxClaim.spec.env`. The cluster template must allow env injection and use `subPathExpr: $(WORKSPACE_SUBPATH)` for the external PVC mounted at `/workspace`. Provision storage permissions in the cluster. In agent-sandbox v0.5.4, a Claim with env bypasses prewarmed instances; the replacement sandbox can reuse the same directory on the retained PVC. Per-call `null` env inherits client defaults; an empty list clears them.
 
 Host-side key files under `workspace/` (`AGENTS.md`, `skills/`, `subagents/`, `knowledge/`) are synced into the sandbox at each start, content-hash-gated — unchanged content is skipped.
 

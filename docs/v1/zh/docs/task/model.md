@@ -55,7 +55,7 @@ en_link: /v1/en/docs/task/model
 | `dashscope:qwen-max` | `DASHSCOPE_API_KEY` | 阿里云 DashScope / 百炼 |
 | `qwen-max` 等以 `qwen-` 开头的 id | `DASHSCOPE_API_KEY` | 将整个字符串作为 DashScope 的 `modelName` |
 | `anthropic:claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY`（可选；未设置时可依赖 SDK 从环境读取） | Anthropic Claude |
-| `gemini:gemini-2.5-flash` | `GEMINI_API_KEY` | Google Gemini API |
+| `gemini:gemini-3.8-flash` | `GEMINI_API_KEY` | Google Gemini API |
 | `ollama:llama3` | `OLLAMA_BASE_URL`（可选，默认 `http://localhost:11434`） | 本地 Ollama |
 
 同一进程内，对**相同**工厂解析 id 多次时，返回的 `Model` 实例会被缓存复用；**具名**注册不走该缓存。
@@ -252,7 +252,7 @@ Google 的 Gemini 系列模型，支持 Gemini API 和 Vertex AI。
 ```java
 GeminiChatModel model = GeminiChatModel.builder()
         .apiKey(System.getenv("GEMINI_API_KEY"))
-        .modelName("gemini-2.5-flash")  // 默认值
+        .modelName("gemini-3.8-flash")  // 默认值
         .baseUrl("https://your-gateway.example")  // 可选
         .build();
 ```
@@ -275,7 +275,7 @@ GeminiChatModel model = GeminiChatModel.builder()
 |--------|------|
 | `apiKey` | Gemini API 密钥 |
 | `baseUrl` | 自定义 Gemini API 端点（可选） |
-| `modelName` | 模型名称，默认 `gemini-2.5-flash` |
+| `modelName` | 模型名称，默认 `gemini-3.8-flash` |
 | `project` | GCP 项目 ID（Vertex AI） |
 | `location` | GCP 区域（Vertex AI） |
 | `vertexAI` | 是否使用 Vertex AI |

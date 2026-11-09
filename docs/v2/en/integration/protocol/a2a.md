@@ -50,6 +50,8 @@ Msg result = remote.call(new UserMessage("Translate to English: 你好")).block(
 
 `streamEvents` streams the events of a call: the text and thinking the remote agent streams arrive as `TextBlockDeltaEvent` and `ThinkingBlockDeltaEvent`, then `AgentResultEvent` carries the same message `call()` returns. Tool calls and tool results are only in the result message.
 
+For completed tasks, the final result prefers output artifacts. When no artifacts are present, it uses the final status message, whether completion arrives as a full task or a streaming status update.
+
 ```java
 remote.streamEvents(new UserMessage("Translate to English: 你好"))
     .doOnNext(event -> {
@@ -69,6 +71,8 @@ RuntimeContext context = RuntimeContext.builder().userId("alice").sessionId("cha
 Msg reply = remote.call(List.of(new UserMessage("Translate to English: 你好")), context).block();
 List<Msg> history = remote.getAgentState(context).getContext();
 ```
+
+The identity travels with every call: the session id is sent as the A2A native `contextId`, and the user id as the envelope metadata key `_agentscope_user_id` — an AgentScope server reads both back into its `RuntimeContext`. A non-AgentScope peer ignores the extra metadata key, and an anonymous call (no user id) sends none.
 
 ### Middleware
 
@@ -147,20 +151,42 @@ TransportWrapper wrapper = server.getTransportWrapper("JSONRPC");
 
 server.postEndpointReady();   // call after the web server is listening — triggers registration etc.
 
-// On shutdown: stop the threads of the request handler. Running executions are asked to stop
-// (interrupted); close() does not wait for them. The Spring Boot starter does this for you.
+// On shutdown: stop the threads of the request handler and the thread pools the server created.
+// Running executions are asked to stop (interrupted); close() does not wait for them. An executor
+// you set with executor(...) is left to you. The Spring Boot starter does this for you.
 server.close();
 ```
 
 `AgentScopeA2aServer` does not bind a port or expose endpoints itself; it only assembles components and the request-handling chain. You wire transport into Spring Boot, Quarkus, Vert.x, etc. as you prefer.
 
-### Request session identifiers
+For streaming requests and requests with `returnImmediately=true`, a custom `AgentRunner` may return only an `AgentResultEvent`. If no artifact has been streamed, the server publishes a non-empty final message as one complete artifact when the event stream finishes successfully. If artifacts have already been streamed, the final snapshot is not appended again. With `completeWithMessage=true`, the final-only message is also included in the completed task status.
+
+### Request identity and session identifiers
 
 The server fills `AgentRequestOptions.sessionId` for the `AgentRunner` from the SDK-resolved A2A `contextId`. Clients can use the standard protocol field without adding a custom metadata key. If the client omits `contextId`, the SDK generates one.
 
 For compatibility, a non-null, non-blank `message.metadata["sessionId"]` overrides this mapping, even when it differs from `contextId`. This preserves existing session keys when the SDK generates a new context ID. Null, empty, or whitespace-only metadata values fall back to `contextId`. The protocol message's `contextId` is not changed.
 
-This mapping supplies the runner's request options; it does not automatically enable session persistence. A custom runner can use the identifier when setting up its runtime context or state store.
+`AgentRequestOptions.userId` is read from the envelope metadata key `_agentscope_user_id` that an AgentScope client sets from its `RuntimeContext`. The flat `message.metadata["userId"]` key still works as a deprecated fallback for older clients; without either, the user id stays empty.
+
+The built-in `BaseReActAgentRunner` implementations pass both ids into the agent's `RuntimeContext`, so session state, session logs, and per-call middlewares see the caller's `(userId, sessionId)` slot. `AgentRunner` implementations receive the ids via `AgentRequestOptions` and decide themselves.
+
+The envelope user id is a delegation claim — it names whom the caller says it acts for, and any client can set it. It keys per-user agent state, session logs, and the identity tools see, so without a resolver treat it as untrusted: a caller claiming another user's id lands in that user's `(userId, sessionId)` slots. When the transport already verifies the caller (mTLS, OAuth), give the server a resolver so the verified identity wins — and let a failing resolver throw to reject the call:
+
+```java
+AgentScopeA2aServer server = AgentScopeA2aServer.builder()
+    .agentBuilder(agentBuilder)
+    .contextResolver(context -> {
+        String verified = verifiedUserIdOf(context.getCallContext()); // mTLS cert / OAuth token
+        return verified == null ? null
+            : RuntimeContext.builder().userId(verified).build();
+    })
+    .build();
+```
+
+Priority: resolver (transport-verified) &gt; envelope-asserted user id &gt; none. A resolver that returns `null`, or a context without a user id, leaves the assertion in place; when the two disagree the server logs a warning and uses the verified one.
+
+This mapping supplies the runner's request options; it does not automatically enable session persistence. A custom runner can use the identifiers when setting up its runtime context or state store.
 
 ### Optional components
 

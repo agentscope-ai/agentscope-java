@@ -497,7 +497,8 @@ class ToolMethodInvokerTest {
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
-        Assertions.assertEquals("null", ToolTestUtils.extractContent(response));
+        Assertions.assertEquals(
+                "(completed with no output)", ToolTestUtils.extractContent(response));
     }
 
     @Test

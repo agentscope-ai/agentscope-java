@@ -46,6 +46,7 @@ en_link: /v2/en/docs/building-blocks/message-and-event
 |--------|------|-----------|
 | `TextBlock` | 纯文本内容 | USER、ASSISTANT、SYSTEM |
 | `DataBlock` | 二进制数据（图片、音频、视频），通过 base64 或 URL；统一替代旧的 ImageBlock/AudioBlock/VideoBlock | USER、ASSISTANT |
+| `DocumentBlock` | 文档输入（PDF、Word、纯文本），来源可以是带 `provider` 和 `file_id` 的服务商文件 ID（`FileIdSource`）、URL 或 base64 | USER |
 | `ImageBlock` / `AudioBlock` / `VideoBlock` | 旧版具体多媒体块（仍兼容，新代码建议用 `DataBlock`） | USER |
 | `ThinkingBlock` | 模型推理过程（思维链） | ASSISTANT |
 | `ToolUseBlock` | 工具调用，包含 `id` / `name` / `input` / `state`（`ToolCallState`） | ASSISTANT |
@@ -55,7 +56,7 @@ en_link: /v2/en/docs/building-blocks/message-and-event
 
 <Note>
 
-角色约束在构造时强制执行：`USER` 消息只能包含 text/data/image/audio/video 块；`SYSTEM` 消息只能包含 `TextBlock`；`ASSISTANT` 消息可包含所有块类型。
+角色约束在构造时强制执行：`USER` 消息只能包含 text/data/document/image/audio/video 块；`SYSTEM` 消息只能包含 `TextBlock`；`ASSISTANT` 消息可包含所有块类型。
 
 </Note>
 
@@ -196,7 +197,7 @@ sequenceDiagram
 | `getId()` | `String` | 唯一事件标识符 |
 | `getCreatedAt()` | `String` | ISO 8601 时间戳 |
 | `getType()` | `AgentEventType` | 事件类型枚举 |
-| `getSource()` | `String` | 事件来源路径。顶层 Agent 为 `null`；子 Agent 事件为斜杠分隔的路径（如 `"main/researcher"`），用于区分父子 Agent 事件 |
+| `getSource()` | `String` | 事件来源路径。顶层 Agent 为 `null`；本地子 Agent 事件为 `parentSessionId/agentId/subagentSessionId`（如 `"main/researcher/sub-1"`），远程子 Agent 事件为 `parentSessionId/agentId/taskId` |
 | `getMetadata()` | `Map<String, Object>` | 可选键值元数据。远程子 agent 转发时会写入 `taskId`（`AgentEvent.METADATA_TASK_ID`，对应 harness / Agent Protocol 任务 id）与 `parentSessionId`（`AgentEvent.METADATA_PARENT_SESSION_ID`，对应父 session） |
 
 事件按类别分组如下。除特别说明外，每个事件还携带 `getReplyId()`，关联到正在构建的消息。

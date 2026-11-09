@@ -28,6 +28,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -38,6 +39,7 @@ import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -48,6 +50,12 @@ import reactor.test.StepVerifier;
 /** Tests message routing between summarization, memory flushing, and the preserved tail. */
 class ConversationCompactorTest {
 
+    /**
+     * Padding that keeps prefix fixtures well above the fixed summary-wrapper cost, so a real
+     * summary candidate genuinely shrinks the conversation and passes the size gate.
+     */
+    private static final String PAD = " earlier conversation detail".repeat(40);
+
     /** Verifies that a prior summary is summarized again but is neither flushed nor retained. */
     @Test
     void compactIfNeeded_routesPriorSummaryToSummaryInputButNotFlushOrTail() {
@@ -56,14 +64,15 @@ class ConversationCompactorTest {
         List<Msg> compacted =
                 fixture.compact(
                         List.of(
-                                summary("S1"),
-                                message("M2"),
+                                summary("S1" + PAD),
+                                padded("M2"),
                                 message("TAIL_1"),
                                 message("TAIL_2")));
 
         assertTrue(fixture.model.prompt(0).contains("S1"));
         assertTrue(fixture.model.prompt(0).contains("M2"));
-        assertEquals(List.of("M2"), texts(fixture.flushInputs.get(0)));
+        assertEquals(1, fixture.flushInputs.get(0).size());
+        assertTrue(text(fixture.flushInputs.get(0).get(0)).startsWith("M2"));
         assertEquals(3, compacted.size());
         assertTrue(compacted.get(0).getId().startsWith(ConversationCompactor.SUMMARY_MSG_NAME));
         assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, compacted.get(0).getName());
@@ -78,17 +87,19 @@ class ConversationCompactorTest {
         List<Msg> compacted =
                 fixture.compact(
                         List.of(
-                                summary("S0"),
-                                message("M1"),
-                                summary("S1"),
-                                message("M2"),
+                                summary("S0" + PAD),
+                                padded("M1"),
+                                summary("S1" + PAD),
+                                padded("M2"),
                                 message("TAIL_1"),
                                 message("TAIL_2")));
 
         String prompt = fixture.model.prompt(0);
         assertTrue(prompt.contains("S0"));
         assertTrue(prompt.contains("S1"));
-        assertEquals(List.of("M1", "M2"), texts(fixture.flushInputs.get(0)));
+        assertEquals(2, fixture.flushInputs.get(0).size());
+        assertTrue(text(fixture.flushInputs.get(0).get(0)).startsWith("M1"));
+        assertTrue(text(fixture.flushInputs.get(0).get(1)).startsWith("M2"));
         assertEquals(
                 1,
                 compacted.stream()
@@ -103,7 +114,10 @@ class ConversationCompactorTest {
 
         List<Msg> compacted =
                 fixture.compact(
-                        List.of(summary("ONLY_OLD_SUMMARY"), message("TAIL_1"), message("TAIL_2")));
+                        List.of(
+                                summary("ONLY_OLD_SUMMARY" + PAD),
+                                message("TAIL_1"),
+                                message("TAIL_2")));
 
         assertTrue(fixture.model.prompt(0).contains("ONLY_OLD_SUMMARY"));
         assertTrue(fixture.flushInputs.get(0).isEmpty());
@@ -118,12 +132,12 @@ class ConversationCompactorTest {
         List<Msg> first =
                 fixture.compact(
                         List.of(
-                                summary("S1"),
-                                message("M2"),
+                                summary("S1" + PAD),
+                                padded("M2"),
                                 message("TAIL_1"),
                                 message("TAIL_2")));
         List<Msg> secondInput = new ArrayList<>(first);
-        secondInput.add(message("M3"));
+        secondInput.add(padded("M3"));
         secondInput.add(message("TAIL_3"));
         secondInput.add(message("TAIL_4"));
 
@@ -133,7 +147,11 @@ class ConversationCompactorTest {
         assertTrue(fixture.model.prompt(1).contains("M3"));
         assertFalse(text(second.get(0)).contains("ROUND_1"));
         assertTrue(text(second.get(0)).contains("ROUND_2"));
-        assertEquals(List.of("TAIL_1", "TAIL_2", "M3"), texts(fixture.flushInputs.get(1)));
+        List<Msg> flushed = fixture.flushInputs.get(1);
+        assertEquals(3, flushed.size());
+        assertEquals("TAIL_1", text(flushed.get(0)));
+        assertEquals("TAIL_2", text(flushed.get(1)));
+        assertTrue(text(flushed.get(2)).startsWith("M3"));
     }
 
     /** Verifies that disabling memory flush does not remove the prior summary from summarization. */
@@ -142,7 +160,7 @@ class ConversationCompactorTest {
         Fixture fixture = new Fixture(false);
 
         fixture.compact(
-                List.of(summary("S1"), message("M2"), message("TAIL_1"), message("TAIL_2")));
+                List.of(summary("S1" + PAD), padded("M2"), message("TAIL_1"), message("TAIL_2")));
 
         assertTrue(fixture.model.prompt(0).contains("S1"));
         assertTrue(fixture.model.prompt(0).contains("M2"));
@@ -209,6 +227,254 @@ class ConversationCompactorTest {
                         .block();
 
         assertTrue(result.isEmpty());
+    }
+
+    /** Verifies that a complete stop-reason summary larger than the conversation is rejected. */
+    @Test
+    void compactIfNeeded_rejectsCompleteSummaryThatDoesNotShrinkConversation() {
+        Model model = scriptedSummary("STOP_BIG_SUMMARY " + "x".repeat(3_000), "stop");
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, new MemoryFlushManager(null, null));
+
+        Optional<List<Msg>> result =
+                compactor
+                        .compactIfNeeded(
+                                mock(RuntimeContext.class),
+                                compactableMessages(),
+                                config(true),
+                                "agent",
+                                "s")
+                        .block();
+
+        assertTrue(result.isEmpty());
+    }
+
+    /** Verifies that summaries stopped at an explicit provider output limit are rejected. */
+    @Test
+    void compactIfNeeded_rejectsSummariesStoppedAtProviderOutputLimit() {
+        assertSummaryRejected("PARTIAL_SUMMARY", "length", Map.of());
+        assertSummaryRejected("PARTIAL_SUMMARY", "MAX_TOKENS", Map.of());
+        assertSummaryRejected("PARTIAL_SUMMARY", "max_tokens", Map.of());
+        assertSummaryRejected(
+                "PARTIAL_SUMMARY",
+                "incomplete",
+                Map.of("openai.response.incomplete_reason", "max_output_tokens"));
+    }
+
+    /** Verifies that an "incomplete" summary without the output-limit cause stays accepted. */
+    @Test
+    void compactIfNeeded_acceptsIncompleteSummaryWithoutOutputLimitCause() {
+        Model noCause = scriptedSummary("INCOMPLETE_OK_SUMMARY", "incomplete", Map.of());
+        Model filtered =
+                scriptedSummary(
+                        "FILTERED_OK_SUMMARY",
+                        "incomplete",
+                        Map.of("openai.response.incomplete_reason", "content_filter"));
+
+        for (Model model : List.of(noCause, filtered)) {
+            ConversationCompactor compactor =
+                    new ConversationCompactor(model, new MemoryFlushManager(null, null));
+            List<Msg> compacted =
+                    compactor
+                            .compactIfNeeded(
+                                    mock(RuntimeContext.class),
+                                    compactableMessages(),
+                                    config(true),
+                                    "agent",
+                                    "s")
+                            .block()
+                            .orElseThrow();
+            assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, compacted.get(0).getName());
+            assertEquals(
+                    List.of("TAIL_1", "TAIL_2"), texts(compacted.subList(1, compacted.size())));
+        }
+    }
+
+    /** Verifies that summary output containing tool calls is rejected as a summary. */
+    @Test
+    void compactIfNeeded_rejectsSummaryOutputContainingToolCalls() {
+        Model model =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .id("tool-summary")
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("CALLING_TOOL_SUMMARY")
+                                                                .build(),
+                                                        ToolUseBlock.builder()
+                                                                .id("call-9")
+                                                                .name("search")
+                                                                .input(Map.of())
+                                                                .build()))
+                                        .finishReason("tool_calls")
+                                        .build());
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "tool-summary";
+                    }
+                };
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, new MemoryFlushManager(null, null));
+
+        Optional<List<Msg>> result =
+                compactor
+                        .compactIfNeeded(
+                                mock(RuntimeContext.class),
+                                compactableMessages(),
+                                config(true),
+                                "agent",
+                                "s")
+                        .block();
+
+        assertTrue(result.isEmpty());
+    }
+
+    /** Verifies that blank summary text is rejected instead of replacing history or failing. */
+    @Test
+    void compactIfNeeded_rejectsBlankSummaryText() {
+        Model model = scriptedSummary("   ", "stop");
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, new MemoryFlushManager(null, null));
+
+        Optional<List<Msg>> result =
+                compactor
+                        .compactIfNeeded(
+                                mock(RuntimeContext.class),
+                                compactableMessages(),
+                                config(true),
+                                "agent",
+                                "s")
+                        .block();
+
+        assertTrue(result.isEmpty());
+    }
+
+    /** Verifies that a complete smaller stop-reason summary replaces the conversation. */
+    @Test
+    void compactIfNeeded_acceptsCompleteSmallerSummaryWithStopReason() {
+        Model model = scriptedSummary("VALID_STOP_SUMMARY", "stop");
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, new MemoryFlushManager(null, null));
+        List<Msg> input = compactableMessages();
+
+        List<Msg> compacted =
+                compactor
+                        .compactIfNeeded(
+                                mock(RuntimeContext.class), input, config(true), "agent", "s")
+                        .block()
+                        .orElseThrow();
+
+        assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, compacted.get(0).getName());
+        assertTrue(text(compacted.get(0)).contains("VALID_STOP_SUMMARY"));
+        assertEquals(List.of("TAIL_1", "TAIL_2"), texts(compacted.subList(1, compacted.size())));
+        assertTrue(
+                TokenCounterUtil.calculateToken(compacted)
+                        < TokenCounterUtil.calculateToken(input));
+    }
+
+    /**
+     * Verifies that an oversized-but-valid summary keeps only the lightweight reductions instead
+     * of replacing history.
+     */
+    @Test
+    void compactIfNeeded_keepsLightweightReductionsWhenSummaryDoesNotShrink() {
+        Model model = scriptedSummary("BIG_SUMMARY " + "x".repeat(3_000), "stop");
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, new MemoryFlushManager(null, null));
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerTokens(1)
+                        .keepMessages(1)
+                        .keepTokens(0)
+                        .flushBeforeCompact(false)
+                        .truncateArgs(null)
+                        .prune(
+                                CompactionConfig.PruneConfig.builder()
+                                        .protectTokens(0)
+                                        .minimumTokens(1)
+                                        .maxOutputChars(10)
+                                        .excludedTools(Set.of())
+                                        .build())
+                        .build();
+        List<Msg> input =
+                List.of(
+                        padded("M1"),
+                        padded("M2"),
+                        toolResult("bash", "x".repeat(100_000)),
+                        message("TAIL_1"));
+
+        Optional<List<Msg>> result =
+                compactor
+                        .compactIfNeeded(mock(RuntimeContext.class), input, config, "agent", "s")
+                        .block();
+
+        List<Msg> kept = result.orElseThrow();
+        assertTrue(
+                kept.stream()
+                        .noneMatch(
+                                msg ->
+                                        ConversationCompactor.SUMMARY_MSG_NAME.equals(
+                                                msg.getName())));
+        assertEquals(4, kept.size());
+        assertTrue(text(kept.get(0)).startsWith("M1"));
+        assertTrue(text(kept.get(1)).startsWith("M2"));
+        assertEquals("TAIL_1", text(kept.get(3)));
+        assertTrue(TokenCounterUtil.calculateToken(kept) < TokenCounterUtil.calculateToken(input));
+    }
+
+    /** Runs one scripted summary against padded input and requires the candidate to be rejected. */
+    private static void assertSummaryRejected(
+            String summary, String finishReason, Map<String, Object> metadata) {
+        Model model = scriptedSummary(summary, finishReason, metadata);
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, new MemoryFlushManager(null, null));
+
+        Optional<List<Msg>> result =
+                compactor
+                        .compactIfNeeded(
+                                mock(RuntimeContext.class),
+                                compactableMessages(),
+                                config(true),
+                                "agent",
+                                "s")
+                        .block();
+
+        assertTrue(result.isEmpty());
+    }
+
+    /** Creates a summary model emitting scripted text with an explicit finish reason. */
+    private static Model scriptedSummary(String text, String finishReason) {
+        return scriptedSummary(text, finishReason, Map.of());
+    }
+
+    /** Creates a summary model emitting scripted text, finish reason, and metadata. */
+    private static Model scriptedSummary(
+            String text, String finishReason, Map<String, Object> metadata) {
+        return new Model() {
+            @Override
+            public Flux<ChatResponse> stream(
+                    List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                return Flux.just(
+                        ChatResponse.builder()
+                                .id("scripted-summary")
+                                .content(List.of(TextBlock.builder().text(text).build()))
+                                .finishReason(finishReason)
+                                .metadata(metadata)
+                                .build());
+            }
+
+            @Override
+            public String getModelName() {
+                return "scripted-summary";
+            }
+        };
     }
 
     /** Verifies that memory-flush fallback does not swallow a user interruption. */
@@ -329,6 +595,11 @@ class ConversationCompactorTest {
                 .build();
     }
 
+    /** Creates a prefix user message padded beyond the fixed summary-wrapper cost. */
+    private static Msg padded(String label) {
+        return message(label + PAD);
+    }
+
     /** Creates a TOOL message carrying a single tool result. */
     private static Msg toolResult(String name, String output) {
         return Msg.builder()
@@ -353,7 +624,7 @@ class ConversationCompactorTest {
 
     /** Creates an input that always triggers compaction and retains a two-message tail. */
     private static List<Msg> compactableMessages() {
-        return List.of(message("M1"), message("M2"), message("TAIL_1"), message("TAIL_2"));
+        return List.of(padded("M1"), padded("M2"), message("TAIL_1"), message("TAIL_2"));
     }
 
     /** Creates focused compaction configuration for fallback-boundary tests. */

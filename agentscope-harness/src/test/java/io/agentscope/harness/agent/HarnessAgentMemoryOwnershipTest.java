@@ -119,6 +119,7 @@ class HarnessAgentMemoryOwnershipTest {
                                                 RuntimeContext.builder()
                                                         .userId(user)
                                                         .sessionId("parent")
+                                                        .modelId("parent-only-model")
                                                         .build())
                                         .emitter(chunk -> {})
                                         .build())

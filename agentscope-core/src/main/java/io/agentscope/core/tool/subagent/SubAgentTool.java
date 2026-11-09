@@ -27,6 +27,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.session.SessionExecution;
+import io.agentscope.core.session.SessionExportSink;
 import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.AgentState;
@@ -218,7 +219,6 @@ public class SubAgentTool implements AgentTool {
                         }
 
                         // Create agent for this session
-                        final String finalSessionId = sessionId;
                         RuntimeContext runtimeContext =
                                 childContext(param.getRuntimeContext(), sessionId);
                         Runnable cleanupFinished =
@@ -283,16 +283,12 @@ public class SubAgentTool implements AgentTool {
                                                             executeWithStreaming(
                                                                     agent,
                                                                     userMsg,
-                                                                    finalSessionId,
                                                                     emitter,
                                                                     runtimeContext);
                                                 } else {
                                                     result =
                                                             executeWithoutStreaming(
-                                                                    agent,
-                                                                    userMsg,
-                                                                    finalSessionId,
-                                                                    runtimeContext);
+                                                                    agent, userMsg, runtimeContext);
                                                 }
 
                                                 return result.flatMap(lifecycle::persistResult);
@@ -341,8 +337,19 @@ public class SubAgentTool implements AgentTool {
         // Session recording and execution identities belong to the parent call, not this agent.
         child.put(SessionRecorder.CONTEXT_KEY, null);
         child.put(SessionRecorder.TURN_ID_KEY, null);
+        child.put(SessionExportSink.CONTEXT_KEY, null);
+        child.put(SessionRecorder.PARENT_KEY, null);
         child.put(SessionExecution.CONTEXT_KEY, null);
         child.put(ExecutionIdentity.CONTEXT_KEY, null);
+        SessionRecorder parentRecorder = SessionRecorder.from(parent);
+        if (parentRecorder != null && parent.getSessionId() != null) {
+            child.put(
+                    SessionRecorder.PARENT_KEY,
+                    Map.of(
+                            "parentSessionId", parent.getSessionId(),
+                            "parentRunId", parentRecorder.runId(),
+                            "parentTurnId", parentRecorder.turnId()));
+        }
         return child;
     }
 
@@ -389,6 +396,7 @@ public class SubAgentTool implements AgentTool {
         }
 
         private synchronized void prepareState() {
+            // Defensive: never load state after cancellation cleanup has retired this lifecycle.
             if (closing || !usesToolState()) return;
             try {
                 VersionedState<AgentState> loaded =
@@ -553,16 +561,12 @@ public class SubAgentTool implements AgentTool {
      *
      * @param agent The agent to execute
      * @param userMsg The user message to send
-     * @param sessionId The session ID for result building
      * @param emitter The emitter to forward events to
+     * @param runtimeContext Child runtime context carrying the session ID and user ID
      * @return A Mono emitting the tool result block
      */
     private Mono<ToolResultBlock> executeWithStreaming(
-            Agent agent,
-            Msg userMsg,
-            String sessionId,
-            ToolEmitter emitter,
-            RuntimeContext runtimeContext) {
+            Agent agent, Msg userMsg, ToolEmitter emitter, RuntimeContext runtimeContext) {
 
         StreamOptions streamOptions =
                 config.getStreamOptions() != null
@@ -572,13 +576,15 @@ public class SubAgentTool implements AgentTool {
         return Mono.deferContextual(
                 ctxView ->
                         streamWithContext(agent, userMsg, streamOptions, runtimeContext)
-                                .doOnNext(event -> forwardEvent(event, emitter, agent, sessionId))
+                                .doOnNext(
+                                        event ->
+                                                forwardEvent(event, emitter, agent, runtimeContext))
                                 .filter(Event::isLast)
                                 .last()
                                 .map(
                                         lastEvent -> {
-                                            Msg response = lastEvent.getMessage();
-                                            return buildResult(response, sessionId);
+                                            return buildResult(
+                                                    lastEvent.getMessage(), runtimeContext);
                                         })
                                 .contextWrite(context -> context.putAll(ctxView))
                                 .onErrorResume(
@@ -600,16 +606,16 @@ public class SubAgentTool implements AgentTool {
      *
      * @param agent The agent to execute
      * @param userMsg The user message to send
-     * @param sessionId The session ID for result building
+     * @param runtimeContext Child runtime context carrying the session ID and user ID
      * @return A Mono emitting the tool result block
      */
     private Mono<ToolResultBlock> executeWithoutStreaming(
-            Agent agent, Msg userMsg, String sessionId, RuntimeContext runtimeContext) {
+            Agent agent, Msg userMsg, RuntimeContext runtimeContext) {
 
         return Mono.deferContextual(
                 ctxView ->
                         callWithContext(agent, userMsg, runtimeContext)
-                                .map(response -> buildResult(response, sessionId))
+                                .map(response -> buildResult(response, runtimeContext))
                                 .onErrorResume(
                                         e -> {
                                             logger.error(
@@ -623,11 +629,21 @@ public class SubAgentTool implements AgentTool {
 
     private Flux<Event> streamWithContext(
             Agent agent, Msg userMsg, StreamOptions options, RuntimeContext runtimeContext) {
-        return agent.stream(List.of(userMsg), options, runtimeContext);
+        return agent.stream(List.of(userMsg), options, stripCallerModel(runtimeContext));
     }
 
     private Mono<Msg> callWithContext(Agent agent, Msg userMsg, RuntimeContext runtimeContext) {
-        return agent.call(List.of(userMsg), runtimeContext);
+        return agent.call(List.of(userMsg), stripCallerModel(runtimeContext));
+    }
+
+    /**
+     * Drops the caller's per-call model choice before handing the context to a subagent: a
+     * subagent's model is a build-time contract and must not be overridden by the caller's
+     * runtime selection. The derived copy keeps everything else (ids, attributes, run
+     * correlation); when no model id is set the original context is passed through unchanged.
+     */
+    private static RuntimeContext stripCallerModel(RuntimeContext rc) {
+        return rc.getModelId() == null ? rc : RuntimeContext.builder(rc).modelId(null).build();
     }
 
     /**
@@ -639,9 +655,11 @@ public class SubAgentTool implements AgentTool {
      * @param event The event to forward
      * @param emitter The emitter to send the event to
      * @param agent The agent
-     * @param sessionId Current session ID
+     * @param runtimeContext Child runtime context carrying the current session ID
      */
-    private void forwardEvent(Event event, ToolEmitter emitter, Agent agent, String sessionId) {
+    private void forwardEvent(
+            Event event, ToolEmitter emitter, Agent agent, RuntimeContext runtimeContext) {
+        String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         try {
             String json = JsonUtils.getJsonCodec().toJson(event);
             Map<String, Object> metadata = new HashMap<>();
@@ -664,10 +682,11 @@ public class SubAgentTool implements AgentTool {
      * conversation by passing the session ID in subsequent calls.
      *
      * @param response The agent's response message
-     * @param sessionId The session ID to include in the result
+     * @param runtimeContext Child runtime context whose session ID is included in the result
      * @return A tool result block containing the formatted response
      */
-    private ToolResultBlock buildResult(Msg response, String sessionId) {
+    private ToolResultBlock buildResult(Msg response, RuntimeContext runtimeContext) {
+        String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         String textContent = response.getTextContent();
 
         // Return response with session context

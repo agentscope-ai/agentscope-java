@@ -11,11 +11,13 @@ en_link: /v2/en/integration/protocol/agui
 
 `AguiMessage.content` 现在使用类型化消息内容表示。仅处理纯文本时，请使用 `getTextContent()`。
 
-多模态输入支持 text、image、audio 和 video。暂不支持 document 输入：adapter 会通过 `RUN_ERROR` 拒绝请求，错误码为 `INVALID_INPUT_ERROR`，错误信息不包含文档来源或 metadata。
+多模态输入支持 image/audio/video/document。document part 会转换为 `DocumentBlock`；无法消费文档的模型提供方会返回错误，而不是静默丢弃内容。
 
-这一保护仅针对 `RUN_ERROR` 的错误消息，不针对整个事件流。此前的 `RUN_STARTED.input` 保留原始请求，包括被拒绝的文档内容。记录日志或转发事件的使用方需要自行对敏感输入脱敏。
+`RUN_STARTED.input` 会保留原始请求，记录日志或转发事件的使用方需要自行对敏感输入脱敏。
 
-`AguiMessageConverter.toAguiMessageList()` 会把包含多个 `ToolResultBlock` 的 TOOL `Msg` 展开成每个 tool result 一条 AG-UI tool message。`toAguiMessage()` 仅用于最多一个 tool result 的消息，多结果时会拒绝；需要展开结果时请使用 `toAguiMessages()`。目前仍只保留文本和工具调用字段；image、audio、video、document 内容块不会被序列化回 AG-UI message content。
+`AguiMessageConverter.toAguiMessageList()` 会把包含多个 `ToolResultBlock` 的 TOOL `Msg` 展开成每个 tool result 一条 AG-UI tool message。`toAguiMessage()` 仅用于最多一个 tool result 的消息，多结果时会拒绝；需要展开结果时请使用 `toAguiMessages()`。
+
+出站方向会把带 URL 的 `ImageBlock` / `AudioBlock` / `VideoBlock` / `DocumentBlock` 序列化为 AG-UI `MessageContent.Blocks`（`image` / `audio` / `video` / `document`），带 URL 的 `DataBlock` 会按解析出的 MIME 类型路由。目前出站会跳过 Base64 媒体来源。
 
 ## 何时使用
 
@@ -198,6 +200,7 @@ agentscope:
 | RuntimeContext 内容 | 来源 |
 | --- | --- |
 | `sessionId` | `RunAgentInput.threadId` |
+| `userId` | resolver 提供的身份，否则为 request 一等 userId（见下文） |
 | `RunAgentInput.class` | 完整 `RunAgentInput` |
 | `agui.threadId` | `RunAgentInput.threadId` |
 | `agui.runId` | `RunAgentInput.runId` |
@@ -209,6 +212,22 @@ agentscope:
 | `agui.resume` | `RunAgentInput.resume` |
 
 `sessionId` 来自 `threadId`。沿用相同的用户、thread 和持久存储配置，新实例可以继续原会话；不同 thread 使用各自的会话身份。
+
+`userId` 不在 AG-UI 协议报文中携带，由宿主经两个入口提供，按优先级合并：
+
+1. `AguiRuntimeContextResolver` —— 部署方裁决（例如从认证主体解析），优先级最高。
+2. `AguiRuntimeContextRequest.getUserId()` —— 调用方断言，由宿主构建 request 时直传。仅当 resolver 未提供身份时采信。
+
+直接驱动 `AguiRequestProcessor` 的宿主（自定义 transport）把认证得到的用户 id 作为一等字段传入，无需自行发明 resolver 约定：
+
+```java
+AguiRuntimeContextRequest<?> request = AguiRuntimeContextRequest.builder()
+    .input(input)
+    .userId(authenticatedUserId)
+    .build()
+```
+
+两个入口都提供且不相等时记录 WARN 并以 resolver 为准——调用方断言不得覆盖服务端已验证的身份。宿主未提供 userId 时保持匿名。官方 starter 不了解宿主的身份模型，使用 starter 的宿主应注册 `AguiRuntimeContextResolver` bean（见下文 Spring Boot 集成）。
 
 ## Spring Boot 集成
 
@@ -255,7 +274,7 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 }
 ```
 
-`forwardedProps` 来自客户端请求体，适合传递 UI 选项或前端上下文。不要把它当作可信身份来源；服务端用户身份应由认证链路或服务端 resolver 注入。
+`forwardedProps` 来自客户端请求体，适合传递 UI 选项或前端上下文。不要把它当作可信身份来源；服务端用户身份应由认证链路注入——经服务端 resolver 或 request 一等 `userId` 字段。
 
 ## Frontend Tools 与合并模式
 

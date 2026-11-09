@@ -46,6 +46,8 @@ class ChannelWorkBridgeTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     // Loopback HTTP round-trips (token fetch + send) can be starved for many seconds on
     // Windows runners when -T1C builds sibling modules in parallel; 5s proved too tight.
+    // The Feishu clients' internal 10s default once fired before this outer bound could help
+    // (PR #3757, 2026-10-26), so the test configures both to the same CI-grade bound.
     private static final Duration CALL_TIMEOUT = Duration.ofSeconds(30);
     private static final String EVENT =
             """
@@ -118,7 +120,9 @@ class ChannelWorkBridgeTest {
             var client =
                     new FeishuOutboundClient(
                             url(server),
-                            new FeishuAccessTokenProvider(url(server), "app", "secret"));
+                            new FeishuAccessTokenProvider(
+                                    url(server), "app", "secret", CALL_TIMEOUT),
+                            CALL_TIMEOUT);
             var address = new OutboundAddress("channel", "org", "channel:GROUP:room", "om-root");
             var msg = Msg.builder().role(MsgRole.ASSISTANT).textContent("result").build();
             assertEquals(

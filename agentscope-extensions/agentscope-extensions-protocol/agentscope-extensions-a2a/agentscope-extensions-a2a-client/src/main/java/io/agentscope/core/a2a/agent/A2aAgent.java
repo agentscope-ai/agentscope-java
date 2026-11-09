@@ -80,6 +80,9 @@ import reactor.util.context.ContextView;
  * <p>Agent description should get from AgentCard. If AgentCard get failed, description will be default value from
  * {@link Agent#getDescription()}
  *
+ * <p>Every call resolves the AgentCard again. If no card is found for the name of this agent, the call fails with an
+ * {@link IllegalStateException} that names the agent and the resolver.
+ *
  * <p>Example Usage:
  * <pre>{@code
  *  // Simple usage.
@@ -347,12 +350,19 @@ public class A2aAgent extends AgentBase {
 
     private A2aCall startCall(Session session) {
         String requestId = UUID.randomUUID().toString();
-        Client client = buildA2aClient(getName());
+        AgentCard agentCard = agentCardResolver.getAgentCard(getName());
+        if (null == agentCard) {
+            throw new IllegalStateException(
+                    "No AgentCard found for A2A agent '"
+                            + getName()
+                            + "' via "
+                            + agentCardResolver.getClass().getSimpleName()
+                            + ". Check that the agent name matches the name registered on the"
+                            + " server.");
+        }
+        Client client = buildA2aClient(agentCard);
         LoggerUtil.debug(
-                log,
-                "[{}] A2aAgent build A2a Client with Agent Card: {}.",
-                requestId,
-                agentCardResolver.getAgentCard(getName()));
+                log, "[{}] A2aAgent build A2a Client with Agent Card: {}.", requestId, agentCard);
         A2aCall call =
                 new A2aCall(requestId, session, client, new ClientEventContext(requestId, this));
         runningCalls.put(session, call);
@@ -401,8 +411,9 @@ public class A2aAgent extends AgentBase {
     }
 
     /**
-     * Sends {@code msgs} to the remote agent. Streams the text and thinking it replies with, and
-     * keeps its reply in {@code reply}.
+     * Sends {@code msgs} to the remote agent, carrying the user and session id of the call: the
+     * user id as an envelope-level metadata key and the session id as the A2A {@code contextId}.
+     * Streams the text and thinking it replies with, and keeps its reply in {@code reply}.
      */
     private Flux<AgentEvent> exchange(
             A2aCall call, List<Msg> msgs, ReplyEvents events, AtomicReference<Msg> reply) {
@@ -413,7 +424,12 @@ public class A2aAgent extends AgentBase {
                                     null == events ? call.requestId() : events.replyId(),
                                     sink::next);
                     Disposable disposable =
-                            doExecute(call, MessageConvertUtil.convertFromMsg(msgs))
+                            doExecute(
+                                            call,
+                                            MessageConvertUtil.convertFromMsg(
+                                                    msgs,
+                                                    call.session().userId(),
+                                                    call.session().sessionId()))
                                     .subscribe(
                                             msg -> {
                                                 reply.set(msg);
@@ -507,8 +523,8 @@ public class A2aAgent extends AgentBase {
         return null != memory ? memory : new StateMemory(getAgentState(null));
     }
 
-    private Client buildA2aClient(String name) {
-        ClientBuilder builder = Client.builder(this.agentCardResolver.getAgentCard(name));
+    private Client buildA2aClient(AgentCard agentCard) {
+        ClientBuilder builder = Client.builder(agentCard);
         if (this.a2aAgentConfig.clientTransports().isEmpty()) {
             // Default Add The Basic JSON-RPC Transport
             builder.withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig());

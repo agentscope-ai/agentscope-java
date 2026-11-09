@@ -35,6 +35,7 @@ import io.agentscope.core.model.ModelProviderSupport;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.tool.search.ToolSearchMode;
 import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
 import java.io.IOException;
 import java.time.Instant;
@@ -265,6 +266,11 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
     }
 
     // Builder
+
+    @Override
+    public ToolSearchMode getToolSearchMode() {
+        return ToolSearchMode.CLIENT;
+    }
 
     public static Builder builder() {
         return new Builder();

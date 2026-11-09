@@ -178,7 +178,10 @@ X-DataAgent-Sig: <body 的 HMAC-SHA256，hex>
 
 ### 4. 运行
 
+只生成一次 JWT 密钥，安全保存，并在重启和同一部署的多个副本间复用：
+
 ```bash
+export DATAAGENT_JWT_SECRET="$(openssl rand -hex 32)"
 java -jar target/agentscope-dataagent-*-exec.jar
 ```
 
@@ -190,7 +193,7 @@ java -jar target/agentscope-dataagent-*-exec.jar
 
 | 配置项 | 默认 | 说明 |
 |---|---|---|
-| `dataagent.jwt.secret` | 开发占位 | JWT 签名密钥（>= 32 字符）。**非 `dev` Profile 下若仍是默认值会拒绝启动**。 |
+| `dataagent.jwt.secret` | _空_ | 必需的随机 JWT 签名密钥（>= 32 字节）。**任何 Profile 下，缺失、空白、过短或仍使用原公开默认值都会拒绝启动**。 |
 | `dataagent.workspace` | `$CWD`（仅开发态） | agent 运行时状态的工作目录（与配置无关 —— 配置在 `~/.agentscope/dataagent/agentscope.json`）。**非 `dev` Profile 下必填**，留空就启动失败。 |
 | `dataagent.workspace-store.local.max-file-size-mb` | `10` | `RemoteFilesystem` 本地后端的单文件上限。 |
 | `dataagent.dashscope.api-key` | _空_ | DashScope API key（无 `Model` Bean 时回落到这里）。 |
