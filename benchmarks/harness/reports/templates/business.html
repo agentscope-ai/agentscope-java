@@ -12,7 +12,7 @@
 <header><div class="brand"><span>A</span>AgentScope <span style="display:inline;background:none;color:var(--muted);font-size:13px;font-weight:400">/ Evaluation</span></div><button class="btn" id="print">打印 / PDF</button></header>
 <section class="hero"><div><div class="eyebrow">HARNESSAGENT · INTERNAL EVALUATION</div><h1>每一道任务，都有据可查。</h1><p id="subtitle" class="muted"></p><p id="batch" class="source"></p></div><div><span id="completion" class="badge"></span><p id="finished" class="muted tiny"></p></div></section>
 <div class="cards" id="cards"></div><div class="datasets" id="datasets"></div>
-<div class="note">评测范围：本批为开发抽样任务，不代表完整官方数据集成绩或排行榜。通过率按本批计划题数计算；未评分与缺失结果单独保留。模型名称为提供方别名，未锁定底层快照。</div>
+<div class="note">评测范围以本次归档清单为准，不代表完整官方数据集成绩或排行榜。通过率按本批计划题数计算；未评分与缺失结果单独保留。比较结果前，请核对模型、题目与环境版本。</div>
 <div class="note" id="audit-note" hidden></div>
 <main class="workspace"><section class="panel"><div class="panelhead"><h2>逐题结果</h2><span class="muted tiny" id="count"></span></div>
 <div class="filters"><input id="search" type="search" aria-label="搜索题号或任务内容" placeholder="搜索题号、任务内容…"><select id="dataset" aria-label="数据集"><option value="">全部数据集</option></select><select id="status" aria-label="结果状态"><option value="">全部状态</option><option value="passed">通过</option><option value="not_passed">未通过</option><option value="unscored">未评分</option><option value="missing">缺失</option></select></div>
@@ -20,7 +20,7 @@
 <section class="panel" id="detail"><div class="panelhead"><h2 id="detailtitle"></h2><span id="detailbadge" class="badge"></span></div><div class="tabs" role="tablist" aria-label="题目详情"><button class="active" id="tab-task" role="tab" aria-controls="pane-task" aria-selected="true" data-tab="task">题目与用量</button><button id="tab-trace" role="tab" aria-controls="pane-trace" aria-selected="false" data-tab="trace">执行过程</button><button id="tab-score" role="tab" aria-controls="pane-score" aria-selected="false" data-tab="score">评分依据</button></div><div class="detailbody"><div id="pane-task" role="tabpanel" aria-labelledby="tab-task"></div><div id="pane-trace" role="tabpanel" aria-labelledby="tab-trace" hidden></div><div id="pane-score" role="tabpanel" aria-labelledby="tab-score" hidden></div></div></section></main>
 <section class="panel meta"><div class="panelhead"><h2>任务类型与工具覆盖</h2></div><div class="detailbody" id="coverage"></div></section>
 <details class="meta"><summary>版本、数据集与归档信息</summary><pre id="metadata"></pre></details>
-<footer class="footer">私有离线报告 · 数据已嵌入此文件，无需服务、API Key 或网络连接。对话来自模拟业务环境；原始 OSS 归档为最终依据。</footer>
+<footer class="footer">私有离线报告 · 数据已嵌入此文件，无需服务、API Key 或网络连接。对话来自模拟业务环境；原始评测归档为最终依据。</footer>
 </div>
 <script>
 'use strict';

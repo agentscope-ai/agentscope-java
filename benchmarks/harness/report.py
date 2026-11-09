@@ -142,7 +142,8 @@ def build_report(read, keys):
 
 def render(data):
     payload = base64.b64encode(json.dumps(data, ensure_ascii=False).encode()).decode()
-    return Path(__file__).with_name("report.html").read_text().replace("__REPORT_DATA__", payload)
+    template = Path(__file__).parent / "reports/templates/business.html"
+    return template.read_text(encoding="utf-8").replace("__REPORT_DATA__", payload)
 
 
 
