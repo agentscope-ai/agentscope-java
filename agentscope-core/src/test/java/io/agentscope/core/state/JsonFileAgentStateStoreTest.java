@@ -15,8 +15,10 @@
  */
 package io.agentscope.core.state;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -28,14 +30,23 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /** Tests for JsonFileAgentStateStore. */
 @DisplayName("JsonFileAgentStateStore Tests")
@@ -150,21 +161,39 @@ class JsonFileAgentStateStoreTest {
     }
 
     @Test
-    @DisplayName("Should tolerate concurrent saves of the same state key")
+    @DisplayName("Should tolerate concurrent saves and reads of one key across instances")
     void saveSurvivesConcurrentWritesToSameKey(@TempDir Path tempDir) throws Exception {
-        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        List<JsonFileAgentStateStore> stores = twoStoresOnSameRoot(tempDir);
         int threads = 8;
         int iterations = 50;
-        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        int readers = 4;
+        AtomicBoolean writing = new AtomicBoolean(true);
+        ExecutorService pool = Executors.newFixedThreadPool(threads + readers);
         try {
+            // Readers run while the writers replace the file: on Windows an unlocked read
+            // handle makes the replace fail, and no reader may ever see a torn document.
+            List<Future<Void>> readerResults = new ArrayList<>();
+            for (int r = 0; r < readers; r++) {
+                JsonFileAgentStateStore store = stores.get(r % stores.size());
+                readerResults.add(
+                        pool.submit(
+                                () -> {
+                                    while (writing.get()) {
+                                        store.get(null, "session1", "agent_state", TestState.class)
+                                                .ifPresent(
+                                                        JsonFileAgentStateStoreTest
+                                                                ::assertConsistentPair);
+                                    }
+                                    return null;
+                                }));
+            }
             List<Callable<Void>> tasks = new ArrayList<>();
             for (int t = 0; t < threads; t++) {
                 int threadIndex = t;
+                JsonFileAgentStateStore store = stores.get(t % stores.size());
                 tasks.add(
                         () -> {
                             for (int i = 0; i < iterations; i++) {
-                                // Both fields encode the writer so a torn document mixing
-                                // fields from two writes cannot pass the pair check below.
                                 store.save(
                                         null,
                                         "session1",
@@ -176,34 +205,31 @@ class JsonFileAgentStateStoreTest {
                             return null;
                         });
             }
-            for (Future<Void> future : pool.invokeAll(tasks)) {
-                future.get();
+            try {
+                for (Future<Void> future : pool.invokeAll(tasks)) {
+                    future.get();
+                }
+            } finally {
+                writing.set(false);
+            }
+            for (Future<Void> reader : readerResults) {
+                reader.get();
             }
         } finally {
             pool.shutdownNow();
         }
 
-        var loaded = store.get(null, "session1", "agent_state", TestState.class);
+        // The winner is whichever thread moved last; it must be a complete, intact document.
+        var loaded = stores.get(0).get(null, "session1", "agent_state", TestState.class);
         assertTrue(loaded.isPresent());
-        // The winner is whichever thread moved last; it must be a complete, intact document
-        // whose two fields still describe the same write.
-        String[] parts = loaded.get().value().split("-");
-        int writer = Integer.parseInt(parts[0].substring(1));
-        int iteration = Integer.parseInt(parts[1]);
-        assertEquals(writer, loaded.get().count() / 1000);
-        assertEquals(iteration, loaded.get().count() % 1000);
-        assertTrue(writer < threads);
-        assertTrue(iteration < iterations);
-        // No orphaned tmp files may survive a successful save.
-        try (Stream<Path> paths = Files.walk(tempDir)) {
-            assertEquals(0, paths.filter(p -> p.toString().endsWith(".tmp")).count());
-        }
+        assertConsistentPair(loaded.get());
+        assertNoTmpFiles(tempDir);
     }
 
     @Test
     @DisplayName("Should keep the list file intact under concurrent read-modify-write saves")
     void saveListSurvivesConcurrentReadModifyWrite(@TempDir Path tempDir) throws Exception {
-        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        List<JsonFileAgentStateStore> stores = twoStoresOnSameRoot(tempDir);
         int threads = 4;
         int iterations = 20;
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -211,6 +237,7 @@ class JsonFileAgentStateStoreTest {
             List<Callable<Void>> tasks = new ArrayList<>();
             for (int t = 0; t < threads; t++) {
                 int threadIndex = t;
+                JsonFileAgentStateStore store = stores.get(t % stores.size());
                 tasks.add(
                         () -> {
                             for (int i = 0; i < iterations; i++) {
@@ -241,19 +268,174 @@ class JsonFileAgentStateStoreTest {
         // that is the caller's CAS concern — but the file itself must stay parseable, with no
         // duplicated or torn lines, and every surviving pair must describe one write.
         List<TestState> loaded =
-                store.getList(null, "session1", "memory_messages", TestState.class);
+                stores.get(0).getList(null, "session1", "memory_messages", TestState.class);
         assertTrue(loaded.size() <= threads * iterations);
         assertTrue(loaded.size() > 0);
-        for (TestState item : loaded) {
-            String[] parts = item.value().split("-");
-            assertEquals(Integer.parseInt(parts[0].substring(1)), item.count() / 1000);
-            assertEquals(Integer.parseInt(parts[1]), item.count() % 1000);
-        }
+        loaded.forEach(JsonFileAgentStateStoreTest::assertConsistentPair);
         // No line may appear twice: a rewrite fully replaces the file and an append only adds
         // a snapshot's tail, so duplication means two writers interleaved on the same file.
         assertEquals(loaded.size(), loaded.stream().map(TestState::value).distinct().count());
-        try (Stream<Path> paths = Files.walk(tempDir)) {
-            assertEquals(0, paths.filter(p -> p.toString().endsWith(".tmp")).count());
+        assertNoTmpFiles(tempDir);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("sessionOperations")
+    @DisplayName("Should hold session operations of another instance until a save finishes")
+    void sessionOperationsWaitForAnInFlightSave(
+            Consumer<JsonFileAgentStateStore> operation, @TempDir Path tempDir) throws Exception {
+        List<JsonFileAgentStateStore> stores = twoStoresOnSameRoot(tempDir);
+        JsonFileAgentStateStore holder = stores.get(0);
+        TestState first = new TestState("m0", 0);
+        holder.save(null, "session1", "agent_state", new TestState("a", 1));
+        holder.save(null, "session1", "memory_messages", List.of(first));
+
+        BlockingState blocking = new BlockingState();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            // Appended items are serialized under the session lock, so this save holds it
+            // until the blocking item is released.
+            Future<?> held =
+                    pool.submit(
+                            () ->
+                                    holder.save(
+                                            null,
+                                            "session1",
+                                            "memory_messages",
+                                            List.<State>of(first, blocking)));
+            assertTrue(blocking.entered.await(10, TimeUnit.SECONDS));
+
+            Future<?> pending = pool.submit(() -> operation.accept(stores.get(1)));
+            assertThrows(TimeoutException.class, () -> pending.get(200, TimeUnit.MILLISECONDS));
+
+            blocking.release.countDown();
+            held.get(10, TimeUnit.SECONDS);
+            pending.get(10, TimeUnit.SECONDS);
+        } finally {
+            blocking.release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    static Stream<Named<Consumer<JsonFileAgentStateStore>>> sessionOperations() {
+        return Stream.of(
+                Named.of("get", s -> s.get(null, "session1", "agent_state", TestState.class)),
+                Named.of(
+                        "getList",
+                        s -> s.getList(null, "session1", "memory_messages", TestState.class)),
+                Named.of(
+                        "save",
+                        s -> s.save(null, "session1", "agent_state", new TestState("b", 2))),
+                Named.of(
+                        "save list",
+                        s ->
+                                s.save(
+                                        null,
+                                        "session1",
+                                        "memory_messages",
+                                        List.of(new TestState("m1", 1)))),
+                Named.of("delete key", s -> s.delete(null, "session1", "memory_messages")),
+                Named.of("delete session", s -> s.delete(null, "session1")),
+                Named.of("exists", s -> s.exists(null, "session1")),
+                Named.of("clearAllSessions", s -> s.clearAllSessions().block()));
+    }
+
+    @Test
+    @DisplayName("Should leave the list untouched when an appended item fails to serialize")
+    void failedAppendLeavesListUntouched(@TempDir Path tempDir) throws IOException {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        TestState a = new TestState("a", 1);
+        TestState b = new TestState("b", 2);
+        TestState c = new TestState("c", 3);
+        store.save(null, "session1", "memory_messages", List.of(a, b));
+        Path listFile = findListFile(tempDir);
+        Path hashFile = listFile.resolveSibling("memory_messages.hash");
+        byte[] listBefore = Files.readAllBytes(listFile);
+        byte[] hashBefore = Files.readAllBytes(hashFile);
+
+        // c serializes fine, so writing item by item would leave it behind on its own.
+        assertThrows(
+                RuntimeException.class,
+                () ->
+                        store.save(
+                                null,
+                                "session1",
+                                "memory_messages",
+                                List.<State>of(a, b, c, new UnserializableState())));
+
+        assertArrayEquals(listBefore, Files.readAllBytes(listFile));
+        assertArrayEquals(hashBefore, Files.readAllBytes(hashFile));
+        assertEquals(
+                List.of(a, b), store.getList(null, "session1", "memory_messages", TestState.class));
+        assertNoTmpFiles(tempDir);
+
+        store.save(null, "session1", "memory_messages", List.of(a, b, c));
+        assertEquals(
+                List.of(a, b, c),
+                store.getList(null, "session1", "memory_messages", TestState.class));
+    }
+
+    @Test
+    @DisplayName("Should leave the list untouched and no tmp file when a rewrite fails")
+    void failedRewriteLeavesListUntouched(@TempDir Path tempDir) throws IOException {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        List<TestState> saved = List.of(new TestState("a", 1), new TestState("b", 2));
+        store.save(null, "session1", "memory_messages", saved);
+        Path listFile = findListFile(tempDir);
+        byte[] before = Files.readAllBytes(listFile);
+
+        // The first item differs, so this rewrites the list and fails after the tmp file
+        // already holds that item.
+        assertThrows(
+                RuntimeException.class,
+                () ->
+                        store.save(
+                                null,
+                                "session1",
+                                "memory_messages",
+                                List.<State>of(new TestState("x", 9), new UnserializableState())));
+
+        assertArrayEquals(before, Files.readAllBytes(listFile));
+        assertEquals(saved, store.getList(null, "session1", "memory_messages", TestState.class));
+        assertNoTmpFiles(tempDir);
+    }
+
+    @Test
+    @DisplayName("Should delete every file of a key and keep the other keys")
+    void deleteKeyRemovesStateListAndHash(@TempDir Path tempDir) throws IOException {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        TestState kept = new TestState("kept", 3);
+        store.save(null, "session1", "k", new TestState("single", 1));
+        store.save(null, "session1", "k", List.of(new TestState("item", 2)));
+        store.save(null, "session1", "other", kept);
+
+        store.delete(null, "session1", "k");
+
+        assertEquals(Optional.empty(), store.get(null, "session1", "k", TestState.class));
+        assertEquals(List.of(), store.getList(null, "session1", "k", TestState.class));
+        assertEquals(Optional.of(kept), store.get(null, "session1", "other", TestState.class));
+        try (Stream<Path> files = Files.list(tempDir.resolve("__anon__").resolve("session1"))) {
+            assertEquals(
+                    List.of("other.json"),
+                    files.map(path -> path.getFileName().toString()).toList());
+        }
+    }
+
+    // Two instances on one root, the second spelled differently: they must share session locks.
+    private static List<JsonFileAgentStateStore> twoStoresOnSameRoot(Path root) {
+        return List.of(
+                new JsonFileAgentStateStore(root), new JsonFileAgentStateStore(root.resolve(".")));
+    }
+
+    // Both fields encode the same write, so a document torn between two writes fails the check.
+    private static void assertConsistentPair(TestState state) {
+        String[] parts = state.value().split("-");
+        assertEquals(Integer.parseInt(parts[0].substring(1)), state.count() / 1000);
+        assertEquals(Integer.parseInt(parts[1]), state.count() % 1000);
+    }
+
+    private static void assertNoTmpFiles(Path root) throws IOException {
+        try (Stream<Path> paths = Files.walk(root)) {
+            assertEquals(List.of(), paths.filter(p -> p.toString().endsWith(".tmp")).toList());
         }
     }
 
@@ -281,4 +463,23 @@ class JsonFileAgentStateStoreTest {
     }
 
     public record TestState(String value, int count) implements State {}
+
+    /** Blocks while being serialized until released. */
+    public static final class BlockingState implements State {
+        private final CountDownLatch entered = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+
+        public String getValue() throws InterruptedException {
+            entered.countDown();
+            release.await(10, TimeUnit.SECONDS);
+            return "blocked";
+        }
+    }
+
+    /** Fails while being serialized. */
+    public static final class UnserializableState implements State {
+        public String getValue() {
+            throw new IllegalStateException("not serializable");
+        }
+    }
 }

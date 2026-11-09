@@ -20,6 +20,9 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
@@ -67,6 +70,13 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>Features: atomic file operations, UTF-8 encoding, graceful handling of missing
  * sessions, hash-based append-or-rewrite for list state.
+ *
+ * <p>Concurrency: every operation on a session runs under a lock keyed by the session
+ * directory's normalized absolute path. The locks are shared by all instances in the JVM, so
+ * stores rooted at the same directory exclude each other. They do not span processes: a session
+ * must be owned by one process at a time. File locks are advisory and unreliable on network file
+ * systems such as NFS, so deployments that share sessions across processes should use a
+ * database-backed {@link AgentStateStore} instead.
  */
 public class JsonFileAgentStateStore implements AgentStateStore {
 
@@ -76,15 +86,16 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     /** Pattern for file-system safe characters: alphanumeric, underscore, hyphen, dot. */
     private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-.]+$");
 
-    /**
-     * Striped write locks keyed by target file. A unique tmp name alone does not make write+move
-     * safe: two threads still replace the same target, and Windows rejects the replace while
-     * another thread holds the target (AccessDeniedException). Striping keeps the lock count
-     * bounded while giving each target file a stable lock.
-     */
     private static final int LOCK_STRIPES = 64;
 
-    private final ReentrantLock[] writeLocks = createLockStripes();
+    /**
+     * Striped locks keyed by session directory, static so that every instance on the same root
+     * shares them. A unique tmp name alone does not make write+move safe: two threads still
+     * replace the same target, and Windows rejects the replace, or a delete, while another thread
+     * holds the file open (AccessDeniedException). Locking the session rather than the file also
+     * lets deleting a session exclude every file operation inside it.
+     */
+    private static final ReentrantLock[] SESSION_LOCKS = createLockStripes();
 
     private final Path rootDirectory;
 
@@ -113,11 +124,11 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     @Override
     public void save(String userId, String sessionId, String key, State value) {
         Path file = getStatePath(userId, sessionId, key);
-        ensureDirectoryExists(file.getParent());
-        ReentrantLock lock = lockFor(file);
+        String json = JsonUtils.getJsonCodec().toPrettyJson(value);
+        ReentrantLock lock = lockFor(userId, sessionId);
         lock.lock();
         try {
-            String json = JsonUtils.getJsonCodec().toPrettyJson(value);
+            ensureDirectoryExists(file.getParent());
             atomicWriteString(file, json);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save state: " + key, e);
@@ -130,16 +141,15 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     public void save(String userId, String sessionId, String key, List<? extends State> values) {
         Path file = getListPath(userId, sessionId, key);
         Path hashFile = getHashPath(userId, sessionId, key);
-        ensureDirectoryExists(file.getParent());
+        String currentHash = ListHashUtil.computeHash(values);
 
-        // The whole read-hash-count + append/rewrite sequence must be atomic per target file:
+        // The whole read-hash-count + append/rewrite sequence must run under the session lock:
         // two concurrent list saves would otherwise append the same tail twice, or interleave
-        // an append with a rewrite. The hash file is only written while holding the list
-        // file's lock, so it needs no separate lock.
-        ReentrantLock lock = lockFor(file);
+        // an append with a rewrite.
+        ReentrantLock lock = lockFor(userId, sessionId);
         lock.lock();
         try {
-            String currentHash = ListHashUtil.computeHash(values);
+            ensureDirectoryExists(file.getParent());
             String storedHash = readHashFile(hashFile);
             long existingCount = countLines(file);
             boolean needsFullRewrite =
@@ -184,12 +194,27 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     }
 
     private void appendToList(Path file, List<? extends State> items) throws IOException {
-        try (BufferedWriter writer =
-                newUtf8ReplacingWriter(
-                        file, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
-            for (State item : items) {
-                writer.write(JsonUtils.getJsonCodec().toJson(item));
-                writer.newLine();
+        // Serialize before touching the file and undo a write that fails part-way, so a failed
+        // save never leaves part of its tail behind.
+        StringBuilder lines = new StringBuilder();
+        for (State item : items) {
+            lines.append(JsonUtils.getJsonCodec().toJson(item)).append(System.lineSeparator());
+        }
+        ByteBuffer bytes = utf8ReplacingEncoder().encode(CharBuffer.wrap(lines));
+        try (FileChannel channel =
+                FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+            long originalSize = channel.size();
+            try {
+                while (bytes.hasRemaining()) {
+                    channel.write(bytes);
+                }
+            } catch (IOException e) {
+                try {
+                    channel.truncate(originalSize);
+                } catch (IOException rollbackFailure) {
+                    e.addSuppressed(rollbackFailure);
+                }
+                throw e;
             }
         }
     }
@@ -198,10 +223,10 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     public <T extends State> Optional<T> get(
             String userId, String sessionId, String key, Class<T> type) {
         Path file = getStatePath(userId, sessionId, key);
-        // Readers take the same per-file lock as writers: on Windows an open read handle
-        // blocks another thread's replace of the same file (AccessDeniedException), so
-        // reads and writes must be mutually exclusive per target.
-        ReentrantLock lock = lockFor(file);
+        // Readers take the session lock too: on Windows an open read handle blocks another
+        // thread's replace of the same file (AccessDeniedException), so reads and writes must
+        // be mutually exclusive.
+        ReentrantLock lock = lockFor(userId, sessionId);
         lock.lock();
         try {
             if (!Files.exists(file)) {
@@ -222,7 +247,7 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     public <T extends State> List<T> getList(
             String userId, String sessionId, String key, Class<T> itemType) {
         Path file = getListPath(userId, sessionId, key);
-        ReentrantLock lock = lockFor(file);
+        ReentrantLock lock = lockFor(userId, sessionId);
         lock.lock();
         try {
             if (!Files.exists(file)) {
@@ -250,24 +275,29 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     @Override
     public boolean exists(String userId, String sessionId) {
-        return Files.exists(getSessionDir(userId, sessionId));
-    }
-
-    @Override
-    public void delete(String userId, String sessionId) {
         Path dir = getSessionDir(userId, sessionId);
-        if (Files.exists(dir)) {
-            deleteDirectory(dir);
+        ReentrantLock lock = lockFor(dir);
+        lock.lock();
+        try {
+            return Files.exists(dir);
+        } finally {
+            lock.unlock();
         }
     }
 
     @Override
+    public void delete(String userId, String sessionId) {
+        deleteSession(getSessionDir(userId, sessionId));
+    }
+
+    @Override
     public void delete(String userId, String sessionId, String key) {
-        Path file = getStatePath(userId, sessionId, key);
-        ReentrantLock lock = lockFor(file);
+        ReentrantLock lock = lockFor(userId, sessionId);
         lock.lock();
         try {
-            Files.deleteIfExists(file);
+            Files.deleteIfExists(getStatePath(userId, sessionId, key));
+            Files.deleteIfExists(getListPath(userId, sessionId, key));
+            Files.deleteIfExists(getHashPath(userId, sessionId, key));
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete state: " + key, e);
         } finally {
@@ -277,6 +307,8 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     @Override
     public Set<String> listSessionIds(String userId) {
+        // Only reads directory entries, never a session's files, so it takes no session lock;
+        // a session created or deleted concurrently may or may not be listed.
         Path userDir = rootDirectory.resolve(safeSegment(normalizeUser(userId)));
         if (!Files.isDirectory(userDir)) {
             return Set.of();
@@ -317,8 +349,9 @@ public class JsonFileAgentStateStore implements AgentStateStore {
                                                     (Iterable<Path>)
                                                             sessionDirs.filter(Files::isDirectory)
                                                                     ::iterator) {
-                                                deleteDirectory(sessionDir);
-                                                deletedCount++;
+                                                if (deleteSession(sessionDir)) {
+                                                    deletedCount++;
+                                                }
                                             }
                                         }
                                     }
@@ -394,8 +427,13 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         return locks;
     }
 
-    private ReentrantLock lockFor(Path file) {
-        return writeLocks[(file.hashCode() & 0x7fffffff) % writeLocks.length];
+    private ReentrantLock lockFor(String userId, String sessionId) {
+        return lockFor(getSessionDir(userId, sessionId));
+    }
+
+    private static ReentrantLock lockFor(Path sessionDir) {
+        int hash = sessionDir.toAbsolutePath().normalize().hashCode();
+        return SESSION_LOCKS[Math.floorMod(hash, LOCK_STRIPES)];
     }
 
     // Unique tmp names are never overwritten by a later write, so a failed one must be
@@ -449,22 +487,31 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         }
     }
 
-    private void deleteDirectory(Path dir) {
+    private boolean deleteSession(Path sessionDir) {
+        ReentrantLock lock = lockFor(sessionDir);
+        lock.lock();
         try {
-            if (Files.exists(dir)) {
-                try (Stream<Path> paths = Files.walk(dir)) {
-                    paths.sorted(Comparator.reverseOrder())
-                            .forEach(
-                                    path -> {
-                                        try {
-                                            Files.delete(path);
-                                        } catch (IOException e) {
-                                            throw new RuntimeException(
-                                                    "Failed to delete: " + path, e);
-                                        }
-                                    });
-                }
+            if (!Files.exists(sessionDir)) {
+                return false;
             }
+            deleteDirectory(sessionDir);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void deleteDirectory(Path dir) {
+        try (Stream<Path> paths = Files.walk(dir)) {
+            paths.sorted(Comparator.reverseOrder())
+                    .forEach(
+                            path -> {
+                                try {
+                                    Files.delete(path);
+                                } catch (IOException e) {
+                                    throw new RuntimeException("Failed to delete: " + path, e);
+                                }
+                            });
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete directory: " + dir, e);
         }
