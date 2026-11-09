@@ -35,6 +35,7 @@ import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.RepoBound;
 import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.skill.runtime.SkillCatalog;
+import io.agentscope.harness.agent.skill.runtime.SkillLoadTool;
 import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -279,6 +280,14 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         }
 
         Toolkit agentToolkit = agent != null ? agent.getToolkit() : null;
+
+        // The loader was registered during construction, before tools.json filtering.
+        // Do not undo an explicit removal when refreshing the per-call catalog.
+        if (agentToolkit != null && agentToolkit.getTool(SkillLoadTool.TOOL_NAME) == null) {
+            runtime.install(SkillCatalog.empty(), ctx, null);
+            registerSkillsMaterial(ctx, "");
+            return Mono.just(currentPrompt);
+        }
 
         Map<String, RepoBound> merged = skillsForCall(ctx);
         if (merged.isEmpty()) {

@@ -418,7 +418,7 @@ A JSON file at the workspace root, read once during `build()`:
 
 ```jsonc
 {
-  // allowlist: when non-empty, only listed tools survive
+  // allowlist for catalog tools (platform tools are exempt unless strictAllow is true)
   "allow": ["read_file", "grep_files", "execute"],
   // denylist: listed tools are always removed (wins over allow)
   "deny":  ["write_file"],
@@ -455,9 +455,10 @@ Behavior notes:
 
 - **MCP servers are registered into the toolkit once at build time**; the agent sees the tools they expose.
 - **Meta propagation to MCP servers is controlled by three optional fields**, mirroring the three-level switches of the core MCP client: `propagateMeta` (connection level — a deployment cut-off; core evaluates it live on every call, but Harness currently exposes no runtime handle to flip it, so treat it as build-time configuration), `propagateMetaDefault` (registration level — every tool from this server is registered silent by default), and `propagateMetaOverrides` (per tool — a tool name that is not registered from this server fails the registration loudly, so an override is never lost; a per-tool `true` cannot overrule a `false` connection-level switch). When all are absent, the core default applies (metadata is propagated).
-- **`allow` / `deny` are applied after every tool has been registered** — including Harness built-ins (`read_file` / `memory_search` / `agent_spawn` / …). **When you use `allow` to whitelist, list the built-ins you want to keep too**, otherwise they get filtered out alongside everything else.
+- **`allow` / `deny` are applied after Harness and core tool registration.** By default, Harness platform tools survive `allow`; `deny` always wins. Set `strictAllow: true` to remove that exemption, and `defaultToolsEnabled: false` to expose only explicitly allowed tools even when `allow` is empty. Skill refresh respects a removed `load_skill_through_path` tool instead of registering it again at call time.
+- Memory, knowledge-file and subagent guidance reflects the registered tools. Filtering tools does not turn off automatic memory hooks; use `disableMemoryHooks()` when those should also be disabled. For a business-tools-only runner, also disable unused capabilities with `disableSubagents()` and `disableMemoryTools()`.
 - `${ENV_VAR}` syntax substitutes environment variables; missing variables warn and substitute the empty string.
-- Don't want a file? Pass `builder.toolsConfig(ToolsConfig.builder()...)` directly, or fully disable reading with `disableToolsConfig()`.
+- Don't want a file? Configure a `new ToolsConfig()` with its setters and pass it to `builder.toolsConfig(config)`, or fully disable reading with `disableToolsConfig()`.
 - Under shared-store mode, `tools.json` follows the same "remote upper, local-template lower" overlay described above.
 
 ### `plans/`

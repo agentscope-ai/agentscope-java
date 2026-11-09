@@ -3312,6 +3312,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
             inner.middleware(new HarnessToolBindings(Collections.unmodifiableMap(frameworkTools)));
             inner.toolkit(agentToolkit);
             ReActAgent delegate = inner.build();
+            // Core may add tools (for example the meta tool) while copying the toolkit.
+            // The resolved policy must also apply to the final, exposed toolkit.
+            if (resolvedToolsConfig != null) {
+                ToolFilter.apply(delegate.getToolkit(), resolvedToolsConfig);
+            }
             // Core adds tools during build; finish ownership before exposing the agent.
             captureFrameworkTools(delegate.getToolkit(), coreInheritedNames, frameworkTools);
             frameworkTools

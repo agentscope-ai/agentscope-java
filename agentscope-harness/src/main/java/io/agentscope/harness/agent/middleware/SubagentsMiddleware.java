@@ -444,9 +444,12 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
 
         List<Msg> rebuilt =
                 prependToSystemMessage(
-                        input.messages(), renderSubagentSection(currentEntries, isSessionMode));
+                        input.messages(),
+                        renderSubagentSection(currentEntries, isSessionMode, agent));
         Msg stateMsg =
-                buildSubagentStateMsg(currentEntries, buildTaskSummary(this.taskRepository, rc));
+                buildSubagentStateMsg(
+                        canSpawn(agent, isSessionMode) ? currentEntries : List.of(),
+                        buildTaskSummary(this.taskRepository, rc));
         if (stateMsg != null) {
             rebuilt = new ArrayList<>(rebuilt);
             rebuilt.add(stateMsg);
@@ -665,6 +668,43 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         String sendName = isSessionMode ? "sessions_send" : "agent_send";
         String listName = isSessionMode ? "sessions_list" : "agent_list";
         return String.format(SUBAGENT_SECTION_TEMPLATE, spawnName, sendName, listName);
+    }
+
+    static boolean canSpawn(Agent agent, boolean sessionMode) {
+        return agent == null
+                || agent.getToolkit() == null
+                || agent.getToolkit().getTool(sessionMode ? "sessions_spawn" : "agent_spawn")
+                        != null;
+    }
+
+    static String renderSubagentSection(
+            List<SubagentEntry> entries, boolean sessionMode, Agent agent) {
+        if (agent == null || agent.getToolkit() == null) {
+            return renderSubagentSection(entries, sessionMode);
+        }
+        List<String> names =
+                List.of(
+                        sessionMode ? "sessions_spawn" : "agent_spawn",
+                        sessionMode ? "sessions_send" : "agent_send",
+                        sessionMode ? "sessions_list" : "agent_list",
+                        "task_output",
+                        "wait_async_results",
+                        "task_cancel",
+                        "task_list");
+        List<String> available =
+                names.stream().filter(name -> agent.getToolkit().getTool(name) != null).toList();
+        if (available.size() == names.size()) {
+            return renderSubagentSection(entries, sessionMode);
+        }
+        if (available.isEmpty()) {
+            return "";
+        }
+        // The full workflow assumes every coordination tool is exposed. With a partial
+        // toolset, keep guidance scoped to the tools actually available to this agent.
+        return "\n\n## Subagents\nAvailable coordination tools: "
+                + String.join(", ", available)
+                + ". Follow their schemas. Delegated tasks must be self-contained; subagents"
+                + " have separate conversations. Retain returned agent_key and task_id handles.\n";
     }
 
     /**
