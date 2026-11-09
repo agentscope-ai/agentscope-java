@@ -37,6 +37,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -279,6 +280,8 @@ class InboxMiddlewareTest {
                 HarnessAgent.builder()
                         .name("inbox-agent")
                         .model(model)
+                        // Background memory calls must not overwrite the captured inbox request.
+                        .memory(MemoryConfig.builder().model(new MockModel("memory ack")).build())
                         .workspace(wsDir)
                         .abstractFilesystem(new LocalFilesystem(wsDir))
                         .stateStore(stateStore)

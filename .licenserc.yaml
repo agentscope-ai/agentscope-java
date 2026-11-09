@@ -17,6 +17,11 @@ header:
       limitations under the License.
 
   paths-ignore:
+    # Benchmark task inputs/verifiers and pinned adaptations must retain their bytes and licenses.
+    - 'benchmarks/harness/datasets/**'
+    - 'benchmarks/harness/external/**'
+    # Synthetic capability tools retain their original MIT attribution and bundled LICENSE.
+    - 'benchmarks/harness/runtime/fixtures/**'
     # Configuration files (including example configurations)
     - '**/.env'
     - '**/.env.*'
