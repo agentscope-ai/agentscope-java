@@ -39,11 +39,15 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
+import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.search.ToolSearchMiddleware;
+import io.agentscope.core.tracing.OtelTracingMiddleware;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -58,9 +62,10 @@ import reactor.core.publisher.Mono;
 
 /**
  * Tests for the {@link MiddlewareBase#activePoints()} participation-switch contract: explicit
- * declaration semantics (the only source of the participation set), null fail-fast, per-point
- * filtering, order preservation, empty-chain short-circuit, and construction-time freezing.
- * Non-declaration cannot occur — the method is abstract, so the compiler rejects it.
+ * declarations are authoritative, {@code null} (the default) is auto-detected from implemented
+ * hooks (own and inherited), plus per-point filtering, order preservation, empty-chain
+ * short-circuit, construction-time freezing, and shipped middlewares declaring every point
+ * whose hook they implement.
  */
 class MiddlewareActivePointsTest {
 
@@ -131,6 +136,33 @@ class MiddlewareActivePointsTest {
         }
     }
 
+    /** Implements the system-prompt hook; does not declare {@code activePoints()}. */
+    private static class PromptHookBase implements MiddlewareBase {
+        @Override
+        public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
+            return Mono.just(currentPrompt + "|base");
+        }
+    }
+
+    /** Adds a reasoning hook on top of {@link PromptHookBase}; still undeclared. */
+    private static final class InheritingChild extends PromptHookBase {
+        private final List<String> trace;
+
+        InheritingChild(List<String> trace) {
+            this.trace = trace;
+        }
+
+        @Override
+        public Flux<AgentEvent> onReasoning(
+                Agent agent,
+                RuntimeContext ctx,
+                ReasoningInput input,
+                Function<ReasoningInput, Flux<AgentEvent>> next) {
+            trace.add("child:onReasoning");
+            return next.apply(input);
+        }
+    }
+
     /** Fixed-text model that captures the model input for system-prompt assertions. */
     private static final class CapturingModel extends ChatModelBase {
         private final List<List<Msg>> inputs = new ArrayList<>();
@@ -166,8 +198,10 @@ class MiddlewareActivePointsTest {
     }
 
     @Test
-    void nullDeclarationFailsFastAtConstruction() {
+    void nullAndDefaultDeclarationsInferPointsFromImplementedHooks() {
         List<String> trace = new ArrayList<>();
+        // Explicit null declaration: RecordingMiddleware implements every hook except
+        // onAgentStateReady.
         MiddlewareBase nullDeclaring =
                 new RecordingMiddleware("B", trace) {
                     @Override
@@ -175,14 +209,96 @@ class MiddlewareActivePointsTest {
                         return null;
                     }
                 };
+        // Undeclared (the default null): implements only the system-prompt hook.
+        MiddlewareBase undeclared =
+                new MiddlewareBase() {
+                    @Override
+                    public Mono<String> onSystemPrompt(
+                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                        return Mono.just(currentPrompt + "|inferred");
+                    }
+                };
+        CapturingModel model = new CapturingModel();
+        ReActAgent agent = buildAgent(model, List.of(nullDeclaring, undeclared));
 
-        // A null declaration is a programming error and must fail at build time, not at call
-        // time.
-        NullPointerException error =
-                assertThrows(
-                        NullPointerException.class,
-                        () -> buildAgent(new CapturingModel(), List.of(nullDeclaring)));
-        assertTrue(error.getMessage().contains("activePoints()"), error.getMessage());
+        agent.streamEvents(List.of()).collectList().block();
+
+        assertTrue(
+                trace.containsAll(
+                        List.of("B:onAgent", "B:onReasoning", "B:onModelCall", "B:onSystemPrompt")),
+                trace.toString());
+        // Pipeline applies participants in registration order (equal order() values).
+        assertEquals("base-system|B|inferred", model.firstInputText());
+        assertTrue(
+                agent.middlewaresAt(MiddlewareBase.ExtensionPoint.ON_SYSTEM_PROMPT)
+                        .containsAll(List.of(nullDeclaring, undeclared)),
+                "implemented hooks' points are inferred");
+        assertFalse(
+                agent.middlewaresAt(MiddlewareBase.ExtensionPoint.ON_AGENT_STATE_READY)
+                        .contains(nullDeclaring),
+                "a point whose hook is not implemented is not inferred");
+        assertFalse(
+                agent.middlewaresAt(MiddlewareBase.ExtensionPoint.ON_ACTING).contains(undeclared),
+                "points without an implemented hook are not inferred");
+    }
+
+    @Test
+    void nullInferenceCountsInheritedHookImplementations() {
+        CapturingModel model = new CapturingModel();
+        List<String> trace = new ArrayList<>();
+        MiddlewareBase child = new InheritingChild(trace);
+        ReActAgent agent = buildAgent(model, List.of(child));
+
+        agent.streamEvents(List.of()).collectList().block();
+
+        // onSystemPrompt is implemented by the superclass, onReasoning by the child; the
+        // inferred set covers both.
+        assertEquals("base-system|base", model.firstInputText());
+        assertEquals(List.of("child:onReasoning"), trace);
+        assertTrue(
+                agent.middlewaresAt(MiddlewareBase.ExtensionPoint.ON_SYSTEM_PROMPT).contains(child),
+                "inherited implementations count");
+    }
+
+    @Test
+    void nullWithNoImplementedHooksParticipatesNowhere() {
+        MiddlewareBase bare = new MiddlewareBase() {};
+        ReActAgent agent = buildAgent(new CapturingModel(), List.of(bare));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertFalse(events.isEmpty(), "the agent still runs");
+        assertTrue(agent.getMiddlewares().contains(bare), "registration is retained");
+        assertTrue(
+                agent.middlewaresAt(MiddlewareBase.ExtensionPoint.ON_SYSTEM_PROMPT).isEmpty(),
+                "a middleware implementing no hooks is not swept into any point");
+    }
+
+    @Test
+    void builtinMiddlewaresDeclareEveryImplementedHookPoint() {
+        List<MiddlewareBase> builtins =
+                List.of(
+                        new TaskReminderMiddleware(),
+                        new FinalAnswerFilterMiddleware(),
+                        new DynamicSkillMiddleware(List.of()),
+                        new ToolSearchMiddleware(new Toolkit()),
+                        new OtelTracingMiddleware(),
+                        new GracefulShutdownMiddleware(GracefulShutdownManager.getInstance()));
+
+        for (MiddlewareBase mw : builtins) {
+            Set<MiddlewareBase.ExtensionPoint> inferred = ActivePointsResolver.infer(mw.getClass());
+            Set<MiddlewareBase.ExtensionPoint> declared = mw.activePoints();
+            assertTrue(
+                    declared != null && declared.containsAll(inferred),
+                    mw.getClass().getSimpleName()
+                            + " implements hooks at "
+                            + inferred
+                            + " but declares "
+                            + declared
+                            + " — an implemented hook whose point is not declared is never"
+                            + " invoked");
+        }
     }
 
     @Test

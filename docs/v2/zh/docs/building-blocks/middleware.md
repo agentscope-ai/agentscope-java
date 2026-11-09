@@ -461,17 +461,17 @@ onAgent
 
 ### 扩展点参与声明（`activePoints()`）
 
-`MiddlewareBase.activePoints()` 声明 middleware 在哪些扩展点处于激活状态。它是**抽象方法**——每个 middleware 必须实现——返回的集合是其参与集的**唯一来源**。它是**参与开关**，不是对"覆写了哪些方法"的复述：
+**你写的每个 middleware 都应当实现 `activePoints()`，明确返回自己挂接的点集合。** 无论是业务代码、第三方库还是 AI 工具生成的 middleware，都应遵循这一实践；下面的 `null` 默认值仅为 API 兼容而保留。`MiddlewareBase.activePoints()` 是**参与开关**，不是对"覆写了哪些方法"的复述：
 
-- 未实现或返回 `null` 是编程错误——前者无法编译，后者在 agent 构建期立即失败。
 - 声明包含某点即参与该点；未覆写对应方法时走默认直通实现，属合法冗余。
 - 声明不包含某点即在此点不存在——链中不占位，即使覆写了方法也不会被调用（有意关闭，非错误）。
 
 关键语义：
 
-- **声明是强制的。** `activePoints()` 没有默认实现：参与必须显式表达意图，绝不能是"没说"的缺省结果。middleware 绝不会在未声明的情况下被卷入任何扩展点——包括未来版本新增的点。
+- **声明且仅声明你挂接的点。** 每个 middleware 都应覆写 `activePoints()`，精确返回自己挂接的点集合（`EnumSet.allOf(ExtensionPoint.class)` 显式表达全点参与）。声明是权威的：agent 构建时读取一次，优先于下面的自动探测。
+- **`null` 默认值仅为 API 兼容而保留——不要依赖它。** 默认实现返回 `null`，让这份契约出现之前写就的 middleware 无需修改即可继续编译和运行。当前 `null` 由自动探测解析：middleware 恰好参与其类实际实现了钩子方法的扩展点（父类继承的实现同样计入），按类计算一次并缓存。自动探测是遗留兜底，不能替代声明意图——它表达不了有意退出，也会因直通基类覆写的钩子点亮无关的点。探测行为在未来版本可能调整，新代码一律实现 `activePoints()`。
 - **空集合合法。** `EnumSet.noneOf(ExtensionPoint.class)` 让 middleware 在所有扩展点失活，同时保留注册——可用作运行开关。
-- **构造期固化。** agent 构建时读取一次声明；之后修改返回的集合对已构建的 agent 无效。
+- **构造期固化。** agent 构建时解析一次参与集；之后修改返回的集合对已构建的 agent 无效。
 - **与 `order()` 正交。** 声明只回答"是否参与"，不回答"什么顺序"——各点参与者保持既有 `order()` 语义。
 
 ```java
@@ -489,11 +489,11 @@ MiddlewareBase timingOnly =
         };
 ```
 
-**声明且仅声明你挂接的点。** 精确声明让框架能整体跳过未参与者——某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），链更短，构建期的有效执行计划也更清晰。`middlewaresAt(point)` 因此只包含显式声明了该点的 middleware，任何依赖"此点是否有参与者"做决策的框架能力（激活标志、观测短路、按点统计）拿到的都是真实集合。
+精确声明让链保持精简：某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），构建期的有效执行计划清晰可见。`middlewaresAt(point)` 只包含声明（或探测）到的参与者——绝不含在该点上没有任何逻辑的 middleware。不要因为自动探测今天能用就依赖它：探测行为在未来版本可能调整，而显式声明是稳定的契约。
 
 继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 永远不会被调用。
 
-新增扩展点遵循同一条评审规则：凡是激活会在参与 middleware 之外产生副作用的点（例如改变全局事件路由），绝不能被隐式激活——每个 middleware 都必须通过声明显式加入。
+新增扩展点遵循同一条评审规则：凡是激活会在参与 middleware 之外产生副作用的点（例如改变全局事件路由），绝不能仅凭自动探测激活——带全局影响的激活必须依赖显式声明或显式开关，绝不能用 `!middlewaresAt(point).isEmpty()` 推断。
 
 ## 实用示例
 
@@ -545,8 +545,6 @@ import java.time.Duration;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.EnumSet;
-import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;

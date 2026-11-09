@@ -86,6 +86,7 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.ActivePointsResolver;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.MiddlewareChain;
@@ -157,9 +158,7 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -300,9 +299,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * Per-extension-point participants, grouped once at construction from {@link #middlewares}
-     * by their explicit {@link MiddlewareBase#activePoints()} declarations (stable filter,
-     * onion order preserved). Immutable and shared across concurrent calls; later
-     * {@link MiddlewareBase#activePoints()} changes have no effect.
+     * (stable filter, onion order preserved). Immutable and shared across concurrent calls;
+     * later {@link MiddlewareBase#activePoints()} changes have no effect.
      */
     private final Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> groupedMiddlewares;
 
@@ -426,7 +424,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.middlewares = List.copyOf(mws);
         this.modelRequestPreparer = builder.modelRequestPreparer;
         this.actionObserver = builder.actionObserver;
-        this.groupedMiddlewares = groupMiddlewares(this.middlewares);
+        this.groupedMiddlewares = ActivePointsResolver.groupByPoint(this.middlewares);
 
         this.stateStore = builder.stateStore;
         this.sessionLogStore = builder.sessionLogStore;
@@ -1028,30 +1026,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Override
     protected AgentState stateForCall(Object callScope) {
         return callScope instanceof CallExecution ce ? ce.state : getAgentState();
-    }
-
-    /**
-     * Groups middlewares per extension point from their explicit {@link
-     * MiddlewareBase#activePoints()} declarations; a {@code null} declaration is a programming
-     * error and fails fast here.
-     */
-    private static Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> groupMiddlewares(
-            List<MiddlewareBase> middlewares) {
-        Map<MiddlewareBase.ExtensionPoint, List<MiddlewareBase>> grouped =
-                new EnumMap<>(MiddlewareBase.ExtensionPoint.class);
-        for (MiddlewareBase mw : middlewares) {
-            Set<MiddlewareBase.ExtensionPoint> active =
-                    Objects.requireNonNull(
-                            mw.activePoints(),
-                            () -> mw.getClass().getName() + ".activePoints() must not return null");
-            for (MiddlewareBase.ExtensionPoint point : MiddlewareBase.ExtensionPoint.values()) {
-                if (active.contains(point)) {
-                    grouped.computeIfAbsent(point, p -> new ArrayList<>()).add(mw);
-                }
-            }
-        }
-        grouped.replaceAll((point, participants) -> List.copyOf(participants));
-        return Collections.unmodifiableMap(grouped);
     }
 
     /**
