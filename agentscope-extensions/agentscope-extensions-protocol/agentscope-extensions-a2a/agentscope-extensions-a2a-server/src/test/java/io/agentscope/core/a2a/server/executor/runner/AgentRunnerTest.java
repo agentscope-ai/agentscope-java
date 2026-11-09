@@ -18,6 +18,7 @@ package io.agentscope.core.a2a.server.executor.runner;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -36,9 +37,18 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatModelBase;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolSchema;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -53,6 +63,7 @@ import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 
 @DisplayName("Agent Runner Tests")
 class AgentRunnerTest {
@@ -208,6 +219,51 @@ class AgentRunnerTest {
     }
 
     @Test
+    @DisplayName("Should stop only the session of the task, not the default session")
+    void testStopInterruptsTaskSessionOnly() throws Exception {
+        CountDownLatch modelCalls = new CountDownLatch(2);
+        ReActAgent sharedAgent =
+                ReActAgent.builder()
+                        .name("shared")
+                        .sysPrompt("hi")
+                        .model(new EndlessModel(modelCalls))
+                        .build();
+        // Like the starter, every request gets the same agent instance.
+        BaseReActAgentRunner sharedRunner =
+                new BaseReActAgentRunner() {
+                    @Override
+                    protected ReActAgent buildReActAgent() {
+                        return sharedAgent;
+                    }
+                };
+        String taskId = UUID.randomUUID().toString();
+        requestOptions.setTaskId(taskId);
+        requestOptions.setUserId("alice");
+        requestOptions.setSessionId("context-a");
+        List<Msg> messages = List.of(userMsg("hello"));
+
+        CompletableFuture<AgentEvent> taskRun =
+                sharedRunner
+                        .streamEvents(messages, requestOptions)
+                        .subscribeOn(Schedulers.parallel())
+                        .last()
+                        .toFuture();
+        CompletableFuture<Msg> defaultSessionCall =
+                sharedAgent.call(messages).subscribeOn(Schedulers.parallel()).toFuture();
+        try {
+            assertTrue(modelCalls.await(5, TimeUnit.SECONDS), "both calls should reach the model");
+
+            sharedRunner.stop(taskId);
+
+            assertNotNull(taskRun.get(5, TimeUnit.SECONDS), "the stopped task should end");
+            assertFalse(defaultSessionCall.isDone(), "the default session must keep running");
+        } finally {
+            taskRun.cancel(true);
+            defaultSessionCall.cancel(true);
+        }
+    }
+
+    @Test
     @DisplayName("Should leave the agent context identity unset when options are blank")
     void testBlankIdentityLeftUnsetInAgentContext() {
         // Given
@@ -329,8 +385,8 @@ class AgentRunnerTest {
             assertEquals(Sinks.EmitResult.OK, firstCompletion.tryEmitEmpty());
             runner.stop(taskId);
 
-            verify(firstAgent, times(1)).interrupt();
-            verify(secondAgent, times(1)).interrupt();
+            verify(firstAgent, times(1)).interrupt(any(RuntimeContext.class));
+            verify(secondAgent, times(1)).interrupt(any(RuntimeContext.class));
         } finally {
             firstRun.dispose();
             if (secondRun != null) {
@@ -404,7 +460,9 @@ class AgentRunnerTest {
         runner.streamEvents(messages, requestOptions);
 
         runner.stop(taskId);
-        verify(mockAgent, times(1)).interrupt();
+        ArgumentCaptor<RuntimeContext> startContext = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(mockAgent).streamEvents(eq(messages), startContext.capture());
+        verify(mockAgent, times(1)).interrupt(startContext.getValue());
 
         // Try to stream again with the same taskId - should succeed since agent was removed
         Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
@@ -415,5 +473,49 @@ class AgentRunnerTest {
     @DisplayName("Should handle stop for non-existent task ID")
     void testStopNonExistentTaskId() {
         assertDoesNotThrow(() -> runner.stop("non-existent-task-id"));
+    }
+
+    private static Msg userMsg(String text) {
+        return Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .content(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    /**
+     * A model that streams chunks forever, so a call keeps running until it is interrupted. The
+     * agent checks for an interrupt on each chunk.
+     */
+    private static final class EndlessModel extends ChatModelBase {
+        private final CountDownLatch calls;
+
+        private EndlessModel(CountDownLatch calls) {
+            this.calls = calls;
+        }
+
+        @Override
+        public String getModelName() {
+            return "endless";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.defer(
+                    () -> {
+                        calls.countDown();
+                        return Flux.interval(Duration.ofMillis(20))
+                                .map(
+                                        tick ->
+                                                ChatResponse.builder()
+                                                        .content(
+                                                                List.of(
+                                                                        TextBlock.builder()
+                                                                                .text(".")
+                                                                                .build()))
+                                                        .build());
+                    });
+        }
     }
 }

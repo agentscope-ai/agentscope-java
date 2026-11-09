@@ -22,6 +22,8 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -38,6 +40,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -689,11 +692,22 @@ public class SubAgentTool implements AgentTool {
         String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         String textContent = response.getTextContent();
 
+        List<ContentBlock> output = new ArrayList<>();
         // Return response with session context
-        return ToolResultBlock.text(
-                String.format(
-                        "session_id: %s\n\n%s",
-                        sessionId, textContent != null ? textContent : "(No response)"));
+        output.add(
+                TextBlock.builder()
+                        .text(
+                                String.format(
+                                        "session_id: %s\n\n%s",
+                                        sessionId,
+                                        textContent != null && !textContent.isBlank()
+                                                ? textContent
+                                                : "(No response)"))
+                        .build());
+        // A subagent can deliver a document. Folding the reply into text would drop it here even
+        // when the parent model supports it natively.
+        output.addAll(response.getContentBlocks(DocumentBlock.class));
+        return ToolResultBlock.of(output);
     }
 
     /**

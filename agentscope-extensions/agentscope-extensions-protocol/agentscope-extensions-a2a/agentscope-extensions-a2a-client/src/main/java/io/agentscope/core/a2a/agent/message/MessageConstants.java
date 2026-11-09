@@ -35,6 +35,8 @@ public class MessageConstants {
 
         public static final String TYPE_VIDEO = "video";
 
+        public static final String TYPE_DOCUMENT = "document";
+
         public static final String TYPE_TOOL_USE = "tool_use";
 
         public static final String TYPE_TOOL_RESULT = "tool_result";
@@ -66,4 +68,16 @@ public class MessageConstants {
     public static final String TOOL_CALL_ID_METADATA_KEY = "_agentscope_tool_call_id";
 
     public static final String TOOL_RESULT_OUTPUT_METADATA_KEY = "_agentscope_tool_output";
+
+    /**
+     * Reply metadata key with the id of the remote task, set when the task stopped to wait for the
+     * caller (input or authorization required), so the caller can continue that task.
+     */
+    public static final String TASK_ID_METADATA_KEY = "_agentscope_a2a_task_id";
+
+    /**
+     * Reply metadata key with the {@link org.a2aproject.sdk.spec.TaskState} name of the remote
+     * task, set together with {@link #TASK_ID_METADATA_KEY}.
+     */
+    public static final String TASK_STATE_METADATA_KEY = "_agentscope_a2a_task_state";
 }

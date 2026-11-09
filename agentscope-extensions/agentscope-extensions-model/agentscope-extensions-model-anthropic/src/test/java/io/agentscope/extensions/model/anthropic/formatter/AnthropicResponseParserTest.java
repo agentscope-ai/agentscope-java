@@ -46,19 +46,35 @@ import com.anthropic.models.messages.WebSearchResultBlock;
 import com.anthropic.models.messages.WebSearchToolResultBlock;
 import com.anthropic.models.messages.WebSearchToolResultError;
 import com.anthropic.models.messages.WebSearchToolResultErrorCode;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 /** Unit tests for AnthropicResponseParser. */
@@ -259,6 +275,101 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(parsedToolUse.getInput());
         // Null input should result in empty map
         assertTrue(parsedToolUse.getInput().isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "{\"store_id\":\"S001\",\"month\":\"2026-10\"}",
+                "{\"query\":\"a=1,"
+                        + " b=2\",\"filters\":{\"active\":true},\"ids\":[1,2],\"optional\":null}",
+                "{}"
+            })
+    void nonStreamingToolArgumentsSurviveAgentExecution(String arguments) throws Exception {
+        String json =
+                """
+                {"id":"msg_tool","type":"message","role":"assistant","model":"claude-sonnet-4-5",
+                 "content":[{"type":"tool_use","id":"call_store","name":"get_store_sales","input":%s}],
+                 "stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":20}}
+                """
+                        .formatted(arguments);
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+        ChatResponse parsed = AnthropicResponseParser.parseMessage(message, Instant.now());
+        ToolUseBlock call = assertInstanceOf(ToolUseBlock.class, parsed.getContent().get(0));
+        Map<?, ?> expected = JsonUtils.getJsonCodec().fromJson(arguments, Map.class);
+        assertEquals(expected, call.getInput());
+        assertEquals(expected, JsonUtils.getJsonCodec().fromJson(call.getContent(), Map.class));
+
+        AtomicReference<Map<String, Object>> executedArguments = new AtomicReference<>();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "get_store_sales";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Get store sales";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        executedArguments.set(param.getToolUseBlock().getInput());
+                        return Mono.just(ToolResultBlock.text("1286400"));
+                    }
+                });
+        AtomicInteger requests = new AtomicInteger();
+        Model model =
+                new Model() {
+                    @Override
+                    public String getModelName() {
+                        return "nonstream-fixture";
+                    }
+
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        if (requests.getAndIncrement() == 0) {
+                            return Flux.just(parsed);
+                        }
+                        ToolResultBlock result =
+                                messages.stream()
+                                        .flatMap(
+                                                msg ->
+                                                        msg
+                                                                .getContentBlocks(
+                                                                        ToolResultBlock.class)
+                                                                .stream())
+                                        .findFirst()
+                                        .orElseThrow();
+                        assertEquals("call_store", result.getId());
+                        assertEquals("1286400", ((TextBlock) result.getOutput().get(0)).getText());
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(List.of(TextBlock.builder().text("done").build()))
+                                        .build());
+                    }
+                };
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("fixture")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .maxIters(3)
+                        .build()) {
+            Msg answer = agent.call(List.of()).block(Duration.ofSeconds(5));
+            assertNotNull(answer);
+            assertEquals("done", answer.getTextContent());
+        }
+        assertEquals(expected, executedArguments.get());
+        assertEquals(2, requests.get());
     }
 
     @Test
