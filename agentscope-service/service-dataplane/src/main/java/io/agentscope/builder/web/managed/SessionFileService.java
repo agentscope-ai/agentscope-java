@@ -18,12 +18,15 @@ package io.agentscope.builder.web.managed;
 import io.agentscope.core.session.JournalSessionLog;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -33,6 +36,36 @@ import org.springframework.web.server.ResponseStatusException;
 /** Immutable, session-scoped files stored in the configured shared BaseStore. */
 @Service
 public final class SessionFileService {
+    /**
+     * Application subtypes whose bytes are text and therefore safe to inline into the model input.
+     *
+     * <p>{@code text/*} is covered by the type, and the {@code +json} / {@code +xml} structured
+     * suffixes are covered separately, so only the plain application subtypes are listed here.
+     */
+    private static final Set<String> TEXT_APPLICATION_SUBTYPES =
+            Set.of(
+                    "json",
+                    "xml",
+                    "yaml",
+                    "x-yaml",
+                    "yml",
+                    "csv",
+                    "toml",
+                    "markdown",
+                    "ndjson",
+                    "x-ndjson",
+                    "sql",
+                    "javascript",
+                    "x-sh");
+
+    /**
+     * Largest amount of a text file that is inlined into the model input.
+     *
+     * <p>A 16 MB file (the upload limit) is far more than any context window can take, so the
+     * content is cut here and the cut is stated in the text rather than being silent.
+     */
+    private static final int TEXT_INLINE_MAX_BYTES = 262_144;
+
     private final BaseStore store;
     private final int maxBytes;
 
@@ -150,6 +183,14 @@ public final class SessionFileService {
                 }
                 var file = raw(session, String.valueOf(block.get("file_id")));
                 String mime = (String) file.get("media_type");
+                // Text files are inlined as text: handing them over as an opaque data block means
+                // the model only ever sees a "[Media - unsupported MIME type: ...]" placeholder,
+                // which breaks "upload material, ask the agent about it" for every text-ish file.
+                String text = inlineText(file, mime);
+                if (text != null) {
+                    content.add(Map.of("type", "text", "text", text));
+                    continue;
+                }
                 String type =
                         mime.startsWith("image/")
                                 ? "image"
@@ -172,5 +213,84 @@ public final class SessionFileService {
         }
         copy.put("input", messages);
         return copy;
+    }
+
+    /**
+     * Inline a text-like file as text, or return {@code null} to fall back to an opaque data block.
+     *
+     * <p>The decision is made from the media type alone: {@code text/*}, the plain application text
+     * subtypes and the {@code +json} / {@code +xml} structured suffixes are inlined; everything else
+     * (PDF, Word, archives, images, audio, video) stays a data block for the model layer to route.
+     *
+     * <p>Content is cut at {@link #TEXT_INLINE_MAX_BYTES} and the cut is stated in the text, so a
+     * truncated file cannot be mistaken for a complete one.
+     *
+     * @param file the stored record, including its base64 payload
+     * @param mediaType the media type recorded at upload time
+     * @return the text to inline, or {@code null} when the file is not text or is mislabelled binary
+     */
+    private static String inlineText(Map<String, Object> file, String mediaType) {
+        if (!isTextLike(mediaType)) {
+            return null;
+        }
+        byte[] bytes = Base64.getDecoder().decode((String) file.get("data"));
+        int length = Math.min(bytes.length, TEXT_INLINE_MAX_BYTES);
+        String text = new String(bytes, 0, length, charsetOf(mediaType));
+        // A text media type does not prove the bytes are text: fall back rather than pushing
+        // control characters into the conversation.
+        if (text.indexOf('\u0000') >= 0) {
+            return null;
+        }
+        return bytes.length <= TEXT_INLINE_MAX_BYTES
+                ? text
+                : text
+                        + "\n\n[truncated: "
+                        + TEXT_INLINE_MAX_BYTES
+                        + " of "
+                        + bytes.length
+                        + " bytes]";
+    }
+
+    /**
+     * Decide whether a media type describes text that can be inlined.
+     *
+     * @param mediaType the media type recorded at upload time
+     * @return true when the content can be inlined as text
+     */
+    private static boolean isTextLike(String mediaType) {
+        if (mediaType == null) {
+            return false;
+        }
+        MediaType parsed;
+        try {
+            parsed = MediaType.parseMediaType(mediaType);
+        } catch (RuntimeException error) {
+            return false;
+        }
+        if ("text".equalsIgnoreCase(parsed.getType())) {
+            return true;
+        }
+        if (!"application".equalsIgnoreCase(parsed.getType())) {
+            return false;
+        }
+        String subtype = parsed.getSubtype().toLowerCase(Locale.ROOT);
+        return TEXT_APPLICATION_SUBTYPES.contains(subtype)
+                || subtype.endsWith("+json")
+                || subtype.endsWith("+xml");
+    }
+
+    /**
+     * Resolve the charset a text media type declares, defaulting to UTF-8.
+     *
+     * @param mediaType the media type recorded at upload time
+     * @return the declared charset, or UTF-8 when none is declared or it is unknown
+     */
+    private static Charset charsetOf(String mediaType) {
+        try {
+            Charset charset = MediaType.parseMediaType(mediaType).getCharset();
+            return charset == null ? StandardCharsets.UTF_8 : charset;
+        } catch (RuntimeException error) {
+            return StandardCharsets.UTF_8;
+        }
     }
 }
