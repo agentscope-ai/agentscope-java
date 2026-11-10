@@ -44,6 +44,27 @@ en_link: /v2/en/docs/harness/architecture
 | MCP 集成与工具白名单 | 声明式 MCP server + 工具粒度允许 / 拒绝 | `workspace/tools.json` | [工作区](/v2/zh/docs/harness/workspace) |
 | Channel 路由 | 会话管理、per-session 并发控制、多 agent 路由、流式事件 | `agent.channel(...)` / `GatewayBootstrap` | [Channel](/v2/zh/docs/harness/channel) |
 
+## 可选网页工具
+
+内置的 `web_search`（Tavily）和 `web_fetch` 工具默认关闭：
+
+- **不向模型暴露不可用能力。** `web_search` 需要配置 `TAVILY_API_KEY`。未配置时无法搜索，但注册后的工具 schema 仍会消耗输入 token。
+- **减少无效回合。** 调用未配置的工具只能得到配置错误，会增加无用的工具调用 token、延迟和错误上下文；模型还可能花费额外回合尝试恢复。
+- **不擅自增加原生搜索的替代项。** 模型服务商可能已提供原生搜索。自动暴露另一个 `web_search` 可能造成命名或工具选择冲突，偏离应用原本选择的搜索后端。
+- **显式选择外部服务。** Tavily 有独立的凭据、计费和数据处理条款。是否把搜索词发送给该服务，应由应用主动决定，而不是作为框架默认行为被动引入。
+
+需要时显式开启：
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .model(model)
+    .workspace(workspace)
+    .enableWebTools()
+    .build();
+```
+
+自动构建的通用子 Agent 和声明式子 Agent 会继承此设置。`.disableWebTools()` 可再次关闭；`.webHttpClient(...)` 只定制 HTTP client，不会开启工具。仅配置 `TAVILY_API_KEY` 也不会自动开启。显式注册到 toolkit 的工具和模型服务商原生搜索不受影响。
+
 ## 状态怎么流转
 
 状态分三层，框架自动在层之间搬数据。

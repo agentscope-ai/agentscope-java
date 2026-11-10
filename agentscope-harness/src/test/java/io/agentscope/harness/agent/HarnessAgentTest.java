@@ -256,24 +256,61 @@ class HarnessAgentTest {
         assertFalse(toolNames.contains("list_files"));
     }
 
-    @Test
-    void disableWebTools_omitsOptionalWebTools() throws Exception {
+    @ParameterizedTest
+    @CsvSource({
+        "false, false, false, false",
+        "true, false, false, true",
+        "true, true, false, false",
+        "false, true, false, false",
+        "false, false, true, false"
+    })
+    void webTools_areOptIn(boolean enable, boolean disable, boolean customClient, boolean expected)
+            throws Exception {
         Files.createDirectories(workspace);
-        HarnessAgent agent =
+        HarnessAgent.Builder builder =
                 HarnessAgent.builder()
                         .name("t")
                         .model(stubModel("ok"))
                         .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .disableWebTools()
-                        .build();
+                        .abstractFilesystem(new LocalFilesystem(workspace));
+        if (enable) builder.enableWebTools();
+        if (disable) builder.disableWebTools();
+        if (customClient) builder.webHttpClient(HttpClient.newHttpClient());
 
-        List<String> toolNames =
-                agent.getDelegate().getToolkit().getToolSchemas().stream()
-                        .map(ToolSchema::getName)
-                        .toList();
-        assertFalse(toolNames.contains("web_search"));
-        assertFalse(toolNames.contains("web_fetch"));
+        try (HarnessAgent agent = builder.build()) {
+            assertEquals(expected, agent.getToolkit().getTool("web_search") != null);
+            assertEquals(expected, agent.getToolkit().getTool("web_fetch") != null);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void subagents_inheritWebToolsOptIn(boolean enabled) throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .subagent(
+                                SubagentDeclaration.builder()
+                                        .name("worker")
+                                        .description("worker")
+                                        .workspaceMode(WorkspaceMode.SHARED)
+                                        .build());
+        if (enabled) builder.enableWebTools();
+
+        List<SubagentEntry> entries = builder.buildSubagentEntries(workspace);
+        assertEquals(2, entries.size());
+        for (SubagentEntry entry : entries) {
+            try (HarnessAgent child =
+                    (HarnessAgent) entry.factory().create(RuntimeContext.empty())) {
+                assertEquals(
+                        enabled, child.getToolkit().getTool("web_search") != null, entry.name());
+                assertEquals(
+                        enabled, child.getToolkit().getTool("web_fetch") != null, entry.name());
+            }
+        }
     }
 
     @Test
@@ -290,6 +327,7 @@ class HarnessAgentTest {
                         .model(stubModel("ok"))
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .enableWebTools()
                         .webHttpClient(custom)
                         .build();
 
@@ -1294,11 +1332,13 @@ class HarnessAgentTest {
                                 .model(stubModel("done"))
                                 .workspace(workspace)
                                 .abstractFilesystem(new LocalFilesystem(workspace))
+                                .enableWebTools()
                                 .build();
                 HarnessAgent copied =
                         HarnessAgent.Builder.fromAgent(source.getDelegate())
                                 .workspace(workspace)
                                 .abstractFilesystem(new LocalFilesystem(workspace))
+                                .enableWebTools()
                                 .build()) {
             Toolkit sourceToolkit = source.getToolkit();
             Toolkit copiedToolkit = copied.getToolkit();

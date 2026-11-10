@@ -430,6 +430,7 @@ class HarnessAgentSubagentStreamTest {
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .enableWebTools()
                         .webHttpClient(
                                 HttpClient.newBuilder()
                                         .version(HttpClient.Version.HTTP_1_1)

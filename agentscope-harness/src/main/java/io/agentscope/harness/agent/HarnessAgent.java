@@ -1417,7 +1417,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean disableFilesystemTools = false;
         int readFileMaxChars = FilesystemTool.DEFAULT_MAX_READ_CHARS;
         boolean disableShellTool = false;
-        boolean disableWebTools = false;
+        boolean disableWebTools = true;
 
         /** Optional caller-supplied client used by the built-in web tools; {@code null} = default. */
         HttpClient webHttpClient;
@@ -2377,6 +2377,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /** Enables built-in web tools, which are disabled by default. */
+        public Builder enableWebTools() {
+            this.disableWebTools = false;
+            return this;
+        }
+
         /** Skips registration of the optional Tavily-backed {@code web_search} and {@code web_fetch} tools. */
         public Builder disableWebTools() {
             this.disableWebTools = true;
@@ -2388,7 +2394,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * and {@code web_search} tools (e.g. custom proxy, TLS or HTTP version settings). When
          * unset, the tools use a default client with JDK version negotiation (HTTP/2 preferred,
          * automatic HTTP/1.1 fallback); inject an HTTP/1.1-only client here if a target server
-         * fails under HTTP/2 negotiation (see issue #3101).
+         * fails under HTTP/2 negotiation (see issue #3101). Call {@link #enableWebTools()} separately
+         * to enable the tools.
          */
         public Builder webHttpClient(HttpClient client) {
             this.webHttpClient = client;

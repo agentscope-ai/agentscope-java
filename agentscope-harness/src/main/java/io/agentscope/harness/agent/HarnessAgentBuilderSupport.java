@@ -338,6 +338,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final int capturedReadFileMaxChars = b.readFileMaxChars;
         final boolean capturedDisableShellTool = b.disableShellTool;
+        final boolean capturedDisableWebTools = b.disableWebTools;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final var capturedWebHttpClient = b.webHttpClient;
@@ -396,6 +397,7 @@ final class HarnessAgentBuilderSupport {
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
+            if (!capturedDisableWebTools) sub.enableWebTools();
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
@@ -464,6 +466,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final int capturedReadFileMaxChars = b.readFileMaxChars;
         final boolean capturedDisableShellTool = b.disableShellTool;
+        final boolean capturedDisableWebTools = b.disableWebTools;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final var capturedWebHttpClient = b.webHttpClient;
@@ -584,6 +587,7 @@ final class HarnessAgentBuilderSupport {
             sub.readFileMaxChars(capturedReadFileMaxChars);
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
+            if (!capturedDisableWebTools) sub.enableWebTools();
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);

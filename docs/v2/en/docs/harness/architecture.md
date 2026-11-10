@@ -44,6 +44,27 @@ Configure capabilities and use session operations as your application needs them
 | MCP integration & tool allowlist | Declarative MCP servers + allow/deny per tool | `workspace/tools.json` | [Workspace](/v2/en/docs/harness/workspace) |
 | Channel routing | Session management, per-session concurrency, multi-agent routing, streaming events | `agent.channel(...)` / `GatewayBootstrap` | [Channel](/v2/en/docs/harness/channel) |
 
+## Optional web tools
+
+The built-in `web_search` (Tavily) and `web_fetch` tools are disabled by default:
+
+- **No unusable capabilities in model input.** `web_search` requires `TAVILY_API_KEY`. Without it, the tool cannot search, but its schema still consumes input tokens if registered.
+- **Fewer wasted turns.** Selecting an unconfigured tool produces a configuration error instead of results, adding avoidable tool-call tokens, latency and error context; the model may spend further turns trying to recover.
+- **No unsolicited alternative to native search.** A provider's built-in search may already be available. Automatically exposing another `web_search` can create naming or selection conflicts and steer the model away from the application's intended search backend.
+- **Explicit external-service choice.** Tavily has separate credentials, billing and data-handling terms. Applications should deliberately choose whether to send search queries to that service rather than inherit the integration as a framework default.
+
+Enable these tools explicitly when needed:
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .model(model)
+    .workspace(workspace)
+    .enableWebTools()
+    .build();
+```
+
+Automatically constructed general-purpose and declared subagents inherit this setting. `.disableWebTools()` turns the tools off again; `.webHttpClient(...)` only customizes their HTTP client and does not enable them. Setting `TAVILY_API_KEY` alone does not enable them either. Tools registered explicitly in your toolkit and model-provider-native search are unaffected.
+
 ## How state flows
 
 Three layers exist; the framework moves data between them automatically.
