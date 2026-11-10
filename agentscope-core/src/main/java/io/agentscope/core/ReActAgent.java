@@ -2299,7 +2299,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             }
 
-            // Has pending tools but no input -> resume (execute pending tools directly)
+            // Resume pending tools or report that external results are still outstanding.
             if (msgs == null || msgs.isEmpty()) {
                 return resumeAgent();
             }
@@ -2758,7 +2758,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     resolvePendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
             if (!replyId.isEmpty()) {
                 publishEvent(new ExternalExecutionResultEvent(replyId, results));
-                clearPendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
+                if (awaitingExternalResults().stream()
+                        .allMatch(call -> providedIds.contains(call.getId()))) {
+                    clearPendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
+                }
             }
             state.contextMutable().addAll(msgsToPersist);
         }
@@ -2833,12 +2836,46 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return settleSession(executeIteration(0));
         }
 
-        /**
-         * Resume entry point when pending tool calls remain from a previous turn:
-         * jumps directly into the acting phase without another reasoning step.
-         */
+        /** Resume pending tools, or keep waiting for already submitted external calls. */
         private Mono<Msg> resumeAgent() {
+            List<ToolUseBlock> awaiting = awaitingExternalResults();
+            if (!awaiting.isEmpty()) {
+                return Mono.just(
+                        buildSuspendedMsg(
+                                awaiting.stream()
+                                        .map(
+                                                call ->
+                                                        Map.entry(
+                                                                call,
+                                                                ToolResultBlock.suspended(call)))
+                                        .toList()));
+            }
             return settleSession(acting(0));
+        }
+
+        private List<ToolUseBlock> awaitingExternalResults() {
+            if (resolvePendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID)
+                    .isEmpty()) {
+                return List.of();
+            }
+            List<ToolUseBlock> pending =
+                    MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
+            if (extractRecentToolCalls().stream()
+                    .anyMatch(call -> call.getState() == ToolCallState.SUBMITTED)) {
+                return pending.stream()
+                        .filter(call -> call.getState() == ToolCallState.SUBMITTED)
+                        .toList();
+            }
+            SessionExecution execution = SessionExecution.from(rc);
+            if (execution != null) {
+                return pending.stream()
+                        .filter(call -> execution.wasAwaitingExternalResult(call.getId()))
+                        .toList();
+            }
+            // Older state-only snapshots have no per-call dispatch record.
+            return pending.stream()
+                    .filter(call -> call.getState() == ToolCallState.ALLOWED)
+                    .toList();
         }
 
         private int lastSessionIteration;
@@ -3969,10 +4006,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                                     results);
                                                                             if (!suspendedCalls
                                                                                     .isEmpty()) {
-                                                                                persistPendingRequestReplyId(
-                                                                                        Msg
-                                                                                                .METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID,
-                                                                                        replyId);
+                                                                                persistExternalExecutionRequest(
+                                                                                        replyId,
+                                                                                        suspendedCalls);
                                                                                 sink.next(
                                                                                         new RequireExternalExecutionEvent(
                                                                                                 replyId,
@@ -4077,6 +4113,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
+
+        private void persistExternalExecutionRequest(String replyId, List<ToolUseBlock> calls) {
+            Map<String, ToolCallState> updates = new HashMap<>();
+            for (ToolUseBlock call : calls) {
+                updates.put(call.getId(), ToolCallState.SUBMITTED);
+            }
+            updateToolCallStates(updates);
+            persistPendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID, replyId);
+        }
 
         private List<ToolUseBlock> getSuspendedToolCalls(
                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> results) {
@@ -5018,7 +5063,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return MessageUtils.extractRecentToolCalls(state.contextMutable(), getName());
         }
 
-        // ==================== Tool call state helpers (Permission HITL) ====================
+        // ==================== Tool call state helpers ====================
 
         /**
          * Locate the last assistant Msg in context and replace the {@code state} of every

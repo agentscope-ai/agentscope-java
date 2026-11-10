@@ -159,7 +159,7 @@ var answered = session.respond("external-request-id", "部署在自建 Kubernete
 
 `respond` 返回新的执行回执。需要等待这次接续时，使用 `session.await(answered)`；原提交的 `await(task)` 观察的是挂起前的那次执行。未知、已处理或答案类型不匹配的待办会被拒绝。
 
-需要自定义工具结果块时使用 `SessionAnswer.Output`；需要提交修改后的参数或权限规则时使用 `SessionAnswer.Confirmation`。同一任务内多个并行工具的答案可以用 `respond(Map<String, SessionAnswer>)` 一起提交。Service 的在线交互通过其所属服务的 actions 接口答复。
+需要自定义工具结果块时使用 `SessionAnswer.Output`；需要提交修改后的参数或权限规则时使用 `SessionAnswer.Confirmation`。同一任务内多个并行工具的答案可以用 `respond(Map<String, SessionAnswer>)` 一起提交。外部工具结果也可以逐个回填。每次只记录本次提交的结果，剩余工具继续等待原请求的结果。Service 的在线交互通过其所属服务的 actions 接口答复。
 
 这是对原有 HITL 机制的会话封装：Agent 仍在原有的工具确认或外部输入位置暂停，Session Log 让待办与后续答案可持久恢复。直接使用 `call` 的应用也可以继续使用[原有 HITL API](/v2/zh/docs/building-blocks/agent#人机交互)，不必仅为人工确认更换执行方式。
 

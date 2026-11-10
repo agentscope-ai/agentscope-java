@@ -47,9 +47,11 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatModelBase;
@@ -60,6 +62,8 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.MessageUtils;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -68,6 +72,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -377,6 +383,101 @@ class ReActAgentNewLoopReplyTest {
                 (AgentResultEvent)
                         resumedEvents.get(indexOf(resumedEvents, AgentResultEvent.class));
         assertEquals("done", agentResult.getResult().getTextContent());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void partialExternalResultsKeepTheOriginalWaitAndReplyId(boolean legacyState) {
+        var first = toolUseResponse("ext1", "external_api", "A").getContent().get(0);
+        var second = toolUseResponse("ext2", "external_api", "B").getContent().get(0);
+        var local = toolUseResponse("local", "echo", "C").getContent().get(0);
+        var batch = ChatResponse.builder().content(List.of(first, second, local)).build();
+        var model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(batch), () -> Flux.just(textResponse("done"))));
+        var toolkit = toolkitWithExternalSchema();
+        toolkit.registerAgentTool(new EchoTool());
+        var deferLocalTool =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        if (input.toolCalls().size() == 1) return next.apply(input);
+                        return next.apply(
+                                new ActingInput(
+                                        input.toolCalls().stream()
+                                                .filter(call -> !call.getId().equals("local"))
+                                                .toList()));
+                    }
+                };
+        var agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middlewares(List.of(deferLocalTool))
+                        .build();
+        var timeout = Duration.ofSeconds(10);
+        var initialEvents = agent.streamEvents(List.of()).collectList().block(timeout);
+        var request =
+                (RequireExternalExecutionEvent)
+                        initialEvents.get(
+                                indexOf(initialEvents, RequireExternalExecutionEvent.class));
+        assertEquals(2, request.getToolCalls().size());
+
+        if (legacyState) {
+            // Older snapshots stored the external reply ID without marking the submitted calls.
+            var oldCalls = new HashMap<String, ToolUseBlock>();
+            for (var call : request.getToolCalls())
+                oldCalls.put(call.getId(), call.withState(ToolCallState.ALLOWED));
+            MessageUtils.replaceToolUseBlocks(agent.getAgentState().contextMutable(), oldCalls);
+        }
+
+        var resultA = ToolResultBlock.success("A").withIdAndName("ext1", "external_api");
+        var partial =
+                agent.streamEvents(
+                                List.of(Msg.builder().role(MsgRole.TOOL).content(resultA).build()))
+                        .collectList()
+                        .block(timeout);
+        assertEquals(-1, indexOf(partial, RequireExternalExecutionEvent.class));
+        assertEquals(-1, indexOf(partial, ModelCallStartEvent.class));
+        assertEquals(-1, indexOf(partial, ToolResultStartEvent.class));
+        var acceptedA =
+                (ExternalExecutionResultEvent)
+                        partial.get(indexOf(partial, ExternalExecutionResultEvent.class));
+        assertEquals(request.getReplyId(), acceptedA.getReplyId());
+        var waiting =
+                ((AgentResultEvent) partial.get(indexOf(partial, AgentResultEvent.class)))
+                        .getResult();
+        assertEquals(GenerateReason.TOOL_SUSPENDED, waiting.getGenerateReason());
+        assertEquals(
+                List.of("ext2"),
+                waiting.getContentBlocks(ToolUseBlock.class).stream()
+                        .map(ToolUseBlock::getId)
+                        .toList());
+
+        var resultB = ToolResultBlock.success("B").withIdAndName("ext2", "external_api");
+        var completed =
+                agent.streamEvents(
+                                List.of(Msg.builder().role(MsgRole.TOOL).content(resultB).build()))
+                        .collectList()
+                        .block(timeout);
+        var acceptedB =
+                (ExternalExecutionResultEvent)
+                        completed.get(indexOf(completed, ExternalExecutionResultEvent.class));
+        assertEquals(request.getReplyId(), acceptedB.getReplyId());
+        var localResult =
+                (ToolResultEndEvent) completed.get(indexOf(completed, ToolResultEndEvent.class));
+        assertEquals("local", localResult.getToolCallId());
+        assertEquals(ToolResultState.SUCCESS, localResult.getState());
+        assertEquals(
+                "done",
+                ((AgentResultEvent) completed.get(indexOf(completed, AgentResultEvent.class)))
+                        .getResult()
+                        .getTextContent());
     }
 
     @Test
