@@ -3760,7 +3760,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 String replyId,
                 AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
 
-            return evaluatePermissions(toolCalls)
+            // Grant gate ordered before the permission pipeline: an ungranted backend call
+            // must not reach human confirmation — to the model it does not exist. Such calls
+            // are resolved here with the executor gate's byte-identical not-found wording;
+            // external (request-config) tools are caller-controlled and skip this gate.
+            GrantPartition batch = partitionByGrant(toolCalls);
+            List<ToolUseBlock> granted = batch.granted();
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> ungranted = batch.ungranted();
+            if (granted.isEmpty()) {
+                // Every call ungranted: resolve the whole batch without the permission
+                // pipeline (no confirmation can be requested for non-existent tools).
+                resultHolder.set(ungranted);
+                return ungrantedEvents(ungranted, replyId).doOnNext(this::publishEvent);
+            }
+
+            return evaluatePermissions(granted)
                     .flatMapMany(
                             gate -> {
                                 List<ToolUseBlock> pending = gate.pendingAsk();
@@ -3769,8 +3783,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // Mark ToolUseBlock.state in context for every gated tool. ALLOWED
                                 // calls run immediately; ASKING calls cause the agent to pause and
                                 // return; DENIED calls get DENIED ToolResultBlocks written below.
+                                // Ungranted calls were already resolved above and need no state
+                                // update (same rationale as DENIED).
                                 Map<String, ToolCallState> stateUpdates = new HashMap<>();
-                                for (ToolUseBlock tc : toolCalls) {
+                                for (ToolUseBlock tc : granted) {
                                     if (autoDenied.contains(tc.getId())) {
                                         // DENIED tools don't need a state change — they'll get a
                                         // DENIED ToolResultBlock and won't reappear in pending.
@@ -3792,7 +3808,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 if (pending.isEmpty()) {
                                     return runToolBatch(
-                                            toolCalls, autoDenied, replyId, resultHolder);
+                                            granted, autoDenied, replyId, resultHolder, ungranted);
                                 }
 
                                 // Permission HITL: surface the pending tool calls, persist any
@@ -3803,7 +3819,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 if (!autoDenied.isEmpty()) {
                                     // Write DENIED results in-place so they aren't re-evaluated on
                                     // resume.
-                                    writeAutoDeniedResults(toolCalls, autoDenied);
+                                    writeAutoDeniedResults(granted, autoDenied);
+                                }
+                                if (!ungranted.isEmpty()) {
+                                    // Same in-place stance as auto-denied results: ungranted
+                                    // calls are resolved now so resume does not see them pending.
+                                    writeUngrantedResults(ungranted);
                                 }
                                 // resultHolder may be inspected by the caller after stream
                                 // completion;
@@ -3812,14 +3833,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 persistPendingRequestReplyId(
                                         Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
                                 Flux<AgentEvent> autoDeniedEvents =
-                                        Flux.fromIterable(toolCalls)
-                                                .filter(tc -> autoDenied.contains(tc.getId()))
-                                                .concatMapIterable(
-                                                        tc ->
-                                                                deniedToolResultEvents(
-                                                                        tc,
-                                                                        replyId,
-                                                                        PERMISSION_DENIED_BY_RULES));
+                                        ungrantedEvents(ungranted, replyId)
+                                                .concatWith(
+                                                        Flux.fromIterable(granted)
+                                                                .filter(
+                                                                        tc ->
+                                                                                autoDenied.contains(
+                                                                                        tc.getId()))
+                                                                .concatMapIterable(
+                                                                        tc ->
+                                                                                deniedToolResultEvents(
+                                                                                        tc,
+                                                                                        replyId,
+                                                                                        PERMISSION_DENIED_BY_RULES)));
                                 return autoDeniedEvents.concatWith(
                                         Flux.just(
                                                 new RequireUserConfirmEvent(replyId, pending),
@@ -3877,14 +3903,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Execute the given tool calls, synthesising DENIED results for any tool whose id is in
          * {@code deniedIds} (skipping toolkit invocation for those) and running the rest through
-         * {@link #executeToolCalls(List)}. The combined results are written to {@code resultHolder}
+         * {@link #executeToolCalls(List)}. The combined results — including the {@code ungranted}
+         * entries resolved before the permission pipeline — are written to {@code resultHolder}
          * and emitted as a stream of fine-grained {@link AgentEvent}s.
          */
         private Flux<AgentEvent> runToolBatch(
                 List<ToolUseBlock> toolCalls,
                 Set<String> deniedIds,
                 String replyId,
-                AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
+                AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder,
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> ungranted) {
 
             List<Map.Entry<ToolUseBlock, ToolResultBlock>> deniedEntries = new ArrayList<>();
             List<ToolUseBlock> approved = new ArrayList<>();
@@ -3901,30 +3929,36 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
 
             Flux<AgentEvent> deniedEvents =
-                    Flux.fromIterable(deniedEntries)
-                            .concatMap(
-                                    entry -> {
-                                        ToolUseBlock use = entry.getKey();
-                                        ToolCallParam deniedParam =
-                                                ToolCallParam.builder()
-                                                        .toolUseBlock(use)
-                                                        .agent(ReActAgent.this)
-                                                        .runtimeContext(
-                                                                buildMergedRuntimeContext(rc))
-                                                        .build();
-                                        return ActionObservations.observe(
-                                                        deniedParam,
-                                                        () -> Mono.just(entry.getValue()))
-                                                .thenMany(
-                                                        Flux.fromIterable(
-                                                                deniedToolResultEvents(
-                                                                        use,
-                                                                        replyId,
-                                                                        PERMISSION_DENIED_BY_RULES)));
-                                    });
+                    ungrantedEvents(ungranted, replyId)
+                            .concatWith(
+                                    Flux.fromIterable(deniedEntries)
+                                            .concatMap(
+                                                    entry -> {
+                                                        ToolUseBlock use = entry.getKey();
+                                                        ToolCallParam deniedParam =
+                                                                ToolCallParam.builder()
+                                                                        .toolUseBlock(use)
+                                                                        .agent(ReActAgent.this)
+                                                                        .runtimeContext(
+                                                                                buildMergedRuntimeContext(
+                                                                                        rc))
+                                                                        .build();
+                                                        return ActionObservations.observe(
+                                                                        deniedParam,
+                                                                        () ->
+                                                                                Mono.just(
+                                                                                        entry
+                                                                                                .getValue()))
+                                                                .thenMany(
+                                                                        Flux.fromIterable(
+                                                                                deniedToolResultEvents(
+                                                                                        use,
+                                                                                        replyId,
+                                                                                        PERMISSION_DENIED_BY_RULES)));
+                                                    }));
 
             if (approved.isEmpty()) {
-                resultHolder.set(deniedEntries);
+                resultHolder.set(combineResolvedResults(ungranted, deniedEntries, List.of()));
                 return deniedEvents;
             }
 
@@ -3984,17 +4018,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                         })
                                                                 .subscribe(
                                                                         results -> {
-                                                                            List<
-                                                                                            Map
-                                                                                                            .Entry<
-                                                                                                    ToolUseBlock,
-                                                                                                    ToolResultBlock>>
-                                                                                    merged =
-                                                                                            new ArrayList<>(
-                                                                                                    deniedEntries);
-                                                                            merged.addAll(results);
                                                                             resultHolder.set(
-                                                                                    merged);
+                                                                                    combineResolvedResults(
+                                                                                            ungranted,
+                                                                                            deniedEntries,
+                                                                                            results));
                                                                             List<ToolUseBlock>
                                                                                     suspendedCalls =
                                                                                             getSuspendedToolCalls(
@@ -4106,6 +4134,140 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
 
+        /**
+         * Grant check for the acting phase, ordered before the permission pipeline so an
+         * ungranted call never reaches human confirmation. Mirrors the executor gate ({@code
+         * ToolExecutor.requireToolGranted}) — same not-found wording, same external-tool and
+         * missing-surface bypasses; the executor gate stays as defense in depth.
+         *
+         * @param use the tool call to check
+         * @return the denial wording, or {@code null} when the call proceeds
+         */
+        private String grantDenialFor(ToolUseBlock use) {
+            // Same check as ToolExecutor's fromRequestConfig (overrides() is package-private
+            // there): a name shadowed by an external tool is caller-controlled, never
+            // grant-trimmed.
+            if (toolRequestConfig.externalTools().containsKey(use.getName())) {
+                return null;
+            }
+            CapabilitySurface surface = rc.get(CapabilitySurface.class);
+            if (surface == null) {
+                return null; // no surface on this path: unrestricted (trusted direct call)
+            }
+            AgentTool tool = activeToolkit.getTool(use.getName(), toolRequestConfig);
+            if (tool == null) {
+                return null; // unknown tool: the executor's not-found wording applies
+            }
+            if (surface.allowsTool(tool, activeToolkit.getToolGroupsOf(use.getName()))) {
+                return null;
+            }
+            log.warn(
+                    "Denied ungranted tool call (grant, pre-permission): tool='{}',"
+                            + " userId='{}', sessionId='{}', agentId='{}'",
+                    use.getName(),
+                    rc.getUserId(),
+                    rc.getSessionId(),
+                    getAgentId());
+            return "Tool not found: " + use.getName();
+        }
+
+        /** Pre-permission grant partition of one acting batch. */
+        private record GrantPartition(
+                List<ToolUseBlock> granted,
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> ungranted) {}
+
+        /**
+         * Split an acting batch by the grant gate. Ungranted backend calls are paired with a
+         * synthesized not-found result here; everything else proceeds to the permission
+         * pipeline.
+         */
+        private GrantPartition partitionByGrant(List<ToolUseBlock> toolCalls) {
+            List<ToolUseBlock> granted = new ArrayList<>(toolCalls.size());
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> ungranted = new ArrayList<>();
+            for (ToolUseBlock tc : toolCalls) {
+                String denial = grantDenialFor(tc);
+                if (denial != null) {
+                    ungranted.add(
+                            Map.entry(
+                                    tc,
+                                    ToolResultBlock.error(denial)
+                                            .withIdAndName(tc.getId(), tc.getName())));
+                } else {
+                    granted.add(tc);
+                }
+            }
+            return new GrantPartition(granted, ungranted);
+        }
+
+        /**
+         * Event stream for ungranted calls, observed through {@link ActionObservations} exactly
+         * like permission-denied calls so session recordings keep a complete action timeline
+         * for every resolved tool call.
+         */
+        private Flux<AgentEvent> ungrantedEvents(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> entries, String replyId) {
+            return Flux.fromIterable(entries)
+                    .concatMap(
+                            entry -> {
+                                ToolUseBlock use = entry.getKey();
+                                ToolCallParam ungrantedParam =
+                                        ToolCallParam.builder()
+                                                .toolUseBlock(use)
+                                                .agent(ReActAgent.this)
+                                                .runtimeContext(buildMergedRuntimeContext(rc))
+                                                .build();
+                                return ActionObservations.observe(
+                                                ungrantedParam, () -> Mono.just(entry.getValue()))
+                                        .thenMany(
+                                                Flux.fromIterable(
+                                                        ungrantedToolResultEvents(entry, replyId)));
+                            });
+        }
+
+        /**
+         * Build the synthesized ERROR tool-result lifecycle for an ungranted call. The delta
+         * text is taken from the result block itself, so the event stream and the recorded
+         * result can never drift apart.
+         */
+        private List<AgentEvent> ungrantedToolResultEvents(
+                Map.Entry<ToolUseBlock, ToolResultBlock> entry, String replyId) {
+            ToolUseBlock use = entry.getKey();
+            String text = ((TextBlock) entry.getValue().getOutput().get(0)).getText();
+            return List.of(
+                    new ToolResultStartEvent(replyId, use.getId(), use.getName()),
+                    new ToolResultTextDeltaEvent(replyId, use.getId(), use.getName(), text),
+                    new ToolResultEndEvent(
+                            replyId, use.getId(), use.getName(), ToolResultState.ERROR));
+        }
+
+        /**
+         * Append ungranted results to the conversation context so a permission pause does not
+         * leave them pending on resume (the same in-place stance as {@code
+         * writeAutoDeniedResults}).
+         */
+        private void writeUngrantedResults(List<Map.Entry<ToolUseBlock, ToolResultBlock>> entries) {
+            for (Map.Entry<ToolUseBlock, ToolResultBlock> entry : entries) {
+                Msg msg =
+                        ToolResultMessageBuilder.buildToolResultMsg(
+                                entry.getValue(), entry.getKey(), getName());
+                state.contextMutable().add(msg);
+            }
+        }
+
+        /**
+         * Combine the resolved-before-execution results (ungranted, then permission-denied)
+         * with the executed results, preserving the batch's resolution order.
+         */
+        private static List<Map.Entry<ToolUseBlock, ToolResultBlock>> combineResolvedResults(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> ungranted,
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> deniedEntries,
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> executed) {
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> merged = new ArrayList<>(ungranted);
+            merged.addAll(deniedEntries);
+            merged.addAll(executed);
+            return merged;
+        }
+
         private List<ToolUseBlock> getSuspendedToolCalls(
                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> results) {
             return results.stream()
@@ -4129,7 +4291,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private final reactor.util.context.ContextView parentContext;
 
             /** Results resolved before batch settlement, by call id. */
-            private final ConcurrentHashMap<String, ToolResultBlock> resolvedResults =
+            private final ConcurrentHashMap<String, ToolResultBlock> combineResolvedResults =
                     new ConcurrentHashMap<>();
 
             /** Ids of calls whose start has been published. */
@@ -4175,7 +4337,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             public void onResult(ToolUseBlock call, ToolResultBlock result) {
                 // Record before the suspended check so an earlier suspension survives the batch
                 // error fallback; only the first resolution publishes events.
-                if (resolvedResults.putIfAbsent(call.getId(), result) != null) return;
+                if (combineResolvedResults.putIfAbsent(call.getId(), result) != null) return;
                 if (result.isSuspended()) return;
                 Map<String, Object> metadata = result.getMetadata();
                 if (result.getOutput() != null) {
@@ -4203,7 +4365,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             /** Result already resolved for {@code call}, or {@code null} if it never settled. */
             private ToolResultBlock resolvedResult(ToolUseBlock call) {
-                return resolvedResults.get(call.getId());
+                return combineResolvedResults.get(call.getId());
             }
         }
 

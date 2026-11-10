@@ -357,6 +357,86 @@ class ReActAgentHitlTest {
     }
 
     @Test
+    void ungrantedAskingToolSkipsConfirmationWithNotFoundResult() {
+        // Regression: the grant gate must run BEFORE the permission pipeline — an ungranted
+        // call must never reach human confirmation; it resolves as non-existent with the
+        // executor gate's byte-identical not-found wording.
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new AskingTool("ask")))
+                        .capabilityResolver((ctx, a) -> CapabilitySurface.DENY_ALL)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        assertEquals(
+                0,
+                countOf(events, RequireUserConfirmEvent.class),
+                "an ungranted call must not request confirmation");
+        assertTrue(
+                events.stream()
+                        .filter(e -> e instanceof ToolResultTextDeltaEvent)
+                        .map(e -> ((ToolResultTextDeltaEvent) e).getDelta())
+                        .anyMatch("Error: Tool not found: ask"::equals),
+                "not-found wording must be byte-identical to the executor gate");
+        assertTrue(
+                events.stream()
+                        .anyMatch(
+                                e ->
+                                        e instanceof ToolResultEndEvent end
+                                                && "tc1".equals(end.getToolCallId())
+                                                && end.getState() == ToolResultState.ERROR),
+                "the ungranted call resolves with an ERROR end event");
+    }
+
+    @Test
+    void ungrantedToolInMixedBatchResolvesWhileGrantedToolExecutes() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse("tc1", "allow", "x"),
+                                                toolUseResponse("tc2", "ask", "y")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new AllowingTool("allow"), new AskingTool("ask")))
+                        .capabilityResolver(
+                                (ctx, a) ->
+                                        new CapabilitySurface(
+                                                null, null, java.util.Set.of("allow")))
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        assertEquals(
+                0,
+                countOf(events, RequireUserConfirmEvent.class),
+                "the granted tool needs no confirmation and the ungranted one must not ask");
+        List<String> deltas =
+                events.stream()
+                        .filter(e -> e instanceof ToolResultTextDeltaEvent)
+                        .map(e -> ((ToolResultTextDeltaEvent) e).getDelta())
+                        .toList();
+        assertTrue(deltas.contains("allowed:x"), "the granted tool executes normally");
+        assertTrue(
+                deltas.contains("Error: Tool not found: ask"),
+                "the ungranted tool resolves as non-existent");
+    }
+
+    @Test
     void confirmedResumeEmitsUserConfirmResultEventCorrelatedToRequireEvent() {
         ChatModelBase model =
                 new ScriptedModel(

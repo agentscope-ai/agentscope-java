@@ -100,6 +100,14 @@ public final class SkillLoadTool implements AgentTool {
     }
 
     @Override
+    public boolean isSystem() {
+        // Framework meta tool (aligned with the core load tool in SkillToolFactory):
+        // ungrouped, always visible and callable even under a restricted capability
+        // surface / DENY_ALL — per-skill grant decisions live in isSkillGranted.
+        return true;
+    }
+
+    @Override
     public String getName() {
         return TOOL_NAME;
     }
@@ -275,7 +283,9 @@ public final class SkillLoadTool implements AgentTool {
         sb.append("Successfully loaded skill: ").append(skill.getSkillId()).append("\n\n");
         sb.append("Name: ").append(skill.getName()).append("\n");
         sb.append("Description: ").append(skill.getDescription()).append("\n");
-        sb.append("Source: ").append(skill.getSource()).append("\n");
+        if (skill.getSource() != null) {
+            sb.append("Source: ").append(skill.getSource()).append("\n");
+        }
         if (entry.filesRoot() != null && !entry.filesRoot().isBlank()) {
             sb.append("Files root: ").append(entry.filesRoot()).append("\n");
         }

@@ -238,6 +238,21 @@ class CapabilitySurfaceTest {
         assertFalse(surface.allowsTool(tool("t1"), Set.of("s2_skill_tools")));
     }
 
+    @Test
+    @DisplayName(
+            "skill path — a repository-qualified entry still authorizes the name-derived group")
+    void qualifiedSkillEntryGrantsNameDerivedGroup() {
+        // Regression: qualified entries used to derive "name__s__source_skill_tools" from the
+        // raw entry, missing the actually registered "name_skill_tools" group — granting the
+        // repository's copy left its tool group denied.
+        CapabilitySurface surface =
+                new CapabilitySurface(Set.of("s1__s__repo1"), Set.of(), Set.of());
+        assertTrue(surface.allowsSkill("s1__s__repo1"));
+        assertTrue(surface.allowsToolGroup("s1_skill_tools"));
+        assertTrue(surface.allowsTool(tool("t1"), Set.of("s1_skill_tools")));
+        assertFalse(surface.allowsTool(tool("t1"), Set.of("s2_skill_tools")));
+    }
+
     // ==================== trimming intent ====================
 
     @Test

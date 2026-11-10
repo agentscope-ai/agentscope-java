@@ -238,6 +238,56 @@ class SkillBoxToolsTest {
     }
 
     @Test
+    @DisplayName("Combined-form skillId load still activates the name-derived tool group")
+    void testCombinedFormSkillIdLoadActivatesToolGroup() {
+        // Regression: loading with the combined id (name__s__source — the form the prompt
+        // advertises for sourced skills) used to derive "name__s__source_skill_tools" and
+        // miss the registered "name_skill_tools" group, leaving the skill's tools inactive.
+        AgentSkill sourced =
+                AgentSkill.builder()
+                        .name("sourced-skill")
+                        .description("Sourced Skill")
+                        .skillContent("# Sourced Content")
+                        .source("repo1")
+                        .build();
+        skillBox.registration()
+                .skill(sourced)
+                .agentTool(createDummyTool("sourced-skill_tool"))
+                .apply();
+
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
+        String combinedId = sourced.getSkillId();
+        assertEquals("sourced-skill__s__repo1", combinedId);
+
+        ToolContextState toolContext = ToolContextState.builder().build();
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder()
+                        .agentState(AgentState.builder().toolContext(toolContext).build())
+                        .build();
+
+        Map<String, Object> input = Map.of("skillId", combinedId, "path", "SKILL.md");
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("test-call-combined-001")
+                        .name("load_skill_through_path")
+                        .input(input)
+                        .build();
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(withGrant(runtimeContext))
+                        .build();
+        ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
+
+        assertNotNull(result);
+        assertFalse(isErrorResult(result));
+        assertTrue(
+                toolContext.getActivatedGroups().contains("sourced-skill_skill_tools"),
+                "Combined-form load must activate the name-derived tool group");
+    }
+
+    @Test
     @DisplayName("Should return error for non existent skill")
     void testReturnErrorForNonExistentSkill() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");

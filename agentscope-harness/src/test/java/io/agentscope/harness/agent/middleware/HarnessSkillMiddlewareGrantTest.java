@@ -30,6 +30,7 @@ import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolRequestConfig;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import java.util.List;
@@ -127,7 +128,11 @@ class HarnessSkillMiddlewareGrantTest {
     }
 
     private static HarnessSkillMiddleware middleware(List<AgentSkill> skills) {
-        return new HarnessSkillMiddleware(List.of(new StubRepo(skills)), new Toolkit());
+        return middleware(skills, new Toolkit());
+    }
+
+    private static HarnessSkillMiddleware middleware(List<AgentSkill> skills, Toolkit toolkit) {
+        return new HarnessSkillMiddleware(List.of(new StubRepo(skills)), toolkit);
     }
 
     /**
@@ -280,5 +285,54 @@ class HarnessSkillMiddlewareGrantTest {
         RuntimeContext direct = rc(null);
         mw.onSystemPrompt(null, direct, "base").block();
         assertTrue(load(mw, direct, "beta").contains("Successfully loaded skill"));
+    }
+
+    @Test
+    @DisplayName("load tool is a system capability: survives grant-trimmed schemas under DENY_ALL")
+    void loadToolSurvivesGrantTrimmedSchemas() {
+        Toolkit toolkit = new Toolkit();
+        HarnessSkillMiddleware mw = middleware(List.of(skill("alpha")), toolkit);
+        mw.onSystemPrompt(null, rc(CapabilitySurface.DENY_ALL), "base").block();
+
+        // Regression: the harness loader must be exempt from tool-grant trimming (aligned
+        // with the core load tool), otherwise a surface granting skills but not the loader
+        // per-name makes every granted skill unloadable.
+        assertTrue(
+                mw.runtime().loadTool().isSystem(),
+                "load_skill_through_path must be system-marked");
+        boolean visible =
+                toolkit
+                        .getToolSchemas(
+                                List.of(), ToolRequestConfig.NONE, CapabilitySurface.DENY_ALL)
+                        .stream()
+                        .anyMatch(s -> "load_skill_through_path".equals(s.getName()));
+        assertTrue(
+                visible,
+                "load_skill_through_path must stay in model-facing schemas under DENY_ALL");
+    }
+
+    @Test
+    @DisplayName("SKILL.md response omits the Source line when the skill has no source")
+    void loadSkillMarkdownOmitsNullSource() {
+        HarnessSkillMiddleware mw = middleware(List.of(skill("alpha")));
+        RuntimeContext ctx = rc(null);
+        mw.onSystemPrompt(null, ctx, "base").block();
+
+        String markdown = load(mw, ctx, "alpha");
+        assertFalse(markdown.contains("Source:"), "no 'Source: null' line for source-less skill");
+
+        AgentSkill sourced =
+                AgentSkill.builder()
+                        .name("sourced")
+                        .description("Sourced skill")
+                        .skillContent("# sourced")
+                        .source("repo1")
+                        .build();
+        HarnessSkillMiddleware sourcedMw = middleware(List.of(sourced));
+        RuntimeContext sourcedCtx = rc(null);
+        sourcedMw.onSystemPrompt(null, sourcedCtx, "base").block();
+        assertTrue(
+                load(sourcedMw, sourcedCtx, sourced.getSkillId()).contains("Source: repo1"),
+                "an explicit source is still reported");
     }
 }

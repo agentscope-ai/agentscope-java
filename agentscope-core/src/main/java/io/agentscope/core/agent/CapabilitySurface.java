@@ -179,7 +179,9 @@ public record CapabilitySurface(
 
     /**
      * Whether the group name derives from a granted skill (naming convention: {@code
-     * skillName + "_skill_tools"}, see {@link SkillToolGroup#skillToolsGroupName}).
+     * skillName + "_skill_tools"}, see {@link SkillToolGroup#skillToolsGroupName}). A
+     * repository-qualified grant entry normalizes to its name part first — the registered
+     * convention group is always derived from the bare skill name.
      *
      * @param name the group name to check
      * @return {@code true} when the name is a granted skill's tool group
@@ -187,6 +189,7 @@ public record CapabilitySurface(
     private boolean isSkillGroupName(String name) {
         return allowedSkills != null
                 && allowedSkills.stream()
+                        .map(AgentSkill::parseSkillName)
                         .map(SkillToolGroup::skillToolsGroupName)
                         .anyMatch(name::equals);
     }

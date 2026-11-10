@@ -478,7 +478,7 @@ class SkillToolFactory {
         return state != null ? state.getToolContext() : null;
     }
 
-    private void activateSkill(String skillName, ToolContextState tcs) {
+    private void activateSkill(String skillId, ToolContextState tcs) {
         // No per-session context: skip the tool-group gate without mutating shared state.
         if (tcs == null) {
             logger.warn(
@@ -486,6 +486,11 @@ class SkillToolFactory {
                             + " skipped");
             return;
         }
+
+        // Group discovery is name-keyed: normalize a combined id (name__s__source) to its
+        // name part so the convention group and activateOnSkill bindings resolve; a bare
+        // name is itself the source-less id form and passes through unchanged.
+        String skillName = AgentSkill.parseSkillName(skillId);
 
         // Read-only discovery of the groups owned by this skill: the name-convention group
         // (skillName_skill_tools) plus any SkillToolGroup bound via activateOnSkill (bindings
