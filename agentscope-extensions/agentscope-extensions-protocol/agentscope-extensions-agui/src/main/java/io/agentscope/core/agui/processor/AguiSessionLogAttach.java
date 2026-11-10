@@ -66,6 +66,13 @@ final class AguiSessionLogAttach {
 
     private static final int BATCH_SIZE = 256;
 
+    /**
+     * Events replayed in one poll. {@link SessionLog#scan} walks the commit chain from the head,
+     * so every extra read of the same range costs another full walk; a poll therefore consumes a
+     * whole committed delta in one pass instead of {@code BATCH_SIZE} events at a time.
+     */
+    private static final int REPLAY_CHUNK = 4096;
+
     private AguiSessionLogAttach() {}
 
     static Flux<AguiFramedEvent> attach(
@@ -943,7 +950,14 @@ final class AguiSessionLogAttach {
             return new PollOutcome(List.of(), false);
         }
 
-        List<SessionEvent> batch = log.readAfter(state.cursor, BATCH_SIZE);
+        // One walk of the commit chain per poll: readAfter(cursor, BATCH_SIZE) repeated the
+        // head -> cursor walk for every 256 events, which made a full replay quadratic in the
+        // number of commit segments.
+        long through = Math.min(head.seq(), state.cursor + REPLAY_CHUNK);
+        List<SessionEvent> batch = new ArrayList<>();
+        for (SessionEvent event : log.scan(state.cursor, through)) {
+            batch.add(event);
+        }
         if (batch.isEmpty()) {
             // The head already reported committed events after the cursor, so an empty read
             // cannot mean the run ended: finishing here would drop them permanently.

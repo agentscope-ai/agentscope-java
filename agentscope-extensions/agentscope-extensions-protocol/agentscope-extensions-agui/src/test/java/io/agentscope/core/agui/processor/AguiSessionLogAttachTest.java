@@ -38,13 +38,17 @@ import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiFramedEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.session.SessionEvent;
 import io.agentscope.core.session.SessionLog;
+import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -693,6 +697,67 @@ class AguiSessionLogAttachTest {
         assertFalse(
                 frames.stream().anyMatch(frame -> frame.event() instanceof AguiEvent.RunError),
                 "one-pass replay must finish without an error frame");
+    }
+
+    @Test
+    void attachReplaysFromZeroWithOneScanAndMatchesLegacyFrames() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        RunAgentInput input = input();
+        long head;
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            appendModelChunkBatch(log, writer, 3000);
+            head = append(log, writer, "run/end", Map.of("status", "completed"));
+        } finally {
+            log.release(writer);
+        }
+        AtomicInteger scanCalls = new AtomicInteger();
+        List<long[]> scanRanges = new CopyOnWriteArrayList<>();
+        SessionLog counted = countingScans(log, scanCalls, scanRanges);
+
+        List<AguiFramedEvent> actual =
+                AguiSessionLogAttach.attach(input, counted, 0, null, CONFIG, POLL)
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        List<AguiFramedEvent> expected = legacyFrames(log, input, head);
+
+        assertNotNull(actual);
+        assertEquals(expected, actual, "one-pass replay must preserve the legacy frame sequence");
+        assertTrue(
+                scanCalls.get() <= 2,
+                "a full replay must not scan once per batch: " + scanCalls.get());
+        assertEquals(1, scanCalls.get(), "3000 events fit in one REPLAY_CHUNK poll");
+        assertEquals(head, actual.get(actual.size() - 1).seq());
+    }
+
+    @Test
+    void attachReplaysMoreThanOneChunkWithOneScanPerPollAndMonotonicCursor() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        long head;
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            appendModelChunkBatch(log, writer, 4200);
+            head = append(log, writer, "run/end", Map.of("status", "completed"));
+        } finally {
+            log.release(writer);
+        }
+        AtomicInteger scanCalls = new AtomicInteger();
+        List<long[]> scanRanges = new CopyOnWriteArrayList<>();
+        SessionLog counted = countingScans(log, scanCalls, scanRanges);
+
+        List<AguiFramedEvent> actual =
+                AguiSessionLogAttach.attach(input(), counted, 0, null, CONFIG, POLL)
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+
+        assertNotNull(actual);
+        assertEquals(2, scanCalls.get(), "one scan per REPLAY_CHUNK poll");
+        assertEquals(2, scanRanges.size());
+        assertRange(scanRanges.get(0), 0, 4096);
+        assertRange(scanRanges.get(1), 4096, head);
+        assertEquals(head, actual.get(actual.size() - 1).seq());
     }
 
     @Test
@@ -1384,6 +1449,94 @@ class AguiSessionLogAttachTest {
                         .id();
         assertEquals(TURN_ID + ":tool-1", replayId);
         assertEquals(replayId, liveId);
+    }
+
+    private static void appendModelChunkBatch(SessionLog log, SessionLog.Writer writer, int count) {
+        long first = log.head().seq() + 1;
+        String payload =
+                JsonUtils.getJsonCodec().toJson(modelChunk("call-1", "chat-1", textBlock("chunk")));
+        List<SessionEvent> events = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            long seq = first + i;
+            events.add(
+                    new SessionEvent(
+                            1,
+                            UUID.randomUUID().toString(),
+                            seq,
+                            System.currentTimeMillis(),
+                            "model/chunk",
+                            "exec-1",
+                            TURN_ID,
+                            true,
+                            payload));
+        }
+        log.commit(writer, "batch-model-chunks", first - 1, events);
+    }
+
+    private static SessionLog countingScans(
+            SessionLog delegate, AtomicInteger calls, List<long[]> ranges) {
+        return (SessionLog)
+                Proxy.newProxyInstance(
+                        SessionLog.class.getClassLoader(),
+                        new Class<?>[] {SessionLog.class},
+                        (proxy, method, args) -> {
+                            if ("scan".equals(method.getName())) {
+                                calls.incrementAndGet();
+                                ranges.add(
+                                        new long[] {
+                                            ((Number) args[0]).longValue(),
+                                            ((Number) args[1]).longValue()
+                                        });
+                            }
+                            try {
+                                return method.invoke(delegate, args);
+                            } catch (InvocationTargetException error) {
+                                throw error.getCause();
+                            }
+                        });
+    }
+
+    private static List<AguiFramedEvent> legacyFrames(
+            SessionLog log, RunAgentInput input, long through) {
+        AguiSessionPresentation presentation =
+                new AguiSessionPresentation(THREAD_ID, input.getRunId(), CONFIG, input);
+        List<AguiFramedEvent> frames = new ArrayList<>();
+        long cursor = 0;
+        while (cursor < through) {
+            List<SessionEvent> batch = log.readAfter(cursor, 256);
+            if (batch.isEmpty()) {
+                break;
+            }
+            for (SessionEvent event : batch) {
+                if (event.seq() > through) {
+                    break;
+                }
+                frames.addAll(legacyFrames(presentation.apply(event), event));
+                cursor = event.seq();
+            }
+        }
+        frames.add(
+                new AguiFramedEvent(
+                        through,
+                        new AguiEvent.RunFinished(THREAD_ID, input.getRunId(), null, null)));
+        return frames;
+    }
+
+    private static List<AguiFramedEvent> legacyFrames(List<AguiEvent> events, SessionEvent source) {
+        List<AguiFramedEvent> frames = new ArrayList<>(events.size());
+        for (int i = 0; i < events.size(); i++) {
+            long seq =
+                    !"model/chunk".equals(source.type()) && i == events.size() - 1
+                            ? source.seq()
+                            : -1;
+            frames.add(new AguiFramedEvent(seq, source.seq(), events.get(i)));
+        }
+        return frames;
+    }
+
+    private static void assertRange(long[] range, long after, long through) {
+        assertEquals(after, range[0]);
+        assertEquals(through, range[1]);
     }
 
     private static RunAgentInput input() {
