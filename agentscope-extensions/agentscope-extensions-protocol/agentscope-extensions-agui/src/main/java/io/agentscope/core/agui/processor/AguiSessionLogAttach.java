@@ -452,7 +452,7 @@ final class AguiSessionLogAttach {
                                                 }
                                                 // Hoisted so a failure frame reports the last
                                                 // fully emitted sequence, not the bridge start.
-                                                long cursor = after;
+                                                AtomicLong cursor = new AtomicLong(after);
                                                 try {
                                                     AguiSessionPresentation presentation =
                                                             sharedPresentation != null
@@ -466,110 +466,77 @@ final class AguiSessionLogAttach {
                                                             System.nanoTime()
                                                                     + commitWaitTimeout(config)
                                                                             .toNanos();
-                                                    while (cursor < through
-                                                            && !sink.isCancelled()) {
-                                                        List<SessionEvent> batch =
-                                                                log.readAfter(cursor, BATCH_SIZE);
-                                                        if (batch.isEmpty()) {
-                                                            SessionLog.Head head = log.head();
-                                                            // The boundary is either buffered in
-                                                            // the writer or readAfter raced the
-                                                            // head update it already reflects.
-                                                            // Retry while it stays reachable; a
-                                                            // dead writer with an unreachable
-                                                            // boundary ends below.
-                                                            boolean reachable =
-                                                                    head.seq() >= through
-                                                                            || isActive(
-                                                                                    head,
-                                                                                    executionRunId);
-                                                            if (!reachable) break;
-                                                            if (System.nanoTime() >= deadline) {
-                                                                emitFrames(
-                                                                        sink,
-                                                                        errorFrames(
-                                                                                input,
-                                                                                cursor,
-                                                                                "Session log attach"
-                                                                                        + " timed"
-                                                                                        + " out at"
-                                                                                        + " cursor="
-                                                                                        + cursor
-                                                                                        + " through="
-                                                                                        + through,
-                                                                                "TIMEOUT_ERROR",
-                                                                                config,
-                                                                                false));
-                                                                return;
-                                                            }
-                                                            try {
-                                                                Thread.sleep(
-                                                                        DEFAULT_POLL_INTERVAL
-                                                                                .toMillis());
-                                                            } catch (
-                                                                    InterruptedException
-                                                                            interrupted) {
-                                                                Thread.currentThread().interrupt();
-                                                                if (!sink.isCancelled()) {
-                                                                    emitFrames(
-                                                                            sink,
-                                                                            errorFrames(
-                                                                                    input,
-                                                                                    cursor,
-                                                                                    "Session log"
-                                                                                        + " attach"
-                                                                                        + " interrupted",
-                                                                                    "SESSION_LOG_ERROR",
-                                                                                    config,
-                                                                                    false));
-                                                                }
-                                                                return;
-                                                            }
-                                                            continue;
+                                                    long committedThrough =
+                                                            Math.min(through, log.head().seq());
+                                                    if (committedThrough > cursor.get()) {
+                                                        replayRange(
+                                                                sink,
+                                                                input,
+                                                                log,
+                                                                presentation,
+                                                                cursor,
+                                                                committedThrough,
+                                                                executionRunId,
+                                                                config);
+                                                        if (sink.isCancelled()) {
+                                                            return;
                                                         }
-                                                        long before = cursor;
-                                                        for (SessionEvent event : batch) {
-                                                            if (event.seq() > through) break;
-                                                            boolean target =
-                                                                    executionRunId == null
-                                                                            || executionRunId
-                                                                                    .equals(
-                                                                                            event
-                                                                                                    .executionRunId());
-                                                            if (target) {
-                                                                for (AguiFramedEvent frame :
-                                                                        frames(
-                                                                                presentation.apply(
-                                                                                        event),
-                                                                                event.seq(),
-                                                                                cursored(
-                                                                                        event
-                                                                                                .type()))) {
-                                                                    if (sink.isCancelled()) {
-                                                                        return;
-                                                                    }
-                                                                    sink.next(frame);
-                                                                }
-                                                            }
-                                                            // Advance only after the event's
-                                                            // frames are emitted, so a later
-                                                            // failure reports a cursor the client
-                                                            // already holds.
-                                                            cursor = event.seq();
-                                                        }
-                                                        if (cursor == before) break;
                                                     }
-                                                    if (cursor < through) {
+                                                    if (cursor.get() < through) {
+                                                        BoundaryWait boundary =
+                                                                waitForCommittedBoundary(
+                                                                        sink,
+                                                                        input,
+                                                                        log,
+                                                                        through,
+                                                                        cursor.get(),
+                                                                        executionRunId,
+                                                                        deadline,
+                                                                        config);
+                                                        if (boundary == BoundaryWait.UNREACHABLE) {
+                                                            emitFrames(
+                                                                    sink,
+                                                                    errorFrames(
+                                                                            input,
+                                                                            cursor.get(),
+                                                                            "Session log attach"
+                                                                                + " range not fully"
+                                                                                + " committed:"
+                                                                                + " cursor="
+                                                                                    + cursor.get()
+                                                                                    + " through="
+                                                                                    + through,
+                                                                            "INVALID_INPUT_ERROR",
+                                                                            config,
+                                                                            false));
+                                                            return;
+                                                        }
+                                                        if (boundary == BoundaryWait.ABORTED) {
+                                                            return;
+                                                        }
+                                                        replayRange(
+                                                                sink,
+                                                                input,
+                                                                log,
+                                                                presentation,
+                                                                cursor,
+                                                                through,
+                                                                executionRunId,
+                                                                config);
+                                                        if (sink.isCancelled()) {
+                                                            return;
+                                                        }
+                                                    }
+                                                    if (cursor.get() < through) {
                                                         emitFrames(
                                                                 sink,
                                                                 errorFrames(
                                                                         input,
-                                                                        cursor,
-                                                                        "Session log attach"
-                                                                                + " range not fully"
-                                                                                + " committed:"
-                                                                                + " cursor="
-                                                                                + cursor
+                                                                        cursor.get(),
+                                                                        "Session log attach range"
+                                                                            + " not fully"
+                                                                            + " committed: cursor="
+                                                                                + cursor.get()
                                                                                 + " through="
                                                                                 + through,
                                                                         "INVALID_INPUT_ERROR",
@@ -583,7 +550,7 @@ final class AguiSessionLogAttach {
                                                             sink,
                                                             errorFrames(
                                                                     input,
-                                                                    cursor,
+                                                                    cursor.get(),
                                                                     errorMessage(error),
                                                                     "SESSION_LOG_ERROR",
                                                                     config,
@@ -598,6 +565,101 @@ final class AguiSessionLogAttach {
                         }
                     }
                 });
+    }
+
+    private enum BoundaryWait {
+        COMMITTED,
+        UNREACHABLE,
+        ABORTED
+    }
+
+    /**
+     * Projects one committed range with a single {@link SessionLog#scan(long, long)} pass.
+     *
+     * <p>The cursor advances after every event, including filtered ones, so a later failure reports
+     * the last fully emitted sequence.
+     */
+    private static void replayRange(
+            FluxSink<AguiFramedEvent> sink,
+            RunAgentInput input,
+            SessionLog log,
+            AguiSessionPresentation presentation,
+            AtomicLong cursor,
+            long through,
+            String executionRunId,
+            AguiAdapterConfig config) {
+        for (SessionEvent event : log.scan(cursor.get(), through)) {
+            if (sink.isCancelled()) {
+                return;
+            }
+            boolean target =
+                    executionRunId == null || executionRunId.equals(event.executionRunId());
+            if (target) {
+                for (AguiFramedEvent frame :
+                        frames(presentation.apply(event), event.seq(), cursored(event.type()))) {
+                    if (sink.isCancelled()) {
+                        return;
+                    }
+                    sink.next(frame);
+                }
+            }
+            cursor.set(event.seq());
+        }
+    }
+
+    private static BoundaryWait waitForCommittedBoundary(
+            FluxSink<AguiFramedEvent> sink,
+            RunAgentInput input,
+            SessionLog log,
+            long through,
+            long cursor,
+            String executionRunId,
+            long deadline,
+            AguiAdapterConfig config) {
+        while (true) {
+            if (sink.isCancelled()) {
+                return BoundaryWait.ABORTED;
+            }
+            SessionLog.Head head = log.head();
+            if (head.seq() >= through) {
+                return BoundaryWait.COMMITTED;
+            }
+            if (!isActive(head, executionRunId)) {
+                return BoundaryWait.UNREACHABLE;
+            }
+            if (System.nanoTime() >= deadline) {
+                emitFrames(
+                        sink,
+                        errorFrames(
+                                input,
+                                cursor,
+                                "Session log attach timed out at cursor="
+                                        + cursor
+                                        + " through="
+                                        + through,
+                                "TIMEOUT_ERROR",
+                                config,
+                                false));
+                return BoundaryWait.ABORTED;
+            }
+            try {
+                Thread.sleep(DEFAULT_POLL_INTERVAL.toMillis());
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                if (!sink.isCancelled()) {
+                    emitFrames(
+                            sink,
+                            errorFrames(
+                                    input,
+                                    cursor,
+                                    "Session log attach interrupted",
+                                    "SESSION_LOG_ERROR",
+                                    config,
+                                    false));
+                }
+                return BoundaryWait.ABORTED;
+            }
+        }
     }
 
     private static void runAttach(

@@ -630,8 +630,9 @@ class AguiSessionLogAttachTest {
                                 SessionLog.class.getClassLoader(),
                                 new Class<?>[] {SessionLog.class},
                                 (proxy, method, args) -> {
-                                    if ("readAfter".equals(method.getName())) {
-                                        return List.of();
+                                    if ("readAfter".equals(method.getName())
+                                            || "scan".equals(method.getName())) {
+                                        throw new IllegalStateException("unreadable session log");
                                     }
                                     try {
                                         return method.invoke(log, args);
@@ -649,6 +650,49 @@ class AguiSessionLogAttachTest {
         AguiFramedEvent last = frames.get(frames.size() - 1);
         assertTrue(last.event() instanceof AguiEvent.RunError);
         assertEquals("SESSION_LOG_ERROR", ((AguiEvent.RunError) last.event()).code());
+    }
+
+    @Test
+    void attachUntilReplaysACommittedRangeWithOneScan() {
+        SessionLog log = AguiSessionLogTestSupport.newLog();
+        SessionLog.Writer writer = writer(log);
+        long through;
+        try {
+            append(log, writer, "run/start", Map.of("executionRunId", "exec-1"));
+            for (int i = 0; i < 300; i++) {
+                append(log, writer, "message/user", message(user("u" + i, "message " + i)));
+            }
+            through = log.head().seq();
+        } finally {
+            log.release(writer);
+        }
+        AtomicInteger scanCalls = new AtomicInteger();
+        SessionLog counted =
+                (SessionLog)
+                        Proxy.newProxyInstance(
+                                SessionLog.class.getClassLoader(),
+                                new Class<?>[] {SessionLog.class},
+                                (proxy, method, args) -> {
+                                    if ("scan".equals(method.getName())) {
+                                        scanCalls.incrementAndGet();
+                                    }
+                                    try {
+                                        return method.invoke(log, args);
+                                    } catch (InvocationTargetException error) {
+                                        throw error.getCause();
+                                    }
+                                });
+
+        List<AguiFramedEvent> frames =
+                AguiSessionLogAttach.attachUntil(input(), counted, 0, through, "exec-1", CONFIG)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(frames);
+        assertEquals(1, scanCalls.get(), "a committed range must be replayed in one scan pass");
+        assertFalse(
+                frames.stream().anyMatch(frame -> frame.event() instanceof AguiEvent.RunError),
+                "one-pass replay must finish without an error frame");
     }
 
     @Test
