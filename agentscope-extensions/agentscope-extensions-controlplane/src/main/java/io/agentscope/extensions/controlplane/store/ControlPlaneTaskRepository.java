@@ -208,11 +208,25 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
                                                     ? cause.getClass().getSimpleName()
                                                     : err.getClass().getSimpleName());
                             updateStatus(capturedRc, sid, taskId, TaskStatus.FAILED, null, errMsg);
-                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, null);
+                            fireCompletionCallback(
+                                    capturedRc,
+                                    taskId,
+                                    subAgentId,
+                                    sid,
+                                    TaskStatus.FAILED,
+                                    null,
+                                    errMsg);
                         } else {
                             updateStatus(
                                     capturedRc, sid, taskId, TaskStatus.COMPLETED, result, null);
-                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, result);
+                            fireCompletionCallback(
+                                    capturedRc,
+                                    taskId,
+                                    subAgentId,
+                                    sid,
+                                    TaskStatus.COMPLETED,
+                                    result,
+                                    null);
                         }
                     });
         } else if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
@@ -477,12 +491,14 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
                 return null;
             }
             updateStatus(rc, sessionId, taskId, TaskStatus.COMPLETED, result, null);
-            fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
+            fireCompletionCallback(
+                    rc, taskId, subAgentId, sessionId, TaskStatus.COMPLETED, result, null);
             return result;
         } catch (Exception e) {
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
-            fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
+            fireCompletionCallback(
+                    rc, taskId, subAgentId, sessionId, TaskStatus.FAILED, null, errMsg);
             throw e instanceof RuntimeException re ? re : new RuntimeException(e);
         }
     }
@@ -837,14 +853,20 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
     }
 
     private void fireCompletionCallback(
-            RuntimeContext rc, String taskId, String subAgentId, String sessionId, String result) {
+            RuntimeContext rc,
+            String taskId,
+            String subAgentId,
+            String sessionId,
+            TaskStatus status,
+            String result,
+            String errorMessage) {
         TaskCompletionCallback cb = this.completionCallback;
         if (cb == null
                 || (rc != null && Boolean.TRUE.equals(rc.get(SUPPRESS_COMPLETION_CALLBACK)))) {
             return;
         }
         try {
-            cb.onCompleted(rc, taskId, subAgentId, sessionId, result);
+            cb.onSettled(rc, taskId, subAgentId, sessionId, status, result, errorMessage);
         } catch (Exception e) {
             log.warn("TaskCompletionCallback failed for task {}: {}", taskId, e.getMessage(), e);
         }

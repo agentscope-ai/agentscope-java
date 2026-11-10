@@ -17,6 +17,7 @@ package io.agentscope.extensions.controlplane.store;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -25,6 +26,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.extensions.controlplane.transport.ControlPlaneHttpClient;
+import io.agentscope.harness.agent.subagent.task.TaskDelivery;
 import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
@@ -46,6 +48,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -172,6 +175,104 @@ class TaskRepositoryContractTest {
                             new TaskRunSpec.LocalTaskRunSpec(() -> "normal result"));
             assertTrue(normal.waitForCompletion(5000));
             assertEquals(1, wakeups.get());
+        }
+    }
+
+    @Test
+    void settledCallbacksCarryStatusAndErrorsOnBothBackends() throws Exception {
+        for (TaskRepository repo : List.of(workspaceRepo, cpRepoA)) {
+            for (boolean adopted : List.of(false, true)) {
+                for (boolean fails : List.of(false, true)) {
+                    CompletableFuture<TaskDelivery> callback = new CompletableFuture<>();
+                    repo.setCompletionCallback(
+                            (TaskRepository.TaskSettledCallback)
+                                    (rc, taskId, agentId, sessionId, status, result, error) ->
+                                            callback.complete(
+                                                    new TaskDelivery(
+                                                            taskId, agentId, status, result, error,
+                                                            null)));
+                    String taskId = "settled-" + adopted + "-" + fails;
+                    CompletableFuture<String> future = new CompletableFuture<>();
+                    TaskRunSpec spec =
+                            adopted
+                                    ? new TaskRunSpec.AdoptedTaskRunSpec(future)
+                                    : new TaskRunSpec.LocalTaskRunSpec(
+                                            () -> {
+                                                if (fails) {
+                                                    throw new IllegalStateException(
+                                                            "execution error");
+                                                }
+                                                return "completed result";
+                                            });
+                    repo.putTask(RuntimeContext.empty(), taskId, "worker", SESSION, spec);
+                    if (adopted) {
+                        if (fails) {
+                            future.completeExceptionally(
+                                    new IllegalStateException("execution error"));
+                        } else {
+                            future.complete(null);
+                        }
+                    }
+                    TaskDelivery delivery = callback.get(5, TimeUnit.SECONDS);
+                    assertEquals(taskId, delivery.taskId());
+                    assertEquals("worker", delivery.agentId());
+                    assertEquals(
+                            fails ? TaskStatus.FAILED : TaskStatus.COMPLETED, delivery.status());
+                    assertEquals(!fails && !adopted ? "completed result" : null, delivery.result());
+                    assertEquals(fails ? "execution error" : null, delivery.errorMessage());
+                }
+            }
+        }
+    }
+
+    @Test
+    void legacyCallbacksReceiveNullOnFailureOnBothBackends() throws Exception {
+        for (TaskRepository repo : List.of(workspaceRepo, cpRepoA)) {
+            CompletableFuture<String> callback = new CompletableFuture<>();
+            repo.setCompletionCallback(
+                    (rc, taskId, agentId, sessionId, result) -> callback.complete(result));
+            repo.putTask(
+                    RuntimeContext.empty(),
+                    "legacy-failure",
+                    "worker",
+                    SESSION,
+                    new TaskRunSpec.LocalTaskRunSpec(
+                            () -> {
+                                throw new IllegalStateException("execution error");
+                            }));
+            assertNull(callback.get(5, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void suppressedSettledFailuresRetainDurableErrorsOnBothBackends() throws Exception {
+        for (TaskRepository repo : List.of(workspaceRepo, cpRepoA)) {
+            var callbacks = new java.util.concurrent.atomic.AtomicInteger();
+            repo.setCompletionCallback(
+                    (TaskRepository.TaskSettledCallback)
+                            (rc, taskId, agentId, sessionId, status, result, error) ->
+                                    callbacks.incrementAndGet());
+            RuntimeContext context =
+                    RuntimeContext.builder()
+                            .sessionId(SESSION)
+                            .put(TaskRepository.SUPPRESS_COMPLETION_CALLBACK, true)
+                            .build();
+            var task =
+                    repo.putTask(
+                            context,
+                            "suppressed-failure",
+                            "worker",
+                            SESSION,
+                            new TaskRunSpec.LocalTaskRunSpec(
+                                    () -> {
+                                        throw new IllegalStateException(
+                                                "suppressed execution error");
+                                    }));
+            assertTrue(task.waitForCompletion(5000));
+            assertEquals(0, callbacks.get());
+            TaskDelivery delivery = repo.findPendingDeliveries(context, SESSION).get(0);
+            assertEquals(TaskStatus.FAILED, delivery.status());
+            assertEquals("suppressed execution error", delivery.errorMessage());
         }
     }
 

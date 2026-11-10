@@ -128,9 +128,8 @@ public interface TaskRepository {
     /**
      * Registers a callback invoked when any task reaches a terminal state (COMPLETED or FAILED).
      * Used by {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware} to push results
-     * to the session inbox and enqueue a wakeup signal. The callback receives the terminal
-     * {@link TaskStatus}; {@code result} is {@code null} for failed tasks and
-     * {@code errorMessage} is {@code null} for completed ones.
+     * to the session inbox and enqueue a wakeup signal. The {@code result} argument is {@code null}
+     * for failed tasks. Use {@link TaskSettledCallback} to also receive terminal status and errors.
      *
      * <p>Callers retaining execution ownership can set {@link #SUPPRESS_COMPLETION_CALLBACK}
      * in their RuntimeContext to suppress inbox/wakeup callbacks while preserving durable results.
@@ -146,11 +145,7 @@ public interface TaskRepository {
         // no-op
     }
 
-    /**
-     * Callback invoked when a background task reaches a terminal state (COMPLETED or FAILED).
-     * {@code result} is {@code null} when the task failed; {@code errorMessage} is {@code null}
-     * when it completed.
-     */
+    /** Callback for completed or failed tasks; {@code result} is null on failure. */
     @FunctionalInterface
     interface TaskCompletionCallback {
         void onCompleted(
@@ -158,8 +153,50 @@ public interface TaskRepository {
                 String taskId,
                 String subAgentId,
                 String sessionId,
+                String result);
+
+        /** Delivers terminal details while preserving the five-argument callback contract. */
+        default void onSettled(
+                RuntimeContext rc,
+                String taskId,
+                String subAgentId,
+                String sessionId,
+                TaskStatus status,
+                String result,
+                String errorMessage) {
+            onCompleted(rc, taskId, subAgentId, sessionId, result);
+        }
+    }
+
+    /** Terminal callback; register through {@link TaskRepository#setCompletionCallback}. */
+    @FunctionalInterface
+    interface TaskSettledCallback extends TaskCompletionCallback {
+        @Override
+        void onSettled(
+                RuntimeContext rc,
+                String taskId,
+                String subAgentId,
+                String sessionId,
                 TaskStatus status,
                 String result,
                 String errorMessage);
+
+        /** Legacy repositories only distinguish failures by a null result and provide no error. */
+        @Override
+        default void onCompleted(
+                RuntimeContext rc,
+                String taskId,
+                String subAgentId,
+                String sessionId,
+                String result) {
+            onSettled(
+                    rc,
+                    taskId,
+                    subAgentId,
+                    sessionId,
+                    result != null ? TaskStatus.COMPLETED : TaskStatus.FAILED,
+                    result,
+                    null);
+        }
     }
 }

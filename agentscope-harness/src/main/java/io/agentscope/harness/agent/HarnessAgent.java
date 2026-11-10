@@ -2602,31 +2602,37 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 io.agentscope.harness.agent.bus.MessageBus bus,
                 String agentId) {
             repo.setCompletionCallback(
-                    (rc, taskId, subAgentId, sessionId, status, result, errorMessage) -> {
-                        String userId = rc != null ? rc.getUserId() : null;
-                        String hintContent =
-                                io.agentscope.harness.agent.middleware.SubagentsMiddleware
-                                        .taskSettledHintContent(
-                                                taskId, subAgentId, status, result, errorMessage);
-                        String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
-                        bus.inboxPush(
-                                        sessionId,
-                                        java.util.Map.of(
-                                                "type",
-                                                "hint",
-                                                "id",
-                                                hintId,
-                                                "hint",
-                                                hintContent,
-                                                "source",
-                                                "subagent_task"))
-                                .subscribe();
-                        bus.enqueueWakeup(
-                                        userId != null ? userId : "",
-                                        sessionId,
-                                        agentId != null ? agentId : "")
-                                .subscribe();
-                    });
+                    (io.agentscope.harness.agent.subagent.task.TaskRepository.TaskSettledCallback)
+                            (rc, taskId, subAgentId, sessionId, status, result, errorMessage) -> {
+                                String userId = rc != null ? rc.getUserId() : null;
+                                String hintContent =
+                                        io.agentscope.harness.agent.middleware.SubagentsMiddleware
+                                                .taskSettledHintContent(
+                                                        taskId,
+                                                        subAgentId,
+                                                        status,
+                                                        result,
+                                                        errorMessage);
+                                String hintId =
+                                        java.util.UUID.randomUUID().toString().replace("-", "");
+                                bus.inboxPush(
+                                                sessionId,
+                                                java.util.Map.of(
+                                                        "type",
+                                                        "hint",
+                                                        "id",
+                                                        hintId,
+                                                        "hint",
+                                                        hintContent,
+                                                        "source",
+                                                        "subagent_task"))
+                                        .subscribe();
+                                bus.enqueueWakeup(
+                                                userId != null ? userId : "",
+                                                sessionId,
+                                                agentId != null ? agentId : "")
+                                        .subscribe();
+                            });
         }
 
         /**

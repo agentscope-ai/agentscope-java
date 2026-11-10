@@ -223,6 +223,8 @@ Background tasks delivered:
 
 The parent naturally responds or continues. This means **you do not** write "remember to poll task_output" in your prompt — that was the old way.
 
+Message-bus notifications distinguish `FAILED` tasks from successful completion and include the execution error, not an empty business result. The five-argument `TaskRepository.TaskCompletionCallback` remains compatible; use `TaskRepository.TaskSettledCallback` with the same `setCompletionCallback` method to receive status and error details. Custom repositories should call `onSettled` after persisting the terminal state; legacy `onCompleted` calls retain their null-result failure convention but cannot supply error details.
+
 ### Background task tools
 
 Behind the scenes, subagent lifecycle is split across two groups of tools:
