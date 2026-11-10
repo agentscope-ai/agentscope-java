@@ -29,6 +29,12 @@ package io.agentscope.core.tool;
  * <p>This design allows handling both simple cases (one UserContext) and complex cases
  * (multiple UserContext instances for different users).
  *
+ * <p>The default in-memory store prefers exact registered types and falls back to registered
+ * subtypes (including interface implementations). If multiple subtypes match, it returns the first
+ * match in an unspecified iteration order. Keyed retrieval only searches the requested key;
+ * singleton retrieval searches the default key. {@code contains(type)} checks all keys, whereas
+ * {@code contains(key, type)} checks only the requested key, with the same type matching rules.
+ *
  * <p>Implementations can be:
  * <ul>
  *   <li>Simple in-memory Map storage ({@link DefaultContextStore})</li>

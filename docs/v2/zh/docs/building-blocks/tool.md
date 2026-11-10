@@ -275,6 +275,11 @@ toolkit.replaceAgentTool(newFallbackTool); // 替换掉已有的 "dup" 绑定
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()`（兼容层，已 deprecated） |
 | 其它用户自定义 POJO 类型 | `runtimeContext.get(ParamType.class)` —— 即调用方在 `RuntimeContext.builder().put(ParamType.class, value)` 注册的对象 |
 
+已废弃的 `ToolExecutionContext.builder().register(...)` 兼容 API 也支持通过父类或接口查找已注册的子类型。
+其默认 `ContextStore` 优先匹配精确的注册类型，否则返回首个兼容类型；多个子类型匹配时不保证顺序。
+`get(key, type)` 和 `contains(key, type)` 严格匹配指定 key；`get(type)` 只查询默认 key，
+`contains(type)` 则检查所有 key。新代码应使用 `RuntimeContext`。
+
 注入的 `ToolEmitter` 会提供当前工具调用 ID，可用于把进度与前端状态或其它共享存储关联起来：
 
 ```java
