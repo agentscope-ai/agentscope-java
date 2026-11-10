@@ -982,6 +982,58 @@ class ModelRegistryTest {
     }
 
     @Test
+    void creationContext_contextIdContainingHash_throws() {
+        ModelCreationContext context = ModelCreationContext.builder().apiKey("key-a").build();
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ModelRegistry.registerCreationContext("plan#1", context));
+    }
+
+    @Test
+    void modelCreationContext_cacheIdContainingHash_throws() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        ModelCreationContext.builder()
+                                .cachePolicy(CachePolicy.ENABLED)
+                                .cacheId("plan#1")
+                                .build());
+    }
+
+    @Test
+    void creationContext_rotation_sparesUnrelatedCacheIds() {
+        ModelRegistry.registerFactory("local:(.+)", (id, context) -> new StubModel(id));
+        ModelRegistry.registerCreationContext(
+                "tenant-a", ModelCreationContext.builder().apiKey("key-a").build());
+        ModelRegistry.registerCreationContext(
+                "tenant-b", ModelCreationContext.builder().apiKey("key-b").build());
+        ModelCreationContext manual =
+                ModelCreationContext.builder()
+                        .apiKey("key-m")
+                        .cachePolicy(CachePolicy.ENABLED)
+                        .cacheId("tenant-a-manual")
+                        .build();
+
+        Model namedA =
+                ModelRegistry.resolve("local:alpha", ModelRegistry.getCreationContext("tenant-a"));
+        Model namedB =
+                ModelRegistry.resolve("local:alpha", ModelRegistry.getCreationContext("tenant-b"));
+        Model manualInstance = ModelRegistry.resolve("local:alpha", manual);
+
+        // Rotating tenant-a must not purge tenant-b's or a hand-built cache id's entries.
+        ModelRegistry.registerCreationContext(
+                "tenant-a", ModelCreationContext.builder().apiKey("key-a-2").build());
+
+        Model rotated =
+                ModelRegistry.resolve("local:alpha", ModelRegistry.getCreationContext("tenant-a"));
+        assertNotSame(namedA, rotated);
+        assertSame(
+                namedB,
+                ModelRegistry.resolve("local:alpha", ModelRegistry.getCreationContext("tenant-b")));
+        assertSame(manualInstance, ModelRegistry.resolve("local:alpha", manual));
+    }
+
+    @Test
     void resolve_compositeIdentity_usesCreationContextAndCaches() {
         AtomicReference<String> seenApiKey = new AtomicReference<>();
         ModelRegistry.registerFactory(

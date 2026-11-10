@@ -92,7 +92,12 @@ import org.slf4j.LoggerFactory;
  * <p>The {@code @} character is reserved for the composite model identity syntax {@code
  * contextId@modelId}: {@link #register(String, Model)} instance ids and {@link
  * #registerCreationContext(String, ModelCreationContext)} context ids must not contain it, so a
- * registration can never shadow a composite identity.
+ * registration can never shadow a composite identity. The {@code #} character is reserved for
+ * the rotation-generation cache-id suffix ({@code contextId#generation}) that {@link
+ * #registerCreationContext(String, ModelCreationContext)} derives: context ids and hand-built
+ * {@link ModelCreationContext.Builder#cacheId(String)} values must not contain it, so a named
+ * generation identity can never collide with a hand-built cache id, and rotating one id can
+ * never purge another id's entries.
  *
  * <p>The registry holds two physically separate, structurally isomorphic instance slots ("string
  * identity → Model instance"): {@code modelInstances} for instances the user pinned explicitly
@@ -157,6 +162,9 @@ public final class ModelRegistry {
     /**
      * Registers a whole {@link Model} instance under a unique {@code modelInstanceId}. {@link #resolve(String)} returns this instance
      * for an exact {@code modelInstanceId} match (no caching of factory-created instances applies).
+     *
+     * <p>In plain terms: {@code modelInstanceId} is just a name you give this {@link Model}
+     * instance — {@code resolve(name)} hands back exactly this object.
      *
      * <p>The model instance id is trimmed. At most one instance is bound per id at any time;
      * re-registering an id with a different instance replaces the registration (logged as a warning).
@@ -568,6 +576,11 @@ public final class ModelRegistry {
      * cacheId(contextId + "#" + generation)}, where the generation increments on every
      * re-registration; all other fields are kept as supplied.
      *
+     * <p>In plain terms: {@code contextId} is just a name you give this {@link
+     * ModelCreationContext}. {@code getCreationContext(name)} hands the (normalized) context
+     * back, and the composite identity {@code name@modelId} resolves with it — the
+     * credentials/endpoint pairing travels with one string.
+     *
      * <p><b>Rotation semantics.</b> Re-registering the same {@code contextId} starts a new
      * generation and purges every cached entry of previous generations. The rotation takes
      * effect for resolutions that <em>start</em> after the re-registration, including the
@@ -586,8 +599,9 @@ public final class ModelRegistry {
      * them. A full leak response is: rotate here + revoke the old key at the provider +
      * holders release old instances; this registry covers only the first.
      *
-     * @throws IllegalArgumentException if the trimmed contextId is blank or contains {@code @}
-     *     (reserved for the {@code contextId@modelId} model identity syntax)
+     * @throws IllegalArgumentException if the trimmed contextId is blank, or contains {@code @}
+     *     (reserved for the {@code contextId@modelId} model identity syntax) or {@code #}
+     *     (reserved for the rotation-generation cache-id suffix)
      */
     public static void registerCreationContext(String contextId, ModelCreationContext context) {
         Objects.requireNonNull(contextId, "contextId");
@@ -603,6 +617,13 @@ public final class ModelRegistry {
                             + trimmed
                             + "\"");
         }
+        if (trimmed.indexOf('#') >= 0) {
+            throw new IllegalArgumentException(
+                    "contextId must not contain '#' — it is reserved for the"
+                            + " rotation-generation cache-id suffix (contextId#generation): \""
+                            + trimmed
+                            + "\"");
+        }
         long generation =
                 contextGenerations
                         .computeIfAbsent(trimmed, k -> new AtomicLong())
@@ -610,7 +631,7 @@ public final class ModelRegistry {
         ModelCreationContext normalized =
                 context.toBuilder()
                         .cachePolicy(CachePolicy.ENABLED)
-                        .cacheId(trimmed + "#" + generation)
+                        .registryCacheId(trimmed + "#" + generation)
                         .build();
         creationContexts.put(trimmed, normalized);
         // Purge every generation's entries (the previous one included): an in-flight

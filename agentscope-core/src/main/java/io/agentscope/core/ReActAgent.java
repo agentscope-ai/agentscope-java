@@ -5369,8 +5369,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * pinned on the context's typed bag ({@code ctx.put(Model.class, ...)} — pinned by the
      * caller, or memoized at run entry by the {@code call()}/{@code streamEvents()} pipeline),
      * then this agent's identity string resolved through {@link ModelRegistry}, then the
-     * configured {@link Model} instance. The result is memoized into {@code ctx} on first
-     * resolution, so the model is determined once at the start of the run and never switches
+     * configured {@link Model} instance.
+     *
+     * <p>The {@code Model.class} slot of {@link RuntimeContext} is intentionally the generic
+     * typed channel, not a private framework flag: the caller may pin a per-call selection,
+     * and middleware or tools may replace the model mid-run through the same {@code
+     * ctx.put(Model.class, ...)} call to adapt to per-request business needs — RuntimeContext
+     * content is designed to be reworked mid-run by middleware. What the framework itself
+     * guarantees is narrower: the pipeline resolves the identity once at run entry, memoizes
+     * the result into {@code ctx}, and from then on every model boundary of the run is a plain
+     * read of the slot — the framework never re-resolves or switches the model on its own
      * mid-response; a fresh context re-resolves. Run-entry resolution happens on a
      * boundedElastic scheduler ({@code ModelRegistry.resolve} may run a factory), so the
      * subscriber's thread — possibly a Reactor event loop — is never blocked. A
@@ -6214,7 +6222,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * overload and {@link #model(Model)} are two forms of one configuration slot: the
          * last setter wins, and this call clears any previously configured instance. Per-call
          * selection pins an instance on the context ({@code ctx.put(Model.class, ...)}),
-         * which outranks both forms.
+         * which outranks both forms; middleware may likewise replace the effective model
+         * mid-run through that same typed slot — see {@link #getModel(RuntimeContext)}.
          *
          * @param modelIdentity a registry-resolvable identity string
          * @return this builder
