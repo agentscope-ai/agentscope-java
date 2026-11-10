@@ -486,7 +486,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 
 > 新代码请用 `streamEvents()`（返回 `Flux<AgentEvent>`）。旧 `stream()` 系列（`Flux<Event>`）在 2.0.0 起 `@Deprecated(forRemoval = true)` —— 详见 [消息与事件](/v2/zh/docs/building-blocks/message-and-event) 与 [V1 迁移指南 B.4](/v2/zh/docs/change-log)。
 
-父 agent 通过 `agent_spawn` / `agent_send` 同步调用子 agent 时，子 agent 的中间事件会**实时转发**到父的 `streamEvents()` 流中。每个子事件都带一个 `source` 字段（`/` 分隔的路径，如 `"main/researcher"`），父事件的 `source` 为 `null`。远程 Agent Protocol 子 agent 还会写入 `metadata.taskId`（`AgentEvent.METADATA_TASK_ID`，harness 侧任务 id）与 `metadata.parentSessionId`（`AgentEvent.METADATA_PARENT_SESSION_ID`，父 session），因此同一轮里对同一远程 agent 的多次调用即使 `source` 相同也能区分，并能回溯到发起方会话。
+父 agent 通过 `agent_spawn` / `agent_send` 同步调用本地子 agent 时，子 agent 的中间事件会**实时转发**到父的 `streamEvents()` 流中。每个子事件都带一个 `source` 字段，格式为 `parentSessionId/agentId/subagentSessionId`（例如 `"main/researcher/sub-1"`）。最后一段是子 agent 实例自己的 session id，因此同一父会话里多次实例化同一种子 agent 也能区分。远程 Agent Protocol 子 agent 使用 `parentSessionId/agentId/taskId`，并额外写入 `metadata.taskId`（`AgentEvent.METADATA_TASK_ID`，harness 侧任务 id）与 `metadata.parentSessionId`（`AgentEvent.METADATA_PARENT_SESSION_ID`，父 session），因此同一轮里对同一远程 agent 的多次调用也能区分。
 
 ```
 caller
@@ -497,11 +497,11 @@ caller
         ├─ TOOL_CALL_START "agent_spawn"
         │
         │  [子 agent 创建]
-        ├─ AGENT_START          (source="main/researcher")  ← 子启动
-        ├─ TEXT_BLOCK_DELTA …   (source="main/researcher")  ← 子推理
-        ├─ TOOL_CALL_START …    (source="main/researcher")
-        ├─ TOOL_RESULT_END …   (source="main/researcher")
-        ├─ AGENT_END            (source="main/researcher")  ← 子结束
+        ├─ AGENT_START          (source="main/researcher/sub-1")  ← 子启动
+        ├─ TEXT_BLOCK_DELTA …   (source="main/researcher/sub-1")  ← 子推理
+        ├─ TOOL_CALL_START …    (source="main/researcher/sub-1")
+        ├─ TOOL_RESULT_END …   (source="main/researcher/sub-1")
+        ├─ AGENT_END            (source="main/researcher/sub-1")  ← 子结束
         │  [agent_spawn 返回，子结果作为 TOOL_RESULT 传给父]
         │
         ├─ TOOL_RESULT_END                        ← 父收到工具结果

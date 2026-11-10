@@ -81,7 +81,9 @@ public final class AgentSession implements AutoCloseable {
 
     public AgentSession(HarnessAgent agent, RuntimeContext context) {
         this.agent = Objects.requireNonNull(agent);
-        this.context = RuntimeContext.builder(context).build();
+        // A durable session spans many runs: a caller's per-call modelId must not stick to
+        // every future turn. Queued and resumed turns run the agent's build-time model.
+        this.context = RuntimeContext.builder(context).modelId(null).build();
         this.context.put(SessionRecorder.TURN_ID_KEY, null);
         this.context.put(SessionExecution.CONTEXT_KEY, null);
         this.key = agent.sessionKey(this.context);

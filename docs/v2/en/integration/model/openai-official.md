@@ -42,6 +42,37 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
     .build();
 ```
 
+## Document input
+
+Send documents in user messages with `DocumentBlock`. Both the default formatter
+and `ResponsesMultiAgentFormatter` preserve documents as native `input_file`
+content parts, including their position among text and images. File formats and
+model support follow the [OpenAI file inputs guide](https://developers.openai.com/api/docs/guides/file-inputs).
+
+OpenAI requires each file to be under 50 MB, and the combined size of all files
+in one request to be at most 50 MB.
+For documents reused across requests, upload the file to OpenAI first, then use a
+`FileIdSource` to reference the returned file ID; this avoids
+repeated local reads and encoding.
+
+```java
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.UserMessage;
+import java.util.List;
+
+DocumentBlock document = DocumentBlock.builder()
+    .source(new URLSource("https://example.com/report.pdf"))
+    .build();
+
+model.stream(List.of(UserMessage.builder()
+        .content(TextBlock.builder().text("Summarize this report.").build(), document)
+        .build()), null, null)
+    .doOnNext(System.out::println)
+    .blockLast();
+```
+
 ## Server-side built-in tools
 
 OpenAI Official Documents: https://developers.openai.com/api/docs/guides/tools#available-tools

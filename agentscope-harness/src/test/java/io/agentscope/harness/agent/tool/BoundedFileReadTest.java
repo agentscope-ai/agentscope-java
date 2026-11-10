@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -32,6 +33,8 @@ import java.nio.file.Path;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class BoundedFileReadTest {
     @TempDir Path workspace;
@@ -83,7 +86,7 @@ class BoundedFileReadTest {
     }
 
     @Test
-    void explicitLimitCannotBypassHardMaximum() throws Exception {
+    void explicitLimitCannotBypassDefaultMaximum() throws Exception {
         Files.writeString(workspace.resolve("large.txt"), "\uD83D\uDE00".repeat(100_000));
         String output =
                 text(
@@ -97,6 +100,54 @@ class BoundedFileReadTest {
         assertTrue(output.startsWith("\uD83D\uDE00".repeat(32_000) + "\n[Output truncated."));
         assertTrue(output.length() < 65_000);
         assertTrue(output.contains("char_offset=32000"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {16_000, 64_000})
+    void configuredMaximumBoundsPagesAndPreservesUnicodeContent(int maximum) throws Exception {
+        String content = "a\uD83D\uDE00中".repeat(maximum);
+        Files.writeString(workspace.resolve("configured.txt"), content);
+        FilesystemTool tool = new FilesystemTool(new LocalFilesystem(workspace), null, maximum);
+        StringBuilder restored = new StringBuilder();
+        int total = content.codePointCount(0, content.length());
+        for (int start = 0; start < total; start += maximum) {
+            String output =
+                    text(
+                            tool.readFile(
+                                    RuntimeContext.empty(),
+                                    "configured.txt",
+                                    0,
+                                    1,
+                                    start,
+                                    Integer.MAX_VALUE));
+            int marker = output.indexOf("\n[Output truncated.");
+            String page = marker < 0 ? output : output.substring(0, marker);
+            assertEquals(Math.min(maximum, total - start), page.codePointCount(0, page.length()));
+            assertFalse(Character.isLowSurrogate(page.charAt(0)));
+            assertFalse(Character.isHighSurrogate(page.charAt(page.length() - 1)));
+            if (marker >= 0) assertTrue(output.contains("char_offset=" + (start + maximum)));
+            restored.append(page);
+        }
+        assertEquals(content, restored.toString());
+    }
+
+    @Test
+    void configuredMaximumDoesNotChangeOmittedPageSize() throws Exception {
+        Files.writeString(workspace.resolve("default.txt"), "x".repeat(100_000));
+        FilesystemTool tool = new FilesystemTool(new LocalFilesystem(workspace), null, 64_000);
+        String output = text(tool.readFile(RuntimeContext.empty(), "default.txt", null, null));
+        assertTrue(output.startsWith("x".repeat(16_000) + "\n[Output truncated."));
+        assertTrue(output.contains("char_offset=16000"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, 0, 15_999})
+    void invalidConfiguredMaximumDoesNotAccessFilesystem(int maximum) {
+        AbstractFilesystem filesystem = mock(AbstractFilesystem.class);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new FilesystemTool(filesystem, null, maximum));
+        verifyNoInteractions(filesystem);
     }
 
     @Test
