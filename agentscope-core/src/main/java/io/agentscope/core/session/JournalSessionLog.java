@@ -23,17 +23,22 @@ import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 
 /** Immutable commit chain made visible by one fenced CAS of its head. No listing-based recovery. */
 public final class JournalSessionLog implements SessionLog {
+    /** Segments loaded per bulk read while streaming a located range. */
+    private static final int LOAD_BATCH = 256;
+
     private final AtomicSessionStorage storage;
     private final String prefix;
     private final Clock clock;
@@ -198,7 +203,9 @@ public final class JournalSessionLog implements SessionLog {
             if (event.seq() != ++seq) throw new SessionLogException("Non-contiguous event batch");
         }
         String hash = hash(bytes(frozen));
-        String id = hash(batchId.getBytes(StandardCharsets.UTF_8));
+        // Lexicographic key order is sequence order, so an incremental scan can locate the
+        // segment covering a sequence without walking the parent chain from head.
+        String id = String.format(Locale.ROOT, "%020d", expectedSeq + 1);
         String commitPath = path("commits/" + id + ".json");
         for (int i = 0; i < 32; i++) {
             var value = storage.read(path("head.json"));
@@ -247,8 +254,18 @@ public final class JournalSessionLog implements SessionLog {
             byte[] data = bytes(commit);
             if (!storage.compareAndSet(commitPath, 0, data)) {
                 var existing = storage.read(commitPath);
-                if (existing == null || !Arrays.equals(existing.bytes(), data))
-                    throw new SessionLogException("Immutable commit conflict");
+                if (existing == null || !Arrays.equals(existing.bytes(), data)) {
+                    // A fenced or failed attempt can leave an unreferenced segment at this
+                    // sequence. Fall back to the legacy batch-hash name so a different batch
+                    // can still advance the journal; later scans then use the parent chain.
+                    id = hash(batchId.getBytes(StandardCharsets.UTF_8));
+                    commitPath = path("commits/" + id + ".json");
+                    if (!storage.compareAndSet(commitPath, 0, data)) {
+                        existing = storage.read(commitPath);
+                        if (existing == null || !Arrays.equals(existing.bytes(), data))
+                            throw new SessionLogException("Immutable commit conflict");
+                    }
+                }
             }
             owned(h, writer);
             var next = new Head(seq, h.epoch(), h.owner(), h.leaseUntil(), id);
@@ -341,17 +358,115 @@ public final class JournalSessionLog implements SessionLog {
         return storage.read(path("commits/" + id + ".json"));
     }
 
-    public Iterable<SessionEvent> scan(long after, long through) {
-        var head = head();
-        if (after < 0 || through < after || through > head.seq())
-            throw new IllegalArgumentException("Invalid committed prefix");
-        // One round-trip per journal instead of one per segment: bulk-load the committed
-        // segments up front when the backend can list and batch-read, and walk the commit
-        // chain in memory. Backends without discovery fall back to per-segment reads.
-        // This is only worth it for a full replay (after == 0); an incremental read covers
-        // just the head -> after suffix and reads those segments one by one.
-        Map<String, AtomicSessionStorage.Value> loadedSegments =
-                after == 0 ? loadCommitSegments() : null;
+    /** Bulk-reads one bounded page of located segments, so long journals stay off the heap. */
+    private Map<String, AtomicSessionStorage.Value> loadCommitBatch(Collection<String> ids) {
+        var paths = new ArrayList<String>(ids.size());
+        for (String id : ids) {
+            paths.add(path("commits/" + id + ".json"));
+        }
+        return storage.readAll(paths);
+    }
+
+    /** A sequence-named commit segment: {@code <20-digit firstSeq>.json}. */
+    private record SegmentKey(long firstSeq, String id, String path) {}
+
+    /** A located scan range: segments in sequence order and their bulk-read values. */
+    private record Located(List<String> ids) {}
+
+    /**
+     * Locates the segments covering {@code after} by listing commit keys and binary-searching
+     * their sequence-named filenames. Returns {@code null} when listing is unavailable, any key
+     * is not sequence-named (legacy journal), or the located segments fail validation; callers
+     * then fall back to walking the parent chain.
+     */
+    private Located locateBySequence(Head head, long after, long through) {
+        List<String> paths;
+        try {
+            paths = storage.listPaths(path("commits") + "/");
+        } catch (UnsupportedOperationException | SessionLogException ignored) {
+            return null;
+        }
+        if (paths.isEmpty()) return null;
+        var segments = new ArrayList<SegmentKey>(paths.size());
+        for (String segmentPath : paths) {
+            String id = segmentId(segmentPath);
+            if (id == null) return null;
+            try {
+                segments.add(new SegmentKey(Long.parseLong(id), id, segmentPath));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        segments.sort((left, right) -> Long.compare(left.firstSeq(), right.firstSeq()));
+        int start = after <= segments.get(0).firstSeq() ? 0 : lastAtOrBefore(segments, after);
+        if (start < 0) return null;
+        int end = lastAtOrBefore(segments, through);
+        if (end < start) return null;
+        var selected = segments.subList(start, end + 1);
+        var ids = new ArrayList<String>(selected.size());
+        for (var segment : selected) ids.add(segment.id());
+        try {
+            // Read only the boundary segments; the iterator validates the rest while streaming.
+            var firstSegment = selected.get(0);
+            var first = readCommit(firstSegment.id(), null);
+            if (first.firstSeq() != firstSegment.firstSeq()
+                    || first.events().isEmpty()
+                    || first.lastSeq() != first.firstSeq() + first.events().size() - 1) return null;
+            var lastSegment = selected.get(selected.size() - 1);
+            var last = selected.size() == 1 ? first : readCommit(lastSegment.id(), null);
+            if (last.firstSeq() != lastSegment.firstSeq()
+                    || last.lastSeq() != last.firstSeq() + last.events().size() - 1) return null;
+            // Anchor the located range to the head chain. A scan that reaches head must end at
+            // the head commit; a shorter range must link to the next segment after it.
+            if (end == segments.size() - 1 || through == head.seq()) {
+                if (!lastSegment.id().equals(head.commitId()) || last.lastSeq() != head.seq())
+                    return null;
+            } else {
+                var anchor = readCommit(segments.get(end + 1).id(), null);
+                if (anchor.firstSeq() != last.lastSeq() + 1
+                        || !Objects.equals(anchor.parent(), lastSegment.id())) return null;
+            }
+        } catch (SessionLogException ignored) {
+            return null;
+        }
+        return new Located(ids);
+    }
+
+    /** Index of the last segment whose first sequence is at or before {@code seq}. */
+    private static int lastAtOrBefore(List<SegmentKey> segments, long seq) {
+        int low = 0;
+        int high = segments.size() - 1;
+        int found = -1;
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            if (segments.get(mid).firstSeq() <= seq) {
+                found = mid;
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+        return found;
+    }
+
+    /** Extracts the sequence id from a {@code <20-digit firstSeq>.json} key, or null. */
+    private static String segmentId(String segmentPath) {
+        String name = segmentPath.substring(segmentPath.lastIndexOf('/') + 1);
+        if (!name.endsWith(".json")) return null;
+        String id = name.substring(0, name.length() - ".json".length());
+        if (id.length() != 20) return null;
+        for (int i = 0; i < id.length(); i++) {
+            if (id.charAt(i) < '0' || id.charAt(i) > '9') return null;
+        }
+        return id;
+    }
+
+    /** Walks the immutable parent chain from head down to {@code after}. */
+    private ArrayDeque<String> walkChain(
+            Head head,
+            long after,
+            long through,
+            Map<String, AtomicSessionStorage.Value> loadedSegments) {
         var ids = new ArrayDeque<String>();
         var seen = new HashSet<String>();
         long expected = head.seq();
@@ -369,12 +484,39 @@ public final class JournalSessionLog implements SessionLog {
             id = commit.parent();
         }
         if (expected > after) throw new SessionLogException("Incomplete committed chain");
+        return ids;
+    }
+
+    public Iterable<SessionEvent> scan(long after, long through) {
+        var head = head();
+        if (after < 0 || through < after || through > head.seq())
+            throw new IllegalArgumentException("Invalid committed prefix");
+        Map<String, AtomicSessionStorage.Value> loadedSegments;
+        ArrayDeque<String> ids;
+        var located = after < head.seq() ? locateBySequence(head, after, through) : null;
+        boolean batchLoad = located != null;
+        if (located != null) {
+            loadedSegments = null;
+            ids = new ArrayDeque<>(located.ids());
+        } else {
+            // One round-trip per journal instead of one per segment: bulk-load the committed
+            // segments up front when the backend can list and batch-read, and walk the commit
+            // chain in memory. Backends without discovery fall back to per-segment reads.
+            // This is only worth it for a full replay (after == 0); an incremental read covers
+            // just the head -> after suffix and reads those segments one by one.
+            loadedSegments = after == 0 ? loadCommitSegments() : null;
+            ids = walkChain(head, after, through, loadedSegments);
+        }
         return () ->
                 new Iterator<SessionEvent>() {
                     final Iterator<String> segments = ids.iterator();
+                    final ArrayDeque<String> pending = new ArrayDeque<>();
+                    Map<String, AtomicSessionStorage.Value> batchValues = Map.of();
                     Iterator<SessionEvent> batch = List.<SessionEvent>of().iterator();
                     SessionEvent next;
                     long cursor = after;
+                    String previousId;
+                    long expectedFirst = -1;
 
                     public boolean hasNext() {
                         if (next != null) return true;
@@ -388,9 +530,36 @@ public final class JournalSessionLog implements SessionLog {
                                 next = candidate;
                                 return true;
                             }
-                            if (!segments.hasNext())
-                                throw new SessionLogException("Missing committed events");
-                            batch = readCommit(segments.next(), loadedSegments).events().iterator();
+                            String id;
+                            Commit commit;
+                            if (!batchLoad) {
+                                if (!segments.hasNext())
+                                    throw new SessionLogException("Missing committed events");
+                                id = segments.next();
+                                commit = readCommit(id, loadedSegments);
+                            } else {
+                                if (pending.isEmpty()) {
+                                    while (pending.size() < LOAD_BATCH && segments.hasNext()) {
+                                        pending.addLast(segments.next());
+                                    }
+                                    if (pending.isEmpty())
+                                        throw new SessionLogException("Missing committed events");
+                                    batchValues = loadCommitBatch(pending);
+                                }
+                                id = pending.removeFirst();
+                                commit = readCommit(id, batchValues);
+                            }
+                            if (commit.events().isEmpty()
+                                    || commit.lastSeq()
+                                            != commit.firstSeq() + commit.events().size() - 1)
+                                throw new SessionLogException("Broken committed prefix");
+                            if (previousId != null
+                                    && (commit.firstSeq() != expectedFirst
+                                            || !Objects.equals(commit.parent(), previousId)))
+                                throw new SessionLogException("Broken committed prefix");
+                            previousId = id;
+                            expectedFirst = commit.lastSeq() + 1;
+                            batch = commit.events().iterator();
                         }
                     }
 
