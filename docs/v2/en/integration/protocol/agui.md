@@ -76,6 +76,25 @@ Flux<AguiEvent> events = Flux.using(
 
 The front end provides `RunAgentInput`, including `threadId`, `runId`, `messages`, `tools`, `state`, and related fields. The adapter converts AG-UI messages to AgentScope `Msg` objects, invokes v2 `streamEvents(...)`, and converts each `AgentEvent` to AG-UI events.
 
+## Custom MVC Request Processor
+
+For manual Spring MVC controller configuration, supply an `AguiRequestProcessor` to use your own agent resolver and request processing configuration:
+
+```java
+import io.agentscope.core.agui.processor.AguiRequestProcessor;
+import io.agentscope.spring.boot.agui.mvc.AguiMvcController;
+
+AguiRequestProcessor processor = AguiRequestProcessor.builder()
+    .agentResolver(customAgentResolver)
+    .build();
+
+AguiMvcController controller = AguiMvcController.builder()
+    .requestProcessor(processor)
+    .build();
+```
+
+With a custom processor, the controller does not require an agent registry. Its `agentRegistry`, `sessionManager`, `serverSideMemory`, `config`, `adapterFactory`, and `runtimeContextResolver` builder options are ignored; configure these behaviors on the supplied processor instead. HTTP options such as `sseTimeout` and `interruptOnDisconnect` still apply. Omit `requestProcessor` (or pass `null`) to keep the default processor and required registry.
+
 ## Event Mapping
 
 The v2 path consumes `AgentEvent`. Built-in converters handle semantic mapping, and unmapped events fall back to the official `RAW` event.
