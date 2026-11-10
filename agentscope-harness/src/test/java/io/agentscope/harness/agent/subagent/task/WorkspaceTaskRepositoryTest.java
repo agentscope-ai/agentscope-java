@@ -169,6 +169,69 @@ class WorkspaceTaskRepositoryTest {
         assertTrue(record.get().getErrorMessage().contains("intentional failure"));
     }
 
+    @Test
+    @DisplayName("completion callback receives FAILED status and error message when task throws")
+    void completionCallback_receivesFailedStatusAndError() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<TaskStatus> status =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<String> result =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<String> error =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        repo.setCompletionCallback(
+                (rc, taskId, subAgentId, sessionId, cbStatus, cbResult, cbError) -> {
+                    status.set(cbStatus);
+                    result.set(cbResult);
+                    error.set(cbError);
+                });
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                "task-callback-fail",
+                "sub-agent-fail",
+                "sess-callback",
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            throw new RuntimeException("callback failure detail");
+                        }));
+
+        awaitCondition(() -> status.get() != null);
+
+        assertEquals(TaskStatus.FAILED, status.get());
+        assertEquals(null, result.get());
+        assertTrue(error.get().contains("callback failure detail"));
+    }
+
+    @Test
+    @DisplayName("completion callback receives COMPLETED status and result on success")
+    void completionCallback_receivesCompletedStatusAndResult() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<TaskStatus> status =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<String> result =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<String> error =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        repo.setCompletionCallback(
+                (rc, taskId, subAgentId, sessionId, cbStatus, cbResult, cbError) -> {
+                    status.set(cbStatus);
+                    result.set(cbResult);
+                    error.set(cbError);
+                });
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                "task-callback-ok",
+                "sub-agent-ok",
+                "sess-callback",
+                new TaskRunSpec.LocalTaskRunSpec(() -> "delivered"));
+
+        awaitCondition(() -> status.get() != null);
+
+        assertEquals(TaskStatus.COMPLETED, status.get());
+        assertEquals("delivered", result.get());
+        assertEquals(null, error.get());
+    }
+
     // ------------------------------------------------------------------
     //  Cross-node fallback: no local future
     // ------------------------------------------------------------------
@@ -923,7 +986,8 @@ class WorkspaceTaskRepositoryTest {
     void executionOwnerCanSuppressWakeupWithoutLosingDurableDelivery() throws Exception {
         AtomicInteger wakeups = new AtomicInteger();
         repo.setCompletionCallback(
-                (rc, taskId, agentId, sessionId, result) -> wakeups.incrementAndGet());
+                (rc, taskId, agentId, sessionId, status, result, errorMessage) ->
+                        wakeups.incrementAndGet());
         RuntimeContext managed =
                 RuntimeContext.builder()
                         .sessionId("managed")

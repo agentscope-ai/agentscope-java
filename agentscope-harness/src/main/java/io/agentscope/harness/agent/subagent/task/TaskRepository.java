@@ -128,8 +128,9 @@ public interface TaskRepository {
     /**
      * Registers a callback invoked when any task reaches a terminal state (COMPLETED or FAILED).
      * Used by {@link io.agentscope.harness.agent.middleware.SubagentsMiddleware} to push results
-     * to the session inbox and enqueue a wakeup signal. The {@code result} argument is {@code null}
-     * for failed tasks.
+     * to the session inbox and enqueue a wakeup signal. The callback receives the terminal
+     * {@link TaskStatus}; {@code result} is {@code null} for failed tasks and
+     * {@code errorMessage} is {@code null} for completed ones.
      *
      * <p>Callers retaining execution ownership can set {@link #SUPPRESS_COMPLETION_CALLBACK}
      * in their RuntimeContext to suppress inbox/wakeup callbacks while preserving durable results.
@@ -147,7 +148,8 @@ public interface TaskRepository {
 
     /**
      * Callback invoked when a background task reaches a terminal state (COMPLETED or FAILED).
-     * {@code result} is {@code null} when the task failed.
+     * {@code result} is {@code null} when the task failed; {@code errorMessage} is {@code null}
+     * when it completed.
      */
     @FunctionalInterface
     interface TaskCompletionCallback {
@@ -156,6 +158,8 @@ public interface TaskRepository {
                 String taskId,
                 String subAgentId,
                 String sessionId,
-                String result);
+                TaskStatus status,
+                String result,
+                String errorMessage);
     }
 }

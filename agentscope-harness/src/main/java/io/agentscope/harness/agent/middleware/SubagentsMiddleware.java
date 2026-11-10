@@ -287,6 +287,34 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
+     * Formats the inbox hint pushed when a background subagent task settles.
+     *
+     * <p>Failed tasks must not be announced with completion wording: the parent model would treat
+     * the run as a delivered (empty) business result instead of an infrastructure failure to retry
+     * or escalate. Mirrors the task-delivery reminder's {@code <task_error>} semantics.</p>
+     */
+    public static String taskSettledHintContent(
+            String taskId,
+            String subAgentId,
+            TaskStatus status,
+            String result,
+            String errorMessage) {
+        if (status == TaskStatus.FAILED) {
+            return String.format(
+                    "<system-reminder>Background subagent task '%s' (agent=%s) FAILED and"
+                            + " produced no result.\n\nError:\n\n%s\n\nThis is an execution"
+                            + " failure, not a business conclusion. Use task_output(task_id=...,"
+                            + " block=false) or task_list() if you need the task"
+                            + " record.</system-reminder>",
+                    taskId, subAgentId, errorMessage != null ? errorMessage : "(no error message)");
+        }
+        return String.format(
+                "<system-reminder>Background subagent task '%s' (agent=%s) has completed."
+                        + "\n\nResult:\n\n%s</system-reminder>",
+                taskId, subAgentId, result != null ? result : "(no output)");
+    }
+
+    /**
      * Wires a {@link io.agentscope.harness.agent.bus.MessageBus} so that background task completions are
      * pushed to the session inbox and a wakeup signal is enqueued. This enables the
      * {@link io.agentscope.harness.agent.gateway.WakeupDispatcher} to re-trigger idle sessions
@@ -305,14 +333,11 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             return this;
         }
         taskRepository.setCompletionCallback(
-                (rc, taskId, subAgentId, sessionId, result) -> {
+                (rc, taskId, subAgentId, sessionId, status, result, errorMessage) -> {
                     String userId = rc != null ? rc.getUserId() : null;
                     String hintContent =
-                            String.format(
-                                    "<system-reminder>Background subagent task '%s'"
-                                            + " (agent=%s) has completed.\n\nResult:\n\n%s"
-                                            + "</system-reminder>",
-                                    taskId, subAgentId, result != null ? result : "(no output)");
+                            taskSettledHintContent(
+                                    taskId, subAgentId, status, result, errorMessage);
                     String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
                     java.util.Map<String, Object> hintPayload =
                             java.util.Map.of(
@@ -339,9 +364,10 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                                                     taskId,
                                                     err.getMessage()));
                     log.info(
-                            "Subagent task {} completed, pushed to inbox and enqueued wakeup:"
-                                    + " session={}",
+                            "Subagent task {} settled (status={}), pushed to inbox and enqueued"
+                                    + " wakeup: session={}",
                             taskId,
+                            status,
                             sessionId);
                 });
         return this;

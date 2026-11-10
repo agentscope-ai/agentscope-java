@@ -2602,16 +2602,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 io.agentscope.harness.agent.bus.MessageBus bus,
                 String agentId) {
             repo.setCompletionCallback(
-                    (rc, taskId, subAgentId, sessionId, result) -> {
+                    (rc, taskId, subAgentId, sessionId, status, result, errorMessage) -> {
                         String userId = rc != null ? rc.getUserId() : null;
                         String hintContent =
-                                String.format(
-                                        "<system-reminder>Background subagent task '%s'"
-                                                + " (agent=%s) has completed.\n\nResult:\n\n%s"
-                                                + "</system-reminder>",
-                                        taskId,
-                                        subAgentId,
-                                        result != null ? result : "(no output)");
+                                io.agentscope.harness.agent.middleware.SubagentsMiddleware
+                                        .taskSettledHintContent(
+                                                taskId, subAgentId, status, result, errorMessage);
                         String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
                         bus.inboxPush(
                                         sessionId,
