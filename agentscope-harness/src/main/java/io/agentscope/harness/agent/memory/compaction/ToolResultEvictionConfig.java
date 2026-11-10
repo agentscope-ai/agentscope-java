@@ -58,19 +58,15 @@ public class ToolResultEvictionConfig {
      *   <li>{@code read_file} — evicting would cause re-read loops; pagination handles size</li>
      *   <li>{@code write_file}, {@code edit_file} — return tiny success messages</li>
      *   <li>Search/list tools have bounded previews and remain eligible for eviction.</li>
-     *   <li>{@code memory_search}, {@code memory_get}, {@code session_search} — small/paginated results</li>
+     *   <li>{@code memory_search}, {@code memory_get} — small/paginated results</li>
      * </ul>
      *
      * Shell ({@code execute}) is intentionally NOT excluded: command output can be very large.
+     * {@code session_search} is NOT excluded either: its result count is capped, but each match
+     * carries a whole stored message, so a few matching tool outputs can exceed the threshold.
      */
     public static final Set<String> DEFAULT_EXCLUDED_TOOLS =
-            Set.of(
-                    "read_file",
-                    "write_file",
-                    "edit_file",
-                    "memory_search",
-                    "memory_get",
-                    "session_search");
+            Set.of("read_file", "write_file", "edit_file", "memory_search", "memory_get");
 
     private final int maxResultChars;
     private final int previewChars;

@@ -35,9 +35,8 @@ import java.util.function.Predicate;
 /** Read-only session discovery and full conversation views from the authoritative native log. */
 public class SessionSearchTool {
     /**
-     * Hard ceiling for model-supplied result limits. The tool is excluded from
-     * {@code ToolResultEvictionConfig} on the "bounded results" rationale, so nothing
-     * downstream trims an oversized result — the clamp has to happen here (#3270).
+     * Hard ceiling for model-supplied result limits (#3270). This bounds the number of matches,
+     * not their size; oversized results are left to {@code ToolResultEvictionConfig}.
      */
     private static final int MAX_RESULTS_CEILING = 100;
 

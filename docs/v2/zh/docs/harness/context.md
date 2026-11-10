@@ -213,7 +213,7 @@ builder.toolResultEviction(ToolResultEvictionConfig.builder()
         .build());
 ```
 
-`read_file`、`write_file`、`edit_file`、`memory_search`、`memory_get` 和 `session_search` 默认不参与这种卸载。`execute` 等工具仍可卸载；读取工具本身应合理分页，避免一次读回全部内容又占满窗口。
+`read_file`、`write_file`、`edit_file`、`memory_search` 和 `memory_get` 默认不参与这种卸载。`execute`、`session_search` 等工具仍可卸载；读取工具本身应合理分页，避免一次读回全部内容又占满窗口。
 
 <span id="配置预算与观测" />
 

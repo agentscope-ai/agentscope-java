@@ -211,7 +211,7 @@ agentBuilder.toolResultEviction(ToolResultEvictionConfig.builder()
         .build());
 ```
 
-These are the defaults: results exceeding 80,000 characters are eligible, and the first and last 2,000 characters remain as previews. `read_file`, `write_file`, `edit_file`, `memory_search`, `memory_get`, and `session_search` are excluded by default. Shell `execute`, search, and list outputs remain eligible. Prefer paginated tools and targeted reads so the next step can use the relevant portion without loading the entire file again.
+These are the defaults: results exceeding 80,000 characters are eligible, and the first and last 2,000 characters remain as previews. `read_file`, `write_file`, `edit_file`, `memory_search`, and `memory_get` are excluded by default. Shell `execute`, `session_search`, and other search and list outputs remain eligible. Prefer paginated tools and targeted reads so the next step can use the relevant portion without loading the entire file again.
 
 <span id="1-conversation-summarization-compactionmiddleware" />
 <span id="4-pre-summary-argument-truncation-optional" />

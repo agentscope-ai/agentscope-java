@@ -416,6 +416,35 @@ class ToolResultEvictionMiddlewareTest {
     }
 
     @Test
+    void defaultConfigEvictsOversizedSessionSearchButNotReadFile() {
+        ToolResultEvictionConfig config = ToolResultEvictionConfig.defaults();
+        assertFalse(config.getExcludedToolNames().contains("session_search"));
+        assertTrue(config.getExcludedToolNames().contains("read_file"));
+
+        RecordingFilesystem filesystem = new RecordingFilesystem(tempDir, WriteResult.ok("stored"));
+        ToolResultEvictionMiddleware middleware =
+                new ToolResultEvictionMiddleware(filesystem, config);
+        String largeOutput = "x".repeat(config.getMaxResultChars() + 1);
+        ReasoningInput input =
+                new ReasoningInput(
+                        List.of(
+                                toolMessage(namedToolResult("session_search", largeOutput)),
+                                toolMessage(namedToolResult("read_file", largeOutput))),
+                        List.of(),
+                        null);
+
+        ReasoningInput compacted =
+                middleware.prepare(agent("Test Agent"), RuntimeContext.empty(), input);
+
+        assertEquals(1, filesystem.writes);
+        assertEquals(largeOutput, filesystem.lastContent);
+        String searchOutput = toolOutput(compacted.messages().get(0));
+        assertTrue(searchOutput.contains("Tool output was too large"));
+        assertTrue(searchOutput.length() < largeOutput.length());
+        assertEquals(largeOutput, toolOutput(compacted.messages().get(1)));
+    }
+
+    @Test
     void mediaOnlyAndWithinBudgetResultsAreNotEvicted() {
         RecordingFilesystem filesystem = new RecordingFilesystem(tempDir, WriteResult.ok("stored"));
         ToolResultEvictionMiddleware middleware =
@@ -602,6 +631,11 @@ class ToolResultEvictionMiddlewareTest {
                 output,
                 Map.of("source", "test"),
                 ToolResultState.SUCCESS);
+    }
+
+    private static ToolResultBlock namedToolResult(String name, String output) {
+        return new ToolResultBlock(
+                "call:" + name, name, List.of(text(output)), Map.of(), ToolResultState.SUCCESS);
     }
 
     private static TextBlock text(String value) {
