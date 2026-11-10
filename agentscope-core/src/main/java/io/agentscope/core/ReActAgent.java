@@ -904,10 +904,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         callContext.put(SessionRecorder.CONTEXT_KEY, recorder);
                                         try {
                                             if (cancelled.get()) {
-                                                // The subscriber is gone: an error
-                                                // emitted now would only be dropped. Close
-                                                // through the failure path and complete
-                                                // empty instead.
                                                 cancelBeforeSessionStart(callContext);
                                                 return null;
                                             }
@@ -925,11 +921,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             beforeAgentExecution(
                                                                     msgs, callContext, control);
                                             if (rc != null) rc.setAgentState(acquired.state);
-                                            // Re-check once the hooks have run: if the
-                                            // subscriber cancelled mid-flight, subscribeOn
-                                            // drops the produced value silently (no onNext,
-                                            // no discard signal), so close here or the lease
-                                            // would be held until it expires.
                                             if (cancelled.get()) {
                                                 cancelBeforeSessionStart(callContext);
                                                 return null;
@@ -974,8 +965,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * is starting, before the resource has been emitted.
      */
     private void cancelJournalStart(CallExecution scope) {
-        closeFailedSessionExecution(
-                scope.rc, new CancellationException("Call cancelled during journal startup"));
+        // The first journal flush may still hold the recorder monitor. Closing here would block
+        // the cancelling thread (often an event loop), so hand the cleanup to boundedElastic.
+        Schedulers.boundedElastic()
+                .schedule(
+                        () ->
+                                closeFailedSessionExecution(
+                                        scope.rc,
+                                        new CancellationException(
+                                                "Call cancelled during journal startup")));
     }
 
     private void closeFailedSessionExecution(RuntimeContext context, Throwable error) {

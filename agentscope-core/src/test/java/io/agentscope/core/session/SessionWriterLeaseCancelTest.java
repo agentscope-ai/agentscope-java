@@ -157,17 +157,15 @@ class SessionWriterLeaseCancelTest {
             assertTrue(
                     committing.await(10, TimeUnit.SECONDS),
                     "the first journal commit never started");
+            long startedAt = System.nanoTime();
+            subscription.dispose();
+            long elapsed = System.nanoTime() - startedAt;
+            assertTrue(
+                    elapsed < Duration.ofMillis(500).toNanos(),
+                    "dispose() blocked on the parked journal flush for " + elapsed + " ns");
         } finally {
-            // dispose() runs the release synchronously on this thread, but the parked flush
-            // still holds the recorder monitor inside flushNow — so let it resume from a
-            // side thread first, or dispose would wait on it forever. The ordering still
-            // pins the window: cancel propagation is synchronous, and dispose() usually
-            // lands while the flush is parked - not guaranteed, but the test tolerates the
-            // opposite ordering by only asserting on the successor's acquisition
-            // looks like.
-            new Thread(proceed::countDown, "lease-test-unpark").start();
+            proceed.countDown();
         }
-        subscription.dispose();
 
         assertSuccessorAcquires(store);
     }
