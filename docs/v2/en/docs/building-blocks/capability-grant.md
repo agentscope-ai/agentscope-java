@@ -145,10 +145,9 @@ surface means no trimming; place a surface on the `RuntimeContext`
 ## Static skillBox path limitation
 
 `skillBox(...)` is deprecated since 2.0.0 (retiring with the hook system); **do not use it in
-new code** — register skills with `skillRepositories(...)` instead. For existing code still on
-this path, its limitation: the static `skillBox(...)` registration (or
-`dynamicSkillsEnabled(false)`) has no per-call skill-visibility filtering — when a resolver is
-configured, `build()` logs an ERROR and disables the resolver on that agent: top-level calls
-of this agent are untrimmed; as a sub-agent, loading and execution stay gated under the
-inherited surface, but the static skill *prompt* still enumerates the full skill catalog (a
-residual exposure; the static load tool's embedded `skillName` enum lists the full catalog too).
+new code** — register skills with `skillRepositories(...)` instead. The static path (the
+static `skillBox(...)` registration, or `dynamicSkillsEnabled(false)`) has no per-call
+skill-visibility filtering, so it **cannot be combined with a capability resolver**:
+configuring both fails the build with an `IllegalStateException` (an authorization setting
+must never silently degrade to an untrimmed agent). Use `skillRepositories(...)` (the default
+dynamic path) for per-call skill trimming.

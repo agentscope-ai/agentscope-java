@@ -99,4 +99,4 @@ resolver 抛异常时**中止本次调用**：异常传播给调用方并记录 
 
 ## 静态 skillBox 路径限制
 
-`skillBox(...)` 已随 hook 系统于 2.0.0 标记为过时，**新代码不要使用**——skill 接入一律使用 `skillRepositories(...)` 动态路径。存量代码若仍停留在该路径，其限制如下：`skillBox(...)` 构建期注册（或 `dynamicSkillsEnabled(false)`）没有 per-call 可见面过滤——配置 resolver 时构建期会输出 ERROR 并使该 agent 的 resolver 失效——该 agent 直调时不裁剪；作为子代理运行时继承父授权面，skill 加载与工具执行仍被硬门拦截，但静态**提示词会枚举全量 skill 目录**（残留暴露；静态 load 工具 schema 内嵌的 `skillId` enum 同样全量）。
+`skillBox(...)` 已随 hook 系统于 2.0.0 标记为过时，**新代码不要使用**——skill 接入一律使用 `skillRepositories(...)` 动态路径。静态路径（`skillBox(...)` 构建期注册，或 `dynamicSkillsEnabled(false)`）没有 per-call 可见面过滤，因此**不能与 capability resolver 组合**：两者同时配置时 `build()` 直接抛出 `IllegalStateException`（授权配置绝不允许静默退化为不裁剪的 agent）。需要按用户裁剪 skill 时请使用 `skillRepositories(...)` 动态路径（默认）。

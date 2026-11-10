@@ -445,15 +445,19 @@ public class Toolkit {
 
     /**
      * Un-trimmed compose: the {@link #getToolSchemas(Collection, ToolRequestConfig,
-     * CapabilitySurface) 3-arg overload} with no surface. Package-private building block —
-     * not for model-visible schema synthesis.
+     * CapabilitySurface) 3-arg overload} with no surface ({@code null} — no grant trimming).
+     *
+     * <p>Kept public for source/binary compatibility. Model-facing synthesis inside an agent
+     * call should prefer the 3-arg overload, passing the call's {@link
+     * io.agentscope.core.agent.CapabilitySurface} so grant trimming applies; this overload
+     * composes without any surface (equivalent to a trusted direct path).
      *
      * @param activeGroups the group names treated as active for this resolution
      * @param requestConfig per-call request config (may be {@code null} → {@link
      *     ToolRequestConfig#NONE})
      * @return the composed tool schemas
      */
-    List<ToolSchema> getToolSchemas(
+    public List<ToolSchema> getToolSchemas(
             Collection<String> activeGroups, ToolRequestConfig requestConfig) {
         return getToolSchemas(activeGroups, requestConfig, null);
     }

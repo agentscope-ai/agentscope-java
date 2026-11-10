@@ -329,27 +329,70 @@ class CapabilityGrantIntegrationTest {
     }
 
     @Test
-    @DisplayName("skillBox + capabilityResolver → resolver disabled, behavior equals unconfigured")
-    void staticSkillBoxGuardDisablesResolver() {
+    @DisplayName(
+            "skillBox + capabilityResolver → build fails explicitly (no silent untrimmed agent)")
+    void staticSkillBoxGuardFailsBuild() {
         Toolkit toolkit = new Toolkit();
         SkillBox skillBox = new SkillBox(toolkit);
         skillBox.registerSkill(skill("boxed"));
-        RecordingMiddleware recorder = new RecordingMiddleware();
-        ReActAgent agent =
+        IllegalStateException ex =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                ReActAgent.builder()
+                                        .name("a")
+                                        .model(new MockModel("done"))
+                                        .toolkit(toolkit)
+                                        .skillBox(skillBox)
+                                        .capabilityResolver(
+                                                (ctx, a) ->
+                                                        new CapabilitySurface(
+                                                                null, Set.of("g1"), Set.of()))
+                                        .build());
+        assertTrue(
+                ex.getMessage().contains("skillBox"),
+                "message should name the conflicting static path");
+    }
+
+    @Test
+    @DisplayName("skillRepositories + dynamicSkillsEnabled(false) + resolver → build fails too")
+    void staticDynamicDisabledGuardFailsBuild() {
+        IllegalStateException ex =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                ReActAgent.builder()
+                                        .name("a")
+                                        .model(new MockModel("done"))
+                                        .skillRepositories(List.of(new StubRepo(List.of())))
+                                        .dynamicSkillsEnabled(false)
+                                        .capabilityResolver((ctx, a) -> CapabilitySurface.ALLOW_ALL)
+                                        .build());
+        assertTrue(ex.getMessage().contains("dynamicSkillsEnabled"));
+    }
+
+    @Test
+    @DisplayName("static paths without a resolver, and the dynamic path with one, build normally")
+    void compatibleCombinationsStillBuild() {
+        Toolkit toolkit = new Toolkit();
+        SkillBox skillBox = new SkillBox(toolkit);
+        skillBox.registerSkill(skill("boxed"));
+        // skillBox without a resolver: unaffected legacy combination.
+        assertNotNull(
                 ReActAgent.builder()
                         .name("a")
                         .model(new MockModel("done"))
                         .toolkit(toolkit)
                         .skillBox(skillBox)
-                        .capabilityResolver(
-                                (ctx, a) -> new CapabilitySurface(null, Set.of("g1"), Set.of()))
-                        .middleware(recorder)
-                        .build();
-        RuntimeContext ctx = rc();
-        agent.call(userMsg("hi"), ctx).block(Duration.ofSeconds(10));
-        // Guard fired: resolver disabled, ALLOW_ALL fallback (prompt catalog stays full).
-        // Observed on the call-scoped rc — the caller's rc stays isolated.
-        assertSame(CapabilitySurface.ALLOW_ALL, recorder.seen.get());
+                        .build());
+        // Dynamic skill path with a resolver: the supported combination.
+        assertNotNull(
+                ReActAgent.builder()
+                        .name("a")
+                        .model(new MockModel("done"))
+                        .skillRepositories(List.of())
+                        .capabilityResolver((ctx, a) -> CapabilitySurface.ALLOW_ALL)
+                        .build());
     }
 
     @Test

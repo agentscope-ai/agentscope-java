@@ -7037,21 +7037,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
 
             // The static skill path has no per-call visibility filtering: a resolver here
-            // would silently trim nothing. Log and disable it; use skillRepositories
-            // instead.
+            // would trim nothing while appearing active. Fail the build explicitly — an
+            // authorization setting must never degrade to an untrimmed agent. Use
+            // skillRepositories(...) for per-call skill trimming.
             if (capabilityResolver != null
                     && (skillBox != null
                             || (!skillRepositories.isEmpty() && !dynamicSkillsEnabled))) {
-                log.error(
-                        "capabilityResolver is configured but the static skill path is active"
-                                + " (skillBox(...) or dynamicSkillsEnabled=false); skill-prompt"
-                                + " trimming is not supported on this path — resolver disabled"
-                                + " on this agent: top-level calls of this agent are untrimmed;"
-                                + " as a sub-agent, loading and execution stay gated under the"
-                                + " inherited surface, but the static skill prompt still"
-                                + " enumerates the full catalog. Use skillRepositories(...)"
-                                + " for per-call skill trimming.");
-                capabilityResolver = null;
+                throw new IllegalStateException(
+                        "capabilityResolver cannot be combined with the static skill path"
+                                + " (skillBox(...) or dynamicSkillsEnabled=false): the static"
+                                + " skill prompt has no per-call visibility filtering, so the"
+                                + " resolver could not trim it. Use skillRepositories(...) with"
+                                + " the dynamic skill path (default) for per-call skill"
+                                + " trimming.");
             }
 
             // List.sort is stable: middlewares with equal order retain their registration order.
