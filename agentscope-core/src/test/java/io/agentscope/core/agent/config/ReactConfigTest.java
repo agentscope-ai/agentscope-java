@@ -32,6 +32,13 @@ class ReactConfigTest {
         ReactConfig cfg = ReactConfig.defaults();
         assertEquals(20, cfg.maxIters());
         assertFalse(cfg.stopOnReject());
+        assertEquals(3, cfg.maxToolErrorRecoveries());
+    }
+
+    @Test
+    void twoArgConstructorKeepsDefaultRecoveryCap() {
+        ReactConfig cfg = new ReactConfig(50, true);
+        assertEquals(3, cfg.maxToolErrorRecoveries());
     }
 
     @Test
@@ -41,13 +48,24 @@ class ReactConfigTest {
     }
 
     @Test
+    void rejectsNegativeMaxToolErrorRecoveries() {
+        assertThrows(IllegalArgumentException.class, () -> new ReactConfig(20, false, -1));
+    }
+
+    @Test
+    void zeroMaxToolErrorRecoveriesDisablesRecovery() {
+        assertEquals(0, new ReactConfig(20, false, 0).maxToolErrorRecoveries());
+    }
+
+    @Test
     void jsonRoundTripPreservesFields() throws Exception {
-        ReactConfig original = new ReactConfig(50, true);
+        ReactConfig original = new ReactConfig(50, true, 5);
         String json = mapper.writeValueAsString(original);
         ReactConfig decoded = mapper.readValue(json, ReactConfig.class);
         assertEquals(original, decoded);
         assertTrue(json.contains("\"max_iters\":50"));
         assertTrue(json.contains("\"stop_on_reject\":true"));
+        assertTrue(json.contains("\"max_tool_error_recoveries\":5"));
     }
 
     @Test
@@ -55,5 +73,6 @@ class ReactConfigTest {
         ReactConfig decoded = mapper.readValue("{}", ReactConfig.class);
         assertEquals(20, decoded.maxIters());
         assertFalse(decoded.stopOnReject());
+        assertEquals(3, decoded.maxToolErrorRecoveries());
     }
 }
