@@ -66,13 +66,6 @@ final class AguiSessionLogAttach {
 
     private static final int BATCH_SIZE = 256;
 
-    /**
-     * Events replayed in one poll. {@link SessionLog#scan} walks the commit chain from the head,
-     * so every extra read of the same range costs another full walk; a poll therefore consumes a
-     * whole committed delta in one pass instead of {@code BATCH_SIZE} events at a time.
-     */
-    private static final int REPLAY_CHUNK = 4096;
-
     private AguiSessionLogAttach() {}
 
     static Flux<AguiFramedEvent> attach(
@@ -788,7 +781,8 @@ final class AguiSessionLogAttach {
                                                                     executionRunId,
                                                                     config,
                                                                     deadline,
-                                                                    commitDeadline);
+                                                                    commitDeadline,
+                                                                    sink);
                                                 } catch (RuntimeException error) {
                                                     outcome =
                                                             new PollOutcome(
@@ -813,6 +807,7 @@ final class AguiSessionLogAttach {
                                                 }
                                                 long delay =
                                                         outcome.frames().isEmpty()
+                                                                        && outcome.streamed() == 0
                                                                 ? Math.max(0L, poll.toMillis())
                                                                 : 0L;
                                                 pending.set(
@@ -850,7 +845,8 @@ final class AguiSessionLogAttach {
             String executionRunId,
             AguiAdapterConfig config,
             long deadline,
-            long commitDeadline) {
+            long commitDeadline,
+            FluxSink<AguiFramedEvent> sink) {
         SessionLog.Head head = log.head();
         if (head.seq() < state.cursor) {
             // The cursor references an event that is appended but not yet committed. Wait for the
@@ -952,13 +948,55 @@ final class AguiSessionLogAttach {
 
         // One walk of the commit chain per poll: readAfter(cursor, BATCH_SIZE) repeated the
         // head -> cursor walk for every 256 events, which made a full replay quadratic in the
-        // number of commit segments.
-        long through = Math.min(head.seq(), state.cursor + REPLAY_CHUNK);
-        List<SessionEvent> batch = new ArrayList<>();
-        for (SessionEvent event : log.scan(state.cursor, through)) {
-            batch.add(event);
+        // number of commit segments. Only scan(0, ..) bulk-loads the segments, so the first poll
+        // of a replay starts from 0 and skips the events the caller already has; starting at a
+        // non-zero cursor would walk the chain segment by segment and stall before the first
+        // frame. Later polls are incremental and only cross the few segments written since.
+        boolean bulkReplay = !state.primed && state.cursor == 0;
+        long from = bulkReplay ? 0 : state.cursor;
+        long through = head.seq();
+        state.primed = true;
+        int scanned = 0;
+        for (SessionEvent event : log.scan(from, through)) {
+            if (sink.isCancelled()) {
+                return new PollOutcome(List.of(), true, scanned);
+            }
+            if (event.seq() <= state.cursor) {
+                continue;
+            }
+            scanned++;
+            boolean target =
+                    executionRunId == null || executionRunId.equals(event.executionRunId());
+            if (target) {
+                state.targetSeen = true;
+                for (AguiFramedEvent frame :
+                        frames(
+                                state.presentation.apply(event),
+                                event.seq(),
+                                cursored(event.type()))) {
+                    if (sink.isCancelled()) {
+                        return new PollOutcome(List.of(), true, scanned);
+                    }
+                    sink.next(frame);
+                }
+                if ("run/end".equals(event.type()) && executionRunId != null) {
+                    state.cursor = event.seq();
+                    for (AguiFramedEvent frame :
+                            finishFrames(input, state.presentation, event.seq(), event, config)) {
+                        if (sink.isCancelled()) {
+                            return new PollOutcome(List.of(), true, scanned);
+                        }
+                        sink.next(frame);
+                    }
+                    return new PollOutcome(List.of(), true, scanned);
+                }
+            }
+            // Without a target run id the stream follows the log instead of stopping at the first
+            // run/end: the cursor may sit inside an older run, and ending there would drop the run
+            // the caller is actually reconnecting to.
+            state.cursor = event.seq();
         }
-        if (batch.isEmpty()) {
+        if (scanned == 0) {
             // The head already reported committed events after the cursor, so an empty read
             // cannot mean the run ended: finishing here would drop them permanently.
             if (!isActive(head, executionRunId)) {
@@ -986,34 +1024,7 @@ final class AguiSessionLogAttach {
             return new PollOutcome(List.of(), false);
         }
 
-        // Advance only after the batch is projected, so a failure mid-batch leaves the cursor at
-        // the last sequence the caller already received.
-        long cursor = state.cursor;
-        List<AguiFramedEvent> frames = new ArrayList<>();
-        for (SessionEvent event : batch) {
-            boolean target =
-                    executionRunId == null || executionRunId.equals(event.executionRunId());
-            if (target) {
-                state.targetSeen = true;
-                frames.addAll(
-                        frames(
-                                state.presentation.apply(event),
-                                event.seq(),
-                                cursored(event.type())));
-                if ("run/end".equals(event.type()) && executionRunId != null) {
-                    state.cursor = event.seq();
-                    frames.addAll(
-                            finishFrames(input, state.presentation, event.seq(), event, config));
-                    return new PollOutcome(frames, true);
-                }
-            }
-            // Without a target run id the stream follows the log instead of stopping at the first
-            // run/end: the cursor may sit inside an older run, and ending there would drop the run
-            // the caller is actually reconnecting to.
-            cursor = event.seq();
-        }
-        state.cursor = cursor;
-        return new PollOutcome(frames, false);
+        return new PollOutcome(List.of(), false, scanned);
     }
 
     /** Keeps an uncommitted-cursor wait short even when the configured run timeout is larger. */
@@ -1169,10 +1180,17 @@ final class AguiSessionLogAttach {
         return error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
     }
 
-    private record PollOutcome(List<AguiFramedEvent> frames, boolean terminal) {}
+    private record PollOutcome(List<AguiFramedEvent> frames, boolean terminal, int streamed) {
+        PollOutcome(List<AguiFramedEvent> frames, boolean terminal) {
+            this(frames, terminal, 0);
+        }
+    }
 
     private static final class AttachState {
         private long cursor;
+
+        /** Whether the first poll already ran; later polls read incrementally. */
+        private boolean primed;
 
         /** Whether an event of the target run has been projected since the cursor. */
         private boolean targetSeen;

@@ -566,7 +566,7 @@ class AguiSessionLogAttachTest {
         AguiFramedEvent last = frames.get(frames.size() - 1);
         assertTrue(last.event() instanceof AguiEvent.RunError);
         assertEquals("SESSION_LOG_ERROR", ((AguiEvent.RunError) last.event()).code());
-        assertEquals(0L, last.seq(), "the cursor must not advance past an unprojected event");
+        assertEquals(1L, last.seq(), "the cursor stops at the last projected event");
     }
 
     @Test
