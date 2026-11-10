@@ -732,7 +732,7 @@ class AguiSessionLogAttachTest {
     }
 
     @Test
-    void attachReplaysMoreThanOneChunkWithOneScanPerPollAndMonotonicCursor() {
+    void attachReplaysMoreThanOneChunkWithOneScanToHead() {
         SessionLog log = AguiSessionLogTestSupport.newLog();
         SessionLog.Writer writer = writer(log);
         long head;
@@ -753,10 +753,9 @@ class AguiSessionLogAttachTest {
                         .block(Duration.ofSeconds(10));
 
         assertNotNull(actual);
-        assertEquals(2, scanCalls.get(), "one scan per REPLAY_CHUNK poll");
-        assertEquals(2, scanRanges.size());
-        assertRange(scanRanges.get(0), 0, 4096);
-        assertRange(scanRanges.get(1), 4096, head);
+        assertEquals(1, scanCalls.get(), "a replay scans from cursor to head in one pass");
+        assertEquals(1, scanRanges.size());
+        assertRange(scanRanges.get(0), 0, head);
         assertEquals(head, actual.get(actual.size() - 1).seq());
     }
 
