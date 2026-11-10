@@ -97,10 +97,12 @@ class ToolExecutionCallbackTest {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(
                 tool(
-                        p ->
-                                attempts.incrementAndGet() == 1
-                                        ? Mono.never()
-                                        : Mono.just(ToolResultBlock.text("retried"))));
+                        p -> {
+                            p.getEmitter().emit(ToolResultBlock.text("working"));
+                            return attempts.incrementAndGet() == 1
+                                    ? Mono.never()
+                                    : Mono.just(ToolResultBlock.text("retried"));
+                        }));
         List<String> events = new CopyOnWriteArrayList<>();
         ExecutionConfig config =
                 ExecutionConfig.builder()
@@ -112,7 +114,7 @@ class ToolExecutionCallbackTest {
         assertEquals(2, attempts.get());
         assertEquals("a", results.get(0).getId());
         assertEquals("retried", ((TextBlock) results.get(0).getOutput().get(0)).getText());
-        assertEquals(List.of("start", "result"), events);
+        assertEquals(List.of("start", "progress", "result"), events);
     }
 
     @Test

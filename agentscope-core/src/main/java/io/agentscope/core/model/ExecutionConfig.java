@@ -162,6 +162,25 @@ public class ExecutionConfig {
      *   <li>Timeout: 5 minutes
      *   <li>Max attempts: 1 (no retry)
      * </ul>
+     *
+     * <p>When {@code maxAttempts} is greater than 1, failures that surface as reactive error
+     * signals are retried; failures reported as completed {@code ToolResultBlock} error results
+     * are never retried. Without an explicit {@link #getRetryOn() retry predicate} only {@link
+     * #RETRYABLE_ERRORS} are retried, so side-effecting tools are not implicitly replayed for
+     * deterministic failures.
+     *
+     * <p>The timeout is applied per attempt: with {@code maxAttempts} greater than 1 the
+     * worst-case wall-clock time of a single tool call is roughly {@code maxAttempts} times the
+     * timeout, plus the backoff delays between attempts.
+     *
+     * <p>Upgrade note: tool exceptions now honor this configuration. Existing configurations with
+     * {@code maxAttempts > 1} can re-execute tools after transient failures. Callers must ensure
+     * those operations are safe to repeat; a transient error does not imply that an operation
+     * had no side effects. Keep one attempt for operations that cannot be safely repeated.
+     *
+     * <p>When multiple attempts are configured, streaming callbacks receive only the chunks from
+     * the completed attempt, after that attempt settles. Failed or cancelled attempts discard
+     * their chunks. Single-attempt calls continue streaming immediately.
      */
     public static final ExecutionConfig TOOL_DEFAULTS =
             builder().timeout(Duration.ofMinutes(5)).maxAttempts(1).build();

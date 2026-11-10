@@ -269,23 +269,7 @@ public class McpTool extends ToolBase {
      */
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-        logger.debug("Calling MCP tool '{}' with input: {}", getName(), param.getInput());
-
-        // Merge preset arguments with input arguments
-        Map<String, Object> mergedArgs = mergeArguments(param.getInput());
-
-        // Propagate request metadata only when both switches allow it; null omits the MCP
-        // `_meta` field entirely so no metadata (user McpMeta entries nor the tool-call id)
-        // leaves the process. The wrapper switch is read live so disabling a connection takes
-        // effect immediately, even for tools registered earlier.
-        boolean propagate = propagateMeta && clientWrapper.isPropagateMeta();
-        Map<String, Object> metaMap = propagate ? buildMetaMap(param) : null;
-
-        return clientWrapper
-                .callTool(remoteToolName, mergedArgs, metaMap)
-                .map(McpContentConverter::convertCallToolResult)
-                .doOnSuccess(
-                        result -> logger.debug("MCP tool '{}' completed successfully", getName()))
+        return callAsyncForExecution(param)
                 .onErrorResume(
                         e -> {
                             logger.error(
@@ -324,6 +308,48 @@ public class McpTool extends ToolBase {
      */
     public void setPropagateMeta(boolean propagateMeta) {
         this.propagateMeta = propagateMeta;
+    }
+
+    /**
+     * Executes this MCP tool through the framework's execution infrastructure.
+     *
+     * <p>Transport-level failures stay as reactive error signals so the executor can apply its
+     * retry policy. Protocol-level business errors ({@code isError=true}) remain completed error
+     * results and are never retried.
+     *
+     * @param param The tool call parameters containing toolUseBlock, input, and agent
+     * @return a Mono that emits the tool result, or signals an error on failure
+     */
+    @Override
+    public Mono<ToolResultBlock> callAsyncForExecution(ToolCallParam param) {
+        return Mono.defer(
+                () -> {
+                    Objects.requireNonNull(param, "param must not be null");
+                    logger.debug(
+                            "Calling MCP tool '{}' with input: {}", getName(), param.getInput());
+
+                    // Merge preset arguments with input arguments
+                    Map<String, Object> mergedArgs = mergeArguments(param.getInput());
+
+                    // Propagate request metadata only when both switches allow it; null omits the
+                    // MCP
+                    // `_meta` field entirely so no metadata (user McpMeta entries nor the tool-call
+                    // id)
+                    // leaves the process. The wrapper switch is read live so disabling a connection
+                    // takes
+                    // effect immediately, even for tools registered earlier.
+                    boolean propagate = propagateMeta && clientWrapper.isPropagateMeta();
+                    Map<String, Object> metaMap = propagate ? buildMetaMap(param) : null;
+
+                    return clientWrapper
+                            .callTool(remoteToolName, mergedArgs, metaMap)
+                            .map(McpContentConverter::convertCallToolResult)
+                            .doOnSuccess(
+                                    result ->
+                                            logger.debug(
+                                                    "MCP tool '{}' completed successfully",
+                                                    getName()));
+                });
     }
 
     /**

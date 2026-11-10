@@ -8,6 +8,14 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+### Changed
+
+- Tool exceptions now honor `ExecutionConfig.maxAttempts`. Retries default to `RETRYABLE_ERRORS` unless a predicate is supplied; the default remains one attempt. Existing configurations with multiple attempts may repeat side effects after transient failures, so use retries only for operations that are safe to repeat. Timeout applies to each attempt, with backoff added to total elapsed time. Retrying calls buffer streaming chunks until an attempt completes and discard failed attempts' output ([#2830](https://github.com/agentscope-ai/agentscope-java/pull/2830)).
+
+---
+
 ## 2.0.4
 
 > Status: Release draft (prepared on 2026-10-08)

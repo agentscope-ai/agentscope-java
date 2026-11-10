@@ -95,6 +95,7 @@ class ActionObservationsTest {
         when(tool.getName()).thenReturn("test");
         when(tool.getDescription()).thenReturn("test");
         when(tool.getParameters()).thenReturn(Map.of("type", "object", "properties", Map.of()));
+        when(tool.callAsyncForExecution(any())).thenCallRealMethod();
         when(tool.callAsync(any()))
                 .thenAnswer(
                         invocation ->

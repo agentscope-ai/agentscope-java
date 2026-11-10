@@ -77,6 +77,38 @@ class ToolDispatchCheckTest {
         assertEquals("id", results.get(0).getId());
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void rejectsDispatchEvenWithAnExplicitRetryPredicate(boolean withInterceptor) {
+        AtomicInteger checks = new AtomicInteger();
+        ToolkitConfig.Builder config =
+                ToolkitConfig.builder()
+                        .beforeToolCall(
+                                param -> {
+                                    if (checks.incrementAndGet() == 1) {
+                                        throw new IllegalStateException("run stopped");
+                                    }
+                                });
+        if (withInterceptor) {
+            config.interceptor((invocation, next) -> next.apply(invocation));
+        }
+        Toolkit toolkit = new Toolkit(config.build());
+        toolkit.registerTool(tool("local", () -> Mono.just(ToolResultBlock.success("done"))));
+        ToolCallParam param = ToolCallParam.builder().toolUseBlock(call("id", "local")).build();
+        ExecutionConfig retry =
+                ExecutionConfig.builder()
+                        .maxAttempts(2)
+                        .initialBackoff(Duration.ofMillis(10))
+                        .retryOn(error -> true)
+                        .build();
+
+        ToolResultBlock result = toolkit.callTool(param, retry).block(TIMEOUT);
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertEquals("id", result.getId());
+        assertEquals(1, checks.get());
+    }
+
     @Test
     void rejectsExternalDispatchBeforeSuspensionAndLeavesDefaultBehaviorIntact() {
         Toolkit toolkit = guarded(new AtomicBoolean(true));

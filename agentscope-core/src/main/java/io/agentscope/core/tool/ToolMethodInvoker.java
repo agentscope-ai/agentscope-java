@@ -46,6 +46,8 @@ class ToolMethodInvoker {
     /**
      * Invoke tool method asynchronously with custom converter support.
      *
+     * <p>Failures are converted into {@link ToolResultBlock} error results.
+     *
      * @param toolObject the object containing the method
      * @param method the method to invoke
      * @param param the tool call parameters containing input, toolUseBlock, agent, and context
@@ -53,6 +55,28 @@ class ToolMethodInvoker {
      * @return Mono containing ToolResultBlock
      */
     Mono<ToolResultBlock> invokeAsync(
+            Object toolObject,
+            Method method,
+            ToolCallParam param,
+            ToolResultConverter customConverter) {
+        return invokeRawAsync(toolObject, method, param, customConverter)
+                .onErrorResume(this::handleError);
+    }
+
+    /**
+     * Invoke tool method asynchronously while keeping failures as reactive error signals.
+     *
+     * <p>Raw channel used by {@link ToolExecutor}'s execution infrastructure: only the
+     * error-to-result conversion of {@link #invokeAsync} is omitted, so the timeout and retry
+     * layers can act on failures.
+     *
+     * @param toolObject the object containing the method
+     * @param method the method to invoke
+     * @param param the tool call parameters containing input, toolUseBlock, agent, and context
+     * @param customConverter custom converter for this invocation (null to use default)
+     * @return Mono containing ToolResultBlock, or signalling an error on failure
+     */
+    Mono<ToolResultBlock> invokeRawAsync(
             Object toolObject,
             Method method,
             ToolCallParam param,
@@ -84,11 +108,9 @@ class ToolMethodInvoker {
                     .flatMap(
                             future ->
                                     convertAsyncResult(
-                                                    Mono.fromFuture(future),
-                                                    extractGenericType(method),
-                                                    converter)
-                                            .onErrorResume(this::handleError))
-                    .onErrorResume(this::handleError);
+                                            Mono.fromFuture(future),
+                                            extractGenericType(method),
+                                            converter));
 
         } else if (returnType == Mono.class) {
             // Async method returning Mono: invoke and flatMap
@@ -104,22 +126,19 @@ class ToolMethodInvoker {
                             })
                     .flatMap(
                             mono ->
-                                    convertAsyncResult(mono, extractGenericType(method), converter)
-                                            .onErrorResume(this::handleError))
-                    .onErrorResume(this::handleError);
+                                    convertAsyncResult(
+                                            mono, extractGenericType(method), converter));
 
         } else {
             // Sync method: wrap in Mono.fromCallable
             return Mono.fromCallable(
-                            () -> {
-                                method.setAccessible(true);
-                                Object[] args =
-                                        convertParameters(
-                                                method, input, agent, runtimeContext, emitter);
-                                Object result = method.invoke(toolObject, args);
-                                return converter.convert(result, method.getGenericReturnType());
-                            })
-                    .onErrorResume(this::handleError);
+                    () -> {
+                        method.setAccessible(true);
+                        Object[] args =
+                                convertParameters(method, input, agent, runtimeContext, emitter);
+                        Object result = method.invoke(toolObject, args);
+                        return converter.convert(result, method.getGenericReturnType());
+                    });
         }
     }
 

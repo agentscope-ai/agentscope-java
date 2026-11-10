@@ -214,6 +214,7 @@ class AgentSpawnToolForceSyncTest {
         Mockito.when(ordinary.getName()).thenReturn("ordinary");
         Mockito.when(ordinary.getDescription()).thenReturn("Ordinary tool");
         Mockito.when(ordinary.getParameters()).thenReturn(Map.of("type", "object"));
+        Mockito.when(ordinary.callAsyncForExecution(Mockito.any())).thenCallRealMethod();
         Mockito.when(ordinary.callAsync(Mockito.any()))
                 .thenReturn(Mono.<ToolResultBlock>never().doOnCancel(ordinaryCancelled::countDown));
         toolkit.registerTool(ordinary);
