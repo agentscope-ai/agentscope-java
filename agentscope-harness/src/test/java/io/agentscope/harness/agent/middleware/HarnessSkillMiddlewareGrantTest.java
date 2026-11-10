@@ -168,8 +168,8 @@ class HarnessSkillMiddlewareGrantTest {
         assertTrue(block.contains("alpha"), "granted skill kept in the skills material");
         assertFalse(block.contains("beta"), "un-granted skill cut from the skills material");
         List<String> ids = mw.runtime().currentCatalog(ctx).ids();
-        assertTrue(ids.contains("alpha"));
-        assertFalse(ids.contains("beta"));
+        assertTrue(ids.contains("alpha_custom"));
+        assertFalse(ids.contains("beta_custom"));
     }
 
     @Test
@@ -195,7 +195,7 @@ class HarnessSkillMiddlewareGrantTest {
         String block = skillsMaterial(ctx);
         assertTrue(block.contains("gamma"), "system skill kept");
         assertFalse(block.contains("beta"), "non-system skill cut");
-        assertTrue(mw.runtime().currentCatalog(ctx).ids().contains("gamma"));
+        assertTrue(mw.runtime().currentCatalog(ctx).ids().contains("gamma_custom"));
     }
 
     @Test
@@ -236,8 +236,8 @@ class HarnessSkillMiddlewareGrantTest {
         RuntimeContext ctx = rc(ALPHA_ONLY);
         mw.onSystemPrompt(null, ctx, "base").block();
 
-        assertTrue(load(mw, ctx, "alpha").contains("Successfully loaded skill"));
-        assertFalse(load(mw, ctx, "beta").contains("Successfully loaded skill"));
+        assertTrue(load(mw, ctx, "alpha_custom").contains("Successfully loaded skill"));
+        assertFalse(load(mw, ctx, "beta_custom").contains("Successfully loaded skill"));
     }
 
     @Test
@@ -247,9 +247,11 @@ class HarnessSkillMiddlewareGrantTest {
         RuntimeContext ctx = rc(ALPHA_ONLY);
         mw.onSystemPrompt(null, ctx, "base").block();
 
-        String ungranted = load(mw, ctx, "beta");
-        String unknown = load(mw, ctx, "nope");
-        assertEquals("Error: Skill not found: 'beta'. Check the available skills list.", ungranted);
+        String ungranted = load(mw, ctx, "beta_custom");
+        String unknown = load(mw, ctx, "nope_custom");
+        assertEquals(
+                "Error: Skill not found: 'beta_custom'. Check the available skills list.",
+                ungranted);
         assertEquals(
                 ungranted.replace("beta", "nope"),
                 unknown,
@@ -266,10 +268,10 @@ class HarnessSkillMiddlewareGrantTest {
         // A surface appearing afterwards (alternate installer / ordering) must still gate.
         ctx.put(CapabilitySurface.class, ALPHA_ONLY);
 
-        assertTrue(load(mw, ctx, "alpha").contains("Successfully loaded skill"));
+        assertTrue(load(mw, ctx, "alpha_custom").contains("Successfully loaded skill"));
         assertEquals(
-                "Error: Skill not found: 'beta'. Check the available skills list.",
-                load(mw, ctx, "beta"));
+                "Error: Skill not found: 'beta_custom'. Check the available skills list.",
+                load(mw, ctx, "beta_custom"));
     }
 
     @Test
@@ -280,11 +282,11 @@ class HarnessSkillMiddlewareGrantTest {
         RuntimeContext restricted =
                 rc(new CapabilitySurface(java.util.Set.of("alpha"), null, null));
         mw.onSystemPrompt(null, restricted, "base").block();
-        assertTrue(load(mw, restricted, "gamma").contains("Successfully loaded skill"));
+        assertTrue(load(mw, restricted, "gamma_custom").contains("Successfully loaded skill"));
 
         RuntimeContext direct = rc(null);
         mw.onSystemPrompt(null, direct, "base").block();
-        assertTrue(load(mw, direct, "beta").contains("Successfully loaded skill"));
+        assertTrue(load(mw, direct, "beta_custom").contains("Successfully loaded skill"));
     }
 
     @Test
@@ -312,14 +314,18 @@ class HarnessSkillMiddlewareGrantTest {
     }
 
     @Test
-    @DisplayName("SKILL.md response omits the Source line when the skill has no source")
-    void loadSkillMarkdownOmitsNullSource() {
+    @DisplayName("SKILL.md response reports the source; a null source never renders as 'null'")
+    void loadSkillMarkdownReportsSource() {
+        // Under the standard semantics a skill always carries a source ("custom" by default),
+        // so the line can never degenerate to "Source: null"; the conditional rendering keeps
+        // that guarantee even if a null ever slips through.
         HarnessSkillMiddleware mw = middleware(List.of(skill("alpha")));
         RuntimeContext ctx = rc(null);
         mw.onSystemPrompt(null, ctx, "base").block();
 
-        String markdown = load(mw, ctx, "alpha");
-        assertFalse(markdown.contains("Source:"), "no 'Source: null' line for source-less skill");
+        assertTrue(
+                load(mw, ctx, "alpha_custom").contains("Source: custom"),
+                "the default source is reported");
 
         AgentSkill sourced =
                 AgentSkill.builder()
@@ -333,6 +339,6 @@ class HarnessSkillMiddlewareGrantTest {
         sourcedMw.onSystemPrompt(null, sourcedCtx, "base").block();
         assertTrue(
                 load(sourcedMw, sourcedCtx, sourced.getSkillId()).contains("Source: repo1"),
-                "an explicit source is still reported");
+                "an explicit source is reported");
     }
 }

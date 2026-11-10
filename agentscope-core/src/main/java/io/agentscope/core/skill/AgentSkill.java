@@ -68,15 +68,6 @@ import java.util.Set;
  */
 public class AgentSkill {
 
-    /**
-     * Single source of the skillId composition separator: {@code skillId = name + "__s__" +
-     * source}. Neither the name nor the source may contain this separator (enforced at
-     * construction), so the separator occurs in a well-formed skillId if and only if it is the
-     * delimiter — grant entries can therefore distinguish "bare name" (source-unrestricted)
-     * from "name__s__source" (repository-qualified) by simply looking for it.
-     */
-    public static final String SKILL_ID_SEPARATOR = "__s__";
-
     private final Map<String, Object> metadata;
     private final String skillContent;
     private final Map<String, String> resources;
@@ -110,7 +101,7 @@ public class AgentSkill {
      */
     public AgentSkill(
             String name, String description, String skillContent, Map<String, String> resources) {
-        this(name, description, skillContent, resources, null);
+        this(name, description, skillContent, resources, "custom");
     }
 
     /**
@@ -123,7 +114,7 @@ public class AgentSkill {
      * @param description Skill description (must not be null or empty)
      * @param skillContent The skill implementation or instructions (must not be null or empty)
      * @param resources Supporting resources referenced by the skill (can be null)
-     * @param source Source identifier for the skill ({@code null} = no provenance)
+     * @param source Source identifier for the skill (null defaults to "custom")
      * @throws IllegalArgumentException if name, description, or skillContent is null or empty
      */
     public AgentSkill(
@@ -144,7 +135,7 @@ public class AgentSkill {
      * @param metadata Skill metadata including required {@code name} and {@code description}
      * @param skillContent The skill implementation or instructions (must not be null or empty)
      * @param resources Supporting resources referenced by the skill (can be null)
-     * @param source Source identifier for the skill ({@code null} = no provenance)
+     * @param source Source identifier for the skill (null defaults to "custom")
      * @throws IllegalArgumentException if metadata is invalid or skillContent is null or empty
      */
     public AgentSkill(
@@ -165,7 +156,7 @@ public class AgentSkill {
      * @param metadata Skill metadata including required {@code name} and {@code description}
      * @param skillContent The skill implementation or instructions (must not be null or empty)
      * @param resources Supporting resources referenced by the skill (can be null)
-     * @param source Source identifier for the skill ({@code null} = no provenance)
+     * @param source Source identifier for the skill (null defaults to "custom")
      * @param originDir Absolute path to the skill's source directory, or {@code null} if not
      *                  filesystem-backed (e.g. classpath / remote / synthetic). Stored as-is.
      * @throws IllegalArgumentException if metadata is invalid, skillContent is null or empty, or
@@ -186,7 +177,7 @@ public class AgentSkill {
      * @param metadata Skill metadata including required {@code name} and {@code description}
      * @param skillContent The skill implementation or instructions (must not be null or empty)
      * @param resources Supporting resources (can be null)
-     * @param source Source identifier for the skill ({@code null} = no provenance)
+     * @param source Source identifier for the skill (null defaults to "custom")
      * @param originDir Absolute path to the skill's source directory, or {@code null}
      * @param system Whether this skill is exempt from grant-layer trimming
      * @throws IllegalArgumentException if metadata is invalid or skillContent is null or empty
@@ -204,20 +195,6 @@ public class AgentSkill {
         if (skillContent == null || skillContent.isEmpty()) {
             throw new IllegalArgumentException("The skill must have content");
         }
-        if (name.contains(SKILL_ID_SEPARATOR)) {
-            throw new IllegalArgumentException(
-                    "The skill name must not contain '"
-                            + SKILL_ID_SEPARATOR
-                            + "' (reserved as the skillId separator)");
-        }
-        String resolvedSource = source != null && !source.isBlank() ? source : null;
-        if (resolvedSource != null && resolvedSource.contains(SKILL_ID_SEPARATOR)) {
-            throw new IllegalArgumentException(
-                    "The skill source must not contain '"
-                            + SKILL_ID_SEPARATOR
-                            + "' (reserved as the skillId separator)");
-        }
-
         LinkedHashMap<String, Object> metadataCopy = new LinkedHashMap<>(metadata);
         metadataCopy.put("name", name);
         metadataCopy.put("description", description);
@@ -225,7 +202,7 @@ public class AgentSkill {
         this.metadata = Collections.unmodifiableMap(metadataCopy);
         this.skillContent = skillContent;
         this.resources = resources != null ? new HashMap<>(resources) : new HashMap<>();
-        this.source = resolvedSource;
+        this.source = source != null ? source : "custom";
         this.originDir = originDir;
         this.system = system;
     }
@@ -233,10 +210,9 @@ public class AgentSkill {
     /**
      * Gets the skill name.
      *
-     * <p>The name is the skill's business identity and follows the industry convention of unique
-     * skill naming: it is the single identifier used across the grant surface, registry keying,
-     * loading, and skill tool-group naming. It must be unique within an agent's catalog; the
-     * {@link #getSource() source} is provenance metadata only, not part of the identity.
+     * <p>The name is the skill's business identity and the single vocabulary of the grant
+     * surface ({@code allowedSkills}); within one agent's catalog the standard merge keeps a
+     * single copy per name.
      *
      * @return The skill name (never null)
      */
@@ -284,9 +260,10 @@ public class AgentSkill {
     }
 
     /**
-     * Gets the skill source identifier (provenance only, not part of the identity).
+     * Gets the skill source identifier (provenance metadata, never part of the grant
+     * vocabulary).
      *
-     * @return The source identifier, or {@code null} when the skill carries no provenance
+     * @return The source identifier (never null)
      */
     public String getSource() {
         return source;
@@ -321,30 +298,17 @@ public class AgentSkill {
     }
 
     /**
-     * Gets a unique identifier for this skill. With no source set (the common case — skills
-     * are not differentiated by repository), the id is simply the name; with a source set it
-     * extends to {@code name + "__s__" + source} (see {@link #SKILL_ID_SEPARATOR}). Neither
-     * part may contain the separator, so a qualified id parses back unambiguously; grant
-     * entries use either the bare name (source-unrestricted) or the qualified form
-     * (repository-specific).
+     * Gets a unique identifier for this skill.
      *
-     * @return the skill identifier (never null)
+     * <p>The ID is composed of name and source: {@code name + SkillUtil#SKILL_ID_SEPARATOR +
+     * source}. Because the standard naming rule forbids underscores in names, the ID splits
+     * deterministically at the first separator, so distinct {@code (name, source)} pairs
+     * always produce distinct IDs regardless of the source's charset.
+     *
+     * @return Unique skill identifier (never null)
      */
     public String getSkillId() {
-        return source == null || source.isBlank()
-                ? getName()
-                : getName() + SKILL_ID_SEPARATOR + source;
-    }
-
-    /**
-     * Parses the name part out of a skill identifier.
-     *
-     * @param skillIdOrName a bare skill name or a full skillId ({@code name__s__source})
-     * @return the name part (the whole input when it contains no separator)
-     */
-    public static String parseSkillName(String skillIdOrName) {
-        int idx = skillIdOrName.indexOf(SKILL_ID_SEPARATOR);
-        return idx < 0 ? skillIdOrName : skillIdOrName.substring(0, idx);
+        return getName() + SkillUtil.SKILL_ID_SEPARATOR + source;
     }
 
     /**

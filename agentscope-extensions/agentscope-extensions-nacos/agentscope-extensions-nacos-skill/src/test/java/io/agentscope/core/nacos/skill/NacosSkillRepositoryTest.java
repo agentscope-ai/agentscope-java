@@ -405,7 +405,7 @@ class NacosSkillRepositoryTest {
     }
 
     @Test
-    @DisplayName("Should upload skill resources using a Windows-safe skill name")
+    @DisplayName("Should upload skill resources using a Windows-safe skill ID")
     void testUploadSkillResourcesWithWindowsSafeSkillId(@TempDir Path tempDir)
             throws NacosException, IOException {
         when(aiService.downloadSkillZip("resource-skill"))

@@ -831,9 +831,9 @@ class CapabilityGrantIntegrationTest {
     }
 
     @Test
-    @DisplayName("repository-qualified entry grants only that repository's skill")
-    void qualifiedEntryGrantsOnlyTheQualifiedSkill() {
-        AgentSkill alphaCustom = skill("alpha"); // source unset: id is simply "alpha"
+    @DisplayName("same-name merge keeps the later copy; a name grant covers it")
+    void sameNameMergeKeepsLaterCopyAndNameGrantCoversIt() {
+        AgentSkill alphaCustom = skill("alpha"); // source defaults to "custom" → id alpha_custom
         AgentSkill alphaMarket =
                 AgentSkill.builder()
                         .name("alpha")
@@ -841,82 +841,39 @@ class CapabilityGrantIntegrationTest {
                         .skillContent("# market")
                         .source("market")
                         .build();
-        // Same-name merge keeps the later entry (alphaMarket), so the catalog holds the
-        // market copy whose skillId is "alpha__s__market".
+        // Standard merge semantics: same name keeps the later entry, so the catalog holds
+        // exactly the market copy whose skillId is "alpha_market" (no coexistence).
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(
                         List.of(new StubRepo(List.of(alphaCustom, alphaMarket))));
 
-        // Qualified entry "alpha__s__market" grants exactly that copy; the same-named
-        // source-less copy coexists in the catalog but stays ungranted.
+        // The grant vocabulary is the name: one entry grants the merged (winning) copy.
         String prompt =
                 mw.onSystemPrompt(
                                 null,
-                                rc(new CapabilitySurface(Set.of("alpha__s__market"), null, null)),
+                                rc(new CapabilitySurface(Set.of("alpha"), null, null)),
                                 "base")
                         .block();
         assertNotNull(prompt);
-        assertTrue(prompt.contains("from market"), "the qualified copy is granted");
+        assertTrue(prompt.contains("from market"), "the name grant covers the winning copy");
         assertFalse(
                 prompt.contains("Skill alpha"),
-                "the coexisting source-less copy stays ungranted by the qualified entry");
-
-        // A qualified entry for the source-less copy does not grant the market copy.
-        String mismatched =
-                mw.onSystemPrompt(
-                                null,
-                                rc(new CapabilitySurface(Set.of("alpha"), Set.of(), Set.of())),
-                                "base")
-                        .block();
-        assertNotNull(mismatched);
-        assertTrue(mismatched.contains("from market"), "bare-name entry grants any source");
+                "only one copy of the name exists after the standard merge");
     }
 
     @Test
-    @DisplayName("qualified entry with an unknown source fails lazily: call runs, skill denied")
-    void qualifiedEntryWithUnknownSourceFailsLazily() {
-        // No eager entry validation: a misspelled source simply never matches, so the skill
-        // stays invisible and loading it reports the not-found wording at runtime.
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("a")
-                        .model(new MockModel("done"))
-                        .skillRepository(new StubRepo(List.of(skill("alpha"))))
-                        .capabilityResolver(
-                                (ctx, a) ->
-                                        new CapabilitySurface(Set.of("alpha__s__nope"), null, null))
-                        .build();
-        agent.call(userMsg("hi"), rc()).block(java.time.Duration.ofSeconds(10));
-
+    @DisplayName("an entry naming an unknown skill grants nothing; the skill stays invisible")
+    void unknownNameEntryGrantsNothing() {
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(new StubRepo(List.of(skill("alpha")))));
         String prompt =
                 mw.onSystemPrompt(
-                                null,
-                                rc(new CapabilitySurface(Set.of("alpha__s__nope"), null, null)),
-                                "base")
+                                null, rc(new CapabilitySurface(Set.of("nope"), null, null)), "base")
                         .block();
         assertEquals(
                 "base",
                 prompt,
-                "an unknown-source qualified entry grants nothing; the skill stays invisible");
-    }
-
-    @Test
-    @DisplayName("qualified entry with a known repository source passes entry validation")
-    void qualifiedEntryWithKnownSourceLoads() {
-        // StubRepo.getSource() = "stub": the qualified entry references a configured source.
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("a")
-                        .model(new MockModel("done"))
-                        .skillRepository(new StubRepo(List.of(skill("alpha"))))
-                        .capabilityResolver(
-                                (ctx, a) ->
-                                        new CapabilitySurface(Set.of("alpha__s__stub"), null, null))
-                        .build();
-        // Validation passes and the call completes (the qualified copy is loadable).
-        agent.call(userMsg("hi"), rc()).block(java.time.Duration.ofSeconds(10));
+                "an entry naming an unknown skill grants nothing; the skill stays invisible");
     }
 
     @Test
@@ -948,10 +905,10 @@ class CapabilityGrantIntegrationTest {
         assertNotNull(box1);
         assertNotNull(box2);
         assertTrue(box1 != box2, "different grants must materialize different boxes");
-        assertTrue(box1.getAllSkillIds().contains("alpha"));
-        assertFalse(box1.getAllSkillIds().contains("beta"));
-        assertTrue(box2.getAllSkillIds().contains("beta"));
-        assertFalse(box2.getAllSkillIds().contains("alpha"));
+        assertTrue(box1.getAllSkillIds().contains("alpha_custom"));
+        assertFalse(box1.getAllSkillIds().contains("beta_custom"));
+        assertTrue(box2.getAllSkillIds().contains("beta_custom"));
+        assertFalse(box2.getAllSkillIds().contains("alpha_custom"));
     }
 
     // ==================== tool execution gate ====================
@@ -1023,13 +980,13 @@ class CapabilityGrantIntegrationTest {
         mw.onSystemPrompt(null, ctx, "base").block();
         assertNotNull(ctx.get(SkillBox.class));
 
-        ToolResultBlock denied = loadViaToolkit(toolkit, "beta", ctx);
+        ToolResultBlock denied = loadViaToolkit(toolkit, "beta_custom", ctx);
         assertEquals(
-                "Error: Skill not found: 'beta'. Please check the skill ID.",
+                "Error: Skill not found: 'beta_custom'. Please check the skill ID.",
                 firstText(denied),
                 "deny wording must be byte-identical to the not-found wording");
 
-        ToolResultBlock allowed = loadViaToolkit(toolkit, "alpha", ctx);
+        ToolResultBlock allowed = loadViaToolkit(toolkit, "alpha_custom", ctx);
         assertTrue(firstText(allowed).contains("Successfully loaded skill: alpha"));
     }
 
@@ -1050,7 +1007,7 @@ class CapabilityGrantIntegrationTest {
         RuntimeContext ctx = rc(new CapabilitySurface(Set.of(), null, null));
         mw.onSystemPrompt(null, ctx, "base").block();
 
-        ToolResultBlock result = loadViaToolkit(toolkit, "gamma", ctx);
+        ToolResultBlock result = loadViaToolkit(toolkit, "gamma_custom", ctx);
         assertTrue(firstText(result).contains("Successfully loaded skill: gamma"));
     }
 
@@ -1067,12 +1024,13 @@ class CapabilityGrantIntegrationTest {
 
         RuntimeContext ctx = rc(new CapabilitySurface(Set.of("alpha"), null, null));
         ToolResultBlock denied =
-                callDirect(loadTool, Map.of("skillId", "secret", "path", "SKILL.md"), ctx);
+                callDirect(loadTool, Map.of("skillId", "secret_custom", "path", "SKILL.md"), ctx);
         assertEquals(
-                "Error: Skill not found: 'secret'. Please check the skill ID.", firstText(denied));
+                "Error: Skill not found: 'secret_custom'. Please check the skill ID.",
+                firstText(denied));
 
         ToolResultBlock allowed =
-                callDirect(loadTool, Map.of("skillId", "alpha", "path", "SKILL.md"), ctx);
+                callDirect(loadTool, Map.of("skillId", "alpha_custom", "path", "SKILL.md"), ctx);
         assertTrue(firstText(allowed).contains("Successfully loaded skill: alpha"));
     }
 
@@ -1094,7 +1052,7 @@ class CapabilityGrantIntegrationTest {
 
         // Direct callAsync so the executor gate does not preempt the load-gate check.
         ToolResultBlock result =
-                callDirect(loadTool, Map.of("skillId", "gamma", "path", "SKILL.md"), rc());
+                callDirect(loadTool, Map.of("skillId", "gamma_custom", "path", "SKILL.md"), rc());
         assertTrue(
                 firstText(result).contains("Successfully loaded skill: gamma"),
                 "no surface (direct path) = unrestricted: " + firstText(result));

@@ -310,7 +310,7 @@ public final class SkillLoadTool implements AgentTool {
         String fence = contentFence(content);
         StringBuilder sb = new StringBuilder();
         sb.append("Successfully loaded resource from skill: ")
-                .append(entry.skill().getName())
+                .append(entry.skill().getSkillId())
                 .append("\n");
         sb.append("Resource path: ").append(path).append("\n");
         if (entry.filesRoot() != null && !entry.filesRoot().isBlank()) {
@@ -331,7 +331,7 @@ public final class SkillLoadTool implements AgentTool {
         sb.append("Resource not found: '")
                 .append(missingPath)
                 .append("' in skill '")
-                .append(entry.skill().getName())
+                .append(entry.skill().getSkillId())
                 .append("'.\n\n");
 
         LinkedHashSet<String> available = new LinkedHashSet<>();
@@ -349,7 +349,7 @@ public final class SkillLoadTool implements AgentTool {
             } catch (Exception e) {
                 log.debug(
                         "lazyResources.list() failed for '{}': {}",
-                        entry.skill().getName(),
+                        entry.skill().getSkillId(),
                         e.getMessage());
             }
         }

@@ -148,14 +148,14 @@ class CapabilitySurfaceTest {
     }
 
     @Test
-    @DisplayName("skill grant entries: bare name vs repository-qualified id forms")
-    void skillGrantEntryDualForms() {
+    @DisplayName("skill grant entries use the skill name; ids resolve through the name part")
+    void skillGrantEntryVocabulary() {
         AgentSkill alphaCustom =
                 AgentSkill.builder()
                         .name("alpha")
                         .description("d")
                         .skillContent("c")
-                        .build(); // source defaults to "custom" → id "alpha__s__custom"
+                        .build(); // source defaults to "custom" → id "alpha_custom"
         AgentSkill alphaMarket =
                 AgentSkill.builder()
                         .name("alpha")
@@ -164,22 +164,54 @@ class CapabilitySurfaceTest {
                         .source("market")
                         .build();
 
-        // Bare-name entry grants the name under any source.
+        // The grant vocabulary is the name: one entry grants every copy of that name.
         CapabilitySurface byName = new CapabilitySurface(Set.of("alpha"), Set.of(), Set.of());
         assertTrue(byName.allowsSkill(alphaCustom));
         assertTrue(byName.allowsSkill(alphaMarket));
 
-        // Qualified entry grants only the exact repository's skill.
-        CapabilitySurface byId =
-                new CapabilitySurface(Set.of("alpha__s__market"), Set.of(), Set.of());
+        // String fallback: the standard name charset forbids underscores, so the name part of
+        // an id is everything before the first underscore — the check is deterministic.
+        assertTrue(byName.allowsSkill(alphaCustom.getSkillId()));
+        assertTrue(byName.allowsSkill(alphaMarket.getSkillId()));
+        assertFalse(byName.allowsSkill("beta_custom"));
+    }
+
+    @Test
+    @DisplayName("full-skillId entries: program-level compatibility, exact-copy match")
+    void skillIdEntryCompatibility() {
+        AgentSkill alphaCustom =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("d")
+                        .skillContent("c")
+                        .build(); // source defaults to "custom" → id "alpha_custom"
+        AgentSkill alphaMarket =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("d")
+                        .skillContent("c")
+                        .source("market")
+                        .build(); // id "alpha_market"
+
+        // Exact-copy binding: the id entry grants only that copy, not the name.
+        CapabilitySurface byId = new CapabilitySurface(Set.of("alpha_market"), Set.of(), Set.of());
         assertTrue(byId.allowsSkill(alphaMarket));
         assertFalse(byId.allowsSkill(alphaCustom));
 
-        // String fallback: a bare-name input never hits a qualified entry (no source known);
-        // a full id is also granted by a bare-name entry.
-        assertFalse(byId.allowsSkill("alpha"));
-        assertTrue(byName.allowsSkill(alphaCustom.getSkillId()));
-        assertTrue(AgentSkill.parseSkillName("alpha__s__market").equals("alpha"));
+        // Companion group path: the id entry authorizes its own convention group (and only
+        // that one) — no "skill granted but tools denied" gap.
+        assertTrue(byId.allowsToolGroup("alpha_market_skill_tools"));
+        assertFalse(byId.allowsToolGroup("alpha_custom_skill_tools"));
+        assertTrue(byId.allowsTool(tool("t1"), Set.of("alpha_market_skill_tools")));
+        assertFalse(byId.allowsTool(tool("t1"), Set.of("alpha_custom_skill_tools")));
+
+        // The name remains the stable recommended form: it covers every copy and every
+        // source's convention group.
+        CapabilitySurface byName = new CapabilitySurface(Set.of("alpha"), Set.of(), Set.of());
+        assertTrue(byName.allowsSkill(alphaCustom));
+        assertTrue(byName.allowsSkill(alphaMarket));
+        assertTrue(byName.allowsToolGroup("alpha_market_skill_tools"));
+        assertTrue(byName.allowsToolGroup("alpha_custom_skill_tools"));
     }
 
     @Test
@@ -229,28 +261,33 @@ class CapabilitySurfaceTest {
     }
 
     @Test
-    @DisplayName("skill path — granted skillName authorizes its skill tool group")
+    @DisplayName("skill path — granted name authorizes the skill tool group of any source copy")
     void skillGroupPath() {
         // Group dimension restricted (empty) so only the skill path can rescue the tool.
         CapabilitySurface surface = new CapabilitySurface(Set.of("s1"), Set.of(), Set.of());
-        // skillName s1 → group name "s1_skill_tools" (SkillToolGroup naming convention)
-        assertTrue(surface.allowsTool(tool("t1"), Set.of("s1_skill_tools")));
-        assertFalse(surface.allowsTool(tool("t1"), Set.of("s2_skill_tools")));
+        // Convention group = skillId + "_skill_tools" = name + "_" + source + "_skill_tools".
+        assertTrue(surface.allowsTool(tool("t1"), Set.of("s1_custom_skill_tools")));
+        assertTrue(surface.allowsTool(tool("t1"), Set.of("s1_market_skill_tools")));
+        assertFalse(surface.allowsTool(tool("t1"), Set.of("s2_custom_skill_tools")));
     }
 
     @Test
     @DisplayName(
-            "skill path — a repository-qualified entry still authorizes the name-derived group")
-    void qualifiedSkillEntryGrantsNameDerivedGroup() {
-        // Regression: qualified entries used to derive "name__s__source_skill_tools" from the
-        // raw entry, missing the actually registered "name_skill_tools" group — granting the
-        // repository's copy left its tool group denied.
-        CapabilitySurface surface =
-                new CapabilitySurface(Set.of("s1__s__repo1"), Set.of(), Set.of());
-        assertTrue(surface.allowsSkill("s1__s__repo1"));
-        assertTrue(surface.allowsToolGroup("s1_skill_tools"));
-        assertTrue(surface.allowsTool(tool("t1"), Set.of("s1_skill_tools")));
-        assertFalse(surface.allowsTool(tool("t1"), Set.of("s2_skill_tools")));
+            "skill path — backward derivation: group name → name part → grant entry, source-free")
+    void skillGroupPathBackwardDerivation() {
+        // The derivation peels the "_skill_tools" suffix and takes everything before the first
+        // underscore as the name (the standard charset forbids underscores in names), so the
+        // source part is irrelevant — deterministic regardless of the source's charset.
+        CapabilitySurface surface = new CapabilitySurface(Set.of("s1"), Set.of(), Set.of());
+        assertTrue(surface.allowsToolGroup("s1_custom_skill_tools"));
+        assertTrue(surface.allowsToolGroup("s1_my_repo_v2_skill_tools"));
+
+        // Not granted names and non-convention groups stay denied. (A group whose idPart is
+        // exactly the entry — e.g. "s1_skill_tools" for entry "s1" — is matched by the
+        // exact-id clause; main-semantics ids always carry a source, so this form cannot
+        // occur for a real skill, and matching it is harmless.)
+        assertFalse(surface.allowsToolGroup("s2_custom_skill_tools"));
+        assertFalse(surface.allowsToolGroup("s1_custom_tools"));
     }
 
     // ==================== trimming intent ====================
@@ -296,10 +333,11 @@ class CapabilitySurfaceTest {
         assertTrue(
                 new CapabilitySurface(null, Set.of("g1"), Set.of())
                         .allowsToolGroupActivation("g1", GROUPS_OF_G1));
-        // Skill path: the derived skill tool-group name is activatable.
+        // Skill path: the skill tool-group name (name + "_" + source + "_skill_tools") is
+        // activatable via backward derivation from the group name.
         assertTrue(
                 new CapabilitySurface(Set.of("s1"), Set.of(), Set.of())
-                        .allowsToolGroupActivation("s1_skill_tools", NO_GROUPS));
+                        .allowsToolGroupActivation("s1_custom_skill_tools", NO_GROUPS));
         // Reachability: some per-name granted member tool belongs to the group.
         assertTrue(
                 new CapabilitySurface(null, Set.of(), Set.of("t1"))

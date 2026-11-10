@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -49,22 +48,21 @@ class SkillUtilTest {
         @Test
         @DisplayName("Should validate names against the standard naming rule")
         void testValidatesNamesAgainstTheStandardRule() {
-            // Accept: lowercase letters, digits, dashes, underscores; digit start; max length.
+            // Accept: lowercase letters, digits, dashes; digit start; max length.
             assertTrue(SkillUtil.isValidSkillName("a"));
             assertTrue(SkillUtil.isValidSkillName("data-analysis"));
-            assertTrue(SkillUtil.isValidSkillName("with_underscore"));
             assertTrue(SkillUtil.isValidSkillName("0start"));
             assertTrue(SkillUtil.isValidSkillName("a".repeat(SkillUtil.MAX_SKILL_NAME_LENGTH)));
 
-            // Reject: everything else, including dot/slash (path shapes), non-ASCII,
-            // uppercase, and overlong names. Underscores are valid; the reserved "__s__"
-            // separator is rejected by AgentSkill construction, not by this pattern.
+            // Reject: everything else, including underscore/dot (skill-id separator and path
+            // shapes), non-ASCII, uppercase, and overlong names.
             for (String invalid :
                     new String[] {
                         null,
                         "",
                         "Uppercase",
                         "技能",
+                        "with_underscore",
                         "dot.name",
                         "with space",
                         "colon:name",
@@ -80,7 +78,7 @@ class SkillUtilTest {
         @Test
         @DisplayName("Should throw with a descriptive message for invalid names")
         void testRequireValidSkillNameThrowsWithMessage() {
-            assertEquals("^[a-z0-9][a-z0-9_-]*$", SkillUtil.VALID_SKILL_NAME_PATTERN.pattern());
+            assertEquals("^[a-z0-9][a-z0-9-]*$", SkillUtil.VALID_SKILL_NAME_PATTERN.pattern());
             assertEquals(64, SkillUtil.MAX_SKILL_NAME_LENGTH);
 
             IllegalArgumentException e =
@@ -88,8 +86,18 @@ class SkillUtilTest {
                             IllegalArgumentException.class,
                             () -> SkillUtil.requireValidSkillName("Bad Name"));
             assertTrue(e.getMessage().contains("Bad Name"));
-            assertTrue(e.getMessage().contains("^[a-z0-9][a-z0-9_-]*$"));
+            assertTrue(e.getMessage().contains("^[a-z0-9][a-z0-9-]*$"));
             assertDoesNotThrow(() -> SkillUtil.requireValidSkillName("good-name"));
+        }
+
+        @Test
+        @DisplayName("parseSkillName: bare names pass through; ids split at the first underscore")
+        void testParseSkillName() {
+            // A bare name (no separator) passes through unchanged.
+            assertEquals("alpha", SkillUtil.parseSkillName("alpha"));
+            // A full id splits at the first separator; the source may contain underscores.
+            assertEquals("alpha", SkillUtil.parseSkillName("alpha_custom"));
+            assertEquals("alpha", SkillUtil.parseSkillName("alpha_my_repo_v2"));
         }
     }
 
@@ -116,7 +124,7 @@ class SkillUtilTest {
             assertEquals("test-skill", skill.getName());
             assertEquals("A test skill for validation", skill.getDescription());
             assertTrue(skill.getSkillContent().contains("Skill Content"));
-            assertNull(skill.getSource());
+            assertEquals("custom", skill.getSource());
             assertEquals(1, skill.getResources().size());
         }
 
@@ -134,7 +142,7 @@ class SkillUtilTest {
 
             assertEquals("github-skill", skill.getName());
             assertEquals("github", skill.getSource());
-            assertEquals("github-skill__s__github", skill.getSkillId());
+            assertEquals("github-skill_github", skill.getSkillId());
         }
 
         @Test
@@ -155,7 +163,7 @@ class SkillUtilTest {
 
             AgentSkill skill = SkillUtil.createFrom(skillMd, null, null);
 
-            assertNull(skill.getSource());
+            assertEquals("custom", skill.getSource());
         }
 
         @Test

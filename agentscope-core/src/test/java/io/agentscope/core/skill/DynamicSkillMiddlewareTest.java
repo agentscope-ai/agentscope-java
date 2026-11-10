@@ -28,7 +28,6 @@ import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
-import io.agentscope.core.skill.repository.RuntimeContextSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
 import java.util.List;
@@ -231,7 +230,7 @@ class DynamicSkillMiddlewareTest {
                                             "complete resource",
                                             java.nio.file.Files.readString(
                                                     box.getUploadDir()
-                                                            .resolve(skill.getName())
+                                                            .resolve(skill.getSkillId())
                                                             .resolve("data.txt")));
                                     return box;
                                 }));
@@ -259,7 +258,7 @@ class DynamicSkillMiddlewareTest {
         RuntimeContext rc = grantRc();
         mw.onSystemPrompt(agent, rc, "").block();
         SkillBox active = rc.get(SkillBox.class);
-        Path activeFile = active.getUploadDir().resolve(skill.getName()).resolve("data.txt");
+        Path activeFile = active.getUploadDir().resolve(skill.getSkillId()).resolve("data.txt");
         for (int i = 0; i < 32; i++) {
             repo.skills = List.of(new AgentSkill("other" + i, "Other", "content", null));
             mw.onSystemPrompt(agent, grantRc(), "").block();
@@ -276,16 +275,18 @@ class DynamicSkillMiddlewareTest {
                 java.nio.file.Files.readString(
                         rc.get(SkillBox.class)
                                 .getUploadDir()
-                                .resolve(skill.getName())
+                                .resolve(skill.getSkillId())
                                 .resolve("data.txt")));
     }
 
     @Test
     void contextualRepositoryReceivesExactRequest() {
-        var repo = org.mockito.Mockito.mock(RuntimeContextSkillRepository.class);
+        var repo =
+                org.mockito.Mockito.mock(
+                        io.agentscope.core.skill.repository.RuntimeContextSkillRepository.class);
         RuntimeContext a = RuntimeContext.builder().userId("A").sessionId("s").build();
-        a.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
         RuntimeContext b = RuntimeContext.builder().userId("B").sessionId("s").build();
+        a.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
         b.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
         org.mockito.Mockito.when(repo.getAllSkills(a))
                 .thenReturn(List.of(new AgentSkill("skill-a", "A", "A", null)));
@@ -327,13 +328,13 @@ class DynamicSkillMiddlewareTest {
                     second.getToolkit().getTool(SkillToolFactory.LOAD_TOOL_NAME),
                     "an agent without a prompt pass must stay unregistered");
 
-            mw.onSystemPrompt(first, RuntimeContext.empty(), "base").block();
+            mw.onSystemPrompt(first, grantRc(), "base").block();
 
             assertNotNull(
                     first.getToolkit().getTool(SkillToolFactory.LOAD_TOOL_NAME),
                     "the first prompt pass must make the load tool available");
             // Repeated passes must not duplicate the registration.
-            mw.onSystemPrompt(first, RuntimeContext.empty(), "base").block();
+            mw.onSystemPrompt(first, grantRc(), "base").block();
             assertEquals(
                     1,
                     first.getToolkit().getToolSchemas().stream()
@@ -341,7 +342,7 @@ class DynamicSkillMiddlewareTest {
                             .count(),
                     "repeated passes must not register the load tool twice");
             // Each agent registers on its own toolkit at its own first pass.
-            mw.onSystemPrompt(second, RuntimeContext.empty(), "base").block();
+            mw.onSystemPrompt(second, grantRc(), "base").block();
             assertNotNull(
                     second.getToolkit().getTool(SkillToolFactory.LOAD_TOOL_NAME),
                     "a rebuilt agent must gain the load tool at its own first pass");
@@ -366,7 +367,7 @@ class DynamicSkillMiddlewareTest {
                     agent.getToolkit().getTool(SkillToolFactory.LOAD_TOOL_NAME),
                     "build alone must not register the load tool");
 
-            mw.onSystemPrompt(agent, RuntimeContext.empty(), "").block();
+            mw.onSystemPrompt(agent, grantRc(), "").block();
 
             assertNotNull(
                     agent.getToolkit().getTool(SkillToolFactory.LOAD_TOOL_NAME),
@@ -384,7 +385,7 @@ class DynamicSkillMiddlewareTest {
         assertNull(
                 toolkit.getTool(SkillToolFactory.LOAD_TOOL_NAME), "construction must not register");
 
-        mw.onSystemPrompt(wired, RuntimeContext.empty(), "base").block();
+        mw.onSystemPrompt(wired, grantRc(), "base").block();
 
         assertNotNull(
                 toolkit.getTool(SkillToolFactory.LOAD_TOOL_NAME),
@@ -520,11 +521,10 @@ class DynamicSkillMiddlewareTest {
      * the pre-refactor implementation (which copied the whole resource map per key). The refactor
      * to per-key {@code AgentSkill#getResource(String)} access must keep the hashed bytes — and
      * therefore this constant — bit-for-bit identical. {@code originDir} stays empty because
-     * {@code Path#toString()} is platform-dependent. Captured with sourceless 4-arg-constructor
-     * skills (a {@code null} source hashes as zero bytes).
+     * {@code Path#toString()} is platform-dependent.
      */
     private static final String GOLDEN_SIGNATURE =
-            "31a1141d42de16b3d2ac538c2181d886404c68fc85a054eb1eba015b1eaad9a1";
+            "12cf4fa8d7ce1d654ed2e5625b41b5e990bf5658db1c2deb7548413ffea1b7e3";
 
     @Test
     void signatureValueUnchangedAfterPerKeyResourceAccess() throws Exception {

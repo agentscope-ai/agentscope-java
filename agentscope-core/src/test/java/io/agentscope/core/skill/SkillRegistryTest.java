@@ -50,60 +50,35 @@ class SkillRegistryTest {
     void testRegisterNewSkill() {
         AgentSkill skill = createSkill("test");
 
-        registry.registerSkill("test", skill);
+        registry.registerSkill("test_custom", skill);
 
-        assertTrue(registry.exists("test"));
-        assertEquals(skill, registry.getSkill("test"));
+        assertTrue(registry.exists("test_custom"));
+        assertEquals(skill, registry.getSkill("test_custom"));
     }
 
     @Test
-    @DisplayName("Should re-registering the same skillId replace the previous instance")
-    void testRegisterSameSkillIdReplaces() {
-        AgentSkill v1 = createSkill("v1");
-        AgentSkill v2 = createSkill("v2");
-        registry.registerSkill("test", v1);
-        registry.registerSkill("test", v2); // same id: version override, later wins
-        assertTrue(registry.exists("test"));
-        assertEquals(v2, registry.getSkill("test"));
+    @DisplayName("Should register same skill id replaces existing")
+    void testRegisterSameSkillIdReplacesExisting() {
+        AgentSkill skill1 = createSkill("v1");
+        registry.registerSkill("test_custom", skill1);
+
+        AgentSkill skill2 = createSkill("v2");
+        registry.registerSkill("test_custom", skill2);
+
+        assertTrue(registry.exists("test_custom"));
+        assertEquals(skill2, registry.getSkill("test_custom"));
     }
 
     @Test
-    @DisplayName("Should same-named skills from different sources coexist")
-    void testSameNameDifferentSourceCoexist() {
-        AgentSkill internal =
-                AgentSkill.builder()
-                        .name("alpha")
-                        .description("d")
-                        .skillContent("c")
-                        .source("internal")
-                        .build();
-        AgentSkill market =
-                AgentSkill.builder()
-                        .name("alpha")
-                        .description("d")
-                        .skillContent("c")
-                        .source("market")
-                        .build();
-        registry.registerSkill(internal.getSkillId(), internal);
-        registry.registerSkill(market.getSkillId(), market);
-
-        assertEquals(2, registry.getSkillIds().size());
-        assertEquals(internal, registry.getSkill("alpha__s__internal"));
-        assertEquals(market, registry.getSkill("alpha__s__market"));
-        // A bare name is itself the source-less id form: it never resolves a sourced copy.
-        assertNull(registry.getSkill("alpha"));
-    }
-
-    @Test
-    @DisplayName("Should keep ids unambiguous via the reserved skillId separator")
-    void testSeparatorIsReservedSoIdsSplitDeterministically() {
-        // Names and sources may contain underscores but never the reserved "__s__"
-        // separator, so a qualified id always splits at it and distinct (name, source)
-        // pairs cannot share an id.
-        assertThrows(IllegalArgumentException.class, () -> createSkill("a__s__b"));
+    @DisplayName("Should keep ids unambiguous by rejecting underscore names at construction")
+    void testUnderscoreNamesAreRejectedSoIdsSplitDeterministically() {
+        // Names cannot contain the id separator "_", so "name_source" always splits at the
+        // first underscore and distinct (name, source) pairs cannot share an id.
+        assertThrows(IllegalArgumentException.class, () -> createSkill("a_b"));
+        assertThrows(IllegalArgumentException.class, () -> createSkill("b-c_d"));
 
         AgentSkill a = new AgentSkill("a", "desc", "content", null, "b-c");
-        assertEquals("a__s__b-c", a.getSkillId());
+        assertEquals("a_b-c", a.getSkillId());
     }
 
     @Test
@@ -130,33 +105,33 @@ class SkillRegistryTest {
     @Test
     @DisplayName("Should get skill ids")
     void testGetSkillIds() {
-        registry.registerSkill("test1", createSkill("test1"));
-        registry.registerSkill("test2", createSkill("test2"));
+        registry.registerSkill("test1_custom", createSkill("test1"));
+        registry.registerSkill("test2_custom", createSkill("test2"));
 
         var skillIds = registry.getSkillIds();
         assertEquals(2, skillIds.size());
-        assertTrue(skillIds.contains("test1"));
-        assertTrue(skillIds.contains("test2"));
+        assertTrue(skillIds.contains("test1_custom"));
+        assertTrue(skillIds.contains("test2_custom"));
     }
 
     @Test
     @DisplayName("Should exists")
     void testExists() {
-        registry.registerSkill("test", createSkill("test"));
+        registry.registerSkill("test_custom", createSkill("test"));
 
-        assertTrue(registry.exists("test"));
+        assertTrue(registry.exists("test_custom"));
         assertFalse(registry.exists("non-existent"));
     }
 
     @Test
     @DisplayName("Should remove skill")
     void testRemoveSkill() {
-        registry.registerSkill("test", createSkill("test"));
+        registry.registerSkill("test_custom", createSkill("test"));
 
-        registry.removeSkill("test");
+        registry.removeSkill("test_custom");
 
-        assertFalse(registry.exists("test"));
-        assertNull(registry.getSkill("test"));
+        assertFalse(registry.exists("test_custom"));
+        assertNull(registry.getSkill("test_custom"));
     }
 
     @Test

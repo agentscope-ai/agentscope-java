@@ -22,7 +22,6 @@ import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.AgentTool;
-import io.agentscope.core.tool.SkillToolGroup;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
@@ -295,7 +294,7 @@ class SkillToolFactory {
      * Implementation of skill resource loading logic. Both load paths (per-call box and the
      * build-time bound static tool) converge here, so the grant gate lives in this method only.
      *
-     * @param skillId The skill identifier (normally the skill name)
+     * @param skillId The unique identifier of the skill
      * @param path The path to the resource file
      * @param tcs the per-call tool context state (may be {@code null})
      * @param rc the tool call's runtime context (may be {@code null} → unrestricted: direct
@@ -449,7 +448,7 @@ class SkillToolFactory {
     /**
      * Validates that a skill is registered and returns its instance.
      *
-     * @param skillId The skill identifier (normally the skill name)
+     * @param skillId The unique identifier of the skill
      * @return The registered skill instance
      * @throws IllegalArgumentException if the skill is not registered
      * @throws IllegalStateException if the skill cannot be loaded after validation
@@ -487,21 +486,18 @@ class SkillToolFactory {
             return;
         }
 
-        // Group discovery is name-keyed: normalize a combined id (name__s__source) to its
-        // name part so the convention group and activateOnSkill bindings resolve; a bare
-        // name is itself the source-less id form and passes through unchanged.
-        String skillName = AgentSkill.parseSkillName(skillId);
-
         // Read-only discovery of the groups owned by this skill: the name-convention group
-        // (skillName_skill_tools) plus any SkillToolGroup bound via activateOnSkill (bindings
-        // match by skill name). Shared group definitions are never mutated.
+        // (skillId_skill_tools) plus any SkillToolGroup bound via activateOnSkill. Shared group
+        // definitions are never mutated.
         List<String> groups = new ArrayList<>();
-        String toolsGroupName = SkillToolGroup.skillToolsGroupName(skillName);
+        String toolsGroupName = skillId + "_skill_tools";
         if (toolkit != null && toolkit.getToolGroup(toolsGroupName) != null) {
             groups.add(toolsGroupName);
         }
-        if (toolkit != null) {
-            for (String group : toolkit.findSkillToolGroupsByActivateOnSkill(skillName)) {
+        AgentSkill agentSkill = skillRegistry.getSkill(skillId);
+        if (agentSkill != null && toolkit != null) {
+            for (String group :
+                    toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName())) {
                 if (!groups.contains(group)) {
                     groups.add(group);
                 }

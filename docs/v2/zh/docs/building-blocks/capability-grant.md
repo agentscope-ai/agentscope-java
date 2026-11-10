@@ -27,7 +27,7 @@ CapabilityResolver resolver = (ctx, agent) -> {
     // 粒度自选：按 (userId, agentId) 做 per-agent 差异，
     // 或忽略 agentId 按用户出一份数据（框架一视同仁）
     return new CapabilitySurface(
-            authzService.allowedSkills(userId),      // 允许的 skillId（通常即 skill 名）；null = 未设置
+            authzService.allowedSkills(userId),      // 允许的 skill 名；null = 未设置
             authzService.allowedToolGroups(userId),  // 允许的 ToolGroup 名；null = 未设置
             authzService.allowedTools(userId));      // 允许的工具名；null = 未设置
 };
@@ -73,11 +73,11 @@ new CapabilitySurface(Set.of(), Set.of(), Set.of());
 
 正向授权层次包含，命中**任一已设置维度**即放行：
 
-- 授权一个 **skill** 即隐含授权其手册、脚本与关联工具（技能组 `skillId + "_skill_tools"`，无 source 时 skillId 即 skill 名），**并自动放行经 `activateOnSkill` 绑定到该 skill 的自定义工具组**（call 入口把绑定组并入授权面）；
+- 授权一个 **skill** 即隐含授权其手册、脚本与关联工具（技能组，约定组名 `skillId + "_skill_tools"`），**并自动放行经 `activateOnSkill` 绑定到该 skill 的自定义工具组**（call 入口把绑定组并入授权面）；
 - 授权一个 **ToolGroup** 即隐含授权组内全部工具；
 - 逐名授权一个**工具**即授权该工具本身（不问分组，也不放大到组内其他工具）。
 
-skill 以 **skillId** 授权与寻址：skillId 通常就是 skill 名（行业标准唯一定位），仅在同名 skill 来自不同仓库时取 `name + "__s__" + source` 组合形态精确到具体仓库（业务授权清单可以直接使用 skill 名，极端情况下使用组合形态）。目录以 skillId 为键：同名 skill 来自不同仓库时以组合形态共存，同 id 重复注册覆盖旧实例（版本更新），寻址按 skillId 精确匹配。
+skill 以 **skill 名**授权（业务身份，行业标准唯一定位）：一份名单条目覆盖该名字在目录中的全部（目录按标准语义合并，同名只保留高优先仓库那份）。skillId（`name + "_" + source`）仍是框架内部的注册与寻址键：加载入参用 skillId，标准命名规则禁止名字含下划线，因此 skillId 的第一个下划线必是分隔符、拆分无歧义。
 
 只提供白名单，不提供 deny（反向禁用）；默认拒绝——不在授权清单内的能力即「不存在」。
 

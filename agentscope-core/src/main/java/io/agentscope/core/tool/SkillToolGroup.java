@@ -46,17 +46,6 @@ public class SkillToolGroup extends ToolGroup {
     private final String activateOnSkill;
     private final String rawDescription;
 
-    /**
-     * Single source of the skill tool-group naming convention: {@code skillName +
-     * "_skill_tools"}.
-     *
-     * @param skillName the skill name (the skill's business identity)
-     * @return the derived tool-group name
-     */
-    public static String skillToolsGroupName(String skillName) {
-        return skillName + "_skill_tools";
-    }
-
     private SkillToolGroup(Builder builder) {
         super(
                 builder.name,

@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -87,21 +86,6 @@ class SkillBoxToolsTest {
         skillBox.registerSkillLoadTool();
     }
 
-    /**
-     * Direct-execution tests bypass the agent call() entry; seed ALLOW_ALL so the grant layer's
-     * fail-closed load gate does not deny every skill load.
-     */
-    private static RuntimeContext grantRc() {
-        RuntimeContext rc = RuntimeContext.empty();
-        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
-        return rc;
-    }
-
-    private static RuntimeContext withGrant(RuntimeContext rc) {
-        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
-        return rc;
-    }
-
     private AgentTool createDummyTool(String name) {
         return new AgentTool() {
             @Override
@@ -159,10 +143,10 @@ class SkillBoxToolsTest {
         assertTrue(required.contains("skillId"));
         assertTrue(required.contains("path"));
 
-        // Verify skillName has enum with available skills
+        // Verify skillId has enum with available skills
         @SuppressWarnings("unchecked")
-        Map<String, Object> skillNameParam = (Map<String, Object>) properties.get("skillId");
-        assertNotNull(skillNameParam.get("enum"));
+        Map<String, Object> skillIdParam = (Map<String, Object>) properties.get("skillId");
+        assertNotNull(skillIdParam.get("enum"));
 
         @SuppressWarnings("unchecked")
         Map<String, Object> pathParam = (Map<String, Object>) properties.get("path");
@@ -176,7 +160,7 @@ class SkillBoxToolsTest {
     void testLoadSkillMarkdownSuccessfully() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test-skill", "path", "SKILL.md");
+        Map<String, Object> input = Map.of("skillId", "test-skill_custom", "path", "SKILL.md");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-001")
@@ -184,11 +168,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -204,8 +184,8 @@ class SkillBoxToolsTest {
     void testActivateSkillAndToolGroupWhenLoadingMarkdown() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        String skillName = "test-skill";
-        String toolGroupName = skillName + "_skill_tools";
+        String skillId = "test-skill_custom";
+        String toolGroupName = skillId + "_skill_tools";
 
         ToolContextState toolContext = ToolContextState.builder().build();
         RuntimeContext runtimeContext =
@@ -213,7 +193,7 @@ class SkillBoxToolsTest {
                         .agentState(AgentState.builder().toolContext(toolContext).build())
                         .build();
 
-        Map<String, Object> input = Map.of("skillId", skillName, "path", "SKILL.md");
+        Map<String, Object> input = Map.of("skillId", skillId, "path", "SKILL.md");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-002")
@@ -224,7 +204,7 @@ class SkillBoxToolsTest {
                 ToolCallParam.builder()
                         .toolUseBlock(toolUseBlock)
                         .input(input)
-                        .runtimeContext(withGrant(runtimeContext))
+                        .runtimeContext(runtimeContext)
                         .build();
         tool.callAsync(param).block(TIMEOUT);
 
@@ -235,56 +215,6 @@ class SkillBoxToolsTest {
         assertFalse(
                 toolkit.getToolGroup(toolGroupName).isActive(),
                 "Shared toolkit group-manager flag must remain inactive");
-    }
-
-    @Test
-    @DisplayName("Combined-form skillId load still activates the name-derived tool group")
-    void testCombinedFormSkillIdLoadActivatesToolGroup() {
-        // Regression: loading with the combined id (name__s__source — the form the prompt
-        // advertises for sourced skills) used to derive "name__s__source_skill_tools" and
-        // miss the registered "name_skill_tools" group, leaving the skill's tools inactive.
-        AgentSkill sourced =
-                AgentSkill.builder()
-                        .name("sourced-skill")
-                        .description("Sourced Skill")
-                        .skillContent("# Sourced Content")
-                        .source("repo1")
-                        .build();
-        skillBox.registration()
-                .skill(sourced)
-                .agentTool(createDummyTool("sourced-skill_tool"))
-                .apply();
-
-        AgentTool tool = toolkit.getTool("load_skill_through_path");
-        String combinedId = sourced.getSkillId();
-        assertEquals("sourced-skill__s__repo1", combinedId);
-
-        ToolContextState toolContext = ToolContextState.builder().build();
-        RuntimeContext runtimeContext =
-                RuntimeContext.builder()
-                        .agentState(AgentState.builder().toolContext(toolContext).build())
-                        .build();
-
-        Map<String, Object> input = Map.of("skillId", combinedId, "path", "SKILL.md");
-        ToolUseBlock toolUseBlock =
-                ToolUseBlock.builder()
-                        .id("test-call-combined-001")
-                        .name("load_skill_through_path")
-                        .input(input)
-                        .build();
-        ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(withGrant(runtimeContext))
-                        .build();
-        ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
-
-        assertNotNull(result);
-        assertFalse(isErrorResult(result));
-        assertTrue(
-                toolContext.getActivatedGroups().contains("sourced-skill_skill_tools"),
-                "Combined-form load must activate the name-derived tool group");
     }
 
     @Test
@@ -300,11 +230,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -327,11 +253,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -354,11 +276,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -371,7 +289,7 @@ class SkillBoxToolsTest {
     void testLoadSkillResourceSuccessfully() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test-skill", "path", "config.json");
+        Map<String, Object> input = Map.of("skillId", "test-skill_custom", "path", "config.json");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-006")
@@ -379,11 +297,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -399,8 +313,8 @@ class SkillBoxToolsTest {
     void testActivateSkillAndToolGroupWhenLoadingResource() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        String skillName = "test-skill";
-        String toolGroupName = skillName + "_skill_tools";
+        String skillId = "test-skill_custom";
+        String toolGroupName = skillId + "_skill_tools";
 
         ToolContextState toolContext = ToolContextState.builder().build();
         RuntimeContext runtimeContext =
@@ -408,7 +322,7 @@ class SkillBoxToolsTest {
                         .agentState(AgentState.builder().toolContext(toolContext).build())
                         .build();
 
-        Map<String, Object> input = Map.of("skillId", skillName, "path", "data.txt");
+        Map<String, Object> input = Map.of("skillId", skillId, "path", "data.txt");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-007")
@@ -419,7 +333,7 @@ class SkillBoxToolsTest {
                 ToolCallParam.builder()
                         .toolUseBlock(toolUseBlock)
                         .input(input)
-                        .runtimeContext(withGrant(runtimeContext))
+                        .runtimeContext(runtimeContext)
                         .build();
         tool.callAsync(param).block(TIMEOUT);
 
@@ -436,10 +350,10 @@ class SkillBoxToolsTest {
     @DisplayName("Loading without a runtime context does not mutate the shared toolkit")
     void testLoadWithoutRuntimeContextDoesNotMutateSharedToolkit() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
-        String skillName = "test-skill";
-        String toolGroupName = skillName + "_skill_tools";
+        String skillId = "test-skill_custom";
+        String toolGroupName = skillId + "_skill_tools";
 
-        Map<String, Object> input = Map.of("skillId", skillName, "path", "SKILL.md");
+        Map<String, Object> input = Map.of("skillId", skillId, "path", "SKILL.md");
         ToolCallParam param =
                 ToolCallParam.builder()
                         .toolUseBlock(
@@ -467,8 +381,8 @@ class SkillBoxToolsTest {
         // Register a second tool-bearing skill.
         AgentSkill other = new AgentSkill("other-skill", "Other Skill", "# Other", null);
         skillBox.registration().skill(other).agentTool(createDummyTool("other-skill_tool")).apply();
-        String groupA = "test-skill_skill_tools";
-        String groupB = "other-skill_skill_tools";
+        String groupA = "test-skill_custom_skill_tools";
+        String groupB = "other-skill_custom_skill_tools";
 
         ToolContextState tcsA = ToolContextState.builder().build();
         ToolContextState tcsB = ToolContextState.builder().build();
@@ -481,8 +395,8 @@ class SkillBoxToolsTest {
                         .agentState(AgentState.builder().toolContext(tcsB).build())
                         .build();
 
-        loadSkillWithContext("test-skill", rcA);
-        loadSkillWithContext("other-skill", rcB);
+        loadSkillWithContext("test-skill_custom", rcA);
+        loadSkillWithContext("other-skill_custom", rcB);
 
         assertTrue(tcsA.getActivatedGroups().contains(groupA), "Session A activates its own group");
         assertFalse(
@@ -494,15 +408,14 @@ class SkillBoxToolsTest {
                 "Session B must not see session A's group");
     }
 
-    private ToolResultBlock loadSkillWithContext(String skillName, RuntimeContext rc) {
-        withGrant(rc);
+    private ToolResultBlock loadSkillWithContext(String skillId, RuntimeContext rc) {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
-        Map<String, Object> input = Map.of("skillId", skillName, "path", "SKILL.md");
+        Map<String, Object> input = Map.of("skillId", skillId, "path", "SKILL.md");
         ToolCallParam param =
                 ToolCallParam.builder()
                         .toolUseBlock(
                                 ToolUseBlock.builder()
-                                        .id("call-" + skillName)
+                                        .id("call-" + skillId)
                                         .name("load_skill_through_path")
                                         .input(input)
                                         .build())
@@ -523,7 +436,7 @@ class SkillBoxToolsTest {
                     .skill(skill)
                     .agentTool(createDummyTool("parallel-tool_" + i))
                     .apply();
-            groupNames.add(skill.getName() + "_skill_tools");
+            groupNames.add(skill.getSkillId() + "_skill_tools");
         }
 
         ToolContextState tcs = ToolContextState.builder().build();
@@ -536,12 +449,12 @@ class SkillBoxToolsTest {
         CountDownLatch start = new CountDownLatch(1);
         List<Future<?>> futures = new ArrayList<>();
         for (int i = 0; i < n; i++) {
-            final String skillName = "parallel-" + i + "";
+            final String skillId = "parallel-" + i + "_custom";
             futures.add(
                     pool.submit(
                             () -> {
                                 start.await();
-                                loadSkillWithContext(skillName, rc);
+                                loadSkillWithContext(skillId, rc);
                                 return null;
                             }));
         }
@@ -563,7 +476,8 @@ class SkillBoxToolsTest {
     void testReturnErrorForNonExistentResource() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test-skill", "path", "non_existent.txt");
+        Map<String, Object> input =
+                Map.of("skillId", "test-skill_custom", "path", "non_existent.txt");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-008")
@@ -571,11 +485,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -594,7 +504,7 @@ class SkillBoxToolsTest {
     void testReturnErrorForMissingPathParameter() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test-skill");
+        Map<String, Object> input = Map.of("skillId", "test-skill_custom");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-009")
@@ -602,11 +512,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -621,7 +527,7 @@ class SkillBoxToolsTest {
     void testListAllResourcePathsWithInvalidPath() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test-skill", "path", "list");
+        Map<String, Object> input = Map.of("skillId", "test-skill_custom", "path", "list");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-010")
@@ -629,11 +535,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -650,7 +552,7 @@ class SkillBoxToolsTest {
     void testListOnlySkillMdForSkillWithoutResources() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "empty-skill", "path", "invalid");
+        Map<String, Object> input = Map.of("skillId", "empty-skill_custom", "path", "invalid");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-011")
@@ -658,11 +560,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -686,11 +584,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -703,7 +597,7 @@ class SkillBoxToolsTest {
     void testHandleWhitespaceInResourcePath() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        Map<String, Object> input = Map.of("skillId", "test-skill", "path", "  ");
+        Map<String, Object> input = Map.of("skillId", "test-skill_custom", "path", "  ");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-013")
@@ -711,11 +605,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 
@@ -730,11 +620,11 @@ class SkillBoxToolsTest {
         AgentSkill emptySkill = new AgentSkill("no-tools-skill", "No Tools", "# Empty", null);
         skillBox.registerSkill(emptySkill);
 
-        String skillName = emptySkill.getName();
+        String skillId = emptySkill.getSkillId();
 
         // Load skill
         AgentTool loader = toolkit.getTool("load_skill_through_path");
-        Map<String, Object> input = Map.of("skillId", skillName, "path", "SKILL.md");
+        Map<String, Object> input = Map.of("skillId", skillId, "path", "SKILL.md");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-015")
@@ -742,11 +632,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = loader.callAsync(param).block(TIMEOUT);
 
@@ -754,17 +640,16 @@ class SkillBoxToolsTest {
         assertNotNull(result);
         assertFalse(isErrorResult(result), "Should not fail when skill has no tools");
         assertNull(
-                toolkit.getToolGroup(skillName + "_skill_tools"),
-                "Tool group should not be created");
+                toolkit.getToolGroup(skillId + "_skill_tools"), "Tool group should not be created");
     }
 
     @Test
     @DisplayName("Should not activate skill when resource path is invalid")
     void testInvalidResourcePathDoesNotActivateSkill() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
-        String skillName = "test-skill";
+        String skillId = "test-skill_custom";
 
-        Map<String, Object> input = Map.of("skillId", skillName, "path", ".");
+        Map<String, Object> input = Map.of("skillId", skillId, "path", ".");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-016")
@@ -772,11 +657,7 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolUseBlock)
-                        .input(input)
-                        .runtimeContext(grantRc())
-                        .build();
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
 
         ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
 

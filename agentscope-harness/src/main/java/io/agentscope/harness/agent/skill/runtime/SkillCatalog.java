@@ -24,10 +24,8 @@ import java.util.Map;
 /**
  * Immutable snapshot of the skills visible to a single {@code onSystemPrompt} pass.
  *
- * <p>Keyed by skillId (the skill name when no source is set, or the combined {@code
- * name__s__source} form), insertion-order preserved so the prompt renders skills in compose
- * order. Same-named skills from different repositories coexist as separate entries; a
- * same-id re-registration keeps the later entry (version override).
+ * <p>Keyed by {@code skillId} (the AgentSkill's {@code name + "_" + source}), insertion-order
+ * preserved so the prompt renders skills in compose order.
  */
 public final class SkillCatalog {
 
@@ -52,12 +50,7 @@ public final class SkillCatalog {
         return new SkillCatalog(map);
     }
 
-    /**
-     * Lookup by the exact skillId (a bare name is the source-less form and never resolves a
-     * sourced copy).
-     *
-     * @return the matching entry, or {@code null} when absent
-     */
+    /** Lookup by {@code skillId} (name_source). Returns {@code null} when absent. */
     public HarnessSkillEntry get(String skillId) {
         return skillId == null ? null : entries.get(skillId);
     }

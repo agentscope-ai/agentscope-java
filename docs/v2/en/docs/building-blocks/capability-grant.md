@@ -32,7 +32,7 @@ CapabilityResolver resolver = (ctx, agent) -> {
     // Granularity is yours: per-(userId, agentId), or ignore agentId and return one
     // surface per user — the framework treats both identically.
     return new CapabilitySurface(
-            authzService.allowedSkills(userId),      // allowed skillIds (normally the skill name); null = not set
+            authzService.allowedSkills(userId),      // allowed skill names; null = not set
             authzService.allowedToolGroups(userId),  // allowed ToolGroup names; null = not set
             authzService.allowedTools(userId));      // allowed tool names; null = not set
 };
@@ -92,19 +92,19 @@ accessors (`allowedSkills()` etc.) still preserve the distinction.
 Positive authorization is hierarchical; matching **any set dimension** grants:
 
 - Granting a **skill** implicitly grants its manual, scripts and associated tools (the skill
-  tool group `skillId + "_skill_tools"`, where a source-less skillId is simply the skill name),
-  **and automatically enables custom tool groups bound to it via `activateOnSkill`** (the call
-  entry merges bound groups into the grant set);
+  tool group, convention-named `skillId + "_skill_tools"`), **and automatically enables custom
+  tool groups bound to it via `activateOnSkill`** (the call entry merges bound groups into the
+  grant set);
 - Granting a **ToolGroup** implicitly grants every tool in it;
 - Granting a **tool** by name grants exactly that tool (grouping is ignored, and it does not
   amplify to sibling tools in the same group).
 
-Skills are granted and addressed **by skillId**: normally just the skill name (the
-industry-standard unique identity); the combined `name + "__s__" + source` form only when
-same-named skills come from different repositories (entitlement lists use the bare name; the
-combined form for the rare precise case). Catalogs key by skillId: same-named skills from
-different repositories coexist under their combined form, a same-id re-registration replaces
-the previous instance (version override), and lookups match the exact skillId.
+Skills are granted **by skill name** (the business identity, the industry-standard unique
+locator): one entry covers every copy of that name in the catalog (catalogs use the standard
+merge semantics — same name keeps the higher-priority repository's copy). The skillId (`name +
+"_" + source`) remains the framework-internal registration and addressing key: loading takes a
+skillId, and because the standard naming rule forbids underscores in names, the first
+underscore in a skillId is always the separator — the split is unambiguous.
 
 Only whitelists are provided; there is no deny (reverse-ban) capability. Default is deny —
 anything not reachable from the enumeration does not exist.

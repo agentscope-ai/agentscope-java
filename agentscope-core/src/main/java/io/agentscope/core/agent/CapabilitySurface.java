@@ -16,8 +16,8 @@
 package io.agentscope.core.agent;
 
 import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.tool.AgentTool;
-import io.agentscope.core.tool.SkillToolGroup;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -35,10 +35,13 @@ import java.util.function.Function;
  * granted when it is system-marked or its name is whitelisted. Default is deny: anything
  * not reachable from the enumeration does not exist.
  *
- * @param allowedSkills skill grant entries: normally the bare skill name (the business
- *     identity, source-unrestricted); optionally the combined skillId form when a specific
- *     repository's copy must be granted (see {@link AgentSkill#getSkillId()}); {@code null} =
- *     not set (no skill grants)
+ * @param allowedSkills allowed skill names (the business identity — the grant vocabulary is
+ *     the name, never the source). As a program-level compatibility, a full skillId entry
+ *     ({@code name_source}) is also honoured as an exact-copy match; the bare name remains
+ *     the recommended form — it covers the name under any source and stays stable when
+ *     repository priorities change, while an id entry binds to one exact copy and stops
+ *     matching silently if that copy no longer wins the catalog merge. {@code null} = not
+ *     set (no skill grants)
  * @param allowedToolGroups allowed ToolGroup names; {@code null} = not set (no group grants)
  * @param allowedTools allowed tool names (per-name, grouping ignored); {@code null} = not set
  *     (no per-name grants)
@@ -78,25 +81,22 @@ public record CapabilitySurface(
      * such callers must apply that bypass themselves (or resolve the skill and prefer {@link
      * #allowsSkill(AgentSkill)}).
      *
-     * <p>A skillId is normally just the skill name; only when a source is set does it take the
-     * combined form {@code name__s__source} (composition rules: {@link
-     * AgentSkill#getSkillId()}). A name-only skillId matches a bare-name grant entry but never
-     * a repository-qualified one — the qualified entry demands a source the caller has not
-     * supplied (fail-closed).
+     * <p>The grant vocabulary is the skill <em>name</em>. A skillId takes the standard {@code
+     * name + "_" + source} form; because the standard name charset forbids underscores, the
+     * name part is everything before the first underscore, so the check is deterministic
+     * regardless of the source's charset.
      *
-     * @param skillId the skillId to check (the skill name, or the combined form)
-     * @return {@code true} for an all-null surface or a matching grant entry
+     * @param skillId the skillId to check ({@code name_source})
+     * @return {@code true} for an all-null surface or a grant entry naming this skill
      */
     public boolean allowsSkill(String skillId) {
         if (isUnrestricted() || allowedSkills == null) {
             return isUnrestricted();
         }
         if (allowedSkills.contains(skillId)) {
-            return true; // exact entry match (bare name or an exactly equal combined id)
+            return true; // exact entry match (bare name or an exactly equal full id)
         }
-        // A combined id is also granted by a bare-name entry of its name part.
-        return skillId.contains(AgentSkill.SKILL_ID_SEPARATOR)
-                && allowedSkills.contains(AgentSkill.parseSkillName(skillId));
+        return allowedSkills.contains(SkillUtil.parseSkillName(skillId));
     }
 
     /**
@@ -104,12 +104,14 @@ public record CapabilitySurface(
      * the caller holds the {@link AgentSkill}: it applies the system-capability bypass ({@code
      * skill.isSystem()}), mirroring how {@link #allowsTool} treats system tools.
      *
-     * <p>Matches either grant-entry form: the bare skill name (source-unrestricted) or the
-     * skill's combined id (repository-qualified).
+     * <p>The grant vocabulary is the skill name; one entry covers every copy of that name. A
+     * full-skillId entry is also honoured as an exact-copy compatibility match (see the
+     * record javadoc for the stability trade-off).
      *
      * @param skill the skill to check; {@code null} (a registry miss) is never granted, not
      *     even on {@link #ALLOW_ALL} — fail-closed like a missing surface
-     * @return {@code true} for a system skill, an all-null surface, or a matching grant entry
+     * @return {@code true} for a system skill, an all-null surface, or a grant entry naming
+     *     this skill
      */
     public boolean allowsSkill(AgentSkill skill) {
         if (skill == null) {
@@ -122,20 +124,23 @@ public record CapabilitySurface(
             return false;
         }
         return allowedSkills.contains(skill.getName())
+                // Full-skillId entries are a program-level compatibility (exact-copy
+                // match), not the recommended form: see the record javadoc.
                 || allowedSkills.contains(skill.getSkillId());
     }
 
     /**
-     * Tool-group decision. A granted skill implicitly grants its skill tool group.
+     * Tool-group decision. A granted skill implicitly grants its skill tool group (the {@code
+     * skillId + "_skill_tools"} convention group).
      *
      * @param name the group name to check
-     * @return {@code true} for an all-null surface, a whitelisted group, or a group derived
-     *     from a granted skill
+     * @return {@code true} for an all-null surface, a whitelisted group, or the skill tool
+     *     group of a granted skill
      */
     public boolean allowsToolGroup(String name) {
         return isUnrestricted()
                 || (allowedToolGroups != null && allowedToolGroups.contains(name))
-                || isSkillGroupName(name);
+                || isSkillToolGroup(name);
     }
 
     /**
@@ -177,20 +182,27 @@ public record CapabilitySurface(
                 && allowedTools.stream().anyMatch(t -> groupsOf.apply(t).contains(name));
     }
 
+    /** Suffix of the skill tool-group naming convention: {@code skillId + "_skill_tools"}. */
+    private static final String SKILL_TOOLS_SUFFIX = "_skill_tools";
+
     /**
-     * Whether the group name derives from a granted skill (naming convention: {@code
-     * skillName + "_skill_tools"}, see {@link SkillToolGroup#skillToolsGroupName}). A
-     * repository-qualified grant entry normalizes to its name part first — the registered
-     * convention group is always derived from the bare skill name.
+     * Whether the group name is the skill tool group of a granted skill. Convention group
+     * names are {@code skillId + "_skill_tools"} with {@code skillId = name + "_" + source};
+     * because the standard name charset forbids underscores, the name part is everything
+     * before the first underscore of the id part — the backward derivation is deterministic
+     * regardless of the source's charset.
      *
-     * @param name the group name to check
-     * @return {@code true} when the name is a granted skill's tool group
+     * @param groupName the group name to check
+     * @return {@code true} when the group is a granted skill's tool group
      */
-    private boolean isSkillGroupName(String name) {
-        return allowedSkills != null
-                && allowedSkills.stream()
-                        .map(AgentSkill::parseSkillName)
-                        .map(SkillToolGroup::skillToolsGroupName)
-                        .anyMatch(name::equals);
+    private boolean isSkillToolGroup(String groupName) {
+        if (allowedSkills == null || !groupName.endsWith(SKILL_TOOLS_SUFFIX)) {
+            return false;
+        }
+        String idPart = groupName.substring(0, groupName.length() - SKILL_TOOLS_SUFFIX.length());
+        // A full-skillId entry authorizes its own convention group (the idPart is exactly the
+        // skill's id); a name entry authorizes the group of any copy of that name.
+        return allowedSkills.contains(idPart)
+                || allowedSkills.contains(SkillUtil.parseSkillName(idPart));
     }
 }

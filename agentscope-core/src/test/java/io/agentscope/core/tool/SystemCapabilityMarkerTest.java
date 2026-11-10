@@ -305,11 +305,8 @@ class SystemCapabilityMarkerTest {
     // ==================== helper methods ====================
 
     @Test
-    @DisplayName("helpers: skill group naming, group-membership lookup, restricted notes")
+    @DisplayName("helpers: group-membership lookup, restricted notes")
     void helperMethods() {
-        assertEquals("s1_skill_tools", SkillToolGroup.skillToolsGroupName("s1"));
-        assertEquals("report_gen_skill_tools", SkillToolGroup.skillToolsGroupName("report_gen"));
-
         Toolkit toolkit = new Toolkit();
         toolkit.createToolGroup("g1", "one", true);
         toolkit.createToolGroup("g2", "two", false);

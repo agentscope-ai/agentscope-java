@@ -19,7 +19,6 @@ import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
-import io.agentscope.core.tool.SkillToolGroup;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
@@ -248,9 +247,8 @@ public class SkillBox {
     }
 
     /**
-     * Gets all registered skillIds — the skill name when no source is set, or the combined
-     * {@code name__s__source} form when one is. Unique in this box.
-     * @return All skillIds
+     * Gets all skill IDs.
+     * @return All skill IDs
      */
     public Set<String> getAllSkillIds() {
         return skillRegistry.getSkillIds();
@@ -283,45 +281,45 @@ public class SkillBox {
     }
 
     /**
-     * Gets a skill by its exact skillId (a bare name is the source-less form).
+     * Gets a skill by ID (latest version).
      *
-     * @param skillName The skillId
+     * @param skillId The skill ID
      * @return The skill instance, or null if not found
-     * @throws IllegalArgumentException if skillName is null
+     * @throws IllegalArgumentException if skillId is null
      */
-    public AgentSkill getSkill(String skillName) {
-        if (skillName == null) {
-            throw new IllegalArgumentException("Skill name cannot be null");
+    public AgentSkill getSkill(String skillId) {
+        if (skillId == null) {
+            throw new IllegalArgumentException("Skill ID cannot be null");
         }
-        return skillRegistry.getSkill(skillName);
+        return skillRegistry.getSkill(skillId);
     }
 
     /**
      * Removes a skill completely.
      *
-     * @param skillName The skill name
-     * @throws IllegalArgumentException if skillName is null
+     * @param skillId The skill ID
+     * @throws IllegalArgumentException if skillId is null
      */
-    public void removeSkill(String skillName) {
-        if (skillName == null) {
-            throw new IllegalArgumentException("Skill name cannot be null");
+    public void removeSkill(String skillId) {
+        if (skillId == null) {
+            throw new IllegalArgumentException("Skill ID cannot be null");
         }
-        skillRegistry.removeSkill(skillName);
-        logger.info("Removed skill '{}'", skillName);
+        skillRegistry.removeSkill(skillId);
+        logger.info("Removed skill '{}'", skillId);
     }
 
     /**
      * Checks if a skill exists.
      *
-     * @param skillName The skill name
+     * @param skillId The skill ID
      * @return true if the skill exists, false otherwise
-     * @throws IllegalArgumentException if skillName is null
+     * @throws IllegalArgumentException if skillId is null
      */
-    public boolean exists(String skillName) {
-        if (skillName == null) {
-            throw new IllegalArgumentException("Skill name cannot be null");
+    public boolean exists(String skillId) {
+        if (skillId == null) {
+            throw new IllegalArgumentException("Skill ID cannot be null");
         }
-        return skillRegistry.exists(skillName);
+        return skillRegistry.exists(skillId);
     }
 
     /**
@@ -552,7 +550,7 @@ public class SkillBox {
                     throw new IllegalStateException(
                             "Must bind toolkit or call toolkit() before apply()");
                 }
-                String skillToolGroup = SkillToolGroup.skillToolsGroupName(skill.getName());
+                String skillToolGroup = skill.getSkillId() + "_skill_tools";
                 if (toolkit.getToolGroup(skillToolGroup) == null) {
                     toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
                 }
@@ -641,7 +639,7 @@ public class SkillBox {
      * lifetime so {@code uploadSkillFiles} no longer mints a fresh {@code agentscope-code-execution-*}
      * tempdir each round).
      *
-     * @param workDir the directory under which {@code skills/<skillName>/} subtrees are written;
+     * @param workDir the directory under which {@code skills/<skillId>/} subtrees are written;
      *                {@code null} (the default) preserves the legacy per-instance tempdir behavior
      */
     public void setWorkDir(Path workDir) {

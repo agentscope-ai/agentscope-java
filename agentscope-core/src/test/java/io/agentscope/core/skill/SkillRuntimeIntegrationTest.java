@@ -20,10 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PreCallEvent;
@@ -33,7 +31,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.AgentTool;
@@ -80,13 +77,9 @@ class SkillRuntimeIntegrationTest {
     }
 
     private RuntimeContext sessionContext() {
-        RuntimeContext rc =
-                RuntimeContext.builder()
-                        .agentState(AgentState.builder().toolContext(toolContext).build())
-                        .build();
-        // Direct-execution tests bypass the agent call() entry; seed the grant surface.
-        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
-        return rc;
+        return RuntimeContext.builder()
+                .agentState(AgentState.builder().toolContext(toolContext).build())
+                .build();
     }
 
     @Test
@@ -96,12 +89,12 @@ class SkillRuntimeIntegrationTest {
         shared.setAutoUploadSkill(false);
         AgentSkill skill = new AgentSkill("shared", "Shared", "instructions", null);
         shared.registerSkill(skill);
-        String group = skill.getName() + "_skill_tools";
+        String group = skill.getSkillId() + "_skill_tools";
         source.createToolGroup(group, "first agent group", false);
         var builder =
-                ReActAgent.builder()
+                io.agentscope.core.ReActAgent.builder()
                         .name("agent")
-                        .model(org.mockito.Mockito.mock(Model.class))
+                        .model(org.mockito.Mockito.mock(io.agentscope.core.model.Model.class))
                         .toolkit(source)
                         .skillBox(shared);
         var first = builder.build();
@@ -110,7 +103,7 @@ class SkillRuntimeIntegrationTest {
         assertEquals(1, first.getHooks().stream().filter(SkillHook.class::isInstance).count());
         assertEquals(1, second.getHooks().stream().filter(SkillHook.class::isInstance).count());
 
-        Map<String, Object> input = Map.of("skillId", skill.getName(), "path", "SKILL.md");
+        Map<String, Object> input = Map.of("skillId", skill.getSkillId(), "path", "SKILL.md");
         first.getToolkit()
                 .getTool("load_skill_through_path")
                 .callAsync(
@@ -131,7 +124,7 @@ class SkillRuntimeIntegrationTest {
                 .block();
         assertFalse(toolContext.getActivatedGroups().contains(group));
 
-        shared.removeSkill(skill.getName());
+        shared.removeSkill(skill.getSkillId());
         PreCallEvent event = new PreCallEvent(first, new ArrayList<>());
         first.getHooks().stream()
                 .filter(SkillHook.class::isInstance)
@@ -162,8 +155,8 @@ class SkillRuntimeIntegrationTest {
         skillBox.registration().skill(calculatorSkill).agentTool(calculatorAdd).apply();
         skillBox.registration().skill(calculatorSkill).agentTool(calculatorMultiply).apply();
 
-        String skillName = calculatorSkill.getName();
-        String toolGroupName = skillName + "_skill_tools";
+        String skillId = calculatorSkill.getSkillId();
+        String toolGroupName = skillId + "_skill_tools";
 
         // Step 2: Verify initial state - skill and tool group inactive
         assertNotNull(toolkit.getToolGroup(toolGroupName), "ToolGroup should exist");
@@ -174,7 +167,7 @@ class SkillRuntimeIntegrationTest {
         // Step 3: Simulate LLM calling load_skill_through_path
         AgentTool skillLoader = toolkit.getTool("load_skill_through_path");
         Map<String, Object> loadParams = new HashMap<>();
-        loadParams.put("skillId", skillName);
+        loadParams.put("skillId", skillId);
         loadParams.put("path", "SKILL.md");
 
         ToolCallParam callParam =
@@ -248,8 +241,8 @@ class SkillRuntimeIntegrationTest {
         skillBox.registration().skill(mathSkill).agentTool(mathTool).apply();
         skillBox.registration().skill(weatherSkill).agentTool(weatherTool).apply();
 
-        String mathSkillId = mathSkill.getName();
-        String weatherSkillId = weatherSkill.getName();
+        String mathSkillId = mathSkill.getSkillId();
+        String weatherSkillId = weatherSkill.getSkillId();
         String mathToolGroupName = mathSkillId + "_skill_tools";
         String weatherToolGroupName = weatherSkillId + "_skill_tools";
 
@@ -315,10 +308,10 @@ class SkillRuntimeIntegrationTest {
         AgentSkill counterSkill = new AgentSkill("counter", "Counter Skill", "# Counter", null);
         skillBox.registration().skill(counterSkill).agentTool(counterTool).apply();
 
-        String skillName = counterSkill.getName();
+        String skillId = counterSkill.getSkillId();
 
         // Load skill
-        loadSkill(skillName);
+        loadSkill(skillId);
 
         // Verify skill activated
         // Call the tool multiple times
@@ -348,10 +341,10 @@ class SkillRuntimeIntegrationTest {
     /**
      * Helper method to load a skill by calling the load_skill_through_path tool.
      */
-    private void loadSkill(String skillName) {
+    private void loadSkill(String skillId) {
         AgentTool skillLoader = toolkit.getTool("load_skill_through_path");
         Map<String, Object> loadParams = new HashMap<>();
-        loadParams.put("skillId", skillName);
+        loadParams.put("skillId", skillId);
         loadParams.put("path", "SKILL.md");
 
         ToolCallParam callParam =

@@ -131,12 +131,12 @@ import io.agentscope.core.shutdown.AgentShuttingDownException;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.shutdown.PartialReasoningPolicy;
-import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.SkillHook;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ConcurrentSessionModificationException;
@@ -1080,9 +1080,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
         Set<String> boundGroups = new HashSet<>();
         for (String entry : grantedSkills) {
-            // Entries may be bare names or qualified ids; bindings match by name.
+            // Entries are names (the recommended form); a full-skillId entry (name_source)
+            // resolves to its name part — bindings are name-keyed.
             boundGroups.addAll(
-                    toolkit.findSkillToolGroupsByActivateOnSkill(AgentSkill.parseSkillName(entry)));
+                    toolkit.findSkillToolGroupsByActivateOnSkill(SkillUtil.parseSkillName(entry)));
         }
         if (boundGroups.isEmpty()) {
             return surface;

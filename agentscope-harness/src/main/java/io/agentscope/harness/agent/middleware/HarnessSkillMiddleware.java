@@ -415,7 +415,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
      * subsequent steps (lazy resources, marketplace stage) can act on it.
      */
     private LinkedHashMap<String, RepoBound> mergeRepositories(RuntimeContext ctx) {
-        LinkedHashMap<String, RepoBound> merged = new LinkedHashMap<>(); // keyed by skillId
+        LinkedHashMap<String, RepoBound> merged = new LinkedHashMap<>(); // keyed by skill name
         for (AgentSkillRepository repo : repositories) {
             List<AgentSkill> skills;
             try {
@@ -437,7 +437,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
                 if (skill == null || skill.getName() == null) {
                     continue;
                 }
-                merged.put(skill.getSkillId(), new RepoBound(skill, repo));
+                merged.put(skill.getName(), new RepoBound(skill, repo));
             }
         }
         return merged;
