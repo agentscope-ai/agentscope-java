@@ -72,7 +72,8 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
 
         AtomicReference<String> completedResult = new AtomicReference<>();
         repo.setCompletionCallback(
-                (rc, taskId, subAgentId, sessionId, result) -> completedResult.set(result));
+                (rc, taskId, subAgentId, sessionId, status, result, errorMessage) ->
+                        completedResult.set(result));
 
         String session = "sess-remote";
         String taskId = "task-remote-hitl";
