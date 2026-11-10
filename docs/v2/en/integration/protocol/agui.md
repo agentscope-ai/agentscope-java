@@ -76,13 +76,14 @@ Flux<AguiEvent> events = Flux.using(
 
 The front end provides `RunAgentInput`, including `threadId`, `runId`, `messages`, `tools`, `state`, and related fields. The adapter converts AG-UI messages to AgentScope `Msg` objects, invokes v2 `streamEvents(...)`, and converts each `AgentEvent` to AG-UI events.
 
-## Custom MVC Request Processor
+## Custom Request Processor
 
-For manual Spring MVC controller configuration, supply an `AguiRequestProcessor` to use your own agent resolver and request processing configuration:
+For manual Spring MVC or WebFlux configuration, supply an `AguiRequestProcessor` to use your own agent resolver and request processing configuration:
 
 ```java
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.spring.boot.agui.mvc.AguiMvcController;
+import io.agentscope.spring.boot.agui.webflux.AguiWebFluxHandler;
 
 AguiRequestProcessor processor = AguiRequestProcessor.builder()
     .agentResolver(customAgentResolver)
@@ -91,9 +92,13 @@ AguiRequestProcessor processor = AguiRequestProcessor.builder()
 AguiMvcController controller = AguiMvcController.builder()
     .requestProcessor(processor)
     .build();
+
+AguiWebFluxHandler handler = AguiWebFluxHandler.builder()
+    .requestProcessor(processor)
+    .build();
 ```
 
-With a custom processor, the controller does not require an agent registry. Its `agentRegistry`, `sessionManager`, `serverSideMemory`, `config`, `adapterFactory`, and `runtimeContextResolver` builder options are ignored; configure these behaviors on the supplied processor instead. HTTP options such as `sseTimeout` and `interruptOnDisconnect` still apply. Omit `requestProcessor` (or pass `null`) to keep the default processor and required registry.
+With a custom processor, the MVC controller and WebFlux handler do not require an agent registry. Their `agentRegistry`, `sessionManager`, `serverSideMemory`, `config`, `adapterFactory`, and `runtimeContextResolver` builder options are ignored; configure these behaviors on the supplied processor instead. Transport options such as MVC `sseTimeout` and the shared `agentIdHeader` and `interruptOnDisconnect` options still apply. Omit `requestProcessor` (or pass `null`) to keep the default processor and required registry.
 
 ## Event Mapping
 
