@@ -505,6 +505,8 @@ for (var tc : externalEvent.getToolCalls()) {
 
 **3. 恢复智能体** —— 将结果作为下一次 `call` 的输入消息回传。结果校验通过后会被注入智能体上下文，agent 会先发出 `ExternalExecutionResultEvent`，其 `getReplyId()` 与之前的 `RequireExternalExecutionEvent#getReplyId()` 相同。同一批工具的结果可以分多次回填。每次结果事件都使用原来的 reply ID，智能体收齐结果后继续推理。
 
+如果恢复的是逐调用等待状态引入之前保存的纯状态快照，请一次回填所有尚未返回的外部结果。
+
 
 <Tip>
 

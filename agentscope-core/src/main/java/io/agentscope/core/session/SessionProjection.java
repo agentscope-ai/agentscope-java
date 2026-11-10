@@ -62,14 +62,13 @@ public record SessionProjection(
                     if (data.get("result") != null) {
                         String id = (String) data.get("toolCallId");
                         uncertain.remove(id);
-                        // Early native action payloads omitted the polymorphic discriminator.
-                        var result =
-                                new LinkedHashMap<Object, Object>((Map<?, ?>) data.get("result"));
-                        result.putIfAbsent("type", "tool_result");
-                        results.put(
-                                id,
-                                JsonUtils.getJsonCodec()
-                                        .convertValue(result, ToolResultBlock.class));
+                        results.put(id, decodeToolResult((Map<?, ?>) data.get("result")));
+                    }
+                }
+                case "interaction/resolved" -> {
+                    if ("external_execution".equals(data.get("kind"))
+                            && data.get("result") instanceof Map<?, ?> result) {
+                        results.put((String) data.get("requestId"), decodeToolResult(result));
                     }
                 }
                 case "recovery/applied" -> {
@@ -110,6 +109,13 @@ public record SessionProjection(
             state = restored.toJson();
         }
         return new SessionProjection(cursor, state, Set.copyOf(uncertain), Set.copyOf(runs));
+    }
+
+    private static ToolResultBlock decodeToolResult(Map<?, ?> payload) {
+        // Early native action payloads omitted the polymorphic discriminator.
+        var result = new LinkedHashMap<Object, Object>(payload);
+        result.putIfAbsent("type", "tool_result");
+        return JsonUtils.getJsonCodec().convertValue(result, ToolResultBlock.class);
     }
 
     public AgentState restore() {

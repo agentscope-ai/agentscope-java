@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -58,9 +59,13 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolSuspendException;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.MessageUtils;
 import java.time.Duration;
@@ -73,7 +78,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -385,9 +390,15 @@ class ReActAgentNewLoopReplyTest {
         assertEquals("done", agentResult.getResult().getTextContent());
     }
 
+    private enum ExternalCheckpoint {
+        CURRENT,
+        LEGACY_NATIVE_LOG,
+        LEGACY_STATE_ONLY
+    }
+
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void partialExternalResultsKeepTheOriginalWaitAndReplyId(boolean legacyState) {
+    @EnumSource(ExternalCheckpoint.class)
+    void partialExternalResultsKeepTheOriginalWaitAndReplyId(ExternalCheckpoint checkpoint) {
         var first = toolUseResponse("ext1", "external_api", "A").getContent().get(0);
         var second = toolUseResponse("ext2", "external_api", "B").getContent().get(0);
         var local = toolUseResponse("local", "echo", "C").getContent().get(0);
@@ -395,7 +406,18 @@ class ReActAgentNewLoopReplyTest {
         var model =
                 new ScriptedModel(
                         List.of(() -> Flux.just(batch), () -> Flux.just(textResponse("done"))));
-        var toolkit = toolkitWithExternalSchema();
+        var toolkit =
+                toolkitWith(
+                        new ToolBase(
+                                ToolBase.builder()
+                                        .name("external_api")
+                                        .description("Execute API outside the agent runtime")
+                                        .inputSchema(Map.of("type", "object"))) {
+                            @Override
+                            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                                return Mono.error(new ToolSuspendException("Run the external API"));
+                            }
+                        });
         toolkit.registerAgentTool(new EchoTool());
         var deferLocalTool =
                 new MiddlewareBase() {
@@ -410,65 +432,114 @@ class ReActAgentNewLoopReplyTest {
                                 new ActingInput(
                                         input.toolCalls().stream()
                                                 .filter(call -> !call.getId().equals("local"))
+                                                .map(
+                                                        call -> {
+                                                            if (!call.getId().equals("ext2"))
+                                                                return call;
+                                                            return ToolUseBlock.builder()
+                                                                    .id(call.getId())
+                                                                    .name(call.getName())
+                                                                    .input(
+                                                                            Map.of(
+                                                                                    "query",
+                                                                                    "rewritten B"))
+                                                                    .build();
+                                                        })
                                                 .toList()));
                     }
                 };
-        var agent =
+        var builder =
                 ReActAgent.builder()
                         .name("asst")
                         .model(model)
                         .toolkit(toolkit)
-                        .middlewares(List.of(deferLocalTool))
-                        .build();
+                        .middlewares(List.of(deferLocalTool));
+        if (checkpoint == ExternalCheckpoint.LEGACY_NATIVE_LOG)
+            builder.sessionLogStore(new InMemorySessionLogStore());
+        var agent = builder.build();
+        var context = RuntimeContext.builder().userId("u").sessionId("s").build();
         var timeout = Duration.ofSeconds(10);
-        var initialEvents = agent.streamEvents(List.of()).collectList().block(timeout);
+        var initialEvents = agent.streamEvents(List.of(), context).collectList().block(timeout);
         var request =
                 (RequireExternalExecutionEvent)
                         initialEvents.get(
                                 indexOf(initialEvents, RequireExternalExecutionEvent.class));
         assertEquals(2, request.getToolCalls().size());
+        var requestedB =
+                request.getToolCalls().stream()
+                        .filter(call -> call.getId().equals("ext2"))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(Map.of("query", "rewritten B"), requestedB.getInput());
 
-        if (legacyState) {
-            // Older snapshots stored the external reply ID without marking the submitted calls.
-            var oldCalls = new HashMap<String, ToolUseBlock>();
-            for (var call : request.getToolCalls())
-                oldCalls.put(call.getId(), call.withState(ToolCallState.ALLOWED));
-            MessageUtils.replaceToolUseBlocks(agent.getAgentState().contextMutable(), oldCalls);
+        if (checkpoint == ExternalCheckpoint.LEGACY_NATIVE_LOG) {
+            var recorder =
+                    new SessionRecorder(agent.sessionLog(context), request.getExecution().turnId());
+            try {
+                var state = recorder.initial().restore();
+                replaceWithLegacyExternalWait(state, request.getReplyId());
+                recorder.checkpointNow(state, "legacy_external_wait");
+            } finally {
+                recorder.close();
+            }
+        } else {
+            var state = agent.getAgentState(context);
+            if (checkpoint == ExternalCheckpoint.LEGACY_STATE_ONLY)
+                replaceWithLegacyExternalWait(state, request.getReplyId());
+            var restored = AgentState.fromJsonString(state.toJson());
+            state.contextMutable().clear();
+            state.contextMutable().addAll(restored.getContext());
         }
 
         var resultA = ToolResultBlock.success("A").withIdAndName("ext1", "external_api");
         var partial =
                 agent.streamEvents(
-                                List.of(Msg.builder().role(MsgRole.TOOL).content(resultA).build()))
+                                List.of(Msg.builder().role(MsgRole.TOOL).content(resultA).build()),
+                                RuntimeContext.builder(context).runId(null).build())
                         .collectList()
                         .block(timeout);
-        assertEquals(-1, indexOf(partial, RequireExternalExecutionEvent.class));
-        assertEquals(-1, indexOf(partial, ModelCallStartEvent.class));
-        assertEquals(-1, indexOf(partial, ToolResultStartEvent.class));
         var acceptedA =
                 (ExternalExecutionResultEvent)
                         partial.get(indexOf(partial, ExternalExecutionResultEvent.class));
         assertEquals(request.getReplyId(), acceptedA.getReplyId());
+        assertEquals(-1, indexOf(partial, ModelCallStartEvent.class));
         var waiting =
                 ((AgentResultEvent) partial.get(indexOf(partial, AgentResultEvent.class)))
                         .getResult();
         assertEquals(GenerateReason.TOOL_SUSPENDED, waiting.getGenerateReason());
-        assertEquals(
-                List.of("ext2"),
-                waiting.getContentBlocks(ToolUseBlock.class).stream()
-                        .map(ToolUseBlock::getId)
-                        .toList());
+        var waitingCalls = waiting.getContentBlocks(ToolUseBlock.class);
+        assertEquals(List.of("ext2"), waitingCalls.stream().map(ToolUseBlock::getId).toList());
+        var expectedReplyId = request.getReplyId();
+        if (checkpoint == ExternalCheckpoint.LEGACY_STATE_ONLY) {
+            var redispatched =
+                    (RequireExternalExecutionEvent)
+                            partial.get(indexOf(partial, RequireExternalExecutionEvent.class));
+            assertNotEquals(expectedReplyId, redispatched.getReplyId());
+            expectedReplyId = redispatched.getReplyId();
+        } else {
+            assertEquals(-1, indexOf(partial, RequireExternalExecutionEvent.class));
+            assertEquals(-1, indexOf(partial, ToolResultStartEvent.class));
+        }
+        if (checkpoint == ExternalCheckpoint.CURRENT) {
+            assertEquals(requestedB.getInput(), waitingCalls.get(0).getInput());
+            assertEquals(
+                    "Run the external API",
+                    waiting.getContentBlocks(ToolResultBlock.class).get(0).getSuspendReason());
+        }
+        if (checkpoint == ExternalCheckpoint.LEGACY_NATIVE_LOG)
+            assertNotEquals(request.getExecution().turnId(), acceptedA.getExecution().turnId());
 
         var resultB = ToolResultBlock.success("B").withIdAndName("ext2", "external_api");
         var completed =
                 agent.streamEvents(
-                                List.of(Msg.builder().role(MsgRole.TOOL).content(resultB).build()))
+                                List.of(Msg.builder().role(MsgRole.TOOL).content(resultB).build()),
+                                RuntimeContext.builder(context).runId(null).build())
                         .collectList()
                         .block(timeout);
         var acceptedB =
                 (ExternalExecutionResultEvent)
                         completed.get(indexOf(completed, ExternalExecutionResultEvent.class));
-        assertEquals(request.getReplyId(), acceptedB.getReplyId());
+        assertEquals(expectedReplyId, acceptedB.getReplyId());
         var localResult =
                 (ToolResultEndEvent) completed.get(indexOf(completed, ToolResultEndEvent.class));
         assertEquals("local", localResult.getToolCallId());
@@ -478,6 +549,23 @@ class ReActAgentNewLoopReplyTest {
                 ((AgentResultEvent) completed.get(indexOf(completed, AgentResultEvent.class)))
                         .getResult()
                         .getTextContent());
+    }
+
+    private static void replaceWithLegacyExternalWait(AgentState state, String replyId) {
+        var oldCalls = new HashMap<String, ToolUseBlock>();
+        // A prior permission pass can leave even the deferred local call ALLOWED.
+        for (var call : MessageUtils.extractRecentToolCalls(state.getContext(), "asst"))
+            oldCalls.put(call.getId(), call.withState(ToolCallState.ALLOWED));
+        assertTrue(MessageUtils.replaceToolUseBlocks(state.contextMutable(), oldCalls));
+        var assistant = MessageUtils.lastAssistantMessage(state.getContext());
+        assertTrue(
+                MessageUtils.replaceLastMessageByRole(
+                        state.contextMutable(),
+                        MsgRole.ASSISTANT,
+                        assistant.withMetadata(
+                                Map.of(
+                                        Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID,
+                                        replyId))));
     }
 
     @Test

@@ -51,13 +51,17 @@ public final class SessionInteractions {
             if (batch.isEmpty()) throw new SessionLogException("Missing interaction prefix");
             for (var event : batch) {
                 if (event.seq() > upper) break;
-                if (event.type().equals("interaction/requested"))
-                    result.put(String.valueOf(event.data().get("requestId")), event);
-                if (event.type().equals("interaction/resolved"))
-                    result.remove(String.valueOf(event.data().get("requestId")));
+                apply(result, event);
                 cursor = event.seq();
             }
         }
         return Collections.unmodifiableMap(result);
+    }
+
+    static void apply(Map<String, SessionEvent> pending, SessionEvent event) {
+        if (event.type().equals("interaction/requested"))
+            pending.put(String.valueOf(event.data().get("requestId")), event);
+        if (event.type().equals("interaction/resolved"))
+            pending.remove(String.valueOf(event.data().get("requestId")));
     }
 }

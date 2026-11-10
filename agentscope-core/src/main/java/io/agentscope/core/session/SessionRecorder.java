@@ -83,6 +83,7 @@ public final class SessionRecorder {
     private final Set<String> inputMessages = new HashSet<>();
     private final Disposable heartbeat;
     private final SessionProjection initial;
+    private final Map<String, SessionEvent> initialInteractions;
     private final SessionLogExporter exporter;
     private static final Logger LOGGER = LoggerFactory.getLogger(SessionRecorder.class);
 
@@ -106,7 +107,9 @@ public final class SessionRecorder {
             initial = SessionProjection.read(log);
             durableSeq = initial.asOfSeq();
             boolean seenTurn = false;
+            var interactions = new LinkedHashMap<String, SessionEvent>();
             for (var event : log.scan(0, durableSeq)) {
+                SessionInteractions.apply(interactions, event);
                 if (runId.equals(event.executionRunId()))
                     throw new SessionLogException(
                             "Run ID already used; prepare a new execution to resume");
@@ -118,6 +121,7 @@ public final class SessionRecorder {
                     throw new SessionLogException("Turn already completed; use a new turn ID");
             }
             resumedTurn = seenTurn;
+            initialInteractions = Map.copyOf(interactions);
             if (!initial.uncertainToolCalls().isEmpty())
                 throw new SessionLogException(
                         "Explicit reconciliation required for unknown tool outcomes: "
@@ -166,6 +170,19 @@ public final class SessionRecorder {
 
     public SessionProjection initial() {
         return initial;
+    }
+
+    /**
+     * Returns the tool call from an outstanding external request at execution admission, or null.
+     * An existing turn can only use its own requests. A direct call can start with a fresh turn ID
+     * on every invocation, so the caller must match the ID against the current pending tool batch.
+     */
+    public ToolUseBlock initialExternalRequest(String toolCallId) {
+        var request = initialInteractions.get(toolCallId);
+        if (request == null || (resumedTurn && !turnId.equals(request.turnId()))) return null;
+        var data = request.data();
+        if (!"external_execution".equals(data.get("kind"))) return null;
+        return JsonUtils.getJsonCodec().convertValue(data.get("call"), ToolUseBlock.class);
     }
 
     public String runId() {

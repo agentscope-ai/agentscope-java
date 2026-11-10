@@ -31,7 +31,6 @@ public final class SessionExecution {
     private final SessionInbox inbox;
     private final SessionInbox.Command command;
     private List<Msg> inputs;
-    private Map<String, SessionEvent> initialInteractions = Map.of();
     private boolean opened;
 
     public SessionExecution(SessionLog log, SessionInbox.Command command) {
@@ -46,14 +45,6 @@ public final class SessionExecution {
 
     public List<Msg> inputs() {
         return inputs;
-    }
-
-    /** Whether this turn had a durable external request for the call at execution admission. */
-    public boolean wasAwaitingExternalResult(String toolCallId) {
-        var request = initialInteractions.get(toolCallId);
-        return request != null
-                && Objects.equals(command.turnId(), request.turnId())
-                && "external_execution".equals(request.data().get("kind"));
     }
 
     /**
@@ -76,7 +67,6 @@ public final class SessionExecution {
             throw new IllegalStateException("Command already executed");
         var latest = view.latest();
         var pending = SessionInteractions.pending(log);
-        initialInteractions = pending;
         if (command.kind().equals("submit")) {
             if (latest != null && !latest.ended())
                 throw new IllegalStateException(
