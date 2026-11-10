@@ -17,6 +17,7 @@ package io.agentscope.core.state;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -31,6 +32,7 @@ import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -40,17 +42,32 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Tests for JsonFileAgentStateStore. */
 @DisplayName("JsonFileAgentStateStore Tests")
 class JsonFileAgentStateStoreTest {
+
+    @Test
+    @DisplayName("Should create a missing root and resolve it to its real path")
+    void constructorCreatesAndCanonicalizesRoot(@TempDir Path tempDir) throws IOException {
+        Path root = tempDir.resolve("nested").resolve("state").resolve(".");
+
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(root);
+
+        assertTrue(Files.isDirectory(root));
+        assertEquals(root.toRealPath(), store.getRootDirectory());
+    }
 
     @Test
     @DisplayName("Should sanitize invalid Unicode when saving single state")
@@ -278,12 +295,97 @@ class JsonFileAgentStateStoreTest {
         assertNoTmpFiles(tempDir);
     }
 
+    @Test
+    @DisplayName("Should not block another session whose path collided under striped locks")
+    void unrelatedSessionsDoNotShareLocks(@TempDir Path tempDir) throws Exception {
+        List<JsonFileAgentStateStore> stores = twoStoresOnSameRoot(tempDir);
+        JsonFileAgentStateStore holder = stores.get(0);
+        List<String> collidingSessions =
+                IntStream.range(0, 65)
+                        .mapToObj(i -> "session" + i)
+                        .collect(
+                                Collectors.groupingBy(
+                                        session ->
+                                                Math.floorMod(
+                                                        holder.getSessionDir(null, session)
+                                                                .toAbsolutePath()
+                                                                .normalize()
+                                                                .hashCode(),
+                                                        64)))
+                        .values()
+                        .stream()
+                        .filter(sessions -> sessions.size() > 1)
+                        .findFirst()
+                        .orElseThrow();
+        String heldSession = collidingSessions.get(0);
+        String otherSession = collidingSessions.get(1);
+        TestState first = new TestState("first", 1);
+        holder.save(null, heldSession, "k", List.of(first));
+        BlockingState blocking = new BlockingState();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> held =
+                    pool.submit(
+                            () ->
+                                    holder.save(
+                                            null,
+                                            heldSession,
+                                            "k",
+                                            List.<State>of(first, blocking)));
+            assertTrue(blocking.entered.await(10, TimeUnit.SECONDS));
+
+            Future<?> independent =
+                    pool.submit(
+                            () -> {
+                                JsonFileAgentStateStore other = stores.get(1);
+                                other.save(null, otherSession, "k", first);
+                                other.save(null, otherSession, "k", List.of(first));
+                                assertEquals(
+                                        Optional.of(first),
+                                        other.get(null, otherSession, "k", TestState.class));
+                                assertEquals(
+                                        List.of(first),
+                                        other.getList(null, otherSession, "k", TestState.class));
+                                assertTrue(other.exists(null, otherSession));
+                            });
+            independent.get(5, TimeUnit.SECONDS);
+            blocking.release.countDown();
+            held.get(10, TimeUnit.SECONDS);
+        } finally {
+            blocking.release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("sessionOperations")
     @DisplayName("Should hold session operations of another instance until a save finishes")
     void sessionOperationsWaitForAnInFlightSave(
             Consumer<JsonFileAgentStateStore> operation, @TempDir Path tempDir) throws Exception {
-        List<JsonFileAgentStateStore> stores = twoStoresOnSameRoot(tempDir);
+        assertSessionOperationWaits(operation, twoStoresOnSameRoot(tempDir));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("sessionOperations")
+    @DisplayName("Should share session locks when the root is opened through a symbolic link")
+    void sessionOperationsShareLocksThroughRootSymlink(
+            Consumer<JsonFileAgentStateStore> operation, @TempDir Path tempDir) throws Exception {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir.resolve("state"));
+        Path alias = tempDir.resolve("alias");
+        try {
+            Files.createSymbolicLink(alias, store.getRootDirectory());
+        } catch (IOException | UnsupportedOperationException unsupported) {
+            Assumptions.abort("symbolic links not supported here: " + unsupported.getMessage());
+        }
+        JsonFileAgentStateStore aliasStore = new JsonFileAgentStateStore(alias);
+
+        assertEquals(store.getRootDirectory(), aliasStore.getRootDirectory());
+        assertSessionOperationWaits(operation, List.of(store, aliasStore));
+    }
+
+    private static void assertSessionOperationWaits(
+            Consumer<JsonFileAgentStateStore> operation, List<JsonFileAgentStateStore> stores)
+            throws Exception {
         JsonFileAgentStateStore holder = stores.get(0);
         TestState first = new TestState("m0", 0);
         holder.save(null, "session1", "agent_state", new TestState("a", 1));
@@ -304,7 +406,14 @@ class JsonFileAgentStateStoreTest {
                                             List.<State>of(first, blocking)));
             assertTrue(blocking.entered.await(10, TimeUnit.SECONDS));
 
-            Future<?> pending = pool.submit(() -> operation.accept(stores.get(1)));
+            CountDownLatch started = new CountDownLatch(1);
+            Future<?> pending =
+                    pool.submit(
+                            () -> {
+                                started.countDown();
+                                operation.accept(stores.get(1));
+                            });
+            assertTrue(started.await(10, TimeUnit.SECONDS));
             assertThrows(TimeoutException.class, () -> pending.get(200, TimeUnit.MILLISECONDS));
 
             blocking.release.countDown();
@@ -413,11 +522,57 @@ class JsonFileAgentStateStoreTest {
         assertEquals(Optional.empty(), store.get(null, "session1", "k", TestState.class));
         assertEquals(List.of(), store.getList(null, "session1", "k", TestState.class));
         assertEquals(Optional.of(kept), store.get(null, "session1", "other", TestState.class));
+        assertTrue(store.exists(null, "session1"));
+        assertEquals(Set.of("session1"), store.listSessionIds(null));
         try (Stream<Path> files = Files.list(tempDir.resolve("__anon__").resolve("session1"))) {
             assertEquals(
                     List.of("other.json"),
                     files.map(path -> path.getFileName().toString()).toList());
         }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"single", "list", "both"})
+    @DisplayName("Should remove the session directory when its last key is deleted")
+    void deletingLastKeyRemovesSession(String shape, @TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        TestState value = new TestState("value", 1);
+        if (!shape.equals("list")) {
+            store.save("user1", "session1", "k", value);
+        }
+        if (!shape.equals("single")) {
+            store.save("user1", "session1", "k", List.of(value));
+        }
+        assertTrue(store.exists("user1", "session1"));
+        assertEquals(Set.of("session1"), store.listSessionIds("user1"));
+
+        store.delete("user1", "session1", "k");
+
+        assertFalse(Files.exists(store.getSessionDir("user1", "session1")));
+        assertFalse(store.exists("user1", "session1"));
+        assertEquals(Set.of(), store.listSessionIds("user1"));
+        assertEquals(Optional.empty(), store.get("user1", "session1", "k", TestState.class));
+        assertEquals(List.of(), store.getList("user1", "session1", "k", TestState.class));
+        assertEquals(0, store.clearAllSessions().block());
+        store.delete("user1", "session1", "k");
+    }
+
+    @Test
+    @DisplayName("Should recreate a session after its last key is deleted")
+    void saveRecreatesSessionAfterLastKeyDeletion(@TempDir Path tempDir) {
+        List<JsonFileAgentStateStore> stores = twoStoresOnSameRoot(tempDir);
+        JsonFileAgentStateStore store = stores.get(0);
+        TestState value = new TestState("value", 1);
+        store.save(null, "session1", "k", value);
+        store.delete(null, "session1", "k");
+        assertFalse(store.exists(null, "session1"));
+
+        stores.get(1).save(null, "session1", "k", List.of(value));
+
+        assertTrue(store.exists(null, "session1"));
+        assertEquals(Set.of("session1"), store.listSessionIds(null));
+        assertEquals(List.of(value), store.getList(null, "session1", "k", TestState.class));
+        assertEquals(1, store.clearAllSessions().block());
     }
 
     // Two instances on one root, the second spelled differently: they must share session locks.

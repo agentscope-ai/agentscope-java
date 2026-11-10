@@ -40,6 +40,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -71,12 +72,11 @@ import reactor.core.scheduler.Schedulers;
  * <p>Features: atomic file operations, UTF-8 encoding, graceful handling of missing
  * sessions, hash-based append-or-rewrite for list state.
  *
- * <p>Concurrency: every operation on a session runs under a lock keyed by the session
- * directory's normalized absolute path. The locks are shared by all instances in the JVM, so
- * stores rooted at the same directory exclude each other. They do not span processes: a session
- * must be owned by one process at a time. File locks are advisory and unreliable on network file
- * systems such as NFS, so deployments that share sessions across processes should use a
- * database-backed {@link AgentStateStore} instead.
+ * <p>Concurrency: operations on a session share a JVM-wide lock for that session directory.
+ * The root is resolved to its real path, so stores opened through root aliases share locks. The
+ * locks do not span processes: a session must be owned by one process at a time. File locks are
+ * advisory and unreliable on network file systems such as NFS, so deployments that share sessions
+ * across processes should use a database-backed {@link AgentStateStore} instead.
  */
 public class JsonFileAgentStateStore implements AgentStateStore {
 
@@ -86,16 +86,9 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     /** Pattern for file-system safe characters: alphanumeric, underscore, hyphen, dot. */
     private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-.]+$");
 
-    private static final int LOCK_STRIPES = 64;
-
-    /**
-     * Striped locks keyed by session directory, static so that every instance on the same root
-     * shares them. A unique tmp name alone does not make write+move safe: two threads still
-     * replace the same target, and Windows rejects the replace, or a delete, while another thread
-     * holds the file open (AccessDeniedException). Locking the session rather than the file also
-     * lets deleting a session exclude every file operation inside it.
-     */
-    private static final ReentrantLock[] SESSION_LOCKS = createLockStripes();
+    // Keep locks after session deletion so queued operations and later saves use the same lock.
+    private static final ConcurrentHashMap<Path, ReentrantLock> SESSION_LOCKS =
+            new ConcurrentHashMap<>();
 
     private final Path rootDirectory;
 
@@ -113,11 +106,11 @@ public class JsonFileAgentStateStore implements AgentStateStore {
      * @param rootDirectory root directory under which user / session sub-directories live
      */
     public JsonFileAgentStateStore(Path rootDirectory) {
-        this.rootDirectory = rootDirectory;
         try {
             Files.createDirectories(rootDirectory);
+            this.rootDirectory = rootDirectory.toRealPath();
         } catch (IOException e) {
-            throw new RuntimeException("Failed to create root directory: " + rootDirectory, e);
+            throw new RuntimeException("Failed to initialize root directory: " + rootDirectory, e);
         }
     }
 
@@ -292,12 +285,22 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     @Override
     public void delete(String userId, String sessionId, String key) {
-        ReentrantLock lock = lockFor(userId, sessionId);
+        Path sessionDir = getSessionDir(userId, sessionId);
+        ReentrantLock lock = lockFor(sessionDir);
         lock.lock();
         try {
             Files.deleteIfExists(getStatePath(userId, sessionId, key));
             Files.deleteIfExists(getListPath(userId, sessionId, key));
             Files.deleteIfExists(getHashPath(userId, sessionId, key));
+            if (Files.exists(sessionDir)) {
+                boolean empty;
+                try (Stream<Path> files = Files.list(sessionDir)) {
+                    empty = files.findAny().isEmpty();
+                }
+                if (empty) {
+                    Files.delete(sessionDir);
+                }
+            }
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete state: " + key, e);
         } finally {
@@ -324,7 +327,7 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         }
     }
 
-    /** Returns the configured root directory (for diagnostics). */
+    /** Returns the real root directory (for diagnostics). */
     public Path getRootDirectory() {
         return rootDirectory;
     }
@@ -419,21 +422,13 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         }
     }
 
-    private static ReentrantLock[] createLockStripes() {
-        ReentrantLock[] locks = new ReentrantLock[LOCK_STRIPES];
-        for (int i = 0; i < locks.length; i++) {
-            locks[i] = new ReentrantLock();
-        }
-        return locks;
-    }
-
     private ReentrantLock lockFor(String userId, String sessionId) {
         return lockFor(getSessionDir(userId, sessionId));
     }
 
     private static ReentrantLock lockFor(Path sessionDir) {
-        int hash = sessionDir.toAbsolutePath().normalize().hashCode();
-        return SESSION_LOCKS[Math.floorMod(hash, LOCK_STRIPES)];
+        return SESSION_LOCKS.computeIfAbsent(
+                sessionDir.toAbsolutePath().normalize(), ignored -> new ReentrantLock());
     }
 
     // Unique tmp names are never overwritten by a later write, so a failed one must be
