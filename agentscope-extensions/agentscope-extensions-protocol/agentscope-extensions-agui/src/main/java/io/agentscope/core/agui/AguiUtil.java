@@ -17,6 +17,9 @@ package io.agentscope.core.agui;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.session.SessionLog;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 /**
@@ -82,5 +85,53 @@ public final class AguiUtil {
             // Not a harness-style wrapper; fall through.
         }
         return null;
+    }
+
+    /**
+     * Opens the native session log exposed by a Harness-style agent.
+     *
+     * <p>The AG-UI module does not depend on {@code agentscope-harness}, so this uses reflection
+     * against the public {@code sessionLog(RuntimeContext)} method. Returns {@code null} when the
+     * agent does not expose a session log or native session history is disabled (legacy mode).
+     *
+     * <p>This method never starts inference. The returned log is a read/write handle owned by the
+     * agent; callers must not close it.
+     *
+     * @param agent the agent to inspect, may be {@code null}
+     * @param context the runtime context identifying the session, may be {@code null}
+     * @return the session log, or {@code null} when unavailable
+     */
+    public static SessionLog sessionLog(Agent agent, RuntimeContext context) {
+        if (agent == null) {
+            return null;
+        }
+        try {
+            Method method = agent.getClass().getMethod("sessionLog", RuntimeContext.class);
+            // The method may be declared by a non-public runtime class; make the call accessible
+            // rather than mistaking an access failure for "no session log".
+            method.trySetAccessible();
+            Object value = method.invoke(agent, context);
+            return value instanceof SessionLog log ? log : null;
+        } catch (NoSuchMethodException ignored) {
+            return null;
+        } catch (IllegalAccessException error) {
+            throw new IllegalStateException(
+                    "Agent session log method is not accessible: " + agent.getClass().getName(),
+                    error);
+        } catch (InvocationTargetException e) {
+            Throwable target = e.getTargetException();
+            if (target instanceof IllegalStateException
+                    && target.getMessage() != null
+                    && target.getMessage().contains("session history is disabled")) {
+                return null;
+            }
+            if (target instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (target instanceof Error error) {
+                throw error;
+            }
+            throw new IllegalStateException("Failed to open AgentScope session log", target);
+        }
     }
 }

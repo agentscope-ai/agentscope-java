@@ -283,6 +283,10 @@ class InboxMiddlewareTest {
                         .abstractFilesystem(new LocalFilesystem(wsDir))
                         .stateStore(stateStore)
                         .messageBus(realBus)
+                        // Background memory flush/consolidation shares this model and could
+                        // overwrite the last request before the assertion; it is unrelated to
+                        // inbox delivery.
+                        .disableMemoryHooks()
                         .build()) {
 
             realBus.inboxPush(

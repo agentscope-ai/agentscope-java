@@ -18,6 +18,7 @@ package io.agentscope.core.agui.adapter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -30,12 +31,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
 import io.agentscope.core.agui.event.AguiEvents;
+import io.agentscope.core.agui.event.AguiFramedEvent;
 import io.agentscope.core.agui.model.AguiContext;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
@@ -79,6 +82,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.ToolMergeMode;
 import io.agentscope.core.tool.ToolRequestConfig;
@@ -335,20 +339,27 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testTextSegmentsSeparatedByToolCallUseDistinctMessageIds() {
+        void testTextSegmentsSeparatedByToolCallShareOneMessageIdPerAssistantTurn() {
+            String turnId = "turn-assistant";
+            TextBlockDeltaEvent firstDelta = new TextBlockDeltaEvent("call-1", "text", "before");
             List<AguiEvent> events =
                     runReActEvents(
-                            new TextBlockStartEvent("reply-mixed", "text"),
-                            new TextBlockDeltaEvent("reply-mixed", "text", "before"),
-                            new TextBlockEndEvent("reply-mixed", "text"),
-                            new ToolCallStartEvent("reply-mixed", "tool-1", "lookup"),
-                            new ToolCallEndEvent("reply-mixed", "tool-1", "lookup"),
-                            new TextBlockStartEvent("reply-mixed", "text-2"),
-                            new TextBlockDeltaEvent("reply-mixed", "text-2", "after"),
-                            new TextBlockEndEvent("reply-mixed", "text-2"));
+                            onTurn(
+                                    turnId,
+                                    new AgentStartEvent("thread-v2", "reply-assistant", "react"),
+                                    new TextBlockStartEvent("call-1", "text"),
+                                    firstDelta,
+                                    new TextBlockEndEvent("call-1", "text"),
+                                    new ToolCallStartEvent("call-1", "tool-1", "lookup"),
+                                    new ToolCallEndEvent("call-1", "tool-1", "lookup"),
+                                    new TextBlockStartEvent("call-2", "text"),
+                                    new TextBlockDeltaEvent("call-2", "text", "after"),
+                                    new TextBlockEndEvent("call-2", "text"),
+                                    new AgentEndEvent("reply-assistant")));
 
             assertEquals(
                     List.of(
+                            AguiEventType.RUN_STARTED,
                             AguiEventType.TEXT_MESSAGE_START,
                             AguiEventType.TEXT_MESSAGE_CONTENT,
                             AguiEventType.TEXT_MESSAGE_END,
@@ -356,36 +367,277 @@ class AguiAgentAdapterV2Test {
                             AguiEventType.TOOL_CALL_END,
                             AguiEventType.TEXT_MESSAGE_START,
                             AguiEventType.TEXT_MESSAGE_CONTENT,
-                            AguiEventType.TEXT_MESSAGE_END),
+                            AguiEventType.TEXT_MESSAGE_END,
+                            AguiEventType.RUN_FINISHED),
                     types(events));
+
+            List<AguiEvent> textEvents =
+                    events.stream().filter(AguiAgentAdapterV2Test::isTextMessage).toList();
+            assertEquals(6, textEvents.size());
+            String expectedTextMessageId = firstDelta.getExecution().turnId();
+            assertTrue(
+                    textEvents.stream()
+                            .allMatch(event -> expectedTextMessageId.equals(textMessageId(event))),
+                    "text message id must equal the event execution turn id: " + textEvents);
+            assertEquals(
+                    2,
+                    textEvents.stream()
+                            .filter(AguiEvent.TextMessageStart.class::isInstance)
+                            .count());
+            assertEquals(
+                    2,
+                    textEvents.stream().filter(AguiEvent.TextMessageEnd.class::isInstance).count());
+        }
+
+        @Test
+        void testTextSegmentsWithoutTurnIdKeepBlockMessageIds() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-assistant", "react"),
+                            new TextBlockDeltaEvent("call-1", "text", "before"),
+                            new TextBlockEndEvent("call-1", "text"),
+                            new TextBlockDeltaEvent("call-2", "text", "after"),
+                            new TextBlockEndEvent("call-2", "text"),
+                            new AgentEndEvent("reply-assistant"));
+
+            assertEquals(
+                    List.of(
+                            "call-1-text",
+                            "call-1-text",
+                            "call-1-text",
+                            "call-2-text",
+                            "call-2-text",
+                            "call-2-text"),
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isTextMessage)
+                            .map(AguiAgentAdapterV2Test::textMessageId)
+                            .toList());
+        }
+
+        @Test
+        void testTextAfterSecondToolCallStillUsesTheTurnMessageId() {
+            String turnId = "turn-assistant";
+            List<AguiEvent> events =
+                    runReActEvents(
+                            onTurn(
+                                    turnId,
+                                    new AgentStartEvent("thread-v2", "reply-assistant", "react"),
+                                    new TextBlockDeltaEvent("call-1", "text", "one"),
+                                    new TextBlockEndEvent("call-1", "text"),
+                                    new ToolCallStartEvent("call-1", "tool-1", "lookup"),
+                                    new ToolCallEndEvent("call-1", "tool-1", "lookup"),
+                                    new TextBlockDeltaEvent("call-2", "text-2", "two"),
+                                    new TextBlockEndEvent("call-2", "text-2"),
+                                    new ToolCallStartEvent("call-2", "tool-2", "search"),
+                                    new ToolCallEndEvent("call-2", "tool-2", "search"),
+                                    new TextBlockDeltaEvent("call-3", "text-3", "three"),
+                                    new TextBlockEndEvent("call-3", "text-3"),
+                                    new AgentEndEvent("reply-assistant")));
+
+            List<AguiEvent> textEvents =
+                    events.stream().filter(AguiAgentAdapterV2Test::isTextMessage).toList();
+            assertEquals(9, textEvents.size());
+            assertTrue(
+                    textEvents.stream().allMatch(event -> turnId.equals(textMessageId(event))),
+                    "the turn id survives every tool round: " + textEvents);
+            assertEquals(
+                    3,
+                    textEvents.stream()
+                            .filter(AguiEvent.TextMessageStart.class::isInstance)
+                            .count());
+            assertEquals(
+                    3,
+                    textEvents.stream().filter(AguiEvent.TextMessageEnd.class::isInstance).count());
+        }
+
+        @Test
+        void testTextMessageIdDoesNotCollideWithReasoningMessageId() {
+            String turnId = "turn-assistant";
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().enableReasoning(true).build(),
+                            onTurn(
+                                    turnId,
+                                    new AgentStartEvent("thread-v2", "reply-assistant", "react"),
+                                    new ThinkingBlockDeltaEvent("call-1", "thinking", "think"),
+                                    new ThinkingBlockEndEvent("call-1", "thinking"),
+                                    new TextBlockDeltaEvent("call-1", "text", "answer"),
+                                    new TextBlockEndEvent("call-1", "text"),
+                                    new ToolCallStartEvent("call-1", "tool-1", "lookup"),
+                                    new ToolCallEndEvent("call-1", "tool-1", "lookup"),
+                                    new ThinkingBlockDeltaEvent("call-2", "thinking-2", "again"),
+                                    new ThinkingBlockEndEvent("call-2", "thinking-2"),
+                                    new TextBlockDeltaEvent("call-2", "text-2", "more"),
+                                    new TextBlockEndEvent("call-2", "text-2"),
+                                    new AgentEndEvent("reply-assistant")));
+
+            assertEquals(
+                    List.of(turnId, turnId, turnId, turnId, turnId, turnId),
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isTextMessage)
+                            .map(AguiAgentAdapterV2Test::textMessageId)
+                            .toList());
+            List<String> reasoningMessageIds =
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isReasoningMessage)
+                            .map(AguiAgentAdapterV2Test::reasoningMessageId)
+                            .toList();
+            assertFalse(reasoningMessageIds.isEmpty());
+            assertTrue(
+                    reasoningMessageIds.stream().noneMatch(turnId::equals),
+                    "reasoning must not share the bare text id: " + reasoningMessageIds);
+        }
+
+        @Test
+        void testEachAssistantTurnUsesItsOwnTextMessageId() {
+            ExecutionIdentity firstTurn = turnIdentity("turn-1");
+            ExecutionIdentity secondTurn = turnIdentity("turn-2");
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-1", "react")
+                                    .withExecution(firstTurn),
+                            new TextBlockDeltaEvent("call-1", "text", "first")
+                                    .withExecution(firstTurn),
+                            new TextBlockEndEvent("call-1", "text").withExecution(firstTurn),
+                            new AgentEndEvent("reply-1").withExecution(firstTurn),
+                            new AgentStartEvent("thread-v2", "reply-2", "react")
+                                    .withExecution(secondTurn),
+                            new TextBlockDeltaEvent("call-2", "text", "second")
+                                    .withExecution(secondTurn),
+                            new TextBlockEndEvent("call-2", "text").withExecution(secondTurn),
+                            new AgentEndEvent("reply-2").withExecution(secondTurn));
+
+            assertEquals(
+                    List.of("turn-1", "turn-1", "turn-1", "turn-2", "turn-2", "turn-2"),
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isTextMessage)
+                            .map(AguiAgentAdapterV2Test::textMessageId)
+                            .toList());
+        }
+
+        @Test
+        void testForwardedTextDoesNotInheritParentTurnMessageId() {
+            ExecutionIdentity parentTurn = turnIdentity("parent-turn");
+            TextBlockDeltaEvent childDelta = new TextBlockDeltaEvent("child-call", "text", "child");
+            childDelta.withSource("thread-v2/researcher/child-session");
+            TextBlockEndEvent childEnd = new TextBlockEndEvent("child-call", "text");
+            childEnd.withSource("thread-v2/researcher/child-session");
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentStartEvent("thread-v2", "reply-parent", "react")
+                                    .withExecution(parentTurn),
+                            new TextBlockDeltaEvent("call-1", "text", "before")
+                                    .withExecution(parentTurn),
+                            new TextBlockEndEvent("call-1", "text").withExecution(parentTurn),
+                            childDelta,
+                            childEnd,
+                            new TextBlockDeltaEvent("call-2", "text", "after")
+                                    .withExecution(parentTurn),
+                            new TextBlockEndEvent("call-2", "text").withExecution(parentTurn),
+                            new AgentEndEvent("reply-parent").withExecution(parentTurn));
+
+            List<AguiEvent> textEvents =
+                    events.stream().filter(AguiAgentAdapterV2Test::isTextMessage).toList();
+            assertEquals(6, textEvents.size());
+            assertTrue(
+                    textEvents.stream()
+                            .allMatch(event -> "parent-turn".equals(textMessageId(event))),
+                    "forwarded text must not take over the parent turn id: " + textEvents);
+            assertTrue(
+                    events.stream()
+                            .filter(AguiEvent.Custom.class::isInstance)
+                            .map(AguiEvent.Custom.class::cast)
+                            .anyMatch(custom -> "subagent.text".equals(custom.name())),
+                    "forwarded text is a CUSTOM event in the default mode");
+        }
+
+        @Test
+        void testForwardedTextWithoutExecutionFallsBackToBlockMessageId() {
+            ExecutionIdentity parentTurn = turnIdentity("parent-turn");
+            TextBlockDeltaEvent childDelta = new TextBlockDeltaEvent("child-call", "text", "child");
+            childDelta.withSource("thread-v2/researcher/child-session");
+            TextBlockEndEvent childEnd = new TextBlockEndEvent("child-call", "text");
+            childEnd.withSource("thread-v2/researcher/child-session");
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().emitSubagentEventsAsNative(true).build(),
+                            new AgentStartEvent("thread-v2", "reply-parent", "react")
+                                    .withExecution(parentTurn),
+                            new TextBlockDeltaEvent("call-1", "text", "before")
+                                    .withExecution(parentTurn),
+                            new TextBlockEndEvent("call-1", "text").withExecution(parentTurn),
+                            childDelta,
+                            childEnd,
+                            new TextBlockDeltaEvent("call-2", "text", "after")
+                                    .withExecution(parentTurn),
+                            new TextBlockEndEvent("call-2", "text").withExecution(parentTurn),
+                            new AgentEndEvent("reply-parent").withExecution(parentTurn));
+
+            List<String> parentMessageIds =
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isTextMessage)
+                            .map(AguiAgentAdapterV2Test::textMessageId)
+                            .filter("parent-turn"::equals)
+                            .toList();
+            List<String> childMessageIds =
+                    events.stream()
+                            .filter(AguiAgentAdapterV2Test::isTextMessage)
+                            .map(AguiAgentAdapterV2Test::textMessageId)
+                            .filter(messageId -> !"parent-turn".equals(messageId))
+                            .toList();
+            assertEquals(6, parentMessageIds.size());
+            assertEquals(
+                    List.of("child-call-text", "child-call-text", "child-call-text"),
+                    childMessageIds,
+                    "forwarded text without execution keeps its block id");
+        }
+
+        @Test
+        void testForwardedTextUsesChildTurnIdWhenExecutionIsPresent() {
+            ExecutionIdentity parentTurn = turnIdentity("parent-turn");
+            ExecutionIdentity childTurn = turnIdentity("child-turn");
+            TextBlockDeltaEvent childDelta = new TextBlockDeltaEvent("child-call", "text", "child");
+            childDelta.withSource("thread-v2/researcher/child-session");
+            childDelta.withExecution(childTurn);
+            TextBlockEndEvent childEnd = new TextBlockEndEvent("child-call", "text");
+            childEnd.withSource("thread-v2/researcher/child-session");
+            childEnd.withExecution(childTurn);
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().emitSubagentEventsAsNative(true).build(),
+                            new AgentStartEvent("thread-v2", "reply-parent", "react")
+                                    .withExecution(parentTurn),
+                            new TextBlockDeltaEvent("call-1", "text", "before")
+                                    .withExecution(parentTurn),
+                            new TextBlockEndEvent("call-1", "text").withExecution(parentTurn),
+                            childDelta,
+                            childEnd,
+                            new TextBlockDeltaEvent("call-2", "text", "after")
+                                    .withExecution(parentTurn),
+                            new TextBlockEndEvent("call-2", "text").withExecution(parentTurn),
+                            new AgentEndEvent("reply-parent").withExecution(parentTurn));
 
             List<String> messageIds =
                     events.stream()
-                            .filter(
-                                    event ->
-                                            event instanceof AguiEvent.TextMessageStart
-                                                    || event instanceof AguiEvent.TextMessageContent
-                                                    || event instanceof AguiEvent.TextMessageEnd)
-                            .map(
-                                    event -> {
-                                        if (event instanceof AguiEvent.TextMessageStart start) {
-                                            return start.messageId();
-                                        }
-                                        if (event instanceof AguiEvent.TextMessageContent content) {
-                                            return content.messageId();
-                                        }
-                                        return ((AguiEvent.TextMessageEnd) event).messageId();
-                                    })
+                            .filter(AguiAgentAdapterV2Test::isTextMessage)
+                            .map(AguiAgentAdapterV2Test::textMessageId)
                             .toList();
             assertEquals(
                     List.of(
-                            "reply-mixed-text",
-                            "reply-mixed-text",
-                            "reply-mixed-text",
-                            "reply-mixed-text-2",
-                            "reply-mixed-text-2",
-                            "reply-mixed-text-2"),
+                            "parent-turn",
+                            "parent-turn",
+                            "parent-turn",
+                            "child-turn",
+                            "child-turn",
+                            "child-turn",
+                            "parent-turn",
+                            "parent-turn",
+                            "parent-turn"),
                     messageIds);
+            assertNotEquals(childTurn.turnId(), parentTurn.turnId());
         }
 
         @Test
@@ -515,6 +767,28 @@ class AguiAgentAdapterV2Test {
 
             assertEquals("reply-shared-text", textContent.messageId());
             assertEquals("reply-shared-thinking", reasoningContent.messageId());
+        }
+
+        @Test
+        void testExecutionTurnIdOverridesPerBlockMessageIds() {
+            ExecutionIdentity identity =
+                    new ExecutionIdentity("agent-1", "thread-v2", "turn-1", "run-1");
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().enableReasoning(true).build(),
+                            new TextBlockDeltaEvent("reply-text", "text", "answer")
+                                    .withExecution(identity),
+                            new TextBlockEndEvent("reply-text", "text").withExecution(identity),
+                            new ThinkingBlockDeltaEvent("reply-thinking", "thinking", "think")
+                                    .withExecution(identity),
+                            new ThinkingBlockEndEvent("reply-thinking", "thinking")
+                                    .withExecution(identity));
+
+            assertEquals(List.of("turn-1", "turn-1", "turn-1"), textMessageIds(events));
+            assertEquals(
+                    List.of("turn-1:reasoning", "turn-1:reasoning", "turn-1:reasoning"),
+                    reasoningMessageIds(events));
         }
 
         @Test
@@ -1148,6 +1422,45 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testSuspendedToolInterruptUsesExecutionTurnId() {
+            ExecutionIdentity identity =
+                    new ExecutionIdentity("agent-1", "thread-v2", "turn-1", "run-1");
+            ToolUseBlock toolUse =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("lookup")
+                            .input(Map.of("city", "Paris"))
+                            .build();
+            Msg suspendedResult =
+                    suspendedToolResult(
+                            "reply-suspended",
+                            toolUse,
+                            ToolResultBlock.builder()
+                                    .id("tool-1")
+                                    .name("lookup")
+                                    .state(ToolResultState.SUSPENDED)
+                                    .metadata(
+                                            Map.of(
+                                                    ToolResultBlock.METADATA_SUSPEND_REASON,
+                                                    "Execute lookup externally"))
+                                    .build());
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new AgentResultEvent(suspendedResult).withExecution(identity),
+                            new AgentEndEvent("reply-suspended"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(0));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            AguiEvent.Interrupt interrupt = outcome.interrupts().get(0);
+            assertEquals("turn-1:tool-1", interrupt.id());
+            assertEquals("reply-suspended", interrupt.metadata().get("replyId"));
+        }
+
+        @Test
         void testSuspendedFrontendToolDoesNotEmitInterrupt() {
             ToolUseBlock toolUse =
                     ToolUseBlock.builder()
@@ -1402,6 +1715,27 @@ class AguiAgentAdapterV2Test {
             assertEquals(
                     List.of("reply-confirm:tool-1", "reply-confirm:tool-2"),
                     outcome.interrupts().stream().map(AguiEvent.Interrupt::id).toList());
+        }
+
+        @Test
+        void testPermissionConfirmInterruptUsesExecutionTurnId() {
+            ExecutionIdentity identity =
+                    new ExecutionIdentity("agent-1", "thread-v2", "turn-1", "run-1");
+            ToolUseBlock pending = ToolUseBlock.builder().id("tool-1").name("echo").build();
+            RequireUserConfirmEvent confirm =
+                    new RequireUserConfirmEvent("reply-confirm", List.of(pending));
+            confirm.withExecution(identity);
+
+            List<AguiEvent> events = runReActEvents(confirm, new AgentEndEvent("reply-confirm"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(0));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            AguiEvent.Interrupt interrupt = outcome.interrupts().get(0);
+            assertEquals("turn-1:tool-1", interrupt.id());
+            assertEquals("reply-confirm", interrupt.metadata().get("replyId"));
         }
 
         @Test
@@ -2411,6 +2745,46 @@ class AguiAgentAdapterV2Test {
         }
     }
 
+    private static List<String> textMessageIds(List<AguiEvent> events) {
+        return events.stream()
+                .filter(
+                        event ->
+                                event instanceof AguiEvent.TextMessageStart
+                                        || event instanceof AguiEvent.TextMessageContent
+                                        || event instanceof AguiEvent.TextMessageEnd)
+                .map(
+                        event -> {
+                            if (event instanceof AguiEvent.TextMessageStart start) {
+                                return start.messageId();
+                            }
+                            if (event instanceof AguiEvent.TextMessageContent content) {
+                                return content.messageId();
+                            }
+                            return ((AguiEvent.TextMessageEnd) event).messageId();
+                        })
+                .toList();
+    }
+
+    private static List<String> reasoningMessageIds(List<AguiEvent> events) {
+        return events.stream()
+                .filter(
+                        event ->
+                                event instanceof AguiEvent.ReasoningMessageStart
+                                        || event instanceof AguiEvent.ReasoningMessageContent
+                                        || event instanceof AguiEvent.ReasoningMessageEnd)
+                .map(
+                        event -> {
+                            if (event instanceof AguiEvent.ReasoningMessageStart start) {
+                                return start.messageId();
+                            }
+                            if (event instanceof AguiEvent.ReasoningMessageContent content) {
+                                return content.messageId();
+                            }
+                            return ((AguiEvent.ReasoningMessageEnd) event).messageId();
+                        })
+                .toList();
+    }
+
     private static List<AguiEvent> runReActEvents(AgentEvent... agentEvents) {
         return runReActEvents(AguiAdapterConfig.defaultConfig(), input(), agentEvents);
     }
@@ -2543,11 +2917,108 @@ class AguiAgentAdapterV2Test {
         assertEquals(time, (Double) usage.get("time"), 0.000001);
     }
 
+    @Test
+    void runFramedCarriesTheSessionSeqOfTheSourceEvent() {
+        ReActAgent agent = mock(ReActAgent.class);
+        TextBlockDeltaEvent delta = new TextBlockDeltaEvent("reply-seq", "text-1", "hi");
+        delta.withMetadataEntry(SessionRecorder.SESSION_SEQ_KEY, 42L);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.just(delta));
+
+        List<AguiFramedEvent> frames =
+                new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                        .runFramed(input())
+                        .collectList()
+                        .block();
+
+        assertNotNull(frames);
+        List<AguiFramedEvent> textFrames =
+                frames.stream().filter(frame -> frame.sourceSeq() == 42L).toList();
+        assertFalse(textFrames.isEmpty(), "frames of the event must carry its source sequence");
+        assertEquals(42L, textFrames.get(textFrames.size() - 1).seq());
+        assertTrue(
+                textFrames.stream()
+                        .limit(textFrames.size() - 1L)
+                        .noneMatch(AguiFramedEvent::hasCursor),
+                "only the last frame of an event advances the cursor");
+    }
+
+    @Test
+    void forwardedEventsDoNotCarryTheChildSessionSeq() {
+        ReActAgent agent = mock(ReActAgent.class);
+        TextBlockDeltaEvent delta = new TextBlockDeltaEvent("reply-child", "text-1", "hi");
+        delta.withSource("parent-session/child");
+        delta.withMetadataEntry(SessionRecorder.SESSION_SEQ_KEY, 42L);
+        delta.withMetadataEntry(SessionRecorder.SESSION_SOURCE_SEQ_KEY, 42L);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.just(delta));
+
+        List<AguiFramedEvent> frames =
+                new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                        .runFramed(input())
+                        .collectList()
+                        .block();
+
+        assertNotNull(frames);
+        assertFalse(frames.isEmpty());
+        assertTrue(
+                frames.stream().allMatch(frame -> frame.sourceSeq() < 0 && !frame.hasCursor()),
+                "a child journal sequence must not become the parent's source or cursor");
+    }
+
     private static Set<String> warnedMissingToolCallIdOperations(AguiStreamContext context)
             throws Exception {
         Field field = AguiStreamContext.class.getDeclaredField("warnedMissingToolCallIdOperations");
         field.setAccessible(true);
         return Set.copyOf((Set<String>) field.get(context));
+    }
+
+    private static ExecutionIdentity turnIdentity(String turnId) {
+        return new ExecutionIdentity("react", "thread-v2", turnId, "run-v2");
+    }
+
+    private static AgentEvent[] onTurn(String turnId, AgentEvent... events) {
+        ExecutionIdentity identity = turnIdentity(turnId);
+        for (AgentEvent event : events) {
+            event.withExecution(identity);
+        }
+        return events;
+    }
+
+    private static boolean isTextMessage(AguiEvent event) {
+        return event instanceof AguiEvent.TextMessageStart
+                || event instanceof AguiEvent.TextMessageContent
+                || event instanceof AguiEvent.TextMessageEnd;
+    }
+
+    private static String textMessageId(AguiEvent event) {
+        if (event instanceof AguiEvent.TextMessageStart start) {
+            return start.messageId();
+        }
+        if (event instanceof AguiEvent.TextMessageContent content) {
+            return content.messageId();
+        }
+        if (event instanceof AguiEvent.TextMessageEnd end) {
+            return end.messageId();
+        }
+        throw new AssertionError("Not a text message event: " + event);
+    }
+
+    private static boolean isReasoningMessage(AguiEvent event) {
+        return event instanceof AguiEvent.ReasoningMessageStart
+                || event instanceof AguiEvent.ReasoningMessageContent
+                || event instanceof AguiEvent.ReasoningMessageEnd;
+    }
+
+    private static String reasoningMessageId(AguiEvent event) {
+        if (event instanceof AguiEvent.ReasoningMessageStart start) {
+            return start.messageId();
+        }
+        if (event instanceof AguiEvent.ReasoningMessageContent content) {
+            return content.messageId();
+        }
+        if (event instanceof AguiEvent.ReasoningMessageEnd end) {
+            return end.messageId();
+        }
+        throw new AssertionError("Not a reasoning message event: " + event);
     }
 
     private static List<AguiEventType> types(List<AguiEvent> events) {

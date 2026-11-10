@@ -35,6 +35,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -59,6 +60,30 @@ public final class SessionRecorder {
     public static final String PARENT_KEY = "agentscope.session.parent";
     private final AtomicBoolean exporting = new AtomicBoolean();
     public static final String TURN_ID_KEY = "agentscope.session.turnId";
+
+    /**
+     * Metadata key carrying the SessionLog seq assigned to the source event or chunk. The value is
+     * assigned when the event is appended and becomes committed on the next flush, so consumers
+     * must not assume the committed head already covers it.
+     */
+    public static final String SESSION_SEQ_KEY = "agentscope.session.seq";
+
+    /**
+     * Metadata key carrying the seq of the event a frame belongs to. One model chunk can produce
+     * several agent events that share one seq; only the last of them carries {@link
+     * #SESSION_SEQ_KEY} as the cursor, so a consumer can advance the cursor once the whole event
+     * has been delivered.
+     */
+    public static final String SESSION_SOURCE_SEQ_KEY = "agentscope.session.sourceSeq";
+
+    /**
+     * Reactor context key holding an {@code AtomicReference<SessionRecorder>} that the execution
+     * fills once the recorder exists. The recorder is created below the event stream, so an event
+     * emitted outside the call scope (the terminal end event) can still read the recorder without
+     * copying it through a {@code RuntimeContext}, whose builder would isolate the copy.
+     */
+    public static final String CONTEXT_REF_KEY = "agentscope.session.recorderRef";
+
     private static final Duration LEASE = Duration.ofMinutes(2);
     private final SessionLog log;
     private final SessionLog.Writer writer;
@@ -67,6 +92,8 @@ public final class SessionRecorder {
     private final String turnId;
     private final List<SessionEvent> pending = new ArrayList<>();
     private long durableSeq;
+    private long lastAppendedSeq;
+    private String lastAppendedType;
     private int pendingBytes;
     private Throwable failure;
     private boolean closed;
@@ -80,6 +107,7 @@ public final class SessionRecorder {
     private String previousState;
     private List<String> previousMessages = List.of();
     private final Set<String> recordedMessages = new HashSet<>();
+    private final Map<String, Long> recordedMessageSeqs = new HashMap<>();
     private final Set<String> inputMessages = new HashSet<>();
     private final Disposable heartbeat;
     private final SessionProjection initial;
@@ -180,6 +208,119 @@ public final class SessionRecorder {
         return durableSeq;
     }
 
+    /**
+     * Returns the sequence assigned to the most recently appended event, committed or not.
+     *
+     * @return the last assigned sequence, or {@code 0} when nothing was appended yet
+     */
+    public synchronized long lastAppendedSeq() {
+        return lastAppendedSeq;
+    }
+
+    /**
+     * Returns the sequence of the last append only when it has the requested type.
+     *
+     * <p>Event tagging reads this after a record was appended. If an unrelated record slipped in
+     * between, returning {@code 0} is safer than advancing the client cursor past an event that
+     * was not delivered yet.
+     *
+     * @param type expected event type
+     * @return the matching sequence, or {@code 0}
+     */
+    public synchronized long lastAppendedSeq(String type) {
+        return type != null && type.equals(lastAppendedType) ? lastAppendedSeq : 0;
+    }
+
+    /**
+     * Records a message at the moment it is produced and returns the assigned sequence.
+     *
+     * <p>State capture later skips messages already recorded here, so the record order follows
+     * the event order instead of the next checkpoint. That lets the event carry the exact
+     * sequence it belongs to.
+     *
+     * @param message the produced message
+     * @return the record sequence, or the previous one when the message was already recorded
+     */
+    public synchronized long recordMessage(Msg message) {
+        if (message == null) {
+            return 0;
+        }
+        Long recordedSeq = recordedMessageSeqs.get(message.getId());
+        if (recordedSeq != null) {
+            return recordedSeq;
+        }
+        // A message may have been registered by a checkpoint without a stored sequence. In that
+        // case its original seq is unknown, so return 0 rather than a later unrelated sequence.
+        if (recordedMessages.contains(message.getId())) {
+            return 0;
+        }
+        String type =
+                message.hasContentBlocks(ToolResultBlock.class)
+                        ? "tool/result"
+                        : message.getRole() == MsgRole.ASSISTANT
+                                ? "message/assistant"
+                                : message.getRole() == MsgRole.SYSTEM
+                                        ? "message/system"
+                                        : "message/user";
+        long seq = append(type, Map.of("message", message));
+        // Register only after the append succeeded: a failed append must leave the message
+        // eligible for the next state capture instead of silently dropping it.
+        recordedMessages.add(message.getId());
+        recordedMessageSeqs.put(message.getId(), seq);
+        return seq;
+    }
+
+    /**
+     * Records an assistant message together with its tool requests at the moment it is produced.
+     *
+     * <p>Tools may finish and record their results before the next checkpoint captures the
+     * assistant message. Recording the message here keeps the log in conversation order, and the
+     * explicit {@code tool/requested} records preserve what a checkpoint would otherwise have
+     * appended for this message.
+     *
+     * @param message the assistant message
+     * @return the message record sequence, or the previous one when already recorded
+     */
+    public synchronized long recordAssistantMessage(Msg message) {
+        if (message == null) {
+            return 0;
+        }
+        Long recordedSeq = recordedMessageSeqs.get(message.getId());
+        if (recordedSeq != null) {
+            return recordedSeq;
+        }
+        if (recordedMessages.contains(message.getId())) {
+            return 0;
+        }
+        long seq = append("message/assistant", Map.of("message", message));
+        recordedMessages.add(message.getId());
+        recordedMessageSeqs.put(message.getId(), seq);
+        for (ToolUseBlock use : message.getContentBlocks(ToolUseBlock.class)) {
+            append(
+                    "tool/requested",
+                    Map.of("messageId", message.getId(), "toolCallId", use.getId(), "call", use));
+        }
+        return seq;
+    }
+
+    /**
+     * Records a provisional tool result for the live cursor.
+     *
+     * <p>A {@code PostActing} hook may still rewrite the result, so this record is not part of the
+     * conversation history: transcript and projection readers ignore its type. The final result is
+     * recorded after the hook, and a client reconnecting from the provisional sequence reads the
+     * final record.
+     *
+     * @param message the pre-hook tool result message
+     * @return the provisional record sequence
+     */
+    public synchronized long recordProvisionalToolResult(Msg message) {
+        if (message == null) {
+            return 0;
+        }
+        return append("tool/result/provisional", Map.of("message", message), false);
+    }
+
     private void check() {
         if (closed) throw new SessionLogException("Session recorder closed");
         if (failure != null) throw new SessionLogException("Session persistence failed", failure);
@@ -227,6 +368,10 @@ public final class SessionRecorder {
         SessionEventTypes.validate(accepted);
         pending.add(accepted);
         pendingBytes += byteLength;
+        // Publish only after the event is really pending: a validation or buffer failure must not
+        // leave a cursor pointing at a record that does not exist.
+        lastAppendedSeq = seq;
+        lastAppendedType = type;
         return seq;
     }
 
@@ -351,7 +496,8 @@ public final class SessionRecorder {
                                     : message.getRole() == MsgRole.SYSTEM
                                             ? "message/system"
                                             : "message/user";
-            append(type, Map.of("message", message));
+            long messageSeq = append(type, Map.of("message", message));
+            recordedMessageSeqs.put(message.getId(), messageSeq);
             for (ToolUseBlock use : message.getContentBlocks(ToolUseBlock.class))
                 append(
                         "tool/requested",
@@ -514,55 +660,82 @@ public final class SessionRecorder {
         }
     }
 
+    /** Marks an event as the replay boundary of the record that was just appended. */
+    private static void tagBoundary(AgentEvent event, long seq) {
+        if (seq <= 0) {
+            return;
+        }
+        event.withMetadataEntry(SESSION_SEQ_KEY, seq);
+        event.withMetadataEntry(SESSION_SOURCE_SEQ_KEY, seq);
+    }
+
     /** Capture only runtime facts that are not already captured at the model/tool boundary. */
     public void observe(AgentEvent event) {
         // A forwarded child's requests belong to its own journal, never the parent's inbox.
         if (event.getExecution() != null && !runId.equals(event.getExecution().runId())) return;
         if (event.getSource() != null && !event.getSource().isBlank()) return;
         if (event instanceof RequireUserConfirmEvent confirmation) {
+            long seq = 0;
             for (var call : confirmation.getToolCalls())
-                append(
-                        "interaction/requested",
-                        Map.of("requestId", call.getId(), "kind", "confirmation", "call", call));
+                seq =
+                        append(
+                                "interaction/requested",
+                                Map.of(
+                                        "requestId",
+                                        call.getId(),
+                                        "kind",
+                                        "confirmation",
+                                        "call",
+                                        call));
+            tagBoundary(event, seq);
             return;
         }
         if (event instanceof RequireExternalExecutionEvent external) {
+            long seq = 0;
             for (var call : external.getToolCalls())
-                append(
-                        "interaction/requested",
-                        Map.of(
-                                "requestId",
-                                call.getId(),
-                                "kind",
-                                "external_execution",
-                                "call",
-                                call));
+                seq =
+                        append(
+                                "interaction/requested",
+                                Map.of(
+                                        "requestId",
+                                        call.getId(),
+                                        "kind",
+                                        "external_execution",
+                                        "call",
+                                        call));
+            tagBoundary(event, seq);
             return;
         }
         if (event instanceof ExternalExecutionResultEvent external) {
+            long seq = 0;
             for (var result : external.getToolResults())
-                append(
-                        "interaction/resolved",
-                        Map.of(
-                                "requestId",
-                                result.getId(),
-                                "kind",
-                                "external_execution",
-                                "result",
-                                result));
+                seq =
+                        append(
+                                "interaction/resolved",
+                                Map.of(
+                                        "requestId",
+                                        result.getId(),
+                                        "kind",
+                                        "external_execution",
+                                        "result",
+                                        result));
+            tagBoundary(event, seq);
             return;
         }
         if (event instanceof UserConfirmResultEvent confirmed) {
+            long seq = 0;
             for (var result : confirmed.getConfirmResults())
-                append(
-                        "interaction/resolved",
-                        Map.of(
-                                "requestId",
-                                result.getToolCall().getId(),
-                                "kind",
-                                "confirmation",
-                                "result",
-                                result));
+                seq =
+                        append(
+                                "interaction/resolved",
+                                Map.of(
+                                        "requestId",
+                                        result.getToolCall().getId(),
+                                        "kind",
+                                        "confirmation",
+                                        "result",
+                                        result));
+            tagBoundary(event, seq);
             return;
         }
 
@@ -586,7 +759,10 @@ public final class SessionRecorder {
                         default -> "extension/" + custom.getName();
                     };
         }
-        if (type != null) append(type, Map.of("event", event), !type.startsWith("extension/"));
+        if (type != null) {
+            long seq = append(type, Map.of("event", event), !type.startsWith("extension/"));
+            tagBoundary(event, seq);
+        }
     }
 
     public Mono<Void> prepareModel(

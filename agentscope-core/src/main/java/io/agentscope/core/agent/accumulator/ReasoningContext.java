@@ -26,6 +26,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.FinishReasons;
+import io.agentscope.core.session.SessionRecorder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -103,9 +104,17 @@ public class ReasoningContext {
             time = usage.getTime();
         }
 
-        // Propagate provider-specific metadata
+        // Propagate provider-specific metadata. Framework bookkeeping such as the session log seq
+        // stays out: it is only meaningful on the event stream, not in the persisted message. Any
+        // new internal ChatResponse metadata key must be excluded here as well.
         if (chunk.getMetadata() != null && !chunk.getMetadata().isEmpty()) {
-            responseMetadata.putAll(chunk.getMetadata());
+            chunk.getMetadata()
+                    .forEach(
+                            (key, value) -> {
+                                if (!SessionRecorder.SESSION_SEQ_KEY.equals(key)) {
+                                    responseMetadata.put(key, value);
+                                }
+                            });
         }
 
         List<Msg> streamingMsgs = new ArrayList<>();

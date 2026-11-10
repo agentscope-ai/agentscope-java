@@ -35,6 +35,7 @@ import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
+import io.agentscope.core.agui.event.AguiFramedEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
@@ -388,11 +389,12 @@ class AguiMvcControllerTest {
         }
 
         @Override
-        public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
+        public Flux<AguiFramedEvent> runFramed(RunAgentInput input, RuntimeContext runtimeContext) {
             if (runCount.incrementAndGet() == 1) {
                 return firstRunEvents
                         .doOnRequest(ignored -> firstRunSubscribed.countDown())
-                        .doFinally(signalType -> firstRunTerminated.countDown());
+                        .doFinally(signalType -> firstRunTerminated.countDown())
+                        .map(AguiFramedEvent::uncursored);
             }
             return Flux.empty();
         }
