@@ -56,13 +56,13 @@ import reactor.core.scheduler.Schedulers;
 public class WorkspaceMessageBus implements MessageBus {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceMessageBus.class);
-    private static final RuntimeContext RC = RuntimeContext.empty();
     private static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(3);
 
     private final AbstractFilesystem fs;
     private final String busRoot;
     private final Duration pollInterval;
-    private final AtomicLong seq = new AtomicLong(System.nanoTime());
+    private final AtomicLong seq;
+    private final RuntimeContext ctx;
 
     /**
      * @param filesystem any {@link AbstractFilesystem} implementation
@@ -80,12 +80,27 @@ public class WorkspaceMessageBus implements MessageBus {
      */
     public WorkspaceMessageBus(
             AbstractFilesystem filesystem, String busRoot, Duration pollInterval) {
+        this.ctx = RuntimeContext.empty();
+        this.seq = new AtomicLong(System.nanoTime());
         this.fs = filesystem;
         this.busRoot = busRoot.endsWith("/") ? busRoot.substring(0, busRoot.length() - 1) : busRoot;
         this.pollInterval =
                 pollInterval == null || pollInterval.isZero() || pollInterval.isNegative()
                         ? DEFAULT_POLL_INTERVAL
                         : pollInterval;
+    }
+
+    private WorkspaceMessageBus(WorkspaceMessageBus bus, RuntimeContext ctx) {
+        this.fs = bus.fs;
+        this.busRoot = bus.busRoot;
+        this.pollInterval = bus.pollInterval;
+        this.seq = bus.seq;
+        this.ctx = java.util.Objects.requireNonNull(ctx);
+    }
+
+    @Override
+    public MessageBus forCall(RuntimeContext ctx) {
+        return new WorkspaceMessageBus(this, ctx);
     }
 
     // ---- Mode A: drain queue ----
@@ -99,7 +114,7 @@ public class WorkspaceMessageBus implements MessageBus {
                     ensureDir(dir);
                     String path = dir + "/" + entryId + ".json";
                     String json = JsonUtils.getJsonCodec().toJson(payload);
-                    fs.write(RC, path, json);
+                    fs.write(ctx, path, json);
                     return entryId;
                 });
     }
@@ -137,10 +152,10 @@ public class WorkspaceMessageBus implements MessageBus {
                                             + " unblock queue",
                                     fi.path(),
                                     e.getMessage());
-                            fs.delete(RC, fi.path());
+                            fs.delete(ctx, fi.path());
                             continue;
                         }
-                        fs.delete(RC, fi.path());
+                        fs.delete(ctx, fi.path());
                     }
                     return result;
                 });
@@ -148,7 +163,7 @@ public class WorkspaceMessageBus implements MessageBus {
 
     @Override
     public Mono<Void> queueDelete(String key) {
-        return Mono.fromRunnable(() -> fs.delete(RC, queueDir(key)));
+        return Mono.fromRunnable(() -> fs.delete(ctx, queueDir(key)));
     }
 
     @Override
@@ -167,14 +182,14 @@ public class WorkspaceMessageBus implements MessageBus {
                     ensureDir(dir);
                     String path = dir + "/" + entryId + ".json";
                     String json = JsonUtils.getJsonCodec().toJson(payload);
-                    fs.write(RC, path, json);
+                    fs.write(ctx, path, json);
 
                     if (maxLen > 0) {
                         List<FileInfo> files = listSorted(dir);
                         if (files.size() > maxLen) {
                             int excess = files.size() - maxLen;
                             for (int i = 0; i < excess; i++) {
-                                fs.delete(RC, files.get(i).path());
+                                fs.delete(ctx, files.get(i).path());
                             }
                         }
                     }
@@ -221,7 +236,7 @@ public class WorkspaceMessageBus implements MessageBus {
 
     @Override
     public Mono<Void> logTrim(String key) {
-        return Mono.fromRunnable(() -> fs.delete(RC, logDir(key)));
+        return Mono.fromRunnable(() -> fs.delete(ctx, logDir(key)));
     }
 
     // ---- Mode D: degraded pub/sub ----
@@ -265,10 +280,10 @@ public class WorkspaceMessageBus implements MessageBus {
     }
 
     private List<FileInfo> listSorted(String dir) {
-        if (!fs.exists(RC, dir)) {
+        if (!fs.exists(ctx, dir)) {
             return List.of();
         }
-        LsResult ls = fs.ls(RC, dir);
+        LsResult ls = fs.ls(ctx, dir);
         if (!ls.isSuccess() || ls.entries() == null) {
             return List.of();
         }
@@ -279,7 +294,7 @@ public class WorkspaceMessageBus implements MessageBus {
     }
 
     private String readFileContent(String path) {
-        ReadResult rr = fs.read(RC, path, 0, Integer.MAX_VALUE);
+        ReadResult rr = fs.read(ctx, path, 0, Integer.MAX_VALUE);
         if (!rr.isSuccess() || rr.fileData() == null) {
             return null;
         }
@@ -287,8 +302,8 @@ public class WorkspaceMessageBus implements MessageBus {
     }
 
     private void ensureDir(String dir) {
-        if (!fs.exists(RC, dir)) {
-            fs.write(RC, dir + "/.keep", "");
+        if (!fs.exists(ctx, dir)) {
+            fs.write(ctx, dir + "/.keep", "");
         }
     }
 }

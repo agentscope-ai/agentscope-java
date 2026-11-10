@@ -219,7 +219,8 @@ public class WaitAsyncResultsTool {
         }
 
         if (emptyWaits.get() >= MAX_CONSECUTIVE_EMPTY_WAITS) {
-            Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
+            Boolean hasMessages =
+                    messageBus.forCall(runtimeContext).inboxHasMessages(sessionId).block();
             if (Boolean.TRUE.equals(hasMessages)) {
                 log.info(
                         "wait_async_results: budget was exhausted but inbox now has messages,"
@@ -252,7 +253,8 @@ public class WaitAsyncResultsTool {
                     tasks.stream().anyMatch(task -> !task.getTaskStatus().isTerminal())
                             || hasExternalWork();
             if (!hasNonTerminal) {
-                Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
+                Boolean hasMessages =
+                        messageBus.forCall(runtimeContext).inboxHasMessages(sessionId).block();
                 if (!Boolean.TRUE.equals(hasMessages)) {
                     log.info(
                             "wait_async_results: all tasks terminal and inbox empty,"
@@ -290,7 +292,8 @@ public class WaitAsyncResultsTool {
             if (remainingMs <= 0) {
                 break;
             }
-            Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
+            Boolean hasMessages =
+                    messageBus.forCall(runtimeContext).inboxHasMessages(sessionId).block();
             if (Boolean.TRUE.equals(hasMessages)) {
                 log.info("wait_async_results: inbox has messages, session={}", sessionId);
                 emptyWaits.set(0);
@@ -380,7 +383,8 @@ public class WaitAsyncResultsTool {
             return completed;
         }
 
-        ToolResultBlock rejected = rejectIfWaitBudgetExhausted(sessionId, emptyWaits);
+        ToolResultBlock rejected =
+                rejectIfWaitBudgetExhausted(runtimeContext, sessionId, emptyWaits);
         if (rejected != null) {
             return rejected;
         }
@@ -508,11 +512,12 @@ public class WaitAsyncResultsTool {
     }
 
     private ToolResultBlock rejectIfWaitBudgetExhausted(
-            String sessionId, AtomicInteger emptyWaits) {
+            RuntimeContext runtimeContext, String sessionId, AtomicInteger emptyWaits) {
         if (emptyWaits.get() < MAX_CONSECUTIVE_EMPTY_WAITS) {
             return null;
         }
-        Boolean hasMessages = messageBus.inboxHasMessages(sessionId).block();
+        Boolean hasMessages =
+                messageBus.forCall(runtimeContext).inboxHasMessages(sessionId).block();
         if (Boolean.TRUE.equals(hasMessages)) {
             log.info(
                     "wait_async_results: budget was exhausted but inbox now has messages,"

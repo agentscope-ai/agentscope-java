@@ -17,11 +17,16 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.harness.agent.bus.WorkspaceAsyncToolRegistry;
+import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.Sandbox;
@@ -34,9 +39,12 @@ import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import java.io.InputStream;
+import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 /**
  * Reproduction for issue #2490 — concurrent calls on one agent corrupt each other's sandbox
@@ -120,6 +128,41 @@ class SandboxLifecycleConcurrencyReproTest {
                 "released A must not fall back to the still-running B sandbox");
     }
 
+    @Test
+    void inboxReadsTheCallingSandboxWhileSiblingIsActiveAndAfterItReleases() {
+        var fs = new SandboxBackedFilesystem();
+        var first = new RecordingSandbox("s1");
+        var second = new RecordingSandbox("s2");
+        var manager =
+                fakeManager(
+                        Map.of("s1", first, "s2", second),
+                        Map.of("s1", new RecordingLease(), "s2", new RecordingLease()));
+        var lifecycle = new SandboxLifecycleMiddleware(manager, fs);
+        var inbox =
+                new InboxMiddleware(
+                        new WorkspaceMessageBus(fs, "/bus"),
+                        100,
+                        new WorkspaceAsyncToolRegistry(fs, "/bus/async-tools"),
+                        Duration.ofMinutes(1));
+        var a = callContext("s1");
+        var b = callContext("s2");
+        var input = new ReasoningInput(List.of(), List.of(), null);
+
+        lifecycle.acquireForCall(a);
+        lifecycle.acquireForCall(b);
+        inbox.onReasoning(null, a, input, next -> Flux.empty()).blockLast();
+        assertSame(a, first.lastExecContext);
+        assertNull(second.lastExecContext);
+        inbox.onReasoning(null, b, input, next -> Flux.empty()).blockLast();
+        assertSame(b, second.lastExecContext);
+        lifecycle.releaseForCall(b);
+
+        first.lastExecContext = null;
+        inbox.onReasoning(null, a, input, next -> Flux.empty()).blockLast();
+        assertSame(a, first.lastExecContext);
+        lifecycle.releaseForCall(a);
+    }
+
     private static RuntimeContext callContext(String sessionId) {
         SandboxContext sandboxContext = SandboxContext.builder().build();
         return RuntimeContext.builder()
@@ -169,6 +212,7 @@ class SandboxLifecycleConcurrencyReproTest {
 
         private final String sessionId;
         volatile boolean stopped;
+        RuntimeContext lastExecContext;
 
         RecordingSandbox(String sessionId) {
             this.sessionId = sessionId;
@@ -200,6 +244,7 @@ class SandboxLifecycleConcurrencyReproTest {
         @Override
         public ExecResult exec(
                 RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            lastExecContext = runtimeContext;
             return new ExecResult(0, sessionId, "", false);
         }
 
