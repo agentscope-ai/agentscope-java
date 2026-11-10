@@ -28,10 +28,12 @@ import io.agentscope.extensions.model.openai.dto.OpenAIChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.exception.OpenAIException;
+import java.io.EOFException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -403,12 +405,24 @@ public class OpenAIClient {
                             .build();
 
             AtomicBoolean seenChunk = new AtomicBoolean(false);
+            // A stream that ends without either marker below did not finish: the provider, the
+            // gateway or a proxy closed the connection mid-generation and the transport reports
+            // that as a normal completion (a server-side FIN is not an error to the HTTP client).
+            AtomicBoolean sawDoneMarker = new AtomicBoolean(false);
+            AtomicBoolean sawFinishReason = new AtomicBoolean(false);
             return transport.stream(httpRequest)
                     // The SSE `[DONE]` sentinel terminates the stream: complete the Flux here
                     // rather than merely filtering it out, otherwise completion is deferred until
                     // the underlying connection closes (keep-alive gateways may stall this for the
                     // full idle timeout even though the model has finished responding).
-                    .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
+                    .takeWhile(
+                            data -> {
+                                if (SSE_DONE_MARKER.equals(data)) {
+                                    sawDoneMarker.set(true);
+                                    return false;
+                                }
+                                return true;
+                            })
                     .<OpenAIResponse>handle(
                             (data, sink) -> {
                                 OpenAIResponse response = parseStreamData(data);
@@ -440,10 +454,18 @@ public class OpenAIClient {
                                             summaryChoice.setMessage(null);
                                         }
                                     }
+                                    markFinishReason(response, sawFinishReason);
                                     sink.next(response);
                                 }
                                 // If response is null (malformed chunk), skip it silently
                             })
+                    // Completion without [DONE] and without any finish_reason means the answer was
+                    // cut short; surface it instead of returning the partial text as a final one.
+                    .concatWith(
+                            Flux.defer(
+                                    () ->
+                                            failIfTruncated(
+                                                    seenChunk, sawDoneMarker, sawFinishReason)))
                     .onErrorMap(
                             ex -> {
                                 if (ex instanceof HttpTransportException hte) {
@@ -463,6 +485,64 @@ public class OpenAIClient {
             return Flux.error(
                     new OpenAIException("Failed to initialize request: " + e.getMessage(), e));
         }
+    }
+
+    /**
+     * Remember whether a streamed chunk reported a {@code finish_reason}.
+     *
+     * <p>A well-formed stream carries one on its last chunk before the {@code [DONE]} sentinel, so
+     * observing either proves the provider finished the response rather than being cut off.
+     *
+     * @param response the parsed response, which may carry several choices
+     * @param sawFinishReason set once any choice reports a {@code finish_reason}
+     */
+    private static void markFinishReason(OpenAIResponse response, AtomicBoolean sawFinishReason) {
+        if (sawFinishReason.get()) {
+            return;
+        }
+        List<OpenAIChoice> choices = response.getChoices();
+        if (choices == null) {
+            return;
+        }
+        for (OpenAIChoice choice : choices) {
+            if (choice != null && choice.getFinishReason() != null) {
+                sawFinishReason.set(true);
+                return;
+            }
+        }
+    }
+
+    /**
+     * Fail the stream when it ended before the response was complete.
+     *
+     * <p>An interrupted generation is indistinguishable from a finished one once the underlying
+     * connection is gone, so the only evidence left is the terminating marker: either the SSE
+     * {@code [DONE]} sentinel or a chunk carrying {@code finish_reason}. Without both, the text
+     * delivered so far is a prefix of the answer and must not be persisted or shown as a full one.
+     *
+     * <p>The built-in transports already terminate their fluxes on {@code [DONE]} and never hand the
+     * marker to this method, so in practice {@code finish_reason} is the signal that matters; the
+     * {@code [DONE]} check covers custom {@link HttpTransport} implementations that pass it through.
+     *
+     * <p>The error carries an {@link EOFException} cause so it is classified as retryable: a body
+     * that stopped mid-stream is an I/O-level truncation, not a request the server rejected.
+     *
+     * @param seenChunk whether any streamed chunk was delivered at all
+     * @param sawDoneMarker whether the {@code [DONE]} sentinel was received
+     * @param sawFinishReason whether any chunk reported a {@code finish_reason}
+     * @return an empty flux when the response completed, an error flux when it did not
+     */
+    private static <T> Flux<T> failIfTruncated(
+            AtomicBoolean seenChunk, AtomicBoolean sawDoneMarker, AtomicBoolean sawFinishReason) {
+        if (sawDoneMarker.get() || sawFinishReason.get() || !seenChunk.get()) {
+            return Flux.empty();
+        }
+        return Flux.error(
+                new OpenAIException(
+                        "Streaming response ended before completion: the stream closed without the"
+                                + " [DONE] sentinel and no chunk reported a finish_reason, so the"
+                                + " partial response is truncated",
+                        new EOFException("SSE stream ended without [DONE]")));
     }
 
     /**

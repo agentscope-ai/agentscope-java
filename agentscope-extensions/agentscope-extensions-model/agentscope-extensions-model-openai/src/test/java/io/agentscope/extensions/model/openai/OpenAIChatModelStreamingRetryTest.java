@@ -279,13 +279,25 @@ class OpenAIChatModelStreamingRetryTest {
         return new MockResponse()
                 .setResponseCode(200)
                 .setHeader("Content-Type", "text/event-stream")
-                .setBody(sseChunk(content) + sseDone());
+                .setBody(sseChunk(content) + sseFinish("stop") + sseDone());
     }
 
     private static String sseChunk(String content) {
         return "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\""
                 + content
                 + "\"},\"finish_reason\":null}]}\n\n";
+    }
+
+    /**
+     * The terminating chunk of a real OpenAI stream: it carries the {@code finish_reason} that
+     * proves the response completed. Without it a stream that simply stops is indistinguishable
+     * from one the gateway cut off, which {@code OpenAIClient} now reports as a failure.
+     */
+    private static String sseFinish(String finishReason) {
+        return "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{},"
+                + "\"finish_reason\":\""
+                + finishReason
+                + "\"}]}\n\n";
     }
 
     private static String sseDone() {
