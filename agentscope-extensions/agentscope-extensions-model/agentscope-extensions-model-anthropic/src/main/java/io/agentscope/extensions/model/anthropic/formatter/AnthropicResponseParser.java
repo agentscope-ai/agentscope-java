@@ -90,10 +90,7 @@ public class AnthropicResponseParser {
                                                 .id(toolUse.id())
                                                 .name(toolUse.name())
                                                 .input(input)
-                                                .content(
-                                                        toolUse._input() != null
-                                                                ? toolUse._input().toString()
-                                                                : "")
+                                                .content(JsonUtils.getJsonCodec().toJson(input))
                                                 .build());
                             });
 

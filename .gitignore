@@ -8,6 +8,7 @@ target/
 *.iws
 *.iml
 *.ipr
+.openidea/
 
 ### Eclipse ###
 .apt_generated
