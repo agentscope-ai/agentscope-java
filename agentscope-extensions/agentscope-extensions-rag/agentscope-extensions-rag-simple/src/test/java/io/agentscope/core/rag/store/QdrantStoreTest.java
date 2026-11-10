@@ -15,8 +15,10 @@
  */
 package io.agentscope.core.rag.store;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -462,19 +464,64 @@ class QdrantStoreTest {
                         + " add/search/delete operations");
     }
 
+    @ParameterizedTest
+    @CsvSource({"body, true", "missing, false"})
+    void testSearchReturnsOnlyTheRequestedNamedEmbedding(String vectorName, boolean exists)
+            throws Exception {
+        Points.NamedVectorsOutput vectors =
+                Points.NamedVectorsOutput.newBuilder()
+                        .putVectors(
+                                "title",
+                                Points.VectorOutput.newBuilder()
+                                        .setDense(Points.DenseVector.newBuilder().addData(0.25f))
+                                        .build())
+                        .putVectors(
+                                "body",
+                                Points.VectorOutput.newBuilder()
+                                        .setDense(Points.DenseVector.newBuilder().addData(0.75f))
+                                        .build())
+                        .build();
+        store =
+                createMockStore(
+                        createMockScoredPoint().toBuilder()
+                                .setVectors(Points.VectorsOutput.newBuilder().setVectors(vectors))
+                                .build());
+
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(new double[TEST_DIMENSIONS])
+                                        .vectorName(vectorName)
+                                        .limit(1)
+                                        .build()))
+                .assertNext(
+                        results -> {
+                            assertEquals(1, results.size());
+                            Document result = results.get(0);
+                            assertEquals(vectorName, result.getVectorName());
+                            if (exists) {
+                                assertArrayEquals(new double[] {0.75}, result.getEmbedding());
+                            } else {
+                                assertNull(result.getEmbedding());
+                            }
+                        })
+                .verifyComplete();
+    }
+
     // ==================== Helper Methods ====================
 
     /**
-     * Creates a mocked QdrantStore for payload testing.
+     * Creates a mocked QdrantStore that returns the supplied search result.
      *
      * <p>This method uses Mockito to mock the QdrantClient and QdrantGrpcClient,
      * allowing tests to run without a real Qdrant server. The mock returns
      * pre-constructed search results with payload data.
      *
+     * @param point the search result returned by the mocked client
      * @return a mocked QdrantStore instance
      * @throws Exception if store creation fails
      */
-    private QdrantStore createMockStoreForPayloadTest() throws Exception {
+    private QdrantStore createMockStore(ScoredPoint point) throws Exception {
         try (MockedConstruction<QdrantGrpcClient> ignoredGrpc =
                         mockConstruction(QdrantGrpcClient.class);
                 MockedConstruction<QdrantClient> ignoredClient =
@@ -489,11 +536,8 @@ class QdrantStoreTest {
                                     when(mock.upsertAsync(anyString(), anyList()))
                                             .thenReturn(Futures.immediateFuture(null));
 
-                                    // Mock search operation with payload
-                                    ScoredPoint mockPoint = createMockScoredPoint();
                                     when(mock.queryAsync(any(Points.QueryPoints.class)))
-                                            .thenReturn(
-                                                    Futures.immediateFuture(List.of(mockPoint)));
+                                            .thenReturn(Futures.immediateFuture(List.of(point)));
                                 })) {
             return QdrantStore.builder()
                     .location(TEST_LOCATION)
@@ -584,7 +628,7 @@ class QdrantStoreTest {
     @Tag("integration")
     @DisplayName("Should store and load document metadata payload")
     void testDocumentMetadataPayload() throws Exception {
-        store = createMockStoreForPayloadTest();
+        store = createMockStore(createMockScoredPoint());
 
         // Create document with custom payload
         TextBlock content = TextBlock.builder().text("Test document content").build();
