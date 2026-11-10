@@ -58,10 +58,17 @@ public final class SessionInteractions {
         return Collections.unmodifiableMap(result);
     }
 
-    static void apply(Map<String, SessionEvent> pending, SessionEvent event) {
-        if (event.type().equals("interaction/requested"))
-            pending.put(String.valueOf(event.data().get("requestId")), event);
-        if (event.type().equals("interaction/resolved"))
-            pending.remove(String.valueOf(event.data().get("requestId")));
+    static String apply(Map<String, SessionEvent> pending, SessionEvent event) {
+        if (event.type().equals("interaction/requested")) {
+            String id = String.valueOf(event.data().get("requestId"));
+            pending.put(id, event);
+            return id;
+        }
+        if (event.type().equals("interaction/resolved")) {
+            String id = String.valueOf(event.data().get("requestId"));
+            pending.remove(id);
+            return id;
+        }
+        return null;
     }
 }

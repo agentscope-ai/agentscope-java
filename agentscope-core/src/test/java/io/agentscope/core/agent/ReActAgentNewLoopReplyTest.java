@@ -520,7 +520,7 @@ class ReActAgentNewLoopReplyTest {
             assertEquals(-1, indexOf(partial, RequireExternalExecutionEvent.class));
             assertEquals(-1, indexOf(partial, ToolResultStartEvent.class));
         }
-        if (checkpoint == ExternalCheckpoint.CURRENT) {
+        if (checkpoint != ExternalCheckpoint.LEGACY_STATE_ONLY) {
             assertEquals(requestedB.getInput(), waitingCalls.get(0).getInput());
             assertEquals(
                     "Run the external API",

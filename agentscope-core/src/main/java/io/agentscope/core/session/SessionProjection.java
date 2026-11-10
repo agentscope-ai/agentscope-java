@@ -65,12 +65,6 @@ public record SessionProjection(
                         results.put(id, decodeToolResult((Map<?, ?>) data.get("result")));
                     }
                 }
-                case "interaction/resolved" -> {
-                    if ("external_execution".equals(data.get("kind"))
-                            && data.get("result") instanceof Map<?, ?> result) {
-                        results.put((String) data.get("requestId"), decodeToolResult(result));
-                    }
-                }
                 case "recovery/applied" -> {
                     Object interrupted = data.get("interruptedRuns");
                     if (interrupted instanceof List<?> ids) ids.forEach(runs::remove);
@@ -111,7 +105,7 @@ public record SessionProjection(
         return new SessionProjection(cursor, state, Set.copyOf(uncertain), Set.copyOf(runs));
     }
 
-    private static ToolResultBlock decodeToolResult(Map<?, ?> payload) {
+    static ToolResultBlock decodeToolResult(Map<?, ?> payload) {
         // Early native action payloads omitted the polymorphic discriminator.
         var result = new LinkedHashMap<Object, Object>(payload);
         result.putIfAbsent("type", "tool_result");
