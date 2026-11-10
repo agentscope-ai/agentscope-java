@@ -36,6 +36,7 @@ import io.agentscope.core.middleware.TaskReminderMiddleware;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.session.SessionHistoryMode;
 import io.agentscope.core.session.SessionKey;
@@ -1515,7 +1516,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *       <td>{@code name}</td><td>{@code agent.getName()}</td></tr>
          *   <tr><td>{@code description}</td><td>{@code agent.getDescription()}</td></tr>
          *   <tr><td>{@code sysPrompt}</td><td>{@code agent.getSysPrompt()}</td></tr>
-         *   <tr><td>{@code model}</td><td>{@code agent.getModel()}</td></tr>
+         *   <tr><td>{@code model}</td><td>{@code agent.getModel(null)} — an identity-mode source
+         *       is pinned to its identity's current instance (harness orchestration needs a
+         *       {@code Model} at build time, not a lazy per-run reference)</td></tr>
          *   <tr><td>{@code maxIters}</td><td>{@code agent.getMaxIters()}</td></tr>
          *   <tr><td>{@code generateOptions}</td><td>{@code agent.getGenerateOptions()}</td></tr>
          *   <tr><td>{@code toolkit}</td><td>defensive copy via {@code agent.getToolkit().copy()}</td></tr>
@@ -1606,7 +1609,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             b.name(agent.getName());
             b.description(agent.getDescription());
             b.sysPrompt(agent.getSysPrompt());
-            b.model(agent.getModel());
+            // Identity-mode sources are pinned to the identity's current instance: harness
+            // orchestration needs a Model at build time, not a lazy per-run reference.
+            b.model(agent.getModel(null));
             b.maxIters(agent.getMaxIters());
             b.generateOptions(agent.getGenerateOptions());
             List<AgentTool> frameworkTools =
@@ -1736,8 +1741,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        public Builder model(String modelId) {
-            Model resolved = io.agentscope.core.model.ModelRegistry.resolve(modelId);
+        /**
+         * Legacy eager form: resolves the identity string through {@code ModelRegistry} once
+         * at build time and pins the instance — harness orchestration (subagents, memory,
+         * compaction) needs a {@code Model} at build time, so the inner agent holds the
+         * resolved instance rather than a lazy reference; see {@code
+         * ReActAgent.Builder#model(String)} for the lazy reference mode.
+         *
+         * @throws IllegalArgumentException if the identity cannot be resolved at build time
+         */
+        public Builder model(String modelIdentity) {
+            Model resolved = ModelRegistry.resolve(modelIdentity);
             this.model = resolved;
             inner.model(resolved);
             return this;
