@@ -1005,7 +1005,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
             return;
         }
         try {
-            cb.onCompleted(rc, taskId, subAgentId, sessionId, status, result, errorMessage);
+            cb.onSettled(rc, taskId, subAgentId, sessionId, status, result, errorMessage);
         } catch (Exception e) {
             log.warn("TaskCompletionCallback failed for task {}: {}", taskId, e.getMessage(), e);
         }

@@ -216,6 +216,8 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 主 agent 看到这条 reminder 自然地回应或继续行动。这意味着你**不需要**在 prompt 里写"记得调 task_output 轮询"——那是旧版本的做法。
 
+消息总线通知会区分 `FAILED` 任务和正常完成，并携带执行错误，而不是空的业务结果。五参数 `TaskRepository.TaskCompletionCallback` 保持兼容；通过同一个 `setCompletionCallback` 方法注册 `TaskRepository.TaskSettledCallback` 可获取状态及错误。自定义任务仓库应在持久化终态后调用 `onSettled`；旧的 `onCompleted` 调用保留 null 结果表示失败的约定，但无法提供错误详情。
+
 ### 后台任务工具
 
 子 agent 的生命周期背后由两组工具配合完成：

@@ -17,7 +17,12 @@ package io.agentscope.harness.agent.subagent.task;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.subagent.protocol.RemoteAgentEvent;
@@ -29,7 +34,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -63,6 +70,36 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
     }
 
     @Test
+    void remoteFailureDeliversStatusAndError() throws Exception {
+        RemoteSubagentTransport transport = mock(RemoteSubagentTransport.class);
+        when(transport.getStatus(any(), anyString()))
+                .thenReturn(new RemoteTaskStatus("failed", "remote execution error"));
+        repo.setTransport(transport);
+        CompletableFuture<TaskDelivery> callback = new CompletableFuture<>();
+        repo.setCompletionCallback(
+                (TaskRepository.TaskSettledCallback)
+                        (rc, taskId, agentId, sessionId, status, result, error) ->
+                                callback.complete(
+                                        new TaskDelivery(
+                                                taskId, agentId, status, result, error, null)));
+        repo.putTask(
+                RuntimeContext.empty(),
+                "remote-failure",
+                "remote-worker",
+                "remote-session",
+                new TaskRunSpec.RemoteTaskRunSpec(
+                        "http://remote.test",
+                        Map.of(),
+                        "remote-worker",
+                        "do work",
+                        RemoteSubmitContext.empty()));
+        TaskDelivery delivery = callback.get(5, TimeUnit.SECONDS);
+        assertEquals(TaskStatus.FAILED, delivery.status());
+        assertEquals("remote execution error", delivery.errorMessage());
+        assertNull(delivery.result());
+    }
+
+    @Test
     void remoteTask_togglesAwaitingConfirm_thenFiresCompletionOnSuccess() throws Exception {
         AtomicInteger statusCalls = new AtomicInteger();
         List<Boolean> awaitingSnapshots = new CopyOnWriteArrayList<>();
@@ -72,8 +109,7 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
 
         AtomicReference<String> completedResult = new AtomicReference<>();
         repo.setCompletionCallback(
-                (rc, taskId, subAgentId, sessionId, status, result, errorMessage) ->
-                        completedResult.set(result));
+                (rc, taskId, subAgentId, sessionId, result) -> completedResult.set(result));
 
         String session = "sess-remote";
         String taskId = "task-remote-hitl";
