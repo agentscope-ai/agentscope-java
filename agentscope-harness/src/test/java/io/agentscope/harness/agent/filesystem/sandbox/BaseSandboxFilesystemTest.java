@@ -34,10 +34,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -68,6 +71,77 @@ class BaseSandboxFilesystemTest {
 
     @Nested
     class CannedResponseTests {
+
+        @Test
+        void writeClaimsPathExclusivelyBeforeUpload() {
+            SuccessfulWriteFilesystem filesystem = new SuccessfulWriteFilesystem();
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertTrue(result.isSuccess());
+            assertEquals("owner", filesystem.uploadedContent);
+        }
+
+        @Test
+        void writeFailsWhenExclusiveClaimAlreadyExists() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(new ExecuteResponse("EXISTS", 1, false));
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("already exists"));
+        }
+
+        @Test
+        void writeDoesNotTreatCommandErrorPathContainingExistsAsCollision() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse(
+                                    "mkdir: cannot create directory '/tmp/EXISTS-parent':"
+                                            + " Permission denied",
+                                    1,
+                                    false));
+
+            WriteResult result = filesystem.write(RT, "/tmp/EXISTS-parent/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertFalse(result.error().contains("already exists"));
+        }
+
+        @Test
+        void writePreservesCreateFailureDiagnostic() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse("CREATE_FAILED: permission denied", 1, false));
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("permission denied"));
+        }
+
+        @Test
+        void emptyWriteDoesNotAssumeUnknownCreateOutcomeSucceeded() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(new ExecuteResponse("unknown state", null, false));
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "");
+
+            assertFalse(result.isSuccess());
+            assertFalse(result.isAlreadyExists());
+        }
+
+        @Test
+        void writeReportsPlaceholderCleanupFailureAlongsideUploadFailure() {
+            FailedUploadCleanupFilesystem filesystem = new FailedUploadCleanupFilesystem();
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("upload denied"));
+            assertTrue(result.error().contains("cleanup denied"));
+        }
 
         @Test
         void glob_recursivePattern_stripsDoubleStarPrefixBeforeFindName() {
@@ -1221,6 +1295,66 @@ class BaseSandboxFilesystemTest {
         }
     }
 
+    @Nested
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    class LocalShellWriteIntegrationTests {
+
+        @TempDir Path tmpDir;
+
+        @Test
+        void writeUploadsOverExclusivePlaceholderAndRejectsSecondWrite() throws IOException {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            Path path = tmpDir.resolve("nested/claim.txt");
+
+            WriteResult first = fs.write(RT, path.toString(), "first");
+            WriteResult second = fs.write(RT, path.toString(), "second");
+
+            assertTrue(first.isSuccess());
+            assertFalse(second.isSuccess());
+            assertEquals("first", Files.readString(path));
+        }
+
+        @Test
+        void emptyWriteKeepsExclusivePlaceholderWithoutUploading() throws IOException {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem(true);
+            Path path = tmpDir.resolve("claim.marker");
+
+            WriteResult first = fs.write(RT, path.toString(), "");
+
+            assertTrue(first.isSuccess());
+            assertTrue(Files.exists(path));
+            assertEquals(0L, Files.size(path));
+            assertTrue(fs.write(RT, path.toString(), "").isAlreadyExists());
+        }
+
+        @Test
+        void writeFailureForNonWritableDirectoryIsNotReportedAsAlreadyExists() throws IOException {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            Path directory = Files.createDirectory(tmpDir.resolve("read-only"));
+            Files.setPosixFilePermissions(
+                    directory,
+                    Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE));
+            Assumptions.assumeFalse(
+                    Files.isWritable(directory),
+                    "POSIX permissions are not enforced for this user");
+
+            try {
+                WriteResult result =
+                        fs.write(RT, directory.resolve("new-file").toString(), "content");
+
+                assertFalse(result.isSuccess());
+                assertFalse(result.error().contains("already exists"));
+            } finally {
+                Files.setPosixFilePermissions(
+                        directory,
+                        Set.of(
+                                PosixFilePermission.OWNER_READ,
+                                PosixFilePermission.OWNER_WRITE,
+                                PosixFilePermission.OWNER_EXECUTE));
+            }
+        }
+    }
+
     // ================================================================
     // Test helpers
     // ================================================================
@@ -1334,6 +1468,64 @@ class BaseSandboxFilesystemTest {
         }
     }
 
+    private static final class SuccessfulWriteFilesystem extends BaseSandboxFilesystem {
+
+        private String uploadedContent;
+
+        @Override
+        public String id() {
+            return "successful-write";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            return new ExecuteResponse("", 0, false);
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            Map.Entry<String, byte[]> file = files.get(0);
+            uploadedContent = new String(file.getValue(), StandardCharsets.UTF_8);
+            return List.of(FileUploadResponse.success(file.getKey()));
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            return List.of();
+        }
+    }
+
+    private static final class FailedUploadCleanupFilesystem extends BaseSandboxFilesystem {
+
+        @Override
+        public String id() {
+            return "failed-upload-cleanup";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            return command.startsWith("mkdir -p ")
+                    ? new ExecuteResponse("", 0, false)
+                    : new ExecuteResponse("cleanup denied", 1, false);
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            return List.of(FileUploadResponse.fail(files.get(0).getKey(), "upload denied"));
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            return List.of();
+        }
+    }
+
     /**
      * execute() always returns the fixed response, standing in for any execution-layer outcome
      * (successful or failing) without a live sandbox.
@@ -1372,6 +1564,16 @@ class BaseSandboxFilesystemTest {
 
     private static final class LocalShellSandboxFilesystem extends BaseSandboxFilesystem {
 
+        private final boolean failUploads;
+
+        private LocalShellSandboxFilesystem() {
+            this(false);
+        }
+
+        private LocalShellSandboxFilesystem(boolean failUploads) {
+            this.failUploads = failUploads;
+        }
+
         @Override
         public String id() {
             return "local-shell";
@@ -1395,6 +1597,9 @@ class BaseSandboxFilesystemTest {
         @Override
         public List<FileUploadResponse> uploadFiles(
                 RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            if (failUploads) {
+                return List.of(FileUploadResponse.fail(files.get(0).getKey(), "unexpected upload"));
+            }
             List<FileUploadResponse> results = new ArrayList<>();
             for (Map.Entry<String, byte[]> entry : files) {
                 try {
