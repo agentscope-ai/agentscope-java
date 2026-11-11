@@ -44,20 +44,24 @@ public final class SessionInteractions {
     }
 
     public static Map<String, SessionEvent> pending(SessionLog log) {
-        long upper = log.head().seq(), cursor = 0;
-        var result = new LinkedHashMap<String, SessionEvent>();
-        while (cursor < upper) {
-            var batch = log.readAfter(cursor, 256);
-            if (batch.isEmpty()) throw new SessionLogException("Missing interaction prefix");
-            for (var event : batch) {
-                if (event.seq() > upper) break;
-                if (event.type().equals("interaction/requested"))
-                    result.put(String.valueOf(event.data().get("requestId")), event);
-                if (event.type().equals("interaction/resolved"))
-                    result.remove(String.valueOf(event.data().get("requestId")));
-                cursor = event.seq();
-            }
+        var builder = new Builder();
+        for (var event : log.scan(0, log.head().seq())) builder.accept(event);
+        return builder.build();
+    }
+
+    /** Accumulates pending requests from a single event pass shared with the other views. */
+    static final class Builder {
+        private final Map<String, SessionEvent> pending = new LinkedHashMap<>();
+
+        void accept(SessionEvent event) {
+            if (event.type().equals("interaction/requested"))
+                pending.put(String.valueOf(event.data().get("requestId")), event);
+            if (event.type().equals("interaction/resolved"))
+                pending.remove(String.valueOf(event.data().get("requestId")));
         }
-        return Collections.unmodifiableMap(result);
+
+        Map<String, SessionEvent> build() {
+            return Collections.unmodifiableMap(new LinkedHashMap<>(pending));
+        }
     }
 }

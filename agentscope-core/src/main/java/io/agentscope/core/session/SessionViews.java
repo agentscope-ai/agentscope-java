@@ -28,17 +28,27 @@ public final class SessionViews {
 
     public record Transcript(long asOfSeq, List<Msg> messages) {}
 
+    private static final Set<String> MESSAGE_TYPES =
+            Set.of("message/user", "message/assistant", "tool/result", "turn/output");
+
     public static Transcript transcript(SessionLog log) {
         long target = log.head().seq();
-        var messages = new LinkedHashMap<String, Msg>();
-        for (var event : log.scan(0, target)) {
+        var builder = new Builder();
+        for (var event : log.scan(0, target)) builder.accept(event);
+        return builder.build(target);
+    }
+
+    /** Accumulates the transcript from a single event pass shared with the other views. */
+    static final class Builder {
+        private final LinkedHashMap<String, Msg> messages = new LinkedHashMap<>();
+
+        void accept(SessionEvent event) {
             if (event.type().equals("migration/baseline")) {
                 String state = (String) event.data().get("stateJson");
                 if (state != null)
                     for (var msg : AgentState.fromJsonString(state).getContext())
                         messages.putIfAbsent(msg.getId(), msg);
-            } else if (Set.of("message/user", "message/assistant", "tool/result", "turn/output")
-                    .contains(event.type())) {
+            } else if (MESSAGE_TYPES.contains(event.type())) {
                 Object value = event.data().get("message");
                 if (value != null) {
                     Msg msg = JsonUtils.getJsonCodec().convertValue(value, Msg.class);
@@ -47,6 +57,9 @@ public final class SessionViews {
                 }
             }
         }
-        return new Transcript(target, List.copyOf(messages.values()));
+
+        Transcript build(long asOfSeq) {
+            return new Transcript(asOfSeq, List.copyOf(messages.values()));
+        }
     }
 }
