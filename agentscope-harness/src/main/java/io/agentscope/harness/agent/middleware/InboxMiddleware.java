@@ -107,6 +107,14 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
             return next.apply(input);
         }
 
+        // Hints can only be injected into a resolved agent state. Draining the inbox without
+        // one would consume the hints and silently lose them, so leave them queued for a later
+        // round that can resolve state.
+        AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
+        if (state == null) {
+            return next.apply(input);
+        }
+
         Mono<List<HintBlock>> inboxHints =
                 messageBus
                         .inboxDrain(sessionId, maxDrainCount)
@@ -171,16 +179,9 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                     tuple.getT1().size(),
                                     tuple.getT2().size());
 
-                            AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
-                            List<Msg> notifications = List.of();
-                            if (state != null) {
-                                notifications = injectHintsToContext(state, allHints);
-                            }
+                            List<Msg> notifications = injectHintsToContext(state, allHints);
 
-                            String replyId =
-                                    state != null
-                                            ? state.getReplyId()
-                                            : UUID.randomUUID().toString().replace("-", "");
+                            String replyId = state.getReplyId();
 
                             Flux<AgentEvent> hintEvents =
                                     Flux.fromIterable(allHints)

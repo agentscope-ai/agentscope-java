@@ -20,6 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -267,6 +273,64 @@ class InboxMiddlewareTest {
                         .block();
 
         assertTrue(events.isEmpty());
+    }
+
+    @Test
+    void unresolvableStateDoesNotDrainInboxSoHintsAreNotLost() {
+        // Spy the real bus so we can assert whether the inbox was read, while the
+        // delegate keeps the real queue so we can prove the hint actually survives.
+        MessageBus spyBus = spy(bus);
+        InboxMiddleware mw = new InboxMiddleware(spyBus);
+
+        // No agentState on the context and the fallback agent has none either, so
+        // RuntimeContext.resolveAgentState(...) returns null.
+        RuntimeContext noStateCtx = RuntimeContext.builder().sessionId("session-1").build();
+        bus.inboxPush("session-1", Map.of("id", "h1", "hint", "keep me")).block();
+
+        ReasoningInput input = new ReasoningInput(List.of(), List.of(), null);
+
+        List<AgentEvent> first =
+                mw.onReasoning(stubAgent(), noStateCtx, input, next -> Flux.empty())
+                        .collectList()
+                        .block();
+
+        assertNotNull(first);
+        assertTrue(first.isEmpty(), "no hint events when state cannot be resolved");
+        // The inbox must not be read at all: not by an explicit drain call...
+        verify(spyBus, never()).inboxDrain(anyString(), anyInt());
+        // ...and not in effect either: the queued message is still present.
+        assertTrue(
+                bus.inboxHasMessages("session-1").block(),
+                "inbox must not be drained when state cannot be resolved");
+
+        // The hint must still be available to a later round with a resolvable state,
+        // and must now be rendered as a HintBlockEvent.
+        List<ReasoningInput> captured = new ArrayList<>();
+        List<AgentEvent> second =
+                mw.onReasoning(
+                                stubAgent(),
+                                ctx,
+                                input,
+                                next -> {
+                                    captured.add(next);
+                                    return Flux.empty();
+                                })
+                        .collectList()
+                        .block();
+
+        verify(spyBus, times(1)).inboxDrain(anyString(), anyInt());
+        assertEquals(1, captured.size(), "next must be invoked exactly once");
+        assertTrue(
+                captured.get(0).messages().stream()
+                        .anyMatch(m -> m.getTextContent().contains("keep me")),
+                "preserved hint must reach a later resolvable reasoning round");
+        assertNotNull(second);
+        assertTrue(
+                second.stream().anyMatch(HintBlockEvent.class::isInstance),
+                "preserved hint should generate a HintBlockEvent");
+        assertFalse(
+                bus.inboxHasMessages("session-1").block(),
+                "the preserved hint is consumed once it is actually delivered");
     }
 
     @Test
