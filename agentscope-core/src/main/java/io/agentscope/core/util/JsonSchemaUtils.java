@@ -117,7 +117,6 @@ public class JsonSchemaUtils {
         }
     }
 
-
     /**
      * Generate JSON Schema from a com.fasterxml.jackson.databind.JsonNode instance.
      * This method is suitable for structured output scenarios where complex nested
@@ -156,7 +155,6 @@ public class JsonSchemaUtils {
                     "Failed to generate JSON schema for " + type.getTypeName(), e);
         }
     }
-
 
     /**
      * Convert Map to typed object.
