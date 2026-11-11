@@ -1894,6 +1894,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Remove structured-output-related messages from the conversation context and append
      * the final response.
+     *
+     * <p>A model may emit a business tool call and the synthetic {@code generate_response} call in
+     * the same assistant message. Dropping such a message wholesale would delete the business
+     * {@link ToolUseBlock} while its {@link ToolResultBlock} stays in the context, breaking the
+     * tool-use/result pairing that providers require. Mixed messages are therefore rebuilt with
+     * only the internal structured-output blocks removed. Pure structured-output messages keep
+     * the original whole-message removal.
      */
     private void compressStructuredOutputContext(AgentState agentState) {
         List<Msg> contextMutable = agentState.contextMutable();
@@ -1902,8 +1909,66 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         for (Msg msg : original) {
             if (!isStructuredOutputRelated(msg)) {
                 contextMutable.add(msg);
+                continue;
+            }
+            Msg trimmed = stripStructuredOutputBlocks(msg);
+            if (trimmed != null) {
+                contextMutable.add(trimmed);
             }
         }
+    }
+
+    /**
+     * Rebuild a message that mixes internal structured-output blocks with business tool blocks,
+     * dropping only the former. Returns {@code null} for pure structured-output messages and
+     * synthetic reminders, so the caller keeps the existing whole-message removal for them.
+     *
+     * <p>Only {@link ToolUseBlock} / {@link ToolResultBlock} named {@code generate_response} are
+     * stripped; text, thinking and business tool blocks are preserved together with the message
+     * identity (id/name/role/timestamp/metadata/usage), so the business tool_use/result pair stays
+     * intact for the next model request.
+     */
+    private Msg stripStructuredOutputBlocks(Msg msg) {
+        Map<String, Object> metadata = msg.getMetadata();
+        if (metadata != null
+                && Boolean.TRUE.equals(
+                        metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER))) {
+            return null;
+        }
+        List<ContentBlock> kept = new ArrayList<>(msg.getContent().size());
+        boolean hasStructured = false;
+        boolean hasBusiness = false;
+        for (ContentBlock block : msg.getContent()) {
+            if (isStructuredOutputBlock(block)) {
+                hasStructured = true;
+            } else {
+                kept.add(block);
+                if (block instanceof ToolUseBlock || block instanceof ToolResultBlock) {
+                    hasBusiness = true;
+                }
+            }
+        }
+        if (!hasStructured || !hasBusiness || kept.isEmpty()) {
+            return null;
+        }
+        return Msg.builderForRole(msg.getRole())
+                .id(msg.getId())
+                .name(msg.getName())
+                .content(kept)
+                .metadata(metadata == null ? Map.of() : metadata)
+                .timestamp(msg.getTimestamp())
+                .usage(msg.getChatUsage())
+                .build();
+    }
+
+    private boolean isStructuredOutputBlock(ContentBlock block) {
+        if (block instanceof ToolUseBlock tu) {
+            return STRUCTURED_OUTPUT_TOOL_NAME.equals(tu.getName());
+        }
+        if (block instanceof ToolResultBlock tr) {
+            return STRUCTURED_OUTPUT_TOOL_NAME.equals(tr.getName());
+        }
+        return false;
     }
 
     private boolean isStructuredOutputRelated(Msg msg) {
