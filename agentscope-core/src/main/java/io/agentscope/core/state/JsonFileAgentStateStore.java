@@ -116,9 +116,10 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     @Override
     public void save(String userId, String sessionId, String key, State value) {
-        Path file = getStatePath(userId, sessionId, key);
+        Path sessionDir = getSessionDir(userId, sessionId);
+        Path file = getStatePath(sessionDir, key);
         String json = JsonUtils.getJsonCodec().toPrettyJson(value);
-        ReentrantLock lock = lockFor(userId, sessionId);
+        ReentrantLock lock = lockFor(sessionDir);
         lock.lock();
         try {
             ensureDirectoryExists(file.getParent());
@@ -132,14 +133,15 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     @Override
     public void save(String userId, String sessionId, String key, List<? extends State> values) {
-        Path file = getListPath(userId, sessionId, key);
-        Path hashFile = getHashPath(userId, sessionId, key);
+        Path sessionDir = getSessionDir(userId, sessionId);
+        Path file = getListPath(sessionDir, key);
+        Path hashFile = getHashPath(sessionDir, key);
         String currentHash = ListHashUtil.computeHash(values);
 
         // The whole read-hash-count + append/rewrite sequence must run under the session lock:
         // two concurrent list saves would otherwise append the same tail twice, or interleave
         // an append with a rewrite.
-        ReentrantLock lock = lockFor(userId, sessionId);
+        ReentrantLock lock = lockFor(sessionDir);
         lock.lock();
         try {
             ensureDirectoryExists(file.getParent());
@@ -215,11 +217,12 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     @Override
     public <T extends State> Optional<T> get(
             String userId, String sessionId, String key, Class<T> type) {
-        Path file = getStatePath(userId, sessionId, key);
+        Path sessionDir = getSessionDir(userId, sessionId);
+        Path file = getStatePath(sessionDir, key);
         // Readers take the session lock too: on Windows an open read handle blocks another
         // thread's replace of the same file (AccessDeniedException), so reads and writes must
         // be mutually exclusive.
-        ReentrantLock lock = lockFor(userId, sessionId);
+        ReentrantLock lock = lockFor(sessionDir);
         lock.lock();
         try {
             if (!Files.exists(file)) {
@@ -239,8 +242,9 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     @Override
     public <T extends State> List<T> getList(
             String userId, String sessionId, String key, Class<T> itemType) {
-        Path file = getListPath(userId, sessionId, key);
-        ReentrantLock lock = lockFor(userId, sessionId);
+        Path sessionDir = getSessionDir(userId, sessionId);
+        Path file = getListPath(sessionDir, key);
+        ReentrantLock lock = lockFor(sessionDir);
         lock.lock();
         try {
             if (!Files.exists(file)) {
@@ -289,9 +293,9 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         ReentrantLock lock = lockFor(sessionDir);
         lock.lock();
         try {
-            Files.deleteIfExists(getStatePath(userId, sessionId, key));
-            Files.deleteIfExists(getListPath(userId, sessionId, key));
-            Files.deleteIfExists(getHashPath(userId, sessionId, key));
+            Files.deleteIfExists(getStatePath(sessionDir, key));
+            Files.deleteIfExists(getListPath(sessionDir, key));
+            Files.deleteIfExists(getHashPath(sessionDir, key));
             if (Files.exists(sessionDir)) {
                 boolean empty;
                 try (Stream<Path> files = Files.list(sessionDir)) {
@@ -377,16 +381,16 @@ public class JsonFileAgentStateStore implements AgentStateStore {
                 .resolve(safeSegment(requireSessionId(sessionId)));
     }
 
-    private Path getStatePath(String userId, String sessionId, String key) {
-        return getSessionDir(userId, sessionId).resolve(key + ".json");
+    private static Path getStatePath(Path sessionDir, String key) {
+        return sessionDir.resolve(key + ".json");
     }
 
-    private Path getListPath(String userId, String sessionId, String key) {
-        return getSessionDir(userId, sessionId).resolve(key + ".jsonl");
+    private static Path getListPath(Path sessionDir, String key) {
+        return sessionDir.resolve(key + ".jsonl");
     }
 
-    private Path getHashPath(String userId, String sessionId, String key) {
-        return getSessionDir(userId, sessionId).resolve(key + ".hash");
+    private static Path getHashPath(Path sessionDir, String key) {
+        return sessionDir.resolve(key + ".hash");
     }
 
     private String readHashFile(Path hashFile) {
@@ -420,10 +424,6 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         } finally {
             deleteQuietly(tmp);
         }
-    }
-
-    private ReentrantLock lockFor(String userId, String sessionId) {
-        return lockFor(getSessionDir(userId, sessionId));
     }
 
     private static ReentrantLock lockFor(Path sessionDir) {

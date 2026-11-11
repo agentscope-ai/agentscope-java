@@ -300,8 +300,10 @@ class JsonFileAgentStateStoreTest {
     void unrelatedSessionsDoNotShareLocks(@TempDir Path tempDir) throws Exception {
         List<JsonFileAgentStateStore> stores = twoStoresOnSameRoot(tempDir);
         JsonFileAgentStateStore holder = stores.get(0);
+        // Stripe count of the removed lock table; one extra session forces a collision.
+        int formerLockStripes = 64;
         List<String> collidingSessions =
-                IntStream.range(0, 65)
+                IntStream.range(0, formerLockStripes + 1)
                         .mapToObj(i -> "session" + i)
                         .collect(
                                 Collectors.groupingBy(
@@ -311,7 +313,7 @@ class JsonFileAgentStateStoreTest {
                                                                 .toAbsolutePath()
                                                                 .normalize()
                                                                 .hashCode(),
-                                                        64)))
+                                                        formerLockStripes)))
                         .values()
                         .stream()
                         .filter(sessions -> sessions.size() > 1)
