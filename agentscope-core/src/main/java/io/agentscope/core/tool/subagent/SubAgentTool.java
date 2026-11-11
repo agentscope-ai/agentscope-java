@@ -17,6 +17,7 @@ package io.agentscope.core.tool.subagent;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RuntimeContext;
@@ -31,8 +32,10 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.session.SessionExecution;
 import io.agentscope.core.session.SessionExportSink;
 import io.agentscope.core.session.SessionRecorder;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
@@ -44,20 +47,25 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * AgentTool implementation that wraps a sub-agent for multi-turn conversation.
  *
  * <p>This tool allows an agent to be called as a tool by other agents, supporting multi-turn
- * conversation with session management. Each session maintains its own agent instance and state.
+ * conversation with session management. Each session maintains its own persisted agent state.
  *
- * <p>Thread safety is ensured by using {@link SubAgentProvider} to create a fresh agent instance
- * for each new session.
+ * <p>Providers may return shared or per-call agents. Ownership is controlled by
+ * {@link SubAgentConfig.LifecyclePolicy}; shared instances retain their caches and shutdown
+ * registrations. RuntimeContext identifies each child conversation independently of its parent.
  *
  * <p>The tool exposes two parameters:
  *
@@ -81,6 +89,19 @@ public class SubAgentTool implements AgentTool {
     private final String description;
     private final SubAgentProvider<?> agentProvider;
     private final SubAgentConfig config;
+    private final ConcurrentHashMap<SessionKey, SessionWrites> sessionWrites =
+            new ConcurrentHashMap<>();
+
+    private record SessionKey(String userId, String sessionId) {}
+
+    private static final class SessionWrites {
+        private final AtomicLong latest = new AtomicLong();
+        private int leases;
+        private long committedVersion = AgentStateStore.UNVERSIONED;
+    }
+
+    private volatile SubAgentConfig.LifecyclePolicy resolvedLifecycle;
+    private Agent metadataSample;
 
     /**
      * Creates a new SubAgentTool.
@@ -89,15 +110,62 @@ public class SubAgentTool implements AgentTool {
      * @param config Configuration for the tool
      */
     public SubAgentTool(SubAgentProvider<?> agentProvider, SubAgentConfig config) {
-        // Create a sample agent to derive name and description
-        Agent sampleAgent = agentProvider.provide();
-
         this.agentProvider = agentProvider;
         this.config = config != null ? config : SubAgentConfig.defaults();
-        this.name = resolveToolName(sampleAgent, this.config);
-        this.description = resolveDescription(sampleAgent, this.config);
+        this.resolvedLifecycle = this.config.getLifecyclePolicy();
+        Agent sampleAgent = null;
+        if (!hasText(this.config.getToolName()) || !hasText(this.config.getDescription())) {
+            sampleAgent = agentProvider.provide();
+            if (resolvedLifecycle == SubAgentConfig.LifecyclePolicy.AUTO) {
+                metadataSample = sampleAgent;
+            }
+        }
+        try {
+            this.name = resolveToolName(sampleAgent, this.config);
+            this.description = resolveDescription(sampleAgent, this.config);
+        } finally {
+            if (resolvedLifecycle == SubAgentConfig.LifecyclePolicy.PER_CALL) {
+                closeAgent(sampleAgent);
+            }
+        }
 
         logger.debug("Created SubAgentTool: name={}, description={}", name, description);
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private record Provision(Agent agent, boolean owned, Agent unusedSample) {}
+
+    private Provision provideAgent() {
+        SubAgentConfig.LifecyclePolicy policy = resolvedLifecycle;
+        if (policy == SubAgentConfig.LifecyclePolicy.AUTO) {
+            // Only discovery is exclusive. Once ownership is published, independent calls may
+            // provision concurrently (including providers that establish remote connections).
+            synchronized (this) {
+                policy = resolvedLifecycle;
+                if (policy == SubAgentConfig.LifecyclePolicy.AUTO) {
+                    Agent sample = metadataSample;
+                    if (sample == null) {
+                        sample = agentProvider.provide();
+                        metadataSample = sample;
+                    }
+                    Agent agent = agentProvider.provide();
+                    boolean shared = sample == agent;
+                    policy =
+                            shared
+                                    ? SubAgentConfig.LifecyclePolicy.SHARED
+                                    : SubAgentConfig.LifecyclePolicy.PER_CALL;
+                    metadataSample = null;
+                    resolvedLifecycle = policy;
+                    logger.debug("Sub-agent provider '{}' detected as {}", name, policy);
+                    return new Provision(agent, !shared, shared ? null : sample);
+                }
+            }
+        }
+        return new Provision(
+                agentProvider.provide(), policy == SubAgentConfig.LifecyclePolicy.PER_CALL, null);
     }
 
     @Override
@@ -154,60 +222,21 @@ public class SubAgentTool implements AgentTool {
                             return Mono.just(ToolResultBlock.error("Message is required"));
                         }
 
-                        RuntimeContext parentContext = param.getRuntimeContext();
-                        // A child must not inherit the parent's active state or session execution.
-                        RuntimeContext childContext =
-                                RuntimeContext.builder(parentContext)
-                                        .sessionId(sessionId)
-                                        .agentState(null)
-                                        .build();
-                        childContext.put(SessionRecorder.CONTEXT_KEY, null);
-                        childContext.put(SessionRecorder.TURN_ID_KEY, null);
-                        childContext.put(SessionExportSink.CONTEXT_KEY, null);
-                        childContext.put(SessionExecution.CONTEXT_KEY, null);
-                        childContext.put(SessionRecorder.PARENT_KEY, null);
-                        childContext.put(ExecutionIdentity.CONTEXT_KEY, null);
-                        SessionRecorder parentRecorder = SessionRecorder.from(parentContext);
-                        if (parentRecorder != null && parentContext.getSessionId() != null) {
-                            childContext.put(
-                                    SessionRecorder.PARENT_KEY,
-                                    Map.of(
-                                            "parentSessionId",
-                                            parentContext.getSessionId(),
-                                            "parentRunId",
-                                            parentRecorder.runId(),
-                                            "parentTurnId",
-                                            parentRecorder.turnId()));
+                        // Create agent for this session
+                        RuntimeContext runtimeContext =
+                                childContext(param.getRuntimeContext(), sessionId);
+                        Runnable cleanupFinished =
+                                GracefulShutdownManager.getInstance().registerCleanup();
+                        Provision provision;
+                        try {
+                            provision = provideAgent();
+                        } catch (Exception | Error error) {
+                            cleanupFinished.run();
+                            throw error;
                         }
-                        Agent agent = agentProvider.provide();
-
-                        // Load existing state if continuing session
-                        if (!isNewSession) {
-                            loadAgentState(agent, childContext);
-                        }
-
-                        // Build user message
-                        Msg userMsg =
-                                Msg.builder()
-                                        .role(MsgRole.USER)
-                                        .content(TextBlock.builder().text(message).build())
-                                        .build();
-                        logger.debug(
-                                "AgentStateStore {} with agent '{}': {}",
-                                isNewSession ? "started" : "continued",
-                                agent.getName(),
-                                message.substring(0, Math.min(50, message.length())));
-
-                        // Get emitter for event forwarding
-                        ToolEmitter emitter = param.getEmitter();
-
-                        // Execute and save state after completion
-                        Mono<ToolResultBlock> result;
-                        if (config.isForwardEvents()) {
-                            result = executeWithStreaming(agent, userMsg, emitter, childContext);
-                        } else {
-                            result = executeWithoutStreaming(agent, userMsg, childContext);
-                        }
+                        Agent agent = provision.agent();
+                        InvocationLifecycle lifecycle =
+                                new InvocationLifecycle(provision, runtimeContext, cleanupFinished);
 
                         // Interrupt the sub-agent when the subscription is cancelled
                         // (e.g. ToolExecutor timeout triggers a retry on a new subscription).
@@ -222,16 +251,77 @@ public class SubAgentTool implements AgentTool {
                         // interrupt(InterruptSource) because the latter only looks up
                         // `defaultSessionId` which may differ from the session the call
                         // actually runs in.
-                        result =
-                                result.doFinally(
-                                        signal -> {
-                                            if (signal == SignalType.CANCEL) {
-                                                interruptAgent(agent, childContext);
+                        // Keep cleanup outermost; the lifecycle also serializes concurrent
+                        // save/cancel.
+                        Mono<ToolResultBlock> invocation =
+                                Mono.defer(
+                                        () -> {
+                                            try {
+                                                // Load existing state if continuing session
+                                                lifecycle.prepareState();
+
+                                                // Build user message
+                                                Msg userMsg =
+                                                        Msg.builder()
+                                                                .role(MsgRole.USER)
+                                                                .content(
+                                                                        TextBlock.builder()
+                                                                                .text(message)
+                                                                                .build())
+                                                                .build();
+
+                                                logger.debug(
+                                                        "AgentStateStore {} with agent '{}': {}",
+                                                        isNewSession ? "started" : "continued",
+                                                        agent.getName(),
+                                                        message.substring(
+                                                                0, Math.min(50, message.length())));
+
+                                                // Get emitter for event forwarding
+                                                ToolEmitter emitter = param.getEmitter();
+
+                                                // Execute and save state after completion
+                                                Mono<ToolResultBlock> result;
+                                                if (config.isForwardEvents()) {
+                                                    result =
+                                                            executeWithStreaming(
+                                                                    agent,
+                                                                    userMsg,
+                                                                    emitter,
+                                                                    runtimeContext);
+                                                } else {
+                                                    result =
+                                                            executeWithoutStreaming(
+                                                                    agent, userMsg, runtimeContext);
+                                                }
+
+                                                return result.flatMap(lifecycle::persistResult);
+                                            } catch (Exception e) {
+                                                logger.error(
+                                                        "Error in session setup: {}",
+                                                        e.getMessage(),
+                                                        e);
+                                                return Mono.just(
+                                                        ToolResultBlock.error(
+                                                                "AgentStateStore setup failed: "
+                                                                        + e.getMessage()));
                                             }
                                         });
-
-                        // Save state after execution
-                        return result.doOnSuccess(r -> saveAgentState(agent, childContext));
+                        if (!provision.owned() && agent.getAgentId() != null) {
+                            // A session-level interrupt could hit a different direct/queued call
+                            // on a shared instance. Bind cancellation to this execution instead.
+                            AgentRun<ToolResultBlock> run =
+                                    AgentRun.create(
+                                            agent.getAgentId(),
+                                            runtimeContext.getRunId(),
+                                            () -> invocation);
+                            lifecycle.run = run;
+                            return run.stream()
+                                    .single()
+                                    .doFinally(signal -> lifecycle.finish(signal, runtimeContext));
+                        }
+                        return invocation.doFinally(
+                                signal -> lifecycle.finish(signal, runtimeContext));
                     } catch (Exception e) {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
@@ -239,6 +329,207 @@ public class SubAgentTool implements AgentTool {
                                         "AgentStateStore setup failed: " + e.getMessage()));
                     }
                 });
+    }
+
+    private static RuntimeContext childContext(RuntimeContext parent, String sessionId) {
+        RuntimeContext child =
+                RuntimeContext.builder(parent)
+                        .sessionId(sessionId)
+                        .agentState(null)
+                        .toolRequestConfig(null)
+                        .build();
+        // Session recording and execution identities belong to the parent call, not this agent.
+        child.put(SessionRecorder.CONTEXT_KEY, null);
+        child.put(SessionRecorder.TURN_ID_KEY, null);
+        child.put(SessionExportSink.CONTEXT_KEY, null);
+        child.put(SessionRecorder.PARENT_KEY, null);
+        child.put(SessionExecution.CONTEXT_KEY, null);
+        child.put(ExecutionIdentity.CONTEXT_KEY, null);
+        SessionRecorder parentRecorder = SessionRecorder.from(parent);
+        if (parentRecorder != null && parent.getSessionId() != null) {
+            child.put(
+                    SessionRecorder.PARENT_KEY,
+                    Map.of(
+                            "parentSessionId", parent.getSessionId(),
+                            "parentRunId", parentRecorder.runId(),
+                            "parentTurnId", parentRecorder.turnId()));
+        }
+        return child;
+    }
+
+    /** Coordinates one invocation's state access and potentially blocking resource cleanup. */
+    private final class InvocationLifecycle {
+        private final Agent agent;
+        private final boolean owned;
+        private final Agent unusedSample;
+        private final RuntimeContext context;
+        private final SessionKey key;
+        private final SessionWrites writes;
+        private final long attempt;
+        private final Runnable cleanupFinished;
+        private AgentRun<ToolResultBlock> run;
+        private long expectedVersion = AgentStateStore.UNVERSIONED;
+        private boolean stateLoaded;
+        private boolean closing;
+
+        private InvocationLifecycle(
+                Provision provision, RuntimeContext context, Runnable cleanupFinished) {
+            this.agent = provision.agent();
+            this.owned = provision.owned();
+            this.unusedSample = provision.unusedSample();
+            this.context = context;
+            this.key = new SessionKey(context.getUserId(), context.getSessionId());
+            this.writes =
+                    sessionWrites.compute(
+                            key,
+                            (k, current) -> {
+                                SessionWrites entry =
+                                        current == null ? new SessionWrites() : current;
+                                entry.leases++;
+                                return entry;
+                            });
+            this.attempt = writes.latest.incrementAndGet();
+            // Register before agent admission; its own request may retire before outer doFinally.
+            this.cleanupFinished = cleanupFinished;
+        }
+
+        private boolean usesToolState() {
+            return agent instanceof ReActAgent ra
+                    && !ra.sessionLogEnabled()
+                    && ra.getStateStore() == null;
+        }
+
+        private synchronized void prepareState() {
+            // Defensive: never load state after cancellation cleanup has retired this lifecycle.
+            if (closing || !usesToolState()) return;
+            try {
+                VersionedState<AgentState> loaded =
+                        config.getStateStore()
+                                .getVersioned(
+                                        key.userId(),
+                                        key.sessionId(),
+                                        "agent_state",
+                                        AgentState.class);
+                expectedVersion = loaded.version();
+                ReActAgent ra = (ReActAgent) agent;
+                if (loaded.value() != null) {
+                    AgentState live = ra.getAgentState(context);
+                    // Shared agents own live history; never replace direct-call state.
+                    if (owned || live.getContext().isEmpty())
+                        applyLoadedState(live, loaded.value());
+                }
+                stateLoaded = true;
+            } catch (Exception e) {
+                logger.warn("Failed to load sub-agent state for session {}", key.sessionId(), e);
+            }
+        }
+
+        private Mono<ToolResultBlock> persistResult(ToolResultBlock result) {
+            if (!stateLoaded || !usesToolState()) return Mono.just(result);
+            return Mono.create(
+                    sink -> {
+                        try {
+                            // Deliberately do not cancel an in-flight persistence operation.
+                            // Cleanup
+                            // waits for its monitor; disposal must not interrupt a partially
+                            // written save.
+                            Schedulers.boundedElastic()
+                                    .schedule(
+                                            () -> {
+                                                saveState();
+                                                sink.success(result);
+                                            });
+                        } catch (RejectedExecutionException e) {
+                            logger.warn("Sub-agent state save rejected; saving inline", e);
+                            saveState();
+                            sink.success(result);
+                        }
+                    });
+        }
+
+        private synchronized void saveState() {
+            if (closing || !stateLoaded || !usesToolState()) return;
+            try {
+                ReActAgent ra = (ReActAgent) agent;
+                // A detached snapshot prevents in-memory stores from observing later mutations.
+                var codec = JsonUtils.getJsonCodec();
+                AgentState snapshot =
+                        codec.fromJson(codec.toJson(ra.getAgentState(context)), AgentState.class);
+                AgentStateStore store = config.getStateStore();
+                // Serialize actual writes, not only their admission. Newer attempts that loaded
+                // before an older local commit may advance from its known committed version;
+                // writes from another tool/process still fail the store's atomic CAS check.
+                synchronized (writes) {
+                    if (writes.latest.get() != attempt) return;
+                    if (store.supportsVersioning()) {
+                        long expected = Math.max(expectedVersion, writes.committedVersion);
+                        long version =
+                                store.saveIfVersion(
+                                        key.userId(),
+                                        key.sessionId(),
+                                        "agent_state",
+                                        snapshot,
+                                        expected);
+                        if (version == AgentStateStore.UNVERSIONED) {
+                            logger.warn(
+                                    "Skipped conflicting sub-agent state for session {}",
+                                    key.sessionId());
+                        } else {
+                            writes.committedVersion = version;
+                        }
+                    } else {
+                        store.save(key.userId(), key.sessionId(), "agent_state", snapshot);
+                    }
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to save sub-agent state for session {}", key.sessionId(), e);
+            }
+        }
+
+        private void finish(SignalType signal, RuntimeContext runtimeContext) {
+            try {
+                if (signal == SignalType.CANCEL) {
+                    if (run != null) run.interrupt();
+                    else interruptAgent(agent, runtimeContext);
+                }
+            } finally {
+                // Interrupt is cooperative: owned instances can close before the cancelled call
+                // fully unwinds. They are discarded, never reused; shared instances stay open.
+                // Neither a blocking close nor waiting for a save belongs on a signal thread.
+                try {
+                    Schedulers.boundedElastic().schedule(this::closeAfterStateSave);
+                } catch (RejectedExecutionException e) {
+                    logger.warn("Sub-agent cleanup rejected; closing inline", e);
+                    closeAfterStateSave();
+                }
+            }
+        }
+
+        private void closeAfterStateSave() {
+            synchronized (this) {
+                if (closing) return;
+                closing = true;
+            }
+            try {
+                closeAgent(unusedSample);
+                if (owned) closeAgent(agent);
+            } finally {
+                sessionWrites.computeIfPresent(
+                        key, (k, current) -> --current.leases == 0 ? null : current);
+                cleanupFinished.run();
+            }
+        }
+    }
+
+    /** Closes tool-owned agent instances without masking execution or initialization errors. */
+    private void closeAgent(Agent agent) {
+        if (agent instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                logger.warn("Failed to close sub-agent: {}", e.getMessage(), e);
+            }
+        }
     }
 
     /**
@@ -256,61 +547,7 @@ public class SubAgentTool implements AgentTool {
         }
     }
 
-    /**
-     * Loads sub-agent state for the child session carried by {@code childContext} from
-     * {@link SubAgentConfig#getStateStore()} into that session's {@link AgentState}. Errors are
-     * logged but do not interrupt execution.
-     */
-    private void loadAgentState(Agent agent, RuntimeContext childContext) {
-        if (!(agent instanceof ReActAgent ra) || ra.sessionLogEnabled()) {
-            return;
-        }
-        AgentStateStore subSession = config.getStateStore();
-        if (subSession == null) {
-            return;
-        }
-        String sessionId = childContext.getSessionId();
-        try {
-            subSession
-                    .get(childContext.getUserId(), sessionId, "agent_state", AgentState.class)
-                    .ifPresent(loaded -> applyLoadedState(ra.getAgentState(childContext), loaded));
-            logger.debug("Loaded sub-agent state for session: {}", sessionId);
-        } catch (Exception e) {
-            logger.warn(
-                    "Failed to load sub-agent state for session {}: {}", sessionId, e.getMessage());
-        }
-    }
-
-    /**
-     * Saves the child session's {@link AgentState} carried by {@code childContext} into {@link
-     * SubAgentConfig#getStateStore()}. Errors are logged but do not interrupt execution.
-     */
-    private void saveAgentState(Agent agent, RuntimeContext childContext) {
-        if (!(agent instanceof ReActAgent ra) || ra.sessionLogEnabled()) {
-            return;
-        }
-        AgentStateStore subSession = config.getStateStore();
-        if (subSession == null) {
-            return;
-        }
-        String sessionId = childContext.getSessionId();
-        try {
-            subSession.save(
-                    childContext.getUserId(),
-                    sessionId,
-                    "agent_state",
-                    ra.getAgentState(childContext));
-            logger.debug("Saved sub-agent state for session: {}", sessionId);
-        } catch (Exception e) {
-            logger.warn(
-                    "Failed to save sub-agent state for session {}: {}", sessionId, e.getMessage());
-        }
-    }
-
     private static void applyLoadedState(AgentState live, AgentState loaded) {
-        if (live == null) {
-            return;
-        }
         live.contextMutable().clear();
         live.contextMutable().addAll(loaded.getContext());
         live.setSummary(loaded.getSummary());
@@ -396,17 +633,11 @@ public class SubAgentTool implements AgentTool {
 
     private Flux<Event> streamWithContext(
             Agent agent, Msg userMsg, StreamOptions options, RuntimeContext runtimeContext) {
-        if (runtimeContext != null && agent instanceof ReActAgent reActAgent) {
-            return reActAgent.stream(List.of(userMsg), options, stripCallerModel(runtimeContext));
-        }
-        return agent.stream(List.of(userMsg), options);
+        return agent.stream(List.of(userMsg), options, stripCallerModel(runtimeContext));
     }
 
     private Mono<Msg> callWithContext(Agent agent, Msg userMsg, RuntimeContext runtimeContext) {
-        if (runtimeContext != null && agent instanceof ReActAgent reActAgent) {
-            return reActAgent.call(List.of(userMsg), stripCallerModel(runtimeContext));
-        }
-        return agent.call(List.of(userMsg));
+        return agent.call(List.of(userMsg), stripCallerModel(runtimeContext));
     }
 
     /**

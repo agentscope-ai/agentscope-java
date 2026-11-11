@@ -60,17 +60,29 @@ import io.agentscope.core.state.JsonFileAgentStateStore;
  */
 public class SubAgentConfig {
 
+    /** Who releases instances returned by the provider. */
+    public enum LifecyclePolicy {
+        /** Detect a stable singleton or a factory by comparing the first two instances by identity. */
+        AUTO,
+        /** Instances belong to the caller, including cached pools; the tool never closes them. */
+        SHARED,
+        /** Each provided instance belongs to the tool and is closed after use. */
+        PER_CALL
+    }
+
     private final String toolName;
     private final String description;
     private final boolean forwardEvents;
     private final StreamOptions streamOptions;
     private final AgentStateStore stateStore;
+    private final LifecyclePolicy lifecyclePolicy;
 
     private SubAgentConfig(Builder builder) {
         this.toolName = builder.toolName;
         this.description = builder.description;
         this.forwardEvents = builder.forwardEvents;
         this.streamOptions = builder.streamOptions;
+        this.lifecyclePolicy = builder.lifecyclePolicy;
         this.stateStore =
                 builder.stateStore != null ? builder.stateStore : new InMemoryAgentStateStore();
     }
@@ -149,6 +161,11 @@ public class SubAgentConfig {
         return stateStore;
     }
 
+    /** Returns the provider lifecycle policy; defaults to {@link LifecyclePolicy#AUTO}. */
+    public LifecyclePolicy getLifecyclePolicy() {
+        return lifecyclePolicy;
+    }
+
     /** Builder for SubAgentConfig. */
     public static class Builder {
         private String toolName;
@@ -156,6 +173,19 @@ public class SubAgentConfig {
         private boolean forwardEvents = true;
         private StreamOptions streamOptions;
         private AgentStateStore stateStore;
+        private LifecyclePolicy lifecyclePolicy = LifecyclePolicy.AUTO;
+
+        /**
+         * Declares ownership of provided agents. Use SHARED for pools or externally managed
+         * instances, and PER_CALL for factories that transfer ownership to the tool.
+         *
+         * @param lifecyclePolicy ownership policy, never null
+         * @return this builder
+         */
+        public Builder lifecyclePolicy(LifecyclePolicy lifecyclePolicy) {
+            this.lifecyclePolicy = java.util.Objects.requireNonNull(lifecyclePolicy);
+            return this;
+        }
 
         private Builder() {}
 

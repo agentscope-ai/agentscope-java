@@ -18,6 +18,7 @@ package io.agentscope.core.tool.subagent;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -37,14 +38,16 @@ import io.agentscope.core.tool.ToolEmitter;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 class SubAgentToolDocumentTest {
 
-    @Test
-    void aDocumentDeliveredByTheChildReachesTheParentToolResult() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aDocumentDeliveredByTheChildReachesTheParentToolResult(boolean streaming) {
         DocumentBlock document =
                 DocumentBlock.builder()
                         .source(new URLSource("https://example.test/report.pdf"))
@@ -62,14 +65,18 @@ class SubAgentToolDocumentTest {
                         .build();
         // A remote or proxied child can answer with a document; ReActAgent itself assembles only
         // text, thinking and tool calls, so the reply is supplied directly here.
-        Agent child = mock(Agent.class);
+        Agent child = mock(Agent.class, CALLS_REAL_METHODS);
         when(child.getName()).thenReturn("child");
         when(child.call(anyList())).thenReturn(Mono.just(reply));
         when(child.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(Flux.just(new Event(EventType.AGENT_RESULT, reply, true)));
         SubAgentTool tool =
                 new SubAgentTool(
-                        () -> child, SubAgentConfig.builder().toolName("call_child").build());
+                        () -> child,
+                        SubAgentConfig.builder()
+                                .toolName("call_child")
+                                .forwardEvents(streaming)
+                                .build());
         RuntimeContext parent =
                 RuntimeContext.builder().userId("merchant").sessionId("parent").build();
 

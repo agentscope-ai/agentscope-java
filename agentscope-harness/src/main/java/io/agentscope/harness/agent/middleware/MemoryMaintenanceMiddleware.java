@@ -153,17 +153,17 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                         signal -> {
                             if (signal.isOnComplete()) {
                                 ContextView contextView = signal.getContextView();
-                                scheduleMaintenance(rc, contextView);
+                                scheduleMaintenance(agent, rc, contextView);
                             }
                         });
     }
 
-    private void scheduleMaintenance(RuntimeContext rc, ContextView contextView) {
-        MemoryBackgroundTasks.begin();
+    private void scheduleMaintenance(Agent agent, RuntimeContext rc, ContextView contextView) {
+        MemoryBackgroundTasks.begin(agent);
         Mono.defer(() -> doMaintenance(rc))
                 .subscribeOn(Schedulers.boundedElastic())
                 .contextWrite(context -> context.putAll(contextView))
-                .doFinally(signal -> MemoryBackgroundTasks.end())
+                .doFinally(signal -> MemoryBackgroundTasks.end(agent))
                 .subscribe(null, e -> log.warn("Memory maintenance failed: {}", e.getMessage()));
     }
 

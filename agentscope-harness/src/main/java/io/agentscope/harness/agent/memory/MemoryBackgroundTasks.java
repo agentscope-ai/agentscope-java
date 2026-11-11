@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.memory;
 
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,11 +25,9 @@ import org.slf4j.LoggerFactory;
  * Tracks in-flight fire-and-forget memory background tasks (flush, maintenance) so
  * {@code HarnessAgent.close()} can wait for them to quiesce before releasing resources.
  *
- * <p>The middleware instances that dispatch these tasks are created per agent call, so they
- * cannot be reached from the agent's {@code close()} method. The in-flight count is
- * process-wide: {@code close()} blocks until every background task started
- * before the call has finished, so async workspace writes do not race with resource cleanup
- * (e.g. temp workspace deletion in tests).
+ * <p>Middleware registers work under its owning agent before dispatch. Closing one Harness
+ * waits for its delegate's work only. The global overload is retained for application-wide
+ * drains and test workspace cleanup.
  */
 public final class MemoryBackgroundTasks {
 
@@ -35,25 +35,37 @@ public final class MemoryBackgroundTasks {
 
     private static final Object MONITOR = new Object();
     private static int inFlight = 0;
+    private static final Map<Object, Integer> OWNERS = new IdentityHashMap<>();
 
     private MemoryBackgroundTasks() {}
 
     /** Marks the start of a fire-and-forget background task. */
     public static void begin() {
+        begin(null);
+    }
+
+    /** Marks a task before dispatch, scoped to the agent that owns its resources. */
+    public static void begin(Object owner) {
         synchronized (MONITOR) {
             inFlight++;
+            OWNERS.merge(owner, 1, Integer::sum);
         }
     }
 
     /** Marks the end of a fire-and-forget background task (must pair with {@link #begin()}). */
     public static void end() {
+        end(null);
+    }
+
+    /** Releases the matching owner's task, including work displaced before execution. */
+    public static void end(Object owner) {
         synchronized (MONITOR) {
-            if (inFlight > 0) {
-                inFlight--;
-            }
-            if (inFlight == 0) {
-                MONITOR.notifyAll();
-            }
+            Integer count = OWNERS.get(owner);
+            if (count == null) return;
+            if (count == 1) OWNERS.remove(owner);
+            else OWNERS.put(owner, count - 1);
+            inFlight--;
+            MONITOR.notifyAll();
         }
     }
 
@@ -66,9 +78,18 @@ public final class MemoryBackgroundTasks {
      * @return {@code true} if the tasks quiesced within the timeout
      */
     public static boolean awaitQuiescence(long timeout, TimeUnit unit) {
+        return await(null, true, timeout, unit);
+    }
+
+    /** Waits only for this agent's tasks; unrelated agents cannot delay its cleanup. */
+    public static boolean awaitQuiescence(Object owner, long timeout, TimeUnit unit) {
+        return await(owner, false, timeout, unit);
+    }
+
+    private static boolean await(Object owner, boolean global, long timeout, TimeUnit unit) {
         long deadline = System.nanoTime() + unit.toNanos(timeout);
         synchronized (MONITOR) {
-            while (inFlight > 0) {
+            while (global ? inFlight > 0 : OWNERS.containsKey(owner)) {
                 long remaining = deadline - System.nanoTime();
                 if (remaining <= 0) {
                     return false;

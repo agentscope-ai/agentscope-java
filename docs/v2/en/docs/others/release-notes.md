@@ -8,6 +8,34 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+### Fixed
+
+- Release tool-owned `SubAgentTool` instances without closing shared singleton providers ([#3652](https://github.com/agentscope-ai/agentscope-java/pull/3652)). Keep child conversations isolated by user/session, prevent stale retry state writes, coordinate saving with asynchronous cleanup, and wait for pending cleanup during graceful shutdown. Harness closes only wait for their own background memory work.
+
+### Compatibility
+
+Singleton and factory providers are both supported. The default `AUTO` lifecycle policy compares the first two instances by identity: a stable singleton remains caller-owned, while a factory's distinct instances are closed by the tool. Use `SHARED` for external caches/pools, or `PER_CALL` to explicitly transfer ownership. Name and description configured together skip provider calls during registration. AUTO defers an unresolved metadata sample until first invocation; use PER_CALL for immediate disposal of unused factory samples. With explicit metadata, AUTO performs its two-instance probe on first invocation.
+
+Agent-owned state stores and native session logs retain their own persistence. Tool-managed stores use conditional writes when supported; legacy non-versioning stores coordinate retries within the same tool instance. Cross-process write protection requires a versioning store.
+
+#### Existing sub-agent sessions
+
+The user/session identity used for persistence changes in this release. Existing data is retained at its old key; without migration, continuing an old child session can start with empty history.
+
+| Persistence owner | Previous key | New key |
+| --- | --- | --- |
+| Tool-managed state | `(null, childSessionId, "agent_state")` | `(callerUserId, childSessionId, "agent_state")` |
+| Agent-owned state store: `ReActAgent` with forwarded caller context | `(callerUserId, parentSessionId, ...)` | `(callerUserId, childSessionId, ...)` |
+| Agent-owned state store: legacy `HarnessAgent` calls | `(null, configuredDefaultSessionId, ...)` | `(callerUserId, childSessionId, ...)` |
+
+When caller userId remains null, the tool-managed key is unchanged. The old tool forwarded context only to `ReActAgent`, which used its configured default session if the parent session was absent. Legacy `HarnessAgent` calls used an empty context and the delegate's default session even when the tool received caller context. Verify the previous user/session pair from trusted application records; both parts can differ from the destination. Check other implementations' defaults and native session-log identities in the same way.
+
+Before upgrading applications with persisted child conversations, follow the [sub-agent migration steps](/v2/en/docs/building-blocks/tool#migrating-existing-sub-agent-sessions). Back up and pause writes, establish ownership from application records, migrate to the new keys without overwriting existing destinations, and verify conversation continuity. There is no automatic anonymous-state fallback: an anonymous key does not establish which user owns that history.
+
+---
+
 ## 2.0.4
 
 > Status: Release draft (prepared on 2026-10-08)

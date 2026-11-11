@@ -21,11 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
@@ -56,7 +52,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.ArgumentCaptor;
 
 class SubAgentToolSessionTest {
 
@@ -64,7 +59,7 @@ class SubAgentToolSessionTest {
     @ValueSource(booleans = {false, true})
     void continuesChildSessionWithoutUsingParentSession(boolean forwardEvents) {
         List<MockModel> models = new ArrayList<>();
-        InMemoryAgentStateStore stateStore = spy(new InMemoryAgentStateStore());
+        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
         SubAgentConfig config =
                 SubAgentConfig.builder()
                         .forwardEvents(forwardEvents)
@@ -92,14 +87,9 @@ class SubAgentToolSessionTest {
                 tool.callAsync(param("Remember this", null, firstParent))
                         .block(Duration.ofSeconds(10));
         String firstOutput = ((TextBlock) first.getOutput().get(0)).getText();
-        ArgumentCaptor<String> sessionIdCaptor = ArgumentCaptor.forClass(String.class);
-        verify(stateStore)
-                .save(
-                        eq("merchant"),
-                        sessionIdCaptor.capture(),
-                        eq("agent_state"),
-                        any(AgentState.class));
-        String childSessionId = sessionIdCaptor.getValue();
+        var childSessions = stateStore.listSessionIds("merchant");
+        assertEquals(1, childSessions.size());
+        String childSessionId = childSessions.iterator().next();
         assertTrue(firstOutput.contains("session_id: " + childSessionId));
         AgentState saved =
                 config.getStateStore()
