@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.filesystem.local;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileData;
@@ -1053,61 +1054,22 @@ public class LocalFilesystem implements AbstractFilesystem {
 
     private GrepMatch parseRipgrepJsonLine(RuntimeContext rc, String jsonLine) {
         try {
-            if (!jsonLine.contains("\"type\":\"match\"")) {
-                return null;
-            }
-            String pathText = extractJsonStringField(jsonLine, "text", "path");
-            String lineNumStr = extractJsonField(jsonLine, "line_number");
-            String linesText = extractJsonStringField(jsonLine, "text", "lines");
-
-            if (pathText == null || lineNumStr == null) {
+            Map<?, ?> event = JsonUtils.getJsonCodec().fromJson(jsonLine, Map.class);
+            if (!"match".equals(event.get("type"))
+                    || !(event.get("data") instanceof Map<?, ?> data)
+                    || !(data.get("path") instanceof Map<?, ?> path)
+                    || !(data.get("lines") instanceof Map<?, ?> lines)
+                    || !(path.get("text") instanceof String pathText)
+                    || !(lines.get("text") instanceof String linesText)
+                    || !(data.get("line_number") instanceof Number lineNumber)) {
                 return null;
             }
             String filePath = resolveEntryPath(rc, Path.of(pathText));
-            int lineNum = Integer.parseInt(lineNumStr.trim());
-            String text = linesText != null ? linesText.replaceAll("[\r\n]+$", "") : "";
-            return new GrepMatch(filePath, lineNum, text);
+            String text = linesText.replaceAll("[\r\n]+$", "");
+            return new GrepMatch(filePath, lineNumber.intValue(), text);
         } catch (Exception e) {
             return null;
         }
-    }
-
-    private static String extractJsonStringField(String json, String field, String parentField) {
-        String searchKey = "\"" + parentField + "\":{";
-        int parentIdx = json.indexOf(searchKey);
-        if (parentIdx < 0) {
-            return extractSimpleJsonString(json, field);
-        }
-        String sub = json.substring(parentIdx + searchKey.length());
-        return extractSimpleJsonString(sub, field);
-    }
-
-    private static String extractSimpleJsonString(String json, String field) {
-        String key = "\"" + field + "\":\"";
-        int start = json.indexOf(key);
-        if (start < 0) {
-            return null;
-        }
-        start += key.length();
-        int end = json.indexOf('"', start);
-        if (end < 0) {
-            return null;
-        }
-        return json.substring(start, end);
-    }
-
-    private static String extractJsonField(String json, String field) {
-        String key = "\"" + field + "\":";
-        int start = json.indexOf(key);
-        if (start < 0) {
-            return null;
-        }
-        start += key.length();
-        int end = start;
-        while (end < json.length() && json.charAt(end) != ',' && json.charAt(end) != '}') {
-            end++;
-        }
-        return json.substring(start, end).trim();
     }
 
     private List<GrepMatch> javaSearch(
