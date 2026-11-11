@@ -156,8 +156,8 @@ public final class EmbeddingUtils {
      * @param logger the logger instance for debug and warning messages
      * @return wrapped Mono with timeout and retry applied
      */
-    public static Mono<double[]> applyTimeoutAndRetry(
-            Mono<double[]> embeddingMono,
+    public static Mono<EmbeddingResponse> applyTimeoutAndRetry(
+            Mono<EmbeddingResponse> embeddingMono,
             ExecutionConfig config,
             String modelName,
             String provider,

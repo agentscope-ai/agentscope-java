@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.openaiofficial;
 
+import com.openai.core.JsonField;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseError;
 import com.openai.models.responses.ResponseOutputItem;
@@ -162,9 +163,12 @@ final class ResponsesHelper {
         ResponseUsage respUsage = usageOpt.get();
         long inputTokens = respUsage.inputTokens();
         long outputTokens = respUsage.outputTokens();
-        long cachedTokens = respUsage.inputTokensDetails().cachedTokens();
-        long cacheCreationTokens = respUsage.inputTokensDetails().cacheWriteTokens();
-        long reasoningTokens = respUsage.outputTokensDetails().reasoningTokens();
+        // Read the breakdowns through the JSON-field accessors: providers such as DeepSeek omit
+        // individual sub-fields (e.g. cache_write_tokens) while still reporting totals, and the
+        // required-field accessors throw on read, failing the whole model call (#3564).
+        long cachedTokens = orZero(respUsage.inputTokensDetails()._cachedTokens());
+        long cacheCreationTokens = orZero(respUsage.inputTokensDetails()._cacheWriteTokens());
+        long reasoningTokens = orZero(respUsage.outputTokensDetails()._reasoningTokens());
 
         double time = Duration.between(startTime, Instant.now()).toMillis() / 1000.0;
 
@@ -176,5 +180,15 @@ final class ResponsesHelper {
                 .reasoningTokens((int) reasoningTokens)
                 .time(time)
                 .build();
+    }
+
+    /**
+     * Unwraps an optional JSON field, defaulting to {@code 0} when the field is missing or null.
+     *
+     * @param field the JSON field to read
+     * @return the field's value, or {@code 0} when absent
+     */
+    private static long orZero(JsonField<Long> field) {
+        return field.asKnown().orElse(0L);
     }
 }

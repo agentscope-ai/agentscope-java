@@ -8,7 +8,7 @@
 
 <span align="center">
 
-[**中文主页**](https://github.com/agentscope-ai/agentscope-java/blob/main/README_zh.md) | [**Documentation**](https://java.agentscope.io/)
+[**中文主页**](https://github.com/agentscope-ai/agentscope-java/blob/main/README_zh.md) | [**日本語ホームページ**](https://github.com/agentscope-ai/agentscope-java/blob/main/README_ja.md) | [**Documentation**](https://java.agentscope.io/)
 
 </span>
 
@@ -112,6 +112,8 @@ Model providers are shipped as separate extension modules in 2.0. Add the one yo
 ```
 
 Other options: `agentscope-extensions-model-openai`, `agentscope-extensions-model-anthropic`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-ollama`. See the [Model docs](https://java.agentscope.io/v2/en/docs/building-blocks/model.html) for details.
+
+For typed text and image classification, see [OpenAI Decisions](docs/v2/en/integration/judge/openai-decisions.md), available in `2.1.0-SNAPSHOT` builds containing the extension.
 
 To use the reasoning and tool APIs of `ReActAgent` and compose application capabilities yourself, depend on `agentscope-core` and your model extension.
 

@@ -8,7 +8,7 @@
 
 <span align="center">
 
-[**English Homepage**](https://github.com/agentscope-ai/agentscope-java/blob/main/README.md) | [**文档**](https://java.agentscope.io/v2/zh/intro.html)
+[**English Homepage**](https://github.com/agentscope-ai/agentscope-java/blob/main/README.md) | [**日本語ホームページ**](https://github.com/agentscope-ai/agentscope-java/blob/main/README_ja.md) | [**文档**](https://java.agentscope.io/v2/zh/intro.html)
 
 </span>
 
@@ -112,6 +112,8 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 ```
 
 其他可选：`agentscope-extensions-model-openai`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-ollama`。详见[模型文档](https://java.agentscope.io/v2/zh/docs/building-blocks/model.html)。
+
+文本和图片的类型化分类可使用 [OpenAI Decisions](docs/v2/zh/integration/judge/openai-decisions.md)，需要包含该扩展的 `2.1.0-SNAPSHOT` 构建。
 
 如果希望直接使用 `ReActAgent` 的推理和工具 API、自行组合工程能力，可依赖 `agentscope-core` 和所需模型扩展。
 

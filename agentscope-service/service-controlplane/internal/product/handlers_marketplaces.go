@@ -273,7 +273,7 @@ func (s *Server) ensureGitMarketplaceClone(ctx context.Context, m marketplaceRow
 		branch = "main"
 	}
 	cache := filepath.Join(s.cfg.WorkspaceRoot, "_marketplaces", m.OwnerID, m.MarketplaceID)
-	if fileExists(filepath.Join(cache, ".git")) {
+	if _, err := os.Stat(filepath.Join(cache, ".git")); err == nil {
 		cmd := exec.CommandContext(ctx, "git", "-C", cache, "pull", "--ff-only")
 		if err := cmd.Run(); err != nil {
 			return "", fmt.Errorf("marketplace refresh failed; check source access and branch: %w", err)

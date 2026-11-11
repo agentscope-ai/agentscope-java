@@ -36,6 +36,7 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
@@ -205,6 +206,11 @@ public class HookStopAgentExample {
 
         ToolConfirmationMiddleware(Set<String> dangerousTools) {
             this.dangerousTools = dangerousTools;
+        }
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_ACTING);
         }
 
         @Override

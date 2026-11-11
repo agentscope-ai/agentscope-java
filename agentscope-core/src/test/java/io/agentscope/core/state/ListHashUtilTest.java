@@ -194,6 +194,42 @@ class ListHashUtilTest {
         assertTrue(ListHashUtil.needsFullRewrite(list, null, 5));
     }
 
+    @Test
+    void testComputeHashChangesWhenOnlyAMiddleElementChanges() {
+        List<Msg> list = createMsgList(10);
+        String before = ListHashUtil.computeHash(list);
+
+        list.set(
+                3,
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("replaced").build())
+                        .build());
+
+        assertNotEquals(
+                before,
+                ListHashUtil.computeHash(list),
+                "every element must contribute to the hash, not only a sample of positions");
+    }
+
+    @Test
+    void testNeedsFullRewriteDetectsEditTheOldSamplePositionsMissed() {
+        List<Msg> list = createMsgList(10);
+        String storedHash = ListHashUtil.computeHash(list);
+
+        // A ten-element list used to hash positions 0, 2, 5, 7 and 9 only.
+        list.set(
+                3,
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("replaced").build())
+                        .build());
+
+        assertTrue(
+                ListHashUtil.needsFullRewrite(list, storedHash, 10),
+                "an edit outside the old sample positions still needs a rewrite");
+    }
+
     private List<Msg> createMsgList(int size) {
         List<Msg> list = new ArrayList<>();
         for (int i = 0; i < size; i++) {

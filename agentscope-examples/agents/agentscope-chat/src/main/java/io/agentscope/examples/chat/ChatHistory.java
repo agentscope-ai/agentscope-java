@@ -55,17 +55,18 @@ final class ChatHistory {
             String executionError,
             List<AgentSession.Task> tasks) {}
 
-    static Snapshot snapshot(String sessionId, SessionLog log, String activeRun, String error) {
-        return snapshot(sessionId, log, activeRun, error, List.of());
+    static Snapshot snapshot(String sessionId, SessionLog log, String error) {
+        return snapshot(sessionId, log, error, List.of());
     }
 
     static Snapshot snapshot(
-            String sessionId,
-            SessionLog log,
-            String activeRun,
-            String error,
-            List<AgentSession.Task> tasks) {
+            String sessionId, SessionLog log, String error, List<AgentSession.Task> tasks) {
         var head = log.head();
+        // The active run must come from the same head read that bounds the facts scan below.
+        // Reading the lease separately can straddle a run's writer acquisition: the facts then
+        // already include run/start while the lease view still shows no owner, and the snapshot
+        // mislabels the starting turn as interrupted.
+        String activeRun = head.leaseUntil() > System.currentTimeMillis() ? head.owner() : null;
         var facts = new ArrayList<SessionEvent>();
         log.scan(0, head.seq()).forEach(facts::add);
         var prefix = new Prefix(head, List.copyOf(facts));

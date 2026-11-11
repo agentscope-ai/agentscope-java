@@ -43,6 +43,7 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.examples.jev.JevCodeReviewExample;
 import io.agentscope.examples.jev.JevSupervisionExample;
@@ -303,6 +304,13 @@ class JevTraceManagedAgentTest {
                         mock(DefinitionStore.class),
                         control);
         builds.setJevServiceSupport(support);
+        // This test validates JEV middleware wiring on an all-stub pipeline, not journal
+        // persistence — no assertion reopens state from disk. The default workspace journal is
+        // one SQLite file written per event with full sync; under parallel -T1C builds the
+        // per-commit fsyncs (plus AV scans of the fresh -journal files) can stall a run past
+        // the 10 s block budget — the same mechanism #3602 documented for
+        // SubagentPendingToolRecoveryTest. An in-memory log removes it outright.
+        builds.setSessionLogStore(new InMemorySessionLogStore());
         try {
             var spec = new SessionAgentBuildSpec(1, "local", null, config, null, null);
             var agent = builds.getOrBuildAgent(session, spec);
@@ -367,7 +375,11 @@ class JevTraceManagedAgentTest {
                                             }))
                             .build();
             var events =
-                    agent.streamEvents(List.of(new UserMessage("Where is the order?")), ctx)
+                    agent.streamEvents(
+                                    List.of(new UserMessage("Where is the order?")),
+                                    // One runId per execution: reuse the caller's session
+                                    // attributes but start a new run.
+                                    RuntimeContext.builder(ctx).runId(null).build())
                             .collectList()
                             .block(Duration.ofSeconds(10));
             var answer =
@@ -445,7 +457,9 @@ class JevTraceManagedAgentTest {
                             null);
             var disabled = builds.getOrBuildAgent(session, off);
             assertThat(disabled).isNotSameAs(agent);
-            disabled.streamEvents(List.of(new UserMessage("Where is the order?")), ctx)
+            disabled.streamEvents(
+                            List.of(new UserMessage("Where is the order?")),
+                            RuntimeContext.builder(ctx).runId(null).build())
                     .blockLast(Duration.ofSeconds(10));
             assertThat(evaluations.get()).isEqualTo(expectedCalls);
             if (purpose.equals("routing")) assertThat(routedCalls.get()).isEqualTo(1);

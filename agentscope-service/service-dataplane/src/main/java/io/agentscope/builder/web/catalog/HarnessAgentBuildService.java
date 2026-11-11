@@ -55,6 +55,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
@@ -91,8 +92,32 @@ public class HarnessAgentBuildService {
     /** Prefix for locally-built data-plane agent instance ids. */
     private static final String DP_AGENT_PREFIX = "dpa-";
 
+    /**
+     * Characters that {@code AgentBase#normalizeAgentId} rejects. The assembled id is handed to
+     * {@code HarnessAgent.Builder#agentId}, which requires a single safe path/namespace segment.
+     */
+    private static final Pattern AGENT_ID_UNSAFE_CHARS = Pattern.compile("[^A-Za-z0-9._-]");
+
     public static String sessionLogAgentId(ManagedSessionDto session) {
-        return DP_AGENT_PREFIX + session.ownerId() + "-" + session.agentId() + "-" + session.id();
+        return DP_AGENT_PREFIX
+                + agentIdSegment(session.ownerId())
+                + "-"
+                + agentIdSegment(session.agentId())
+                + "-"
+                + agentIdSegment(session.id());
+    }
+
+    /**
+     * Replaces characters outside the agent id alphabet with {@code -}.
+     *
+     * <p>Control-plane owner ids are namespaced ({@code namespace:default}) and the session id can
+     * carry its own prefix, but {@link io.agentscope.core.agent.AgentBase#normalizeAgentId} only
+     * accepts {@code [A-Za-z0-9._-]}: the id is used as a filesystem namespace key, so a colon is
+     * not an option (it is invalid in Windows paths too). Mapping the separator keeps the owner,
+     * agent and session parts readable and distinct, and leaves an already valid id untouched.
+     */
+    private static String agentIdSegment(String value) {
+        return value == null ? "" : AGENT_ID_UNSAFE_CHARS.matcher(value).replaceAll("-");
     }
 
     private static final String COLLABORATION_MCP_NAME = "controlplane-collaboration";

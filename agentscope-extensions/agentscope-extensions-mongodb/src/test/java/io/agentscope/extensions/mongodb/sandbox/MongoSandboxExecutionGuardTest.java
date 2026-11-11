@@ -423,13 +423,15 @@ class MongoSandboxExecutionGuardTest {
         verify(collection, timeout(3_000).atLeast(2)).updateOne(any(Bson.class), any(Bson.class));
 
         lease.close();
-        // Wait well past one full renewal cycle to drain any in-flight ticks
-        Thread.sleep(500);
+        // Wait well past one full renewal cycle to drain any in-flight ticks. The watchdog
+        // renews every leaseTtl/3 = 50ms, so 300ms = 6 cycles: an un-cancelled watchdog would
+        // renew ~6 more times in this window, far above the noise floor.
+        Thread.sleep(300);
         // Capture count AFTER the grace period, then verify no further growth
         int renewalsAfterClose = countUpdateOneInvocations();
 
         // Over several renewal intervals the count must not grow: close() cancelled the watchdog
-        verify(collection, after(500).times(renewalsAfterClose))
+        verify(collection, after(300).times(renewalsAfterClose))
                 .updateOne(any(Bson.class), any(Bson.class));
     }
 

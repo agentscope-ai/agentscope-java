@@ -357,9 +357,11 @@ class MarketplaceStagerPathTest {
                 "---\nname: '" + outside + "'\ndescription: test\n---\nBody\n");
         Files.writeString(source.resolve("marker.txt"), "marker");
         AgentSkillRepository repo = new FileSystemSkillRepository(source.getParent());
-        AgentSkill loaded = repo.getAllSkills().get(0);
-        assertEquals(outside.toString(), loaded.getName());
+        // The naming standard rejects the unsafe frontmatter name at load time.
+        assertTrue(repo.getAllSkills().isEmpty());
 
+        // The stager still rejects the name on its own if a repository supplies it anyway.
+        AgentSkill loaded = skill(outside.toString());
         Map<String, StageResult> result =
                 new MarketplaceStager(workspace)
                         .stage(
@@ -387,13 +389,11 @@ class MarketplaceStagerPathTest {
         AgentSkillRepository repo = repository("nacos@public");
         MarketplaceStager stager = new MarketplaceStager(workspace);
         Map<AgentSkillRepository, String> namespaces = Map.of(repo, "nacos@public");
-        AgentSkill first = new AgentSkill(name, "test", "Body", Map.of("old.txt", "stale"));
+        AgentSkill first = skill(name, Map.of("old.txt", "stale"));
         stager.stage(List.of(new RepoBound(first, repo)), namespaces);
         AgentSkill replacement =
-                new AgentSkill(
+                skill(
                         name,
-                        "test",
-                        "Body",
                         Map.of("references/guide.txt", "guide", "assets/data.bin", "base64:AAEC"));
 
         Map<String, StageResult> result =
@@ -492,7 +492,16 @@ class MarketplaceStagerPathTest {
     }
 
     private static AgentSkill skill(String name) {
-        return new AgentSkill(name, "test", "Body", Map.of("marker.txt", "marker"));
+        return skill(name, Map.of("marker.txt", "marker"));
+    }
+
+    // AgentSkill constructors enforce the standard naming rule, so non-conforming names can
+    // only reach the stager through custom repository implementations; mocks model that boundary.
+    private static AgentSkill skill(String name, Map<String, String> resources) {
+        AgentSkill skill = mock(AgentSkill.class);
+        when(skill.getName()).thenReturn(name);
+        when(skill.getResources()).thenReturn(resources);
+        return skill;
     }
 
     private static AgentSkillRepository repository(String source) {

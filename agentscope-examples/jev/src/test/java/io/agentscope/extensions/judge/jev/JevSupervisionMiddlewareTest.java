@@ -23,8 +23,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.AllToolsDeniedEvent;
+import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.examples.jev.JevSupervisionExample;
@@ -41,6 +44,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -72,10 +77,26 @@ class JevSupervisionMiddlewareTest {
                 ignored -> events);
     }
 
+    static boolean limitReached(List<JevSupervisionMiddleware.Observation> observations) {
+        return observations.stream()
+                .anyMatch(o -> o.decision().reason().equals("ASSESSMENT_LIMIT"));
+    }
+
     @Test
     void synchronousWorkerIsSubscribedOnceAndAllEventsAreIdentical() {
         var observations = new CopyOnWriteArrayList<JevSupervisionMiddleware.Observation>();
-        var m = middleware(JevSupervisionExample::syntheticAnswers, observations, 5, 3);
+        // The worker completes synchronously, so exactly one terminal assessment should fire.
+        // The shared helper's 10ms periodic tick can still sneak in before that synchronous
+        // emission when a loaded -T1C runner preempts the subscribing thread mid-subscription,
+        // adding a superseded mid-run observation. The terminal tick is emitted on worker
+        // completion, not on a timer, so an interval beyond any test lifetime makes the
+        // periodic tick structurally impossible without slowing the test down.
+        var m =
+                new JevSupervisionMiddleware(
+                        JevSupervisionTest.supervisor(JevSupervisionExample::syntheticAnswers),
+                        new JevSupervisionMiddleware.Schedule(
+                                Duration.ofDays(1), Duration.ofDays(1), 5, 3),
+                        (ctx, o) -> observations.add(o));
         AtomicInteger starts = new AtomicInteger();
         var first = new TextBlockDeltaEvent("r", "b", "Done");
         var last = new AgentResultEvent(new AssistantMessage("Done"));
@@ -89,7 +110,7 @@ class JevSupervisionMiddlewareTest {
                                             return Flux.just(first, last);
                                         }))
                         .collectList()
-                        .block(Duration.ofSeconds(3));
+                        .block(Duration.ofSeconds(8));
         assertEquals(1, starts.get());
         assertSame(first, result.get(0));
         assertSame(last, result.get(1));
@@ -133,19 +154,26 @@ class JevSupervisionMiddlewareTest {
     void concurrentCallsKeepScopesEvidenceAndCountersSeparate() {
         var observations = new CopyOnWriteArrayList<JevSupervisionMiddleware.Observation>();
         Map<String, String> seen = new ConcurrentHashMap<>();
+        // This test's worker completes synchronously, so only the terminal assessment should ever
+        // fire. The shared helper's 10ms tick can sneak in before that synchronous emission when a
+        // loaded CI runner preempts the subscribing thread; a superseded mid-run observation then
+        // breaks the REVIEW_COMPLETION assertion. An interval beyond any test lifetime makes the
+        // terminal-only assumption structurally safe under -T1C contention without touching what
+        // the test verifies and without slowing it down.
         var m =
-                middleware(
-                        r -> {
-                            Map<?, ?> state = (Map<?, ?>) r.state();
-                            seen.put(
-                                    state.get("original_job").toString().trim(),
-                                    state.get("git_diff").toString());
-                            return JevSupervisionExample.syntheticAnswers(r)
-                                    .delayElement(Duration.ofMillis(20));
-                        },
-                        observations,
-                        5,
-                        3);
+                new JevSupervisionMiddleware(
+                        JevSupervisionTest.supervisor(
+                                r -> {
+                                    Map<?, ?> state = (Map<?, ?>) r.state();
+                                    seen.put(
+                                            state.get("original_job").toString().trim(),
+                                            state.get("git_diff").toString());
+                                    return JevSupervisionExample.syntheticAnswers(r)
+                                            .delayElement(Duration.ofMillis(20));
+                                }),
+                        new JevSupervisionMiddleware.Schedule(
+                                Duration.ofDays(1), Duration.ofDays(1), 5, 3),
+                        (ctx, o) -> observations.add(o));
         Function<String, Flux<AgentEvent>> run =
                 session -> {
                     var ctx =
@@ -218,7 +246,7 @@ class JevSupervisionMiddlewareTest {
         Map<String, Answer> answers = new java.util.LinkedHashMap<>();
         JevTaskSupervisor.checks(false).forEach(c -> answers.put(c.key(), new NoulAnswer(.99)));
         response.tryEmitValue(new SystemOneResult("synthetic", answers, new Usage(0, 0)));
-        completion.get(3, TimeUnit.SECONDS);
+        completion.get(8, TimeUnit.SECONDS);
         assertTrue(observations.get(0).superseded());
         assertEquals(JevTaskSupervisor.Advice.CONTINUE, observations.get(0).advice());
         assertEquals(2, calls.get()); // a fresh terminal snapshot follows the stale in-flight one
@@ -265,7 +293,7 @@ class JevSupervisionMiddlewareTest {
                                 context("s"),
                                 Mono.delay(Duration.ofMillis(180)).thenMany(Flux.just(event)))
                         .collectList()
-                        .block(Duration.ofSeconds(3));
+                        .block(Duration.ofSeconds(8));
         assertEquals(List.of(event), events);
         assertEquals(2, calls.get());
         assertEquals(JevTaskSupervisor.Advice.CONTINUE, observations.get(0).advice());
@@ -293,16 +321,24 @@ class JevSupervisionMiddlewareTest {
                         observations,
                         2,
                         3);
+        // The worker must stay active until the limit decision is published: a fixed event
+        // count races the assessment pipeline — under a stalled parallel scheduler the worker
+        // can complete before the second assessment does, the terminal tick then spends the
+        // remaining assessment slot on a final assessment instead of tripping the limit, and
+        // ASSESSMENT_LIMIT is never published. Completing on the published decision makes
+        // that impossible; the event cap only bounds a genuinely broken pipeline.
+        var emitted = new AtomicInteger();
         var worker =
                 Flux.interval(Duration.ofMillis(1))
-                        .take(160)
+                        .takeWhile(t -> !limitReached(observations))
+                        .take(2_000)
+                        .doOnNext(t -> emitted.incrementAndGet())
                         .map(i -> (AgentEvent) new TextBlockDeltaEvent("r", "b", "x"));
-        assertEquals(160, invoke(m, context("s"), worker).count().block());
+        long count = invoke(m, context("s"), worker).count().block(Duration.ofSeconds(8));
+        assertEquals(emitted.get(), count);
         assertEquals(2, calls.get());
         assertEquals(1, maxActive.get());
-        assertTrue(
-                observations.stream()
-                        .anyMatch(o -> o.decision().reason().equals("ASSESSMENT_LIMIT")));
+        assertTrue(limitReached(observations));
     }
 
     @Test
@@ -332,14 +368,115 @@ class JevSupervisionMiddlewareTest {
     @Test
     void runtimeIterationLimitCannotTurnIntoCompletionEvenWithPositiveJudgments() {
         var observations = new CopyOnWriteArrayList<JevSupervisionMiddleware.Observation>();
-        var m = middleware(JevSupervisionExample::syntheticAnswers, observations, 5, 3);
+        // Same terminal-only assumption as synchronousWorkerIsSubscribedOnce above: a periodic
+        // tick that fires before the synchronous ExceedMaxItersEvent lands would publish a
+        // mid-run CONTINUE observation ahead of the terminal WORKER_FAILED one.
+        var m =
+                new JevSupervisionMiddleware(
+                        JevSupervisionTest.supervisor(JevSupervisionExample::syntheticAnswers),
+                        new JevSupervisionMiddleware.Schedule(
+                                Duration.ofDays(1), Duration.ofDays(1), 5, 3),
+                        (ctx, o) -> observations.add(o));
         invoke(
                         m,
                         context("s"),
                         Flux.just(new io.agentscope.core.event.ExceedMaxItersEvent("r", 2, 2)))
-                .blockLast(Duration.ofSeconds(3));
+                .blockLast(Duration.ofSeconds(8));
         assertEquals(JevTaskSupervisor.Advice.MANUAL_REVIEW, observations.get(0).advice());
         assertEquals("WORKER_FAILED", observations.get(0).decision().reason());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "MODEL_STOP, false, false, REVIEW_COMPLETION",
+        "STRUCTURED_OUTPUT, false, false, REVIEW_COMPLETION",
+        "TOOL_RETURN_DIRECT, false, false, REVIEW_COMPLETION",
+        "PERMISSION_ASKING, true, false, CONTINUE",
+        "TOOL_SUSPENDED, true, false, CONTINUE",
+        "REASONING_STOP_REQUESTED, true, false, CONTINUE",
+        "ACTING_STOP_REQUESTED, true, false, CONTINUE",
+        "MIDDLEWARE_STOP_REQUESTED, true, false, CONTINUE",
+        "ALL_TOOLS_DENIED, false, true, MANUAL_REVIEW",
+        "MAX_ITERATIONS, false, true, MANUAL_REVIEW",
+        "INTERRUPTED, false, true, MANUAL_REVIEW"
+    })
+    void supervisionUsesLogicalResultAfterDenialOrPause(
+            GenerateReason reason,
+            boolean active,
+            boolean failed,
+            JevTaskSupervisor.Advice advice) {
+        var result =
+                new AgentResultEvent(new AssistantMessage("result").withGenerateReason(reason));
+        List<AgentEvent> events =
+                failed
+                        ? List.of(result)
+                        : active
+                                ? List.of(new RequestStopEvent("pause", reason), result)
+                                : List.of(new AllToolsDeniedEvent(List.of()), result);
+        assertSupervisionOutcome(events, active, failed, advice);
+    }
+
+    @Test
+    void forwardedChildFailureCannotOverwriteParentOutcome() {
+        var parent = new AgentResultEvent(new AssistantMessage("parent done"));
+        var childLimit =
+                new io.agentscope.core.event.ExceedMaxItersEvent("child", 2, 2)
+                        .withSource("parent/child");
+        var childResult =
+                new AgentResultEvent(
+                                new AssistantMessage("child stopped")
+                                        .withGenerateReason(GenerateReason.MAX_ITERATIONS))
+                        .withSource("parent/child");
+        assertSupervisionOutcome(
+                List.of(parent, childLimit, childResult),
+                false,
+                false,
+                JevTaskSupervisor.Advice.REVIEW_COMPLETION);
+    }
+
+    private static void assertSupervisionOutcome(
+            List<AgentEvent> events,
+            boolean active,
+            boolean failed,
+            JevTaskSupervisor.Advice advice) {
+        var observations = new CopyOnWriteArrayList<JevSupervisionMiddleware.Observation>();
+        var states = new CopyOnWriteArrayList<Map<?, ?>>();
+        var m =
+                new JevSupervisionMiddleware(
+                        JevSupervisionTest.supervisor(
+                                request -> {
+                                    states.add((Map<?, ?>) request.state());
+                                    return JevSupervisionExample.syntheticAnswers(request);
+                                }),
+                        new JevSupervisionMiddleware.Schedule(
+                                Duration.ofDays(1), Duration.ofDays(1), 5, 3),
+                        (ctx, observation) -> observations.add(observation));
+        var ctx = context("logical-result");
+        ctx.put(
+                JevSupervisionMiddleware.EvidenceSource.class,
+                new JevSupervisionMiddleware.EvidenceSource(
+                        request ->
+                                Mono.just(
+                                        JevSupervisionTest.evidence(
+                                                "revision",
+                                                JevSupervisionTest.verification(
+                                                        request.scope().userId(),
+                                                        request.scope().sessionId(),
+                                                        request.scope().runId(),
+                                                        "revision",
+                                                        true)))));
+        assertEquals(
+                events,
+                invoke(m, ctx, Flux.fromIterable(events))
+                        .collectList()
+                        .block(Duration.ofSeconds(8)));
+        assertEquals(1, states.size());
+        assertEquals(active, states.get(0).get("worker_active"));
+        assertEquals(failed, states.get(0).get("worker_failed"));
+        assertEquals(1, observations.size());
+        assertEquals(advice, observations.get(0).advice());
+        assertTrue(observations.get(0).decision().value().verifiedRevision());
+        if (failed) assertEquals("WORKER_FAILED", observations.get(0).decision().reason());
     }
 
     @Test
@@ -383,7 +520,7 @@ class JevSupervisionMiddlewareTest {
                         3,
                         3);
         invoke(m, context("s"), Mono.delay(Duration.ofMillis(170)).thenMany(Flux.empty()))
-                .blockLast(Duration.ofSeconds(3));
+                .blockLast(Duration.ofSeconds(8));
         assertEquals(3, calls.get());
     }
 }
