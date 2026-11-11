@@ -7134,20 +7134,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 List.copyOf(skillRepositories), skillCodeExecutionEnabled));
             }
 
-            // The static skill path has no per-call visibility filtering: a resolver here
-            // would trim nothing while appearing active. Fail the build explicitly — an
-            // authorization setting must never degrade to an untrimmed agent. Use
-            // skillRepositories(...) for per-call skill trimming.
+            // skillRepositories with dynamic skills disabled renders no per-call skill prompt
+            // at all: a resolver here would trim nothing while appearing active. Fail the
+            // build explicitly — an authorization setting must never silently degrade. The
+            // skillBox(...) path is exempt: its SkillHook trims the injected prompt per call
+            // via the capability surface carried on the RuntimeContext.
             if (capabilityResolver != null
-                    && (skillBox != null
-                            || (!skillRepositories.isEmpty() && !dynamicSkillsEnabled))) {
+                    && !skillRepositories.isEmpty()
+                    && !dynamicSkillsEnabled) {
                 throw new IllegalStateException(
-                        "capabilityResolver cannot be combined with the static skill path"
-                                + " (skillBox(...) or dynamicSkillsEnabled=false): the static"
-                                + " skill prompt has no per-call visibility filtering, so the"
-                                + " resolver could not trim it. Use skillRepositories(...) with"
-                                + " the dynamic skill path (default) for per-call skill"
-                                + " trimming.");
+                        "capabilityResolver cannot be combined with"
+                                + " dynamicSkillsEnabled=false: with the dynamic skill"
+                                + " middleware disabled there is no per-call skill prompt the"
+                                + " resolver could trim. Use skillRepositories(...) with the"
+                                + " dynamic skill path (default) for per-call skill trimming.");
             }
 
             // List.sort is stable: middlewares with equal order retain their registration order.

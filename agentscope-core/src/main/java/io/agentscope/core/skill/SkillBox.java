@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.tool.AgentTool;
@@ -157,6 +158,28 @@ public class SkillBox {
      */
     public String getSkillPrompt(SkillFilter filter) {
         return skillPromptProvider.getSkillSystemPrompt(filter);
+    }
+
+    /**
+     * Gets the skill system prompt trimmed to the given capability grant surface.
+     *
+     * <p>{@code null} and unrestricted ({@code ALLOW_ALL}-shaped) surfaces keep the
+     * unfiltered prompt — byte-identical to {@link #getSkillPrompt()}. A restricted surface
+     * renders only the skills it grants (system-marked skills always pass), through the same
+     * provider pipeline as every other render — a single renderer, no second format. The
+     * per-skill decision is the surface's own {@code allowsSkill} predicate, the same one
+     * the dynamic skill middleware applies, so full-skillId (exact-copy) grant entries keep
+     * their precision. When nothing is granted the result is an empty string, which callers
+     * skip injecting.
+     *
+     * @param surface the per-call grant surface, or {@code null} for no trimming
+     * @return The trimmed skill system prompt, or empty string if no skill passes
+     */
+    public String getSkillPrompt(CapabilitySurface surface) {
+        if (surface == null || surface.isUnrestricted()) {
+            return getSkillPrompt();
+        }
+        return skillPromptProvider.getSkillSystemPrompt(surface::allowsSkill);
     }
 
     /**

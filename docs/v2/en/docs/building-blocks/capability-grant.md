@@ -114,4 +114,6 @@ Principle: **when the authorization infrastructure fails, fail the call — neve
 
 `skillBox(...)` is deprecated since 2.0.0 (retiring with the hook system); **do not use it in new code** — register skills with `skillRepositories(...)` (the default dynamic path) instead.
 
-Why the static path cannot combine with a resolver: it has no per-call skill-visibility filtering, so "static skillBox + capability resolver" would silently void the authorization — configuring both fails the build with an `IllegalStateException` (an authorization setting must never silently degrade to an untrimmed agent).
+Authorization compatibility: `skillBox(...)` **combines** with a capability resolver. The static prompt is trimmed to the current grant surface right before injection — the SkillHook reads the surface from the call's runtime context and filters through the same rendering pipeline. When authorization is not engaged (or the surface is ALLOW_ALL) the prompt stays byte-identical to previous versions; when no skill is granted the whole block is omitted; sub-agents inheriting a parent surface are covered the same way.
+
+One combination is still rejected: `skillRepositories(...)` + `dynamicSkillsEnabled(false)` + resolver — that shape renders no per-call skill prompt at all, so the configuration would be a silently ineffective authorization; `build()` fails with an `IllegalStateException` (an authorization setting must never silently degrade to an untrimmed agent).

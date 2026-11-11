@@ -70,8 +70,15 @@ public record CapabilitySurface(
     public static final CapabilitySurface DENY_ALL =
             new CapabilitySurface(Set.of(), Set.of(), Set.of());
 
-    /** Whether nothing is set at all — the only shape that skips trimming. */
-    private boolean isUnrestricted() {
+    /**
+     * Whether nothing is set at all — the only shape that skips trimming. Distinguishes
+     * "authorization not engaged" (all-null surface, e.g. {@link #ALLOW_ALL}) from "engaged
+     * with a grant enumeration": a restricted surface must never run on paths that cannot
+     * honor per-call trimming.
+     *
+     * @return {@code true} when all three dimensions are {@code null}
+     */
+    public boolean isUnrestricted() {
         return allowedSkills == null && allowedToolGroups == null && allowedTools == null;
     }
 

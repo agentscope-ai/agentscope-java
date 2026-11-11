@@ -114,4 +114,6 @@ new CapabilitySurface(Set.of(), Set.of(), Set.of());
 
 `skillBox(...)` 已随 hook 系统于 2.0.0 标记为过时，**新代码不要使用**——skill 接入一律使用 `skillRepositories(...)` 动态路径（默认）。
 
-为什么静态路径不能配 resolver：它没有 per-call 可见面过滤，「静态 skillBox + capability resolver」组合等于授权静默失效——因此两者同时配置时 `build()` 直接抛出 `IllegalStateException`（授权配置绝不允许静默退化为不裁剪的 agent）。
+授权兼容：`skillBox(...)` 与 capability resolver **可以组合**。静态提示词在注入前按当次授权面裁剪——SkillHook 从调用上下文读取授权面，经同一渲染管线过滤；未启用授权（或授权面为 ALLOW_ALL）时提示词与历史版本逐字节一致，零技能获授时整块不注入；子代理继承父级授权面时同样生效。
+
+仍被拒绝的组合只有一种：`skillRepositories(...)` + `dynamicSkillsEnabled(false)` + resolver——该形态没有任何 per-call 技能提示词可供裁剪，配置等于无效授权，`build()` 直接抛 `IllegalStateException`（授权配置绝不允许静默退化为不裁剪的 agent）。

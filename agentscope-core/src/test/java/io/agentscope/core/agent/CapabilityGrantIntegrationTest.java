@@ -329,29 +329,20 @@ class CapabilityGrantIntegrationTest {
     }
 
     @Test
-    @DisplayName(
-            "skillBox + capabilityResolver → build fails explicitly (no silent untrimmed agent)")
-    void staticSkillBoxGuardFailsBuild() {
+    @DisplayName("skillBox + capabilityResolver → builds; the hook trims the prompt per call")
+    void staticSkillBoxWithResolverBuilds() {
         Toolkit toolkit = new Toolkit();
         SkillBox skillBox = new SkillBox(toolkit);
         skillBox.registerSkill(skill("boxed"));
-        IllegalStateException ex =
-                assertThrows(
-                        IllegalStateException.class,
-                        () ->
-                                ReActAgent.builder()
-                                        .name("a")
-                                        .model(new MockModel("done"))
-                                        .toolkit(toolkit)
-                                        .skillBox(skillBox)
-                                        .capabilityResolver(
-                                                (ctx, a) ->
-                                                        new CapabilitySurface(
-                                                                null, Set.of("g1"), Set.of()))
-                                        .build());
-        assertTrue(
-                ex.getMessage().contains("skillBox"),
-                "message should name the conflicting static path");
+        assertNotNull(
+                ReActAgent.builder()
+                        .name("a")
+                        .model(new MockModel("done"))
+                        .toolkit(toolkit)
+                        .skillBox(skillBox)
+                        .capabilityResolver(
+                                (ctx, a) -> new CapabilitySurface(null, Set.of("g1"), Set.of()))
+                        .build());
     }
 
     @Test
@@ -393,6 +384,117 @@ class CapabilityGrantIntegrationTest {
                         .skillRepositories(List.of())
                         .capabilityResolver((ctx, a) -> CapabilitySurface.ALLOW_ALL)
                         .build());
+    }
+
+    @Test
+    @DisplayName(
+            "static skillBox + inherited restricted surface → prompt trimmed: granted stays,"
+                    + " ungranted never reaches the model (P1-1 golden assertion)")
+    void staticSkillBoxWithInheritedRestrictedSurfaceTrimsPrompt() {
+        Toolkit toolkit = new Toolkit();
+        SkillBox skillBox = new SkillBox(toolkit);
+        skillBox.registerSkill(skill("granted-one"));
+        skillBox.registerSkill(skill("secret-one"));
+        MockModel model = new MockModel("done");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("a")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .skillBox(skillBox)
+                        .build();
+        RuntimeContext ctx = rc();
+        ctx.put(
+                CapabilitySurface.class,
+                new CapabilitySurface(Set.of("granted-one"), Set.of(), Set.of()));
+        assertNotNull(agent.call(userMsg("hi"), ctx).block(Duration.ofSeconds(10)));
+        String seen = modelInputText(model);
+        assertTrue(seen.contains("granted-one"), "the granted skill must stay visible");
+        assertFalse(seen.contains("secret-one"), "the ungranted skill must not reach the model");
+    }
+
+    @Test
+    @DisplayName("static skillBox + DENY_ALL → no available_skills block reaches the model")
+    void staticSkillBoxWithDenyAllOmitsWholeBlock() {
+        Toolkit toolkit = new Toolkit();
+        SkillBox skillBox = new SkillBox(toolkit);
+        skillBox.registerSkill(skill("granted-one"));
+        MockModel model = new MockModel("done");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("a")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .skillBox(skillBox)
+                        .build();
+        RuntimeContext ctx = rc();
+        ctx.put(CapabilitySurface.class, CapabilitySurface.DENY_ALL);
+        assertNotNull(agent.call(userMsg("hi"), ctx).block(Duration.ofSeconds(10)));
+        assertFalse(modelInputText(model).contains("<available_skills>"));
+    }
+
+    @Test
+    @DisplayName("static skillBox + unrestricted surface → full catalog, byte-compatible with main")
+    void staticSkillBoxWithUnrestrictedSurfaceKeepsFullCatalog() {
+        Toolkit toolkit = new Toolkit();
+        SkillBox skillBox = new SkillBox(toolkit);
+        skillBox.registerSkill(skill("granted-one"));
+        skillBox.registerSkill(skill("secret-one"));
+        MockModel model = new MockModel("done");
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("a")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .skillBox(skillBox)
+                        .build();
+        RuntimeContext ctx = rc();
+        ctx.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
+        assertNotNull(agent.call(userMsg("hi"), ctx).block(Duration.ofSeconds(10)));
+        String seen = modelInputText(model);
+        assertTrue(seen.contains("granted-one") && seen.contains("secret-one"));
+    }
+
+    /** Concatenates every text block the model received, across rounds (system included). */
+    private static String modelInputText(MockModel model) {
+        StringBuilder sb = new StringBuilder();
+        for (List<Msg> round : model.getRecordedMessages()) {
+            for (Msg msg : round) {
+                for (TextBlock block : msg.getContentBlocks(TextBlock.class)) {
+                    sb.append(block.getText()).append('\n');
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    @Test
+    @DisplayName("dynamic skill path + restricted surface → entry check does not fire")
+    void dynamicSkillPathWithRestrictedSurfaceProceeds() {
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("a")
+                        .model(new MockModel("done"))
+                        .skillRepositories(List.of(new StubRepo(List.of())))
+                        .build();
+        RuntimeContext ctx = rc();
+        ctx.put(CapabilitySurface.class, new CapabilitySurface(null, Set.of("g1"), Set.of()));
+        assertNotNull(agent.call(userMsg("hi"), ctx).block(Duration.ofSeconds(10)));
+    }
+
+    @Test
+    @DisplayName("repos + dynamicSkillsEnabled(false) + restricted surface → proceeds (no prompt)")
+    void dynamicDisabledWithRestrictedSurfaceProceeds() {
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("a")
+                        .model(new MockModel("done"))
+                        .skillRepositories(List.of(new StubRepo(List.of())))
+                        .dynamicSkillsEnabled(false)
+                        .build();
+        RuntimeContext ctx = rc();
+        ctx.put(CapabilitySurface.class, new CapabilitySurface(null, Set.of("g1"), Set.of()));
+        assertNotNull(agent.call(userMsg("hi"), ctx).block(Duration.ofSeconds(10)));
     }
 
     @Test
