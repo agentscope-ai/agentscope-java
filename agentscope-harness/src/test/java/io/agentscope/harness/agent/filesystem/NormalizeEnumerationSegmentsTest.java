@@ -55,6 +55,13 @@ class NormalizeEnumerationSegmentsTest {
             {"./", "."},
             {"a/../../b", "../b"},
             {"C:\\a\\..\\b", "C:/b"},
+            // A trailing lone "." segment is stripped even though no "./" pair occurs
+            // (the dot is the last character) — this row plus the one below are exactly
+            // what a `contains("./")` fast-path guard cannot express and pin why it
+            // needs an endsWith(".") clause instead (review follow-up).
+            {"/memories/.", "/memories"},
+            // ...while a real dotfile name is NOT a "." segment and passes through.
+            {"/a/.hidden", "/a/.hidden"},
         };
         for (String[] row : table) {
             assertEquals(row[1], AbstractFilesystem.normalizeEnumerationSegments(row[0]), row[0]);
