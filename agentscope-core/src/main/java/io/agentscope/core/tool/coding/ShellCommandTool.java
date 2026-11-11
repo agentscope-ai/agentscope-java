@@ -489,6 +489,13 @@ public class ShellCommandTool implements AgentTool {
 
         Charset effectiveCharset = overrideCharset != null ? overrideCharset : charset;
         int actualTimeout = timeout != null && timeout > 0 ? timeout : DEFAULT_TIMEOUT;
+        // Approval can wait for terminal input. Defer it and keep it off the caller thread.
+        return Mono.defer(() -> validateAndExecute(command, actualTimeout, effectiveCharset))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private Mono<ToolResultBlock> validateAndExecute(
+            String command, int actualTimeout, Charset effectiveCharset) {
         logger.debug(
                 "Executing shell command: '{}' with timeout: {} seconds, charset: {}",
                 command,
