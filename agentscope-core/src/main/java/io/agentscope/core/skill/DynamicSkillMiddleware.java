@@ -242,19 +242,23 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
     }
 
     /**
-     * Grant visibility filter, fail-closed: a missing surface or an internal error
-     * yields an empty set (the filterVisible hook's exception handling is fail-open, so
+     * Grant visibility filter. A missing surface means this pass never entered an agent
+     * {@code call()} funnel (a funnel always writes one, even ALLOW_ALL): treat it as
+     * unrestricted — direct middleware use is trusted assembler code, the same stance as
+     * the core execution gates and the harness middleware. A filtering error still fails
+     * closed to an empty set (the filterVisible hook's exception handling is fail-open, so
      * this filter must catch its own exceptions).
      *
      * @param visible the skills remaining after the filterVisible hook
      * @param ctx the per-call runtime context carrying the grant set
-     * @return the granted subset; empty on a missing surface or filter error
+     * @return the granted subset; the input unchanged when no surface is present; empty on
+     *     a filter error
      */
     private List<AgentSkill> applyCapabilityFilter(List<AgentSkill> visible, RuntimeContext ctx) {
         try {
             CapabilitySurface surface = ctx != null ? ctx.get(CapabilitySurface.class) : null;
             if (surface == null) {
-                return List.of();
+                return visible;
             }
             return visible.stream().filter(surface::allowsSkill).toList();
         } catch (Exception e) {

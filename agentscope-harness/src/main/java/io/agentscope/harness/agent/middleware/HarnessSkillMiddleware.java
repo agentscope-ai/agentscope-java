@@ -251,27 +251,56 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
      * Pre-stages marketplace skill resources to {@code .skills-cache/} on the host workspace.
      * Intended to be called <em>before</em> sandbox start so that workspace projection picks up
      * the staged content in the same call. Safe to call multiple times — staging is idempotent
-     * (content-hash guarded).
+     * (content-hash guarded). Delegates to {@link #prestageForProjection} and discards the
+     * returned projection roots.
      *
      * @param ctx the per-call runtime context
      */
     public void prestageMarketplaceSkills(RuntimeContext ctx) {
+        prestageForProjection(ctx);
+    }
+
+    /**
+     * Pre-stages exactly like {@link #prestageMarketplaceSkills} and additionally returns this
+     * call's {@code .skills-cache} projection roots: one explicit {@code
+     * .skills-cache/<scope>/<ns>/<skill>} subtree per staged skill.
+     *
+     * <p>The returned list is authoritative for the whole cache subtree in workspace projection:
+     * directories staged by earlier calls (e.g. under a since-shrunken grant) stay on disk — the
+     * shared cache is swept only by the grace-window orphan GC, never deleted mid-flight — but
+     * are no longer projected into this call's sandbox. An empty list means nothing of the cache
+     * may project for this call.
+     *
+     * @param ctx the per-call runtime context
+     * @return the per-call cache projection roots; {@code null} when this middleware has no
+     *     stager (nothing it manages lives on disk, so projection stays configured as-is)
+     */
+    public List<String> prestageForProjection(RuntimeContext ctx) {
         if (stager == null) {
-            return;
+            return null;
         }
         if (ctx == null) {
             ctx = RuntimeContext.empty();
         }
         Map<String, RepoBound> merged = skillsForCall(ctx);
         if (merged.isEmpty()) {
-            return;
+            return List.of();
         }
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
         List<RepoBound> enabled =
                 applyCapabilityFilter(applySkillFilter(visible, effectiveFilter(ctx)), ctx);
-        if (!enabled.isEmpty()) {
-            stager.stage(enabled, sourceNamespaces, scopeKeyFor(ctx));
+        if (enabled.isEmpty()) {
+            return List.of();
         }
+        Map<String, StageResult> staged = stager.stage(enabled, sourceNamespaces, scopeKeyFor(ctx));
+        List<String> roots = new ArrayList<>(staged.size());
+        for (StageResult result : staged.values()) {
+            if (result instanceof StageResult.Cached cached) {
+                roots.add(MarketplaceStager.projectionRoot(cached));
+            }
+        }
+        Collections.sort(roots);
+        return roots;
     }
 
     @Override

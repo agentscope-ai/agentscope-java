@@ -3358,10 +3358,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.dynamicSkillsEnabled(false);
 
                 // Wire pre-start staging so sandbox projection picks up .skills-cache content
-                // that MarketplaceStager materialises from database-backed repositories.
+                // that MarketplaceStager materialises from database-backed repositories. The
+                // projection-aware variant also narrows the projected cache subtree to this
+                // call's granted skills — residue staged under earlier, wider grants stays on
+                // disk but no longer enters the sandbox.
                 if (sandboxLifecycleMw != null && stager != null) {
-                    sandboxLifecycleMw.setBeforeStartCallback(
-                            skillMiddleware::prestageMarketplaceSkills);
+                    sandboxLifecycleMw.setProjectionAwareBeforeStart(
+                            skillMiddleware::prestageForProjection);
                 }
             } else if (disableDynamicSkills) {
                 // No composed repositories exist, but preserve the explicit core opt-out.

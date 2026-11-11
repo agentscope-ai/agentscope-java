@@ -18,11 +18,20 @@ package io.agentscope.harness.agent.middleware;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.sandbox.PinnedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
+import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
+import io.agentscope.harness.agent.sandbox.layout.WorkspaceProjectionEntry;
+import io.agentscope.harness.agent.skill.runtime.MarketplaceStager;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
@@ -62,7 +71,8 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
     private final SandboxManager sandboxManager;
     private final SandboxBackedFilesystem filesystemProxy;
-    private volatile Consumer<RuntimeContext> beforeStartCallback;
+    private volatile BeforeSandboxStart beforeStartCallback;
+    private volatile boolean projectionAwareCallback;
 
     public SandboxLifecycleMiddleware(
             SandboxManager sandboxManager, SandboxBackedFilesystem filesystemProxy) {
@@ -80,14 +90,56 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
+     * Before-start callback that can also narrow the projected {@code .skills-cache} subtree.
+     * Runs after the sandbox session is acquired but before {@link
+     * io.agentscope.harness.agent.sandbox.Sandbox#start()} applies workspace projection.
+     */
+    @FunctionalInterface
+    public interface BeforeSandboxStart {
+
+        /**
+         * Materialises pre-start host resources (e.g. stages {@code .skills-cache/}).
+         *
+         * @param ctx the per-call {@link RuntimeContext}
+         * @return the {@code .skills-cache} projection roots this call is granted — the
+         *     configured whole-tree {@code .skills-cache} include-root is replaced by these
+         *     explicit per-skill subtrees; {@code null} keeps the configured projection
+         */
+        List<String> beforeStart(RuntimeContext ctx);
+    }
+
+    /**
      * Registers a callback that runs after the sandbox session is acquired but before
      * {@link io.agentscope.harness.agent.sandbox.Sandbox#start()} applies workspace projection.
      * This allows callers to materialise resources on the host workspace (e.g.
-     * {@code .skills-cache/}) so that projection picks them up in the same call.
+     * {@code .skills-cache/}) so that projection picks them up in the same call. The callback
+     * cannot narrow the projection; see {@link #setProjectionAwareBeforeStart(BeforeSandboxStart)}.
      *
      * @param callback receives the per-call {@link RuntimeContext}; may be {@code null} to clear
      */
     public void setBeforeStartCallback(Consumer<RuntimeContext> callback) {
+        this.projectionAwareCallback = false;
+        this.beforeStartCallback =
+                callback != null
+                        ? ctx -> {
+                            callback.accept(ctx);
+                            return null;
+                        }
+                        : null;
+    }
+
+    /**
+     * Registers a projection-aware before-start callback: besides materialising pre-start host
+     * resources, its return value narrows the {@code .skills-cache} workspace projection to the
+     * explicit per-skill cache roots granted for this call (grant-layer guarantee: cache
+     * directories staged by earlier calls under wider grants stay on disk but no longer project
+     * into this call's sandbox). The shared configured {@link SandboxContext} is never mutated —
+     * narrowing derives a per-call copy, so concurrent calls keep independent views.
+     *
+     * @param callback the before-start hook; may be {@code null} to clear
+     */
+    public void setProjectionAwareBeforeStart(BeforeSandboxStart callback) {
+        this.projectionAwareCallback = callback != null;
         this.beforeStartCallback = callback;
     }
 
@@ -107,17 +159,31 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             return;
         }
         try {
-            Consumer<RuntimeContext> cb = beforeStartCallback;
+            BeforeSandboxStart cb = beforeStartCallback;
+            // A projection-aware callback carries the authorization decision for the cache
+            // subtree: when it fails, nothing of the cache may project (fail-closed). The
+            // legacy Consumer variant carries no grant decision — its failure keeps the
+            // configured projection (historical behaviour).
+            boolean projectionAware = cb != null && projectionAwareCallback;
+            List<String> cacheRoots = null;
             if (cb != null) {
                 try {
-                    cb.accept(ctx);
+                    cacheRoots = cb.beforeStart(ctx);
                 } catch (Exception e) {
                     log.warn(
-                            "[sandbox-mw] beforeStartCallback failed; proceeding with sandbox"
-                                    + " start: {}",
+                            "[sandbox-mw] beforeStartCallback failed; {}: {}",
+                            projectionAware
+                                    ? "failing closed — no .skills-cache projects for this call"
+                                    : "proceeding with sandbox start",
                             e.getMessage(),
                             e);
+                    if (projectionAware) {
+                        cacheRoots = List.of();
+                    }
                 }
+            }
+            if (cacheRoots != null) {
+                sandboxContext = narrowSkillsCacheProjection(sandboxContext, cacheRoots);
             }
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
@@ -200,5 +266,57 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         if (result.isSelfManaged()) {
             PinnedSandboxFilesystem.markSandboxReleased(result.getSandbox());
         }
+    }
+
+    /**
+     * Replaces the configured whole-tree {@code .skills-cache} include-root with the explicit
+     * per-skill cache subtrees of this call, on a derived {@link SandboxContext}/{@link
+     * WorkspaceSpec} copy. The shared configured context is never mutated, so concurrent calls
+     * against the same agent bean keep independent projection views (issue #2490's per-call
+     * binding, applied to the spec). Contexts whose projection does not cover {@code
+     * .skills-cache} are returned unchanged.
+     *
+     * @param original the per-call sandbox context from the {@link RuntimeContext}
+     * @param cacheRoots the granted {@code .skills-cache} subtrees (workspace-relative,
+     *     forward slashes); an empty list removes the cache from projection entirely
+     * @return a derived context with the narrowed projection, or {@code original} when nothing
+     *     can (or needs to) be narrowed
+     */
+    private static SandboxContext narrowSkillsCacheProjection(
+            SandboxContext original, List<String> cacheRoots) {
+        WorkspaceSpec spec = original.getWorkspaceSpec();
+        if (spec == null) {
+            return original;
+        }
+        WorkspaceEntry entry =
+                spec.getEntries().get(SandboxFilesystemSpec.WORKSPACE_PROJECTION_ENTRY_KEY);
+        if (!(entry instanceof WorkspaceProjectionEntry projection)
+                || !projection.getIncludeRoots().contains(MarketplaceStager.CACHE_DIR)) {
+            return original;
+        }
+        WorkspaceSpec narrowedSpec = spec.copy();
+        WorkspaceProjectionEntry narrowed = new WorkspaceProjectionEntry();
+        narrowed.setSourceRoot(projection.getSourceRoot());
+        List<String> roots =
+                new ArrayList<>(projection.getIncludeRoots().size() + cacheRoots.size());
+        for (String root : projection.getIncludeRoots()) {
+            if (!MarketplaceStager.CACHE_DIR.equals(root)) {
+                roots.add(root);
+            }
+        }
+        roots.addAll(cacheRoots);
+        narrowed.setIncludeRoots(roots);
+        Map<String, WorkspaceEntry> entries = new LinkedHashMap<>(narrowedSpec.getEntries());
+        entries.put(SandboxFilesystemSpec.WORKSPACE_PROJECTION_ENTRY_KEY, narrowed);
+        narrowedSpec.setEntries(entries);
+        return SandboxContext.builder()
+                .client(original.getClient())
+                .clientOptions(original.getClientOptions())
+                .workspaceSpec(narrowedSpec)
+                .snapshotSpec(original.getSnapshotSpec())
+                .externalSandbox(original.getExternalSandbox())
+                .externalSandboxState(original.getExternalSandboxState())
+                .isolationScope(original.getIsolationScope())
+                .build();
     }
 }

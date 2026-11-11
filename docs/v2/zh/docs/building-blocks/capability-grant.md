@@ -8,7 +8,7 @@ en_link: /v2/en/docs/building-blocks/capability-grant
 
 一句话定位：**SkillFilter 决定这个 agent 设计上有什么；grant 决定这个用户被授权用什么。有效能力 = 两者之交。**
 
-为什么需要 grant：企业部署里，同一个 agent 面向大量权限不同的用户（多租户、多角色）。grant 层按用户的实际权限，把无权的能力**彻底切除**——被切除的能力对模型**不存在**：不进 tool schema、不可枚举、不可被 `reset_equipped_tools` 激活、不可被 `load_skill_through_path` 加载、不可执行。Harness 的技能链路（`HarnessSkillMiddleware` 的提示词与技能目录、harness 版 `load_skill_through_path`）同样受授权面约束。
+为什么需要 grant：企业部署里，同一个 agent 面向大量权限不同的用户（多租户、多角色）。grant 层按用户的实际权限，把无权的能力**彻底切除**——被切除的能力对模型**不存在**：不进 tool schema、不可枚举、不可被 `reset_equipped_tools` 激活、不可被 `load_skill_through_path` 加载、不可执行。Harness 的技能链路（`HarnessSkillMiddleware` 的提示词与技能目录、harness 版 `load_skill_through_path`）同样受授权面约束。暂存缓存同样收口：沙箱 workspace projection 只投影本次已获授技能的 `.skills-cache` 子树——早前更宽授权暂存的残留文件仍在磁盘（由宽限期 GC 负责清理），但不再进入本次调用的沙箱。
 
 它与其他既有层正交，各层只回答一个问题：
 
@@ -108,7 +108,7 @@ new CapabilitySurface(Set.of(), Set.of(), Set.of());
 原则：**授权体系出问题时，宁可中止，不可放开。**
 
 - resolver 抛异常 → **中止本次调用**：异常传播给调用方并记录 ERROR（授权体系故障 ≠「无授权」）；需要降级继续服务，请在 resolver 内部捕获并返回 `DENY_ALL`。
-- 直连执行 → `Toolkit.callTool` / `callTools` 等不经 agent `call()` 入口的路径不经过授权解析，无 surface 即视为不裁剪；需要按权限裁剪时，在 `RuntimeContext` 中显式放入即可（`rc.put(CapabilitySurface.class, surface)`）。
+- 直连执行 → `Toolkit.callTool` / `callTools` 等不经 agent `call()` 入口的路径不经过授权解析，无 surface 即视为不裁剪；直连调用 `DynamicSkillMiddleware` 同理（rc 无 surface = 可信装配代码，技能照常可见）。需要按权限裁剪时，在 `RuntimeContext` 中显式放入即可（`rc.put(CapabilitySurface.class, surface)`）。
 
 ## 静态 skillBox 路径限制
 

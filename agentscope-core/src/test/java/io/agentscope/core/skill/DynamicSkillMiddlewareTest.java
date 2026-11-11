@@ -148,6 +148,41 @@ class DynamicSkillMiddlewareTest {
     }
 
     @Test
+    void directUseWithoutSurfaceKeepsVisibleSkills() {
+        // Pre-grant compatibility: onSystemPrompt invoked outside an agent call() funnel
+        // carries no surface on the rc. Direct middleware use is trusted assembler code
+        // (the same stance as the core execution gates), so the skills must stay visible.
+        AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
+        DynamicSkillMiddleware mw = middleware(List.of(skill));
+        RuntimeContext rc = RuntimeContext.empty();
+
+        String prompt = mw.onSystemPrompt(agent, rc, "base").block();
+
+        assertTrue(
+                prompt.contains("my-skill"),
+                "direct use without a surface must keep visible skills (pre-grant usage)");
+        assertNotNull(rc.get(SkillBox.class), "the per-call SkillBox must still be exposed");
+    }
+
+    @Test
+    void restrictedSurfaceStillFiltersOnDirectUse() {
+        // The unrestricted default for a missing surface must not weaken filtering when a
+        // surface IS present: an alpha-only grant keeps alpha and cuts beta.
+        AgentSkill alpha = new AgentSkill("alpha", "Alpha", "# Alpha", null);
+        AgentSkill beta = new AgentSkill("beta", "Beta", "# Beta", null);
+        DynamicSkillMiddleware mw = middleware(List.of(alpha, beta));
+        RuntimeContext rc = RuntimeContext.empty();
+        rc.put(
+                CapabilitySurface.class,
+                new CapabilitySurface(java.util.Set.of("alpha"), null, null));
+
+        String prompt = mw.onSystemPrompt(agent, rc, "base").block();
+
+        assertTrue(prompt.contains("alpha"), "the granted skill must stay visible");
+        assertFalse(prompt.contains("beta"), "the ungranted skill must be cut");
+    }
+
+    @Test
     void reusedRuntimeContextClearsStaleBox() {
         AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
         StubRepo repo = new StubRepo(List.of(skill));

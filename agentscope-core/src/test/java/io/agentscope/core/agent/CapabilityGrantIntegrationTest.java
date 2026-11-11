@@ -877,14 +877,17 @@ class CapabilityGrantIntegrationTest {
     }
 
     @Test
-    @DisplayName("missing surface → no skill prompt at all (fail-closed)")
-    void skillFilterFailsClosedOnMissingSurface() {
+    @DisplayName("missing surface → skills stay visible (direct use outside a call funnel)")
+    void skillFilterKeepsSkillsOnMissingSurface() {
+        // A missing surface means the pass never entered an agent call() funnel (a funnel
+        // always writes one, even ALLOW_ALL): direct middleware use is trusted assembler
+        // code — the same stance as the core execution gates and the harness middleware.
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(new StubRepo(List.of(skill("alpha")))));
         RuntimeContext ctx = rc();
         String prompt = mw.onSystemPrompt(null, ctx, "base").block();
-        assertEquals("base", prompt, "no surface → no skill prompt");
-        assertNull(ctx.get(SkillBox.class), "no box exposed");
+        assertTrue(prompt.contains("alpha"), "direct use without a surface keeps visible skills");
+        assertNotNull(ctx.get(SkillBox.class), "the per-call box is still exposed");
     }
 
     @Test

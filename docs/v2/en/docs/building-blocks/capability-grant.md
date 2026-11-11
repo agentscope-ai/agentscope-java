@@ -8,7 +8,7 @@ zh_link: /v2/zh/docs/building-blocks/capability-grant
 
 One-line positioning: **SkillFilter decides what the agent is designed to have; grant decides what the current user is authorized to use. The effective capability set is the intersection.**
 
-Why grant exists: in enterprise deployments, one agent serves many users with different permissions (multi-tenant, multi-role). The grant layer cuts out every capability the current user is not authorized for — a cut capability **does not exist for the model**: it never enters tool schemas, cannot be enumerated, cannot be activated via `reset_equipped_tools`, cannot be loaded via `load_skill_through_path`, and cannot be executed. The harness skill chain (`HarnessSkillMiddleware`'s prompt and catalog, plus the harness `load_skill_through_path`) is equally governed by the grant surface.
+Why grant exists: in enterprise deployments, one agent serves many users with different permissions (multi-tenant, multi-role). The grant layer cuts out every capability the current user is not authorized for — a cut capability **does not exist for the model**: it never enters tool schemas, cannot be enumerated, cannot be activated via `reset_equipped_tools`, cannot be loaded via `load_skill_through_path`, and cannot be executed. The harness skill chain (`HarnessSkillMiddleware`'s prompt and catalog, plus the harness `load_skill_through_path`) is equally governed by the grant surface. The staged cache is clamped the same way: sandbox workspace projection hydrates only the granted skills' `.skills-cache` subtrees for the current call — residue staged under an earlier, wider grant stays on disk (the grace-window GC owns deletion) but no longer enters the sandbox.
 
 It is orthogonal to the existing layers — each layer answers exactly one question:
 
@@ -108,7 +108,7 @@ The framework's own meta tools (`reset_equipped_tools`, `load_skill_through_path
 Principle: **when the authorization infrastructure fails, fail the call — never open up.**
 
 - A throwing resolver **aborts the call**: the exception propagates to the caller and ERROR is logged — an authorization-infrastructure failure is not "no grants". Catch inside your resolver and return `DENY_ALL` if graceful degradation is wanted.
-- Direct execution: paths that execute tools directly without going through an agent `call()` entry (e.g. `Toolkit.callTool` / `callTools`) bypass grant resolution — a missing surface means no trimming; place a surface on the `RuntimeContext` (`rc.put(CapabilitySurface.class, surface)`) to have grants applied.
+- Direct execution: paths that execute tools directly without going through an agent `call()` entry (e.g. `Toolkit.callTool` / `callTools`) bypass grant resolution — a missing surface means no trimming; invoking `DynamicSkillMiddleware` directly behaves the same (no surface on the rc = trusted assembler code, skills stay visible). Place a surface on the `RuntimeContext` (`rc.put(CapabilitySurface.class, surface)`) to have grants applied.
 
 ## Static skillBox path limitation
 
