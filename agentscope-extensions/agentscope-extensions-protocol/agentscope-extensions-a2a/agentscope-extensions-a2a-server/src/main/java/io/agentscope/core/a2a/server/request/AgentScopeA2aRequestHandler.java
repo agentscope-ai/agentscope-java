@@ -183,6 +183,10 @@ public class AgentScopeA2aRequestHandler implements RequestHandler, AutoCloseabl
 
         private PushNotificationSender pushSender;
 
+        private int agentCompletionTimeoutSeconds = 60;
+
+        private int consumptionCompletionTimeoutSeconds = 10;
+
         public Builder agentExecutor(AgentExecutor agentExecutor) {
             this.agentExecutor = agentExecutor;
             return this;
@@ -233,6 +237,33 @@ public class AgentScopeA2aRequestHandler implements RequestHandler, AutoCloseabl
 
         public Builder pushSender(PushNotificationSender pushSender) {
             this.pushSender = pushSender;
+            return this;
+        }
+
+        /**
+         * Set how long a blocking request that got a non-final result first then waits for the
+         * agent to stop producing events, in seconds. Default 60. It is not a deadline for the agent
+         * or the whole request.
+         *
+         * @param agentCompletionTimeoutSeconds timeout in seconds
+         * @return this builder
+         */
+        public Builder agentCompletionTimeoutSeconds(int agentCompletionTimeoutSeconds) {
+            this.agentCompletionTimeoutSeconds = agentCompletionTimeoutSeconds;
+            return this;
+        }
+
+        /**
+         * Set how long a blocking request that got a non-final result first then waits for the
+         * produced events to be consumed, in seconds. Default 10. It is not a deadline for the agent
+         * or the whole request.
+         *
+         * @param consumptionCompletionTimeoutSeconds timeout in seconds
+         * @return this builder
+         */
+        public Builder consumptionCompletionTimeoutSeconds(
+                int consumptionCompletionTimeoutSeconds) {
+            this.consumptionCompletionTimeoutSeconds = consumptionCompletionTimeoutSeconds;
             return this;
         }
 
@@ -293,9 +324,11 @@ public class AgentScopeA2aRequestHandler implements RequestHandler, AutoCloseabl
                     new AgentScopeA2aRequestHandler(
                             delegate, executor, eventConsumerExecutor, mainEventBusProcessor);
             try {
-                // 60/10 seconds, as before: the SDK builder sets a few seconds, too short for
-                // models.
-                SdkInternals.setTimeouts(delegate, 60, 10);
+                // The SDK builder sets a few seconds, too short for agents calling models.
+                SdkInternals.setTimeouts(
+                        delegate,
+                        agentCompletionTimeoutSeconds,
+                        consumptionCompletionTimeoutSeconds);
             } catch (RuntimeException e) {
                 result.close();
                 throw e;

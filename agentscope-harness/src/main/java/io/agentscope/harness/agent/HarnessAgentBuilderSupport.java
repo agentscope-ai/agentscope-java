@@ -336,6 +336,7 @@ final class HarnessAgentBuilderSupport {
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
         final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
+        final int capturedReadFileMaxChars = b.readFileMaxChars;
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
@@ -379,6 +380,7 @@ final class HarnessAgentBuilderSupport {
                             .memory(capturedMemoryConfig)
                             .contextPolicy(capturedContextPolicy)
                             .enableAgentTracingLog(capturedAgentTracingLogEnabled)
+                            .readFileMaxChars(capturedReadFileMaxChars)
                             .maxContextTokens(capturedMaxContextTokens);
 
             if (capturedPermissions != null) sub.permissionContext(capturedPermissions);
@@ -460,6 +462,7 @@ final class HarnessAgentBuilderSupport {
         final MemoryConfig capturedMemoryConfig = b.memoryConfig;
         final var capturedContextPolicy = b.contextPolicy;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
+        final int capturedReadFileMaxChars = b.readFileMaxChars;
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
@@ -578,6 +581,7 @@ final class HarnessAgentBuilderSupport {
                 sub.compaction(capturedCompactionConfig);
             }
 
+            sub.readFileMaxChars(capturedReadFileMaxChars);
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
             if (capturedDisableMemoryTools) sub.disableMemoryTools();

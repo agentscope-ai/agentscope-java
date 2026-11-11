@@ -15,11 +15,13 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -318,6 +320,12 @@ public class OpenAIConversationMerger {
                             .append(errorMsg)
                             .append("]\n");
                 }
+
+            } else if (block instanceof DocumentBlock doc) {
+                if (includePrefix) {
+                    appendNamePrefix(textBuffer, agentName);
+                }
+                textBuffer.append(DocumentReferenceRenderer.render(doc)).append("\n");
 
             } else if (block instanceof ThinkingBlock thinkingBlock) {
                 // Include ThinkingBlock in conversation history for models that support reasoning

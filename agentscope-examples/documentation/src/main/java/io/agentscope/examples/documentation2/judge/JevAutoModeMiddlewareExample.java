@@ -34,6 +34,8 @@ import io.agentscope.extensions.judge.jev.JevClient;
 import io.agentscope.extensions.judge.jev.JevRetryPolicy;
 import io.agentscope.extensions.judge.jev.example.JevAutoModeMiddleware;
 import java.time.Duration;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -167,6 +169,11 @@ public final class JevAutoModeMiddlewareExample {
         @Override
         public int order() {
             return -1;
+        }
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_ACTING);
         }
 
         @Override

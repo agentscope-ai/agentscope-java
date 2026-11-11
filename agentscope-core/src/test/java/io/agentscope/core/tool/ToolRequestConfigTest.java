@@ -85,6 +85,18 @@ class ToolRequestConfigTest {
     }
 
     @Test
+    void getTool_withNullName_resolvesToNotFound() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(schemaOnlyTool("backend", "backend"));
+        ToolRequestConfig config =
+                new ToolRequestConfig(
+                        Map.of("external", schemaOnlyTool("external", "external")),
+                        ToolMergeMode.MERGE_EXTERNAL_PRIORITY);
+
+        assertNull(toolkit.getTool(null, config));
+    }
+
+    @Test
     void getToolSchemas_mergeExternalPriority_overridesBackendAndLeavesRegistryUntouched() {
         Toolkit toolkit = new Toolkit();
         SchemaOnlyTool backend = schemaOnlyTool("overlap", "backend");
