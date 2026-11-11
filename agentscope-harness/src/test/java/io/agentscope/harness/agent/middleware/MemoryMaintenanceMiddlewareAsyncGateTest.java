@@ -54,13 +54,7 @@ class MemoryMaintenanceMiddlewareAsyncGateTest {
                 };
         MemoryMaintenanceMiddleware middleware =
                 new MemoryMaintenanceMiddleware(
-                        null,
-                        null,
-                        90,
-                        180,
-                        Duration.ofMinutes(30),
-                        IsolationScope.USER,
-                        recordingGate);
+                        null, null, 90, Duration.ofMinutes(30), IsolationScope.USER, recordingGate);
 
         Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("hi").build();
         RuntimeContext rc = RuntimeContext.builder().userId("alice").build();
@@ -96,7 +90,6 @@ class MemoryMaintenanceMiddlewareAsyncGateTest {
                         null,
                         null,
                         90,
-                        180,
                         Duration.ofMinutes(30),
                         IsolationScope.USER,
                         (name, minGap) -> false);

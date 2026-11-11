@@ -55,6 +55,11 @@ import java.util.Map;
  */
 public class OverlayFilesystem implements AbstractFilesystem {
 
+    @Override
+    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
+        return upper.sessionStorage(rc);
+    }
+
     private final AbstractFilesystem upper;
     private final AbstractFilesystem lower;
 

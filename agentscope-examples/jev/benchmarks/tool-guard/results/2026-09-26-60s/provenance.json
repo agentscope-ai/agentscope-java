@@ -1,0 +1,8 @@
+{
+  "repository": "agentscope-ai/agentscope-java",
+  "branch": "harness-context-redesign",
+  "baseCommit": "6e4d2bb6481207e8b6db5208d7092b94200888fa",
+  "workingTree": "uncommitted changes; manifest includes dataset and loaded class hashes",
+  "qwenEndpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "execution": "local shell; sequential paired requests; no API keys or raw HTTP responses saved"
+}

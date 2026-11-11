@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,6 +24,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.permission.AdditionalWorkingDirectory;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
@@ -87,19 +89,21 @@ class AgentSpawnToolPermissionTest {
                         });
 
         String spawnResult =
-                tool.agentSpawn(
-                                parentContext(),
-                                parentState(
-                                        PermissionContextState.builder()
-                                                .mode(PermissionMode.BYPASS)
-                                                .addDenyRule("blocked_probe", parentDeny)
-                                                .build()),
-                                "worker",
-                                null,
-                                null,
-                                null,
-                                null)
-                        .block();
+                assertText(
+                        tool.agentSpawn(
+                                        parentContext(),
+                                        parentState(
+                                                PermissionContextState.builder()
+                                                        .mode(PermissionMode.BYPASS)
+                                                        .addDenyRule("blocked_probe", parentDeny)
+                                                        .build()),
+                                        "worker",
+                                        null,
+                                        null,
+                                        null,
+                                        null)
+                                .block(),
+                        ToolResultState.SUCCESS);
 
         String childSessionId = firstLineValue(spawnResult, "session_id: ");
         HarnessAgent child = (HarnessAgent) childRef.get();
@@ -181,15 +185,17 @@ class AgentSpawnToolPermissionTest {
                         });
 
         String spawnResult =
-                tool.agentSpawn(
-                                parentContext(),
-                                parentState(parentPermissions),
-                                "worker",
-                                null,
-                                null,
-                                null,
-                                null)
-                        .block();
+                assertText(
+                        tool.agentSpawn(
+                                        parentContext(),
+                                        parentState(parentPermissions),
+                                        "worker",
+                                        null,
+                                        null,
+                                        null,
+                                        null)
+                                .block(),
+                        ToolResultState.SUCCESS);
 
         String childSessionId = firstLineValue(spawnResult, "session_id: ");
         PermissionContextState actual =
@@ -228,20 +234,24 @@ class AgentSpawnToolPermissionTest {
                         });
 
         String spawnResult =
-                tool.agentSpawn(
-                                parentContext(),
-                                parentState(
-                                        PermissionContextState.builder()
-                                                .addDenyRule(
-                                                        "blocked_probe",
-                                                        denyRule("blocked_probe", "parent-policy"))
-                                                .build()),
-                                "worker",
-                                null,
-                                null,
-                                null,
-                                null)
-                        .block();
+                assertText(
+                        tool.agentSpawn(
+                                        parentContext(),
+                                        parentState(
+                                                PermissionContextState.builder()
+                                                        .addDenyRule(
+                                                                "blocked_probe",
+                                                                denyRule(
+                                                                        "blocked_probe",
+                                                                        "parent-policy"))
+                                                        .build()),
+                                        "worker",
+                                        null,
+                                        null,
+                                        null,
+                                        null)
+                                .block(),
+                        ToolResultState.SUCCESS);
 
         String childSessionId = firstLineValue(spawnResult, "session_id: ");
         PermissionContextState actual =
@@ -279,15 +289,17 @@ class AgentSpawnToolPermissionTest {
                                 .build());
 
         String spawnResult =
-                tool.agentSpawn(
-                                parentContext(),
-                                parentState,
-                                "worker",
-                                null,
-                                "persistent-worker",
-                                null,
-                                null)
-                        .block();
+                assertText(
+                        tool.agentSpawn(
+                                        parentContext(),
+                                        parentState,
+                                        "worker",
+                                        null,
+                                        "persistent-worker",
+                                        null,
+                                        null)
+                                .block(),
+                        ToolResultState.SUCCESS);
         String key = firstLineValue(spawnResult, "agent_key: ");
         String childSessionId = firstLineValue(spawnResult, "session_id: ");
         HarnessAgent persistentChild = children.get(0);

@@ -64,6 +64,7 @@ agent.call(msg, RuntimeContext.builder()
 - 容器还在 + 工作区还在 → 直接接着用（最快）
 - 容器没了 → 拿快照重新起一个，恢复工作区
 - 没快照 → 按 `WorkspaceSpec` 全量初始化（冷启动）
+- 快照读取或恢复失败 → 本次 `call()` 报错，可重试；不会静默丢弃快照状态
 
 快照存到哪里取决于你配的 `snapshotSpec`：
 
@@ -216,17 +217,19 @@ SandboxContext callCtx = SandboxContext.builder()
 | 文本/查找 | `sed` `grep`（支持 `-rHnF` `--include`）`find` | `read_file` 分页、`grep_files`、`glob_files` |
 | 元数据 | GNU 风格 `stat -c`（非 BSD `stat -f`） | `list_files`、`glob_files` |
 | 归档/编码 | `tar`、`base64`（编码 + `-d` 解码） | 快照持久化/恢复、文件上传下载 |
-| 解释器 | `python3` | `edit_file`（精确字符串替换） |
+| 解释器 | 可选：`python3` | `edit_file` 原生快速路径；缺少时 `edit_file` 会回退到下载/替换/上传 |
 | 文件系统 | 工作区根目录（默认 `/workspace`）可写 | 全部 |
 
-以 `ubuntu:24.04`、`debian` 为基础的镜像天然满足（`python3` 可能需额外安装）；`alpine`（BusyBox `stat` / `grep` 行为不同）和 distroless 镜像**不满足**。
+以 `ubuntu:24.04`、`debian` 为基础的镜像天然满足；`python3` 是可选项，仅用于启用 `edit_file` 原生快速路径。没有可执行的 `python3` 时，编辑仍会通过文件传输回退路径工作，但由于需要经由宿主机传输文件，速度可能较慢。`alpine`（BusyBox `stat` / `grep` 行为不同）和 distroless 镜像不满足其他基线要求。
 
 快速自检（在镜像内执行，全部成功即基本达标）：
 
 ```bash
-sh -c 'echo ok' && python3 --version && tar --version \
+sh -c 'echo ok' && { python3 --version 2>/dev/null || echo 'python3 缺失；edit_file 将使用传输回退路径'; } && tar --version \
   && printf x | base64 | base64 -d && stat -c %Y /tmp && grep -rHnF --include='*.txt' x /tmp; true
 ```
+
+`edit_file` 会拒绝完整命令（包括编码后的参数与脚本）超过 112 KiB 的请求；异常大的编辑应拆成多次调用。该限制针对整条命令，而不是分别限制 `oldString` 和 `newString`。
 
 ### Kubernetes（agent-sandbox）附加约束
 
@@ -234,10 +237,17 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 
 | 端点 | 语义 |
 |------|------|
-| `POST /execute`（body `{"command": "..."}`） | **必须以 POSIX shell 语义解释 command**（等价 `sh -c`），返回 `{"stdout", "stderr", "exit_code"}`。Harness 发出的命令包含 `cd ... && (...)`、管道等 shell 结构 |
+| `GET /capabilities` | 返回 `{"execute":{"timeout_seconds":true,"max_timeout_seconds":900,"cleanup_timeout_seconds":6}}`。执行上限为正整数秒，清理预算为非负整数秒。SDK 在提交命令前检查支持情况与请求时长；缺失或无效时拒绝执行，不静默忽略 timeout |
+| `POST /execute`（body `{"command": "...", "timeout_seconds": 30}`） | **必须以 POSIX shell 语义解释 command**（等价 `sh -c`），返回 `{"stdout", "stderr", "exit_code"}`。Harness 发出的命令包含 `cd ... && (...)`、管道等 shell 结构 |
 | `POST /upload`（multipart，`filename` 为相对路径） | 写文件到文件 API 根目录下 |
 | `GET /download/{path}` | 按相对路径下载文件字节 |
 | `GET /list/{path}`、`GET /exists/{path}` | 目录列表 / 存在性检查 |
+
+`timeout_seconds` 是正整数秒，期限覆盖排队、进程创建与执行和 stdout/stderr 排空。无效或不支持的值必须在进程启动前拒绝。到期后终止命令进程组，在声明的 `cleanup_timeout_seconds` 内完成清理，以退出码 `124` 返回此前收集到的输出。父 shell 退出后被子进程继承的输出管道也受同一期限约束；取消时同样清理进程组。自行创建新 session 的脱离进程不在进程组终止保证内。
+
+`execute` 工具默认 30 秒，直接调用 SDK `commands().run(command)` 默认 60 秒，都会显式发送生效时长。每次命令 POST 的 HTTP 等待预算为 **执行时长 + 运行时清理预算 + 连接器 `perAttemptTimeout`**，并发调用互不修改预算。命令 POST 之前的能力预检另用连接器 `perAttemptTimeout` 预算，上述公式不包含预检。各层 gateway/router 的请求与空闲时限须覆盖最大支持预算，或明确关闭相应限制；路由仍固定 180 秒时，300 秒命令仍无法通过该路由完成。
+
+先发布满足契约的运行时及路由设置，再接入此 SDK。缺少 capabilities 的旧镜像会在提交命令前被拒绝，包括工作区初始化与文件工具命令；尚未实现 timeout 语义时不能仅声明支持。开始尝试提交命令后的 HTTP 错误、等待超时或无效响应表示**执行结果未知**（Harness 退出码 `null` / outcome `UNKNOWN`），不表示进程执行超时已被终止。提交期间的传输失败保守标为 UNKNOWN，因为调用方无法证明服务端是否已接受请求。能力校验失败使用 `SandboxRequestException.RuntimeCapabilityException`，保留可用的原始 HTTP 状态；应用应将其视为运行时故障，即使状态为 400 或 404。已确认支持协议的运行时中，请求时长超过上限仍按普通 422 参数错误处理。工作区建目录同样检查命令退出码，失败后不能继续初始化、恢复或上传。命令 POST 不自动重试或跟随重定向；是否重试应先检查命令状态。
 
 **文件 API 根目录必须与工作区根一致**（推荐都用 `/workspace`）。Harness 通过 `/upload` / `/download` 传输两类内容：工作区快照 tar 包（临时文件放在根目录下的 `.agentscope-tmp/`），以及 `write_file` / 文件下载涉及的单文件字节（路径在根目录之下时；Linux 对单个命令行参数有约 128 KiB 上限，走文件 API 的原生传输不受此限制）。根目录通过 `KubernetesSandboxClientOptions.fileApiBaseDir` 配置（默认 `/workspace`）；置空则退回 base64-over-exec 传输。
 
@@ -248,6 +258,16 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 `Sandbox` 抽象的主数据面入口是 `exec(command)`。这是刻意的——`edit_file` / `grep_files` 这类工具的语义（正则、字符串替换、glob）不可能靠有限的文件 API 端点表达，靠镜像内的标准工具链执行 shell 脚本是唯一通用解。文件 API（upload/download）只承担"纯字节搬运"：工作区快照和单文件上传下载走它（后端通过实现 `SandboxFileTransfer` 可选接口声明该能力），其余一切走 `execute`。这也意味着：**镜像契约本身就是沙箱接口的一部分**，换镜像前先跑上面的自检。
 
 **从模型视角跨越边界。** 上面的文件 API（upload/download）是内部机制——对 LLM 不可见，`FilesystemTool` 不暴露任何传输工具。沙箱中的 agent 把自己产出的产物交给沙箱外目标的受支持方式是通用 **`deliver_artifact`** 工具。只有当你通过 `HarnessAgent.builder().artifactDeliveryTarget(...)` 配置了 `ArtifactDeliveryTarget` 时它才会被注册。该 SPI 保持业务无关——`deliver(RuntimeContext, ArtifactDeliveryRequest) -> ArtifactDeliveryResult`——目标逻辑（例如 WebDAV 上传）由你的应用实现。工具会从沙箱工作区下载文件字节，并把传输委托给 target。未配置 target 时，沙箱工作区提示语会明确说明文件无法离开容器。
+
+## Kubernetes HTTP 交换超时
+
+Kubernetes 沙箱请求同时限制响应头和完整响应体的等待时间。即使服务端发送响应头后停止发送响应体，调用方也能超时返回。命令请求使用上文说明的执行时长、运行时清理预算与连接器 `perAttemptTimeout` 之和。命令交换超时表示执行结果未知；只有有效的运行时响应才能确认退出码。
+
+运行时返回 `timed_out: true` 表示进程已被执行时限终止，同时保留部分输出。HTTP 交换超时表示执行结果未知；仅凭退出码 124 不能确认运行时超时。
+
+文件上传和下载默认使用 10 分钟交换预算；目录列表和存在性检查默认使用 60 秒。接受 `Duration` 的客户端方法使用传入值作为交换预算，重试和退避共享这份预算。
+
+这些期限限制 HTTP 等待。连接发现和 pod IP 查询仍使用各自的超时机制。取消客户端交换不保证远程命令已经停止；需要终止远程进程时，应在运行时侧设置进程执行限制。
 
 ## Kubernetes 后端的状态保存：PVC 是第一层
 
@@ -295,6 +315,15 @@ spec:
 另外提醒：`SandboxState`（身份指针）这层永远绕不开——多副本部署时要配分布式 `AgentStateStore`，否则别的副本拿不到 claimName，PVC 里的数据再完整也 resume 不回来。
 
 ## 工作区怎么映射进沙箱
+
+使用 Kubernetes 共享 PVC 时，在创建 Claim 时传入由认证身份派生的固定目录：
+
+```java
+.claimEnv(List.of(new SandboxClaimSpec.EnvVar(
+    "WORKSPACE_SUBPATH", "users/1001/2001", "python-runtime")))
+```
+
+`KubernetesFilesystemSpec.claimEnv` 将条目透传到 `SandboxClaim.spec.env`。集群模板须允许 env 注入，并通过 `subPathExpr: $(WORKSPACE_SUBPATH)` 将外部 PVC 的子目录挂到 `/workspace`，存储权限在集群侧配置。agent-sandbox v0.5.4 对带 env 的 Claim 跳过预热实例；新沙箱可在保留的 PVC 上续用同一目录。单次调用的 env 为 `null` 时沿用客户端默认值，空列表清除默认值。
 
 宿主侧 `workspace/` 下的关键文件（`AGENTS.md`、`skills/`、`subagents/`、`knowledge/`）在每次沙箱启动时同步进去；按内容哈希增量，不变就跳过传输。
 

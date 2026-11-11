@@ -46,6 +46,7 @@ Message content is composed of typed blocks, each representing one type of infor
 |-------|-------------|-----------|
 | `TextBlock` | Plain text content | USER, ASSISTANT, SYSTEM |
 | `DataBlock` | Binary data (image / audio / video) via base64 or URL — unifies the legacy ImageBlock / AudioBlock / VideoBlock | USER, ASSISTANT |
+| `DocumentBlock` | Document input (PDF, Word, plain text) via a provider-scoped file ID (`FileIdSource` with `provider` and `file_id`), URL, or base64 | USER |
 | `ImageBlock` / `AudioBlock` / `VideoBlock` | Legacy concrete media blocks (still supported; new code should prefer `DataBlock`) | USER |
 | `ThinkingBlock` | Model reasoning / chain of thought | ASSISTANT |
 | `ToolUseBlock` | A tool call: `id` / `name` / `input` / `state` (`ToolCallState`) | ASSISTANT |
@@ -55,7 +56,7 @@ Message content is composed of typed blocks, each representing one type of infor
 
 <Note>
 
-Role constraints are enforced at construction: `USER` only allows text/data/image/audio/video blocks; `SYSTEM` only allows `TextBlock`; `ASSISTANT` allows all block types.
+Role constraints are enforced at construction: `USER` only allows text/data/document/image/audio/video blocks; `SYSTEM` only allows `TextBlock`; `ASSISTANT` allows all block types.
 
 </Note>
 
@@ -175,6 +176,7 @@ sequenceDiagram
         rect rgba(200, 200, 100, 0.1)
             Note over Client,Agent: ToolResultBlock (toolCallId)
             Agent->>Client: ToolResultStartEvent
+            Agent->>Client: ToolProgressEvent (×N, from ToolEmitter)
             Agent->>Client: ToolResultTextDeltaEvent (×N)
             Agent->>Client: ToolResultDataDeltaEvent (×N)
             Agent->>Client: ToolResultEndEvent
@@ -195,7 +197,7 @@ All events extend `AgentEvent` (`io.agentscope.core.event`), which exposes the c
 | `getId()` | `String` | Unique event identifier |
 | `getCreatedAt()` | `String` | ISO 8601 timestamp |
 | `getType()` | `AgentEventType` | Event type enum |
-| `getSource()` | `String` | Source path identifying the originating agent. `null` for top-level agent events; a slash-separated path (e.g. `"main/researcher"`) for events forwarded from a subagent |
+| `getSource()` | `String` | Source path identifying the originating agent. `null` for top-level agent events; local subagent events use `parentSessionId/agentId/subagentSessionId` (e.g. `"main/researcher/sub-1"`), and remote subagent events use `parentSessionId/agentId/taskId` |
 | `getMetadata()` | `Map<String, Object>` | Optional key/value bag. Remote subagent forwards also set `taskId` (`AgentEvent.METADATA_TASK_ID`) to the harness / Agent Protocol task id and `parentSessionId` (`AgentEvent.METADATA_PARENT_SESSION_ID`) to the parent session when events are task-backed |
 
 Events are grouped below; unless noted otherwise, every event also carries `getReplyId()` linking it to the message being assembled.
@@ -297,19 +299,21 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
 <Accordion title="Tool-result streaming events">
 
-**ToolResultStartEvent** — tool starts executing (carries `toolCallId`, `toolCallName`).
+**ToolResultStartEvent** — the tool starts executing (carries `toolCallId`, `toolCallName`); in sequential batches it fires when the tool's turn arrives, not when the batch is admitted.
 
-    **ToolResultTextDeltaEvent** — incremental text output from the tool; `getDelta()` returns a text fragment.
+    **ToolProgressEvent** — an intermediate update published by a running tool through `ToolEmitter`. Progress is for display only and is never sent to the LLM; it must not be treated as part of the tool result.
 
-    **ToolResultDataDeltaEvent** — incremental binary output from the tool; similar to `DataBlockDeltaEvent` with `mediaType` / `data` / `url`.
+    **ToolResultTextDeltaEvent** — incremental text output from the tool's return value; `getDelta()` returns a text fragment. This is what the LLM receives as the tool result.
 
-    **ToolResultEndEvent** — tool completes.
+    **ToolResultDataDeltaEvent** — incremental binary or structured output from the tool's return value; similar to `DataBlockDeltaEvent` with `mediaType` / `data` / `url`.
+
+    **ToolResultEndEvent** — the final tool result is available. Its text/data deltas and end event are delivered without waiting for other tools in the batch. Results may arrive in completion order; correlate them by `replyId` and `toolCallId`. PostActing, context updates, and the next model call still wait for the whole batch, with results kept in the original call order.
 
     | Method | Type | Description |
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCallId()` | `String` | The matching tool call ID |
-    | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING` |
+    | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING`, `SUSPENDED` |
 
 </Accordion>
 
@@ -334,7 +338,7 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCalls()` | `List<ToolUseBlock>` | Tool calls awaiting confirmation |
 
-    **RequireExternalExecutionEvent** — agent pauses for external execution.
+    **RequireExternalExecutionEvent** — agent pauses for external execution. A suspended call produces no `ToolResult*` events: the tool has not executed, and the real result is supplied by the caller and surfaced through `ExternalExecutionResultEvent`.
 
     | Method | Type | Description |
     |--------|------|-------------|
@@ -417,7 +421,7 @@ agent.streamEvents(userMsg)
 
 <Tip>
 
-This decoupling makes deployments flexible: the backend pushes the event stream over SSE, and the frontend reconstructs the message client-side. Even if the connection drops, replaying events from any checkpoint restores the message state precisely.
+For live output within the current request, adapt AgentEvent to SSE. `streamEvents()` starts execution and has no durable cursor; do not execute the request again to catch up after a disconnect. Harness also saves logs for direct calls by default. See [Session operations, events and recovery](/v2/en/docs/harness/session-log) for reading history and introducing `AgentSession` when you need background tasks. Hosted frontends use [Agent API snapshot plus SSE](/v2/en/service/session-event-log).
 
 </Tip>
 
@@ -476,3 +480,9 @@ How messages are stored and persisted
 
 
 </CardGroup>
+
+## Relationship to durable SessionEvent
+
+AgentEvent is a typed live event; SessionEvent is an immutable durable fact, not a one-to-one copy. Standard execution exposes agentId/sessionId/turnId/runId through event.getExecution(). runId matches native executionRunId. Forwarded children keep their own identity. Live event IDs, native seq and public SSE cursors remain independent; receiving a live event is not a commit acknowledgment.
+
+A logical turn may span multiple executions. AgentEndEvent only ends the current invocation. See [Session operations, events and recovery](/v2/en/docs/harness/session-log).

@@ -39,6 +39,7 @@ import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -59,9 +60,11 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -280,8 +283,11 @@ class ReActAgentNewLoopReplyTest {
         ToolResultBlock toolResult = toolResults.get(0);
         assertEquals("ext1", toolResult.getId());
         assertEquals("external_api", toolResult.getName());
-        assertEquals(ToolResultState.RUNNING, toolResult.getState());
         assertTrue(toolResult.isSuspended());
+        assertEquals(ToolResultState.SUSPENDED, toolResult.getState());
+        assertTrue(
+                toolResult.getOutput().isEmpty(),
+                "suspended marker must not fabricate tool output");
     }
 
     @Test
@@ -303,16 +309,17 @@ class ReActAgentNewLoopReplyTest {
         List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
         assertNotNull(events);
 
-        int iToolResultEnd = indexOf(events, ToolResultEndEvent.class);
         int iRequireExternal = indexOf(events, RequireExternalExecutionEvent.class);
 
-        assertTrue(iToolResultEnd >= 0, "ToolResultEndEvent expected");
-        assertTrue(
-                iRequireExternal > iToolResultEnd,
-                "RequireExternalExecutionEvent must follow suspended tool result");
-
-        ToolResultEndEvent end = (ToolResultEndEvent) events.get(iToolResultEnd);
-        assertEquals(ToolResultState.RUNNING, end.getState());
+        assertEquals(
+                -1,
+                indexOf(events, ToolResultEndEvent.class),
+                "a suspended tool must not emit a result end event");
+        assertEquals(
+                -1,
+                indexOf(events, ToolResultTextDeltaEvent.class),
+                "a suspended tool must not emit result content");
+        assertTrue(iRequireExternal >= 0, "RequireExternalExecutionEvent expected");
 
         RequireExternalExecutionEvent event =
                 (RequireExternalExecutionEvent) events.get(iRequireExternal);
@@ -710,6 +717,11 @@ class ReActAgentNewLoopReplyTest {
         AtomicReference<List<ToolSchema>> summaryTools = new AtomicReference<>();
         MiddlewareBase middleware =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onModelCall(
                             Agent agent,

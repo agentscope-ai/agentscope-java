@@ -29,7 +29,7 @@ jobs:
     env:
       SERVICE_VERSION: ${{ inputs.version }}
       IMAGE_REPOSITORY: ${{ inputs.repository }}
-      AISTIO_TEST_POSTGRES_DSN: postgres://postgres:ci-test-only@localhost:5432/postgres?sslmode=disable
+      CONTROL_PLANE_TEST_POSTGRES_DSN: postgres://postgres:ci-test-only@localhost:5432/postgres?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -39,8 +39,8 @@ jobs:
           cache: maven
       - uses: actions/setup-go@v5
         with:
-          go-version-file: agentscope-service/aistio/go.mod
-          cache-dependency-path: agentscope-service/aistio/go.sum
+          go-version-file: agentscope-service/service-controlplane/go.mod
+          cache-dependency-path: agentscope-service/service-controlplane/go.sum
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -50,7 +50,7 @@ jobs:
       - uses: azure/setup-helm@v4.3.0
         with:
           version: v3.17.3
-      - run: python -m pip install -r agentscope-service/release/requirements.txt -e 'agentscope-service/aistio/sdk/python[dev]'
+      - run: python -m pip install -r agentscope-service/release/requirements.txt -e 'agentscope-service/service-controlplane/sdk/python[dev]'
       - run: python agentscope-service/release/release.py verify
       - run: python agentscope-service/release/release.py package --version "$SERVICE_VERSION" --repository "$IMAGE_REPOSITORY"
       - uses: actions/upload-artifact@v4
