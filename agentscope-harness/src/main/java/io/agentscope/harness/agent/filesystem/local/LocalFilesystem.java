@@ -594,6 +594,21 @@ public class LocalFilesystem implements AbstractFilesystem {
         return namespaceFactory;
     }
 
+    /**
+     * Returns the configured path namespace as an immutable snapshot.
+     *
+     * @param rc call identity; null is treated as an empty context
+     * @return namespace segments, or an empty list for a shared root
+     */
+    public List<String> storageNamespace(RuntimeContext rc) {
+        NamespaceFactory factory = namespaceFactory;
+        List<String> namespace =
+                factory == null
+                        ? List.of()
+                        : factory.getNamespace(rc != null ? rc : RuntimeContext.empty());
+        return namespace == null ? List.of() : List.copyOf(namespace);
+    }
+
     @Override
     public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
         return new io.agentscope.harness.agent.session.LocalSessionStorage(

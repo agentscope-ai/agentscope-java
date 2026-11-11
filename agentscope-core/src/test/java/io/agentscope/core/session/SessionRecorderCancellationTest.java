@@ -15,104 +15,233 @@
  */
 package io.agentscope.core.session;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.spy;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultMessage;
+import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.BooleanSupplier;
+import java.util.Set;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import reactor.core.Disposable;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
-/**
- * Disposing a {@link SessionRecorder} flush must cancel the signal, never the storage work: an
- * interrupted {@code renew}/{@code commit} leaves the durable outcome unknown and cannot be
- * retried safely.
- */
 class SessionRecorderCancellationTest {
+    private SessionLog log;
+    private SessionRecorder recorder;
+    private AgentState state;
 
-    private static final SessionKey KEY = new SessionKey("user-a", "agent-a", "cancel-flush");
-    private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    @BeforeEach
+    void setUp() {
+        var context = RuntimeContext.builder().userId("u").sessionId("s").build();
+        log = new InMemorySessionLogStore().open(new SessionKey("u", "agent", "s"), context);
+        state =
+                AgentState.builder()
+                        .userId("u")
+                        .sessionId("s")
+                        .context(
+                                List.of(
+                                        AssistantMessage.builder()
+                                                .content(List.of(call("fast"), call("slow")))
+                                                .build()))
+                        .build();
+        recorder = new SessionRecorder(log, null);
+        recorder.start(List.of(), state).block(Duration.ofSeconds(5));
+        recorder.checkpointNow(state, "before_tool");
+        recorder.recordNow("tool/dispatch", Map.of("toolCallId", "fast"));
+        recorder.recordNow("tool/dispatch", Map.of("toolCallId", "slow"));
+    }
+
+    @AfterEach
+    void tearDown() {
+        recorder.close();
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = ToolResultState.class,
+            names = {"SUCCESS", "ERROR", "DENIED"})
+    void cancellationPreservesCompletedResultAndLeavesUnknownSiblingUnresolved(
+            ToolResultState resultState) {
+        var result =
+                ToolResultBlock.builder()
+                        .id("fast")
+                        .name("fast")
+                        .state(resultState)
+                        .output(result("receipt").getOutput())
+                        .metadata(Map.of("receipt", 42))
+                        .build();
+        complete(result);
+        // A later state checkpoint need not contain the batch-local result yet.
+        state.getToolContext().addDiscoveredTools(List.of("discovered"));
+        recorder.checkpointNow(state, "before_tool");
+        completeUnknownSibling();
+        String liveState = state.toJson();
+
+        recorder.finish(state, "cancelled").block(Duration.ofSeconds(5));
+
+        var projection = SessionProjection.read(log);
+        assertEquals(Set.of("slow"), projection.uncertainToolCalls());
+        var results = results(projection.restore());
+        assertEquals(1, results.size());
+        assertEquals(resultState, results.get(0).getState());
+        assertEquals(result.getOutput(), results.get(0).getOutput());
+        assertEquals(result.getMetadata(), results.get(0).getMetadata());
+        assertEquals("fast", results.get(0).getId());
+        assertEquals(
+                List.of("discovered"), projection.restore().getToolContext().getDiscoveredTools());
+        assertEquals(liveState, state.toJson(), "only the recovery snapshot is supplemented");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"completed", "cancelled"})
+    void canonicalRewrittenResultWinsWithoutDuplication(String status) {
+        complete(result("raw action output"));
+        var rewritten = result("post-acting replacement").withState(ToolResultState.ERROR);
+        state.contextMutable().add(new ToolResultMessage(rewritten));
+
+        recorder.finish(state, status).block(Duration.ofSeconds(5));
+
+        var results = results(SessionProjection.read(log).restore());
+        assertEquals(1, results.size());
+        assertEquals(rewritten.getOutput(), results.get(0).getOutput());
+        assertEquals(ToolResultState.ERROR, results.get(0).getState());
+    }
 
     @Test
-    void disposingFlushDoesNotInterruptJournalIo() throws Exception {
-        SessionLog log = spy(new InMemorySessionLogStore().open(KEY, null));
+    void cancellationDoesNotResurrectCallsRemovedFromContext() {
+        complete(result("old output"));
+        state.contextMutable().clear();
+        state.contextMutable().add(new UserMessage("replacement after compaction"));
+        recorder.checkpointNow(state, "compaction");
 
-        CountDownLatch insideRenew = new CountDownLatch(1);
-        CountDownLatch resume = new CountDownLatch(1);
-        CountDownLatch renewReturned = new CountDownLatch(1);
-        AtomicBoolean interrupted = new AtomicBoolean();
-        AtomicBoolean first = new AtomicBoolean(true);
-        doAnswer(
-                        invocation -> {
-                            if (first.compareAndSet(true, false)) {
-                                insideRenew.countDown();
-                                try {
-                                    resume.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
-                                } catch (InterruptedException e) {
-                                    interrupted.set(true);
-                                    Thread.currentThread().interrupt();
-                                }
-                            }
-                            try {
-                                return invocation.callRealMethod();
-                            } finally {
-                                renewReturned.countDown();
-                            }
-                        })
-                .when(log)
-                .renew(any(), any());
+        recorder.finish(state, "cancelled").block(Duration.ofSeconds(5));
 
-        SessionRecorder recorder = new SessionRecorder(log, "turn-cancel");
+        var restored = SessionProjection.read(log).restore();
+        assertTrue(results(restored).isEmpty());
+        assertEquals("replacement after compaction", restored.getContext().get(0).getTextContent());
+    }
+
+    @Test
+    void cancellationDoesNotCompleteAnUnrelatedPendingCall() {
+        complete(result("old output"));
+        state.contextMutable().clear();
+        state.contextMutable()
+                .add(AssistantMessage.builder().content(List.of(call("new"))).build());
+
+        recorder.finish(state, "cancelled").block(Duration.ofSeconds(5));
+
+        assertTrue(results(SessionProjection.read(log).restore()).isEmpty());
+    }
+
+    @Test
+    void cancellationDoesNotTurnSuspensionIntoACompletedToolResult() {
+        complete(ToolResultBlock.suspended(call("fast")));
+        state.getToolContext().addDiscoveredTools(List.of("discovered"));
+
+        recorder.finish(state, "cancelled").block(Duration.ofSeconds(5));
+
+        assertTrue(results(SessionProjection.read(log).restore()).isEmpty());
+    }
+
+    @Test
+    void cancellationWithNoCompletedActionKeepsUnknownToolsUnresolved() {
+        completeUnknownSibling();
+        state.getToolContext().addDiscoveredTools(List.of("discovered"));
+
+        recorder.finish(state, "cancelled").block(Duration.ofSeconds(5));
+
+        var projection = SessionProjection.read(log);
+        assertEquals(Set.of("fast", "slow"), projection.uncertainToolCalls());
+        assertTrue(results(projection.restore()).isEmpty());
+    }
+
+    @Test
+    void cancellationAcceptsLegacyResultsWithoutPolymorphicDiscriminator() {
+        var payload =
+                new LinkedHashMap<Object, Object>(
+                        JsonUtils.getJsonCodec()
+                                .fromJson(
+                                        JsonUtils.getJsonCodec().toJson(result("legacy")),
+                                        Map.class));
+        payload.remove("type");
+        recorder.recordNow("action/end", Map.of("toolCallId", "fast", "result", payload));
+        state.getToolContext().addDiscoveredTools(List.of("discovered"));
+
+        recorder.finish(state, "cancelled").block(Duration.ofSeconds(5));
+
+        var results = results(SessionProjection.read(log).restore());
+        assertEquals(1, results.size());
+        assertEquals(result("legacy").getOutput(), results.get(0).getOutput());
+    }
+
+    @Test
+    void administrativeReplacementAfterCancellationDoesNotResurrectCompletedActions() {
+        complete(result("old output"));
+        // Here both calls are known, so an administrative replacement is allowed.
+        recorder.recordNow(
+                "action/end",
+                Map.of(
+                        "toolCallId",
+                        "slow",
+                        "result",
+                        ToolResultBlock.success("done").withIdAndName("slow", "slow")));
+        recorder.finish(state, "cancelled").block(Duration.ofSeconds(5));
+        assertEquals(2, results(SessionProjection.read(log).restore()).size());
+
+        SessionStateAccess.update(
+                log,
+                () -> state,
+                "explicit rollback",
+                restored -> restored.contextMutable().clear());
+        var rolledBack = SessionProjection.read(log).restore();
+        assertTrue(results(rolledBack).isEmpty());
+        assertTrue(rolledBack.getContext().isEmpty());
+        var later = new SessionRecorder(log, null);
         try {
-            recorder.append(
-                    "message/user",
-                    Map.of(
-                            "message",
-                            io.agentscope.core.message.Msg.builder()
-                                    .role(io.agentscope.core.message.MsgRole.USER)
-                                    .textContent("queued")
-                                    .build()));
-
-            Disposable flush = recorder.flush().subscribe();
-            assertTrue(
-                    insideRenew.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS),
-                    "flush never reached the journal");
-
-            // The cancellation under test: a caller (or Mono.using cleanup) disposing the flush.
-            flush.dispose();
-            resume.countDown();
-
-            assertTrue(
-                    renewReturned.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS),
-                    "the storage work never finished");
-            assertFalse(
-                    interrupted.get(),
-                    "disposing flush interrupted the thread executing journal I/O");
-
-            // The queued event must still reach the journal.
-            awaitTrue(() -> recorder.durableSeq() > 0, "the queued event was never committed");
+            later.start(List.of(), rolledBack).block(Duration.ofSeconds(5));
+            later.finish(rolledBack, "cancelled").block(Duration.ofSeconds(5));
+            assertTrue(results(SessionProjection.read(log).restore()).isEmpty());
         } finally {
-            recorder.close();
+            later.close();
         }
     }
 
-    private static void awaitTrue(BooleanSupplier condition, String message) {
-        long deadline = System.nanoTime() + TIMEOUT.toNanos();
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() >= deadline) throw new AssertionError(message);
-            try {
-                Thread.sleep(10);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new AssertionError(message, e);
-            }
-        }
+    private void complete(ToolResultBlock result) {
+        recorder.recordNow("action/end", Map.of("toolCallId", "fast", "result", result));
+    }
+
+    private void completeUnknownSibling() {
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("toolCallId", "slow");
+        payload.put("result", null);
+        recorder.recordNow("action/end", payload);
+    }
+
+    private static ToolUseBlock call(String id) {
+        return ToolUseBlock.builder().id(id).name(id).input(Map.of()).build();
+    }
+
+    private static ToolResultBlock result(String text) {
+        return ToolResultBlock.success(text).withIdAndName("fast", "fast");
+    }
+
+    private static List<ToolResultBlock> results(AgentState state) {
+        return state.getContext().stream()
+                .flatMap(message -> message.getContentBlocks(ToolResultBlock.class).stream())
+                .toList();
     }
 }

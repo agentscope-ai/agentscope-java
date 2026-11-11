@@ -55,6 +55,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addSharedPrefix(String)` | 额外的工作区相对路径前缀也路由到 KV（例如 `"prompts/"` / `"configs/"`） | 无 |
 | `workspaceIndex(WorkspaceIndex)` | 加速远端 ls/glob/grep 的 SQLite 索引 | 不加索引，走全量扫描 |
 
+可选的本地索引无法初始化时（例如 `.index/workspace.db` 已损坏），`WorkspaceIndex.open(workspaceRoot)` 返回 `null`，并关闭本次尝试中已经获取的连接。调用方可以回退到远端扫描，不会保留这条初始化失败的连接。成功返回的索引会持有连接，直到调用 `close()`。
+
 #### 内置路由规则
 
 框架自动把以下路径路由到共享 KV，每个路径段各自独立命名空间，不会互相污染：
@@ -510,7 +512,9 @@ workspace/
 
 所有文件工具都通过 `AbstractFilesystem` 接口调用，每次操作传入当前 `RuntimeContext`，由文件系统后端决定实际读写位置。agent 代码完全感知不到模式差异。
 
-`read_file` 默认每次最多返回 16,000 个 Unicode 码点，即使省略 `limit` 或单行内容很长也受此限制。可选参数 `max_chars` 可调整每页大小，硬上限为 32,000。`offset` 和 `limit` 仍按行选择内容；`char_offset` 从零开始，在**同一行范围返回的文本内**按字符分页。发生截断时，结果会给出下一页的 `char_offset`，继续读取时保持 path、`offset` 和 `limit` 不变。分页不会拆开 Unicode 代理对。拼接多页时应保持文件不变，偏移量不代表不可变快照。
+`read_file` 默认每次最多返回 16,000 个 Unicode 码点，即使省略 `limit` 或单行内容很长也受此限制。可选参数 `max_chars` 可调整每页大小，请求值不会超过应用配置的上限（默认 32,000）。`offset` 和 `limit` 仍按行选择内容；`char_offset` 从零开始，在**同一行范围返回的文本内**按字符分页。发生截断时，结果会给出下一页的 `char_offset`，继续读取时保持 path、`offset` 和 `limit` 不变。分页不会拆开 Unicode 代理对。拼接多页时应保持文件不变，偏移量不代表不可变快照。
+
+通过 `HarnessAgent.Builder.readFileMaxChars(int)` 配置上限。例如，`.readFileMaxChars(64_000)` 允许工具调用请求最多 64,000 个码点。配置值不得小于 16,000，更小的值会抛出 `IllegalArgumentException`。自动创建的通用子 Agent 和声明式子 Agent 均继承此配置。提高上限后，省略 `max_chars` 时的默认读取量仍为 16,000。直接使用 `FilesystemTool` 时，可通过 `(filesystem, pathNormalizer, readFileMaxChars)` 构造器传入上限；现有构造器继续使用默认上限。
 
 转存后的工具结果文件也受此限制。这是适用于所有文件系统后端的工具输出上限，不限制后端读取所选内容时的内存分配和 I/O。二进制文件按编码后的文本分页，需拼接完整内容后再解码。
 
@@ -540,7 +544,9 @@ workspace/
 
 ## 工作区里的两层读取
 
-`AGENTS.md`、`MEMORY.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+`AGENTS.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+
+按身份的运行时数据（`MEMORY.md`、`memory/*.md`、task records）兜底落在 **caller 命名空间内**，不会回退到 workspace 根。规则见 [workspace](/v2/zh/docs/harness/workspace#两层读架构filesystem-first--本地兜底)。
 
 写入永远走配置的文件系统后端。
 

@@ -185,7 +185,7 @@ The `ModelRegistry` string form (`<provider>:<model>`) requires the matching mod
 | `middlewares` | `List<? extends MiddlewareBase>` | `List.of()` | Applied to agent / reasoning / acting / model call / system prompt hooks |
 | `stateStore` | `AgentStateStore` | `null` (no persistence) | When set, agent automatically loads/saves `AgentState` on every `call`, keyed by the `(userId, sessionId)` of the call's `RuntimeContext` |
 | `defaultSessionId` | `String` | agent `name` | Fallback `sessionId` used when a call's `RuntimeContext` carries none |
-| `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules, see [Permission System](/v2/en/docs/building-blocks/permission-system) |
+| `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules; a non-null context replaces a slot's persisted context on activation, see [Permission System](/v2/en/docs/building-blocks/permission-system) |
 | `maxIters` | `int` | `10` | Max iterations of the ReAct main loop |
 
 ## Running an agent
@@ -602,6 +602,8 @@ The framework automatically selects the implementation path based on model capab
 | **Fallback** | Model lacks native structured output (Anthropic, Ollama, etc.) | A synthetic `generate_response` tool is injected with an instruction hint; the model calls this tool to emit its structured result |
 
 Either way, the caller's code is identical — path selection is transparent.
+
+On the fallback path, successful output-tool cleanup preserves business tool calls and their results, including when the model returns them alongside `generate_response` in one response. Only the internal output-tool exchange is removed, so subsequent turns retain paired business-tool history.
 
 When a `ModelRequestPreparer` is configured, including Harness's context compiler, the tool reminder and required `generate_response` schema are assembled before final preparation. The model receives the prepared messages, tools, and options. The reminder is a request-only projection, so it is included in budget checks without changing durable user messages or entering conversation history. A fallback model prepares the request again for its own limits.
 

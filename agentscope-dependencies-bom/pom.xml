@@ -75,10 +75,10 @@
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <testcontainers.version>1.21.4</testcontainers.version>
         <guava.version>33.7.2-jre</guava.version>
-        <google-genai.version>1.78.0</google-genai.version>
-        <dashscope-sdk-java.version>2.23.3</dashscope-sdk-java.version>
+        <google-genai.version>1.80.0</google-genai.version>
+        <dashscope-sdk-java.version>2.23.4</dashscope-sdk-java.version>
         <bailian.version>2.14.5</bailian.version>
-        <openai-java.version>4.88.0</openai-java.version>
+        <openai-java.version>4.99.0</openai-java.version>
         <anthropic.version>2.72.0</anthropic.version>
         <mcp.version>2.1.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
@@ -97,7 +97,7 @@
         <opentelemetry-reactor.version>2.33.1-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.41.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.2.0</redisson.version>
-        <a2a-java-sdk.version>1.4.0.Final</a2a-java-sdk.version>
+        <a2a-java-sdk.version>1.5.0.Final</a2a-java-sdk.version>
         <jedis.version>7.4.1</jedis.version>
         <lettuce.version>6.4.2.RELEASE</lettuce.version>
         <mongodb-driver.version>5.3.1</mongodb-driver.version>
@@ -105,7 +105,7 @@
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.7</spring.version>
         <spring-boot.version>4.0.4</spring-boot.version>
-        <nacos-client.version>3.2.1-2026.03.30</nacos-client.version>
+        <nacos-client.version>3.3.0</nacos-client.version>
         <json-schema-validator.version>2.0.0</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
         <snakeyaml.version>2.6</snakeyaml.version>

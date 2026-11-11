@@ -21,10 +21,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.extensions.model.ollama.dto.OllamaMessage;
 import java.util.Arrays;
 import java.util.List;
@@ -282,5 +284,38 @@ class OllamaConversationMergerTest {
 
         // Assert
         assertEquals("user", merged.getRole());
+    }
+
+    @Test
+    @DisplayName("Should record document blocks in merged history")
+    void testDocumentBlockIsRecorded() {
+        Msg msg =
+                Msg.builder()
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Summarize this").build(),
+                                        DocumentBlock.builder()
+                                                .name("report.pdf")
+                                                .mimeType("application/pdf")
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/report.pdf")
+                                                                .build())
+                                                .build()))
+                        .build();
+        List<Msg> msgs = List.of(msg);
+
+        OllamaMessage merged =
+                merger.mergeToMessage(
+                        msgs, Msg::getName, blocks -> "Converted", TEST_HISTORY_PROMPT);
+
+        assertTrue(
+                merged.getContent()
+                        .contains(
+                                "[document: report.pdf, application/pdf, url:"
+                                        + " https://example.com/report.pdf]"),
+                "Merged history must mention the document instead of dropping it");
     }
 }

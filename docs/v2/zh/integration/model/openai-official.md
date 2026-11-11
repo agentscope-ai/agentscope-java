@@ -42,6 +42,35 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
     .build();
 ```
 
+## 文档输入
+
+通过用户消息中的 `DocumentBlock` 发送文档。默认 formatter 和
+`ResponsesMultiAgentFormatter` 都会将文档保留为原生 `input_file` 内容，并保持
+文档与文本、图片的排列顺序。文件格式和模型支持范围遵循
+[OpenAI 文件输入指南](https://developers.openai.com/api/docs/guides/file-inputs)。
+
+OpenAI 要求单个文件小于 50 MB，且一次请求中所有文件的合计大小不超过 50 MB。
+对于跨请求复用的文档，可以先上传到 OpenAI 服务端，再使用 `FileIdSource`
+引用返回的文件 ID，避免重复读取和编码。
+
+```java
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.UserMessage;
+import java.util.List;
+
+DocumentBlock document = DocumentBlock.builder()
+    .source(new URLSource("https://example.com/report.pdf"))
+    .build();
+
+model.stream(List.of(UserMessage.builder()
+        .content(TextBlock.builder().text("总结这份报告。").build(), document)
+        .build()), null, null)
+    .doOnNext(System.out::println)
+    .blockLast();
+```
+
 ## 服务端内置工具
 
 OpenAI 官方文档: https://developers.openai.com/api/docs/guides/tools#available-tools

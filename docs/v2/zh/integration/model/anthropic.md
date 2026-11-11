@@ -40,6 +40,42 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
+## PDF 文档与引用
+
+PDF `DocumentBlock` 会转换为 Anthropic document block。支持 Base64、本地文件路径或
+`file://` URL、远程 HTTP(S) URL，以及 Anthropic 文件 ID；本地 PDF 会在发送请求前编码为
+Base64。
+
+```java
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
+
+DocumentBlock document = DocumentBlock.builder()
+    .name("guide.pdf")
+    .source(URLSource.builder()
+        .url("file:///absolute/path/to/guide.pdf")
+        .mimeType("application/pdf")
+        .build())
+    .build();
+
+Msg request = Msg.builder()
+    .role(MsgRole.USER)
+    .content(document, TextBlock.builder().text("请总结这个文档。").build())
+    .build();
+
+model.stream(List.of(request), List.of(), null);
+```
+
+Anthropic 要求一次请求中的 document 必须全部开启 citations 或全部关闭，因此本集成会为
+发送的每个 PDF document 开启 citations。返回的引用作为 provider 专属响应 metadata 保留在
+`anthropic.citations` 下。该值是 `List<Map<String, Object>>`；每个条目包含 `type`、`block_index`、
+`cited_text`、`document_index`、对应引用类型的位置字段，以及可选的 `document_title` 和 `file_id`。
+
+```java
+Object citations = response.getMetadata().get("anthropic.citations");
+```
+
 ## 服务端工具
 
 Anthropic 内置工具由 Anthropic 在模型服务端执行，不会进入 AgentScope 本地 Toolkit。使用 SDK

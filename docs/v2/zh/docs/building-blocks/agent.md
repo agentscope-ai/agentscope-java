@@ -187,7 +187,7 @@ ReActAgent.Builder agentBuilder =
 | `middlewares` | `List<? extends MiddlewareBase>` | `List.of()` | 应用于 agent / reasoning / acting / model call / system prompt 钩子 |
 | `stateStore` | `AgentStateStore` | `null`（不持久化） | 配置后 agent 在每次 `call` 后自动加载/保存 `AgentState`，按该次调用 `RuntimeContext` 的 `(userId, sessionId)` 寻址 |
 | `defaultSessionId` | `String` | agent `name` | 当某次调用的 `RuntimeContext` 没带 `sessionId` 时的兜底值 |
-| `permissionContext` | `PermissionContextState` | 默认 `DEFAULT` 模式 | 工具执行的细粒度规则，参见 [权限系统](/v2/zh/docs/building-blocks/permission-system) |
+| `permissionContext` | `PermissionContextState` | 默认 `DEFAULT` 模式 | 工具执行的细粒度规则；非空上下文会在激活槽位时替换已持久化的上下文，参见 [权限系统](/v2/zh/docs/building-blocks/permission-system) |
 | `maxIters` | `int` | `10` | ReAct 主循环最大迭代次数 |
 
 ## 运行智能体
@@ -601,6 +601,8 @@ System.out.println(weather.temperature());   // "18°C"
 | **降级路径** | 模型不支持原生结构化输出（Anthropic、Ollama 等） | 注入 `generate_response` 合成工具 + 指令提示，模型以 tool call 方式输出结构化结果 |
 
 无论哪条路径，调用方的代码完全相同——路径选择对用户透明。
+
+降级路径成功后的输出工具清理会保留业务工具调用及其结果，包括模型在同一响应中同时返回业务调用与 `generate_response` 的情况。清理只移除内部输出工具的交互，因此后续轮次仍能使用配对完整的业务工具历史。
 
 配置 `ModelRequestPreparer`（包括 Harness 的上下文编译器）后，工具提醒和必要的 `generate_response` schema 会在最终准备前完成组装。模型使用准备后的消息、工具和调用选项。提醒是仅属于当前请求的投影，因此会纳入预算检查，同时不改写持久用户消息、不进入对话历史。切换到备用模型时，会按该模型的限制重新准备请求。
 
