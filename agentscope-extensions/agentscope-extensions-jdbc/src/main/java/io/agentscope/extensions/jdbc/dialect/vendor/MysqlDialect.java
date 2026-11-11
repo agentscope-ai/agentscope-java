@@ -177,6 +177,68 @@ public class MysqlDialect extends AbstractJdbcDialect {
     }
 
     // ------------------------------------------------------------------
+    //  SkillDialect / SkillResourcesDialect
+    // ------------------------------------------------------------------
+
+    /**
+     * Skill tables ported verbatim from the deprecated skill-mysql-repository module:
+     * auto-increment id, per-namespace unique names through the inlined
+     * {@code UNIQUE KEY uk_namespace_name (namespace, name)}, utf8mb4 with unicode
+     * collation, on-update timestamp, and the resources' composite PK plus cascading FK.
+     * The {@code namespace} columns are pinned to {@code utf8mb4_bin}: the namespace is
+     * the isolation boundary and must not fold case under the table's case-insensitive
+     * default — the same rationale as the store/session key columns — while {@code name}
+     * keeps that default, preserving the legacy lookup behavior. Only the table names are
+     * resolved through the dialect instead of a hard-coded {@code database.table} prefix —
+     * tables now live in the connection's current database, like the base tables.
+     */
+    @Override
+    public List<String> skillCreateTableDdls() {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + skillTableName()
+                        + " ("
+                        + "  id            BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,"
+                        + "  namespace     VARCHAR(64) COLLATE utf8mb4_bin NOT NULL"
+                        + " DEFAULT 'default',"
+                        + "  name          VARCHAR(255) NOT NULL,"
+                        + "  description   TEXT NOT NULL,"
+                        + "  skill_content LONGTEXT NOT NULL,"
+                        + "  source        VARCHAR(255) NOT NULL,"
+                        + "  metadata_json LONGTEXT NULL,"
+                        + "  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        + "    ON UPDATE CURRENT_TIMESTAMP,"
+                        + "  UNIQUE KEY uk_namespace_name (namespace, name)"
+                        + ") DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    }
+
+    @Override
+    public List<String> skillResourcesCreateTableDdls() {
+        // idx_namespace mirrors the store table's: the bulk resource statements filter by
+        // namespace on a table shared by every namespace, and PRIMARY KEY (id,
+        // resource_path) cannot serve that predicate (namespace is not a prefix).
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS "
+                        + skillResourcesTableName()
+                        + " ("
+                        + "  id               BIGINT NOT NULL,"
+                        + "  namespace        VARCHAR(64) COLLATE utf8mb4_bin NOT NULL"
+                        + " DEFAULT 'default',"
+                        + "  resource_path    VARCHAR(500) NOT NULL,"
+                        + "  resource_content LONGTEXT NOT NULL,"
+                        + "  created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "  updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        + "    ON UPDATE CURRENT_TIMESTAMP,"
+                        + "  PRIMARY KEY (id, resource_path),"
+                        + "  INDEX idx_namespace (namespace),"
+                        + "  FOREIGN KEY (id) REFERENCES "
+                        + skillTableName()
+                        + "(id) ON DELETE CASCADE"
+                        + ") DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    }
+
+    // ------------------------------------------------------------------
     //  SandboxLockStrategy — MySQL native GET_LOCK
     // ------------------------------------------------------------------
 

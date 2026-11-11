@@ -22,6 +22,8 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
@@ -29,9 +31,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
@@ -104,10 +110,10 @@ public class SessionEventLog {
         return append(sessionId, type, payload, null);
     }
 
-    /** Appends locally without invoking generic mirrors; caller supplies an immutable scope. */
+    /** Appends child-session events without control-plane delivery. */
     public SessionEventDto appendLocal(
             String sessionId, String type, Map<String, Object> payload, String eventId) {
-        return appendInternal(sessionId, type, payload, eventId, false);
+        return appendInternal(sessionId, type, payload, eventId, false, null);
     }
 
     /**
@@ -116,7 +122,16 @@ public class SessionEventLog {
      */
     public SessionEventDto append(
             String sessionId, String type, Map<String, Object> payload, String eventId) {
-        return appendInternal(sessionId, type, payload, eventId, true);
+        return appendInternal(sessionId, type, payload, eventId, true, null);
+    }
+
+    public SessionEventDto appendScoped(
+            String sessionId,
+            String type,
+            Map<String, Object> payload,
+            String eventId,
+            SessionEventScope scope) {
+        return appendInternal(sessionId, type, payload, eventId, true, scope);
     }
 
     private SessionEventDto appendInternal(
@@ -124,7 +139,8 @@ public class SessionEventLog {
             String type,
             Map<String, Object> payload,
             String eventId,
-            boolean mirror) {
+            boolean mirror,
+            SessionEventScope scope) {
         if (deletedSessions.isDeleted(sessionId)) {
             log.debug("Dropping {} event for deleted session {}", type, sessionId);
             return droppedEvent(sessionId, type, payload, eventId);
@@ -134,14 +150,21 @@ public class SessionEventLog {
             try {
                 SessionEventDto appended =
                         transactionTemplate.execute(
-                                status -> appendOnce(sessionId, type, payload, eventId));
+                                status -> {
+                                    var event = appendOnce(sessionId, type, payload, eventId);
+                                    if (mirror) enqueueMirrors(event, scope);
+                                    return event;
+                                });
                 notifier.publish(sessionId);
-                if (mirror) {
-                    mirrorBestEffort(appended);
-                }
                 return appended;
             } catch (RuntimeException ex) {
                 if (!isSeqConflict(ex)) {
+                    throw ex;
+                }
+                // A concurrent exporter may have committed this immutable event. Increasing
+                // its sequence cannot fix an event-id conflict: let appendIdempotent validate
+                // and reuse the winner immediately, instead of retrying the same INSERT.
+                if (eventId != null && repository.findByEventId(eventId).isPresent()) {
                     throw ex;
                 }
                 lastConflict = ex;
@@ -168,13 +191,22 @@ public class SessionEventLog {
      */
     public SessionEventDto appendIdempotent(
             String sessionId, String type, Map<String, Object> payload, String eventId) {
-        return appendIdempotent(sessionId, type, payload, eventId, true);
+        return appendIdempotent(sessionId, type, payload, eventId, true, null);
     }
 
     /** Appends/replays locally without an unscoped generic mirror. */
     public SessionEventDto appendIdempotentLocal(
             String sessionId, String type, Map<String, Object> payload, String eventId) {
-        return appendIdempotent(sessionId, type, payload, eventId, false);
+        return appendIdempotent(sessionId, type, payload, eventId, false, null);
+    }
+
+    public SessionEventDto appendIdempotentScoped(
+            String sessionId,
+            String type,
+            Map<String, Object> payload,
+            String eventId,
+            SessionEventScope scope) {
+        return appendIdempotent(sessionId, type, payload, eventId, true, scope);
     }
 
     private SessionEventDto appendIdempotent(
@@ -182,40 +214,59 @@ public class SessionEventLog {
             String type,
             Map<String, Object> payload,
             String eventId,
-            boolean mirror) {
+            boolean mirror,
+            SessionEventScope scope) {
         if (eventId == null || eventId.isBlank()) {
             throw new IllegalArgumentException("eventId is required for idempotent append");
         }
         var existing = repository.findByEventId(eventId);
         if (existing.isEmpty()) {
-            return appendInternal(sessionId, type, payload, eventId, mirror);
+            try {
+                return appendInternal(sessionId, type, payload, eventId, mirror, scope);
+            } catch (RuntimeException error) {
+                if (repository.findByEventId(eventId).isPresent())
+                    return appendIdempotent(sessionId, type, payload, eventId, mirror, scope);
+                throw error;
+            }
         }
         if (!sessionId.equals(existing.get().getSessionId())
                 || !type.equals(existing.get().getEventType())) {
             throw new IllegalStateException(
                     "eventId already belongs to another session/event type: " + eventId);
         }
+        if (!Objects.equals(
+                jsonHelper.readMap(existing.get().getPayloadJson()),
+                jsonHelper.readMap(jsonHelper.writeJson(payload)))) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "eventId reused with different payload");
+        }
         SessionEventDto replay = toDto(existing.get());
         if (mirror) {
-            mirrorBestEffort(replay);
+            transactionTemplate.executeWithoutResult(status -> enqueueMirrors(replay, scope));
         }
         return replay;
     }
 
-    private void mirrorBestEffort(SessionEventDto event) {
-        if (event == null || event.seq() <= 0) {
-            return;
-        }
+    /** Command admission and its public fact commit together. Publish only after commit. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public SessionEventDto appendCommand(
+            String sessionId, String type, Map<String, Object> payload, String eventId) {
+        var event = appendOnce(sessionId, type, payload, eventId);
+        enqueueMirrors(event, null);
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        notifier.publish(sessionId);
+                    }
+                });
+        return event;
+    }
+
+    private void enqueueMirrors(SessionEventDto event, SessionEventScope scope) {
+        if (event == null || event.seq() <= 0) return;
         for (SessionEventMirror mirror : mirrors) {
-            try {
-                mirror.mirror(event);
-            } catch (RuntimeException ex) {
-                log.warn(
-                        "Session event mirror failed for {} seq {}: {}",
-                        event.sessionId(),
-                        event.seq(),
-                        ex.getMessage());
-            }
+            mirror.mirror(event, scope == null ? SessionEventScope.NONE : scope);
         }
     }
 
@@ -304,16 +355,37 @@ public class SessionEventLog {
                 .toList();
     }
 
+    /** Bounded database read over a fixed committed prefix. */
+    @Transactional(readOnly = true)
+    public List<SessionEventDto> page(String sessionId, long after, long through, int limit) {
+        if (limit < 1 || limit > 1000) throw new IllegalArgumentException("limit must be 1..1000");
+        return repository
+                .findBySessionIdAndSeqGreaterThanAndSeqLessThanEqualOrderBySeqAsc(
+                        sessionId, after, through, PageRequest.of(0, limit))
+                .stream()
+                .map(this::toDto)
+                .toList();
+    }
+
     /** Looks up a single event by its public identifier. */
     @Transactional(readOnly = true)
+    public Optional<SessionEventDto> findByEventId(String eventId) {
+        return repository.findByEventId(eventId).map(this::toDto);
+    }
+
+    /** Looks up a single event by its public identifier, requiring it to exist. */
+    @Transactional(readOnly = true)
     public SessionEventDto getByEventId(String eventId) {
-        return repository
-                .findByEventId(eventId)
-                .map(this::toDto)
+        return findByEventId(eventId)
                 .orElseThrow(
                         () ->
                                 new ResponseStatusException(
                                         HttpStatus.NOT_FOUND, "Event not found: " + eventId));
+    }
+
+    @Transactional(readOnly = true)
+    public long highWatermark(String sessionId) {
+        return repository.maxSeq(sessionId);
     }
 
     /** Returns a live flux of events for SSE streaming, starting after sequence 0. */
@@ -337,22 +409,41 @@ public class SessionEventLog {
                 Flux.merge(Flux.just(0L), recovery, notifier.wakeups(sessionId).map(ignored -> 0L))
                         .onBackpressureLatest();
         return wakeups.concatMap(
-                        ignored ->
+                ignored ->
+                        Mono.fromCallable(
+                                        () ->
+                                                transactionTemplate.execute(
+                                                        status -> repository.maxSeq(sessionId)))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .flatMapMany(
+                                        through ->
+                                                readCommittedPrefix(sessionId, cursor, through)));
+    }
+
+    private Flux<SessionEventDto> readCommittedPrefix(
+            String sessionId, AtomicLong cursor, long through) {
+        return Flux.defer(
+                        () ->
                                 Mono.fromCallable(
                                                 () ->
                                                         transactionTemplate.execute(
                                                                 status ->
-                                                                        listAfterUnchecked(
+                                                                        page(
                                                                                 sessionId,
-                                                                                cursor.get())))
-                                        .subscribeOn(Schedulers.boundedElastic()))
-                .concatMapIterable(
-                        list -> {
-                            if (list != null && !list.isEmpty()) {
-                                cursor.set(list.get(list.size() - 1).seq());
-                            }
-                            return list != null ? list : List.of();
-                        });
+                                                                                cursor.get(),
+                                                                                through,
+                                                                                256)))
+                                        .subscribeOn(Schedulers.boundedElastic())
+                                        .flatMapMany(
+                                                batch -> {
+                                                    if (batch == null || batch.isEmpty()) {
+                                                        cursor.set(through);
+                                                        return Flux.empty();
+                                                    }
+                                                    cursor.set(batch.get(batch.size() - 1).seq());
+                                                    return Flux.fromIterable(batch);
+                                                }))
+                .repeat(() -> cursor.get() < through);
     }
 
     /** Repository read used by transactional entry points and resumable subscriptions. */

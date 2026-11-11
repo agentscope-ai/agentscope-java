@@ -16,5 +16,5 @@ apiVersion: v2
 name: agentscope-service
 description: AgentScope Service gateway, control plane, managed dataplane and scheduler
 type: application
-version: 0.1.0
-appVersion: "2.0.3-rc.1"
+version: 2.1.0-BETA1
+appVersion: "2.1.0-BETA1"

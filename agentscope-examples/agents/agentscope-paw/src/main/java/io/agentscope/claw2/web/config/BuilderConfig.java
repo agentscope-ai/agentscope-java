@@ -21,13 +21,14 @@ import io.agentscope.claw2.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.Model;
-import io.agentscope.extensions.aistio.adapter.AgentScopeAdapter;
+import io.agentscope.core.session.SessionLogStore;
+import io.agentscope.extensions.controlplane.adapter.AgentScopeAdapter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.DmScope;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
-import io.agentscope.harness.agent.transcript.FilesystemTranscriptStore;
-import io.agentscope.harness.agent.transcript.TranscriptStore;
+import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -85,17 +86,9 @@ public class BuilderConfig {
                     + " concisely.}")
     private String agentSysPrompt;
 
-    /**
-     * Shared filesystem root for segmented session transcripts. aistiod can read the same tree via
-     * {@code AISTIO_TRANSCRIPT_FS_ROOT}. Empty disables the explicit store (HarnessAgent still
-     * defaults to {@code workspace/.agentscope/transcripts} when a filesystem is absent).
-     */
-    @Value("${claw.transcript.root:}")
-    private String transcriptRoot;
-
-    /** Tenant / namespace segment in transcript keys — keep in sync with {@code claw.aistio.namespace}. */
-    @Value("${claw.transcript.tenant:${claw.aistio.namespace:default}}")
-    private String transcriptTenant;
+    /** Optional shared native session-log root; empty uses each agent's workspace backend. */
+    @Value("${claw.session-log.root:}")
+    private String sessionLogRoot;
 
     // -----------------------------------------------------------------
     //  Model bean — only created when an api-key is set AND no other
@@ -114,32 +107,10 @@ public class BuilderConfig {
                 .build();
     }
 
-    /**
-     * Shared segmented transcript store. Same root should be passed to aistiod as
-     * {@code AISTIO_TRANSCRIPT_FS_ROOT} for Operate message history without a live DP.
-     */
     @Bean
-    @ConditionalOnExpression("'${claw.transcript.enabled:true}' == 'true'")
-    public TranscriptStore pawTranscriptStore() throws IOException {
-        Path home = resolveClawHome();
-        Path root =
-                (transcriptRoot != null && !transcriptRoot.isBlank())
-                        ? resolvePath(transcriptRoot)
-                        : home.resolve("transcripts");
-        Files.createDirectories(root);
-        String tenant =
-                transcriptTenant != null && !transcriptTenant.isBlank()
-                        ? transcriptTenant
-                        : "default";
-        log.info("Session transcript store: root={}, tenant={}", root, tenant);
-        return new FilesystemTranscriptStore(root);
-    }
-
-    @Bean
-    public String pawTranscriptTenant() {
-        return transcriptTenant != null && !transcriptTenant.isBlank()
-                ? transcriptTenant
-                : "default";
+    @ConditionalOnExpression("'${claw.session-log.root:}' != ''")
+    public SessionLogStore pawSessionLogStore() {
+        return new WorkspaceSessionLogStore(new LocalFilesystem(resolvePath(sessionLogRoot)));
     }
 
     // -----------------------------------------------------------------
@@ -151,9 +122,8 @@ public class BuilderConfig {
     public ClawBootstrap builderBootstrap(
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
-            Optional<AgentScopeAdapter> aistioAdapter,
-            Optional<TranscriptStore> transcriptStore,
-            String pawTranscriptTenant)
+            Optional<AgentScopeAdapter> controlPlaneAdapter,
+            Optional<SessionLogStore> sessionLogStore)
             throws IOException {
         Path home = resolveClawHome();
         ensureAgentscopeConfig(home);
@@ -179,16 +149,13 @@ public class BuilderConfig {
 
         builder.configureAllAgents(b -> b.middleware(new ToolNotificationMiddleware(toolEventBus)));
 
-        transcriptStore.ifPresent(
-                store ->
-                        builder.configureAllAgents(
-                                b ->
-                                        b.transcriptStore(store)
-                                                .transcriptTenant(pawTranscriptTenant)));
+        sessionLogStore.ifPresent(
+                store -> builder.configureAllAgents(b -> b.sessionLogStore(store)));
 
-        // A ReActAgent's middleware list is fixed at build time, so aistio has to be wired in here
+        // A ReActAgent's middleware list is fixed at build time, so controlplane has to be wired in
+        // here
         // rather than when the bridge attaches — without it there is no session to observe.
-        aistioAdapter.ifPresent(
+        controlPlaneAdapter.ifPresent(
                 adapter -> builder.configureAllAgents(b -> b.middleware(adapter.middleware())));
 
         ClawBootstrap bootstrap = builder.build();

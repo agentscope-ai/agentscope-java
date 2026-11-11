@@ -20,11 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
 
-import io.a2a.A2A;
-import io.a2a.spec.AgentCard;
 import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
+import org.a2aproject.sdk.A2A;
+import org.a2aproject.sdk.spec.AgentCard;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;

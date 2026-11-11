@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -67,7 +68,7 @@ public class AgentGenerateTool {
                         + " subagents/<name>.md so DynamicSubagentsMiddleware picks it up on the"
                         + " next reasoning step. Use dry_run=true to preview the markdown without"
                         + " writing.")
-    public Mono<String> agentGenerate(
+    public Mono<ToolResultBlock> agentGenerate(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "name",
@@ -90,20 +91,22 @@ public class AgentGenerateTool {
                     Boolean dryRun) {
 
         if (name == null || name.isBlank()) {
-            return Mono.just("Error: name is required");
+            return Mono.just(ToolResultBlock.error("name is required"));
         }
         String trimmed = name.trim();
         if (!NAME_PATTERN.matcher(trimmed).matches()) {
             return Mono.just(
-                    "Error: name '"
-                            + trimmed
-                            + "' is not a valid kebab-case identifier (lowercase, digits, '-')");
+                    ToolResultBlock.error(
+                            "name '"
+                                    + trimmed
+                                    + "' is not a valid kebab-case identifier (lowercase, digits,"
+                                    + " '-')"));
         }
         if (description == null || description.isBlank()) {
-            return Mono.just("Error: description is required");
+            return Mono.just(ToolResultBlock.error("description is required"));
         }
         if (agentManager.hasAgent(trimmed)) {
-            return Mono.just("Error: agent '" + trimmed + "' already exists");
+            return Mono.just(ToolResultBlock.error("agent '" + trimmed + "' already exists"));
         }
         boolean dry = Boolean.TRUE.equals(dryRun);
 
@@ -118,12 +121,14 @@ public class AgentGenerateTool {
                 .map(
                         spec -> {
                             if (dry) {
-                                return "dry_run=true; spec below was NOT persisted\n\n"
-                                        + spec.markdown();
+                                return ToolResultBlock.success(
+                                        "dry_run=true; spec below was NOT persisted\n\n"
+                                                + spec.markdown());
                             }
                             if (filesystem == null) {
-                                return "Error: no filesystem configured for AgentGenerateTool —"
-                                        + " cannot persist spec. Use dry_run=true to preview.";
+                                return ToolResultBlock.error(
+                                        "no filesystem configured for AgentGenerateTool — cannot"
+                                                + " persist spec. Use dry_run=true to preview.");
                             }
                             String path = "subagents/" + trimmed + ".md";
                             WriteResult wr =
@@ -133,14 +138,19 @@ public class AgentGenerateTool {
                                         "Failed to write generated subagent spec to {}: {}",
                                         path,
                                         wr.error());
-                                return "Error: write failed for "
-                                        + path
-                                        + ": "
-                                        + wr.error()
-                                        + "\n\nGenerated spec:\n"
-                                        + spec.markdown();
+                                return ToolResultBlock.error(
+                                        "write failed for "
+                                                + path
+                                                + ": "
+                                                + wr.error()
+                                                + "\n\nGenerated spec:\n"
+                                                + spec.markdown());
                             }
-                            return "Wrote subagent spec to " + wr.path() + "\n\n" + spec.markdown();
+                            return ToolResultBlock.success(
+                                    "Wrote subagent spec to "
+                                            + wr.path()
+                                            + "\n\n"
+                                            + spec.markdown());
                         })
                 .onErrorResume(
                         e -> {
@@ -149,7 +159,7 @@ public class AgentGenerateTool {
                                             ? e.getMessage()
                                             : e.getClass().getSimpleName();
                             log.warn("agent_generate failed for name={}: {}", trimmed, msg);
-                            return Mono.just("Error: " + msg);
+                            return Mono.just(ToolResultBlock.error(msg));
                         });
     }
 }

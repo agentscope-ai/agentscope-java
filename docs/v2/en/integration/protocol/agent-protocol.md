@@ -66,7 +66,7 @@ You may supply your own `ProtocolTaskRepository` bean to override the default. C
 
 ## Concurrent execution
 
-The agent is stateless between calls — a singleton handles multiple concurrent tasks. Each task carries its own `(userId, sessionId)` via `RuntimeContext`, so state is fully isolated:
+This adapter uses a Spring-managed `HarnessAgent` Bean whose lifetime covers protocol execution and recovery, ending at application shutdown. Each task supplies its identity through `RuntimeContext`. For ordinary web handlers, use a shared Builder and a new Agent per request; see [Instance lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle). Do not close the adapter-owned Agent when task submission returns:
 
 ```java
 @Bean

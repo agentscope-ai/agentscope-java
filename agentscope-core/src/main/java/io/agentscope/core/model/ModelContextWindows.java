@@ -79,8 +79,9 @@ public final class ModelContextWindows {
 
     public static final Map<String, Integer> DEEPSEEK =
             Map.ofEntries(
-                    Map.entry("deepseek-v4-flash", 1_000_000),
-                    Map.entry("deepseek-v4-pro", 1_000_000));
+                    Map.entry("deepseek-flash", 1_048_576),
+                    Map.entry("deepseek-v4-flash", 1_048_576),
+                    Map.entry("deepseek-v4-pro", 1_048_576));
 
     public static final Map<String, Integer> GLM =
             Map.ofEntries(
@@ -128,6 +129,7 @@ public final class ModelContextWindows {
     public static final Map<String, Integer> ANTHROPIC =
             Map.ofEntries(
                     Map.entry("claude-opus-4", 200_000),
+                    Map.entry("claude-sonnet-5", 1_000_000),
                     Map.entry("claude-sonnet-4", 200_000),
                     Map.entry("claude-haiku-4", 200_000),
                     Map.entry("claude-3-7", 200_000),
@@ -136,6 +138,7 @@ public final class ModelContextWindows {
 
     public static final Map<String, Integer> GEMINI =
             Map.ofEntries(
+                    Map.entry("gemini-3", 1_048_576),
                     Map.entry("gemini-2.5", 1_048_576),
                     Map.entry("gemini-2.0", 1_048_576),
                     Map.entry("gemini-1.5", 2_097_152));

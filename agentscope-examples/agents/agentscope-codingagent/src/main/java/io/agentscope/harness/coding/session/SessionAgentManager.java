@@ -15,15 +15,17 @@
  */
 package io.agentscope.harness.coding.session;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.session.SessionTranscriptExport;
+import io.agentscope.core.session.SessionViews;
+import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.coding.session.tool.SessionsTool;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -38,6 +40,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -109,6 +112,9 @@ public class SessionAgentManager {
     private volatile AnnounceDispatcher announceDispatcher;
     private volatile SpawnInterceptor spawnInterceptor;
 
+    /** Read-only lookup of MAIN agents owned by the gateway. */
+    private volatile Function<SessionEntry, Agent> mainHistoryAgentResolver = entry -> null;
+
     private final ConcurrentHashMap<String, ArrayDeque<PendingCompletion>> pendingByRequester =
             new ConcurrentHashMap<>();
 
@@ -169,6 +175,10 @@ public class SessionAgentManager {
 
     public void setAnnounceDispatcher(AnnounceDispatcher dispatcher) {
         this.announceDispatcher = dispatcher;
+    }
+
+    public void setMainHistoryAgentResolver(Function<SessionEntry, Agent> resolver) {
+        mainHistoryAgentResolver = Objects.requireNonNull(resolver, "resolver");
     }
 
     public void setSpawnInterceptor(SpawnInterceptor interceptor) {
@@ -711,12 +721,41 @@ public class SessionAgentManager {
             return new HistoryResult(null, null, null, "Unknown session: " + sessionKeyOrLabel);
         }
         SessionEntry entry = opt.get();
-        Path path = Path.of(entry.sessionFilePath());
-        if (!Files.isRegularFile(path)) {
-            return new HistoryResult(entry.sessionKey(), entry.sessionFilePath(), "", null);
-        }
+        RuntimeContext rc =
+                RuntimeContext.builder()
+                        .userId(entry.userId())
+                        .sessionId(entry.sessionId())
+                        .build();
         try {
-            String content = Files.readString(path, StandardCharsets.UTF_8);
+            Agent agent;
+            if (entry.kind() == SessionKind.MAIN) {
+                agent = mainHistoryAgentResolver.apply(entry);
+                if (agent == null)
+                    return new HistoryResult(
+                            entry.sessionKey(),
+                            entry.sessionFilePath(),
+                            null,
+                            "Main agent is not loaded for session history: " + entry.agentId());
+            } else {
+                agent =
+                        agentCache.computeIfAbsent(
+                                entry.sessionKey(),
+                                key -> delegate.createAgent(entry.agentId(), rc));
+            }
+            String content;
+            if (agent instanceof HarnessAgent harness) {
+                content = SessionTranscriptExport.jsonl(harness.sessionTranscript(rc));
+            } else if (agent instanceof ReActAgent react) {
+                content =
+                        SessionTranscriptExport.jsonl(
+                                SessionViews.transcript(react.sessionLog(rc)));
+            } else {
+                return new HistoryResult(
+                        entry.sessionKey(),
+                        entry.sessionFilePath(),
+                        null,
+                        "Agent does not expose a native session log");
+            }
             if (limit > 0) {
                 content = tailLines(content, limit);
             }
@@ -912,13 +951,8 @@ public class SessionAgentManager {
                 "\n", java.util.Arrays.copyOfRange(lines, lines.length - maxLines, lines.length));
     }
 
-    /** Resolves the session file path for a given agent and session. */
+    /** Logical history reference; retained under the old DTO field name for clients. */
     public String resolveSessionFilePath(String agentId, String sessionId) {
-        if (delegate.getWorkspaceManager() != null) {
-            return delegate.getWorkspaceManager()
-                    .resolveSessionFile(RuntimeContext.empty(), agentId, sessionId)
-                    .toString();
-        }
-        return "agents/" + agentId + "/sessions/" + sessionId + ".json";
+        return "session-log:" + new SessionKey(null, agentId, sessionId).storagePath();
     }
 }

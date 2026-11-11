@@ -23,7 +23,7 @@ import java.util.Map;
 
 /**
  * One-shot session materialization returned by {@code GET /api/internal/sessions/{id}/resolve} on
- * the control plane (aistiod).
+ * the control plane (service-controlplane).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record SessionResolveResult(
