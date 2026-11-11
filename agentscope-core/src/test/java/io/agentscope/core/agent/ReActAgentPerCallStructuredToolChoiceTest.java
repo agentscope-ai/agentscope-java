@@ -28,7 +28,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Duration;
@@ -54,29 +54,24 @@ class ReActAgentPerCallStructuredToolChoiceTest {
         RetryModel selected = new RetryModel(selectedSupportsSpecific);
         ReActAgent agent =
                 ReActAgent.builder().name("structured-choice").model(defaultModel).build();
-        String modelId = "test:structured-tool-choice";
-        ModelRegistry.register(modelId, selected);
-        try {
-            RuntimeContext context = RuntimeContext.builder().modelId(modelId).build();
-            Msg result =
-                    assertDoesNotThrow(
-                            () ->
-                                    agent.call("Return a structured answer", Output.class, context)
-                                            .block(Duration.ofSeconds(10)));
+        RuntimeContext context = RuntimeContext.empty();
+        context.put(Model.class, selected);
+        Msg result =
+                assertDoesNotThrow(
+                        () ->
+                                agent.call("Return a structured answer", Output.class, context)
+                                        .block(Duration.ofSeconds(10)));
 
-            assertNotNull(result);
-            assertTrue(result.hasStructuredData(), "the selected model must complete the retry");
-            Output output = result.getStructuredData(Output.class);
-            assertNotNull(output, "the selected model must complete the structured retry");
-            assertEquals("ok", output.value);
-            assertEquals(2, selected.requests.size());
-            assertEquals(
-                    selectedSupportsSpecific,
-                    selected.requests.get(1).getToolChoice() instanceof ToolChoice.Specific);
-            assertEquals(0, defaultModel.getCallCount(), "the default must not serve this call");
-        } finally {
-            ModelRegistry.unregister(modelId);
-        }
+        assertNotNull(result);
+        assertTrue(result.hasStructuredData(), "the selected model must complete the retry");
+        Output output = result.getStructuredData(Output.class);
+        assertNotNull(output, "the selected model must complete the structured retry");
+        assertEquals("ok", output.value);
+        assertEquals(2, selected.requests.size());
+        assertEquals(
+                selectedSupportsSpecific,
+                selected.requests.get(1).getToolChoice() instanceof ToolChoice.Specific);
+        assertEquals(0, defaultModel.getCallCount(), "the default must not serve this call");
     }
 
     /** Ignores the first instruction, then obeys supported forcing or the prompt reminder. */

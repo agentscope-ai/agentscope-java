@@ -20,7 +20,6 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentState;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
@@ -52,11 +51,20 @@ import reactor.core.publisher.Mono;
  *
  * <p>Each onion/transformer hook has a default implementation that delegates
  * directly to {@code next}, so subclasses only need to override the hooks they
- * care about; {@link #onAgentStateReady} defaults to a no-op.
+ * care about; {@link #onAgentStateReady} defaults to a no-op. Every
+ * implementation should additionally declare the points it participates in via
+ * {@link #activePoints()}; an undeclared middleware (returning {@code null})
+ * has its participation set inferred from the hooks its class actually
+ * implements.
  *
  * <p><b>Example:</b>
  * <pre>{@code
  * MiddlewareBase logging = new MiddlewareBase() {
+ *     @Override
+ *     public Set<ExtensionPoint> activePoints() {
+ *         return EnumSet.of(ExtensionPoint.ON_REASONING);
+ *     }
+ *
  *     @Override
  *     public Flux<AgentEvent> onReasoning(
  *             Agent agent, RuntimeContext ctx, ReasoningInput input,
@@ -72,40 +80,74 @@ public interface MiddlewareBase {
 
     /**
      * Middleware extension points. Adding a point adds one constant here; the
-     * grouping mechanism stays unchanged.
+     * grouping mechanism stays unchanged. A middleware participates at a new
+     * point only when it declares the point or implements the new hook —
+     * which is exactly why a capability whose activation has side effects
+     * beyond the declaring middleware must never be gated on participation
+     * alone: it requires an explicit declaration or an explicit switch.
+     *
+     * <p>Each constant names the hook method it pairs with; auto-detection of
+     * undeclared ({@code null}) middlewares resolves participation from these
+     * pairings.
      */
     enum ExtensionPoint {
-        ON_AGENT,
-        ON_REASONING,
-        ON_ACTING,
-        ON_MODEL_CALL,
-        ON_SYSTEM_PROMPT,
-        ON_AGENT_STATE_READY
+        ON_AGENT("onAgent"),
+        ON_REASONING("onReasoning"),
+        ON_ACTING("onActing"),
+        ON_MODEL_CALL("onModelCall"),
+        ON_SYSTEM_PROMPT("onSystemPrompt"),
+        ON_AGENT_STATE_READY("onAgentStateReady");
+
+        private final String hookMethod;
+
+        ExtensionPoint(String hookMethod) {
+            this.hookMethod = hookMethod;
+        }
+
+        /** Name of the hook method this point pairs with (auto-detection support). */
+        String hookMethod() {
+            return hookMethod;
+        }
     }
 
     /**
-     * Returns the extension points where this middleware is active. This is
-     * a participation switch, not a statement about which methods are
-     * overridden: a point declared active but not overridden simply runs
-     * its default (pass-through / no-op), and a point omitted is never
-     * invoked — even if overridden.
+     * Returns the extension points where this middleware is active — the sole
+     * source of its participation set. For an explicit declaration this is a
+     * participation switch, not a statement about which methods are
+     * overridden: a point declared active but not overridden simply runs its
+     * default (pass-through / no-op), and a point omitted is never invoked —
+     * even if overridden.
      *
-     * <p>The default is active at every extension point, including ones
-     * added in future releases, so middlewares that do not override this
-     * method keep today's behavior unchanged. Once overridden, the active
-     * set is exactly the returned set; an empty set disables this
-     * middleware at every point while keeping its registration.
+     * <p><b>Every implementation should override this method</b> and declare
+     * exactly the points it hooks — e.g. {@code EnumSet.of(ExtensionPoint.ON_REASONING)}
+     * — or {@code EnumSet.allOf(ExtensionPoint.class)} when participating at
+     * every point is intended. The declaration is authoritative and is read
+     * once at agent construction. An empty set
+     * ({@code EnumSet.noneOf(ExtensionPoint.class)}) keeps this middleware
+     * registered while participating at no point — useful as a runtime
+     * switch.
+     *
+     * <p>Returning {@code null} — the default — delegates the participation
+     * set to the framework: it infers, per class and computed once, exactly
+     * the points whose hook methods this middleware implements
+     * (implementations inherited from superclasses count). The {@code null}
+     * default exists for API compatibility with middlewares written before
+     * this contract and may change in a future release — do not rely on it.
+     * Inference is a fallback, not a statement of intent: a hook overridden
+     * only by a pass-through base class still lights up its point, and an
+     * intentional opt-out is expressible only through an explicit
+     * declaration.
      *
      * <p>Activation is decided once at agent construction; mutating the
      * returned set (or changing later results) has no effect on an
      * already-built agent.
      *
      * @return the set of extension points this middleware participates in;
-     *         {@code null} is treated as the full set; elements that do not equal
-     *         an {@link ExtensionPoint} constant never activate any point
+     *         {@code null} lets the framework infer the set from the hooks
+     *         this class implements
      */
     default Set<ExtensionPoint> activePoints() {
-        return EnumSet.allOf(ExtensionPoint.class);
+        return null;
     }
 
     /**

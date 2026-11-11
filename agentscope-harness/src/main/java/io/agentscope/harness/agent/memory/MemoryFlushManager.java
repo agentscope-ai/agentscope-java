@@ -16,7 +16,9 @@
 package io.agentscope.harness.agent.memory;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -275,6 +277,8 @@ public class MemoryFlushManager {
                 parts.add(renderToolUse(tu));
             } else if (block instanceof ToolResultBlock tr) {
                 parts.add(renderToolResult(tr));
+            } else if (block instanceof DocumentBlock doc) {
+                parts.add(DocumentReferenceRenderer.render(doc));
             }
         }
 
@@ -322,6 +326,11 @@ public class MemoryFlushManager {
                             sb.append(text);
                         }
                     }
+                } else if (out instanceof DocumentBlock doc) {
+                    if (sb.length() > 0 && !Character.isWhitespace(sb.charAt(sb.length() - 1))) {
+                        sb.append(' ');
+                    }
+                    sb.append(DocumentReferenceRenderer.render(doc));
                 }
             }
         }

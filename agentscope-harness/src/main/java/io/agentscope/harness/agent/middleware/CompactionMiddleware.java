@@ -132,18 +132,16 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
      * Resolves the model that will actually process this conversation, so the trigger budget is
      * derived from the effective model's context window: a dedicated {@link
      * CompactionConfig#getModel()} when configured, else the executing {@link ReActAgent}'s
-     * per-call model (the {@link RuntimeContext} model id when set, else its build-time
-     * default). Wiring guarantees one of the two exists.
+     * per-call model (the {@link RuntimeContext} model id when set, else the build-time
+     * instance or string reference — {@link ReActAgent#getModel(RuntimeContext)} handles both).
+     * Wiring guarantees one of the two exists.
      */
     private Model effectiveModel(Agent agent, RuntimeContext ctx) {
         if (model != null) {
             return model;
         }
         if (agent instanceof ReActAgent react) {
-            Model perCall = ctx != null ? react.getModel(ctx) : react.getModel();
-            if (perCall != null) {
-                return perCall;
-            }
+            return react.getModel(ctx);
         }
         return null;
     }
@@ -151,6 +149,11 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     /** Retry provider context overflow inside the same execution, before its recorder is closed. */
     public HarnessRuntimeMiddleware overflowRecovery() {
         return new HarnessRuntimeMiddleware() {
+            @Override
+            public Set<ExtensionPoint> activePoints() {
+                return EnumSet.of(ExtensionPoint.ON_REASONING);
+            }
+
             @Override
             public Flux<AgentEvent> onReasoning(
                     Agent agent,
@@ -206,7 +209,10 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                             retryMessages,
                                                             input.tools(),
                                                             input.options(),
-                                                            react.getModel()),
+                                                            // Per-call resolution (ctx-aware) so a
+                                                            // string-reference agent works here
+                                                            // too.
+                                                            react.getModel(ctx)),
                                                     CompactionConfig.FALLBACK_TRIGGER_TOKENS,
                                                     before)
                                             .flatMapMany(
@@ -335,7 +341,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                     Math.max(1, trigger),
                                     Math.min(keep, Math.max(0, conversationBudget / 2)));
                     // Dedicated compaction model when configured; otherwise the executing
-                    // agent's per-call model (RuntimeContext modelId when set, else its
+                    // agent's per-call model (context pin or identity resolution, else its
                     // default), so the summary follows the model serving the conversation.
                     Model compactModel = model;
                     if (compactModel == null && agent instanceof ReActAgent react) {
