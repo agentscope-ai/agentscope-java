@@ -78,6 +78,30 @@ The front end provides `RunAgentInput`, including `threadId`, `runId`, `messages
 
 Clients that resend the full message history against a server-side persisted context must additionally register `InputMessageDeduplicationMiddleware` on the agent — see [Server-Side Memory And Message Deduplication](#server-side-memory-and-message-deduplication).
 
+## Custom Request Processor
+
+For manual Spring MVC or WebFlux configuration, supply an `AguiRequestProcessor` to use your own agent resolver and request processing configuration:
+
+```java
+import io.agentscope.core.agui.processor.AguiRequestProcessor;
+import io.agentscope.spring.boot.agui.mvc.AguiMvcController;
+import io.agentscope.spring.boot.agui.webflux.AguiWebFluxHandler;
+
+AguiRequestProcessor processor = AguiRequestProcessor.builder()
+    .agentResolver(customAgentResolver)
+    .build();
+
+AguiMvcController controller = AguiMvcController.builder()
+    .requestProcessor(processor)
+    .build();
+
+AguiWebFluxHandler handler = AguiWebFluxHandler.builder()
+    .requestProcessor(processor)
+    .build();
+```
+
+With a custom processor, the MVC controller and WebFlux handler do not require an agent registry. Their `agentRegistry`, `sessionManager`, `serverSideMemory`, `config`, `adapterFactory`, and `runtimeContextResolver` builder options are ignored; configure these behaviors on the supplied processor instead. Transport options such as MVC `sseTimeout` and the shared `agentIdHeader` and `interruptOnDisconnect` options still apply. Omit `requestProcessor` (or pass `null`) to keep the default processor and required registry.
+
 ## Event Mapping
 
 The v2 path consumes `AgentEvent`. Built-in converters handle semantic mapping, and unmapped events fall back to the official `RAW` event.
