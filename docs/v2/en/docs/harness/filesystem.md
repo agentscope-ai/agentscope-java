@@ -550,7 +550,9 @@ Under shared-store mode, `tools.json` also follows the "remote upper, local temp
 
 ## Two-layer reading in the workspace
 
-Key files like `AGENTS.md`, `MEMORY.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
+Key files like `AGENTS.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
+
+Per-identity runtime data (`MEMORY.md`, `memory/*.md`, task records) falls back **inside the caller's namespace**, never the workspace root. See [Workspace](/v2/en/docs/harness/workspace#two-layer-reads-filesystem-first--local-fallback) for the rule.
 
 Writes always go through the configured filesystem store.
 

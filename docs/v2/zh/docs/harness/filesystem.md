@@ -544,7 +544,9 @@ workspace/
 
 ## 工作区里的两层读取
 
-`AGENTS.md`、`MEMORY.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+`AGENTS.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+
+按身份的运行时数据（`MEMORY.md`、`memory/*.md`、task records）兜底落在 **caller 命名空间内**，不会回退到 workspace 根。规则见 [workspace](/v2/zh/docs/harness/workspace#两层读架构filesystem-first--本地兜底)。
 
 写入永远走配置的文件系统后端。
 
