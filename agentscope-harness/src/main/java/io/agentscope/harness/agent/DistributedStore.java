@@ -102,13 +102,14 @@ public interface DistributedStore {
     /**
      * Creates the {@link SandboxExecutionGuard} for distributed sandbox concurrency control.
      *
-     * <p>Override this when the store supports distributed locking. The default returns
-     * a no-op guard (no cross-node coordination).
+     * <p>Override this when the store supports distributed locking. The default returns the
+     * process-wide in-process guard. Return {@link SandboxExecutionGuard#noop()} only to
+     * deliberately opt out of same-slot serialisation.
      *
-     * @return a sandbox execution guard; must not be {@code null}
+     * @return a sandbox execution guard; never {@code null}
      */
     default SandboxExecutionGuard sandboxExecutionGuard() {
-        return SandboxExecutionGuard.noop();
+        return SandboxExecutionGuard.defaultInProcess();
     }
 
     /**
@@ -254,11 +255,11 @@ public interface DistributedStore {
         /**
          * Sets the sandbox execution guard for distributed concurrency control.
          *
-         * @param sandboxExecutionGuard the execution guard to use
+         * @param sandboxExecutionGuard the execution guard to use; must not be {@code null}
          * @return this builder
          */
         public Builder sandboxExecutionGuard(SandboxExecutionGuard sandboxExecutionGuard) {
-            this.sandboxExecutionGuard = sandboxExecutionGuard;
+            this.sandboxExecutionGuard = Objects.requireNonNull(sandboxExecutionGuard);
             return this;
         }
 
@@ -305,15 +306,13 @@ public interface DistributedStore {
             Objects.requireNonNull(baseStore, "baseStore is required");
             SandboxSnapshotSpec snap =
                     sandboxSnapshotSpec != null ? sandboxSnapshotSpec : new NoopSnapshotSpec();
-            SandboxExecutionGuard guard =
-                    sandboxExecutionGuard != null
-                            ? sandboxExecutionGuard
-                            : SandboxExecutionGuard.noop();
             return new CompositeDistributedStore(
                     agentStateStore,
                     baseStore,
                     snap,
-                    guard,
+                    sandboxExecutionGuard != null
+                            ? sandboxExecutionGuard
+                            : SandboxExecutionGuard.defaultInProcess(),
                     messageBus,
                     asyncToolRegistry,
                     taskRepository,

@@ -83,6 +83,7 @@ import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -746,10 +747,19 @@ class HarnessAgentTest {
     void executionHandleCancelsTheHarnessAndReleasesItsSandboxBinding() throws Exception {
         Files.createDirectories(workspace);
         InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+        CountDownLatch guardEntered = new CountDownLatch(1);
+        CountDownLatch allowAcquire = new CountDownLatch(1);
+        CountDownLatch guardReleased = new CountDownLatch(1);
+        spec.executionGuard(
+                key -> {
+                    guardEntered.countDown();
+                    allowAcquire.await();
+                    return guardReleased::countDown;
+                });
         AtomicReference<RuntimeContext> active = new AtomicReference<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
-        CountDownLatch entered = new CountDownLatch(1);
-        CountDownLatch failed = new CountDownLatch(1);
+        CountDownLatch agentStarted = new CountDownLatch(1);
+        CountDownLatch terminated = new CountDownLatch(1);
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("run-control")
@@ -770,7 +780,7 @@ class HarnessAgentTest {
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String prompt) {
                                         active.set(ctx);
-                                        entered.countDown();
+                                        agentStarted.countDown();
                                         return Mono.never();
                                     }
                                 })
@@ -792,15 +802,25 @@ class HarnessAgentTest {
                                     event -> {},
                                     error -> {
                                         failure.set(error);
-                                        failed.countDown();
+                                        terminated.countDown();
                                     });
             try {
-                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                assertTrue(guardEntered.await(2, TimeUnit.SECONDS));
+                assertEquals(
+                        AgentRun.Status.QUEUED,
+                        run.status(),
+                        "sandbox acquisition is asynchronous and remains part of queued setup");
+                allowAcquire.countDown();
+                assertTrue(agentStarted.await(2, TimeUnit.SECONDS));
                 assertEquals(AgentRun.Status.RUNNING, run.status());
                 assertNotNull(active.get().get(SandboxAcquireResult.class));
                 SandboxAcquireResult acquired = active.get().get(SandboxAcquireResult.class);
                 var log = agent.sessionLog(active.get());
                 assertTrue(run.cancel());
+                assertTrue(terminated.await(2, TimeUnit.SECONDS));
+                assertTrue(
+                        guardReleased.await(2, TimeUnit.SECONDS),
+                        "asynchronous cancellation cleanup must release the sandbox guard");
                 Flux.interval(Duration.ofMillis(10))
                         .filter(ignored -> acquired.isReleased() && log.head().owner() == null)
                         .next()
@@ -813,9 +833,9 @@ class HarnessAgentTest {
                                 ((SandboxBackedFilesystem)
                                                 active.get().get(AbstractFilesystem.class))
                                         .execute(active.get(), "echo stale", 1));
-                assertTrue(failed.await(5, TimeUnit.SECONDS));
                 assertTrue(failure.get() instanceof CancellationException);
             } finally {
+                allowAcquire.countDown();
                 subscription.dispose();
             }
         }
@@ -865,6 +885,29 @@ class HarnessAgentTest {
         assertNotNull(effective);
         assertNotNull(effective.get(SandboxContext.class));
         assertEquals(1, client.getCreateCount());
+    }
+
+    @Test
+    void distributedStoreExecutionGuardIsResolvedOnce() throws Exception {
+        Files.createDirectories(workspace);
+        DistributedStore store = mock(DistributedStore.class);
+        when(store.agentStateStore()).thenReturn(mock(AgentStateStore.class));
+        when(store.baseStore()).thenReturn(new InMemoryStore());
+        SandboxExecutionGuard guard = mock(SandboxExecutionGuard.class);
+        when(store.sandboxExecutionGuard()).thenReturn(guard);
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+
+        try (HarnessAgent ignored =
+                HarnessAgent.builder()
+                        .name("single-guard-access")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .distributedStore(store)
+                        .filesystem(spec)
+                        .build()) {
+            assertSame(guard, spec.getExecutionGuard());
+            verify(store, times(1)).sandboxExecutionGuard();
+        }
     }
 
     @Test
