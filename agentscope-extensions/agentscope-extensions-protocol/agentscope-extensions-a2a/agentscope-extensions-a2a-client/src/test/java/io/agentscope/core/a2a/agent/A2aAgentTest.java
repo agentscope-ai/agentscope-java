@@ -60,6 +60,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -86,6 +87,7 @@ import org.a2aproject.sdk.client.transport.spi.ClientTransport;
 import org.a2aproject.sdk.client.transport.spi.ClientTransportConfig;
 import org.a2aproject.sdk.client.transport.spi.ClientTransportProvider;
 import org.a2aproject.sdk.spec.A2AClientException;
+import org.a2aproject.sdk.spec.AgentCapabilities;
 import org.a2aproject.sdk.spec.AgentCard;
 import org.a2aproject.sdk.spec.AgentInterface;
 import org.a2aproject.sdk.spec.Artifact;
@@ -135,6 +137,10 @@ public class A2aAgentTest {
 
         lenient().when(a2aAgentConfig.clientTransports()).thenReturn(new HashMap<>());
         lenient().when(a2aAgentConfig.clientConfig()).thenReturn(null);
+        // The mocked client delivers events like a streaming one, so the card supports streaming.
+        lenient()
+                .when(agentCard.capabilities())
+                .thenReturn(new AgentCapabilities(true, false, false, null));
         AgentInterface defaultInterface = new AgentInterface("JSONRPC", "http://localhost:8080");
         AgentInterface customInterface = new AgentInterface("CUSTOM", "http://localhost:8080");
         lenient()
@@ -161,6 +167,33 @@ public class A2aAgentTest {
         assertEquals("mock success.", result.getTextContent());
         assertEquals(2, agent.getMemory().getMessages().size());
         verify(a2aClient).close();
+    }
+
+    @Test
+    @DisplayName("Should send the user and session id of the call on the wire")
+    void testSendCallIdentityOnWire() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+
+        doAnswer(mockSuccessMessage())
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        RuntimeContext context =
+                RuntimeContext.builder().userId("alice").sessionId("session-1").build();
+        Msg result =
+                agent.call(List.of(Msg.builder().textContent("test").build()), context).block();
+
+        assertNotNull(result);
+        ArgumentCaptor<Message> sent = ArgumentCaptor.forClass(Message.class);
+        verify(a2aClient).sendMessage(sent.capture(), anyList(), any());
+        assertEquals("session-1", sent.getValue().contextId());
+        assertEquals(
+                "alice", sent.getValue().metadata().get(MessageConstants.USER_ID_METADATA_KEY));
     }
 
     @Test
@@ -204,6 +237,76 @@ public class A2aAgentTest {
     }
 
     @Test
+    @DisplayName("Should retain a completed task update's status message when artifacts are empty")
+    void testCompletedTaskUpdateFallsBackToStatusMessage() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        doAnswer(mockCompletedTaskUpdate("status-only answer", null))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Msg result = agent.call(Msg.builder().textContent("test").build()).block();
+
+        assertNotNull(result);
+        assertEquals("status-only answer", result.getTextContent());
+        assertEquals("test-agent", result.getName());
+
+        Msg streamedResult =
+                agent.streamEvents(Msg.builder().textContent("test again").build())
+                        .ofType(AgentResultEvent.class)
+                        .map(AgentResultEvent::getResult)
+                        .single()
+                        .block();
+        assertNotNull(streamedResult);
+        assertEquals("status-only answer", streamedResult.getTextContent());
+        verify(a2aClient, times(2)).close();
+    }
+
+    @Test
+    @DisplayName("Should prefer artifacts over a completed task update's status message")
+    void testCompletedTaskUpdatePrefersArtifacts() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        doAnswer(mockCompletedTaskUpdate("done", "actual result"))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Msg result = agent.call(Msg.builder().textContent("test").build()).block();
+
+        assertNotNull(result);
+        assertEquals("actual result", result.getTextContent());
+        verify(a2aClient).close();
+    }
+
+    @Test
+    @DisplayName("Should complete when a task update has neither artifacts nor a status message")
+    void testCompletedTaskUpdateWithoutOutput() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        doAnswer(mockCompletedTaskUpdate(null, null))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Msg result = agent.call(Msg.builder().textContent("test").build()).block();
+
+        assertNotNull(result);
+        assertEquals("", result.getTextContent());
+        verify(a2aClient).close();
+    }
+
+    @Test
     @DisplayName("Should keep the status message of a failed task")
     void testFailedTaskKeepsStatusMessage() {
         A2aAgent agent =
@@ -221,6 +324,111 @@ public class A2aAgentTest {
         assertNotNull(result);
         assertEquals("failed", result.getTextContent());
         verify(a2aClient).close();
+    }
+
+    @Test
+    @DisplayName("Should reply with the question of a task that requires input")
+    void testNonStreamingInputRequiredTaskReturnsQuestion() {
+        when(agentCard.capabilities()).thenReturn(new AgentCapabilities(false, false, false, null));
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        doAnswer(mockFinalTask(TaskState.TASK_STATE_INPUT_REQUIRED, "Which city?", null))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Msg result =
+                agent.call(Msg.builder().textContent("weather").build())
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(result);
+        assertEquals("Which city?", result.getTextContent());
+        assertEquals("taskId", result.getMetadata().get(MessageConstants.TASK_ID_METADATA_KEY));
+        assertEquals(
+                TaskState.TASK_STATE_INPUT_REQUIRED.name(),
+                result.getMetadata().get(MessageConstants.TASK_STATE_METADATA_KEY));
+        verify(a2aClient).close();
+    }
+
+    @Test
+    @DisplayName("Should fail instead of waiting when a non-streaming reply is an unfinished task")
+    void testNonStreamingWorkingTaskFails() {
+        when(agentCard.capabilities()).thenReturn(new AgentCapabilities(false, false, false, null));
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        doAnswer(mockFinalTask(TaskState.TASK_STATE_WORKING, "working", null))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                agent.call(Msg.builder().textContent("test").build())
+                                        .block(Duration.ofSeconds(5)));
+
+        assertTrue(error.getMessage().contains("taskId"), error.getMessage());
+        assertTrue(error.getMessage().contains("TASK_STATE_WORKING"), error.getMessage());
+        verify(a2aClient).close();
+    }
+
+    @Test
+    @DisplayName("Should reply with the question when a streamed task requires input")
+    void testStreamingInputRequiredUpdateReturnsQuestion() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        // The stream stays open, as an A2A server keeps it while the task waits for input.
+        doAnswer(mockTaskStatusUpdate(TaskState.TASK_STATE_INPUT_REQUIRED, "Which city?"))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Msg result =
+                agent.call(Msg.builder().textContent("weather").build())
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(result);
+        assertEquals("Which city?", result.getTextContent());
+        assertEquals("taskId", result.getMetadata().get(MessageConstants.TASK_ID_METADATA_KEY));
+        assertEquals(
+                TaskState.TASK_STATE_INPUT_REQUIRED.name(),
+                result.getMetadata().get(MessageConstants.TASK_STATE_METADATA_KEY));
+        verify(a2aClient).close();
+    }
+
+    @Test
+    @DisplayName("Should say what a streamed task waits for when it sends no message")
+    void testStreamingAuthRequiredUpdateWithoutMessage() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        doAnswer(mockTaskStatusUpdate(TaskState.TASK_STATE_AUTH_REQUIRED, null))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Msg result =
+                agent.call(Msg.builder().textContent("test").build()).block(Duration.ofSeconds(5));
+
+        assertNotNull(result);
+        assertTrue(
+                result.getTextContent().contains("TASK_STATE_AUTH_REQUIRED"),
+                result.getTextContent());
+        assertEquals(
+                TaskState.TASK_STATE_AUTH_REQUIRED.name(),
+                result.getMetadata().get(MessageConstants.TASK_STATE_METADATA_KEY));
     }
 
     @Test
@@ -254,6 +462,34 @@ public class A2aAgentTest {
         assertTrue(events.stream().anyMatch(AgentResultEvent.class::isInstance));
         verify(resolver, times(2)).getAgentCard("test-agent");
         verify(a2aClient, times(2)).close();
+    }
+
+    @Test
+    @DisplayName("Should report a missing agent card instead of failing inside the SDK")
+    void testMissingAgentCardFailsWithClearMessage() {
+        AgentCardResolver resolver = mock(AgentCardResolver.class);
+        when(resolver.getAgentCard("test-agent")).thenReturn(null);
+        AtomicInteger clientsBuilt = new AtomicInteger();
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCardResolver(resolver)
+                        .clientReplacer(
+                                built -> {
+                                    clientsBuilt.incrementAndGet();
+                                    return useMockClient(built);
+                                })
+                        .build();
+
+        IllegalStateException failure =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> agent.call(Msg.builder().textContent("call").build()).block());
+
+        assertTrue(failure.getMessage().contains("No AgentCard found"));
+        assertTrue(failure.getMessage().contains("'test-agent'"));
+        assertEquals(0, clientsBuilt.get());
+        verify(a2aClient, never()).sendMessage(any(Message.class), anyList(), any());
     }
 
     @Test
@@ -1159,6 +1395,65 @@ public class A2aAgentTest {
             Message mockResponseMessage = A2A.toAgentMessage("mock success.");
             MessageEvent messageEvent = new MessageEvent(mockResponseMessage);
             a2aEventConsumer.forEach(consumer -> consumer.accept(messageEvent, agentCard));
+            return null;
+        };
+    }
+
+    private Answer<Void> mockCompletedTaskUpdate(String statusText, String artifactText) {
+        return invocationOnMock -> {
+            @SuppressWarnings("unchecked")
+            List<BiConsumer<ClientEvent, AgentCard>> consumers =
+                    invocationOnMock.getArgument(1, List.class);
+            TaskStatus status =
+                    new TaskStatus(
+                            TaskState.TASK_STATE_COMPLETED,
+                            statusText != null ? A2A.toAgentMessage(statusText) : null,
+                            null);
+            Task task =
+                    Task.builder()
+                            .id("taskId")
+                            .contextId("contextId")
+                            .status(status)
+                            .artifacts(
+                                    artifactText != null
+                                            ? List.of(
+                                                    Artifact.builder()
+                                                            .artifactId("artifactId")
+                                                            .parts(new TextPart(artifactText))
+                                                            .build())
+                                            : List.of())
+                            .build();
+            TaskStatusUpdateEvent update =
+                    new TaskStatusUpdateEvent("taskId", status, "contextId", Map.of());
+            consumers.forEach(
+                    consumer -> consumer.accept(new TaskUpdateEvent(task, update), agentCard));
+            return null;
+        };
+    }
+
+    /** Sends a working task, then a status update to {@code state}, and keeps the stream open. */
+    private Answer<Void> mockTaskStatusUpdate(TaskState state, String statusText) {
+        return invocationOnMock -> {
+            @SuppressWarnings("unchecked")
+            List<BiConsumer<ClientEvent, AgentCard>> consumers =
+                    invocationOnMock.getArgument(1, List.class);
+            Task working =
+                    Task.builder()
+                            .id("taskId")
+                            .contextId("contextId")
+                            .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
+                            .build();
+            consumers.forEach(consumer -> consumer.accept(new TaskEvent(working), agentCard));
+            TaskStatus status =
+                    new TaskStatus(
+                            state,
+                            statusText != null ? A2A.toAgentMessage(statusText) : null,
+                            null);
+            Task task = Task.builder().id("taskId").contextId("contextId").status(status).build();
+            TaskStatusUpdateEvent update =
+                    new TaskStatusUpdateEvent("taskId", status, "contextId", Map.of());
+            consumers.forEach(
+                    consumer -> consumer.accept(new TaskUpdateEvent(task, update), agentCard));
             return null;
         };
     }

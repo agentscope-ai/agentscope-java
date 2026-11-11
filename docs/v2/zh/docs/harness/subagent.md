@@ -6,7 +6,7 @@ en_link: /v2/en/docs/harness/subagent
 
 ## 作用
 
-让主 agent 把"可独立处理、上下文重、可并行"的任务委派出去，避免主线程膨胀。每个子 agent 都是一个临时实例（本地的 `HarnessAgent` 或远程 stub），跑自己的会话，结果通过工具返回给父 agent。
+让主 agent 把"可独立处理、上下文重、可并行"的任务委派出去，避免主线程膨胀。每个子 agent（本地 `HarnessAgent` 或远程 stub）跑自己的会话，与父对话相互独立：每次调用——带任务的 spawn，或 `agent_send` follow-up——都完整跑完并返回本次调用的结果（同步走工具结果，后台任务经推送回传）。存活的本地子 agent 在 follow-up send 之间保留自己的历史；远端后端可能为每次 send 开启新对话。会话持久化与后续恢复取决于声明（`persistSession`）和后端——见[持久会话](#持久会话)。
 
 ## 一个最小例子
 
@@ -190,11 +190,13 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 开启后：
 
-1. 若设置了 `CTX_FORCE_SYNC_TIMEOUT_SECONDS`，它会**完全覆盖** LLM 的 `timeout_seconds`（`<=0` 回退到 30s，上限 600s）。
+1. 若设置了 `CTX_FORCE_SYNC_TIMEOUT_SECONDS`，它会**完全覆盖** LLM 的 `timeout_seconds`（`<=0` 回退到 30s；应用设置的正数不受 600s 上限限制）。
 2. 未设置时，LLM 传的 `timeout_seconds=0` 会被改写成默认同步超时（30s），**不会**提交后台任务；LLM 传的正数超时仍生效。
 3. 同步等待超时后返回 `status: timeout` 并中断子 agent，**不会** promote 成后台 `task_id`。
 
 `agent_send` 同样遵守该开关。同一轮里多个强制同步的 `agent_spawn` 仍可按 Toolkit 默认并行推进。
+
+`agent_spawn` 和 `agent_send` 使用自身的等待超时，不受 `ExecutionConfig` 中普通工具超时的限制。子 agent 内部调用的工具仍遵守普通工具超时。取消父调用仍会取消同步执行的子 agent。
 
 如果一个目标可以拆成多个互不依赖、资源不冲突的子任务，主 agent 可以在同一轮 reasoning 里发起多个同步子 agent 调用。Toolkit 默认启用工具并行（`ToolkitConfig.parallel=true`），因此在 `ReActAgent` 与 `HarnessAgent` 上这些同步调用都会并行推进；主 agent 会等这一批工具结果都返回后再进入下一轮推理，相当于一次同步 fan-out / fan-in。若需串行执行工具，可传入 `ToolkitConfig.builder().parallel(false).build()` 构建的自定义 `Toolkit`。
 
@@ -484,7 +486,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 
 > 新代码请用 `streamEvents()`（返回 `Flux<AgentEvent>`）。旧 `stream()` 系列（`Flux<Event>`）在 2.0.0 起 `@Deprecated(forRemoval = true)` —— 详见 [消息与事件](/v2/zh/docs/building-blocks/message-and-event) 与 [V1 迁移指南 B.4](/v2/zh/docs/change-log)。
 
-父 agent 通过 `agent_spawn` / `agent_send` 同步调用子 agent 时，子 agent 的中间事件会**实时转发**到父的 `streamEvents()` 流中。每个子事件都带一个 `source` 字段（`/` 分隔的路径，如 `"main/researcher"`），父事件的 `source` 为 `null`。远程 Agent Protocol 子 agent 还会写入 `metadata.taskId`（`AgentEvent.METADATA_TASK_ID`，harness 侧任务 id）与 `metadata.parentSessionId`（`AgentEvent.METADATA_PARENT_SESSION_ID`，父 session），因此同一轮里对同一远程 agent 的多次调用即使 `source` 相同也能区分，并能回溯到发起方会话。
+父 agent 通过 `agent_spawn` / `agent_send` 同步调用本地子 agent 时，子 agent 的中间事件会**实时转发**到父的 `streamEvents()` 流中。每个子事件都带一个 `source` 字段，格式为 `parentSessionId/agentId/subagentSessionId`（例如 `"main/researcher/sub-1"`）。最后一段是子 agent 实例自己的 session id，因此同一父会话里多次实例化同一种子 agent 也能区分。远程 Agent Protocol 子 agent 使用 `parentSessionId/agentId/taskId`，并额外写入 `metadata.taskId`（`AgentEvent.METADATA_TASK_ID`，harness 侧任务 id）与 `metadata.parentSessionId`（`AgentEvent.METADATA_PARENT_SESSION_ID`，父 session），因此同一轮里对同一远程 agent 的多次调用也能区分。
 
 ```
 caller
@@ -495,11 +497,11 @@ caller
         ├─ TOOL_CALL_START "agent_spawn"
         │
         │  [子 agent 创建]
-        ├─ AGENT_START          (source="main/researcher")  ← 子启动
-        ├─ TEXT_BLOCK_DELTA …   (source="main/researcher")  ← 子推理
-        ├─ TOOL_CALL_START …    (source="main/researcher")
-        ├─ TOOL_RESULT_END …   (source="main/researcher")
-        ├─ AGENT_END            (source="main/researcher")  ← 子结束
+        ├─ AGENT_START          (source="main/researcher/sub-1")  ← 子启动
+        ├─ TEXT_BLOCK_DELTA …   (source="main/researcher/sub-1")  ← 子推理
+        ├─ TOOL_CALL_START …    (source="main/researcher/sub-1")
+        ├─ TOOL_RESULT_END …   (source="main/researcher/sub-1")
+        ├─ AGENT_END            (source="main/researcher/sub-1")  ← 子结束
         │  [agent_spawn 返回，子结果作为 TOOL_RESULT 传给父]
         │
         ├─ TOOL_RESULT_END                        ← 父收到工具结果

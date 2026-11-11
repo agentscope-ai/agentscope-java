@@ -28,6 +28,9 @@ import com.google.genai.types.Part;
 import com.google.genai.types.ToolResponse;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -414,6 +417,37 @@ class GeminiMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should handle tool result with URL data block")
+    void testToolResultWithURLData() {
+        DataBlock dataBlock =
+                DataBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/asset.bin").build())
+                        .build();
+
+        ToolResultBlock toolResultBlock =
+                ToolResultBlock.builder()
+                        .id("call_123")
+                        .name("tool")
+                        .output(List.of(dataBlock))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("system")
+                        .content(List.of(toolResultBlock))
+                        .role(MsgRole.TOOL)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        String output = (String) part.functionResponse().get().response().get().get("output");
+        assertTrue(
+                output.contains(
+                        "The returned data can be found at: https://example.com/asset.bin"));
+    }
+
+    @Test
     @DisplayName("Should handle empty tool result output")
     void testToolResultEmptyOutput() {
         ToolResultBlock toolResultBlock =
@@ -435,6 +469,44 @@ class GeminiMessageConverterTest {
         Part part = result.get(0).parts().get().get(0);
         String output = (String) part.functionResponse().get().response().get().get("output");
         assertEquals("", output);
+    }
+
+    @Test
+    @DisplayName("A base64 document in a tool result is referenced, never written to disk")
+    void testToolResultWithBase64DocumentUsesReference() {
+        ToolResultBlock toolResultBlock =
+                ToolResultBlock.builder()
+                        .id("call_123")
+                        .name("tool")
+                        .output(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType("application/pdf")
+                                                                .data("aGVsbG8gd29ybGQ=")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .mimeType("application/pdf")
+                                                .build()))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("system")
+                        .content(List.of(toolResultBlock))
+                        .role(MsgRole.TOOL)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        String output = (String) part.functionResponse().get().response().get().get("output");
+        assertTrue(output.contains("[document: report.pdf, application/pdf"), output);
+        assertTrue(output.contains("inline base64"), output);
+        // The legacy media path hands the model a temp file path on the local disk; documents
+        // must not go through it.
+        assertFalse(output.contains("can be found at"), output);
     }
 
     @Test
@@ -1381,5 +1453,307 @@ class GeminiMessageConverterTest {
         assertEquals(
                 "OUTCOME_OK", part.codeExecutionResult().get().outcome().orElseThrow().toString());
         assertEquals("42", part.codeExecutionResult().get().output().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should convert a base64 DocumentBlock to inline data")
+    void testConvertBase64DocumentBlock() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .data(
+                                                Base64.getEncoder()
+                                                        .encodeToString("%PDF-1.4".getBytes()))
+                                        .mediaType("application/pdf")
+                                        .build())
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.inlineData().isPresent());
+        assertEquals("application/pdf", part.inlineData().get().mimeType().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should convert a provider file id DocumentBlock to file data")
+    void testConvertFileIdDocumentBlock() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "files/abc123"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.fileData().isPresent());
+        assertEquals(
+                "https://generativelanguage.googleapis.com/v1beta/files/abc123",
+                part.fileData().get().fileUri().orElseThrow());
+        assertEquals("application/pdf", part.fileData().get().mimeType().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should infer the MIME type from the name when a file id document omits it")
+    void testConvertFileIdDocumentBlockWithoutMimeType() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "files/abc123"))
+                        .name("report.pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.fileData().isPresent(), "fileData must carry a MIME type to be accepted");
+        assertEquals("application/pdf", part.fileData().get().mimeType().orElseThrow());
+    }
+
+    @Test
+    @DisplayName(
+            "Should fall back to a placeholder when a file id document has no usable MIME type")
+    void testConvertFileIdDocumentBlockWithoutResolvableMimeType() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "files/abc123"))
+                        .name("mystery")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.fileData().isEmpty(), "an untyped fileData part is rejected by the API");
+        assertEquals("[Document - unsupported MIME type: mystery]", part.text().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should degrade when a URL document cannot be read")
+    void testUnreadableUrlDocumentBlockDegrades() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new URLSource("/agentscope-nonexistent/report.pdf"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.inlineData().isEmpty(), "an unreadable file must not be sent as bytes");
+        assertEquals("[Document - not readable: report.pdf]", part.text().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should fall back to a placeholder for a file id that is not a URI")
+    void testConvertFileIdDocumentBlockWithUnusableFileId() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "fileid://abc"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.fileData().isEmpty());
+        assertEquals("[Document - not supported by Gemini: report.pdf]", part.text().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should pass through a full file URI unchanged")
+    void testConvertFileIdDocumentBlockWithFullUri() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(
+                                new FileIdSource(
+                                        "gemini",
+                                        "https://generativelanguage.googleapis.com/v1beta/files/x1"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(
+                "https://generativelanguage.googleapis.com/v1beta/files/x1",
+                result.get(0).parts().get().get(0).fileData().get().fileUri().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should fall back to a text placeholder for a foreign provider file id")
+    void testConvertFileIdDocumentBlockFromAnotherProvider() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("dashscope", "file-abc"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertEquals("[Document - not supported by Gemini: report.pdf]", part.text().orElseThrow());
+        assertTrue(part.fileData().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should fall back to a placeholder when the document MIME type is unknown")
+    void testDocumentBlockWithUnresolvableMimeTypeFallsBackToPlaceholder() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/report.docx").build())
+                        .name("report.docx")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(
+                part.text().orElse("").contains("[Document - unsupported MIME type: report.docx]"));
+    }
+
+    @Test
+    @DisplayName("Should degrade a document whose declared MIME type the API cannot read")
+    void testDocumentBlockWithDeclaredUnsupportedMimeTypeDegrades() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType(
+                                                "application/vnd.openxmlformats-officedocument"
+                                                        + ".wordprocessingml.document")
+                                        .data("aGVsbG8=")
+                                        .build())
+                        .name("report.docx")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(
+                part.inlineData().isEmpty(),
+                "an unlisted document type is rejected by the API; it must not be inlined");
+        assertTrue(
+                part.text().orElse("").contains("[Document - unsupported MIME type: report.docx]"));
+    }
+
+    @Test
+    @DisplayName("Should degrade a file id document whose declared MIME type the API cannot read")
+    void testFileIdDocumentBlockWithDeclaredUnsupportedMimeTypeDegrades() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "files/abc123"))
+                        .name("report.docx")
+                        .mimeType("application/msword")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.fileData().isEmpty());
+        assertTrue(
+                part.text().orElse("").contains("[Document - unsupported MIME type: report.docx]"));
+    }
+
+    @Test
+    @DisplayName("Should accept a supported document MIME type that carries parameters")
+    void testDocumentBlockWithMimeTypeParametersStillInlines() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("application/pdf; charset=binary")
+                                        .data(Base64.getEncoder().encodeToString(new byte[] {1}))
+                                        .build())
+                        .name("report.pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.inlineData().isPresent());
+        assertEquals(
+                "application/pdf; charset=binary",
+                part.inlineData().get().mimeType().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should inline officially supported text formats such as markdown")
+    void testDocumentBlockWithOfficialTextFormatsInlines() {
+        for (String mimeType : List.of("text/markdown", "text/x-typescript", "application/json")) {
+            DocumentBlock document =
+                    DocumentBlock.builder()
+                            .source(
+                                    Base64Source.builder()
+                                            .mediaType(mimeType)
+                                            .data(
+                                                    Base64.getEncoder()
+                                                            .encodeToString(new byte[] {1}))
+                                            .build())
+                            .name("notes.md")
+                            .build();
+            Msg msg =
+                    Msg.builder()
+                            .name("user")
+                            .content(List.of(document))
+                            .role(MsgRole.USER)
+                            .build();
+
+            List<Content> result = converter.convertMessages(List.of(msg));
+
+            Part part = result.get(0).parts().get().get(0);
+            assertTrue(
+                    part.inlineData().isPresent(),
+                    mimeType + " is listed by the generateContent reference and must be inlined");
+        }
+    }
+
+    @Test
+    @DisplayName("Should keep a text reference for a DocumentBlock outside a user message")
+    void testConvertDocumentBlockOutsideUserMessageKeepsReference() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "files/abc123"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(TextBlock.builder().text("done").build(), document))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        String text =
+                result.get(0).parts().get().stream()
+                        .map(part -> part.text().orElse(""))
+                        .reduce("", String::concat);
+        assertTrue(text.contains("done"));
+        // returnDirect tool deliveries put documents on assistant turns; the reference survives
+        // so the next round of conversation still names the attachment.
+        assertTrue(text.contains("[document: report.pdf, application/pdf"), text);
+        assertTrue(
+                result.get(0).parts().get().stream()
+                        .noneMatch(part -> part.fileData().isPresent()));
     }
 }
