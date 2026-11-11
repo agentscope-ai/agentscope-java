@@ -426,3 +426,5 @@ A common point of confusion: **reading** a skill (`load_skill_through_path` fetc
 - [Workspace](/v2/en/docs/harness/workspace) — overall layout of `skills/`
 - [Filesystem](/v2/en/docs/harness/filesystem) — multi-tenant isolation and per-user bucketing
 - [Architecture](/v2/en/docs/harness/architecture) — how the skill set is rebuilt each call
+
+Recursive YAML alias references in skill frontmatter are normalized to null leaves; repeated nonrecursive aliases retain their values.
