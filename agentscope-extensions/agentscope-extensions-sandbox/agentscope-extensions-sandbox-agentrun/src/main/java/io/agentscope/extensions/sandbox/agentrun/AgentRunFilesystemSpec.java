@@ -87,6 +87,7 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
 
     public AgentRunFilesystemSpec workspaceRoot(String workspaceRoot) {
         options.setWorkspaceRoot(workspaceRoot);
+        defaultWorkspaceSpec.setRoot(workspaceRoot);
         return this;
     }
 

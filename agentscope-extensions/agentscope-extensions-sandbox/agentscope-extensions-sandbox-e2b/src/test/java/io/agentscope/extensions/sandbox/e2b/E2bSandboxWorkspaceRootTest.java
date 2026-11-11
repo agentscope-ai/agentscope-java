@@ -16,6 +16,8 @@
 package io.agentscope.extensions.sandbox.e2b;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.sandbox.Sandbox;
@@ -57,6 +59,38 @@ class E2bSandboxWorkspaceRootTest {
 
         assertTrue(resumed instanceof E2bSandbox);
         assertEquals(SPEC_ROOT, ((E2bSandbox) resumed).getWorkspaceRoot());
+    }
+
+    @Test
+    void resumeResetsWorkspaceStateWhenRootChanges() {
+        E2bSandboxClient client = new E2bSandboxClient();
+        E2bSandboxState state = new E2bSandboxState();
+        state.setSessionId("session-1");
+        state.setWorkspaceSpec(workspaceSpec(SPEC_ROOT));
+        state.setWorkspaceRoot("/home/user");
+        state.setWorkspaceRootReady(true);
+        state.setWorkspaceProjectionHash("old-projection");
+
+        client.resume(state);
+
+        assertFalse(state.isWorkspaceRootReady(), "the new root has not been initialized");
+        assertNull(state.getWorkspaceProjectionHash());
+    }
+
+    @Test
+    void resumeKeepsWorkspaceStateWhenRootIsUnchanged() {
+        E2bSandboxClient client = new E2bSandboxClient();
+        E2bSandboxState state = new E2bSandboxState();
+        state.setSessionId("session-1");
+        state.setWorkspaceSpec(workspaceSpec(SPEC_ROOT));
+        state.setWorkspaceRoot(SPEC_ROOT);
+        state.setWorkspaceRootReady(true);
+        state.setWorkspaceProjectionHash("same-projection");
+
+        client.resume(state);
+
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("same-projection", state.getWorkspaceProjectionHash());
     }
 
     @Test

@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,8 +93,13 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             throw new IllegalArgumentException(
                     "Expected E2bSandboxState but got: " + state.getClass().getName());
         }
-        String workspaceRoot = resolveWorkspaceRoot(e2b.getWorkspaceSpec(), e2b.getWorkspaceRoot());
+        String previousRoot = e2b.getWorkspaceRoot();
+        String workspaceRoot = resolveWorkspaceRoot(e2b.getWorkspaceSpec(), previousRoot);
         requireAbsoluteWorkspaceRoot(workspaceRoot);
+        if (!Objects.equals(previousRoot, workspaceRoot)) {
+            e2b.setWorkspaceRootReady(false);
+            e2b.setWorkspaceProjectionHash(null);
+        }
         e2b.setWorkspaceRoot(workspaceRoot);
         e2b.setWorkspaceOnVolume(isWorkspaceOnVolume(workspaceRoot, e2b.getVolumeMounts()));
         E2bSandboxClientOptions resumed = copy(defaultOptions);
