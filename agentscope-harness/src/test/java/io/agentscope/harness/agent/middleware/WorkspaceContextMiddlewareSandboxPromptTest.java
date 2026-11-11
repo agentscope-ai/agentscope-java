@@ -174,12 +174,15 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
             assertNotNull(prompt);
             assertFalse(prompt.contains("Sandbox root:"));
             assertFalse(prompt.contains("container id:"));
-            assertTrue(prompt.contains("configured execution backend"));
+            assertTrue(
+                    prompt.contains(
+                            "File and shell paths follow the configured execution backend"));
             assertTrue(prompt.contains("No artifact delivery tool is configured"));
             assertTrue(prompt.contains("retrieval work still needed"));
-            assertTrue(prompt.contains("Use that backend's shell syntax, installed runtimes"));
-            assertTrue(prompt.contains("The host workspace directory is:"));
-            assertTrue(prompt.contains("The host JVM temporary directory is:"));
+            assertTrue(prompt.contains("use that backend's shell syntax, installed runtimes"));
+            assertFalse(prompt.contains("The host operating system is:"));
+            assertFalse(prompt.contains("The host workspace directory is:"));
+            assertFalse(prompt.contains("The host JVM temporary directory is:"));
             assertFalse(prompt.contains("Local shell:"));
             assertFalse(prompt.contains("must** call deliver_artifact"));
             assertFalse(prompt.contains("upload/download tools"), () -> prompt);
@@ -225,7 +228,9 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
         assertFalse(a.contains("/sibling"));
         assertTrue(b.contains("Sandbox root: /second"));
         assertTrue(a.contains("Shell commands use the primary backend"));
-        assertTrue(a.contains("The host JVM temporary directory is:"));
+        assertFalse(a.contains("The host operating system is:"));
+        assertFalse(a.contains("The host workspace directory is:"));
+        assertFalse(a.contains("The host JVM temporary directory is:"));
         assertFalse(a.contains("project's temporary directory"));
         first.get(SandboxAcquireResult.class).beginRelease();
         String released = WorkspacePromptTestSupport.render(middleware, first, "BASE");
@@ -286,6 +291,22 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
     }
 
     @Test
+    void sandboxPrompt_keepsIdentityAndEnvironmentMemory(@TempDir Path workspace) {
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
+            WorkspaceContextMiddleware mw =
+                    new WorkspaceContextMiddleware(
+                            wm, "SandboxAgent", "Database: PostgreSQL", 8000);
+            String prompt = WorkspacePromptTestSupport.render(mw, RuntimeContext.empty(), "BASE\n");
+
+            assertTrue(prompt.contains("You are the SandboxAgent agent."));
+            assertTrue(prompt.contains("Database: PostgreSQL"));
+            assertFalse(prompt.contains("The host operating system is:"));
+            assertFalse(prompt.contains("The host workspace directory is:"));
+            assertFalse(prompt.contains("The host JVM temporary directory is:"));
+        }
+    }
+
+    @Test
     void directLocalShellIsDescribedAsHostExecution(@TempDir Path workspace) {
         try (WorkspaceManager wm =
                 new WorkspaceManager(workspace, new LocalFilesystemWithShell(workspace))) {
@@ -299,6 +320,8 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
                             ? "cmd.exe /c"
                             : "sh -c";
             assertTrue(prompt.contains("Local shell: " + shell + " on the host."));
+            assertTrue(prompt.contains("The host operating system is:"));
+            assertTrue(prompt.contains("The host JVM temporary directory is:"));
             assertFalse(prompt.contains("Sandbox root:"));
             assertFalse(prompt.contains("container"));
         }
