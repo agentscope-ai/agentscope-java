@@ -29,6 +29,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -89,6 +90,40 @@ class LocalFilesystemGrepTest {
         assertEquals(List.of(new GrepMatch("/source.txt", 1, "needle")), result.matches());
     }
 
+    @Test
+    void grepDecodesBase64Lines() throws Exception {
+        String text = "needle \"hello\";\tC:\\work";
+        Path file = Files.writeString(root.resolve("source.txt"), text + "\n");
+        String encoded =
+                Base64.getEncoder().encodeToString((text + "\n").getBytes(StandardCharsets.UTF_8));
+
+        GrepResult result = grepWithOutput(event(file, Map.of("bytes", encoded), 1));
+
+        assertEquals(List.of(new GrepMatch("/source.txt", 1, text)), result.matches());
+    }
+
+    @Test
+    void grepKeepsMatchesForNonUtf8Lines() throws Exception {
+        byte[] content = {'n', 'e', 'e', 'd', 'l', 'e', ' ', (byte) 0xff, '\n'};
+        Path file = Files.write(root.resolve("source.txt"), content);
+        String encoded = Base64.getEncoder().encodeToString(content);
+
+        GrepResult result = grepWithOutput(event(file, Map.of("bytes", encoded), 1));
+
+        assertEquals(List.of(new GrepMatch("/source.txt", 1, "needle \ufffd")), result.matches());
+    }
+
+    @Test
+    void grepSkipsMalformedBase64Lines() throws Exception {
+        Path file = Files.writeString(root.resolve("source.txt"), "needle\n");
+        String output =
+                event(file, Map.of("bytes", "not-base64!"), 1) + "\n" + event(file, "needle\n", 2);
+
+        GrepResult result = grepWithOutput(output);
+
+        assertEquals(List.of(new GrepMatch("/source.txt", 2, "needle")), result.matches());
+    }
+
     private GrepResult grepWithOutput(String output) throws Exception {
         Process process = mock(Process.class);
         when(process.getInputStream())
@@ -104,6 +139,10 @@ class LocalFilesystemGrepTest {
     }
 
     private String event(Path file, String text, int line) {
+        return event(file, Map.of("text", text), line);
+    }
+
+    private String event(Path file, Map<String, String> lines, int line) {
         return JsonUtils.getJsonCodec()
                 .toJson(
                         Map.of(
@@ -112,7 +151,7 @@ class LocalFilesystemGrepTest {
                                 "data",
                                 Map.of(
                                         "path", Map.of("text", file.toString()),
-                                        "lines", Map.of("text", text),
+                                        "lines", lines,
                                         "line_number", line)));
     }
 }

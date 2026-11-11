@@ -1060,8 +1060,11 @@ public class LocalFilesystem implements AbstractFilesystem {
                     || !(data.get("path") instanceof Map<?, ?> path)
                     || !(data.get("lines") instanceof Map<?, ?> lines)
                     || !(path.get("text") instanceof String pathText)
-                    || !(lines.get("text") instanceof String linesText)
                     || !(data.get("line_number") instanceof Number lineNumber)) {
+                return null;
+            }
+            String linesText = ripgrepLineText(lines);
+            if (linesText == null) {
                 return null;
             }
             String filePath = resolveEntryPath(rc, Path.of(pathText));
@@ -1070,6 +1073,16 @@ public class LocalFilesystem implements AbstractFilesystem {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static String ripgrepLineText(Map<?, ?> lines) {
+        if (lines.get("text") instanceof String text) {
+            return text;
+        }
+        if (lines.get("bytes") instanceof String bytes) {
+            return new String(Base64.getDecoder().decode(bytes), StandardCharsets.UTF_8);
+        }
+        return null;
     }
 
     private List<GrepMatch> javaSearch(

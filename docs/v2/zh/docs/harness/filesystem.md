@@ -515,7 +515,7 @@ workspace/
 
 所有文件工具都通过 `AbstractFilesystem` 接口调用，每次操作传入当前 `RuntimeContext`，由文件系统后端决定实际读写位置。agent 代码完全感知不到模式差异。
 
-本地 `grep_files` 优先使用 ripgrep，未安装时回退到 Java 搜索。匹配行会保留原有的引号、反斜杠和制表符；ripgrep 输出中的 JSON 转义会先解码再返回，每条匹配不包含行尾换行符。
+本地 `grep_files` 优先使用 ripgrep，未安装时回退到 Java 搜索。匹配行会保留原有的引号、反斜杠和制表符；ripgrep 输出中的 JSON 转义会先解码再返回，每条匹配不包含行尾换行符。非 UTF-8 匹配行会按 UTF-8 解码，无效字节序列替换为替代字符（`�`）；不支持非 UTF-8 文件名。
 
 `read_file` 默认每次最多返回 16,000 个 Unicode 码点，即使省略 `limit` 或单行内容很长也受此限制。可选参数 `max_chars` 可调整每页大小，请求值不会超过应用配置的上限（默认 32,000）。`offset` 和 `limit` 仍按行选择内容；`char_offset` 从零开始，在**同一行范围返回的文本内**按字符分页。发生截断时，结果会给出下一页的 `char_offset`，继续读取时保持 path、`offset` 和 `limit` 不变。分页不会拆开 Unicode 代理对。拼接多页时应保持文件不变，偏移量不代表不可变快照。
 

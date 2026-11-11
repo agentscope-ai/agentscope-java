@@ -521,7 +521,7 @@ The four-layer priority is unchanged (low â†’ high): `projectGlobalSkillsDir` â†
 
 All file tools call through the `AbstractFilesystem` interface, passing the current `RuntimeContext` on every operation. The filesystem implementation decides the actual read/write location. Agent code is completely unaware of the mode.
 
-Local `grep_files` searches use ripgrep when available, with a Java fallback otherwise. Matching lines retain their quotes, backslashes, and tabs; ripgrep's JSON escapes are decoded before the results are returned. Line terminators are omitted from each match.
+Local `grep_files` searches use ripgrep when available, with a Java fallback otherwise. Matching lines retain their quotes, backslashes, and tabs; ripgrep's JSON escapes are decoded before the results are returned. Line terminators are omitted from each match. Non-UTF-8 matching lines are decoded as UTF-8, replacing invalid byte sequences with the replacement character (`ï¿½`). Non-UTF-8 filenames are not supported.
 
 `read_file` bounds each response to 16,000 Unicode code points by default, even when `limit` is omitted or a single line is very long. Set the optional `max_chars` to request a different page size, clamped to the application-configured maximum (32,000 by default). `offset` and `limit` still select lines; `char_offset` selects a character page **within that same line selection**, starting at zero. When truncated, the result supplies the next `char_offset`: keep the same path, `offset`, and `limit` to continue. Unicode surrogate pairs are never split. Read a stable file when assembling multiple pages; offsets do not identify an immutable snapshot.
 
