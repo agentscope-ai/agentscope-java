@@ -17,6 +17,7 @@ package io.agentscope.core.tool.coding;
 
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import java.io.BufferedReader;
@@ -715,7 +716,10 @@ public class ShellCommandTool implements AgentTool {
                         "<returncode>%d</returncode><stdout>%s</stdout><stderr>%s</stderr>",
                         returnCode, stdout, stderr);
 
-        return ToolResultBlock.of(TextBlock.builder().text(formattedOutput).build());
+        return ToolResultBlock.builder()
+                .output(List.of(TextBlock.builder().text(formattedOutput).build()))
+                .state(returnCode == 0 ? ToolResultState.SUCCESS : ToolResultState.ERROR)
+                .build();
     }
 
     /**
