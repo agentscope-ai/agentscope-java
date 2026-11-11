@@ -19,12 +19,27 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultMessage;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -32,14 +47,22 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 class ReActSessionLogTest {
     private RuntimeContext context() {
@@ -250,6 +273,142 @@ class ReActSessionLogTest {
         assertEquals(
                 PermissionMode.BYPASS,
                 agent.inspectAgentState(ctx).state().getPermissionContext().getMode());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void commitsExternalAnswerWithCanonicalCheckpoint(boolean returnDirect) {
+        var backing = new InMemorySessionLogStore();
+        var log = spy(backing.open(new SessionKey("u", "stable", "s"), context()));
+        var toolCalls = new ArrayList<ContentBlock>();
+        toolCalls.add(ToolUseBlock.builder().id("ext").name("external").input(Map.of()).build());
+        if (!returnDirect) {
+            toolCalls.add(ToolUseBlock.builder().id("local").name("local").input(Map.of()).build());
+        }
+        var model =
+                new CaptureModel() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> msgs, List<ToolSchema> tools, GenerateOptions options) {
+                        if (!calls.isEmpty()) return super.stream(msgs, tools, options);
+                        calls.add(List.copyOf(msgs));
+                        return Flux.just(ChatResponse.builder().content(toolCalls).build());
+                    }
+                };
+        var toolkit = new Toolkit();
+        toolkit.registerAgentTool(
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("external")
+                                .description("External tool")
+                                .inputSchema(Map.of("type", "object"))
+                                .returnDirect(returnDirect)) {
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.just(ToolResultBlock.suspended(param.getToolUseBlock()));
+                    }
+                });
+        toolkit.registerAgentTool(
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("local")
+                                .description("Local tool")
+                                .inputSchema(Map.of("type", "object"))) {
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.just(ToolResultBlock.success("local answer"));
+                    }
+                });
+        var deferLocal =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext context,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        if (input.toolCalls().size() == 1) return next.apply(input);
+                        return next.apply(new ActingInput(List.of(input.toolCalls().get(0))));
+                    }
+                };
+        var timeout = Duration.ofSeconds(10);
+        var answer = ToolResultBlock.success("external answer").withIdAndName("ext", "external");
+        var input = new ToolResultMessage(answer);
+        try (var agent =
+                ReActAgent.builder()
+                        .name("stable")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(deferLocal)
+                        .sessionLogStore((key, context) -> log)
+                        .build()) {
+            var suspended = agent.call(List.of(new UserMessage("start")), context()).block(timeout);
+            assertEquals(GenerateReason.TOOL_SUSPENDED, suspended.getGenerateReason());
+            var result = agent.call(List.of(input), context()).block(timeout);
+            assertEquals(returnDirect ? "external answer" : "answer", result.getTextContent());
+            assertEquals(returnDirect ? 1 : 2, model.calls.size());
+
+            ArgumentCaptor<List<SessionEvent>> commits = ArgumentCaptor.captor();
+            verify(log, atLeastOnce()).commit(any(), anyString(), anyLong(), commits.capture());
+            var batches = commits.getAllValues();
+            if (!returnDirect) {
+                // The deferred local action flushes before its dispatch checkpoint.
+                assertTrue(
+                        batches.stream()
+                                .flatMap(List::stream)
+                                .anyMatch(
+                                        event ->
+                                                event.type().equals("action/start")
+                                                        && "local"
+                                                                .equals(
+                                                                        event.data()
+                                                                                .get(
+                                                                                        "toolCallId"))));
+            }
+            var resolutionBatches =
+                    batches.stream()
+                            .filter(
+                                    batch ->
+                                            batch.stream()
+                                                    .map(SessionEvent::type)
+                                                    .anyMatch("interaction/resolved"::equals))
+                            .toList();
+            assertEquals(1, resolutionBatches.size());
+            var resolutionBatch = resolutionBatches.get(0);
+            var resolution =
+                    resolutionBatch.stream()
+                            .filter(event -> event.type().equals("interaction/resolved"))
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals(
+                    answer,
+                    JsonUtils.getJsonCodec()
+                            .convertValue(resolution.data().get("result"), ToolResultBlock.class));
+            var checkpoint =
+                    resolutionBatch.stream()
+                            .filter(event -> event.type().equals("state/checkpoint"))
+                            .findFirst()
+                            .orElseThrow();
+            var restored = AgentState.fromJsonString((String) checkpoint.data().get("stateJson"));
+            var applied =
+                    restored.getContext().stream()
+                            .filter(message -> message.getId().equals(input.getId()))
+                            .findFirst()
+                            .orElseThrow()
+                            .getContentBlocks(ToolResultBlock.class)
+                            .get(0);
+            if (returnDirect) {
+                assertEquals(
+                        "Tool call completed. The result has been presented to the user as the"
+                                + " final output of this turn.",
+                        ((TextBlock) applied.getOutput().get(0)).getText());
+                assertTrue(
+                        restored.getContext().stream()
+                                .anyMatch(message -> message.getId().equals(result.getId())));
+            } else {
+                assertEquals(answer, applied);
+            }
+        }
     }
 
     @Test

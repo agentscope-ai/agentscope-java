@@ -2183,6 +2183,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     final class CallExecution {
         private static final String PERMISSION_DENIED_BY_USER = "Permission denied by user";
         private static final String PERMISSION_DENIED_BY_RULES = "Permission denied by rules";
+        private static final String EXTERNAL_TOOL_WAITS_METADATA = "agentscope_external_tool_waits";
         private static final String OUTPUT_LIMIT_TOOL_ARGUMENTS =
                 "Tool call not executed: the response stopped at its output token limit before"
                         + " complete arguments could be parsed. Do not repeat the same large"
@@ -2390,7 +2391,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             }
 
-            // Has pending tools but no input -> resume (execute pending tools directly)
+            // Resume pending tools or report that external results are still outstanding.
             if (msgs == null || msgs.isEmpty()) {
                 return resumeAgent();
             }
@@ -2426,14 +2427,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 // Validate and publish from the caller's original messages so the
                 // ExternalExecutionResultEvent carries the real external results;
                 // only what lands in context is placeholder-shaped on a short-circuit.
-                validateAndAddToolResults(
-                        msgs,
-                        returnDirectResume ? placeholderToolResultMsgs(msgs) : msgs,
-                        pendingIds);
                 if (returnDirectResume) {
-                    return settleSession(
-                            Mono.just(finalizeReturnDirect(externalPairs, externalReplyId)));
+                    Msg direct = buildReturnDirectResultMsg(externalPairs);
+                    List<Msg> completed = new ArrayList<>(placeholderToolResultMsgs(msgs));
+                    completed.add(direct);
+                    validateAndAddToolResults(msgs, completed, pendingIds);
+                    publishReturnDirectTextEvents(direct, externalReplyId);
+                    logReturnDirect(externalPairs);
+                    return settleSession(Mono.just(direct));
                 }
+                validateAndAddToolResults(msgs, msgs, pendingIds);
                 return !MessageUtils.pendingToolUseIds(state.contextMutable()).isEmpty()
                         ? resumeAgent()
                         : coreAgent();
@@ -2555,7 +2558,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 log.warn("Missing confirmation reply id; generated fallback {}", replyId);
             }
             publishEvent(new UserConfirmResultEvent(replyId, normalized));
-            clearPendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            clearPendingRequestMetadata(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
 
             applyConfirmResults(normalized, replyId);
         }
@@ -2571,18 +2574,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Persist the reply id for a pending HITL request on the live assistant message.
+         * Persist a pending HITL request on the live assistant message.
          *
          * <p>The assistant message owns the paused {@link ToolUseBlock}s, so storing the correlation
          * metadata there lets the next call recover it from session state.
          */
-        private void persistPendingRequestReplyId(String metadataKey, String replyId) {
+        private void persistPendingRequestMetadata(Map<String, Object> requestMetadata) {
             Msg lastAssistant = MessageUtils.lastAssistantMessage(state.contextMutable());
             if (lastAssistant == null) {
                 return;
             }
             Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
-            metadata.put(metadataKey, replyId);
+            metadata.putAll(requestMetadata);
             MessageUtils.replaceLastMessageByRole(
                     state.contextMutable(),
                     MsgRole.ASSISTANT,
@@ -2590,16 +2593,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /** Remove HITL correlation metadata after the resume payload is accepted. */
-        private void clearPendingRequestReplyId(String metadataKey) {
+        private void clearPendingRequestMetadata(String... metadataKeys) {
             Msg lastAssistant = MessageUtils.lastAssistantMessage(state.contextMutable());
             if (lastAssistant == null || lastAssistant.getMetadata() == null) {
                 return;
             }
-            if (!lastAssistant.getMetadata().containsKey(metadataKey)) {
+            Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
+            if (!metadata.keySet().removeAll(List.of(metadataKeys))) {
                 return;
             }
-            Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
-            metadata.remove(metadataKey);
             MessageUtils.replaceLastMessageByRole(
                     state.contextMutable(),
                     MsgRole.ASSISTANT,
@@ -2763,6 +2765,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 event.withExecution(executionIdentity);
             SessionRecorder recorder = SessionRecorder.from(rc);
             if (recorder != null) recorder.observe(event);
+            emitEvent(event);
+        }
+
+        private void emitEvent(AgentEvent event) {
             FluxSink<AgentEvent> sink = eventSink;
             if (sink != null) {
                 sink.next(event);
@@ -2785,11 +2791,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *
          * <p>Validation and the published {@link ExternalExecutionResultEvent} always reflect
          * {@code msgs} as the caller supplied them; {@code msgsToPersist} is what lands in
-         * context and may differ only on a returnDirect short-circuit, where the tool results
-         * are replaced with placeholder-shaped copies.
+         * context. On a returnDirect short-circuit it contains placeholder tool results and the
+         * closing assistant message.
          *
          * @param msgs The input messages to validate and publish
-         * @param msgsToPersist The messages to add to context (may be placeholder-substituted)
+         * @param msgsToPersist The canonical messages to add to context
          * @param pendingIds The set of pending tool use IDs
          * @throws IllegalStateException if validation fails
          */
@@ -2847,9 +2853,30 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
             String replyId =
                     resolvePendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
-            if (!replyId.isEmpty()) {
-                publishEvent(new ExternalExecutionResultEvent(replyId, results));
-                clearPendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
+            if (replyId.isEmpty()) {
+                state.contextMutable().addAll(msgsToPersist);
+                return;
+            }
+            var event = new ExternalExecutionResultEvent(replyId, results);
+            event.withExecution(executionIdentity);
+            SessionRecorder recorder = SessionRecorder.from(rc);
+            if (recorder == null) {
+                addExternalResults(msgsToPersist, providedIds);
+            } else {
+                synchronized (recorder) {
+                    addExternalResults(msgsToPersist, providedIds);
+                    recorder.captureExternalResults(state, event);
+                }
+            }
+            emitEvent(event);
+        }
+
+        private void addExternalResults(List<Msg> msgsToPersist, Set<String> providedIds) {
+            if (awaitingExternalResults().stream()
+                    .allMatch(call -> providedIds.contains(call.getId()))) {
+                clearPendingRequestMetadata(
+                        Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID,
+                        EXTERNAL_TOOL_WAITS_METADATA);
             }
             state.contextMutable().addAll(msgsToPersist);
         }
@@ -2924,12 +2951,59 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return settleSession(executeIteration(0));
         }
 
-        /**
-         * Resume entry point when pending tool calls remain from a previous turn:
-         * jumps directly into the acting phase without another reasoning step.
-         */
+        /** Resume pending tools, or keep waiting for already submitted external calls. */
         private Mono<Msg> resumeAgent() {
+            List<ToolUseBlock> awaiting = awaitingExternalResults();
+            if (!awaiting.isEmpty()) {
+                return Mono.just(
+                        buildSuspendedMsg(
+                                awaiting.stream().map(this::restoreSuspendedTool).toList()));
+            }
             return settleSession(acting(0));
+        }
+
+        private List<ToolUseBlock> awaitingExternalResults() {
+            if (resolvePendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID)
+                    .isEmpty()) {
+                return List.of();
+            }
+            List<ToolUseBlock> pending =
+                    MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
+            SessionRecorder recorder = SessionRecorder.from(rc);
+            if (recorder != null) {
+                return pending.stream()
+                        .map(call -> recorder.initialExternalRequest(call.getId()))
+                        .filter(Objects::nonNull)
+                        .toList();
+            }
+            Map<?, ?> saved = savedExternalToolWaits();
+            return pending.stream().filter(call -> saved.containsKey(call.getId())).toList();
+        }
+
+        private Map<?, ?> savedExternalToolWaits() {
+            Object saved =
+                    MessageUtils.lastAssistantMessage(state.contextMutable())
+                            .getMetadata()
+                            .get(EXTERNAL_TOOL_WAITS_METADATA);
+            return saved instanceof Map<?, ?> waits ? waits : Map.of();
+        }
+
+        private Map.Entry<ToolUseBlock, ToolResultBlock> restoreSuspendedTool(ToolUseBlock call) {
+            SessionRecorder recorder = SessionRecorder.from(rc);
+            if (recorder != null) {
+                ToolResultBlock result = recorder.initialExternalSuspension(call.getId());
+                if (result != null) return Map.entry(call, result);
+            }
+            Object value = savedExternalToolWaits().get(call.getId());
+            if (value != null) {
+                ExternalToolWait wait =
+                        value instanceof ExternalToolWait typed
+                                ? typed
+                                : JsonUtils.getJsonCodec()
+                                        .convertValue(value, ExternalToolWait.class);
+                return Map.entry(wait.call(), wait.result());
+            }
+            return Map.entry(call, ToolResultBlock.suspended(call));
         }
 
         private int lastSessionIteration;
@@ -3868,8 +3942,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // completion;
                                 // initialise it to empty since no successful execution happened.
                                 resultHolder.set(List.of());
-                                persistPendingRequestReplyId(
-                                        Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
+                                persistPendingRequestMetadata(
+                                        Map.of(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId));
                                 Flux<AgentEvent> autoDeniedEvents =
                                         Flux.fromIterable(toolCalls)
                                                 .filter(tc -> autoDenied.contains(tc.getId()))
@@ -4056,14 +4130,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                     merged);
                                                                             List<ToolUseBlock>
                                                                                     suspendedCalls =
-                                                                                            getSuspendedToolCalls(
+                                                                                            persistExternalExecutionRequest(
+                                                                                                    replyId,
                                                                                                     results);
                                                                             if (!suspendedCalls
                                                                                     .isEmpty()) {
-                                                                                persistPendingRequestReplyId(
-                                                                                        Msg
-                                                                                                .METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID,
-                                                                                        replyId);
                                                                                 sink.next(
                                                                                         new RequireExternalExecutionEvent(
                                                                                                 replyId,
@@ -4169,12 +4240,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
 
-        private List<ToolUseBlock> getSuspendedToolCalls(
-                List<Map.Entry<ToolUseBlock, ToolResultBlock>> results) {
-            return results.stream()
-                    .filter(entry -> entry.getValue().isSuspended())
-                    .map(Map.Entry::getKey)
-                    .toList();
+        private record ExternalToolWait(ToolUseBlock call, ToolResultBlock result) {}
+
+        private List<ToolUseBlock> persistExternalExecutionRequest(
+                String replyId, List<Map.Entry<ToolUseBlock, ToolResultBlock>> results) {
+            List<ToolUseBlock> calls = new ArrayList<>();
+            Map<String, ExternalToolWait> waits = new HashMap<>();
+            boolean stateOnly = SessionRecorder.from(rc) == null;
+            for (var entry : results) {
+                if (!entry.getValue().isSuspended()) continue;
+                ToolUseBlock call = entry.getKey();
+                calls.add(call);
+                if (stateOnly)
+                    waits.put(call.getId(), new ExternalToolWait(call, entry.getValue()));
+            }
+            if (!calls.isEmpty()) {
+                Map<String, Object> request = new HashMap<>();
+                request.put(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID, replyId);
+                if (stateOnly) request.put(EXTERNAL_TOOL_WAITS_METADATA, Map.copyOf(waits));
+                persistPendingRequestMetadata(request);
+            }
+            return calls;
         }
 
         /**
@@ -4630,10 +4716,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Finalize a returnDirect turn: synthesize the closing assistant message, persist it,
          * emit the closing text events, and log.
          *
-         * <p>Shared by the in-framework path ({@code acting}) and the external-resume path
-         * ({@code doCallInner}), so both produce identical message, context, return-contract,
-         * and event-stream shapes. {@code replyId} correlates the emitted events with the
-         * originating reply (the acting replyId, or the suspended external-execution request).
+         * <p>{@code replyId} correlates the emitted events with the originating reply.
          */
         private Msg finalizeReturnDirect(
                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs, String replyId) {
@@ -5109,7 +5192,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return MessageUtils.extractRecentToolCalls(state.contextMutable(), getName());
         }
 
-        // ==================== Tool call state helpers (Permission HITL) ====================
+        // ==================== Tool call state helpers ====================
 
         /**
          * Locate the last assistant Msg in context and replace the {@code state} of every

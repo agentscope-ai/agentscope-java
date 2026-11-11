@@ -83,6 +83,8 @@ public final class SessionRecorder {
     private final Set<String> inputMessages = new HashSet<>();
     private final Disposable heartbeat;
     private final SessionProjection initial;
+    private final Map<String, SessionEvent> initialInteractions;
+    private final Map<String, SessionEvent> initialSuspensions;
     private final SessionLogExporter exporter;
     private static final Logger LOGGER = LoggerFactory.getLogger(SessionRecorder.class);
 
@@ -106,7 +108,30 @@ public final class SessionRecorder {
             initial = SessionProjection.read(log);
             durableSeq = initial.asOfSeq();
             boolean seenTurn = false;
+            var interactions = new LinkedHashMap<String, SessionEvent>();
+            var actionEnds = new LinkedHashMap<String, SessionEvent>();
+            var suspensions = new LinkedHashMap<String, SessionEvent>();
             for (var event : log.scan(0, durableSeq)) {
+                String requestId = SessionInteractions.apply(interactions, event);
+                switch (event.type()) {
+                    case "action/end" -> {
+                        var data = event.data();
+                        if (data.get("observation") instanceof Map<?, ?> observation
+                                && "SUSPENDED".equals(observation.get("status")))
+                            actionEnds.put((String) data.get("toolCallId"), event);
+                    }
+                    case "interaction/requested" -> {
+                        var action = actionEnds.remove(requestId);
+                        if (action != null
+                                && Objects.equals(action.executionRunId(), event.executionRunId())
+                                && "external_execution".equals(event.data().get("kind")))
+                            suspensions.put(requestId, action);
+                        else suspensions.remove(requestId);
+                    }
+                    case "interaction/resolved" -> suspensions.remove(requestId);
+                    case "run/start", "run/end" -> actionEnds.clear();
+                    default -> {}
+                }
                 if (runId.equals(event.executionRunId()))
                     throw new SessionLogException(
                             "Run ID already used; prepare a new execution to resume");
@@ -118,6 +143,8 @@ public final class SessionRecorder {
                     throw new SessionLogException("Turn already completed; use a new turn ID");
             }
             resumedTurn = seenTurn;
+            initialInteractions = Map.copyOf(interactions);
+            initialSuspensions = Map.copyOf(suspensions);
             if (!initial.uncertainToolCalls().isEmpty())
                 throw new SessionLogException(
                         "Explicit reconciliation required for unknown tool outcomes: "
@@ -166,6 +193,28 @@ public final class SessionRecorder {
 
     public SessionProjection initial() {
         return initial;
+    }
+
+    /**
+     * Returns the tool call from an outstanding external request at execution admission, or null.
+     * An existing turn can only use its own requests. A direct call can start with a fresh turn ID
+     * on every invocation, so the caller must match the ID against the current pending tool batch.
+     */
+    public ToolUseBlock initialExternalRequest(String toolCallId) {
+        var request = initialInteractions.get(toolCallId);
+        if (request == null || (resumedTurn && !turnId.equals(request.turnId()))) return null;
+        var data = request.data();
+        if (!"external_execution".equals(data.get("kind"))) return null;
+        return JsonUtils.getJsonCodec().convertValue(data.get("call"), ToolUseBlock.class);
+    }
+
+    /** Returns the observed suspension paired with an outstanding external request, or null. */
+    public ToolResultBlock initialExternalSuspension(String toolCallId) {
+        var action = initialSuspensions.get(toolCallId);
+        if (action == null || (resumedTurn && !turnId.equals(action.turnId()))) return null;
+        return action.data().get("result") instanceof Map<?, ?> result
+                ? SessionProjection.decodeToolResult(result)
+                : null;
     }
 
     public String runId() {
@@ -315,6 +364,19 @@ public final class SessionRecorder {
                     append(type, payload);
                     return flush();
                 });
+    }
+
+    /** Stage the accepted result and its canonical context in the same commit. */
+    public synchronized void captureExternalResults(
+            AgentState state, ExternalExecutionResultEvent event) {
+        try {
+            observe(event);
+            captureState(state, "external_results");
+        } catch (RuntimeException error) {
+            // A failed append must not leave half of the update available to the heartbeat.
+            failure = error;
+            throw error;
+        }
     }
 
     public synchronized void captureState(AgentState state, String reason) {

@@ -504,7 +504,9 @@ for (var tc : externalEvent.getToolCalls()) {
 }
 ```
 
-**3. Resume the agent** — feed the results back as the next `call`'s input message. After the results are validated, they are injected into the agent context and the agent emits `ExternalExecutionResultEvent`; its `getReplyId()` matches the earlier `RequireExternalExecutionEvent#getReplyId()`. Reasoning then continues from where it paused.
+**3. Resume the agent** — feed the results back as the next `call`'s input message. After the results are validated, they are injected into the agent context and the agent emits `ExternalExecutionResultEvent`; its `getReplyId()` matches the earlier `RequireExternalExecutionEvent#getReplyId()`. Results for the same batch can arrive in separate calls. Each result event uses the original reply ID, and the agent waits for the remaining results before resuming reasoning.
+
+For a state-only snapshot saved before the agent recorded individual external waits, return the outstanding results together.
 
 
 <Tip>

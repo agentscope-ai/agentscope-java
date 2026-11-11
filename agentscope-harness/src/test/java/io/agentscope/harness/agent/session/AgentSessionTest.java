@@ -19,13 +19,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -33,22 +38,30 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.MessageUtils;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -88,6 +101,126 @@ class AgentSessionTest {
                                             message.getTextContent()
                                                     .contains("ATTACHMENT_CONTENT")),
                     "the submitted task must retain the built-in @path expansion");
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void partialExternalAnswerLeavesTheOriginalSiblingRequestPending(boolean legacyCheckpoint) {
+        var dispatches = new CopyOnWriteArrayList<String>();
+        var toolkit = new Toolkit();
+        toolkit.registerAgentTool(
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("external_quote")
+                                .description("Submit a quote request")
+                                .inputSchema(Map.of("type", "object"))) {
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        var call = param.getToolUseBlock();
+                        dispatches.add(call.getId());
+                        return Mono.just(
+                                call.getId().equals("quote-c")
+                                        ? ToolResultBlock.success("Cached quote")
+                                        : ToolResultBlock.suspended(call));
+                    }
+                });
+        var calls = new AtomicInteger();
+        Model model =
+                new Model() {
+                    @Override
+                    public String getModelName() {
+                        return "external-quote-test";
+                    }
+
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        if (calls.getAndIncrement() != 0)
+                            return response(TextBlock.builder().text("done").build());
+                        var batch =
+                                List.<ContentBlock>of(
+                                        ToolUseBlock.builder()
+                                                .id("quote-a")
+                                                .name("external_quote")
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("quote-b")
+                                                .name("external_quote")
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("quote-c")
+                                                .name("external_quote")
+                                                .build());
+                        return Flux.just(ChatResponse.builder().content(batch).build());
+                    }
+                };
+        var store = new InMemorySessionLogStore();
+        String bEventId;
+        String turnId;
+        var deferCachedQuote =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext context,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(
+                                new ActingInput(
+                                        input.toolCalls().stream()
+                                                .filter(call -> !call.getId().equals("quote-c"))
+                                                .toList()));
+                    }
+                };
+        try (var agent =
+                agentBuilder(model, toolkit, store)
+                        .disableAtPathExpansion()
+                        .middleware(deferCachedQuote)
+                        .build()) {
+            var session = session(agent);
+            var first = session.await(session.submit("compare quotes")).block(WAIT);
+            assertEquals("suspended", first.status(), session.executionError());
+            assertEquals(Set.of("quote-a", "quote-b"), session.pending().keySet());
+            bEventId = session.pending().get("quote-b").eventId();
+            turnId = first.turnId();
+        }
+        if (legacyCheckpoint) {
+            var context = RuntimeContext.builder().userId("u").sessionId("s").build();
+            var recorder =
+                    new SessionRecorder(
+                            store.open(new SessionKey("u", "session-test", "s"), context), turnId);
+            try {
+                var state = recorder.initial().restore();
+                var allowedCalls = new HashMap<String, ToolUseBlock>();
+                // An approval before deferral can leave even the undispatched call ALLOWED.
+                for (var call :
+                        MessageUtils.extractRecentToolCalls(state.getContext(), "session-test"))
+                    allowedCalls.put(call.getId(), call.withState(ToolCallState.ALLOWED));
+                assertTrue(MessageUtils.replaceToolUseBlocks(state.contextMutable(), allowedCalls));
+                recorder.checkpointNow(state, "legacy_external_wait");
+            } finally {
+                recorder.close();
+            }
+        }
+        try (var agent = agent(model, toolkit, store)) {
+            var session = session(agent);
+            var partial = session.await(session.respond("quote-a", "A")).block(WAIT);
+            assertEquals("suspended", partial.status(), session.executionError());
+            assertEquals(turnId, partial.turnId());
+            assertEquals(1, calls.get());
+            assertEquals(List.of("quote-a", "quote-b"), dispatches.stream().sorted().toList());
+            assertEquals(Set.of("quote-b"), session.pending().keySet());
+            assertEquals(bEventId, session.pending().get("quote-b").eventId());
+
+            var completed = session.await(session.respond("quote-b", "B")).block(WAIT);
+            assertEquals("completed", completed.status(), session.executionError());
+            assertEquals(turnId, completed.turnId());
+            assertTrue(session.pending().isEmpty());
+            assertEquals(
+                    List.of("quote-a", "quote-b", "quote-c"),
+                    dispatches.stream().sorted().toList());
+            assertEquals(2, calls.get());
         }
     }
 

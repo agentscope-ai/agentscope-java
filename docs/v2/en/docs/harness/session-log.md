@@ -146,7 +146,7 @@ session.respond("confirmation-request-id", true);
 
 These illustrate two request kinds: strings answer `external_execution` requests; booleans answer confirmation requests. Use the actual persisted IDs for your interaction. The framework resolves the original turn and tool identity, constructs the existing HITL input and continues that turn. Unknown, resolved or mismatched requests are rejected.
 
-For a confirmation denial, use `SessionAnswer.reject(reason)`. `SessionAnswer.Output` accepts custom result blocks, and `SessionAnswer.Confirmation` supports permission rules or edited tool arguments. Parallel answers can be submitted with `respond(Map<String, SessionAnswer>)`; they must belong to one turn.
+For a confirmation denial, use `SessionAnswer.reject(reason)`. `SessionAnswer.Output` accepts custom result blocks, and `SessionAnswer.Confirmation` supports permission rules or edited tool arguments. Answers for multiple calls in the same turn can be submitted together with `respond(Map<String, SessionAnswer>)`. External results can also arrive one at a time. A partial answer records the results supplied and leaves the original requests for the remaining tools pending.
 
 Direct calls can also use the [existing HITL APIs](/v2/en/docs/building-blocks/agent#human-in-the-loop); human confirmation alone does not require session scheduling. Reply to inline Service interactions through their owning service's actions endpoint.
 
