@@ -25,6 +25,7 @@ import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.middleware.TaskContextProjection;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.TaskContextState;
 import io.agentscope.core.util.JsonUtils;
@@ -592,11 +593,16 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         long window = input.model().getContextWindowSize();
         long output = policy.reservedOutputTokens();
         if (output == 0) output = window > 0 ? Math.min(4096, Math.max(1, window / 8)) : 4096;
-        if (input.options() != null) {
-            if (input.options().getMaxTokens() != null)
-                output = Math.max(output, input.options().getMaxTokens());
-            if (input.options().getMaxCompletionTokens() != null)
-                output = Math.max(output, input.options().getMaxCompletionTokens());
+        // The provider applies the model's default options to the outgoing request, so the
+        // output reservation must be read from the same effective options: a default
+        // maxTokens that never appears in request options still consumes budget.
+        GenerateOptions effective = input.model().resolveOptions(input.options());
+        if (effective == null) effective = input.options();
+        if (effective != null) {
+            if (effective.getMaxTokens() != null)
+                output = Math.max(output, effective.getMaxTokens());
+            if (effective.getMaxCompletionTokens() != null)
+                output = Math.max(output, effective.getMaxCompletionTokens());
         }
         long safety =
                 policy.safetyMarginTokens() > 0

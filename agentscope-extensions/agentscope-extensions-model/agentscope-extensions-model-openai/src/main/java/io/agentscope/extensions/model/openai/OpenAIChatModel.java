@@ -233,6 +233,11 @@ public class OpenAIChatModel extends ChatModelBase {
         return configuredOptions != null ? configuredOptions.getModelName() : null;
     }
 
+    @Override
+    public GenerateOptions getDefaultOptions() {
+        return configuredOptions;
+    }
+
     /** Package-private test seam for verifying model-level strict JSON schema configuration. */
     Boolean getStrictJsonSchema() {
         return strictJsonSchema;
