@@ -21,15 +21,15 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
-/** Combines literal matchers without changing each tool's existing case-matching semantics. */
+/** Combines literal matchers within a single search record. */
 final class KeywordMatcher {
     private static final Pattern WHITESPACE =
             Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS);
 
     private KeywordMatcher() {}
 
-    static Predicate<String> compile(
-            String query, String matchMode, Function<String, Predicate<String>> literalMatcher) {
+    static <T> Predicate<T> compile(
+            String query, String matchMode, Function<String, Predicate<T>> literalMatcher) {
         String mode = matchMode == null ? "phrase" : matchMode;
         if (mode.equals("phrase")) {
             return literalMatcher.apply(query);
@@ -37,7 +37,7 @@ final class KeywordMatcher {
         if (!mode.equals("all") && !mode.equals("any")) {
             throw new IllegalArgumentException("matchMode must be one of: phrase, all, any");
         }
-        List<Predicate<String>> terms =
+        List<Predicate<T>> terms =
                 Arrays.stream(WHITESPACE.split(query))
                         .filter(term -> !term.isEmpty())
                         .distinct()
