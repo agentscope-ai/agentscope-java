@@ -26,6 +26,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Stores each tool and its metadata in one registration. Per-name atomic updates prevent
  * conflicting registrations and keep binding metadata consistent during replacement and removal.
+ * Registrations share this registry's monitor so MCP batch validation and registration exclude
+ * concurrent writers.
  */
 class ToolRegistry {
 
@@ -45,7 +47,7 @@ class ToolRegistry {
      * @throws IllegalStateException when the name belongs to a different tool
      * @throws IllegalArgumentException when the name, tool or metadata is invalid
      */
-    void registerTool(
+    synchronized void registerTool(
             String toolName,
             AgentTool tool,
             RegisteredToolFunction registered,
@@ -66,14 +68,7 @@ class ToolRegistry {
                 (name, existingRegistration) -> {
                     AgentTool existing =
                             existingRegistration == null ? null : existingRegistration.getTool();
-                    if (existing != null
-                            && existing != tool
-                            && !allowReplaceExisting
-                            && !isIdempotentRefresh(existing, tool)) {
-                        // Throwing from compute preserves the existing binding and metadata.
-                        throw new IllegalStateException(
-                                duplicateRegistrationMessage(toolName, existing, tool, registered));
-                    }
+                    validateConflict(toolName, existing, tool, registered, allowReplaceExisting);
                     updateGroups.run();
                     return registered;
                 });
@@ -99,6 +94,26 @@ class ToolRegistry {
      */
     void registerTool(String toolName, AgentTool tool, RegisteredToolFunction registered) {
         registerTool(toolName, tool, registered, false, () -> {});
+    }
+
+    /** Checks a batch entry before publication; callers hold this registry's monitor. */
+    void validateRegistration(String toolName, AgentTool tool, RegisteredToolFunction registered) {
+        validateConflict(toolName, getTool(toolName), tool, registered, false);
+    }
+
+    private static void validateConflict(
+            String toolName,
+            AgentTool existing,
+            AgentTool incoming,
+            RegisteredToolFunction registered,
+            boolean allowReplaceExisting) {
+        if (existing != null
+                && existing != incoming
+                && !allowReplaceExisting
+                && !isIdempotentRefresh(existing, incoming)) {
+            throw new IllegalStateException(
+                    duplicateRegistrationMessage(toolName, existing, incoming, registered));
+        }
     }
 
     /** Identifies both tools and the supported conflict-resolution options. */
