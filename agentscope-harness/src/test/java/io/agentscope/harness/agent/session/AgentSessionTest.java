@@ -34,7 +34,6 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
@@ -403,26 +402,17 @@ class AgentSessionTest {
                             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                         return Flux.error(
                                 new AssertionError(
-                                        "session turns must not inherit the caller's per-call"
-                                                + " modelId"));
+                                        "session turns must not inherit the caller's pinned"
+                                                + " model"));
                     }
                 };
-        ModelRegistry.register("sticky-per-call", sticky);
-        try {
-            try (var agent = agent(sessionModel, new Toolkit(), new InMemorySessionLogStore())) {
-                var session =
-                        agent.session(
-                                RuntimeContext.builder()
-                                        .userId("u")
-                                        .sessionId("s")
-                                        .modelId("sticky-per-call")
-                                        .build());
-                var done = session.await(session.submit("begin")).block(WAIT);
-                assertEquals("completed", done.status(), session.executionError());
-                assertEquals(1, calls.get());
-            }
-        } finally {
-            ModelRegistry.reset();
+        try (var agent = agent(sessionModel, new Toolkit(), new InMemorySessionLogStore())) {
+            var callerCtx = RuntimeContext.builder().userId("u").sessionId("s").build();
+            callerCtx.put(Model.class, sticky);
+            var session = agent.session(callerCtx);
+            var done = session.await(session.submit("begin")).block(WAIT);
+            assertEquals("completed", done.status(), session.executionError());
+            assertEquals(1, calls.get());
         }
     }
 
