@@ -107,6 +107,11 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
             return next.apply(input);
         }
 
+        AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
+        if (state == null) {
+            return next.apply(input);
+        }
+
         Mono<List<HintBlock>> inboxHints =
                 messageBus
                         .inboxDrain(sessionId, maxDrainCount)
@@ -171,16 +176,9 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                     tuple.getT1().size(),
                                     tuple.getT2().size());
 
-                            AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
-                            List<Msg> notifications = List.of();
-                            if (state != null) {
-                                notifications = injectHintsToContext(state, allHints);
-                            }
+                            List<Msg> notifications = injectHintsToContext(state, allHints);
 
-                            String replyId =
-                                    state != null
-                                            ? state.getReplyId()
-                                            : UUID.randomUUID().toString().replace("-", "");
+                            String replyId = state.getReplyId();
 
                             Flux<AgentEvent> hintEvents =
                                     Flux.fromIterable(allHints)
