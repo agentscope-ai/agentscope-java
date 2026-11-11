@@ -21,6 +21,7 @@ en_link: /v2/en/docs/harness/workspace
 | 技能（可复用能力包） | `skills/<skill-name>/SKILL.md` |
 | 子 agent 声明 | `subagents/<agent-id>.md` |
 | 工具白名单 + MCP server | `tools.json` |
+| 声明式 MCP 配置（可选） | `mcp.json` |
 
 > **以上全部可选。** 每个工作区文件都有完全对等的 API 配置方式：你可以通过 builder 方法（`.sysPrompt(...)`、`.skill(SkillDeclaration...)`、`.subagent(SubagentDeclaration...)`、`.toolsConfig(...)` 等）传入同等配置。工作区与 API 始终等价——用哪种完全取决于你。
 >
@@ -74,6 +75,7 @@ en_link: /v2/en/docs/harness/workspace
 ├── AGENTS.md                    ← 静态：人格 + 行为约定
 ├── MEMORY.md                    ← 长期记忆：策划后的长期事实
 ├── tools.json                   ← 静态：MCP server + 工具白名单（可选）
+├── mcp.json                     ← 静态：声明式 MCP server（可选，同名覆盖 tools.json）
 ├── memory/                      ← 长期记忆：每天追加的事实流水账
 │   └── YYYY-MM-DD.md
 ├── knowledge/                   ← 静态：领域知识入口 + 任意参考文件
@@ -446,12 +448,46 @@ tools: [read_file, grep_files]   # 可选；继承工具的白名单
 
 行为细节：
 
-- **MCP server 在构建期一次性注册到 toolkit**，agent 看到的就是这些 server 暴露的工具。
+- **MCP server 在构建期一次性注册到 toolkit**，agent 看到的就是这些 server 暴露的工具。运行期增删改见 [`mcp.json` 与运行期 MCP 管理](#mcpjson-与运行期-mcp-管理)。
 - **meta 透传由三个可选字段控制**，与 core MCP client 的三级开关一一对应：`propagateMeta`（连接级——部署态一刀切；core 每次调用实时判定该开关，但 Harness 当前不提供运行时取回入口，按构建期配置对待）、`propagateMetaDefault`（注册级——该 server 注册的所有工具默认静默）、`propagateMetaOverrides`（工具级——放行个别工具；写错的工具名会让本次注册直接失败，绝不静默丢失；工具级 `true` 压不过连接级 `false`，连接级始终是实时天花板）。三个都不写时保持 core 默认行为（meta 全部透传）。
 - **`allow` / `deny` 在所有工具注册完之后才应用**——所以也会过滤掉 Harness 的内置工具（`read_file` / `memory_search` / `agent_spawn` 等）。**用 `allow` 列白名单时务必把要保留的内置工具一并列出**，否则会一起被砍掉。
 - `${ENV_VAR}` 语法做环境变量替换；未设置时给 warning 并替换成空字符串。
 - 不想用文件？直接 `builder.toolsConfig(ToolsConfig.builder()...)` 编程注入；要完全关掉读取用 `disableToolsConfig()`。
 - 在共享存储模式下，`tools.json` 走前面说的"远端为上层、本机模板为下层"的 overlay。
+
+### `mcp.json` 与运行期 MCP 管理
+
+`mcp.json` 放在 workspace 根目录，schema 与 `tools.json` 的 `mcpServers` 完全一致，构建期读取并注册进 agent 的共享 toolkit。同名 server 以 `mcp.json` 为准（覆盖 `tools.json`），`${ENV_VAR}` 替换同样生效。
+
+```jsonc
+{
+  "mcpServers": {
+    "amap": {
+      "transport": "streamableHttp",
+      "url": "https://mcp.amap.com/mcp?key=${AMAP_API_KEY}"
+    }
+  }
+}
+```
+
+**运行期管理**不走文件改写，而是通过 `HarnessAgent#mcpTools()` 拿到的 `McpToolManager`：
+
+```java
+HarnessAgent agent = HarnessAgent.builder()/* ... */.build();
+
+// 给某一个用户挂一个只属于他的 MCP server（不重建 agent）
+agent.mcpTools().register(context, "user-db", config);
+agent.mcpTools().reload(context, "user-db");     // 重连，拾取 server 侧变化
+agent.mcpTools().unregister(context, "user-db");
+agent.mcpTools().servers(context);               // 该上下文可见的 server 快照
+```
+
+隔离与持久化语义：
+
+- **按 `RuntimeContext` 隔离**：scope 以 `userId` 优先、其次 `sessionId` 作为 key。某个上下文注册的 server 只对该上下文可见、可执行；没有运行期 server 的上下文直接用共享 toolkit（零开销），有运行期 server 的上下文用一份 baseline 副本 + 自己的 server。
+- **只增不改 baseline**：`mcp.json` / `tools.json` 里的 server 属于全局 baseline，不能被单个上下文重新注册或移除（会抛 `IllegalArgumentException`），避免一个用户改到所有人。
+- **持久化**：运行期改动写到 workspace 的 `mcp/<scope>.json`（单个上下文一个文件），下次构建时自动加载；`mcp.json` 始终是声明式 baseline。
+- **并发**：修改按 scope 串行化；`reload` / `unregister` 会关闭被替换的客户端，正在进行的调用可能因此失败——这类操作属于运维动作，不在热路径上。
 
 ### `plans/`
 

@@ -223,7 +223,7 @@ public final class McpServerRegistrar {
         }
     }
 
-    private static McpClientWrapper buildClient(String name, McpServerConfig cfg) {
+    static McpClientWrapper buildClient(String name, McpServerConfig cfg) {
         String transport = cfg.getTransport();
         if (transport == null || transport.isBlank()) {
             throw new IllegalArgumentException(

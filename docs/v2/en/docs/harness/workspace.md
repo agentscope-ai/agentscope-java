@@ -23,6 +23,7 @@ Agent *definition* — who the agent is and how it behaves — can be declared e
 | Skills (reusable capability packages) | `skills/<skill-name>/SKILL.md` |
 | Subagent declarations | `subagents/<agent-id>.md` |
 | Tool allowlist + MCP servers | `tools.json` |
+| Declarative MCP servers (optional) | `mcp.json` |
 
 > **All workspace config files are optional.** Every file has a fully equivalent API counterpart: you can pass the same configuration via builder methods (`.sysPrompt(...)`, `.skill(SkillDeclaration...)`, `.subagent(SubagentDeclaration...)`, `.toolsConfig(...)`, etc.). The workspace and the API are always in parity — which one you use is entirely your choice.
 >
@@ -76,6 +77,7 @@ For multi-user applications, share a Builder and build an Agent per request. Con
 ├── AGENTS.md                    ← static: persona + behavior rules
 ├── MEMORY.md                    ← long-term: curated long-term facts
 ├── tools.json                   ← static: MCP servers + tool allow/deny (optional)
+├── mcp.json                     ← static: declarative MCP servers (optional, overrides tools.json)
 ├── memory/                      ← long-term: append-only daily fact log
 │   └── YYYY-MM-DD.md
 ├── knowledge/                   ← static: knowledge entry + reference files
@@ -453,12 +455,46 @@ A JSON file at the workspace root, read once during `build()`:
 
 Behavior notes:
 
-- **MCP servers are registered into the toolkit once at build time**; the agent sees the tools they expose.
+- **MCP servers are registered into the toolkit once at build time**; the agent sees the tools they expose. Runtime add/remove/reload is covered by [`mcp.json` and runtime MCP management](#mcpjson-and-runtime-mcp-management).
 - **Meta propagation to MCP servers is controlled by three optional fields**, mirroring the three-level switches of the core MCP client: `propagateMeta` (connection level — a deployment cut-off; core evaluates it live on every call, but Harness currently exposes no runtime handle to flip it, so treat it as build-time configuration), `propagateMetaDefault` (registration level — every tool from this server is registered silent by default), and `propagateMetaOverrides` (per tool — a tool name that is not registered from this server fails the registration loudly, so an override is never lost; a per-tool `true` cannot overrule a `false` connection-level switch). When all are absent, the core default applies (metadata is propagated).
 - **`allow` / `deny` are applied after every tool has been registered** — including Harness built-ins (`read_file` / `memory_search` / `agent_spawn` / …). **When you use `allow` to whitelist, list the built-ins you want to keep too**, otherwise they get filtered out alongside everything else.
 - `${ENV_VAR}` syntax substitutes environment variables; missing variables warn and substitute the empty string.
 - Don't want a file? Pass `builder.toolsConfig(ToolsConfig.builder()...)` directly, or fully disable reading with `disableToolsConfig()`.
 - Under shared-store mode, `tools.json` follows the same "remote upper, local-template lower" overlay described above.
+
+### `mcp.json` and runtime MCP management
+
+`mcp.json` lives at the workspace root and uses exactly the `mcpServers` schema of `tools.json`. It is read at build time and registered into the agent's shared toolkit; on a name clash `mcp.json` wins over `tools.json`, and `${ENV_VAR}` substitution applies the same way.
+
+```jsonc
+{
+  "mcpServers": {
+    "amap": {
+      "transport": "streamableHttp",
+      "url": "https://mcp.amap.com/mcp?key=${AMAP_API_KEY}"
+    }
+  }
+}
+```
+
+Runtime changes go through the `McpToolManager` returned by `HarnessAgent#mcpTools()` rather than by editing files:
+
+```java
+HarnessAgent agent = HarnessAgent.builder()/* ... */.build();
+
+// Give one user a server only that user can see (no agent rebuild)
+agent.mcpTools().register(context, "user-db", config);
+agent.mcpTools().reload(context, "user-db");     // reconnect, pick up server-side changes
+agent.mcpTools().unregister(context, "user-db");
+agent.mcpTools().servers(context);               // snapshot visible to that context
+```
+
+Isolation and persistence:
+
+- **Scoped to `RuntimeContext`**: the scope key is `userId` first, then `sessionId`. Servers registered for one context are visible and executable only there. A context with no runtime servers resolves to the shared toolkit (zero overhead); a context with runtime servers gets a copy of the baseline plus its own servers.
+- **Additive only**: servers declared in `mcp.json` / `tools.json` are the global baseline and cannot be re-registered or removed for a single context (that throws `IllegalArgumentException`), so one user can never reconfigure everyone.
+- **Persisted**: runtime changes are written to `mcp/<scope>.json` in the workspace (one file per context) and restored on the next build; `mcp.json` stays the declarative baseline.
+- **Concurrency**: mutations are serialized per scope. `reload` / `unregister` close the replaced client, so an in-flight call on that scope may fail — these are administrative operations, not part of the hot path.
 
 ### `plans/`
 
