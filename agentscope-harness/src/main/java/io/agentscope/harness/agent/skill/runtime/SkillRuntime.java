@@ -40,6 +40,7 @@ public final class SkillRuntime {
     private final RuntimeContext legacyContext = RuntimeContext.empty();
     private final AtomicReference<SkillCatalog> legacyCatalogRef =
             new AtomicReference<>(SkillCatalog.empty());
+    private final AtomicReference<Toolkit> toolkitRef = new AtomicReference<>();
     private final SkillLoadTool loadTool;
     private final SkillPromptBuilder promptBuilder;
 
@@ -49,7 +50,7 @@ public final class SkillRuntime {
 
     public SkillRuntime(SkillPromptBuilder promptBuilder) {
         this.promptBuilder = promptBuilder != null ? promptBuilder : new SkillPromptBuilder();
-        this.loadTool = new SkillLoadTool(legacyCatalogRef, false);
+        this.loadTool = new SkillLoadTool(legacyCatalogRef, false, toolkitRef);
     }
 
     /**
@@ -84,17 +85,21 @@ public final class SkillRuntime {
     }
 
     /**
-     * Ensures the skill loading tool is present as an ungrouped tool.
+     * Ensures the skill loading tool is present as an ungrouped tool and remembers the toolkit
+     * used to activate skill-bound tool groups on load.
      *
      * <p>Harness calls this while the agent toolkit is still being assembled. The toolkit copy
      * made by {@code ReActAgent.Builder} therefore contains the tool before its first model call.
      * Keeping the loader ungrouped is intentional: ungrouped tools remain visible regardless of a
      * session's persisted active-group list, including sessions created before the loader existed.
+     * Each system-prompt pass re-binds the reference so it always points at the agent's live
+     * toolkit (the one that was deep-copied during agent construction).
      */
     public void prepareToolkit(Toolkit toolkit) {
         if (toolkit == null) {
             return;
         }
+        this.toolkitRef.set(toolkit);
         try {
             AgentTool existing = toolkit.getTool(SkillLoadTool.TOOL_NAME);
             if (existing == loadTool) {
@@ -115,7 +120,10 @@ public final class SkillRuntime {
      *
      * <p>The catalog is deliberately stored on {@code context}, not on this shared runtime. This is
      * the authorization boundary used by {@link SkillLoadTool}; a skill omitted from the call's
-     * filtered catalog cannot be loaded even while another session exposes it.
+     * filtered catalog cannot be loaded even while another session exposes it. The live toolkit is
+     * bound to the same context so that loading a skill can activate the {@link
+     * io.agentscope.core.tool.SkillToolGroup SkillToolGroups} bound to it via {@code
+     * activateOnSkill} (on-demand tool disclosure).
      *
      * @param catalog the call snapshot; pass {@link SkillCatalog#empty()} to clear visibility
      * @param context the current call context; may be {@code null}, in which case no catalog is
@@ -125,6 +133,7 @@ public final class SkillRuntime {
     public void install(SkillCatalog catalog, RuntimeContext context, Toolkit toolkit) {
         if (context != null) {
             context.put(SkillCatalog.class, catalog != null ? catalog : SkillCatalog.empty());
+            context.put(Toolkit.class, toolkit);
         }
         prepareToolkit(toolkit);
     }
