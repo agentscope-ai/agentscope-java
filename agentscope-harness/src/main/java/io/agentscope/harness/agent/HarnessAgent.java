@@ -517,6 +517,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getPermissionMode(userId, sessionId);
     }
 
+    /**
+     * Replaces the permission context (mode and rules) for the given {@code (userId, sessionId)}
+     * session at runtime. See
+     * {@link ReActAgent#replacePermissionContext(String, String, PermissionContextState)}.
+     */
+    public void replacePermissionContext(
+            String userId, String sessionId, PermissionContextState permissionContext) {
+        delegate.replacePermissionContext(userId, sessionId, permissionContext);
+    }
+
     @Override
     public void close() {
         try {
