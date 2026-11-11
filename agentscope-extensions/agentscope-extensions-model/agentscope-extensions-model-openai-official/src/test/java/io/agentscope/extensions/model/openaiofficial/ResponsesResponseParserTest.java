@@ -21,13 +21,19 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import com.openai.models.responses.Response;
+import com.openai.models.responses.ResponseOutputItem;
 import com.openai.models.responses.ResponseStatus;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -102,6 +108,25 @@ class ResponsesResponseParserTest {
         assertEquals(2, blocks.size());
         assertInstanceOf(TextBlock.class, blocks.get(0));
         assertInstanceOf(ToolUseBlock.class, blocks.get(1));
+    }
+
+    @Test
+    void serverToolResultPrecedesSubsequentFunctionCall() {
+        Response response =
+                TestSdkFixtures.completedResponse(
+                        List.of(
+                                TestSdkFixtures.webSearchItem(),
+                                TestSdkFixtures.functionCallItem(
+                                        "call_local", "local_tool", "{}")));
+        ChatResponse result = parse(response);
+
+        List<ContentBlock> blocks = result.getContent();
+        assertEquals(3, blocks.size());
+        assertInstanceOf(ToolUseBlock.class, blocks.get(0));
+        assertInstanceOf(ToolResultBlock.class, blocks.get(1));
+        assertInstanceOf(ToolUseBlock.class, blocks.get(2));
+        assertEquals("web_search", ((ToolUseBlock) blocks.get(0)).getName());
+        assertEquals("local_tool", ((ToolUseBlock) blocks.get(2)).getName());
     }
 
     // ── Tool use state ────────────────────────────────────────────────────
@@ -389,6 +414,56 @@ class ResponsesResponseParserTest {
         }
     }
 
+    @Test
+    void urlCitationsArePreservedInMetadata() {
+        Response response =
+                TestSdkFixtures.completedResponse(
+                        List.of(
+                                TestSdkFixtures.messageItemWithUrlCitation(
+                                        "answer", "OpenAI", "https://openai.com", 0, 6)));
+        ChatResponse result = parse(response);
+
+        Object citations = result.getMetadata().get(OpenAIOfficialConstants.MD_RESPONSE_CITATIONS);
+        assertTrue(citations instanceof List);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> citationList = (List<Map<String, Object>>) citations;
+        assertEquals(1, citationList.size());
+        Map<String, Object> citation = citationList.get(0);
+        assertEquals("url_citation", citation.get("type"));
+        assertEquals(0L, citation.get("start_index"));
+        assertEquals(6L, citation.get("end_index"));
+        assertEquals("OpenAI", citation.get("title"));
+        assertEquals("https://openai.com", citation.get("url"));
+    }
+
+    @Test
+    void containerFileCitationsArePreservedInMetadata() {
+        Response response =
+                TestSdkFixtures.completedResponse(
+                        List.of(
+                                TestSdkFixtures.messageItemWithContainerFileCitation(
+                                        "answer",
+                                        "container_001",
+                                        "file_001",
+                                        "result.png",
+                                        0,
+                                        6)));
+        ChatResponse result = parse(response);
+
+        Object citations = result.getMetadata().get(OpenAIOfficialConstants.MD_RESPONSE_CITATIONS);
+        assertTrue(citations instanceof List);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> citationList = (List<Map<String, Object>>) citations;
+        assertEquals(1, citationList.size());
+        Map<String, Object> citation = citationList.get(0);
+        assertEquals("container_file_citation", citation.get("type"));
+        assertEquals("container_001", citation.get("container_id"));
+        assertEquals(6L, citation.get("end_index"));
+        assertEquals("file_001", citation.get("file_id"));
+        assertEquals("result.png", citation.get("filename"));
+        assertEquals(0L, citation.get("start_index"));
+    }
+
     // ── Unknown output item handling ─────────────────────────────────────
 
     @Test
@@ -400,15 +475,70 @@ class ResponsesResponseParserTest {
 
     @Test
     void unknownOutputItemTypeSilentlyIgnored() {
+        ResponseOutputItem unknown = mock(ResponseOutputItem.class);
+        Response response =
+                TestSdkFixtures.completedResponse(
+                        List.of(TestSdkFixtures.messageItem("hello"), unknown));
+        ChatResponse result = parse(response);
+        // Only the message item produces a TextBlock; the unknown union variant is ignored
+        assertEquals(1, result.getContent().size());
+        assertInstanceOf(TextBlock.class, result.getContent().get(0));
+    }
+
+    @Test
+    void webSearchCallProducesServerToolUseAndResult() {
+        Response response =
+                TestSdkFixtures.completedResponse(List.of(TestSdkFixtures.webSearchItem()));
+        ChatResponse result = parse(response);
+
+        assertEquals(2, result.getContent().size());
+        ToolUseBlock use = (ToolUseBlock) result.getContent().get(0);
+        ToolResultBlock toolResult = (ToolResultBlock) result.getContent().get(1);
+
+        assertEquals("web_search", use.getName());
+        assertTrue(use.isServerTool());
+        assertEquals(ToolCallState.FINISHED, use.getState());
+        assertEquals("web_search", toolResult.getName());
+        assertEquals(ToolResultState.SUCCESS, toolResult.getState());
+        assertTrue(toolResult.isServerTool());
+        assertNull(use.getMetadata().get("openai.serverToolItem"));
+        assertNotNull(toolResult.getMetadata().get("openai.serverToolItem"));
+    }
+
+    @Test
+    void codeInterpreterAndImageGenerationCallsProduceResults() {
+        assertServerToolResult(TestSdkFixtures.codeInterpreterItem(), "code_interpreter", "hello");
+        assertServerToolResult(
+                TestSdkFixtures.imageGenerationItem(), "image_generation", "image-result");
+    }
+
+    @Test
+    void fileSearchOutputIsIgnored() {
+        Response response =
+                TestSdkFixtures.completedResponse(List.of(TestSdkFixtures.fileSearchItem()));
+        ChatResponse result = parse(response);
+
+        assertTrue(result.getContent().isEmpty());
+    }
+
+    @Test
+    void separatedToolSearchItemsProduceOneResultEach() {
         Response response =
                 TestSdkFixtures.completedResponse(
                         List.of(
-                                TestSdkFixtures.messageItem("hello"),
-                                TestSdkFixtures.fileSearchItem()));
+                                TestSdkFixtures.toolSearchCallItem(),
+                                TestSdkFixtures.toolSearchOutputItem()));
         ChatResponse result = parse(response);
-        // Only the message item produces a TextBlock; file_search_call is ignored
-        assertEquals(1, result.getContent().size());
-        assertInstanceOf(TextBlock.class, result.getContent().get(0));
+
+        assertEquals(2, result.getContent().size());
+        assertSeparatedServerToolPair(
+                result.getContent().get(0),
+                result.getContent().get(1),
+                "tool_search",
+                "code_interpreter");
+        assertEquals(
+                ((ToolUseBlock) result.getContent().get(0)).getId(),
+                ((ToolResultBlock) result.getContent().get(1)).getId());
     }
 
     @Test
@@ -437,5 +567,38 @@ class ResponsesResponseParserTest {
                         + expected.getSimpleName()
                         + " but got "
                         + (actual != null ? actual.getClass().getSimpleName() : "null"));
+    }
+
+    private static void assertServerToolResult(
+            ResponseOutputItem item, String expectedName, String expectedOutput) {
+        Response response = TestSdkFixtures.completedResponse(List.of(item));
+        ChatResponse result = parse(response);
+
+        assertEquals(2, result.getContent().size());
+        ToolResultBlock toolResult = (ToolResultBlock) result.getContent().get(1);
+        assertEquals(expectedName, toolResult.getName());
+        assertTrue(toolResult.isServerTool());
+        ContentBlock output = toolResult.getOutput().get(0);
+        if (output instanceof DataBlock dataBlock) {
+            assertInstanceOf(Base64Source.class, dataBlock.getSource());
+            Base64Source source = (Base64Source) dataBlock.getSource();
+            assertEquals(expectedOutput, source.getData());
+        } else {
+            assertTrue(output.toString().contains(expectedOutput));
+        }
+    }
+
+    private static void assertSeparatedServerToolPair(
+            Object useBlock, Object resultBlock, String expectedName, String expectedOutput) {
+        assertInstanceOf(ToolUseBlock.class, useBlock);
+        assertInstanceOf(ToolResultBlock.class, resultBlock);
+        assertEquals(expectedName, ((ToolUseBlock) useBlock).getName());
+        assertEquals(expectedName, ((ToolResultBlock) resultBlock).getName());
+        assertTrue(
+                ((ToolResultBlock) resultBlock)
+                        .getOutput()
+                        .get(0)
+                        .toString()
+                        .contains(expectedOutput));
     }
 }

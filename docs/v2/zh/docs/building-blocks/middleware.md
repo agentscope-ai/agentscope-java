@@ -8,7 +8,7 @@ en_link: /v2/en/docs/building-blocks/middleware
 
 Agent middleware 是在不修改 agent 或 model 代码的前提下，向 agent 执行流程中的关键位置注入自定义逻辑（日志、追踪、输入改写、访问控制等）的机制。
 
-AgentScope Java 中，可以在 5 个位置上设置 hook，覆盖了从外层 reply 流程一路下沉到底层模型 API 调用的全链路：
+AgentScope Java 中，可以在 6 个位置上设置 hook，覆盖了从外层 reply 流程一路下沉到底层模型 API 调用的全链路：
 
 | 位置 | 类型 | 说明 |
 |------|------|------|
@@ -17,16 +17,19 @@ AgentScope Java 中，可以在 5 个位置上设置 hook，覆盖了从外层 r
 | `onActing` | Onion | 包裹一次工具调用的执行 |
 | `onModelCall` | Onion | 包裹一次底层 `ChatModel` API 调用，最贴近模型 |
 | `onSystemPrompt` | Transformer | 在每次组装 system prompt 时触发；多个 middleware 串行接力，每一个把上一个的输出再做一次变换 |
+| `onAgentStateReady` | Notification | 每次调用触发一次：本次调用的 `AgentState` 就绪时——早于输入进入流水线（pre-call 钩子、记忆、推理） |
 
-两种类型的差别：
+三种类型的差别：
 
 - **Onion**（洋葱式）—— middleware 包裹下一层 handler，可以在 `next.apply(input)` 前后插入逻辑、观察中间事件流。
 - **Transformer**（变换式）—— middleware 之间串成流水线，前一个的输出作为后一个的输入，不存在「内层」概念。
+- **Notification**（通知式）—— 单向同步通知，没有 `next` 委托；多个 middleware 在固定的生命周期点位按序执行。
 
-下图展示这些 hook 在 agent 生命周期中的嵌套关系。`onSystemPrompt` 嵌入在 `onReasoning` 内部，因为它在 reasoning 步骤组装 system prompt 时被触发：
+下图展示这些 hook 在 agent 生命周期中的嵌套关系。`onSystemPrompt` 嵌入在 `onReasoning` 内部，因为它在 reasoning 步骤组装 system prompt 时被触发；`onAgentStateReady` 在本次调用的 `AgentState` 绑定到 `RuntimeContext` 之后、输入进入流水线之前触发：
 
 ```text
 onAgent/
+├── onAgentStateReady（call 级 AgentState 就绪，输入尚未进入流水线）
 └── ReAct loop（每一轮）/
     ├── onReasoning/
     │   ├── onSystemPrompt（组装 system prompt）
@@ -44,7 +47,7 @@ onAgent/
 
 ## 装备 Middleware
 
-AgentScope 把一组 hook 装在一个 `MiddlewareBase` 实现里 —— 同一个 middleware 类可以同时实现 5 个位置中任意子集的 hook（其余位置默认 `next.apply(input)`）。把实例传给 builder 的 `middlewares(...)` 即可装备：
+AgentScope 把一组 hook 装在一个 `MiddlewareBase` 实现里 —— 同一个 middleware 类可以同时实现 6 个位置中任意子集的 hook（未实现的 Onion / Transformer 位置默认 `next.apply(input)`；通知式位置默认不做任何事）。把实例传给 builder 的 `middlewares(...)` 即可装备：
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -76,7 +79,7 @@ ReActAgent agent =
 
 未配置 OpenTelemetry SDK（只剩默认的 no-op provider）时，所有 hook 会直接短路到 `next.apply(input)`，几乎零开销。
 
-`OtelTracingMiddleware` 从进程级 `GlobalOpenTelemetry` 实例读取配置。应用如果自行导出 span，除了 AgentScope 之外还需要引入 OpenTelemetry SDK 和 OTLP exporter。使用 OpenTelemetry BOM 保持二者版本一致（下列版本与 AgentScope 当前使用的版本一致）：
+默认情况下，`OtelTracingMiddleware` 从进程级 `GlobalOpenTelemetry` 实例读取配置。无参构造函数在 hook 执行时才惰性查找该实例，因此可以在注册全局 SDK 之前构造 middleware。应用如果自行导出 span，除了 AgentScope 之外还需要引入 OpenTelemetry SDK 和 OTLP exporter。使用 OpenTelemetry BOM 保持二者版本一致（下列版本与 AgentScope 当前使用的版本一致）：
 
 ```xml
 <properties>
@@ -150,6 +153,49 @@ ReActAgent agent =
 
 必须在 middleware 开始工作前注册 SDK。如果运行环境（例如 Spring Boot 的 OpenTelemetry 自动配置）已经注册了 `GlobalOpenTelemetry`，直接复用并只添加 middleware 即可。新配置不再调用已弃用的 `TracerRegistry.register(...)`。应用关闭时应关闭 `SdkTracerProvider`，让 batch processor 刷新尚未导出的 span。
 
+如果要改用应用自己持有的 SDK，而不是进程级实例，请用 `build()`（不要用 `buildAndRegisterGlobal()`）构建 SDK，把 OTLP HTTP exporter 指向应用的 endpoint，并显式挂到 agent 上。这是一条可选的 middleware 路径：调用方拥有 SDK 的生命周期，并负责关闭 provider。生产环境的接入方式仍然是现有的 `ReActAgent.builder().middleware(...)`，不需要改 builder。
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.tracing.OtelTracingMiddleware;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
+
+String endpoint =
+        System.getenv().getOrDefault(
+                "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces");
+
+SdkTracerProvider tracerProvider =
+        SdkTracerProvider.builder()
+                .addSpanProcessor(
+                        BatchSpanProcessor.builder(
+                                        OtlpHttpSpanExporter.builder()
+                                                .setEndpoint(endpoint)
+                                                .build())
+                                .build())
+                .build();
+
+OpenTelemetry appSdk =
+        OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build();
+Runtime.getRuntime().addShutdownHook(new Thread(tracerProvider::close));
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .sysPrompt("You are a helpful assistant.")
+                .model(model)
+                .toolkit(toolkit)
+                .middleware(new OtelTracingMiddleware(appSdk))
+                .build();
+```
+
+传入 `appSdk` 不会替换 `GlobalOpenTelemetry`，也不会改变 `StudioManager`。`StudioManager` 在 `initialize()` 时仍会独立安装已弃用的 `TracerRegistry` 追踪。供应商插桩如果改写了 tracer 查找结果，以及 Studio 调用树缺少展开控件，都需要对照实际部署另行验证。此 middleware 决定 `onAgent`、`onModelCall`、`onActing` 的 span 记到哪一个 OpenTelemetry SDK。传入 `OpenTelemetry.noop()` 同样合法：下游链路仍会执行，且不会记录 span。
+
+构造 `OtelTracingMiddleware`（无论是 `new OtelTracingMiddleware()` 还是 `new OtelTracingMiddleware(appSdk)`）时，第一次创建实例还会注册一个 JVM 范围的 Reactor hook：`ContextPropagationOperator.registerOnEachOperator()`。从注册那一刻起，该 hook 会在进程中任何代码组装 `Flux` 和 `Mono` operator 时对其进行包装，使父 span 在 `publishOn` / `subscribeOn` 跨线程之后仍然成立。它无法作用于注册之前已经组装好的链：提前构建、之后复用的 publisher 不会获得上下文传播，因此请在组装需要传播的管道之前先构造该 middleware。它与 span 记到哪一个 SDK 无关：应用自持的 SDK 只把 tracer 查找从 `GlobalOpenTelemetry` 隔离开，并不能避免这个全局插桩副作用。该 hook 在每个 JVM 中最多安装一次，关闭 middleware 或 SDK 也不会移除它。
+
 每次 reply 会产出一棵嵌套 span 树，关键属性包括 agent 名称、session ID、模型名、token 数、工具名与入参等。
 
 ### TaskReminderMiddleware
@@ -209,12 +255,23 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /** 同时观察 agent / reasoning / model_call / system_prompt 四个位置。 */
 public class FullObservabilityMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(
+                ExtensionPoint.ON_AGENT,
+                ExtensionPoint.ON_REASONING,
+                ExtensionPoint.ON_MODEL_CALL,
+                ExtensionPoint.ON_SYSTEM_PROMPT);
+    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -255,10 +312,47 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 | `onActing` | `ActingInput` | `toolCalls: List<ToolUseBlock>` |
 | `onModelCall` | `ModelCallInput` | `messages`, `tools`, `options`, `model: Model` |
 | `onSystemPrompt` | `String` | 当前 prompt |
+| `onAgentStateReady` | —（直接参数） | `state: AgentState`, `inputMessages: List<Msg>` |
 
 需要替换流入下一层的字段时，构造一个新的 input record 后再调用 `next.apply(...)`。
 
+`onModelCall` 中的修改只影响该次模型请求，不会自动改写已保存的对话历史。对于旧版 `PostActingEvent`，`setToolResult(...)` 会更新下一轮推理读取的工具消息；显式替换的 `Msg` 优先，原始工具调用标识保持一致。`returnDirect` 仍按原有方式直接返回；替换结果不会改写已经发出的流式 delta。
+
 完整可运行示例：`agentscope-examples/documentation/.../middleware/CustomizedMiddlewareExample.java`、`middleware/ModelCallMiddlewareExample.java`、`middleware/SystemPromptMiddlewareExample.java`。
+
+### 状态就绪通知
+
+`onAgentStateReady` 是通知式 hook（没有 `next`）：每次调用同步触发一次，时点在 call 级 `AgentState` 绑定到 `RuntimeContext` 之后、输入进入流水线之前。`state` 与 `ctx.getAgentState()` 是同一实例且永不为 `null`——全新会话拿到的是刚创建、上下文为空的状态。`inputMessages` 是本次调用输入的私有可变副本：就地修改对本次调用全程生效，调用方原始列表不受影响。
+
+```java
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.state.AgentState;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
+
+/** 全新会话首次调用时在输入头部注入用户画像提示。 */
+public class SessionBootstrapMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY);
+    }
+
+    @Override
+    public void onAgentStateReady(
+            Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {
+        if (state.getContext().isEmpty()) {  // 冷启动：全新会话
+            inputMessages.add(0, loadUserProfilePrompt(ctx.getUserId()));
+        }
+    }
+}
+```
+
+实现必须非阻塞：通知在本次调用的订阅线程上同步执行（流式场景可能是 Reactor 事件循环线程）。触发以每次生命周期执行（订阅）为单位——冷流重订阅会再次触发。抛出的异常原样使本次调用失败，其后的 middleware 不再执行。未覆写该 hook 的 middleware 只是执行默认空调用；固定的开销仅为每次调用一次输入列表浅拷贝，它同时使调用方列表隔离无条件成立。与其他扩展点一样，参与与否由 `activePoints()` 声明：未声明 `ExtensionPoint.ON_AGENT_STATE_READY` 的 middleware 即使覆写了该 hook 也不会被通知。生命周期窗口：通知在本次调用通过准入并完成中断注册之后、追踪包裹与错误事件链就位之前执行——通知期间发出的中断会被兑现，而抛出的异常直接到达调用方，不经过 ErrorEvent 钩子或追踪 span。
 
 ### 读取 RuntimeContext
 
@@ -270,11 +364,18 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 /** 把 user / request id 打到日志，并把 trace id 写回 context 供 tool 读取。 */
 public class RequestContextMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
+    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -314,6 +415,11 @@ MiddlewareBase lowerPriority = new MiddlewareBase() {
     public int order() {
         return 0;
     }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.noneOf(ExtensionPoint.class);  // no hooks, zero participation
+    }
 };
 ```
 
@@ -330,16 +436,64 @@ middlewares = [mw1, mw2]
 // originalPrompt → mw1.onSystemPrompt() → mw2.onSystemPrompt() → final
 ```
 
+通知式 hook（`onAgentStateReady`）每次调用按 `order()` 顺序执行一遍——数值大者先执行，与洋葱链的进入方向一致：
+
+```
+middlewares = [mw1(order=2), mw2(order=1)]
+// onAgentStateReady：mw1 → mw2
+```
+
 一次 reply 中各 hook 的整体执行顺序遵循 agent 生命周期：
 
 ```
 onAgent
+  ├── onAgentStateReady（状态绑定到 RuntimeContext，早于输入进入流水线）
   └── 每一轮 ReAct：
         ├── onReasoning
         │     ├── prepare model input → onSystemPrompt
         │     └── onModelCall
         └── onActing（本轮每个工具调用一次）
 ```
+
+### 何时用 `onActing`,何时用工具调用拦截器?
+
+需要操纵事件流、门控整批工具调用、处理回合级输出 → `onActing`。需要对单次调用的最终参数做校验/改写/拒绝,且要求在不经过 agent 循环的路径(`Toolkit#callTool` 直连、子代理 Toolkit)同样生效 → [工具调用拦截器](/v2/zh/docs/building-blocks/tool#工具调用拦截器)。两者可同时使用。
+
+### 扩展点参与声明（`activePoints()`）
+
+**你写的每个 middleware 都应当实现 `activePoints()`，明确返回自己挂接的点集合。** 无论是业务代码、第三方库还是 AI 工具生成的 middleware，都应遵循这一实践；下面的 `null` 默认值仅为 API 兼容而保留。`MiddlewareBase.activePoints()` 是**参与开关**，不是对"覆写了哪些方法"的复述：
+
+- 声明包含某点即参与该点；未覆写对应方法时走默认直通实现，属合法冗余。
+- 声明不包含某点即在此点不存在——链中不占位，即使覆写了方法也不会被调用（有意关闭，非错误）。
+
+关键语义：
+
+- **声明且仅声明你挂接的点。** 每个 middleware 都应覆写 `activePoints()`，精确返回自己挂接的点集合（`EnumSet.allOf(ExtensionPoint.class)` 显式表达全点参与）。声明是权威的：agent 构建时读取一次，优先于下面的自动探测。
+- **`null` 默认值仅为 API 兼容而保留——不要依赖它。** 默认实现返回 `null`，让这份契约出现之前写就的 middleware 无需修改即可继续编译和运行。当前 `null` 由自动探测解析：middleware 恰好参与其类实际实现了钩子方法的扩展点（父类继承的实现同样计入），按类计算一次并缓存。自动探测是遗留兜底，不能替代声明意图——它表达不了有意退出，也会因直通基类覆写的钩子点亮无关的点。探测行为在未来版本可能调整，新代码一律实现 `activePoints()`。
+- **空集合合法。** `EnumSet.noneOf(ExtensionPoint.class)` 让 middleware 在所有扩展点失活，同时保留注册——可用作运行开关。
+- **构造期固化。** agent 构建时解析一次参与集；之后修改返回的集合对已构建的 agent 无效。
+- **与 `order()` 正交。** 声明只回答"是否参与"，不回答"什么顺序"——各点参与者保持既有 `order()` 语义。
+
+```java
+import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
+
+MiddlewareBase timingOnly =
+        new MiddlewareBase() {
+            @Override
+            public Set<ExtensionPoint> activePoints() {
+                // 只在 onModelCall 激活，其余扩展点全部跳过。
+                return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+            }
+        };
+```
+
+精确声明让链保持精简：某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），构建期的有效执行计划清晰可见。`middlewaresAt(point)` 只包含声明（或探测）到的参与者——绝不含在该点上没有任何逻辑的 middleware。不要因为自动探测今天能用就依赖它：探测行为在未来版本可能调整，而显式声明是稳定的契约。
+
+继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 永远不会被调用。
+
+新增扩展点遵循同一条评审规则：凡是激活会在参与 middleware 之外产生副作用的点（例如改变全局事件路由），绝不能仅凭自动探测激活——带全局影响的激活必须依赖显式声明或显式开关，绝不能用 `!middlewaresAt(point).isEmpty()` 推断。
 
 ## 实用示例
 
@@ -352,10 +506,18 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 public class TimingMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+    }
+
     @Override
     public Flux<AgentEvent> onModelCall(
             Agent agent, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
@@ -380,6 +542,8 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import java.time.Duration;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
@@ -392,6 +556,11 @@ public class RateLimitMiddleware implements MiddlewareBase {
 
     public RateLimitMiddleware(Duration minInterval) {
         this.minIntervalMs = minInterval.toMillis();
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override
@@ -414,6 +583,8 @@ public class RateLimitMiddleware implements MiddlewareBase {
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import java.time.Instant;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Supplier;
 import reactor.core.publisher.Mono;
 
@@ -423,6 +594,11 @@ public class DynamicContextMiddleware implements MiddlewareBase {
 
     public DynamicContextMiddleware(Supplier<String> contextFn) {
         this.contextFn = contextFn;
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
     @Override
@@ -445,6 +621,8 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.Model;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -454,6 +632,11 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 
     public ModelFallbackMiddleware(Model fallback) {
         this.fallback = fallback;
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override
@@ -495,10 +678,17 @@ import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 public class StopOnAllDeniedMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_ACTING);
+    }
 
     @Override
     public Flux<AgentEvent> onActing(

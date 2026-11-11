@@ -88,8 +88,8 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
 
     @Override
     public void shutdown() throws Exception {
-        // Match E2b/Daytona: a non-owned sandbox is shared/reused — keep the MCP channel open so
-        // background SessionTree mirrors can still uploadFiles() after agent teardown (#2259).
+        // Match E2b/Daytona: a non-owned sandbox is shared/reused, so closing this adapter
+        // must not close its shared MCP channel.
         if (!arState.isSandboxOwned()) {
             return;
         }

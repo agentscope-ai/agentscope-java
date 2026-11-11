@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
@@ -25,10 +26,13 @@ import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
 import io.agentscope.core.tool.subagent.SubAgentTool;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import org.slf4j.Logger;
@@ -72,6 +76,7 @@ public class Toolkit {
     private final ToolRegistry toolRegistry = new ToolRegistry();
     private final ToolSchemaProvider schemaProvider;
     private final MetaToolFactory metaToolFactory;
+    private AgentTool registeredMetaTool;
     private final McpClientManager mcpClientManager;
     private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
     private final ToolMethodInvoker methodInvoker;
@@ -206,6 +211,24 @@ public class Toolkit {
     }
 
     /**
+     * Replace an existing registration for {@code tool.getName()} intentionally, or register it
+     * when the name is free.
+     *
+     * <p>This is the explicit counterpart to the fail-fast duplicate protection in
+     * {@link #registerAgentTool(AgentTool)}: use it when overriding a same-named tool (local or
+     * MCP) is deliberate.
+     *
+     * <p>Group membership is keyed by tool name and left untouched by this method, so the
+     * replacement inherits the group bindings of the name it replaces (it is registered ungrouped
+     * itself); adjust the groups afterwards if the inherited membership is not wanted.
+     *
+     * @param tool the AgentTool to register, replacing any existing tool with the same name
+     */
+    public void replaceAgentTool(AgentTool tool) {
+        registerAgentTool(tool, null, null, null, null, true);
+    }
+
+    /**
      * Internal method to register AgentTool with full metadata including preset parameters.
      */
     private void registerAgentTool(
@@ -214,6 +237,17 @@ public class Toolkit {
             ExtendedModel extendedModel,
             String mcpClientName,
             Map<String, Object> presetParameters) {
+        registerAgentTool(tool, groupName, extendedModel, mcpClientName, presetParameters, false);
+    }
+
+    /** Shared registration path for annotated tools, direct tools, schemas, MCP and subagents. */
+    private void registerAgentTool(
+            AgentTool tool,
+            String groupName,
+            ExtendedModel extendedModel,
+            String mcpClientName,
+            Map<String, Object> presetParameters,
+            boolean allowReplace) {
         if (tool == null) {
             throw new IllegalArgumentException("AgentTool cannot be null");
         }
@@ -229,18 +263,32 @@ public class Toolkit {
         RegisteredToolFunction registered =
                 new RegisteredToolFunction(tool, extendedModel, mcpClientName, presetParameters);
 
-        // Register in toolRegistry
-        toolRegistry.registerTool(toolName, tool, registered);
-
-        // Add to group if specified
-        if (groupName != null) {
-            groupManager.addToolToGroup(groupName, toolName);
-        }
+        toolRegistry.registerTool(
+                toolName,
+                tool,
+                registered,
+                allowReplace,
+                () -> {
+                    if (groupName != null) {
+                        groupManager.addToolToGroup(groupName, toolName);
+                    }
+                });
 
         logger.info(
                 "Registered tool '{}' in group '{}'",
                 toolName,
                 groupName != null ? groupName : "ungrouped");
+    }
+
+    /** Returns current bindings backed by an annotated object of exactly the given class. */
+    public List<AgentTool> getToolsFromSource(Class<?> sourceType) {
+        return toolRegistry.getAllRegisteredTools().values().stream()
+                .map(RegisteredToolFunction::getTool)
+                .filter(
+                        tool ->
+                                tool instanceof ReflectiveFunctionTool reflective
+                                        && reflective.getToolObject().getClass() == sourceType)
+                .toList();
     }
 
     /**
@@ -251,6 +299,22 @@ public class Toolkit {
      */
     public AgentTool getTool(String name) {
         return toolRegistry.getTool(name);
+    }
+
+    /**
+     * Resolve a tool by name, composing a per-call {@link ToolRequestConfig} with the shared
+     * registry (never mutating either). External tools from the request config take priority over
+     * the backend registry; in {@link ToolMergeMode#EXTERNAL_ONLY} the
+     * backend is hidden entirely.
+     *
+     * @param name tool name
+     * @param requestConfig per-call request config (may be {@code null} → {@link
+     *     ToolRequestConfig#NONE})
+     * @return the resolved tool, or {@code null} when not found or hidden
+     */
+    public AgentTool getTool(String name, ToolRequestConfig requestConfig) {
+        return (requestConfig != null ? requestConfig : ToolRequestConfig.NONE)
+                .resolveTool(name, this.toolRegistry);
     }
 
     /**
@@ -326,8 +390,27 @@ public class Toolkit {
     }
 
     /**
+     * Check whether {@code toolName} resolves to an external tool under a per-call {@link
+     * ToolRequestConfig}. Resolves the tool via {@link #getTool(String, ToolRequestConfig)}, so
+     * externally injected (schema-only) tools from the request config are recognised as external in
+     * addition to backend-registered external tools. A {@code null} request config resolves against
+     * the shared registry only (equivalent to {@link #isExternalTool(String)}).
+     *
+     * @param toolName The name of the tool to check
+     * @param requestConfig per-call request config (may be {@code null} → shared registry only)
+     * @return true if the resolved tool is an external tool, false otherwise
+     */
+    public boolean isExternalTool(String toolName, ToolRequestConfig requestConfig) {
+        AgentTool tool = getTool(toolName, requestConfig);
+        return tool instanceof ToolBase tb && tb.isExternalTool();
+    }
+
+    /**
      * Get tool schemas as ToolSchema objects.
      * Updated to respect active tool groups.
+     *
+     * <p><b>Legacy single-session API:</b> resolves against the shared activation flags. Per-call
+     * paths use {@link #getToolSchemas(java.util.Collection, ToolRequestConfig)}.
      *
      * @return List of ToolSchema objects
      */
@@ -347,8 +430,54 @@ public class Toolkit {
      * @param activeGroups the group names to treat as active for this resolution
      * @return List of ToolSchema objects visible for the supplied groups (plus all ungrouped tools)
      */
-    public List<ToolSchema> getToolSchemas(java.util.Collection<String> activeGroups) {
+    public List<ToolSchema> getToolSchemas(Collection<String> activeGroups) {
         return schemaProvider.getToolSchemas(activeGroups);
+    }
+
+    /**
+     * Stateless compose: the backend registry filtered by {@code activeGroups}, then a per-call
+     * {@link ToolRequestConfig} applied without mutating the shared registry or group manager.
+     *
+     * <ol>
+     *   <li>In {@link ToolMergeMode#EXTERNAL_ONLY} the backend is hidden
+     *       entirely without deleting any registrations.
+     *   <li>Backend schemas whose names collide with an external tool are dropped (external tools
+     *       override the backend).
+     *   <li>External tool schemas are appended.
+     * </ol>
+     *
+     * @param activeGroups the group names treated as active for this resolution
+     * @param requestConfig per-call request config (may be {@code null} → {@link
+     *     ToolRequestConfig#NONE})
+     * @return the composed tool schemas
+     */
+    public List<ToolSchema> getToolSchemas(
+            Collection<String> activeGroups, ToolRequestConfig requestConfig) {
+        if (requestConfig == null) {
+            requestConfig = ToolRequestConfig.NONE;
+        }
+        boolean hideBackend = requestConfig.hidesBackend();
+
+        List<ToolSchema> schemas = new ArrayList<>();
+        if (!hideBackend) {
+            for (ToolSchema schema : schemaProvider.getToolSchemas(activeGroups)) {
+                if (!requestConfig.overrides(schema.getName())) {
+                    schemas.add(schema);
+                }
+            }
+        }
+        for (SchemaOnlyTool tool : requestConfig.externalTools().values()) {
+            schemas.add(
+                    ToolSchema.builder()
+                            .name(tool.getName())
+                            .description(tool.getDescription())
+                            .parameters(tool.getParameters())
+                            .strict(tool.getStrict())
+                            .deferLoading(tool.getDeferLoading())
+                            .outputSchema(tool.getOutputSchema())
+                            .build());
+        }
+        return schemas;
     }
 
     /**
@@ -391,7 +520,7 @@ public class Toolkit {
                         customConverter,
                         presetParamNames);
 
-        registerAgentTool(tool, groupName, extendedModel, null, presetParameters);
+        registerAgentTool(tool, groupName, extendedModel, null, presetParameters, false);
     }
 
     /**
@@ -449,22 +578,6 @@ public class Toolkit {
     }
 
     /**
-     * Set the framework-internal chunk callback for streaming tool responses.
-     *
-     * <p>This method is used by ReActAgent to forward tool chunks into ActingChunkEvent hooks
-     * without overwriting any user callback configured via {@link #setChunkCallback(BiConsumer)}.
-     *
-     * <p><b>Internal API - Not recommended for external use.</b> This method is intended for
-     * framework components such as {@link io.agentscope.core.ReActAgent}. External callers should
-     * use {@link #setChunkCallback(BiConsumer)} instead.
-     *
-     * @param callback Internal callback to invoke when tools emit chunks via ToolEmitter
-     */
-    public void setInternalChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
-        executor.setInternalChunkCallback(callback);
-    }
-
-    /**
      * Execute a tool with the given parameters.
      *
      * <p>Example usage:
@@ -489,7 +602,28 @@ public class Toolkit {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        return executor.execute(param);
+        return executor.executeWithInfrastructure(param, resolveToolExecutionConfig(null));
+    }
+
+    /**
+     * Execute a tool with a per-call execution configuration.
+     *
+     * <p>The configuration is merged as {@code per-call > toolkit-level > system default}. A
+     * {@code null} configuration is equivalent to {@link #callTool(ToolCallParam)}.
+     *
+     * @param param Tool call parameters containing execution information
+     * @param perCallConfig per-call execution configuration; may be {@code null}
+     * @return Mono containing execution result
+     */
+    public Mono<ToolResultBlock> callTool(ToolCallParam param, ExecutionConfig perCallConfig) {
+        return executor.executeWithInfrastructure(param, resolveToolExecutionConfig(perCallConfig));
+    }
+
+    private ExecutionConfig resolveToolExecutionConfig(ExecutionConfig perCallConfig) {
+        ExecutionConfig base =
+                ExecutionConfig.mergeConfigs(
+                        config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS);
+        return perCallConfig == null ? base : ExecutionConfig.mergeConfigs(perCallConfig, base);
     }
 
     /**
@@ -513,16 +647,89 @@ public class Toolkit {
             List<ToolUseBlock> toolCalls,
             ExecutionConfig agentExecutionConfig,
             Agent agent,
-            io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
-        // Merge execution configs: agent-level > toolkit-level > system default
-        ExecutionConfig effectiveConfig =
-                ExecutionConfig.mergeConfigs(
-                        agentExecutionConfig,
-                        ExecutionConfig.mergeConfigs(
-                                config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
+            RuntimeContext agentRuntimeContext) {
+        return callTools(toolCalls, agentExecutionConfig, agent, agentRuntimeContext, null);
+    }
+
+    /**
+     * Execute multiple tools with request configuration from the runtime context and a per-call chunk callback.
+     *
+     * @param internalChunkCallback per-call internal chunk callback (may be {@code null})
+     */
+    public Mono<List<ToolResultBlock>> callTools(
+            List<ToolUseBlock> toolCalls,
+            ExecutionConfig agentExecutionConfig,
+            Agent agent,
+            RuntimeContext agentRuntimeContext,
+            BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+        return callTools(
+                toolCalls,
+                agentExecutionConfig,
+                agent,
+                agentRuntimeContext,
+                agentRuntimeContext == null
+                        ? ToolRequestConfig.NONE
+                        : agentRuntimeContext.getToolRequestConfig(),
+                internalChunkCallback);
+    }
+
+    /**
+     * Execute multiple tools with a per-call {@link ToolRequestConfig} and internal chunk
+     * callback, both threaded down to every single-tool execution.
+     */
+    public Mono<List<ToolResultBlock>> callTools(
+            List<ToolUseBlock> toolCalls,
+            ExecutionConfig agentExecutionConfig,
+            Agent agent,
+            RuntimeContext agentRuntimeContext,
+            ToolRequestConfig requestConfig,
+            BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+        ToolExecutionCallback callback =
+                internalChunkCallback == null
+                        ? null
+                        : new ToolExecutionCallback() {
+                            @Override
+                            public void onProgress(ToolUseBlock call, ToolResultBlock chunk) {
+                                internalChunkCallback.accept(call, chunk);
+                            }
+                        };
+        return callToolsWithCallback(
+                toolCalls,
+                agentExecutionConfig,
+                agent,
+                agentRuntimeContext,
+                requestConfig,
+                callback);
+    }
+
+    /**
+     * Execute a batch with start, progress, and final-result notifications before ordered
+     * aggregation. The returned list retains declaration order. {@link
+     * ToolExecutionCallback#onStart} fires when the executor begins each invocation (in
+     * sequential batches, when the call's turn arrives) and results may arrive in completion
+     * order.
+     */
+    public Mono<List<ToolResultBlock>> callToolsWithCallback(
+            List<ToolUseBlock> toolCalls,
+            ExecutionConfig agentExecutionConfig,
+            Agent agent,
+            RuntimeContext agentRuntimeContext,
+            ToolRequestConfig requestConfig,
+            ToolExecutionCallback executionCallback) {
+        ExecutionConfig effectiveConfig = resolveToolExecutionConfig(agentExecutionConfig);
 
         return executor.executeAll(
-                toolCalls, config.isParallel(), effectiveConfig, agent, agentRuntimeContext);
+                toolCalls,
+                config.isParallel(),
+                effectiveConfig,
+                agent,
+                agentRuntimeContext,
+                requestConfig != null
+                        ? requestConfig
+                        : agentRuntimeContext == null
+                                ? ToolRequestConfig.NONE
+                                : agentRuntimeContext.getToolRequestConfig(),
+                executionCallback);
     }
 
     // ==================== MCP Client Registration (Delegated) ====================
@@ -668,6 +875,9 @@ public class Toolkit {
      * <p>When {@code allowToolDeletion} is disabled and {@code active} is false, the deactivation
      * will be ignored and a warning will be logged.
      *
+     * <p><b>Legacy single-session API:</b> mutates the shared activation flags. Per-call paths do
+     * not use this.
+     *
      * @param groupNames List of tool group names to update
      * @param active Whether to activate (true) or deactivate (false) the groups
      * @throws IllegalArgumentException if any group doesn't exist
@@ -736,6 +946,9 @@ public class Toolkit {
      * groups can be called by agents. This method is useful for debugging tool availability
      * and verifying group activation state.
      *
+     * <p><b>Legacy single-session API:</b> reads the shared, build-time activation flags. Per-call
+     * paths resolve activation from {@code AgentState#getToolContext()} instead.
+     *
      * @return List of active group names, never null but may be empty
      */
     public List<String> getActiveGroups() {
@@ -746,6 +959,9 @@ public class Toolkit {
      * Set the active tool groups.
      *
      * <p>This method is typically called by ReActAgent when restoring state from a session.
+     *
+     * <p><b>Legacy single-session API:</b> mutates the shared activation flags. Per-call paths
+     * never call this (activation lives on {@code AgentState#getToolContext()}).
      *
      * @param groups List of group names to set as active
      */
@@ -773,9 +989,12 @@ public class Toolkit {
      */
     public void registerMetaTool() {
         AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
+        registeredMetaTool = metaTool;
 
-        // Register without group (meta tool is always available)
-        registerAgentTool(metaTool, null, null, null, null);
+        // Register without group (meta tool is always available). Replacement is intentional:
+        // Toolkit.copy() shares tool instances, then rebinds a fresh meta tool (bound to the
+        // copy's group manager) under this same name.
+        replaceAgentTool(metaTool);
 
         logger.info("Registered meta tool: reset_equipped_tools");
     }
@@ -801,30 +1020,65 @@ public class Toolkit {
         logger.debug("Updated preset parameters for tool '{}'", toolName);
     }
 
-    // ==================== Deep Copy ====================
+    // ==================== Build-time Isolation Copy ====================
 
     /**
-     * Create a deep copy of this toolkit.
+     * Creates an isolated registry for agent construction, sharing user tool instances.
      *
-     * <p>Note: User-defined chunk callbacks are preserved during copy so they continue to work
-     * when the toolkit is passed into ReActAgent.Builder and copied internally.
+     * <p>Groups are copied, the framework meta tool is rebound, and configuration and chunk
+     * callbacks are retained. Shared user tools must support concurrent calls. Use
+     * {@link ToolRequestConfig} for per-call visibility instead of copying the toolkit.
      *
-     * @return A new Toolkit instance with copied state
+     * @return an isolated toolkit sharing the registered tool instances
      */
     public Toolkit copy() {
+        return copyExcludingTools(List.of());
+    }
+
+    /**
+     * Creates a build-time copy without the specified tool instances.
+     *
+     * <p>Exclusions use instance identity, so a newer binding under the same name is preserved.
+     * Group memberships remain associated with their names for tools rebuilt on the copy.
+     * The source and its deletion policy are unchanged; exclusions also apply when runtime
+     * tool deletion is disabled.
+     *
+     * @param excludedTools tool instances to omit before rebuilding framework bindings
+     * @return an isolated toolkit sharing the remaining tool instances
+     * @see #copy()
+     */
+    public Toolkit copyExcludingTools(Collection<? extends AgentTool> excludedTools) {
+        Objects.requireNonNull(excludedTools, "excludedTools");
         Toolkit copy = new Toolkit(this.config);
 
-        // Copy all registered tools
+        // Share tool instances (stateless/thread-safe); copy registry metadata into the target.
         this.toolRegistry.copyTo(copy.toolRegistry);
+        for (AgentTool tool : excludedTools) {
+            copy.toolRegistry.removeToolIfSame(tool.getName(), tool);
+        }
 
-        // Copy all tool groups and their states
+        // Deep-copy tool groups and activation flags for isolated group state.
         this.groupManager.copyTo(copy.groupManager);
 
-        // Preserve user-defined chunk callbacks across toolkit copies (Issue #870)
+        // The framework meta tool captures its owner's group manager; bind it to the copy.
+        if (registeredMetaTool != null
+                && copy.toolRegistry.getTool(registeredMetaTool.getName()) == registeredMetaTool) {
+            copy.registerMetaTool();
+            RegisteredToolFunction metadata =
+                    toolRegistry.getRegisteredTool(registeredMetaTool.getName());
+            if (metadata != null) {
+                copy.updateToolPresetParameters(
+                        registeredMetaTool.getName(), metadata.getPresetParameters());
+            }
+        }
+
+        // Preserve user-defined chunk callbacks across build-time copies.
         copy.executor.setChunkCallback(this.executor.getChunkCallback());
 
         return copy;
     }
+
+    // ==================== Fluent Registration ====================
 
     /**
      * Fluent builder for registering tools with optional configuration.

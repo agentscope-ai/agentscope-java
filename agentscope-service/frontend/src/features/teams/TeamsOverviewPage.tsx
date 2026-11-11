@@ -91,7 +91,7 @@ export default function TeamsOverviewPage() {
     <Page className="max-w-[1440px]">
       <PageHeader
         title="Teams"
-        description="Persistent leader-first multi-Agent services. Assemble a roster and coordination policy, then publish an API Endpoint."
+        description="Persistent leader-first multi-Agent services. Assemble a roster and coordination policy, then call the Team through the Session API."
         actions={<Button onClick={() => setOpen(!open)}><Plus className="h-4 w-4" />New team</Button>}
       />
       {open && (

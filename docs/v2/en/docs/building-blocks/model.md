@@ -63,17 +63,54 @@ Other provider artifacts follow the same pattern: `agentscope-extensions-model-o
 
 ## Choose a creation path
 
+### Model identifiers
+
+Five nouns cover the whole vocabulary. They are the registry layer's canonical terms — kept stable regardless of which API consumes them — so any current or future surface can pick the exact noun instead of overloading one word:
+
+| Term | Example | Meaning |
+|------|---------|---------|
+| `providerId` | `dashscope` | Routing key, the prefix of a `modelId` |
+| `modelId` | `dashscope:qwen-max` | Recipe `providerId + ":" + modelName` (the bare catalog name sent to the upstream API) — *what to create*, the routing argument of the registry layer |
+| `modelCreationContextId` (API arg: `contextId`) | `mytokenplan01` | In plain terms, just a name you give a `ModelCreationContext` registered via `ModelRegistry.registerCreationContext` — a credentials/endpoint set ("with what to build it"); `getCreationContext(name)` hands it back, and `name@modelId` resolves with it |
+| `modelInstanceId` | `my-prod-model-01` | In plain terms, just a name you give a whole `Model` instance — the `register` / `unregister` / `getRegistered` family; `resolve(name)` returns exactly that instance |
+| `modelIdentity` | `mytokenplan01@dashscope:qwen-max` | Model selection string — resolution input of `ModelRegistry.resolve` and the agent-level `model(String)` lazy reference: composite `contextId@modelId`, or a bare `modelId` |
+
+```text
+modelId       = providerId + ":" + modelName
+modelIdentity = modelCreationContextId + "@" + modelId   (composite form; a bare modelId is also a valid identity)
+```
+
+**`modelId` vs `modelIdentity`** — near-twin names, two different layers:
+
+- `modelId` answers *what to create*: the recipe, no credentials dimension. It is the vocabulary of the registry routing layer — `ModelRegistry.resolve`, `registerFactory`, and provider `supports` all speak modelId.
+- `modelIdentity` answers *which model to use*: the selection string — the input of `ModelRegistry.resolve(...)`, and the agent-level `model(String)` lazy reference. Applications that route untrusted choices own the auth/allowlist decision and pin a resolved instance on the context. Its bare form is just a modelId (credentials come from the provider's standard environment variables); the composite form adds the credentials/endpoint dimension via a `modelCreationContextId`, so the correct (credentials, model) pairing travels with one string.
+- The reserved `@` character is the visible boundary between `modelCreationContextId` and `modelId` inside an identity string; model ids themselves never contain it.
+
+`ModelRegistry.resolve("provider:model")` routes by the full id. `ModelRegistry.register(modelInstanceId, model)` additionally registers a whole instance under an id of your choice: `resolve(modelInstanceId)` (single-argument form) returns that exact instance, shadowing factory and SPI routing for the same string. Re-registering an id replaces the registration; `getRegistered(modelInstanceId)` looks it up without creating anything. Instance ids and model ids share one string namespace, so prefer canonical `provider:model` ids for factory/SPI routing.
+
 ### String model id
 
 For simple non-Spring applications, use a `ModelRegistry` string id such as `dashscope:qwen-plus`, `openai:gpt-4.1-mini`, or `deepseek:deepseek-v4-flash`. Add the matching model extension module, set the provider's standard environment variable such as `DASHSCOPE_API_KEY`, `OPENAI_API_KEY`, or `DEEPSEEK_API_KEY`, and pass the id directly to the agent:
 
 ```java
+// Bare modelId: the provider extension module reads its standard environment variables
 ReActAgent agent =
         ReActAgent.builder()
                 .name("assistant")
-                .model("dashscope:qwen-plus") // resolved internally by ModelRegistry.resolve(modelId)
+                .model("dashscope:qwen-plus")
+                .build();
+
+// Composite identity contextId@modelId: credentials/endpoint come from a named creation context
+ModelRegistry.registerCreationContext("mytokenplan01",
+        ModelCreationContext.builder().apiKey(System.getenv("DASHSCOPE_API_KEY")).build());
+ReActAgent tenantAgent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model("mytokenplan01@dashscope:qwen-plus")
                 .build();
 ```
+
+The string is a model identity held as a lazy reference: it is resolved through `ModelRegistry.resolve` once at run entry (on a boundedElastic scheduler, so a slow factory never blocks the subscriber's thread), registry re-registrations apply to runs that start afterwards, and an unresolvable identity fails the run at entry with `IllegalArgumentException` instead of silently falling back. It accepts the composite form `contextId@modelId` (for example `mytokenplan01@dashscope:qwen-plus`), which resolves the model with the [named creation context](#named-creation-contexts) registered under `contextId` — the credentials/endpoint pairing travels with the identity itself. The `@` character is reserved for this form: instance ids and context ids containing `@` are rejected at registration, so a composite identity can never be shadowed. For per-call selection, pin an instance on the call's context (`ctx.put(Model.class, model)`), which outranks the agent's setting. That slot is intentionally the generic typed channel of `RuntimeContext`, not a private framework flag: middleware or tools may also replace the effective model mid-run through the same `ctx.put(Model.class, ...)` call to adapt to per-request needs. What the framework guarantees is narrower — it resolves once at run entry and never switches the model on its own mid-response.
 
 The extension module is discovered through Java SPI. The model provider reads its standard environment variables such as `DASHSCOPE_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GLM_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Ollama reads `OLLAMA_BASE_URL` when present and otherwise defaults to the local Ollama endpoint.
 
@@ -102,7 +139,7 @@ ReActAgent agent =
 
 ### Spring Boot applications
 
-For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, `agentscope-anthropic-spring-boot-starter`, and `agentscope-ollama-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.
+For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-openai-official-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, `agentscope-anthropic-spring-boot-starter`, and `agentscope-ollama-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.
 
 OpenAI example:
 
@@ -126,6 +163,7 @@ default generation options, proxy/client settings, or provider-specific flags.
 | Starter | Customizer type |
 |---------|-----------------|
 | `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
+| `agentscope-openai-official-spring-boot-starter` | `OpenAIResponsesChatModelBuilderCustomizer` |
 | `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
 | `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
 | `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
@@ -160,7 +198,7 @@ class ModelCustomizerConfiguration {
 
 ## ModelRegistry and ModelCreationContext
 
-`ModelRegistry` is a global registry for model instance creation and lookup, supporting multiple resolution strategies. During resolution, it tries in priority order: named model instances directly registered via `ModelRegistry.register(name, model)`, custom factories registered via `registerFactory(regex, factory)`, and `ModelProvider` implementations automatically discovered from extension modules through the Java SPI mechanism.
+`ModelRegistry` is a global registry for model instance creation and lookup, supporting multiple resolution strategies. `resolve(String)` tries in priority order: instances registered via `ModelRegistry.register(modelInstanceId, model)`, cached factory-created instances, custom factories registered via `registerFactory(regex, factory)`, and `ModelProvider` implementations automatically discovered from extension modules through the Java SPI mechanism. `resolve(String, ModelCreationContext)` with a non-empty context does not consult registered instances at all — an instance id declares a whole instance while a context declares creation inputs, and mixing them could hand one tenant another party's credentials.
 
 For simple scenarios, prefer a string id in the `provider:model` format together with the provider's standard environment variable; for fine-grained control, use explicit model builders. `ModelCreationContext` is mainly for integration-layer code that must resolve models dynamically.
 
@@ -202,11 +240,48 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 | `DISABLED` | Never cache; every resolution creates a new model instance. |
 | `ENABLED` | Cache only when the caller explicitly opts in. Use `cacheId(...)` for tenant- or configuration-specific identity. |
 
-If `CachePolicy.ENABLED` is used with `option(...)` or `component(...)`, the user must provide a `cacheId`.
+If `CachePolicy.ENABLED` is used with `option(...)` or `component(...)`, the user must provide a `cacheId`. A hand-built `cacheId` declares the identity yourself and is authoritative: resolving the same `cacheId` with different credential fields only logs a drift warning and still returns the cached instance. Do not vary credentials through a hand-built `cacheId` — rotate credentials via `registerCreationContext` instead. A hand-built `cacheId` must not contain `#`: that character is reserved for the rotation-generation suffix the registry appends to named creation contexts, which is what keeps hand-built ids collision-free with named-context generations.
+
+An `ENABLED` context with no standard fields expresses the same creation inputs as the empty context, so both resolve to the same cached instance (the shared legacy bucket). Resolving with the same explicit `cacheId` but different standard fields logs a drift warning — the `cacheId` stays authoritative — so re-registering a context (below) is the supported way to rotate one.
+
+Calling `registerFactory` evicts cached instances whose model id matches the new pattern, so the next resolution of those ids uses the new factory. Evicted instances are not closed, since callers may still hold them. Concurrent first resolutions of the same cached id share one creation and receive the same instance.
+
+### Named creation contexts
+
+Multi-tenant configurations can register whole creation contexts under a `contextId` instead of passing `ModelCreationContext` objects around:
+
+```java
+ModelRegistry.registerCreationContext("tenant-a",
+        ModelCreationContext.builder().apiKey(tenantApiKey).baseUrl(tenantBaseUrl).build());
+
+Model model = ModelRegistry.resolve("openai:gpt-4.1-mini",
+        ModelRegistry.getCreationContext("tenant-a"));
+```
+
+Registration normalizes the context to `CachePolicy.ENABLED` with a generation-suffixed `cacheId = contextId#<generation>` (the generation increments on every re-registration), so all resolutions through one registration share one cached instance per model id (`explicit:<contextId>#<generation>` identity). The `#` character is reserved for this suffix — context ids containing `#` are rejected at registration, which keeps one id's generations from ever colliding with or over-purging another id's entries. Re-registering the same `contextId` starts a new generation and rotates the credentials: the previous generations' cached entries are evicted and resolutions that *start* after the re-registration use the new context. `unregisterCreationContext(contextId)` removes the registration, evicts its cached entries, and returns the removed context. Two context ids for the same model id produce distinct instances. Already-created `Model` instances are not affected: they permanently hold the credentials they were created with. `getCreationContext(contextId)` fails fast with an `IllegalArgumentException` when no context is registered under the id; `hasCreationContext(contextId)` is the non-throwing probe (`false` for a `null`, blank, or unregistered id) for guarding the two-step composition above. A registered context pairs naturally with the composite model identity form `contextId@modelId` (for example `mytokenplan01@dashscope:qwen-plus`) accepted by `ModelRegistry.resolve(...)`.
+
+### Registry lifecycle
+
+`unregister(modelInstanceId)` removes the registration created by `register(modelInstanceId, model)` and returns the removed instance, or `null` if the id was never registered; `getRegistered(modelInstanceId)` is the pure query.
+
+Both methods only change registry mappings: instances already held by callers keep working unchanged and are never closed by the registry.
+
+`evictResolvedCache(ModelCreationContext, String modelId)` evicts instances cached by `resolve(...)`: a `null` context matches every cache identity, a `null` or blank model id matches every id under the context's identity, and both present evicts one precise entry; both null is rejected.
+
+`reloadProviders()` re-discovers SPI providers from the current classloader context and evicts cached entries that can only have come from SPI providers; entries produced by user factories survive.
+
+```java
+Model removed = ModelRegistry.unregister("my-gpt4o"); // null if never registered
+ModelRegistry.evictResolvedCache((ModelCreationContext) null, "openai:gpt-4.1-mini"); // all entries with a matching modelId
+ModelRegistry.evictResolvedCache(context, null); // all ids cached for this context
+ModelRegistry.evictResolvedCache(context, "openai:gpt-4.1-mini"); // one precise entry
+```
 
 ### ModelProvider SPI
 
 Provider extension modules are discovered with Java SPI through `META-INF/services/io.agentscope.core.model.spi.ModelProvider`. A provider can implement `supports(String, ModelCreationContext)` and `create(String, ModelCreationContext)` to consume context values. Simple providers can keep implementing the original `supports(String)` and `create(String)` methods because the context-aware methods have compatible defaults.
+
+Providers receive the full model id (including the `providerId` prefix) and must strip the prefix to obtain the bare model name. A creation without a context must be derived deterministically from the process environment variables plus the model id — this is what makes `resolve(String)` caching safe. If multiple discovered providers claim the same model id, resolution fails with an `IllegalArgumentException` listing all candidates instead of silently picking the first one.
 
 ## Chat model
 
@@ -341,6 +416,8 @@ model.stream(
 
 A `ChatResponse` carries a list of content blocks (`TextBlock`, `ThinkingBlock`, `ToolUseBlock`, `DataBlock`) and a `ChatUsage` recording token counts and timing.
 
+**Option precedence:** per-call options passed to `stream(messages, tools, options)` take precedence over the builder's `defaultOptions`; fields the call leaves unset fall back to the model defaults. This includes `toolChoice`: a default such as `Specific("get_weather")` constrains every call, and only a call that sets its own `toolChoice` (for example `None`) overrides it. For Gemini, whenever tools are declared the effective choice is projected into the request's `toolConfig` (`Specific` becomes `mode=ANY` plus `allowedFunctionNames`; `None` becomes `mode=NONE`), so a default and an equal per-call value produce the same request.
+
 In practice you usually call models indirectly via `ReActAgent`. For lightweight direct invocation, see `agentscope-examples/documentation/.../model/ModelRegistryExample.java`.
 
 ### Generating structured output
@@ -370,7 +447,7 @@ Msg msg =
 WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
-How it works: the framework synthesizes a forced structured tool call from the target class, validates and repairs the model output, and writes the result into `Msg.metadata` under the `structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
+How it works: the framework builds the output schema from the target class, routes the request through the native or fallback path below, parses and validates the native JSON response against the schema or validates the fallback tool input, and writes the result into `Msg.metadata` under the `_structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
 
 #### Structured output path selection
 
@@ -381,19 +458,42 @@ The framework provides two structured output paths:
 | **Native** | `supportsNativeStructuredOutput() = true` | Uses `response_format` + `json_schema` for direct JSON output |
 | **Fallback** (default) | `supportsNativeStructuredOutput() = false` | Injects a `generate_response` synthetic tool; model returns structured data via tool call |
 
-If the native path fails (e.g. model returns HTTP 400), the framework **automatically falls back** to the synthetic tool path — no user intervention needed.
+If the native path fails (for example, the provider rejects the request, or the output is empty, invalid JSON, or schema-invalid), the framework **automatically falls back** to the synthetic tool path — no user intervention needed. The rejected native response is not kept in the conversation context.
+
+Native response validation is enabled by default. Use `ReActAgent.builder().validateStructuredOutput(false)` when a provider already guarantees schema conformance and you want to avoid the client-side check and its fallback behavior.
+
+Native structured output does not force a schema to strict mode. OpenAI and OpenAI Official
+manufacturer can enable it explicitly with `strictJsonSchema(true)`; a schema-level `strict` value
+always takes precedence.
+
+On the fallback path, AgentScope creates a per-call `generate_response` tool from the output schema.
+The tool is not registered in the shared toolkit, so concurrent structured-output calls do not
+collide. Every fallback request also receives a transient `<system-reminder>`: if the final input
+message is a user message, the reminder is appended as an extra text block to a request-local copy
+of that message; otherwise it is appended as a new user message. The reminder is visible only to
+the model — hooks, middleware, `state.contextMutable()`, session persistence, and later calls
+observe only the caller's real messages.
+
+The first fallback request does not set a named `tool_choice`. If the model finishes without
+calling `generate_response`, AgentScope retries reasoning up to 3 more times. On those retries, a
+model that declares `supportsToolChoiceSpecific() = true` receives
+`tool_choice: generate_response`; other models continue to rely on the reminder. If the tool is
+still not called, the agent returns the response without structured data instead of looping
+forever.
 
 #### Default behavior per provider
 
-| Provider | `supportsNativeStructuredOutput` | Notes |
-|----------|----------------------------------|-------|
-| OpenAI (GPT-4o, etc.) | `true` | Native `json_schema` support |
-| OpenAI Official (Responses API) | `true` | Native `json_schema` support |
-| OpenAI (DeepSeek/GLM formatter) | `false` | Not supported; auto-fallback |
-| DashScope | `false` | Native endpoint only supports `json_object`, not `json_schema`; fallback by default |
-| Anthropic | `false` (default) | — |
+| Provider                        | `supportsNativeStructuredOutput` | `supportsNativeStructuredOutputWithTools` | Notes |
+|---------------------------------|----------------------------------|------------------------------------------|-------|
+| OpenAI (Chat Completions API)   | `true` | `true` | Native `json_schema` support; works alongside tool calling |
+| OpenAI Official (Responses API) | `true` | `true` | Native `json_schema` support; works alongside tool calling |
+| Kimi formatter                  | `true` | `false` | Native `json_schema` support; `response_format` suppresses tool invocations, so the with-tools path falls back |
+| DeepSeek/GLM/MiniMax formatter  | `false` | `false` | — |
+| DashScope                       | `false` | `false` | Some models do not support ` json_schema` |
+| Anthropic                       | `false` | `false` | — |
+| Gemini                          | `false` | `false` | — |
 
-> **DashScope users**: Thinking mode (`enableThinking(true)`) does not support structured output at all — the framework forces the fallback path.
+> **DashScope users**: Thinking mode (`enableThinking(true)`) does not support structured output for some models — the framework forces the fallback path.
 
 #### Explicit configuration
 
@@ -409,7 +509,7 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 
 #### Structured output with tool calling
 
-When an agent has both tools and structured output, some OpenAI-compatible providers (e.g. Kimi, Deepseek) prioritise the `response_format` constraint and skip tool calling entirely. Set `nativeStructuredOutputWithTools(false)` to resolve this:
+When an agent has both tools and structured output, some OpenAI-compatible providers (e.g. Kimi) prioritise the `response_format` constraint and skip tool calling entirely. Set `nativeStructuredOutputWithTools(false)` to resolve this:
 
 ```java
 OpenAIChatModel model = OpenAIChatModel.builder()
@@ -421,6 +521,19 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 ```
 
 `DashScopeChatModel` supports this option as well. For native OpenAI models (GPT-4o, etc.) the default behavior handles both correctly — no configuration needed.
+
+#### Specific `tool_choice` support
+
+When a fallback structured-output request must retry because the model skipped `generate_response`, endpoints that honour `tool_choice` with a specific function name can receive a hard constraint. This capability is declared via `supportsToolChoiceSpecific`. Unknown and custom models default to `false` and never receive named `tool_choice` requests, so an unsupported gateway is not asked for a constraint it may reject. Official OpenAI, DeepSeek, Anthropic, Gemini, DashScope, and Ollama endpoints declare support; GLM, MiniMax, and thinking-enabled Kimi models do not. If you use a custom OpenAI-compatible endpoint known to support named tool choices, opt in explicitly:
+
+```java
+OpenAIChatModel model = OpenAIChatModel.builder()
+        .apiKey("...")
+        .baseUrl("https://your-gateway.example.com/v1")
+        .modelName("your-model")
+        .supportsToolChoiceSpecific(true)
+        .build();
+```
 
 ### Formatter
 

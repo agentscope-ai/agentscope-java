@@ -1,0 +1,12 @@
+{"id":"greeting","request":"Hello! Please say hello back in one sentence.","goldRoute":"utility","goldEffort":"low"}
+{"id":"short-summary","request":"Summarize this note in one sentence: the meeting moved from Tuesday to Wednesday, and the room is unchanged.","goldRoute":"utility","goldEffort":"low"}
+{"id":"simple-arithmetic","request":"What is 7 plus 8? Just give the answer.","goldRoute":"utility","goldEffort":"low"}
+{"id":"architecture","request":"Design a migration from one shared transaction database to regional writes. Analyze consistency, rollback, duplicate events and recovery under partial failures before recommending a design.","goldRoute":"plan","goldEffort":"high"}
+{"id":"security-design","request":"Review the trust boundaries of a multi-tenant tool service. Reason through confused-deputy risks, authorization on retries and how to prevent cross-tenant state leakage.","goldRoute":"plan","goldEffort":"high"}
+{"id":"specified-code","request":"Implement this fully specified change as a code snippet: add a boolean enabled field with default false and return immediately when it is false. Keep the rest of the function unchanged.","goldRoute":"execute","goldEffort":"low"}
+{"id":"specified-json","request":"Carry out this precise conversion: change {\"enabled\":false,\"limit\":5} to enabled true and limit 10. Return the resulting JSON.","goldRoute":"execute","goldEffort":"low"}
+{"id":"failure-diagnosis","request":"Three attempts to repair an intermittent deadlock have failed. Analyze possible lock-order interactions between cancellation, retry and transaction cleanup, then propose a new diagnosis plan.","failures":3,"goldRoute":"plan","goldEffort":"high"}
+{"id":"chinese-design","request":"请设计一个跨会话隔离的任务调度方案，分析取消、重试和故障恢复的竞态条件，并说明每个方案的取舍。","goldRoute":"plan","goldEffort":"high"}
+{"id":"context-constrained","request":"Summarize the long technical history already accounted for in the input token estimate. Preserve the dependency relationships and unresolved decisions.","inputTokens":12000,"goldRoute":"plan","goldEffort":"high"}
+{"id":"explicit-effort-floor","request":"Analyze why a supposedly simple invariant can fail under two concurrent cancellation callbacks. The caller requires high reasoning effort.","minimumEffort":"high","goldRoute":"plan","goldEffort":"high"}
+{"id":"unsupported-image","request":"Generate and return an actual PNG photograph of a red fox. A description, SVG or code snippet is not an acceptable substitute. No image tool is available.","goldRoute":"none"}

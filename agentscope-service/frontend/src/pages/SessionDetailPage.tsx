@@ -22,10 +22,10 @@ import {
   ManagedSession,
   parseAgentTaskExternalKey,
 } from '../api/managedSessions';
-import ChatPanel from '../components/ChatPanel';
 import SessionTranscript from '../components/SessionTranscript';
+import SessionExecution from '../components/SessionExecution';
 
-type Tab = 'chat' | 'details';
+type Tab = 'chat' | 'details' | 'execution';
 
 const S: Record<string, React.CSSProperties> = {
   root: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 },
@@ -65,7 +65,7 @@ const S: Record<string, React.CSSProperties> = {
     lineHeight: 1.5,
   },
   bannerLink: { color: '#0f766e', fontWeight: 600 },
-  chatWrap: { flex: 1, minHeight: 0 },
+  chatWrap: { flex: 1, minHeight: 0, overflow: 'auto' },
   err: { padding: 32, color: '#dc2626' },
   loading: { padding: 32, color: '#94a3b8' },
 };
@@ -74,7 +74,7 @@ export default function SessionDetailPage() {
   const { sessionId = '' } = useParams<{ sessionId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const tab: Tab = tabParam === 'details' ? 'details' : 'chat';
+  const tab: Tab = tabParam === 'execution' ? 'execution' : tabParam === 'details' ? 'details' : 'chat';
   const [session, setSession] = useState<ManagedSession | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,7 +100,7 @@ export default function SessionDetailPage() {
   function setTab(next: Tab) {
     const params = new URLSearchParams(searchParams);
     if (next === 'chat') params.delete('tab');
-    else params.set('tab', 'details');
+    else params.set('tab', next);
     setSearchParams(params, { replace: true });
   }
 
@@ -159,6 +159,7 @@ export default function SessionDetailPage() {
           >
             Details
           </button>
+          <button type="button" style={{ ...S.tab, ...(tab === 'execution' ? S.tabActive : {}) }} onClick={() => setTab('execution')}>Execution</button>
         </div>
       </div>
       <div style={tab === 'chat' ? S.bodyChat : S.body}>
@@ -175,14 +176,10 @@ export default function SessionDetailPage() {
               </div>
             )}
             <div style={S.chatWrap}>
-              <ChatPanel
-                sessionId={session.id}
-                agentId={session.agentId}
-                readOnly={fromTask}
-              />
+              <SessionExecution sessionId={session.id} readOnly={fromTask || session.status === 'archived'} />
             </div>
           </>
-        ) : (
+        ) : tab === 'execution' ? <SessionExecution sessionId={session.id} readOnly={fromTask || session.status === 'archived'} /> : (
           <SessionTranscript
             agentId={session.agentId}
             sessionId={session.id}

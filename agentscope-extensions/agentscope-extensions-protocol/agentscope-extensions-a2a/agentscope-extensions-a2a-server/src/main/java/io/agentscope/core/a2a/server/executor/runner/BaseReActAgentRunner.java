@@ -17,11 +17,12 @@
 package io.agentscope.core.a2a.server.executor.runner;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import reactor.core.publisher.Flux;
 
 /**
@@ -32,7 +33,7 @@ import reactor.core.publisher.Flux;
  */
 public abstract class BaseReActAgentRunner implements AgentRunner {
 
-    private final Map<String, ReActAgent> agentCache;
+    private final ConcurrentMap<String, RunningTask> agentCache;
 
     protected BaseReActAgentRunner() {
         this.agentCache = new ConcurrentHashMap<>();
@@ -50,23 +51,52 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
 
     @Override
     public Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options) {
-        if (agentCache.containsKey(options.getTaskId())) {
-            throw new IllegalStateException(
-                    "Agent already exists for taskId: " + options.getTaskId());
+        String taskId = options.getTaskId();
+        if (agentCache.containsKey(taskId)) {
+            throw new IllegalStateException("Agent already exists for taskId: " + taskId);
         }
         ReActAgent agent = buildReActAgent();
-        agentCache.put(options.getTaskId(), agent);
-        return agent.streamEvents(requestMessages)
-                .doFinally(signal -> agentCache.remove(options.getTaskId()));
+        RunningTask task = new RunningTask(agent, buildRuntimeContext(options));
+        if (agentCache.putIfAbsent(taskId, task) != null) {
+            throw new IllegalStateException("Agent already exists for taskId: " + taskId);
+        }
+        try {
+            return agent.streamEvents(requestMessages, task.context())
+                    .doFinally(signal -> agentCache.remove(taskId, task));
+        } catch (RuntimeException | Error e) {
+            agentCache.remove(taskId, task);
+            throw e;
+        }
+    }
+
+    /**
+     * Builds the per-call {@link RuntimeContext} from the request options. Blank ids mean "not
+     * found" and are left unset, so an anonymous call keeps the null session fields the agent sees
+     * without a context.
+     */
+    private static RuntimeContext buildRuntimeContext(AgentRequestOptions options) {
+        RuntimeContext.Builder builder = RuntimeContext.builder();
+        if (null != options.getUserId() && !options.getUserId().isBlank()) {
+            builder.userId(options.getUserId());
+        }
+        if (null != options.getSessionId() && !options.getSessionId().isBlank()) {
+            builder.sessionId(options.getSessionId());
+        }
+        return builder.build();
     }
 
     @Override
     public void stop(String taskId) {
-        ReActAgent agent = agentCache.remove(taskId);
-        if (null != agent) {
-            agent.interrupt();
+        RunningTask task = agentCache.remove(taskId);
+        if (null != task) {
+            // Interrupt the session the task runs in; the no-arg interrupt() targets the default
+            // session, which may belong to another caller of a shared agent.
+            task.agent().interrupt(task.context());
         }
     }
+
+    /** The agent running a task and the context it was started with. */
+    private record RunningTask(ReActAgent agent, RuntimeContext context) {}
 
     /**
      * Build {@link ReActAgent} to run new request.

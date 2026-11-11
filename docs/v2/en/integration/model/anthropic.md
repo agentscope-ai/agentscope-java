@@ -40,6 +40,66 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
+## PDF documents and citations
+
+PDF `DocumentBlock` content is sent as an Anthropic document block. Base64 data, local file paths
+or `file://` URLs, remote HTTP(S) URLs, and Anthropic file IDs are supported. Local PDFs are
+encoded as base64 before the request is sent.
+
+```java
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
+
+DocumentBlock document = DocumentBlock.builder()
+    .name("guide.pdf")
+    .source(URLSource.builder()
+        .url("file:///absolute/path/to/guide.pdf")
+        .mimeType("application/pdf")
+        .build())
+    .build();
+
+Msg request = Msg.builder()
+    .role(MsgRole.USER)
+    .content(document, TextBlock.builder().text("Summarize this document.").build())
+    .build();
+
+model.stream(List.of(request), List.of(), null);
+```
+
+Anthropic requires citations to be enabled on all documents in a request or on none of them, so
+this integration enables citations on every PDF document it sends. Returned citations are kept as
+provider-specific response metadata under `anthropic.citations`. The value is a `List<Map<String, Object>>`;
+each entry contains `type`, `block_index`, `cited_text`, `document_index`, the location fields for
+its citation type, and optional `document_title` and `file_id` fields.
+
+```java
+Object citations = response.getMetadata().get("anthropic.citations");
+```
+
+## Server-side tools
+
+Anthropic built-in tools run on Anthropic's infrastructure instead of the local AgentScope toolkit.
+Build a strongly typed SDK tool definition, then wrap the resulting `ToolUnion` with
+`AnthropicServerTool.of(...)`:
+
+```java
+import com.anthropic.models.messages.ToolUnion;
+import com.anthropic.models.messages.WebSearchTool20250305;
+import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
+
+AnthropicChatModel model = AnthropicChatModel.builder()
+    .apiKey(System.getenv("ANTHROPIC_API_KEY"))
+    .modelName("claude-sonnet-4.5")
+    .addServerTool(AnthropicServerTool.of(
+        ToolUnion.ofWebSearchTool20250305(WebSearchTool20250305.builder().build())))
+    .build();
+```
+
+Server tools can be combined with local function tools. Anthropic selects tools by name, so a name
+collision fails fast. `AnthropicServerTool.of(...)` accepts SDK built-in tools only, not custom
+client tools.
+
 ### Bearer token authentication
 
 For an Anthropic-compatible gateway that requires `Authorization: Bearer <token>`, set
@@ -58,6 +118,18 @@ while `authToken` sets `Authorization`. Configure only one: setting both causes 
 construction to fail with an `IllegalArgumentException`.
 Configure authentication through the builder rather than `GenerateOptions.additionalHeaders`,
 because the SDK owns these authentication headers.
+
+## Client-side tool search
+
+Register `ToolSearchMiddleware` on the agent to use a custom client-side search
+strategy with native loading. The adapter sends the eligible tools with
+`defer_loading: true`, while search and always-visible tools stay non-deferred.
+Search results include `tool_reference` blocks, which Anthropic expands using the
+full definitions in the request's `tools` array. Deferred definitions are still
+sent on every request, but enter model context only when loaded. Prompt-cache
+markers are placed on the last non-deferred client tool, never on deferred tools.
+Use a model supporting this protocol, or select the ordinary-function fallback.
+See [on-demand tool search](/v2/en/docs/building-blocks/tool#on-demand-tool-search).
 
 ## Spring Boot
 

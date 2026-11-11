@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.extensions.jdbc.H2TestSupport;
-import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
+import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +44,9 @@ class JdbcStoreH2Test {
     @BeforeEach
     void setUp() {
         DataSource ds = H2TestSupport.createDataSource("jdbc_store_test");
-        store = JdbcStore.builder(ds).dialect(new H2Dialect()).initializeSchema(true).build();
+        // Tables are created and validated by the dialect builder in one pass.
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).build();
+        store = JdbcStore.builder(ds).dialect(dialect).build();
     }
 
     @Test

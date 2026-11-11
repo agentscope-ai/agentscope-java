@@ -757,7 +757,7 @@ public ProcessResult process(RunAgentInput input, String headerAgentId, String p
 
 **原因一：线程安全。** 复用层底层是异步线程池模型，线程会被多个会话复用。如果通过 `ThreadLocal` 传递请求级数据，线程归还线程池后残留数据可能污染后续其他会话。`RuntimeContext` 由框架绑定到 `AgentBase` 实例上（per-agent-instance），随请求创建、随请求销毁，天然隔离，不存在跨会话串数据的风险。
 
-**原因二：全链路可达。** `RuntimeContext` 贯穿 Agent 从创建到执行的完整生命周期，下游多个链路节点可以直接通过 `agent.getRuntimeContext()` 消费，无需额外传参：
+**原因二：全链路可达。** `RuntimeContext` 贯穿 Agent 从创建到执行的完整生命周期，下游工具和中间件通过方法参数显式接收当次调用的上下文：
 
 ![RuntimeContext 全链路可达](https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j1eicYBIKHufpOPERtSVarFrRCbGAfib3n75RdOUicqaXEomK9zicOGgJbZN98nR3ic4bBFvXKfuIdYBJTkDkNX56CtX0xLmcicak2pQ/640?wx_fmt=png&from=appmsg)
 

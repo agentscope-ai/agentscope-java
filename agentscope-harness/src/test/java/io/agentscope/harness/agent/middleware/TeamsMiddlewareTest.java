@@ -15,11 +15,17 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
@@ -30,9 +36,11 @@ import io.agentscope.harness.agent.team.TeamCreateSpec;
 import io.agentscope.harness.agent.team.TeamMessage;
 import io.agentscope.harness.agent.team.TeamTask;
 import io.agentscope.harness.agent.tool.TeamTool;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -104,21 +112,23 @@ class TeamsMiddlewareTest {
                         new io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore());
         TeamTool tool = new TeamTool(client, ctx);
         String out =
-                tool.team(
-                        "createTask",
-                        null,
-                        "x",
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null);
+                assertText(
+                        tool.team(
+                                "createTask",
+                                null,
+                                "x",
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null),
+                        ToolResultState.ERROR);
         assertTrue(out.contains("error"));
         assertFalse(out.contains("\"taskId\""));
     }
@@ -203,6 +213,75 @@ class TeamsMiddlewareTest {
     private static TeamTask task(
             String id, String subject, String state, String owner, String result) {
         return new TeamTask(id, "research", "ns", subject, "", state, owner, List.of(), result, 1);
+    }
+
+    @Test
+    void onReasoning_keepsHeadByteStableWhileNoticesChange_andRidesTailState() {
+        TeamsMiddleware mw = middleware(leadContext());
+        mw.notifyWakeup(null, "[team] Task A settled by w1.");
+        ReasoningInput round1 = runReasoning(mw);
+        mw.notifyWakeup(null, "[team] Task B failed by w2.");
+        ReasoningInput round2 = runReasoning(mw);
+
+        // Prefix-cache contract: volatile state (roster statuses, notices, board digest) never
+        // touches the system head.
+        String head1 = round1.messages().get(0).getTextContent();
+        assertEquals(head1, round2.messages().get(0).getTextContent());
+        assertTrue(head1.contains("## Agent Team"));
+        assertTrue(head1.contains("createTask"));
+        assertFalse(head1.contains("**Roster**"), "roster statuses are runtime state");
+
+        Msg tail1 = round1.messages().get(round1.messages().size() - 1);
+        assertEquals("team_state", tail1.getMetadata().get(Msg.METADATA_REMINDER_KIND));
+        assertEquals(Boolean.TRUE, tail1.getMetadata().get(Msg.METADATA_SYNTHETIC));
+        assertTrue(tail1.getTextContent().contains("<RUNTIME_STATE>"));
+        assertTrue(tail1.getTextContent().contains("**Roster**"));
+        assertTrue(tail1.getTextContent().contains("Task A settled by w1"));
+        assertTrue(
+                round2.messages()
+                        .get(round2.messages().size() - 1)
+                        .getTextContent()
+                        .contains("Task B failed by w2"));
+    }
+
+    @Test
+    void onReasoning_noStateToAdd_leavesMessagesUntouched() {
+        TeamsMiddleware mw =
+                middleware(
+                        new TeamContext(
+                                "solo", "default", "obj", "worker", false, List.of(), List.of()));
+        ReasoningInput round = runReasoning(mw);
+        // No members, no digest, no notices: no tail message is appended.
+        assertFalse(
+                round.messages().stream()
+                        .anyMatch(
+                                m ->
+                                        m.getMetadata() != null
+                                                && "team_state"
+                                                        .equals(
+                                                                m.getMetadata()
+                                                                        .get(
+                                                                                Msg
+                                                                                        .METADATA_REMINDER_KIND))));
+        assertTrue(round.messages().get(0).getTextContent().contains("## Agent Team"));
+    }
+
+    private static ReasoningInput runReasoning(TeamsMiddleware mw) {
+        List<Msg> base =
+                List.of(
+                        Msg.builder().role(MsgRole.SYSTEM).textContent("Base.").build(),
+                        Msg.builder().role(MsgRole.USER).textContent("hi").build());
+        AtomicReference<ReasoningInput> forwarded = new AtomicReference<>();
+        mw.onReasoning(
+                        null,
+                        null,
+                        new ReasoningInput(new ArrayList<>(base), List.of(), null),
+                        in -> {
+                            forwarded.set(in);
+                            return Flux.<AgentEvent>empty();
+                        })
+                .blockLast();
+        return forwarded.get();
     }
 
     @Test

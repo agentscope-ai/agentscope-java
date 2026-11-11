@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -298,5 +300,37 @@ class OllamaMessageConverterTest {
         assertNotNull(ollamaMsg);
         assertEquals("user", ollamaMsg.getRole());
         assertEquals("Additional text", ollamaMsg.getContent());
+    }
+
+    @Test
+    @DisplayName("Should keep a document reference instead of dropping the block")
+    void testConvertUserMessageWithDocumentKeepsReference() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                Arrays.asList(
+                                        TextBlock.builder().text("Summarise this").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("dashscope")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        OllamaMessage ollamaMsg = converter.convertMessage(msg);
+
+        assertNotNull(ollamaMsg);
+        assertTrue(ollamaMsg.getContent().contains("Summarise this"));
+        assertTrue(
+                ollamaMsg
+                        .getContent()
+                        .contains(
+                                "[document: report.pdf, provider file id: file-abc"
+                                        + " (dashscope)]"),
+                ollamaMsg.getContent());
     }
 }

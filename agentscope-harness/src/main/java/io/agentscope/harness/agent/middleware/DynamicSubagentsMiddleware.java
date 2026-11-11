@@ -35,9 +35,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -101,6 +103,12 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.taskTool = new TaskTool(taskRepository);
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_REASONING);
+    }
+
     /**
      * Wires a gateway bridge into the internal {@link AgentSpawnTool}, enabling spawned subagents
      * to be exposed as user-addressable threads. Only effective when the middleware owns a
@@ -155,19 +163,16 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (agentManager != null) {
             agentManager.replaceAgents(merged);
         }
-        StringBuilder addition = new StringBuilder();
-        if (!merged.isEmpty()) {
-            addition.append(SubagentsMiddleware.renderSubagentSection(merged, false));
-        }
-        String taskSummary = SubagentsMiddleware.buildTaskSummary(taskRepository, rc);
-        if (taskSummary != null) {
-            addition.append(taskSummary);
-        }
-        if (addition.length() == 0) {
-            return next.apply(input);
-        }
+        Msg stateMsg =
+                SubagentsMiddleware.buildSubagentStateMsg(
+                        merged, SubagentsMiddleware.buildTaskSummary(taskRepository, rc));
         List<Msg> rebuilt =
-                SubagentsMiddleware.prependToSystemMessage(input.messages(), addition.toString());
+                SubagentsMiddleware.prependToSystemMessage(
+                        input.messages(), SubagentsMiddleware.renderSubagentSection(merged, false));
+        if (stateMsg != null) {
+            rebuilt = new ArrayList<>(rebuilt);
+            rebuilt.add(stateMsg);
+        }
         return next.apply(new ReasoningInput(rebuilt, input.tools(), input.options()));
     }
 

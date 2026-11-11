@@ -1,5 +1,5 @@
 ---
-title: 客户实践案例
+title: 用户案例
 en_link: /v2/en/blogs/usecases/index
 ---
 

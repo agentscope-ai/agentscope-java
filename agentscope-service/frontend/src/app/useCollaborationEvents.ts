@@ -41,7 +41,7 @@ export function useCollaborationEvents(tenant: string, namespace: string) {
       const token = getToken();
       const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const url = `${scheme}//${window.location.host}/api/v1/events?tenant=${encodeURIComponent(tenant)}&namespace=${encodeURIComponent(namespace)}`;
-      const protocols = token ? ['aistio.v1', `aistio.jwt.${token}`] : ['aistio.v1'];
+      const protocols = token ? ['controlplane.v1', `controlplane.jwt.${token}`] : ['controlplane.v1'];
       socket = new WebSocket(url, protocols);
       socket.onopen = () => { retry = 1_000; };
       socket.onmessage = (message) => {
