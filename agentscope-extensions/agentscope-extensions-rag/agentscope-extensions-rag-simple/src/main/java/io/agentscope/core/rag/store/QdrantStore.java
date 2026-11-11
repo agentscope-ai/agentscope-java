@@ -590,8 +590,9 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
                                 WithPayloadSelectorFactory.enable(
                                         true)) // Request vectors to include payload
                         .setWithVectors(
-                                WithVectorsSelectorFactory.enable(
-                                        true)); // Request vectors to include embeddings
+                                vectorName == null
+                                        ? WithVectorsSelectorFactory.enable(true)
+                                        : WithVectorsSelectorFactory.include(List.of(vectorName)));
 
         // Add vector name if specified
         if (vectorName != null) {
