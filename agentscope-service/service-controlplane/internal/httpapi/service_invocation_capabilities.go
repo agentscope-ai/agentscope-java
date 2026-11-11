@@ -187,6 +187,10 @@ func (s *Server) getServiceInvocationCapabilities(c *gin.Context) {
 				available = append(available, "resume")
 			}
 		}
+	} else if caps["cancel"] {
+		if _, blocking, e := s.failedNativeServiceTurn(c, ep, inv); e == nil && blocking {
+			available = append(available, "cancel")
+		}
 	}
 	key := "invocation_id"
 	if contract.PublicSessionID != uuid.Nil {
