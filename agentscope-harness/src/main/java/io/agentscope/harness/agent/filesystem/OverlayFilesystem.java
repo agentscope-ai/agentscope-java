@@ -138,6 +138,11 @@ public class OverlayFilesystem implements AbstractFilesystem {
                 RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
             return shellBackend.execute(runtimeContext, command, timeoutSeconds);
         }
+
+        @Override
+        public ShellSyntax shellSyntax() {
+            return shellBackend.shellSyntax();
+        }
     }
 
     @Override

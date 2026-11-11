@@ -24,6 +24,7 @@ import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.ProjectAwareOverlay;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.ShellSyntax;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
@@ -462,10 +463,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         }
         if (localUpper != null || fs instanceof LocalFilesystemWithShell) {
             sb.append("Local shell: ")
-                    .append(
-                            System.getProperty("os.name").toLowerCase().contains("win")
-                                    ? "cmd.exe /c"
-                                    : "sh -c")
+                    .append(describeShell(ShellSyntax.of(fs)))
                     .append(" on the host.\n");
         }
         if (artifactDeliveryEnabled
@@ -496,6 +494,15 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             return lfs;
         }
         return null;
+    }
+
+    /** Names the shell family, so the model writes syntax that shell parses. */
+    private static String describeShell(ShellSyntax syntax) {
+        return switch (syntax) {
+            case CMD -> "cmd.exe /c";
+            case POWERSHELL -> "powershell -Command";
+            case POSIX -> "sh -c";
+        };
     }
 
     /**
