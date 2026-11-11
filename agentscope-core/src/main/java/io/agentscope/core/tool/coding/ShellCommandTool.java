@@ -577,6 +577,8 @@ public class ShellCommandTool implements AgentTool {
 
             // Start the process
             process = processBuilder.start();
+            // This tool does not supply stdin. Let commands waiting for input see EOF.
+            process.getOutputStream().close();
 
             // CRITICAL FIX: Start asynchronous stream readers immediately to prevent pipe buffer
             // deadlock
