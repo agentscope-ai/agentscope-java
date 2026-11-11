@@ -49,6 +49,9 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.session.SessionHistoryMode;
 import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
@@ -234,6 +237,37 @@ class HarnessAgentTest {
 
             assertNotSame(target, delegate.getAgentState("u1", "sessA"));
             assertSame(other, delegate.getAgentState("u1", "sessB"));
+        }
+    }
+
+    @Test
+    void replacePermissionContext_delegatesTargetedSessionToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            PermissionContextState replacement =
+                    PermissionContextState.builder()
+                            .addDenyRule(
+                                    "blocked_tool",
+                                    new PermissionRule(
+                                            "blocked_tool",
+                                            null,
+                                            PermissionBehavior.DENY,
+                                            "role-policy"))
+                            .build();
+
+            agent.replacePermissionContext("u1", "sessA", replacement);
+
+            ReActAgent delegate = agent.getDelegate();
+            assertEquals(replacement, delegate.getAgentState("u1", "sessA").getPermissionContext());
+            assertTrue(
+                    delegate.getAgentState("u2", "sessA").getPermissionContext().isTrivial(),
+                    "replacing one user's session must not alter another user's session");
         }
     }
 
