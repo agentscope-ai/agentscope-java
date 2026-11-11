@@ -32,12 +32,11 @@ import org.junit.jupiter.api.Test;
  *
  * <p>A text file used to be handed to the model as an opaque data block, which the OpenAI formatter
  * renders as {@code [Media - unsupported MIME type: text/plain]} — the agent never saw the content.
- * These tests pin the media types that are inlined as text, the size cut that keeps a huge file from
- * swallowing the context, and the cases that must stay opaque.
+ * These tests pin the media types that are inlined as text, the wrapper that marks the content as an
+ * attachment, the size cut that keeps a huge file from swallowing the context, and the bytes that
+ * must stay opaque no matter what the media type claims.
  */
 class SessionFileTextInliningTest {
-
-    private static final String TRUNCATION_MARKER = "[truncated: ";
 
     @Test
     void textFilesReachTheModelAsTextNotAsAPlaceholder() {
@@ -51,11 +50,11 @@ class SessionFileTextInliningTest {
                         "text/plain",
                         payload.getBytes(StandardCharsets.UTF_8));
 
-        Msg msg = onlyMessage(files, id);
-
-        assertThat(msg.getContent()).hasSize(1);
-        assertThat(msg.getContent().get(0)).isInstanceOf(TextBlock.class);
-        assertThat(((TextBlock) msg.getContent().get(0)).getText()).isEqualTo(payload);
+        assertThat(textOf(onlyMessage(files, id)))
+                .isEqualTo(
+                        "<file name=\"notes.txt\" media_type=\"text/plain\">\n"
+                                + payload
+                                + "\n</file>");
     }
 
     @Test
@@ -86,16 +85,24 @@ class SessionFileTextInliningTest {
                         "application/vnd.api+json",
                         vendorJson.getBytes(StandardCharsets.UTF_8));
 
-        assertThat(onlyMessage(files, jsonId).getContent().get(0))
-                .isInstanceOfSatisfying(
-                        TextBlock.class, block -> assertThat(block.getText()).isEqualTo(json));
-        assertThat(onlyMessage(files, mdId).getContent().get(0))
-                .isInstanceOfSatisfying(
-                        TextBlock.class, block -> assertThat(block.getText()).isEqualTo(markdown));
-        assertThat(onlyMessage(files, vendorId).getContent().get(0))
-                .isInstanceOfSatisfying(
-                        TextBlock.class,
-                        block -> assertThat(block.getText()).isEqualTo(vendorJson));
+        assertThat(bodyOf(onlyMessage(files, jsonId))).isEqualTo(json);
+        assertThat(bodyOf(onlyMessage(files, mdId))).isEqualTo(markdown);
+        assertThat(bodyOf(onlyMessage(files, vendorId))).isEqualTo(vendorJson);
+    }
+
+    @Test
+    void theInlinedTextIsMarkedAsAnAttachmentWithItsName() {
+        var files = new SessionFileService(new InMemoryStore(), 1_000_000);
+        String id =
+                upload(
+                        files,
+                        "k",
+                        "re-port \"2\" & <draft>.txt",
+                        "text/plain",
+                        "body".getBytes(StandardCharsets.UTF_8));
+
+        assertThat(textOf(onlyMessage(files, id)))
+                .startsWith("<file name=\"re-port &quot;2&quot; &amp; &lt;draft&gt;.txt\"");
     }
 
     @Test
@@ -107,8 +114,12 @@ class SessionFileTextInliningTest {
 
         String text = textOf(onlyMessage(files, id));
 
-        assertThat(text).endsWith("\n\n[truncated: 262144 of 300000 bytes]");
-        assertThat(text).hasSize(262_144 + "\n\n[truncated: 262144 of 300000 bytes]".length());
+        assertThat(text).contains("\n\n[truncated: 262144 of 300000 bytes]\n</file>");
+        assertThat(text)
+                .hasSize(
+                        262_144
+                                + "<file name=\"big.txt\" media_type=\"text/plain\">\n".length()
+                                + "\n\n[truncated: 262144 of 300000 bytes]\n</file>".length());
     }
 
     @Test
@@ -120,9 +131,31 @@ class SessionFileTextInliningTest {
     }
 
     @Test
-    void aTextMediaTypeOverBinaryBytesStaysOpaque() {
+    void aTextMediaTypeOverBytesContainingNulStaysOpaque() {
         var files = new SessionFileService(new InMemoryStore(), 1_000_000);
         String id = upload(files, "k", "mislabeled.txt", "text/plain", new byte[] {'a', 0, 'b'});
+
+        assertThat(onlyMessage(files, id).getContent().get(0)).isInstanceOf(DataBlock.class);
+    }
+
+    @Test
+    void aTextMediaTypeOverBytesThatAreNotValidTextStaysOpaque() {
+        var files = new SessionFileService(new InMemoryStore(), 1_000_000);
+        // Binary without a NUL byte, mislabelled as text/plain: decoding must reject it instead of
+        // replacing the malformed bytes with U+FFFD and inlining the result.
+        byte[] binary = {1, 2, 'B', 'I', 'N', (byte) 0x80, (byte) 0x81, (byte) 0xFE, (byte) 0xFF};
+        String id = upload(files, "k", "binary.txt", "text/plain", binary);
+
+        assertThat(onlyMessage(files, id).getContent().get(0)).isInstanceOf(DataBlock.class);
+    }
+
+    @Test
+    void aTextMediaTypeOverControlCharactersStaysOpaque() {
+        var files = new SessionFileService(new InMemoryStore(), 1_000_000);
+        // Valid UTF-8, so strict decoding alone would accept it; the control characters are what
+        // make it binary for this purpose.
+        byte[] control = {1, 2, 'a', 'b', 'c'};
+        String id = upload(files, "k", "control.txt", "text/plain", control);
 
         assertThat(onlyMessage(files, id).getContent().get(0)).isInstanceOf(DataBlock.class);
     }
@@ -138,7 +171,22 @@ class SessionFileTextInliningTest {
                         "text/plain;charset=ISO-8859-1",
                         new byte[] {'c', 'a', 'f', (byte) 0xE9});
 
-        assertThat(textOf(onlyMessage(files, id))).isEqualTo("café");
+        assertThat(bodyOf(onlyMessage(files, id))).isEqualTo("café");
+    }
+
+    @Test
+    void utf16ContentIsDecodedWithItsDeclaredCharset() {
+        var files = new SessionFileService(new InMemoryStore(), 1_000_000);
+        String payload = "材料 PR4101_UTF16_OK";
+        String id =
+                upload(
+                        files,
+                        "k",
+                        "wide.txt",
+                        "text/plain;charset=UTF-16",
+                        payload.getBytes(StandardCharsets.UTF_16));
+
+        assertThat(bodyOf(onlyMessage(files, id))).isEqualTo(payload);
     }
 
     private static String upload(
@@ -163,5 +211,13 @@ class SessionFileTextInliningTest {
         assertThat(msg.getContent()).hasSize(1);
         assertThat(msg.getContent().get(0)).isInstanceOf(TextBlock.class);
         return ((TextBlock) msg.getContent().get(0)).getText();
+    }
+
+    /** The content inside the {@code <file>} wrapper, i.e. what the file actually contains. */
+    private static String bodyOf(Msg msg) {
+        String text = textOf(msg);
+        int start = text.indexOf(">\n") + 2;
+        int end = text.lastIndexOf("\n</file>");
+        return text.substring(start, end);
     }
 }

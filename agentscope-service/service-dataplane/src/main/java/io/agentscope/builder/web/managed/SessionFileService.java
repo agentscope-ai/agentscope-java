@@ -18,7 +18,10 @@ package io.agentscope.builder.web.managed;
 import io.agentscope.core.session.JournalSessionLog;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -218,12 +221,14 @@ public final class SessionFileService {
     /**
      * Inline a text-like file as text, or return {@code null} to fall back to an opaque data block.
      *
-     * <p>The decision is made from the media type alone: {@code text/*}, the plain application text
-     * subtypes and the {@code +json} / {@code +xml} structured suffixes are inlined; everything else
-     * (PDF, Word, archives, images, audio, video) stays a data block for the model layer to route.
+     * <p>The media type decides whether a file is a candidate ({@code text/*}, the plain
+     * application text subtypes and the {@code +json} / {@code +xml} suffixes); the bytes decide
+     * whether it really is text: content that does not decode cleanly in its declared charset, or
+     * that carries control characters, is binary wearing a text label and stays opaque.
      *
-     * <p>Content is cut at {@link #TEXT_INLINE_MAX_BYTES} and the cut is stated in the text, so a
-     * truncated file cannot be mistaken for a complete one.
+     * <p>The content is wrapped in a {@code <file name=...>} element so the model can tell an
+     * attached document from the question it is being asked about, and is cut at {@link
+     * #TEXT_INLINE_MAX_BYTES} with the cut stated in the text.
      *
      * @param file the stored record, including its base64 payload
      * @param mediaType the media type recorded at upload time
@@ -235,20 +240,90 @@ public final class SessionFileService {
         }
         byte[] bytes = Base64.getDecoder().decode((String) file.get("data"));
         int length = Math.min(bytes.length, TEXT_INLINE_MAX_BYTES);
-        String text = new String(bytes, 0, length, charsetOf(mediaType));
-        // A text media type does not prove the bytes are text: fall back rather than pushing
-        // control characters into the conversation.
-        if (text.indexOf('\u0000') >= 0) {
+        String content = decodeText(bytes, length, charsetOf(mediaType));
+        if (content == null) {
             return null;
         }
-        return bytes.length <= TEXT_INLINE_MAX_BYTES
-                ? text
-                : text
-                        + "\n\n[truncated: "
-                        + TEXT_INLINE_MAX_BYTES
-                        + " of "
-                        + bytes.length
-                        + " bytes]";
+        var text =
+                new StringBuilder("<file name=\"")
+                        .append(escapeAttribute(String.valueOf(file.get("name"))))
+                        .append("\" media_type=\"")
+                        .append(escapeAttribute(mediaType))
+                        .append("\">\n")
+                        .append(content);
+        if (length < bytes.length) {
+            text.append("\n\n[truncated: ")
+                    .append(length)
+                    .append(" of ")
+                    .append(bytes.length)
+                    .append(" bytes]");
+        }
+        return text.append("\n</file>").toString();
+    }
+
+    /**
+     * Decode bytes as text in the given charset, or return {@code null} when they are not text.
+     *
+     * <p>Decoding is strict: malformed or unmappable input is rejected rather than replaced with
+     * U+FFFD, because a binary body declared as {@code text/plain} used to be inlined and its
+     * replacement characters pushed into the conversation. The length is walked back a few bytes on
+     * failure so that cutting a multi-byte character at the {@link #TEXT_INLINE_MAX_BYTES} boundary
+     * is not mistaken for malformed content.
+     *
+     * @param bytes the payload
+     * @param length how many bytes to decode
+     * @param charset the charset to decode with
+     * @return the decoded text, or {@code null} when the content is not text
+     */
+    private static String decodeText(byte[] bytes, int length, Charset charset) {
+        int shortestAttempt = Math.max(0, length - 4);
+        for (int attempt = length; attempt >= shortestAttempt; attempt--) {
+            var decoder =
+                    charset.newDecoder()
+                            .onMalformedInput(CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(CodingErrorAction.REPORT);
+            try {
+                String decoded = decoder.decode(ByteBuffer.wrap(bytes, 0, attempt)).toString();
+                return hasOnlyTextCharacters(decoded) ? decoded : null;
+            } catch (CharacterCodingException error) {
+                // Only a partial trailing character is acceptable; retry shorter, then give up.
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Check that decoded content is text rather than binary that happened to decode.
+     *
+     * <p>Tab, line feed and carriage return are text; the rest of the C0/C1 controls are not.
+     *
+     * @param decoded the decoded content
+     * @return true when the content can be shown to a model as text
+     */
+    private static boolean hasOnlyTextCharacters(String decoded) {
+        for (int i = 0; i < decoded.length(); i++) {
+            char c = decoded.charAt(i);
+            if (c == '\t' || c == '\n' || c == '\r') {
+                continue;
+            }
+            if (Character.isISOControl(c)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Escape a value for use inside a double-quoted attribute of the {@code <file>} element.
+     *
+     * @param value the raw value
+     * @return the escaped value
+     */
+    private static String escapeAttribute(String value) {
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
     }
 
     /**
