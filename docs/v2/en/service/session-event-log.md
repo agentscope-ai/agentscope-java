@@ -211,6 +211,8 @@ CANCEL_JSON=$(
 CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
 ```
 
+A Managed Agent Turn that ends `failed` still holds later Turns in its Session. When its `available_commands` includes `cancel`, submit `/cancel` to discard it. The Turn keeps the `failed` status, no tool call is repeated, and the next queued Turn can start.
+
 When `available_commands` from `/turns/{turnId}/capabilities` includes `resume`, submit to that Turn's `/resume` path. Resumption retains the Turn ID and continues from persisted state. Answer pending actions first, and reconcile uncertain tool results before continuing. Resume is not a general replacement for submitting a new task.
 
 ```bash

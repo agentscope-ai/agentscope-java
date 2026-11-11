@@ -215,6 +215,10 @@ RuntimeContext.builder()
 
 成功响应：`{ "task_id", "status": "pending" }`。
 
+在同一个 `AgentProtocolTaskStore` 实例内，任务执行期间并发提交相同的 `task_id`
+不会启动另一次执行。不同任务 ID 可以独立执行。提交已经完成的任务 ID 会返回
+HTTP 409。这一进程内协调机制不对不同服务副本之间的提交进行去重。
+
 ### 轮询 / 等待 / 取消
 
 | 方法 | 路径 | 说明 |
