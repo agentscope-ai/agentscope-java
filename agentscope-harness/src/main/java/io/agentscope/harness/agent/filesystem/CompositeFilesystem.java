@@ -230,7 +230,10 @@ public class CompositeFilesystem implements AbstractFilesystem {
         // reaching the backend's raw cwd or OS root (#3253). Blank is included because
         // LocalFilesystem.applyNamespacePrefix early-returns on blank keys, which would
         // strip the per-user namespace from the anchor and expose sibling tenants.
-        if (isRootSpelling(path)) {
+        // Checked on `canonical`, the same string the route decision used above, so a
+        // relative spelling that resolves to the anchor ("a/..") cannot fall through to
+        // the default-backend branch and skip route aggregation (review follow-up).
+        if (isRootSpelling(canonical)) {
             List<FileInfo> results = new ArrayList<>();
             LsResult defaultResult = defaultBackend.ls(runtimeContext, "/");
             if (defaultResult.isSuccess() && defaultResult.entries() != null) {
@@ -251,9 +254,10 @@ public class CompositeFilesystem implements AbstractFilesystem {
             return LsResult.success(results);
         }
 
-        // Normalize .. segments before delegation (#3378).
-        return defaultBackend.ls(
-                runtimeContext, AbstractFilesystem.normalizeEnumerationSegments(path));
+        // Delegation reuses the canonical string computed at the top — the raw argument is
+        // normalized exactly once per call and this site cannot drift from the route
+        // decision (#3378 review).
+        return defaultBackend.ls(runtimeContext, canonical);
     }
 
     @Override
@@ -320,8 +324,10 @@ public class CompositeFilesystem implements AbstractFilesystem {
         // Root spellings take the aggregated root; blank joins null/"/"/"." so it cannot
         // reach the backend's raw cwd (#3253). grep's documented working-directory form is
         // null and is forwarded as-is for the backend to interpret; every other root
-        // spelling is canonicalized to the contract spelling "/".
-        if (isRootSpelling(path)) {
+        // spelling is canonicalized to the contract spelling "/". Checked on `canonical`
+        // so this branch is the exact complement of the route decision above (review
+        // follow-up).
+        if (isRootSpelling(canonical)) {
             List<GrepMatch> allMatches = new ArrayList<>();
             GrepResult defaultResult =
                     defaultBackend.grep(

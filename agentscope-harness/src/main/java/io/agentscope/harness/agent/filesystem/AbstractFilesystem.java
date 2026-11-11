@@ -102,13 +102,16 @@ public interface AbstractFilesystem {
         // Byte-for-byte passthrough when there is nothing to resolve: POSIX file names may
         // legally contain a backslash, and RemoteFilesystem treats the path as a literal
         // store key — rewriting an already-clean string would change which key is read
-        // (#3378 review).
+        // (#3378 review). The guard must look at a trailing "." segment explicitly: the
+        // dot is the last character so no "./" pair ever occurs ("contains" cannot express
+        // it), yet the resolver strips that segment — while a real dotfile name ("/a/.hidden")
+        // does not end in "." and still passes through untouched.
         if (!path.contains("\\")
                 && !path.contains("./")
                 && !path.contains("../")
                 && !path.contains("//")
                 && !path.endsWith("/")
-                && !path.endsWith("..")) {
+                && !path.endsWith(".")) {
             return path;
         }
         String p = path.replace('\\', '/');
