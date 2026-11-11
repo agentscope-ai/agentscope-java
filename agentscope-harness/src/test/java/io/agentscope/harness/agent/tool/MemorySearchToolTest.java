@@ -67,6 +67,17 @@ class MemorySearchToolTest {
         assertTrue(text.contains("MEMORY.md#2: Error: timeout"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"phrase", "all", "any"})
+    void matchesAccentedLettersIgnoringCase(String mode) {
+        when(workspace.listMemoryFilePaths(context)).thenReturn(List.of("MEMORY.md"));
+        when(workspace.readMemoryFileUtf8(context, "MEMORY.md")).thenReturn("CAFÉ [x]\nCAFE [x]");
+
+        String text = assertText(tool.memorySearch(context, "café", mode), ToolResultState.SUCCESS);
+        assertTrue(text.contains("MEMORY.md#1: CAFÉ [x]"));
+        assertTrue(text.contains("Found 1 matches:"));
+    }
+
     @Test
     void nullContextUsesEmptyContext() {
         when(workspace.listMemoryFilePaths(org.mockito.ArgumentMatchers.any()))

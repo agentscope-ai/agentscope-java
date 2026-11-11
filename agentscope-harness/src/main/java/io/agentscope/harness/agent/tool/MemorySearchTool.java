@@ -84,7 +84,9 @@ public class MemorySearchTool {
                             query,
                             matchMode,
                             term ->
-                                    Pattern.compile(Pattern.quote(term), Pattern.CASE_INSENSITIVE)
+                                    Pattern.compile(
+                                                    Pattern.quote(term),
+                                                    Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE)
                                             .asPredicate());
         } catch (IllegalArgumentException e) {
             return ToolResultBlock.error(e.getMessage());
