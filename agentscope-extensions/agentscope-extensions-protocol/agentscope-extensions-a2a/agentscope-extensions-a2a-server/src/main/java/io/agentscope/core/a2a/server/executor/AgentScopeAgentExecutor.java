@@ -16,11 +16,13 @@
 
 package io.agentscope.core.a2a.server.executor;
 
+import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentResultEvent;
@@ -43,6 +45,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.a2aproject.sdk.server.ServerCallContext;
@@ -56,11 +59,11 @@ import org.a2aproject.sdk.spec.Task;
 import org.a2aproject.sdk.spec.TaskState;
 import org.a2aproject.sdk.spec.TaskStatus;
 import org.a2aproject.sdk.spec.TextPart;
-import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.SignalType;
+import reactor.core.publisher.Sinks;
 
 /**
  * Implementation of A2A {@link AgentExecutor} for AgentScope.
@@ -71,34 +74,51 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeAgentExecutor.class);
 
-    private final Map<String, Subscription> subscriptions;
+    /** Ends the execution of each running task when the task is cancelled. */
+    private final ConcurrentMap<String, Sinks.Empty<Void>> cancelSignals;
 
     private final AgentRunner agentRunner;
 
     private final AgentExecuteProperties agentExecuteProperties;
 
+    /** Deployment-side adjudication of the user identity, or {@code null} to trust the envelope. */
+    private final A2aContextResolver contextResolver;
+
+    /** Whether the unverified-identity warning was logged already; it fires once per executor. */
+    private final AtomicBoolean unverifiedIdentityWarned = new AtomicBoolean();
+
     public AgentScopeAgentExecutor(
             AgentRunner agentRunner, AgentExecuteProperties agentExecuteProperties) {
+        this(agentRunner, agentExecuteProperties, null);
+    }
+
+    public AgentScopeAgentExecutor(
+            AgentRunner agentRunner,
+            AgentExecuteProperties agentExecuteProperties,
+            A2aContextResolver contextResolver) {
         this.agentRunner = agentRunner;
         this.agentExecuteProperties = agentExecuteProperties;
-        this.subscriptions = new ConcurrentHashMap<>();
+        this.contextResolver = contextResolver;
+        this.cancelSignals = new ConcurrentHashMap<>();
     }
 
     @Override
     public void cancel(RequestContext context, AgentEmitter emitter) throws A2AError {
         String taskId = context.getTaskId();
+        Sinks.Empty<Void> cancelSignal = cancelSignals.remove(taskId);
         try {
             log.info("[{}] Start to Cancel Task", taskId);
             emitter.cancel();
             agentRunner.stop(taskId);
-            Subscription subscription = subscriptions.get(taskId);
-            if (null == subscription) {
-                log.warn("[{}] Not found Subscription for Task.", taskId);
-                return;
-            }
-            subscription.cancel();
         } catch (Exception e) {
             log.error("[{}] Error while cancelling task.", context.getTaskId(), e);
+        } finally {
+            // End the execution even if stop() failed or left the agent stream running.
+            if (null == cancelSignal) {
+                log.warn("[{}] Not found Subscription for Task.", taskId);
+            } else {
+                cancelSignal.tryEmitEmpty();
+            }
         }
     }
 
@@ -133,23 +153,72 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         Message message = context.getMessage();
         AgentRequestOptions requestOptions = new AgentRequestOptions();
         requestOptions.setTaskId(context.getTaskId());
-        requestOptions.setUserId(getUserId(message));
-        requestOptions.setSessionId(getSessionId(message));
+        requestOptions.setUserId(resolveUserId(context, message));
+        requestOptions.setSessionId(getSessionId(context));
         return requestOptions;
     }
 
+    /**
+     * Resolves the user id of the call: the resolver's transport-verified identity wins over the
+     * envelope-asserted one, which wins over none. See {@link A2aContextResolver}.
+     */
+    private String resolveUserId(RequestContext context, Message message) {
+        String asserted = getUserId(message);
+        if (null == contextResolver) {
+            if (!asserted.isBlank() && unverifiedIdentityWarned.compareAndSet(false, true)) {
+                log.warn(
+                        "Using the envelope-asserted user id of A2A messages without a configured"
+                                + " {} — the identity is unverified and any caller can claim any"
+                                + " user id. Configure AgentScopeA2aServer.Builder#contextResolver"
+                                + " when the transport verifies callers.",
+                        A2aContextResolver.class.getSimpleName());
+            }
+            return asserted;
+        }
+        RuntimeContext adjudicated = contextResolver.resolve(context);
+        if (null == adjudicated
+                || null == adjudicated.getUserId()
+                || adjudicated.getUserId().isBlank()) {
+            return asserted;
+        }
+        String verified = adjudicated.getUserId();
+        if (!asserted.isBlank() && !verified.equals(asserted)) {
+            log.warn(
+                    "[{}] Transport-verified user id '{}' overrides the envelope-asserted '{}'.",
+                    context.getTaskId(),
+                    verified,
+                    asserted);
+        }
+        return verified;
+    }
+
     private String getUserId(Message message) {
-        if (message.metadata() != null && message.metadata().containsKey("userId")) {
-            return String.valueOf(message.metadata().get("userId"));
+        if (message.metadata() != null) {
+            Object envelopeValue = message.metadata().get(MessageConstants.USER_ID_METADATA_KEY);
+            if (envelopeValue != null) {
+                return String.valueOf(envelopeValue);
+            }
+            // Legacy flat key from callers that predate the envelope key; deprecated.
+            Object legacyValue = message.metadata().get("userId");
+            if (legacyValue != null) {
+                return String.valueOf(legacyValue);
+            }
         }
         return "";
     }
 
-    private String getSessionId(Message message) {
-        if (message.metadata() != null && message.metadata().containsKey("sessionId")) {
-            return String.valueOf(message.metadata().get("sessionId"));
+    private String getSessionId(RequestContext context) {
+        Message message = context.getMessage();
+        Object legacySessionId =
+                message.metadata() == null ? null : message.metadata().get("sessionId");
+        if (legacySessionId != null) {
+            String sessionId = String.valueOf(legacySessionId);
+            if (!sessionId.isBlank()) {
+                return sessionId;
+            }
         }
-        return "";
+        String contextId = context.getContextId();
+        return contextId == null ? "" : contextId;
     }
 
     private Task newTask(RequestContext context) {
@@ -182,13 +251,15 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             RequestContext context, AgentEmitter emitter, Task task, Flux<AgentEvent> resultFlux) {
         BlockingFluxEventHandler eventHandler =
                 new BlockingFluxEventHandler(context, agentExecuteProperties, emitter);
+        Sinks.Empty<Void> cancelSignal = Sinks.empty();
         log.info("[{}] Starting blocking request processing", context.getTaskId());
         resultFlux
-                .doOnSubscribe(s -> saveSubscription(context.getTaskId(), s))
+                .doOnSubscribe(s -> saveCancelSignal(context.getTaskId(), cancelSignal))
                 .doOnNext(eventHandler::doOnNext)
                 .doOnComplete(eventHandler::doOnComplete)
                 .doOnError(eventHandler::doOnError)
-                .doFinally(signal -> removeSubscription(context.getTaskId(), signal))
+                .doFinally(signal -> removeCancelSignal(context.getTaskId(), cancelSignal, signal))
+                .takeUntilOther(cancelSignal.asMono())
                 .blockLast();
     }
 
@@ -221,27 +292,35 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             Flux<AgentEvent> resultFlux, AgentEmitter emitter, RequestContext context) {
         StreamingFluxEventHandler eventHandler =
                 new StreamingFluxEventHandler(context, agentExecuteProperties, emitter);
+        Sinks.Empty<Void> cancelSignal = Sinks.empty();
         resultFlux
                 .doOnSubscribe(
                         s -> {
-                            saveSubscription(context.getTaskId(), s);
+                            saveCancelSignal(context.getTaskId(), cancelSignal);
                             emitter.startWork();
                         })
                 .doOnNext(eventHandler::doOnNext)
                 .doOnComplete(eventHandler::doOnComplete)
                 .doOnError(eventHandler::doOnError)
-                .doFinally(signal -> removeSubscription(context.getTaskId(), signal))
+                .doFinally(signal -> removeCancelSignal(context.getTaskId(), cancelSignal, signal))
+                .takeUntilOther(cancelSignal.asMono())
                 .blockLast();
     }
 
-    private void saveSubscription(String taskId, Subscription subscription) {
+    private void saveCancelSignal(String taskId, Sinks.Empty<Void> cancelSignal) {
         log.info("[{}] Subscribed to executeFunction result stream", taskId);
-        subscriptions.put(taskId, subscription);
+        cancelSignals.put(taskId, cancelSignal);
     }
 
-    private void removeSubscription(String taskId, SignalType signal) {
+    /**
+     * Runs when the agent stream ends, also when a cancel ends it: {@code takeUntilOther} cancels
+     * the stream and completes the downstream, so {@code blockLast()} returns. Cancelling only the
+     * stream would leave {@code blockLast()} waiting for a terminal signal that never comes.
+     */
+    private void removeCancelSignal(
+            String taskId, Sinks.Empty<Void> cancelSignal, SignalType signal) {
         log.info("[{}] Subscribe and process stream output terminated: {}", taskId, signal);
-        subscriptions.remove(taskId);
+        cancelSignals.remove(taskId, cancelSignal);
     }
 
     private abstract static class BaseFluxEventHandler {
@@ -492,6 +571,8 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         private final AtomicBoolean isFirstArtifact;
 
+        private Msg finalResult;
+
         private StreamingFluxEventHandler(
                 RequestContext context,
                 AgentExecuteProperties executeProperties,
@@ -507,6 +588,15 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             log.info(
                     "[{}] Process agent output for non-blocking request completed.",
                     context.getTaskId());
+            // A runner may emit only its final result. Wait for successful completion before
+            // publishing it, and do not append a snapshot to artifacts already streamed.
+            if (isFirstArtifact.get() && finalResult != null) {
+                List<Part<?>> parts = MessageConvertUtil.convertFromContentBlocks(finalResult);
+                if (!parts.isEmpty()) {
+                    addArtifact(finalResult, parts, true);
+                    accumulatedOutput.add(finalResult);
+                }
+            }
             Message completeMessage =
                     executeProperties.isCompleteWithMessage()
                             ? MessageConvertUtil.convertFromMsgToMessage(
@@ -519,19 +609,29 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         @Override
         protected void handleEvent(AgentEvent output, Msg responseMessage) {
+            if (output instanceof AgentResultEvent resultEvent) {
+                finalResult = resultEvent.getResult();
+                return;
+            }
             if (responseMessage == null) {
                 return;
             }
-            List<Part<?>> responseParts =
+            addArtifact(
+                    responseMessage,
                     MessageConvertUtil.convertFromContentBlocks(
-                            responseMessage, isStreamingChunk(output));
+                            responseMessage, isStreamingChunk(output)),
+                    false);
+        }
+
+        private void addArtifact(
+                Msg responseMessage, List<Part<?>> responseParts, boolean lastChunk) {
             emitter.addArtifact(
                     responseParts,
                     artifactId,
                     "agent-response",
                     MessageConvertUtil.convertMetadata(responseMessage),
                     !isFirstArtifact.getAndSet(false),
-                    false);
+                    lastChunk);
         }
 
         private boolean isStreamingChunk(AgentEvent output) {

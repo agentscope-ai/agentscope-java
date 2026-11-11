@@ -116,9 +116,19 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                     }
                     return;
                 }
-                Msg msg =
-                        MessageConvertUtil.convertFromArtifact(
-                                context.getTask().artifacts(), context.getAgent().getName());
+                Msg msg;
+                boolean hasArtifacts =
+                        context.getTask().artifacts() != null
+                                && !context.getTask().artifacts().isEmpty();
+                if (!hasArtifacts && event.status().message() != null) {
+                    msg =
+                            MessageConvertUtil.convertFromMessage(
+                                    event.status().message(), context.getAgent().getName());
+                } else {
+                    msg =
+                            MessageConvertUtil.convertFromArtifact(
+                                    context.getTask().artifacts(), context.getAgent().getName());
+                }
 
                 msg = context.publishPostReasoning(msg);
 
@@ -140,6 +150,11 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                         "[{}] A2aAgent task status updated to: {}.",
                         currentRequestId,
                         taskStatus.state());
+                if (null != taskStatus.state() && taskStatus.state().isInterrupted()) {
+                    // The stream may stay open while the task waits, so end the call here.
+                    TaskEventHandler.completeWaiting(event.taskId(), taskStatus, context);
+                    return;
+                }
                 if (null == taskStatus.message()) {
                     return;
                 }

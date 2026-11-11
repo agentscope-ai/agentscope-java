@@ -149,6 +149,20 @@ The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-ho
 </Warning>
 
 
+### Sandbox mirror release wait
+
+For self-managed sandboxes, `agentscope.sandbox.mirror.release-timeout-millis` controls the **synchronous wait per release** for session mirror uploads already in progress. It is a process-wide JVM system property: all agents in the same JVM share it, and it is read at each release. There is no per-agent builder override.
+
+The value is an integer number of milliseconds. The default is `1000`; `0` disables waiting. Negative, malformed, or out-of-range values log a warning and fall back to `1000`. For example, when launching your application's executable JAR (replace `your-agent-app.jar` with its actual path), allow up to five seconds per release:
+
+```bash
+java -Dagentscope.sandbox.mirror.release-timeout-millis=5000 -jar your-agent-app.jar
+```
+
+Release first rejects new mirrors, then waits for active uploads before calling the sandbox manager's release operation. Each consecutive release can consume the full budget again. This setting limits only that mirror wait; it is neither a per-upload timeout nor a deadline for total shutdown. User-managed sandboxes that remain alive across calls do not use this release wait.
+
+If the budget expires, shutdown proceeds and an in-flight mirror may fail. The warning `Mirror upload still in flight after ... ms; releasing sandbox` identifies this case. Increasing the value gives slow uploads more time but can add the same amount of latency to each call's release. Setting it to `0` avoids the wait but gives active mirrors no time to finish. Monitor this warning and call completion latency when tuning; remove the JVM option to restore the default. This setting does not change the agent state-store location controlled by `agentscope.state.home`.
+
 ### Resume saved sessions across processes and machines
 
 With a shared store, each call reloads the slot's persisted state. This example assumes node A has finished saving before node B continues, not concurrent execution of the same session:
@@ -332,8 +346,40 @@ Available accessors:
 | `resolveAgentState(ctx, agent)` | Static helper: returns `ctx.getAgentState()` if available, falls back to `agent.getAgentState()`. Ensure the current call has injected its state; fallback does not guarantee the intended business session |
 | `get(String)` / `put(String, Object)` | String-keyed get/put |
 | `get(Class<T>)` / `put(Class<T>, T)` | Typed singleton get/put |
+| `get(Model.class)` / `put(Model.class, ...)` | Per-call model pin (see [per-call model selection](#per-call-model-selection) below) |
 | `getExtra()` | Direct access to the string-attribute map (mutable view) |
 | `RuntimeContext.empty()` | Empty context |
+
+### Per-call model selection
+
+`ctx.put(Model.class, model)` pins the model for one call — the per-request model convention of LLM APIs. The agent reads the pin on every model boundary of the run (reasoning, summary, compaction, memory flush), so a singleton agent serves sessions that need different models without reflection or per-tenant agent instances. The choice is deterministic for the whole call: an instance reference is immutable, so there is no mid-call switch and no cross-session leakage.
+
+```java
+// Register models and named creation contexts once at startup:
+ModelRegistry.register("my-prod-model-01", openAiModel);
+ModelRegistry.registerFactory("dashscope:.*", id -> dashscopeModel(id));
+ModelRegistry.registerCreationContext("mytokenplan01",
+        ModelCreationContext.builder().apiKey(tenantApiKey).build());
+
+// Per request: resolve the caller's choice YOURSELF (auth/allowlist lives here),
+// then pin the instance on the call's context:
+Model choice = ModelRegistry.resolve("mytokenplan01@dashscope:qwen-plus");
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId("alice")
+        .sessionId("s-001")
+        .build();
+ctx.put(Model.class, choice);   // no pin = the agent's build-time default model
+Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
+```
+
+Semantics:
+
+- **Priority and determinism**: the pin outranks the agent's two build-time forms (a lazy identity string, or a direct instance). Whatever wins is decided once — the agent memoizes its own first resolution into the same typed slot — so the model never switches mid-response; a fresh context re-decides. Routing untrusted choices? Resolve behind your own auth/allowlist and pin the instance; never pass a client-supplied identity string through.
+- **Auxiliary calls follow the effective model**: compaction, memory flush and max-iteration summaries use the pinned (or default) model unless a dedicated model is configured for them (`CompactionConfig.getModel()` / `MemoryConfig.model()`), in which case the dedicated one wins. Compaction trigger budgets are computed from the effective model's context window. Periodic background memory maintenance is not part of any call and always uses the build-time configured model.
+- **Subagents do not inherit it**: subagent spawning clears the caller's pin — a subagent's model is a build-time contract (`SubagentDeclaration.getModel()`), and a caller's runtime choice must not silently change worker models or their cost envelope.
+- **Provider failures still fail over**: if the pinned model fails at runtime, the configured `fallbackModel` takes over as usual — failover covers availability, the selection itself was honored.
+- Session-sticky switching (remember the choice across requests) is the application's concern: persist the resolved choice (or the identity to re-resolve) in your own session record; keeping it out of `AgentState` leaves a single source of truth.
+- Not to be confused with `GenerateOptions.getModelName()`, which providers treat as a routing hint and no provider consumes for model selection.
 
 ### runId correlation
 

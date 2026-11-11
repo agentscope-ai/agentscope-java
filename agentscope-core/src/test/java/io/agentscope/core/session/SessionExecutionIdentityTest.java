@@ -160,12 +160,21 @@ class SessionExecutionIdentityTest {
     }
 
     @Test
-    void eachDirectSubscriptionAllocatesIndependentRunAndDefaultTurn() {
+    void eachExecutionAllocatesIndependentRunAndDefaultTurn() {
         var agent = agent(false);
-        var ctx = context();
-        var stream = agent.streamEvents(List.of(new UserMessage("hello")), ctx);
-        var first = stream.collectList().block(WAIT).get(0).getExecution();
-        var second = stream.collectList().block(WAIT).get(0).getExecution();
+        // A fresh context per execution keeps its generated runId; executions must not share one.
+        var first =
+                agent.streamEvents(List.of(new UserMessage("hello")), context())
+                        .collectList()
+                        .block(WAIT)
+                        .get(0)
+                        .getExecution();
+        var second =
+                agent.streamEvents(List.of(new UserMessage("hello")), context())
+                        .collectList()
+                        .block(WAIT)
+                        .get(0)
+                        .getExecution();
         assertNotEquals(first.runId(), second.runId());
         assertNotEquals(first.turnId(), second.turnId());
     }

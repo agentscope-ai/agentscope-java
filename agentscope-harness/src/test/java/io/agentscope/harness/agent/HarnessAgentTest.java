@@ -40,12 +40,18 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.session.SessionHistoryMode;
 import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
@@ -55,7 +61,13 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryResult;
+import io.agentscope.harness.agent.context.ContextPolicy;
+import io.agentscope.harness.agent.context.ContextSelectionPolicy;
+import io.agentscope.harness.agent.context.ContextSources;
+import io.agentscope.harness.agent.context.HarnessContextBuilder;
+import io.agentscope.harness.agent.context.TaskContextOptions;
 import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -83,8 +95,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -96,6 +110,9 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -220,6 +237,37 @@ class HarnessAgentTest {
 
             assertNotSame(target, delegate.getAgentState("u1", "sessA"));
             assertSame(other, delegate.getAgentState("u1", "sessB"));
+        }
+    }
+
+    @Test
+    void replacePermissionContext_delegatesTargetedSessionToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            PermissionContextState replacement =
+                    PermissionContextState.builder()
+                            .addDenyRule(
+                                    "blocked_tool",
+                                    new PermissionRule(
+                                            "blocked_tool",
+                                            null,
+                                            PermissionBehavior.DENY,
+                                            "role-policy"))
+                            .build();
+
+            agent.replacePermissionContext("u1", "sessA", replacement);
+
+            ReActAgent delegate = agent.getDelegate();
+            assertEquals(replacement, delegate.getAgentState("u1", "sessA").getPermissionContext());
+            assertTrue(
+                    delegate.getAgentState("u2", "sessA").getPermissionContext().isTrivial(),
+                    "replacing one user's session must not alter another user's session");
         }
     }
 
@@ -378,9 +426,7 @@ class HarnessAgentTest {
         agent.call(userText("hi"), RuntimeContext.builder().sessionId("s1").build()).block();
 
         String combined = capturedPrompt(model);
-        assertTrue(
-                combined.contains("no mechanism for moving files across the boundary"),
-                () -> combined);
+        assertTrue(combined.contains("No artifact delivery tool is configured"), () -> combined);
         assertFalse(combined.contains("deliver_artifact"), () -> combined);
     }
 
@@ -501,37 +547,67 @@ class HarnessAgentTest {
                 "AGENTS.md should not be injected when context hook is disabled");
     }
 
-    @Test
-    void workspaceAgentsMd_injectedIntoMessagesSeenByModel() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void workspaceAgentsMdAndApplicabilityReachModelForCallAndStream(boolean streaming)
+            throws Exception {
         Files.createDirectories(workspace);
         String marker = "injected-via-workspace-context-99";
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), marker);
 
         Model model = stubModel("assistant-done");
-        HarnessAgent agent =
+        try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build();
+                        .build()) {
+            var context = RuntimeContext.builder().sessionId("rules-applicability").build();
+            Msg request = userText("Follow my direct instructions.");
+            if (streaming) {
+                assertNotNull(
+                        agent.streamEvents(request, context).blockLast(Duration.ofSeconds(10)));
+            } else {
+                assertNotNull(agent.call(request, context).block(Duration.ofSeconds(10)));
+            }
 
-        agent.call(userText("hi"), RuntimeContext.builder().sessionId("s1").build()).block();
-
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
-        verify(model, atLeast(1)).stream(captor.capture(), any(), any());
-        String combined =
-                captor.getAllValues().stream()
-                        .map(HarnessAgentTest::joinAllText)
-                        .filter(s -> s.contains("<project_rules "))
-                        .findFirst()
-                        .orElse("");
-        assertTrue(
-                combined.contains("<project_rules "),
-                "expected context builder to wrap AGENTS.md in project_rules");
-        assertTrue(
-                combined.contains(marker), "model should see AGENTS.md body in injected context");
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+            verify(model, atLeast(1)).stream(captor.capture(), any(), any());
+            // Memory extraction may call the same model after the main request.
+            List<Msg> messages =
+                    captor.getAllValues().stream()
+                            .filter(
+                                    input ->
+                                            input.stream()
+                                                    .anyMatch(
+                                                            msg ->
+                                                                    msg.getRole() == MsgRole.USER
+                                                                            && msg.getTextContent()
+                                                                                    .equals(
+                                                                                            request
+                                                                                                    .getTextContent())))
+                            .findFirst()
+                            .orElseThrow();
+            List<Msg> systems =
+                    messages.stream().filter(msg -> msg.getRole() == MsgRole.SYSTEM).toList();
+            assertEquals(1, systems.size());
+            String system = systems.get(0).getTextContent();
+            String note = "They do not override system, developer, or direct user instructions.";
+            int open = system.indexOf("<project_rules ");
+            int noteAt = system.indexOf(note, open);
+            int body = system.indexOf(marker, open);
+            int close = system.indexOf("</project_rules>", open);
+            assertTrue(open >= 0 && open < noteAt && noteAt < body && body < close, system);
+            assertTrue(
+                    messages.stream()
+                            .anyMatch(
+                                    msg ->
+                                            msg.getRole() == MsgRole.USER
+                                                    && msg.getTextContent()
+                                                            .equals(request.getTextContent())));
+        }
     }
 
     @Test
@@ -551,6 +627,11 @@ class HarnessAgentTest {
                         .abstractFilesystem(agentFilesystem)
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
@@ -590,6 +671,11 @@ class HarnessAgentTest {
                         .abstractFilesystem(agentFilesystem)
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
@@ -635,6 +721,11 @@ class HarnessAgentTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
+                                    @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
                                         seen.set(ctx);
@@ -670,6 +761,11 @@ class HarnessAgentTest {
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String prompt) {
@@ -748,6 +844,11 @@ class HarnessAgentTest {
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
@@ -1012,6 +1113,11 @@ class HarnessAgentTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                                    }
+
+                                    @Override
                                     public Flux<AgentEvent> onAgent(
                                             Agent agent,
                                             RuntimeContext ctx,
@@ -1079,6 +1185,11 @@ class HarnessAgentTest {
         AtomicInteger userMiddlewareHits = new AtomicInteger();
         MiddlewareBase userMiddleware =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onAgent(
                             Agent agent,
@@ -1210,6 +1321,358 @@ class HarnessAgentTest {
                 ConflictPolicy.APPEND_MERGE,
                 wrapped.getDelegate().getConflictPolicy(),
                 "a conflict policy set on the source agent must survive being wrapped");
+    }
+
+    @Test
+    void fromAgent_modelStringRefSource_pinsCurrentInstance() {
+        Model registered = stubModel("ref-pinned");
+        ModelRegistry.register("from-agent-ref", registered);
+        try {
+            ReActAgent source =
+                    ReActAgent.builder()
+                            .name("source")
+                            .model("from-agent-ref")
+                            .toolkit(new Toolkit())
+                            .build();
+
+            HarnessAgent wrapped =
+                    HarnessAgent.Builder.fromAgent(source)
+                            .workspace(workspace)
+                            .abstractFilesystem(new LocalFilesystem(workspace))
+                            .build();
+
+            assertSame(
+                    registered,
+                    wrapped.getModel(),
+                    "a string-reference source must be pinned to its current instance");
+        } finally {
+            ModelRegistry.reset();
+        }
+    }
+
+    @Test
+    void fromAgent_rebuildsHarnessPlatformToolsWithoutCollision() {
+        // A HarnessAgent-built source carries harness platform tool instances in its toolkit.
+        // fromAgent().build() must strip those and let buildInstance() re-register fresh ones:
+        // Toolkit's fail-fast duplicate-name rule rejects inherited instances otherwise
+        // (regression: "Tool name already registered" for agent_spawn / memory_search / ...).
+        // Subagent-orchestration, session-search, memory, filesystem and web tools are asserted
+        // below; shell and wait-async tools are covered by the FROM_AGENT_RESET_TOOL_NAMES
+        // constant because they need a sandbox filesystem / message bus to register.
+        try (HarnessAgent source =
+                        HarnessAgent.builder()
+                                .name("from-agent-collision")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build();
+                HarnessAgent copied =
+                        HarnessAgent.Builder.fromAgent(source.getDelegate())
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build()) {
+            Toolkit sourceToolkit = source.getToolkit();
+            Toolkit copiedToolkit = copied.getToolkit();
+            List<String> names =
+                    List.of(
+                            "agent_spawn",
+                            "agent_send",
+                            "agent_list",
+                            "memory_search",
+                            "memory_get",
+                            "memory_save",
+                            "session_search",
+                            "read_file",
+                            "write_file",
+                            "edit_file",
+                            "web_fetch",
+                            "web_search");
+            for (String name : names) {
+                AgentTool inherited = sourceToolkit.getTool(name);
+                AgentTool rebuilt = copiedToolkit.getTool(name);
+                assertNotNull(rebuilt, name + " should be re-registered on the copy");
+                assertNotSame(
+                        inherited,
+                        rebuilt,
+                        name + " must be a fresh instance, not the inherited one");
+            }
+        }
+    }
+
+    @Test
+    void fromAgent_preservesUserToolWithHarnessName() {
+        AgentTool customRead = mockAgentTool("read_file");
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(customRead);
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("custom-reader")
+                        .model(stubModel("done"))
+                        .toolkit(toolkit)
+                        .build();
+
+        try (HarnessAgent copied =
+                HarnessAgent.Builder.fromAgent(source)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableFilesystemTools()
+                        .build()) {
+            assertSame(customRead, copied.getToolkit().getTool("read_file"));
+            assertSame(customRead, source.getToolkit().getTool("read_file"));
+        }
+    }
+
+    @Test
+    void fromAgent_doesNotSilentlyReplaceUserToolWithHarnessName() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(mockAgentTool("read_file"));
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("custom-reader")
+                        .model(stubModel("done"))
+                        .toolkit(toolkit)
+                        .build();
+
+        assertThrows(
+                IllegalStateException.class,
+                () ->
+                        HarnessAgent.Builder.fromAgent(source)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build());
+    }
+
+    @Test
+    void fromAgent_preservesUserReplacementOfHarnessTool() {
+        try (HarnessAgent source =
+                HarnessAgent.builder()
+                        .name("replaced-reader")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            AgentTool replacement = mockAgentTool("read_file");
+            source.getToolkit().replaceAgentTool(replacement);
+
+            try (HarnessAgent copied =
+                    HarnessAgent.Builder.fromAgent(source.getDelegate())
+                            .workspace(workspace)
+                            .abstractFilesystem(new LocalFilesystem(workspace))
+                            .disableFilesystemTools()
+                            .build()) {
+                assertSame(replacement, copied.getToolkit().getTool("read_file"));
+                assertSame(replacement, source.getToolkit().getTool("read_file"));
+            }
+        }
+    }
+
+    @Test
+    void fromAgent_rebuildsHarnessToolInInactiveGroup() {
+        try (HarnessAgent source =
+                HarnessAgent.builder()
+                        .name("inactive-reader")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            Toolkit sourceToolkit = source.getToolkit();
+            AgentTool original = sourceToolkit.getTool("read_file");
+            sourceToolkit.createToolGroup("inactive-files", "Hidden filesystem", false);
+            sourceToolkit.addToolToGroup("inactive-files", "read_file");
+            assertTrue(
+                    sourceToolkit.getToolSchemas().stream()
+                            .noneMatch(schema -> schema.getName().equals("read_file")));
+
+            try (HarnessAgent copied =
+                    HarnessAgent.Builder.fromAgent(source.getDelegate())
+                            .workspace(workspace)
+                            .abstractFilesystem(new LocalFilesystem(workspace))
+                            .build()) {
+                assertNotNull(copied.getToolkit().getTool("read_file"));
+                assertNotSame(original, copied.getToolkit().getTool("read_file"));
+                assertSame(original, sourceToolkit.getTool("read_file"));
+            }
+        }
+    }
+
+    @Test
+    void fromAgent_rebuildsHarnessToolsWhenDeletionIsDisabled() {
+        Toolkit toolkit = new Toolkit(ToolkitConfig.builder().allowToolDeletion(false).build());
+        AgentTool custom = mockAgentTool("custom");
+        toolkit.registerAgentTool(custom);
+
+        try (HarnessAgent source =
+                        HarnessAgent.builder()
+                                .name("protected-reader")
+                                .model(stubModel("done"))
+                                .toolkit(toolkit)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build();
+                HarnessAgent copied =
+                        HarnessAgent.Builder.fromAgent(source.getDelegate())
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build()) {
+            AgentTool rebuilt = copied.getToolkit().getTool("read_file");
+            assertNotNull(rebuilt);
+            assertNotSame(source.getToolkit().getTool("read_file"), rebuilt);
+            assertSame(custom, copied.getToolkit().getTool("custom"));
+            copied.getToolkit().removeTool("read_file");
+            assertSame(rebuilt, copied.getToolkit().getTool("read_file"));
+            copied.getToolkit().removeTool("custom");
+            assertSame(custom, copied.getToolkit().getTool("custom"));
+        }
+    }
+
+    @Test
+    void fromAgent_preservesAndRebindsMetaTool() {
+        try (HarnessAgent source =
+                        HarnessAgent.builder()
+                                .name("meta-tools")
+                                .model(stubModel("done"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .enableMetaTool(true)
+                                .build();
+                HarnessAgent copied =
+                        HarnessAgent.Builder.fromAgent(source.getDelegate())
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build()) {
+            AgentTool original = source.getToolkit().getTool("reset_equipped_tools");
+            AgentTool rebuilt = copied.getToolkit().getTool("reset_equipped_tools");
+            assertNotNull(original);
+            assertNotNull(rebuilt);
+            assertNotSame(original, rebuilt);
+            copied.getToolkit().createToolGroup("copy-only", "Copy tools", false);
+            assertTrue(rebuilt.getParameters().toString().contains("copy-only"));
+            assertFalse(original.getParameters().toString().contains("copy-only"));
+        }
+    }
+
+    @Test
+    void fromAgent_preservesUserReplacementOfRequirementTool() {
+        try (HarnessAgent source =
+                HarnessAgent.builder()
+                        .name("custom-requirement")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .taskContext(
+                                TaskContextOptions.builder().allowRequirementProposals().build())
+                        .build()) {
+            AgentTool replacement = mockAgentTool("task_requirement_propose");
+            source.getToolkit().replaceAgentTool(replacement);
+            try (HarnessAgent copied =
+                    HarnessAgent.Builder.fromAgent(source.getDelegate())
+                            .workspace(workspace)
+                            .abstractFilesystem(new LocalFilesystem(workspace))
+                            .taskContext(TaskContextOptions.disabled())
+                            .build()) {
+                assertSame(replacement, copied.getToolkit().getTool("task_requirement_propose"));
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void fromAgent_rebuildsCoreTaskTools(boolean deletionAllowed, boolean proposalsEnabled) {
+        Toolkit toolkit =
+                new Toolkit(ToolkitConfig.builder().allowToolDeletion(deletionAllowed).build());
+        TaskContextOptions taskOptions =
+                proposalsEnabled
+                        ? TaskContextOptions.builder().allowRequirementProposals().build()
+                        : TaskContextOptions.disabled();
+        try (HarnessAgent source =
+                        HarnessAgent.builder()
+                                .name("task-tools")
+                                .model(stubModel("done"))
+                                .toolkit(toolkit)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .taskContext(taskOptions)
+                                .enableTaskList()
+                                .build();
+                HarnessAgent copied =
+                        HarnessAgent.Builder.fromAgent(source.getDelegate())
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build()) {
+            assertNotNull(copied.getToolkit().getTool("todo_write"));
+            assertNotSame(
+                    source.getToolkit().getTool("todo_write"),
+                    copied.getToolkit().getTool("todo_write"));
+            if (proposalsEnabled) {
+                assertNotNull(copied.getToolkit().getTool("task_requirement_propose"));
+                assertNotSame(
+                        source.getToolkit().getTool("task_requirement_propose"),
+                        copied.getToolkit().getTool("task_requirement_propose"));
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void fromPlainAgent_rebuildsRequirementTools(
+            boolean deletionAllowed, boolean proposalsEnabled) {
+        ReActAgent source = plainAgentWithRequirements(deletionAllowed);
+        AgentTool original = source.getToolkit().getTool("task_requirement_propose");
+        HarnessAgent.Builder builder =
+                HarnessAgent.Builder.fromAgent(source)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace));
+        if (!proposalsEnabled) {
+            builder.taskContext(TaskContextOptions.disabled());
+        }
+        try (HarnessAgent copied = builder.build()) {
+            if (proposalsEnabled) {
+                assertNotNull(copied.getToolkit().getTool("task_requirement_propose"));
+                assertNotSame(original, copied.getToolkit().getTool("task_requirement_propose"));
+            } else {
+                assertNull(copied.getToolkit().getTool("task_requirement_propose"));
+            }
+            assertSame(original, source.getToolkit().getTool("task_requirement_propose"));
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false", "true"})
+    void fromPlainAgent_preservesRequirementReplacement(boolean deletionAllowed) {
+        ReActAgent source = plainAgentWithRequirements(deletionAllowed);
+        AgentTool replacement = mockAgentTool("task_requirement_propose");
+        source.getToolkit().replaceAgentTool(replacement);
+        try (HarnessAgent copied =
+                HarnessAgent.Builder.fromAgent(source)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .taskContext(TaskContextOptions.disabled())
+                        .build()) {
+            assertSame(replacement, copied.getToolkit().getTool("task_requirement_propose"));
+            assertSame(replacement, source.getToolkit().getTool("task_requirement_propose"));
+        }
+    }
+
+    private ReActAgent plainAgentWithRequirements(boolean deletionAllowed) {
+        return ReActAgent.builder()
+                .name("plain-requirements")
+                .model(stubModel("done"))
+                .toolkit(
+                        new Toolkit(
+                                ToolkitConfig.builder().allowToolDeletion(deletionAllowed).build()))
+                .enableTaskRequirements(true)
+                .modelRequestPreparer(
+                        new HarnessContextBuilder(
+                                ContextPolicy.defaults(),
+                                null,
+                                null,
+                                ContextSources.empty()
+                                        .withTaskContext(
+                                                TaskContextOptions.builder()
+                                                        .allowRequirementProposals()
+                                                        .build()),
+                                ContextSelectionPolicy.defaults()))
+                .build();
     }
 
     @Test
@@ -1479,6 +1942,101 @@ class HarnessAgentTest {
     }
 
     @Test
+    void declaredSubagent_explicitCompactionOverridesDisabledParent() throws Exception {
+        Files.createDirectories(workspace);
+        CompactionConfig subagentCompaction = CompactionConfig.builder().triggerMessages(5).build();
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("compact-worker")
+                        .description("worker with independent compaction")
+                        .inlineAgentsBody("You are a worker subagent.")
+                        .compaction(subagentCompaction)
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .disableCompaction()
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "compact-worker".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        assertSame(subagentCompaction, decl.getCompactionConfig());
+        assertNotNull(
+                child.getCompactionHook(),
+                "declaration-level compaction must override the disabled parent");
+    }
+
+    @Test
+    void declaredSubagent_withoutCompactionOverrideInheritsDisabledParent() throws Exception {
+        Files.createDirectories(workspace);
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("non-compacting-worker")
+                        .description("worker inheriting disabled compaction")
+                        .inlineAgentsBody("You are a worker subagent.")
+                        .build();
+
+        List<SubagentEntry> entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .disableCompaction()
+                        .subagent(decl)
+                        .buildSubagentEntries(workspace);
+
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "non-compacting-worker".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+
+        assertNull(decl.getCompactionConfig());
+        assertNull(
+                child.getCompactionHook(),
+                "subagent without an override must inherit disabled compaction");
+    }
+
+    @Test
+    void declaredSubagent_yamlCanDisableCompactionWithEnabledParent() throws Exception {
+        Files.createDirectories(workspace);
+        SubagentDeclaration declaration =
+                io.agentscope.harness.agent.subagent.AgentSpecLoader.parse(
+                        "---\ndescription: Non-compacting worker\ncompaction: false\n---\nWorker",
+                        "worker",
+                        workspace);
+        assertNotNull(declaration);
+        var entries =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .compaction(CompactionConfig.builder().triggerMessages(5).build())
+                        .subagent(declaration)
+                        .buildSubagentEntries(workspace);
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(entry -> "worker".equals(entry.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.empty());
+        assertNull(child.getCompactionHook());
+    }
+
+    @Test
     void declaredSubagent_honorsParentMemoryConfig() throws Exception {
         Files.createDirectories(workspace);
         Model model = stubModel("done");
@@ -1520,6 +2078,65 @@ class HarnessAgentTest {
     // =========================================================================
     // general-purpose mirroring
     // =========================================================================
+
+    @ParameterizedTest
+    @ValueSource(strings = {"parent", "general-purpose", "read-worker"})
+    void configuredReadFileMaximumReachesParentAndBuiltInSubagents(String agentName)
+            throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("large.txt"), "x".repeat(100_000));
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .readFileMaxChars(64_000)
+                        .subagent(
+                                SubagentDeclaration.builder()
+                                        .name("read-worker")
+                                        .description("Reads files")
+                                        .workspaceMode(WorkspaceMode.SHARED)
+                                        .inlineAgentsBody("Read the requested file.")
+                                        .build());
+        try (HarnessAgent agent =
+                "parent".equals(agentName)
+                        ? builder.build()
+                        : (HarnessAgent)
+                                builder.buildSubagentEntries(workspace).stream()
+                                        .filter(entry -> agentName.equals(entry.name()))
+                                        .findFirst()
+                                        .orElseThrow()
+                                        .factory()
+                                        .create(RuntimeContext.empty())) {
+            ToolUseBlock use =
+                    ToolUseBlock.builder()
+                            .id("configured-read")
+                            .name("read_file")
+                            .input(Map.of("path", "large.txt", "max_chars", Integer.MAX_VALUE))
+                            .build();
+            ToolResultBlock result =
+                    agent.getToolkit()
+                            .callTools(List.of(use), null, null, RuntimeContext.empty())
+                            .block(Duration.ofSeconds(5))
+                            .get(0);
+            String output =
+                    result.getOutput().stream()
+                            .filter(TextBlock.class::isInstance)
+                            .map(TextBlock.class::cast)
+                            .map(TextBlock::getText)
+                            .collect(Collectors.joining());
+            assertTrue(output.startsWith("x".repeat(64_000) + "\n[Output truncated."));
+            assertTrue(output.contains("char_offset=64000"));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, 0, 15_999})
+    void readFileMaximumRejectsValuesBelowDefaultPageSize(int maximum) {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> HarnessAgent.builder().readFileMaxChars(maximum));
+    }
 
     @Test
     void generalPurpose_mirrorDisableFilesystemTools() throws Exception {

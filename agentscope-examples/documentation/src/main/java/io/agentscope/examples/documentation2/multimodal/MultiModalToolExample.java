@@ -33,6 +33,8 @@ import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter
 import io.agentscope.extensions.model.dashscope.tool.DashScopeMultiModalTool;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Flux;
@@ -171,6 +173,11 @@ public class MultiModalToolExample {
      * and logs tool result text deltas and final state after execution.
      */
     static class ToolCallLoggingMiddleware implements MiddlewareBase {
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_ACTING);
+        }
 
         @Override
         public Flux<AgentEvent> onActing(

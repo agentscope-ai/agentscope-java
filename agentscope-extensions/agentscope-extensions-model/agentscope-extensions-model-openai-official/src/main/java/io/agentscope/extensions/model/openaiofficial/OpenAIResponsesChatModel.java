@@ -35,6 +35,7 @@ import io.agentscope.core.model.ModelProviderSupport;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.tool.search.ToolSearchMode;
 import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
 import java.io.IOException;
 import java.time.Instant;
@@ -121,32 +122,38 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
 
         GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, configuredOptions);
+        return Flux.defer(
+                        () -> {
+                            validateConnectionFields(effectiveOptions);
 
-        validateConnectionFields(effectiveOptions);
+                            boolean stream =
+                                    effectiveOptions.getStream() != null
+                                            ? effectiveOptions.getStream()
+                                            : true;
 
-        boolean stream = effectiveOptions.getStream() != null ? effectiveOptions.getStream() : true;
+                            String modelName = effectiveOptions.getModelName();
+                            log.debug("OpenAI API call: model={}", modelName);
 
-        String modelName = effectiveOptions.getModelName();
-        log.debug("OpenAI API call: model={}", modelName);
+                            Function<List<Msg>, List<ResponseInputItem>> historyMapper =
+                                    formatter != null
+                                            ? formatter::formatHistory
+                                            : ResponsesRequestMapper::mapHistory;
 
-        Function<List<Msg>, List<ResponseInputItem>> historyMapper =
-                formatter != null ? formatter::formatHistory : ResponsesRequestMapper::mapHistory;
+                            ResponseCreateParams params =
+                                    ResponsesRequestMapper.map(
+                                            messages,
+                                            tools,
+                                            serverTools,
+                                            effectiveOptions,
+                                            strictTools,
+                                            strictJsonSchema,
+                                            historyMapper);
 
-        ResponseCreateParams params =
-                ResponsesRequestMapper.map(
-                        messages,
-                        tools,
-                        serverTools,
-                        effectiveOptions,
-                        strictTools,
-                        strictJsonSchema,
-                        historyMapper);
-
-        if (stream) {
-            return buildStreamingFlux(params, modelName);
-        } else {
-            return buildNonStreamingFlux(params, modelName);
-        }
+                            return stream
+                                    ? buildStreamingFlux(params, modelName)
+                                    : buildNonStreamingFlux(params, modelName);
+                        })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     private Flux<ChatResponse> buildNonStreamingFlux(
@@ -265,6 +272,11 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
     }
 
     // Builder
+
+    @Override
+    public ToolSearchMode getToolSearchMode() {
+        return ToolSearchMode.CLIENT;
+    }
 
     public static Builder builder() {
         return new Builder();

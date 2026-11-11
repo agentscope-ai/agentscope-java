@@ -69,6 +69,117 @@ import org.mockito.ArgumentCaptor;
 import reactor.test.StepVerifier;
 
 class OpenAIDecisionsClientTest {
+    @Test
+    void retriesSdkIoFailures() {
+        HttpClient transport = mock(HttpClient.class);
+        var success = response(200, SUCCESS);
+        when(transport.execute(any(), any()))
+                .thenThrow(mock(OpenAIIoException.class))
+                .thenReturn(success);
+        var client =
+                OpenAIDecisionsClient.builder()
+                        .client(sdkClient(transport))
+                        .retryPolicy(new OpenAIDecisionsRetryPolicy(1, Duration.ofMillis(1)))
+                        .build();
+        assertEquals("fixture-model", client.decideBlocking(request()).model());
+        verify(transport, times(2)).execute(any(), any());
+    }
+
+    @Test
+    void cancellationDuringBackoffPreventsFurtherAttempts() {
+        HttpClient transport = mock(HttpClient.class);
+        var response = response(503, "{\"error\":{\"message\":\"busy\"}}");
+        var attempts = new CountDownLatch(1);
+        when(transport.execute(any(), any()))
+                .thenAnswer(
+                        call -> {
+                            attempts.countDown();
+                            return response;
+                        });
+        var client =
+                OpenAIDecisionsClient.builder()
+                        .client(sdkClient(transport))
+                        .retryPolicy(new OpenAIDecisionsRetryPolicy(2, Duration.ofHours(1)))
+                        .build();
+        StepVerifier.create(client.decide(request()))
+                .then(
+                        () -> {
+                            try {
+                                assertTrue(attempts.await(5, TimeUnit.SECONDS));
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                throw new AssertionError(e);
+                            }
+                        })
+                .thenCancel()
+                .verify();
+        verify(transport, times(1)).execute(any(), any());
+    }
+
+    @Test
+    void retriesTransientFailureThenSucceeds() {
+        HttpClient transport = mock(HttpClient.class);
+        var busy = response(429, "{\"error\":{\"message\":\"busy\"}}");
+        var success = response(200, SUCCESS);
+        when(transport.execute(any(), any())).thenReturn(busy, success);
+        var client =
+                OpenAIDecisionsClient.builder()
+                        .client(sdkClient(transport))
+                        .retryPolicy(new OpenAIDecisionsRetryPolicy(2, Duration.ofMillis(1)))
+                        .build();
+        assertEquals("fixture-model", client.decideBlocking(request()).model());
+        verify(transport, times(2)).execute(any(), any());
+    }
+
+    @Test
+    void retriesExhaustWithOriginalSanitizedFailure() {
+        var transport = transport(SUCCESS);
+        var unavailable = response(503, "{\"error\":{\"message\":\"secret\"}}");
+        when(transport.execute(any(), any())).thenReturn(unavailable);
+        var client =
+                OpenAIDecisionsClient.builder()
+                        .client(sdkClient(transport))
+                        .retryPolicy(new OpenAIDecisionsRetryPolicy(2, Duration.ofMillis(1)))
+                        .build();
+        var error =
+                assertThrows(
+                        OpenAIDecisionsException.class, () -> client.decideBlocking(request()));
+        assertEquals(503, error.getStatusCode());
+        assertFalse(error.getMessage().contains("secret"));
+        verify(transport, times(3)).execute(any(), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"bad request", "invalid response"})
+    void configuredRetriesDoNotRepeatPermanentFailures(String failure) {
+        var transport = transport(SUCCESS);
+        var failed =
+                failure.equals("bad request")
+                        ? response(400, "{\"error\":{\"message\":\"bad\"}}")
+                        : response(200, "{}");
+        when(transport.execute(any(), any())).thenReturn(failed);
+        var client =
+                OpenAIDecisionsClient.builder()
+                        .client(sdkClient(transport))
+                        .retryPolicy(new OpenAIDecisionsRetryPolicy(2, Duration.ofMillis(1)))
+                        .build();
+        assertThrows(OpenAIDecisionsException.class, () -> client.decideBlocking(request()));
+        verify(transport, times(1)).execute(any(), any());
+    }
+
+    @Test
+    void retryPolicyRejectsInvalidSettings() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new OpenAIDecisionsRetryPolicy(-1, Duration.ofMillis(1)));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new OpenAIDecisionsRetryPolicy(1, Duration.ZERO));
+        assertThrows(NullPointerException.class, () -> new OpenAIDecisionsRetryPolicy(1, null));
+        assertEquals(0, OpenAIDecisionsRetryPolicy.disabled().maxRetries());
+        assertEquals(2, OpenAIDecisionsRetryPolicy.defaults().maxRetries());
+    }
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String SUCCESS =
             """

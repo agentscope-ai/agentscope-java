@@ -38,6 +38,34 @@ public class OpenAIDecisionsProperties {
     /** Request timeout. */
     private Duration timeout = OpenAIDecisionsClient.DEFAULT_TIMEOUT;
 
+    private final Retry retry = new Retry();
+
+    public Retry getRetry() {
+        return retry;
+    }
+
+    /** Wrapper retries; SDK retries remain disabled on auto-configured clients. */
+    public static class Retry {
+        private int maxRetries;
+        private Duration initialBackoff = Duration.ofMillis(500);
+
+        public int getMaxRetries() {
+            return maxRetries;
+        }
+
+        public void setMaxRetries(int maxRetries) {
+            this.maxRetries = maxRetries;
+        }
+
+        public Duration getInitialBackoff() {
+            return initialBackoff;
+        }
+
+        public void setInitialBackoff(Duration initialBackoff) {
+            this.initialBackoff = initialBackoff;
+        }
+    }
+
     public boolean isEnabled() {
         return enabled;
     }
